@@ -1,0 +1,885 @@
+<section class="chapter" id="ch05-25" data-title="BC100 ABAP 程式設計入門（BC400 的先修課）">
+  <h2>第 5-25 章 BC100 ABAP 程式設計入門（BC400 的先修課）</h2>
+  <p class="lede">BC100（Introduction to Programming with ABAP）是寫給「從來沒寫過程式」的人的兩天課：它不教 SAP 的架構，而是用 ABAP 當工具，教你程式設計最基本的幾個觀念——<b>變數與型別、賦值與運算、流程控制（分支與迴圈）、除錯、錯誤處理、讀資料庫、模組化</b>。本章依原廠 Col18 版的 5 個單元、16 個 Lesson 逐一整理，程式碼全部改寫成 S/4HANA 1809+ 可直接執行的現代 ABAP；讀完再接 <a href="#ch05-1">5-1 章 BC400</a>，就不會在第一天被一堆名詞淹沒。</p>
+
+  <div class="meta">
+    <div><b>核心 TCODE</b><span class="tcode">SE38</span><span class="tcode">SE80</span><span class="tcode">SE11</span><span class="tcode">SE16</span><span class="tcode">SE16N</span><span class="tcode">SE37</span><span class="tcode">SE91</span><span class="tcode">ST22</span><span class="tcode">ICON</span><span class="tcode">ABAPDOCU</span><span class="tcode">ABAPHELP</span><span class="tcode">SE24</span></div>
+    <div><b>關鍵物件</b>PARAMETERS、DATA、CONSTANTS、TEXT-xxx、SY-DATUM／SY-UZEIT／SY-UNAME／SY-SUBRC／SY-INDEX、COL_HEADING～COL_GROUP、ICON_GREEN_LIGHT、CONCATENATE／FIND／REPLACE／SPLIT、IF／CASE／DO／WHILE／EXIT、BCD_ZERODIVIDE、CX_SY_ZERODIVIDE、MESSAGE、訊息類別 BC100_MSGS、DEMO_MESSAGES、MARA-MATNR、SCARR、SELECT SINGLE、BC100_CALC_HOLS、CALL FUNCTION、Pattern、CL_SALV_TABLE</div>
+  </div>
+
+  <h3 id="ch05-25-01">1. 課程定位與教材對照</h3>
+  <p>BC100 在 SAP 課程體系中屬於 <b>Level 100（入門級）</b>，原廠標示 <b>2 天</b>課程，目標學員是 Developer、Development Consultant、IT Support。它是 <a href="#ch05-1">BC400 ABAP Workbench Foundations</a> 的<b>先修課</b>：教材裡凡是講到「程式類型、套件、其他全域型別、CASE 細節、如何搜尋函數模組、ALV」這些稍深的主題，都一律寫「詳見 BC400」。換句話說，BC100 只負責讓你會寫「一支有輸入畫面、會算、會判斷、會讀一筆資料、會呼叫一個函數的小程式」。</p>
+  <p>本章使用 <span class="src">L29_原廠教材</span> 的兩個版本：</p>
+  <table>
+    <thead><tr><th>L29 檔名</th><th>版本</th><th>頁數</th><th>語言／品質</th><th>說明</th></tr></thead>
+    <tbody>
+      <tr><td>01_BC100_EN_Col18_introduction_135.pdf</td><td>Course Version 18（© 2022），Material No. 50146852</td><td>135</td><td>英文，有文字層</td><td><b>本章主要依據</b>，頁碼以 PDF 頁為準</td></tr>
+      <tr><td>e-book BC100_EN_Col15_2018_120_英文_不清楚.pdf</td><td>Course Version 15（2018），Material No. 50124597，e-book 時長 7 小時 15 分</td><td>120</td><td>英文，掃描版，無文字層</td><td>只核對目錄與幾個關鍵頁（見下表）</td></tr>
+    </tbody>
+  </table>
+
+  <table>
+    <thead><tr><th>單元 / Lesson</th><th>主題</th><th>Col18 PDF 頁</th><th>Col15 書內頁</th><th>本章小節</th></tr></thead>
+    <tbody>
+      <tr><td>Unit 1 L1</td><td>Developing a Simple ABAP Program</td><td>p11–16</td><td>2</td><td><a href="#ch05-25-02">§2</a></td></tr>
+      <tr><td>Unit 1 L2</td><td>Introducing ABAP Syntax</td><td>p17–21</td><td>8</td><td><a href="#ch05-25-03">§3</a></td></tr>
+      <tr><td>Unit 1 L3</td><td>Implementing a Simple Dialog（PARAMETERS）</td><td>p23–26</td><td>13</td><td><a href="#ch05-25-04">§4</a></td></tr>
+      <tr><td>Unit 1 L4</td><td>Customizing the ABAP Editor</td><td>p27–34</td><td>17</td><td><a href="#ch05-25-05">§5</a></td></tr>
+      <tr><td>Unit 2 L1</td><td>Defining Simple Variables</td><td>p41–48</td><td>31</td><td><a href="#ch05-25-06">§6</a></td></tr>
+      <tr><td>Unit 2 L2</td><td>Defining Text Symbols</td><td>p49–51</td><td>40</td><td><a href="#ch05-25-07">§7</a></td></tr>
+      <tr><td>Unit 2 L3</td><td>Arithmetic Operations Using Simple Variables</td><td>p53–57</td><td>43</td><td><a href="#ch05-25-08">§8</a></td></tr>
+      <tr><td>Unit 2 L4</td><td>Using System Variables</td><td>p59–60</td><td>48</td><td><a href="#ch05-25-09">§9</a></td></tr>
+      <tr><td>Unit 2 L5</td><td>Debugging a Program</td><td>p61–67</td><td>50</td><td><a href="#ch05-25-10">§10</a></td></tr>
+      <tr><td>Unit 2 L6</td><td>Creating an ABAP List</td><td>p69–74</td><td>57</td><td><a href="#ch05-25-11">§11</a></td></tr>
+      <tr><td>Unit 2 L7</td><td>Processing Character Strings</td><td>p75–77</td><td>63</td><td><a href="#ch05-25-12">§12</a></td></tr>
+      <tr><td>Unit 3 L1–L2</td><td>Conditional Logic／Loops</td><td>p87–97</td><td>73／81</td><td><a href="#ch05-25-13">§13</a></td></tr>
+      <tr><td>Unit 4 L1–L2</td><td>Analyzing Runtime Errors／Error Handling</td><td>p103–112</td><td>87／92</td><td><a href="#ch05-25-14">§14</a></td></tr>
+      <tr><td>Unit 5 L1</td><td>Retrieving Data From the Database</td><td>p117–121</td><td>99</td><td><a href="#ch05-25-15">§15</a></td></tr>
+      <tr><td>Unit 5 L2–L3</td><td>Modularization／Using Function Modules</td><td>p123–131</td><td>104／107</td><td><a href="#ch05-25-16">§16</a></td></tr>
+      <tr><td>各單元 Learning Assessment</td><td>自我檢核（共 22 題，附答案）</td><td>p35–38、79–84、99–100、113–114、133–135</td><td>各單元末</td><td><a href="#ch05-25-qa">qa</a></td></tr>
+    </tbody>
+  </table>
+
+  <p><b>Col15 與 Col18 的差異</b>（依 Col15 目錄頁 v、第 36 頁 MARA 圖、第 105 頁模組化圖、第 114 頁最後一題答案逐頁比對）：</p>
+  <ul>
+    <li><b>單元與 Lesson 完全相同</b>：5 個 Unit、16 個 Lesson，標題一字不差；圖號也一致（例如兩版的 Figure 28 都是 MARA 的 ABAP Dictionary、Figure 80／81 都是模組化原理與資料交換）。</li>
+    <li><b>頁數差 15 頁</b>：Col15 是 e-book 排版，Unit 之間沒有空白頁（Col18 每個 Lesson 後常有一頁只印頁尾的空白頁），因此 120 頁對 135 頁；內容本身沒有增刪。</li>
+    <li><b>Learning Assessment 題目與答案相同</b>，連 Col18 裡「Unit 5 第 3 題解答指向 Lesson 2」這個小錯也一樣存在（見 qa）。</li>
+    <li><b>兩版都還停留在 ECC 的描述</b>：MATNR 仍畫成 CHAR 18、仍把新前端編輯器說成「為 NetWeaver 7.0 開發、可用 SP 匯入 6.20／6.40」。在 S/4HANA 都需要修正，本章會在對應處說明。</li>
+  </ul>
+  <div class="note">BC100 本身沒有「物件導向」單元；但 Casper 的教學路線裡，初學者應在第一週就「看過」一次類別與方法長什麼樣子，所以本章在 <a href="#ch05-25-17">§17</a> 補一個「從程序到物件」的橋接小節，<a href="#ch05-25-18">§18</a> 把全部觀念串成一支完整程式，<a href="#ch05-25-19">§19</a> 整理舊語法對照與銜接 BC400 的學習路線。</div>
+
+  <h3 id="ch05-25-02">2. Unit 1-1：第一支 ABAP 程式——SE38、命名空間、屬性與四個按鍵</h3>
+  <p>原廠的教學哲學一句話：<b>「學寫程式（任何語言）最好的方法就是開始寫程式。」</b>BC100 用 ABAP Editor（<span class="tcode">SE38</span>）當唯一工具，建立程式需要懂四件事：怎麼建立新程式、怎麼操作編輯器、最重要的編輯器功能、怎麼寫出一個正確的 ABAP 敘述。</p>
+  <ol>
+    <li><b>命名</b>：客製程式必須使用<b>客戶命名空間</b>，也就是以 <b>Z</b> 或 <b>Y</b> 開頭（練習題第 1 題的答案）。公司若有註冊的前綴命名空間（如 <code>/ABC/</code>）也可以，但 BC100 不談。</li>
+    <li><b>程式屬性（Attributes）</b>：標題（Title，通常與技術名稱不同）與程式類型（Type）。BC100 只用 <b>Executable Program（可執行程式，類型 1）</b>，也就是一般說的「報表」；其他類型（Include、Module Pool、Function Group、Class Pool…）在 BC400 介紹。</li>
+    <li><b>套件或本機物件</b>：指派到套件（Package）→ 系統會要求指定傳輸請求（Transport Request），程式可以傳到 QAS／PRD；存成本機物件（Local Object，套件 <code>$TMP</code>）→ 不能傳輸、也不會問請求號碼。詳見 <a href="#ch01-1">1-1 章</a>。</li>
+  </ol>
+  <table>
+    <thead><tr><th>功能</th><th>快捷鍵</th><th>做什麼</th><th>初學者常犯的錯</th></tr></thead>
+    <tbody>
+      <tr><td>Save 儲存</td><td>Ctrl+S</td><td>存成<b>非啟用版本（inactive）</b>，不檢查語法</td><td>以為存檔就生效——其他人、TCODE 跑的仍是舊的啟用版</td></tr>
+      <tr><td>Check 語法檢查</td><td>Ctrl+F2</td><td>像拼字檢查：句點、關鍵字拼寫、關鍵字與句點之間的文法</td><td>只看紅字不看訊息；新編輯器紅線只告訴你「有錯」，細節要按檢查</td></tr>
+      <tr><td>Activate 啟用</td><td>Ctrl+F3</td><td>產生執行時物件（runtime object／load）</td><td>忘了啟用就釋放請求——<b>請求內物件未啟用不能釋放</b></td></tr>
+      <tr><td>Direct Processing 執行</td><td>F8</td><td>直接執行測試</td><td>只在 DEV 用自己的測試資料跑一次就交付</td></tr>
+    </tbody>
+  </table>
+  <p>練習題第 6 題的標準順序：<b>Save → Check → Activate → Execute</b>。語法檢查可以在存檔後執行；有語法錯誤就不能啟用；啟用後才能執行最新版本。</p>
+  <pre><code class="abap">REPORT zbc100_hello.
+*---------------------------------------------------------------------*
+* BC100 Unit 1：第一支程式（S/4HANA 1809+ 寫法）
+*---------------------------------------------------------------------*
+PARAMETERS pa_name TYPE string LOWER CASE.   "LOWER CASE：保留使用者輸入的大小寫
+
+START-OF-SELECTION.
+  " 原教材：WRITE 'Hello World'.  這裡加上使用者輸入，順便示範字串範本
+  WRITE / |Hello { pa_name }！今天是 { sy-datum DATE = USER }|.
+  NEW-LINE.
+  WRITE / 'Welcome to ABAP'(001).            "文字符號寫法，見 §7</code></pre>
+  <div class="tip"><b>本機物件 vs 套件的實務判準</b>：只是練習、明天就刪 → <code>$TMP</code>；任何「可能會給別人用」的程式 → 一開始就放進套件、開請求。把 <code>$TMP</code> 物件事後搬進套件（<span class="tcode">SE03</span> 或 SE80 的 Change Package Assignment）雖然可以，但常常漏搬它引用的訊息類別、文字符號翻譯、資料元素。</div>
+
+  <h3 id="ch05-25-03">3. Unit 1-2：ABAP 語言特性與語法規則、註解、F1 關鍵字說明</h3>
+  <p>ABAP（Advanced Business Application Programming）是 SAP 為商業應用開發的語言，原教材列出六個特性：</p>
+  <table>
+    <thead><tr><th>特性</th><th>意思</th></tr></thead>
+    <tbody>
+      <tr><td>Typed（強型別）</td><td>有多種數值型與字元型，資料依型別處理</td></tr>
+      <tr><td>Multi-lingual（多語言）</td><td>用可翻譯的文字元素（text elements）做出多語系應用</td></tr>
+      <tr><td>SQL access</td><td>內嵌 Open SQL（S/4HANA 稱 <b>ABAP SQL</b>）直接存取資料庫</td></tr>
+      <tr><td>Object-oriented</td><td>ABAP Objects 是 ABAP 的物件導向擴充</td></tr>
+      <tr><td>Platform-independent</td><td>同一段語法在任何資料庫與作業系統上意義相同</td></tr>
+      <tr><td>Upward-compatible</td><td>今天寫的程式在未來版本仍能執行</td></tr>
+    </tbody>
+  </table>
+  <p><b>語法規則</b>（原教材 Figure 4 與 p18 的清單）：</p>
+  <ul>
+    <li>程式由一個個<b>敘述（statement）</b>組成；敘述的第一個字是<b>關鍵字（keyword）</b>。</li>
+    <li>每個敘述<b>以句點結尾，沒有例外</b>（練習題 2：答案是 Period，不是分號）。</li>
+    <li>敘述可以有附加（additions）與運算元（operands），可以跨多行；字與字之間至少一個空白。</li>
+    <li>可以縮排；執行時系統<b>不分大小寫</b>。慣例是關鍵字與附加大寫、運算元小寫（原廠教材採此慣例）。</li>
+    <li><b>鏈式敘述（Chained Statement）</b>：連續幾個敘述關鍵字相同時，寫一次關鍵字加冒號，後面各段用逗號分隔。原教材特別註明：<b>鏈式敘述不會提升效能，只是語法簡寫</b>。</li>
+  </ul>
+  <p><b>註解</b>兩種：行首 <code>*</code> 表示整行註解；<code>"</code> 可以放在任何位置，之後到行尾都是註解。原廠建議：整行註解放在它描述的敘述<b>上一行</b>；行尾註解最適合用在<b>宣告</b>，不適合用在可執行敘述。</p>
+  <pre><code class="abap">* 整行註解：星號必須在第 1 欄
+DATA gv_count TYPE i.          "行尾註解：最適合寫在宣告後面
+
+" 鏈式敘述：WRITE 重複兩次 → 用冒號與逗號合併
+WRITE 'Hello'.
+WRITE 'World'.
+WRITE: 'Hello', 'World'.       "與上面兩行完全等價，效能也一樣
+
+" 一個敘述可以跨行，直到句點才結束
+SELECT SINGLE FROM scarr
+  FIELDS carrname
+  WHERE carrid = 'LH'
+  INTO @DATA(gv_carrname).
+
+" 常見陷阱：鏈式敘述的冒號放錯位置
+" WRITE: / 'A', / 'B'.   → 輸出兩行
+" WRITE / : 'A', 'B'.    → 語法雖然過得了，但讀的人會誤會，不要這樣寫</code></pre>
+  <p><b>F1 關鍵字說明（ABAP Keyword Documentation）</b>兩種開法：游標停在關鍵字上按 <b>F1</b>（練習題 4 的答案），或按編輯器的 <b>Help On</b> 按鈕輸入關鍵字，也可以瀏覽 Glossary、ABAP Subject Directory 等目錄。</p>
+  <div class="tip">S/4HANA 時代的查法：交易碼 <span class="tcode">ABAPDOCU</span>（含可執行範例程式 DEMO_*）、<span class="tcode">ABAPHELP</span>；ADT 中游標停在關鍵字按 F1 會開出與系統版本相符的說明；線上版為 help.sap.com 的「ABAP Keyword Documentation」，<b>務必選和你系統 SAP_BASIS 相同的版本</b>（1809＝7.53），否則會查到你系統還不能用的新語法。</div>
+
+  <h3 id="ch05-25-04">4. Unit 1-3：用 PARAMETERS 做出最簡單的對話——選擇畫面與選擇文字</h3>
+  <p>「Hello World，還是更個人化一點？」——BC100 用這個問題引出輸入。<code>PARAMETERS</code> 在<b>選擇畫面（Selection Screen）</b>上產生一個輸入欄位，一個參數對應一個欄位，畫面自帶 <b>Execute（F8）</b> 按鈕。這裡不用 Screen Painter，畫面是依宣告自動產生的。</p>
+  <p>關鍵觀念（練習題 5 答案 B＋D）：<b>PARAMETERS 同時定義了「畫面上的輸入欄位」與「程式記憶體中同名的變數」</b>。使用者按執行時，輸入值被搬進這個變數，程式就能拿來運算或輸出。因為內容會變，所以叫「變數」；在寫程式的當下你不知道使用者叫什麼名字，所以參數也像是一個「佔位符」。</p>
+  <p>選擇畫面最常見的用途是<b>讀資料庫前的篩選條件</b>（例如只看某天的銷售訂單），只抓需要的資料，對效能與記憶體都有正面影響。</p>
+  <pre><code class="abap">REPORT zbc100_params.
+
+PARAMETERS: pa_name TYPE string LOWER CASE OBLIGATORY,
+            pa_age  TYPE i,
+            pa_date TYPE d DEFAULT sy-datum.   "d 型別：使用者依自己的日期格式輸入
+
+START-OF-SELECTION.
+  WRITE: / |姓名：{ pa_name }|,
+         / |年齡：{ pa_age }|,
+         / |日期：{ pa_date DATE = USER }|.</code></pre>
+  <p><b>選擇文字（Selection Texts）</b>：預設畫面上的標籤是技術名稱（pa_name、pa_age），應改成有意義且可翻譯的文字：編輯器 <b>Goto → Text Elements → Selection Texts</b>；翻譯用 <b>Goto → Translation</b>（<span class="tcode">SE63</span>）。欄位若參照字典型別，可勾 <b>Dictionary Ref.</b> 直接帶出資料元素的欄位標籤。</p>
+  <div class="warn"><b>選擇文字是獨立於原始碼的物件，建立後要另外啟用</b>。最常見的狀況：DEV 看得到中文標籤，傳到 QAS 變回 PA_NAME——原因是文字元素沒啟用、或沒被收進同一張請求。選擇畫面更完整的內容（SELECT-OPTIONS、區塊、事件、F4）見 <a href="#ch03-1">3-1 章</a>。</div>
+
+  <h3 id="ch05-25-05">5. Unit 1-4：ABAP Editor 設定——新舊編輯器、Pretty Printer、Code Hint／Template、語法檢查與啟用</h3>
+  <p><b>選擇編輯器</b>：若看到的是舊式（Classic）編輯器，<b>Utilities → Settings → ABAP Editor → Editor 頁籤</b>，選 <b>Front-End Editor (New)</b>。新編輯器的功能：</p>
+  <ul>
+    <li>可設定不同元素（關鍵字、註解、字面值）的顏色、字型與字級。</li>
+    <li><b>Code Hint（程式提示）</b>：輸入時建議關鍵字與最近用過的識別字。只有一個建議時黑字白底；多個建議時最相關的一個以白字黑底顯示；<b>Ctrl+Space</b> 列出全部建議。也可以開啟「變數也提示」。</li>
+    <li><b>Code Template（程式樣板）</b>：提示中帶有 <b>§</b> 符號的是樣板，按 <b>Tab</b> 插入整段（例如 IF…ENDIF）。與 Code Hint 的差別：hint 針對單一關鍵字，template 針對一整塊常用程式；也可以自訂樣板。</li>
+    <li><b>編輯器設定</b>：右下角按鈕進入；設定是<b>使用者個人的，不是全系統</b>。</li>
+  </ul>
+  <p><b>Pretty Printer</b>（Shift+F1）：新舊編輯器都有，可做兩件事——關鍵字大小寫轉換、邏輯區塊縮排。設定在 <b>Utilities → Settings → ABAP Editor → Pretty Printer</b>，但<b>設定不會自動套用，必須按 Pretty Printer 按鈕</b>；原廠建議開發過程中經常按。</p>
+  <p><b>啟用的意義</b>（p34）：每支新程式一開始都是非啟用；改了已啟用的程式會產生新的非啟用版，<b>用 TCODE 執行的人看到的一直是上一個啟用版</b>，直到你啟用新版。原廠提示：<b>複製程式時只會複製啟用版</b>。</p>
+  <div class="warn"><b>教材過時處與 S/4HANA 現況</b>：兩版教材都說「新編輯器是為 NetWeaver 7.0 開發、可透過 SP 匯入 AS 6.20（SP 18 或 SP 59）與 6.40」——這是 2006 年前後的資訊。S/4HANA 1809 的 <span class="tcode">SE38</span>／<span class="tcode">SE80</span> 預設就是新前端編輯器，不需再切換。更重要的是：<b>CDS View、AMDP、RAP、Behavior Definition 等新物件只能在 ADT（Eclipse）中編輯</b>，SAP 也已明確把 ADT 定為策略性工具。建議初學者 SE38 學會之後盡快轉到 ADT，見 <a href="#ch05-5">5-5 章 BC404 ADT</a>。ADT 對應的操作：Ctrl+S 存檔、Ctrl+F2 檢查、Ctrl+F3 啟用、F8（或 F9 Console）執行、Shift+F1 格式化（ABAP Formatter）、Ctrl+Space 內容輔助（Content Assist）。</div>
+
+  <h3 id="ch05-25-06">6. Unit 2-1：資料型別、變數、字面值與常數</h3>
+  <p>為什麼選擇畫面參數的型別重要？<b>名稱可以隨便取，不影響能輸入什麼；型別決定能輸入什麼值（數字、字元、日期…）與多長</b>，也決定程式裡能對它做什麼（i 可以運算；string 內容是 'ABC' 就不能算）。原廠比喻：型別是變數（輸入欄位）的「正式描述」。</p>
+  <table>
+    <thead><tr><th>型別</th><th>意義</th><th>用途與注意</th><th>初始值</th></tr></thead>
+    <tbody>
+      <tr><td><code>string</code></td><td>變長字串</td><td>任意字元、任意長度；<b>不能也不需要</b>指定長度</td><td>空字串</td></tr>
+      <tr><td><code>c</code></td><td>定長字串</td><td>用 <code>LENGTH</code> 指定長度；未指定預設 <b>1</b></td><td>空白</td></tr>
+      <tr><td><code>d</code></td><td>日期</td><td>內部格式 <b>YYYYMMDD</b>，固定 8 位不能指定長度；使用者依個人設定格式（如 DD.MM.YYYY）輸入，系統自動檢查與轉換</td><td>'00000000'</td></tr>
+      <tr><td><code>t</code></td><td>時間</td><td>內部格式 <b>HHMMSS</b>，固定 6 位</td><td>'000000'</td></tr>
+      <tr><td><code>i</code></td><td>整數</td><td>長度固定（4 bytes），不能有小數</td><td>0</td></tr>
+      <tr><td><code>p</code></td><td>壓縮數（Packed）</td><td>商業計算的主力；每 byte 放 2 位數，半個 byte 留給正負號；<code>DECIMALS</code> 指定小數；未指定長度預設 <b>8</b>（bytes）</td><td>0</td></tr>
+    </tbody>
+  </table>
+  <div class="warn"><b>教材筆誤修正</b>：Col18 p43 內文寫 t 型別「stored internally in the format <b>HHMMTT</b>」，同書 p42 的型別表卻寫 HHMMSS。正確是 <b>HHMMSS</b>（時、分、秒），HHMMTT 是筆誤。</div>
+  <p><b>Packed 的長度算法</b>：<code>p LENGTH 16</code> 有 32 個半位元組，1 個給正負號，剩 <b>31 位數字</b>。p 變數<b>不含千分位</b>，1,000 的逗號只是輸出時自動加的顯示格式。</p>
+  <p><b>全域型別（Global Data Types）</b>：物料號碼多長？能含英文字母嗎？答案在 ABAP Dictionary（<span class="tcode">SE11</span>）的表格定義裡。例如物料主檔 MARA 的欄位 MATNR。最簡單的用法是 <code>TYPE 表格-欄位</code>，字典欄位是全系統可見的，任何程式都能引用。其他全域型別（資料元素、結構、表格型別）在 BC400 與 <a href="#ch01-2">1-2 章</a>。</p>
+  <div class="warn"><b>S/4HANA 修正：MATNR 不是 18 碼</b>。兩版教材的 Figure 28 都畫 <code>MARA-MATNR  CHAR 18</code>，這是 ECC 的定義。S/4HANA（1511 起）MATNR 欄位長度已擴充為 <b>CHAR 40</b>（是否實際允許輸入 40 碼由 Customizing「Extended Material Number」決定）。這正是原廠要你用 <code>TYPE mara-matnr</code> 或資料元素 <code>matnr</code>、而<b>不要自己寫 <code>c LENGTH 18</code></b> 的理由——升級時引用字典型別的程式自動跟著變長，寫死長度的程式則會截斷料號。</div>
+  <p><b>DATA vs PARAMETERS</b>：PARAMETERS 是「選擇畫面上的輸入欄位＋同名變數」；DATA 只是程式內部使用的變數，不對應任何輸入欄位。型別可以用 ABAP 標準型別、字典全域型別，或用 <code>LIKE</code> 參照既有變數。</p>
+  <p><b>字面值（Literal）與常數（Constant）</b>：'Hello World'、123 這種沒有名字、寫死的值叫字面值；數值字面值不加引號，文字字面值用單引號。文字字面值<b>無法翻譯</b>（→ 用文字符號，§7）。原廠建議<b>避免在程式中直接寫字面值，改用常數</b>：同一值出現多處時只需改一次；即使只用一次，取個有意義的名字也讓程式更好懂。常數在宣告時以 <code>VALUE</code> 給值，執行時不能改。</p>
+  <pre><code class="abap">REPORT zbc100_variables.
+
+" --- 選擇畫面參數：用字典型別，長度與檢查跟著系統走 ---
+PARAMETERS pa_mat TYPE mara-matnr.          "S/4HANA：CHAR 40
+PARAMETERS pa_fld TYPE c LENGTH 10.
+
+" --- 常數：取代散落各處的字面值 ---
+CONSTANTS: gc_max_years TYPE i VALUE 5,
+           gc_currency  TYPE waers VALUE 'TWD'.
+
+" --- 傳統宣告：長度兩種寫法等價，建議用 LENGTH ---
+DATA gv_result  TYPE p LENGTH 16 DECIMALS 2.
+" DATA gv_result(16) TYPE p DECIMALS 2.    "舊式括號寫法，功能相同，不建議
+DATA gv_var1    TYPE c LENGTH 2.
+DATA gv_copy    LIKE gv_result.              "LIKE 參照既有變數
+DATA gv_greet   TYPE string VALUE `Hi`.      "VALUE 給初始值
+
+START-OF-SELECTION.
+  " --- 現代寫法：內嵌宣告，型別由右邊推導 ---
+  DATA(gv_today) = sy-datum.                 "型別 d
+  DATA(gv_text)  = |料號 { pa_mat ALPHA = OUT }|.   "型別 string
+  DATA(gv_total) = CONV decfloat34( '1234.56' ).    "需要精確小數時明確指定型別
+
+  WRITE: / gv_text, / gv_today, / gv_total, / |上限 { gc_max_years } 年|.</code></pre>
+  <div class="tip">內嵌宣告 <code>DATA( )</code> 的型別由<b>右邊</b>決定：<code>DATA(x) = 1.</code> 得到的是 i；<code>DATA(x) = '1.5'.</code> 得到的是 c LENGTH 3，<b>不是數字</b>。要算錢請用 <code>CONV</code> 或明確宣告 p／decfloat34。更多型別與轉換陷阱見 <a href="#ch02-1-01">2-1 章 §1</a>、<a href="#ch02-1-05">§5</a>。</div>
+
+  <h3 id="ch05-25-07">7. Unit 2-2：文字符號（Text Symbols）與多語言能力</h3>
+  <p><b>多語言能力是 ABAP 開發的重要原則</b>：畫面上的文字依使用者的<b>登入語言</b>顯示，英文登入看英文、法文登入看法文。因此原廠建議正式程式<b>不要用文字字面值</b>，因為字面值在原始碼裡只有一種語言；要用<b>文字符號</b>讓所有文字都可翻譯。</p>
+  <ul>
+    <li>文字符號屬於特定程式，以<b>3 碼英數 ID</b> 識別（如 001、abc）。</li>
+    <li>兩種引用方式：<code>TEXT-xxx</code>，或 <code>'原文'(xxx)</code>——後者在該語言沒有翻譯時會顯示單引號內的原文，可讀性也較好。</li>
+    <li>兩種維護方式：<b>Goto → Text Elements → Text Symbols</b>；或在原始碼先寫好 ID，<b>雙擊</b>它，系統問你要不要建立，然後開出維護畫面。</li>
+    <li>翻譯：在文字元素畫面 <b>Goto → Translation</b>，輸入目標語言與譯文。</li>
+  </ul>
+  <pre><code class="abap">REPORT zbc100_textsym.
+
+START-OF-SELECTION.
+  WRITE / TEXT-001.                     "只有 ID：未維護時輸出空白
+  WRITE / 'Remaining days'(002).        "有原文：該語言沒翻譯時顯示原文
+
+  " 文字符號也可以放進字串範本
+  DATA(lv_days) = 12.
+  WRITE / |{ TEXT-003 }: { lv_days }|.
+
+  " 訊息同理：用訊息類別而不是寫死中文（見 §14）
+  MESSAGE s001(zbc100_msgs) WITH lv_days.</code></pre>
+  <div class="warn"><b>文字元素是獨立於原始碼的程式物件，一樣要記得啟用</b>（原教材的 Note）。另外，本圖書館的使用者多在台灣、以 ZF（繁中）或 EN 登入；若程式只維護 ZH 的文字符號，EN 登入者會看到空白（用 <code>TEXT-xxx</code> 時）。跨國專案請在交付清單中加上「文字元素翻譯」一項。</div>
+
+  <h3 id="ch05-25-08">8. Unit 2-3：賦值與算術運算</h3>
+  <p>程式啟動時系統替變數配置記憶體，每個變數依型別給<b>初始值</b>（除非用 VALUE 指定）：數值為 0、字元型為空白。之後可以用各種敘述改變它的值：</p>
+  <ul>
+    <li><code>gv_num = 30.</code>：等號左邊是目標、右邊的值覆蓋目標原本的值。</li>
+    <li><code>CLEAR gv_num.</code>：把變數重設為該型別的初始值。</li>
+    <li>原教材還介紹 <code>MOVE a TO b.</code>（等同 <code>b = a.</code>），以及 <code>ADD／SUBTRACT／MULTIPLY／DIVIDE</code> 四個關鍵字寫法（例如 <code>ADD 1 TO gv_result.</code>）。<b>這些都是過時語法</b>，本圖書館的程式碼一律不用，只在 <a href="#ch05-25-19">§19</a> 的對照表以文字列出。</li>
+  </ul>
+  <p>算術運算子只有四個：<b>+ − * /</b>（練習題 2-4 的答案是 / 與 *；% 與 x 都不是 ABAP 運算子）。一個運算式要當另一個運算式的運算元時用括號，<b>括號內外都要留空白</b>。</p>
+  <pre><code class="abap">REPORT zbc100_calc.
+
+PARAMETERS: pa_num1 TYPE i,
+            pa_num2 TYPE i.
+
+START-OF-SELECTION.
+  DATA gv_result TYPE p LENGTH 16 DECIMALS 2.
+
+  gv_result = pa_num1 + pa_num2.
+  WRITE / |加：{ gv_result }|.
+
+  " 括號兩側要有空白：( pa_num1 / pa_num2 )，寫成 (pa_num1/pa_num2) 會語法錯誤
+  IF pa_num2 &lt;&gt; 0.
+    gv_result = ( pa_num1 / pa_num2 ) * 100.
+    WRITE / |百分比：{ gv_result }|.
+  ENDIF.
+
+  " 累加：7.53（S/4HANA 1809）請寫完整形式
+  gv_result = gv_result + 1.
+  " gv_result += 1.        "★ 7.54（S/4HANA 1909）以上才支援的簡寫
+
+  " 整數除法與餘數：DIV / MOD（BC100 未提，但初學者很快會用到）
+  DATA(gv_div) = pa_num1 DIV 7.
+  DATA(gv_mod) = pa_num1 MOD 7.
+  WRITE: / |{ pa_num1 } ÷ 7 = { gv_div } 餘 { gv_mod }|.
+
+  CLEAR gv_result.         "回到初始值 0</code></pre>
+  <div class="warn"><b>i 型別的除法會四捨五入，不是無條件捨去</b>：<code>DATA(x) = 7 / 2.</code> 的結果是 4（型別 i）。這是從 Excel／其他語言轉來的人最常踩的坑；需要小數就讓目標變數為 p 或 decfloat34，需要整數商就用 <code>DIV</code>。詳見 <a href="#ch02-1-05">2-1 章 §5 型別轉換的陷阱</a>。</div>
+
+  <h3 id="ch05-25-09">9. Unit 2-4：系統變數（SY-）</h3>
+  <p>系統變數（system fields）由 ABAP 執行環境自動管理，<b>不用宣告就能用</b>，名稱一律以 <code>SY-</code> 開頭，內容反映當下系統狀態。原教材列出三個，並強調<b>系統變數只供讀取</b>（練習題 2-5：你不需要、也不應該自己填 SY-DATUM）。</p>
+  <table>
+    <thead><tr><th>系統變數</th><th>內容</th><th>BC100 出現處</th></tr></thead>
+    <tbody>
+      <tr><td><code>sy-datum</code></td><td>目前日期（應用伺服器時區）</td><td>Unit 2 L4</td></tr>
+      <tr><td><code>sy-uzeit</code></td><td>目前時間</td><td>Unit 2 L4</td></tr>
+      <tr><td><code>sy-uname</code></td><td>目前使用者帳號</td><td>Unit 2 L4</td></tr>
+      <tr><td><code>sy-subrc</code></td><td>上一個敘述的回傳碼，<b>0 表示成功</b></td><td>Unit 2 L7（REPLACE／FIND）、Unit 5 L1（SELECT）</td></tr>
+      <tr><td><code>sy-index</code></td><td>DO／WHILE 迴圈目前第幾圈</td><td>Unit 3 L2</td></tr>
+    </tbody>
+  </table>
+  <pre><code class="abap">START-OF-SELECTION.
+  WRITE: / |使用者：{ sy-uname }|,
+         / |日期：{ sy-datum DATE = USER }|,
+         / |時間：{ sy-uzeit TIME = USER }|.
+
+  " 跨國工廠要注意：sy-datum 是「伺服器」時區的日期
+  " 使用者本地日期／時間請用 sy-datlo / sy-timlo，或類別 CL_ABAP_CONTEXT_INFO
+  DATA(lv_local_date) = sy-datlo.
+  WRITE / |使用者本地日期：{ lv_local_date DATE = USER }|.</code></pre>
+  <div class="tip">完整清單在 F1 說明的「System Fields」（字典結構 <code>SYST</code>）。實務上最常用的十個見 <a href="#ch02-1-13">2-1 章 §13</a>。<b>sy-subrc 每執行一個會設定它的敘述就被覆蓋</b>，要在「緊接著」那個敘述之後就判斷，中間夾了一個 WRITE 或 CALL 就可能不是你以為的值。</div>
+
+  <h3 id="ch05-25-10">10. Unit 2-5：ABAP Debugger——單步、中斷點、Watchpoint</h3>
+  <p>Debugger 讓你在執行時「走進程式裡面」，看到正在執行哪一行、變數怎麼變化。啟動方式依需求不同：</p>
+  <ol>
+    <li><b>從頭開始除錯</b>：在 SE38 初始畫面按 <b>Debugging</b> 按鈕，從第一行跟到最後，適合理解一支陌生程式的全貌。</li>
+    <li><b>在某一行停下</b>：在編輯器左側狀態欄點一下（再點一次取消），或游標停在該行按工具列的 <b>Set/Delete Breakpoint</b>，然後 F8 執行。<b>原始碼必須是啟用狀態才能設中斷點</b>。</li>
+    <li><b>從畫面啟動</b>：先正常執行、把欄位填好，在命令欄輸入 <b>/h</b> 按 Enter（練習題 2-6 答案），系統顯示「Debugging switched on」，下一個使用者動作（例如按執行）就進入 Debugger。</li>
+  </ol>
+  <p><b>看懂 Debugger</b>：原始碼區中<b>黃色箭頭</b>指的是「<b>下一個要執行</b>」的行；雙擊原始碼中的變數把它加到 Variables 區，一邊執行一邊看值的變化，找出是哪個敘述把資料弄錯。</p>
+  <table>
+    <thead><tr><th>按鈕</th><th>鍵</th><th>行為</th></tr></thead>
+    <tbody>
+      <tr><td>Single Step</td><td>F5</td><td>一次執行一個敘述（會進入被呼叫的模組）</td></tr>
+      <tr><td>Execute</td><td>F6</td><td>執行一行，但不進入被呼叫的模組（BC100 未提，BC403 詳述）</td></tr>
+      <tr><td>Return</td><td>F7</td><td>跑完目前模組回到呼叫者（同上）</td></tr>
+      <tr><td>Continue</td><td>F8</td><td>跑到下一個中斷點／watchpoint；沒有的話跑到程式結束並顯示輸出</td></tr>
+    </tbody>
+  </table>
+  <p><b>中斷點的種類</b>：在編輯器設的中斷點；在 Debugger 裡點狀態欄設的叫 <b>Debugger breakpoint</b>（預設綠色標示以示區別）。在 Debugger 中 <b>Breakpoints → Breakpoint at</b> 可以依敘述設定，例如「在所有 CLEAR 敘述」停下。<b>Break./Watchpoints</b> 頁籤列出所有中斷點，可選取刪除。</p>
+  <p><b>Watchpoint</b>：中斷點是「停在某一行或某個關鍵字」，watchpoint 是「盯著某個變數，<b>內容一變就停</b>」。只能在 Debugger 中建立：工具列 <b>Watchpoint</b> → 輸入變數名稱 → <b>Check</b> 確認拼對 → <b>Create and Close Window</b>。原廠提示：<b>停下來時變數已經被改掉了，要分析的是黃色箭頭「上方」那一行</b>。</p>
+  <pre><code class="abap">REPORT zbc100_debug.
+* 故意留一個錯誤給 Debugger 練習：年數超過 5 時結果不對
+PARAMETERS pa_years TYPE i DEFAULT 8.
+
+START-OF-SELECTION.
+  DATA gv_amount TYPE p LENGTH 16 DECIMALS 2 VALUE 1000.
+
+  " 程式內中斷點：只在「啟用了這個 checkpoint group」時才停（SAAB 維護）
+  " 比寫死的 BREAK-POINT 安全，不怕忘記刪掉而讓 PRD 使用者跳進 Debugger
+  BREAK-POINT ID zbc100.
+
+  DO pa_years TIMES.
+    gv_amount = gv_amount * '1.05'.   "← 對 gv_amount 設 watchpoint，看每一圈的變化
+    IF sy-index &gt;= 5.
+      EXIT.
+    ENDIF.
+  ENDDO.
+
+  WRITE / |第 { pa_years } 年金額：{ gv_amount }|.  "錯：實際只算了 5 年</code></pre>
+  <div class="warn">不要在要傳到 PRD 的程式留 <code>BREAK-POINT.</code> 或 <code>BREAK sy-uname</code>（或 <code>BREAK 帳號</code>）：Code Inspector／ATC 會報錯，而且有 debug 權限的使用者在正式機會真的停下來。<b>正式機除錯必須依公司程序申請權限（S_DEVELOP 的 DEBUG 活動），修改變數值（Change）更是稽核重點</b>。Debugger 的全套功能（Layer Aware、Script、記憶體分析）見 <a href="#ch05-4">5-4 章 BC403</a>。</div>
+
+  <h3 id="ch05-25-11">11. Unit 2-6：ABAP 清單（List）——WRITE、顏色、圖示、清單標頭</h3>
+  <p><code>WRITE</code> 把文字與資料輸出到畫面，形成 <b>ABAP List</b>，就是最簡單的報表；搭配文字符號，清單也能多語言。使用者常要的<b>列印、另存（文字檔／試算表）、搜尋、捲動</b>，都是任何 ABAP 清單的<b>標準功能，不需要另外寫程式</b>（練習題 2-7 答案：Print、Search、Scroll；加圖示與加顏色則要寫程式）。</p>
+  <table>
+    <thead><tr><th>顏色常數</th><th>顏色</th><th>典型用途</th></tr></thead>
+    <tbody>
+      <tr><td>COL_BACKGROUND</td><td>依 GUI 而定</td><td>預設背景</td></tr>
+      <tr><td>COL_HEADING</td><td>灰藍</td><td>標題列</td></tr>
+      <tr><td>COL_NORMAL</td><td>淺灰</td><td>一般明細</td></tr>
+      <tr><td>COL_TOTAL</td><td>黃</td><td>合計</td></tr>
+      <tr><td>COL_KEY</td><td>藍綠</td><td>鍵值欄</td></tr>
+      <tr><td>COL_POSITIVE</td><td>綠</td><td>正面／成功</td></tr>
+      <tr><td>COL_NEGATIVE</td><td>紅</td><td>負面／錯誤</td></tr>
+      <tr><td>COL_GROUP</td><td>橘</td><td>群組</td></tr>
+    </tbody>
+  </table>
+  <p><b>圖示</b>：<code>WRITE ... AS ICON</code>；全部圖示清單在交易碼 <span class="tcode">ICON</span>（Icon Maintenance）。</p>
+  <p><b>清單標頭</b>：可執行程式可維護 <b>1 行清單標題</b>與<b>最多 4 行欄位標題</b>；沒維護時以程式屬性的標題當清單標題。兩種維護方式都要求程式已啟用：① 執行程式後在輸出畫面 <b>System → List → List Header</b>（容易對齊欄位）；② 編輯器 <b>Goto → Text Elements → List Headings</b>（較難對齊，但可在此 <b>Goto → Translation</b> 翻譯）。</p>
+  <pre><code class="abap">REPORT zbc100_list NO STANDARD PAGE HEADING.
+
+PARAMETERS pa_hols TYPE i DEFAULT 3.
+
+START-OF-SELECTION.
+  " 標題列
+  FORMAT COLOR COL_HEADING.
+  WRITE: / 'Employee'(h01), 20 'Remaining'(h02), 40 'Status'(h03).
+  FORMAT COLOR OFF.
+  ULINE.
+
+  " 明細：依條件上色與放圖示（ICON 型別群組自 7.02 起不需 TYPE-POOLS 宣告）
+  DATA(lv_color) = COND i( WHEN pa_hols &gt; 0 THEN col_positive ELSE col_negative ).
+  DATA(lv_icon)  = COND icon_d( WHEN pa_hols &gt; 0 THEN icon_green_light
+                                                ELSE icon_red_light ).
+  WRITE: / sy-uname,
+           20 pa_hols COLOR = lv_color,
+           40 lv_icon AS ICON.
+
+  FORMAT COLOR COL_TOTAL.
+  WRITE: / 'Total'(t01), 20 pa_hols.
+  FORMAT COLOR OFF.</code></pre>
+  <div class="warn"><b>S/4HANA 現況</b>：WRITE 清單仍然可以用（很適合學語法、除錯輸出、背景作業的 spool），但<b>新的使用者報表請用 ALV</b>：<code>CL_SALV_TABLE</code> 自動從字典帶欄位標題、內建排序／篩選／小計／匯出 Excel，<b>手機與 Fiori 啟動的 WebGUI 也能正常顯示</b>；WRITE 清單在 Fiori Launchpad 裡的體驗很差。原教材 p74 也註明 ALV 留到 BC400 教。ALV 見 <a href="#ch02-3">2-3 章</a>，WRITE 的現代替代方案見 <a href="#ch02-1-14">2-1 章 §14</a>。</div>
+
+  <h3 id="ch05-25-12">12. Unit 2-7：字串處理——CONCATENATE、FIND、REPLACE、SPLIT 與字串範本</h3>
+  <p>這一課處理字元型資料（string、c、d、t）。四個核心敘述：</p>
+  <ul>
+    <li><b>CONCATENATE</b>：把兩個以上的字串接成一個；<code>SEPARATED BY</code> 插入分隔字元。<b>目標變數太短時結果會被截斷</b>，所以原廠建議目標用 <b>string</b>。</li>
+    <li><b>FIND</b>：在字串中找子字串或樣式；找到 <code>sy-subrc = 0</code>。</li>
+    <li><b>REPLACE</b>：找到並取代；成功 <code>sy-subrc = 0</code>。兩者原理相同，差別只在於是否取代。</li>
+    <li><b>SPLIT</b>：依分隔字元把字串切成多個目標變數（練習題 2-8 答案）。<b>目標變數不夠時，剩下的整段（含分隔字元）會全部放進最後一個變數</b>。</li>
+  </ul>
+  <pre><code class="abap">REPORT zbc100_strings.
+
+PARAMETERS pa_name TYPE string LOWER CASE DEFAULT `John Smith`.
+
+START-OF-SELECTION.
+  " 1) 串接：傳統敘述 vs 字串範本 / &amp;&amp;
+  DATA lv_full TYPE string.
+  CONCATENATE 'Mr.' pa_name INTO lv_full SEPARATED BY space.
+  DATA(lv_full2) = |Mr. { pa_name }|.            "S/4HANA 建議寫法
+  DATA(lv_full3) = `Mr. ` &amp;&amp; pa_name.            "反引號字串保留尾端空白
+
+  " 2) FIND：找到回傳 sy-subrc = 0
+  FIND 'Smith' IN pa_name IGNORING CASE.
+  IF sy-subrc = 0.
+    WRITE / 'Found Smith'.
+  ENDIF.
+
+  " 3) REPLACE（原教材範例），加上 ALL OCCURRENCES OF 取代全部
+  REPLACE ALL OCCURRENCES OF 'Smith' IN pa_name WITH 'Jones' IGNORING CASE.
+  IF sy-subrc = 0.
+    WRITE: / 'New name is:', pa_name.
+  ENDIF.
+  " 函數寫法（7.02+）：不改變原變數，直接回傳結果
+  DATA(lv_new) = replace( val = lv_full sub = `Smith` with = `Jones` occ = 0 ).
+
+  " 4) SPLIT：目標不足時，剩餘全塞最後一個
+  SPLIT `2026 09 25 extra` AT space INTO DATA(lv_y) DATA(lv_m) DATA(lv_rest).
+  WRITE: / lv_y, / lv_m, / lv_rest.              "lv_rest = '25 extra'
+  " 切成內表就不用擔心個數
+  SPLIT `A;B;C;D` AT ';' INTO TABLE DATA(lt_parts).
+  WRITE / |共 { lines( lt_parts ) } 段|.
+
+  WRITE: / lv_full, / lv_full2, / lv_full3, / lv_new.</code></pre>
+  <div class="tip">字串範本 <code>|…{ 變數 }…|</code>（7.02+）幾乎可以取代 CONCATENATE，還能直接加格式：<code>{ amount NUMBER = USER }</code>、<code>{ date DATE = ISO }</code>、<code>{ matnr ALPHA = OUT }</code>。注意 <b>單引號字面值 'abc ' 是 c 型，尾端空白會被忽略；反引號 `abc ` 是 string，尾端空白保留</b>。八大字串指令與內建函數見 <a href="#ch02-1-10">2-1 章 §10</a>、<a href="#ch02-1-11">§11</a>。</div>
+
+  <h3 id="ch05-25-13">13. Unit 3：流程控制——流程圖、IF／CASE、關係與布林運算子、DO／WHILE 迴圈</h3>
+  <p>設計程式時常遇到「依條件執行不同敘述」。原廠建議先畫<b>程式流程圖（Program Flowchart）</b>——它不限於 ABAP，任何語言都適用，用符號表示動作、輸入與處理。大部分程式可拆成四種元件：</p>
+  <table>
+    <thead><tr><th>元件</th><th>意義</th><th>ABAP 寫法</th></tr></thead>
+    <tbody>
+      <tr><td>Sequence 順序</td><td>要執行的一或多個動作</td><td>依序寫敘述</td></tr>
+      <tr><td>Branch 分支</td><td>是／否的問題</td><td>IF … ELSE … ENDIF</td></tr>
+      <tr><td>Case distinction 多重分支</td><td>多種可能答案的問題</td><td>IF … ELSEIF／CASE … WHEN</td></tr>
+      <tr><td>Loop 迴圈</td><td>重複的一段動作</td><td>DO／WHILE（內表用 LOOP AT）</td></tr>
+    </tbody>
+  </table>
+  <p><b>IF 結構</b>：IF 條件為真就執行該區塊；否則依序檢查各 ELSEIF，第一個為真的區塊執行後跳到 ENDIF；都不成立時執行 ELSE（若有）。<b>ELSEIF 與 ELSE 都可省略，但每個 IF 一定要有 ENDIF</b>（練習題 3-1 答案：IF 與 ENDIF）。原教材以「休假天數結轉」為例：剩餘天數 <code>gv_remaining &gt;= pa_roll</code>（要結轉的天數）時，把結轉天數加到明年額度；否則輸出錯誤訊息。</p>
+  <p><b>CASE</b>：把一個變數的內容與各 WHEN 比對，符合就執行；都不符合執行 WHEN OTHERS（若有）。</p>
+  <table>
+    <thead><tr><th>運算子</th><th>縮寫</th><th>意義</th></tr></thead>
+    <tbody>
+      <tr><td>=</td><td>EQ</td><td>等於</td></tr>
+      <tr><td>&lt;&gt;</td><td>NE</td><td>不等於</td></tr>
+      <tr><td>&gt;</td><td>GT</td><td>大於</td></tr>
+      <tr><td>&gt;=</td><td>GE</td><td>大於等於</td></tr>
+      <tr><td>&lt;</td><td>LT</td><td>小於</td></tr>
+      <tr><td>&lt;=</td><td>LE</td><td>小於等於</td></tr>
+    </tbody>
+  </table>
+  <p>原廠建議<b>同一支程式只用一種寫法</b>（全用符號或全用縮寫，不要混用）。布林運算子：<b>AND</b>（全部為真才真）、<b>OR</b>（任一為真即真）、<b>NOT</b>（反轉）。AND 與 OR 混用時要加括號表達意圖。</p>
+  <pre><code class="abap">REPORT zbc100_flow.
+
+PARAMETERS: pa_rem  TYPE i DEFAULT 10,   "今年剩餘休假天數
+            pa_roll TYPE i DEFAULT 5,    "想結轉到明年的天數
+            pa_grp  TYPE c LENGTH 1 DEFAULT 'A'.
+
+START-OF-SELECTION.
+  DATA gv_next_year TYPE i VALUE 14.
+
+  " --- 分支：是／否 ---
+  IF pa_rem &gt;= pa_roll.
+    gv_next_year = gv_next_year + pa_roll.
+    WRITE / |結轉成功，明年共 { gv_next_year } 天|.
+  ELSE.
+    WRITE / |剩餘 { pa_rem } 天，不足以結轉 { pa_roll } 天|.
+  ENDIF.
+
+  " --- AND / OR 混用：括號表達意圖 ---
+  IF pa_grp = 'A' AND ( pa_rem = 0 OR pa_roll = 0 ).
+    WRITE / 'A 群組且無可結轉'.
+  ENDIF.
+
+  " --- 多重分支：CASE ---
+  CASE pa_grp.
+    WHEN 'A'.
+      WRITE / '主管'.
+    WHEN 'B' OR 'C'.
+      WRITE / '一般員工'.
+    WHEN OTHERS.
+      WRITE / '未分類'.
+  ENDCASE.
+
+  " --- 7.40+ 運算式版本：把「判斷後賦值」寫成一行 ---
+  DATA(lv_title) = SWITCH string( pa_grp WHEN 'A' THEN `主管`
+                                         WHEN 'B' OR 'C' THEN `一般員工`
+                                         ELSE `未分類` ).
+  DATA(lv_ok)    = COND string( WHEN pa_rem &gt;= pa_roll THEN `可結轉` ELSE `不可結轉` ).
+  WRITE: / lv_title, / lv_ok.</code></pre>
+  <div class="warn"><b>Casper 實務：條件用列舉比用區間安全</b>。「群組是 B 到 D」寫成 <code>pa_grp BETWEEN 'B' AND 'D'</code> 看起來省事，但字元比較是<b>字典序</b>不是業務語意：將來新增代碼 'B1'、'C9' 都會被包進來；號碼段不連續、ALPHA 前導零、編碼規則改過時就會多抓或漏抓。業務上能列舉的就寫 <code>WHEN 'B' OR 'C' OR 'D'</code> 或 <code>IN</code> 一組明確值。</div>
+  <p><b>迴圈</b>：重複一段邏輯直到條件滿足。<b>在 DO 與 WHILE 迴圈中，<code>sy-index</code> 自動記錄目前是第幾圈</b>，不必自己維護計數器（練習題 3-2 答案）。原教材的 DO 範例：依使用者輸入的 pa_years 重複計算，但最多 5 次——在迴圈中用 IF 判斷後 <code>EXIT</code> 跳出。</p>
+  <pre><code class="abap">PARAMETERS pa_years TYPE i DEFAULT 8.
+
+START-OF-SELECTION.
+  DATA gv_balance TYPE p LENGTH 16 DECIMALS 2 VALUE 1000.
+  CONSTANTS gc_max TYPE i VALUE 5.
+
+  " DO n TIMES：固定圈數；EXIT 提早離開
+  DO pa_years TIMES.
+    gv_balance = gv_balance * '1.02'.
+    WRITE / |第 { sy-index } 年：{ gv_balance }|.
+    IF sy-index &gt;= gc_max.
+      EXIT.                       "最多 5 次
+    ENDIF.
+  ENDDO.
+
+  " WHILE：條件成立才繼續；條件寫錯就是無窮迴圈
+  DATA(lv_n) = 1.
+  WHILE lv_n &lt;= 100.
+    lv_n = lv_n * 2.
+  ENDWHILE.
+  WRITE / |第一個大於 100 的 2 的次方：{ lv_n }|.
+
+  " 7.40+：用 REDUCE 在一個運算式內完成累加
+  DATA(lv_sum) = REDUCE i( INIT s = 0 FOR i = 1 UNTIL i &gt; 10 NEXT s = s + i ).
+  WRITE / |1 到 10 的和：{ lv_sum }|.</code></pre>
+  <div class="tip"><b>沒有 EXIT 的 DO（不加 TIMES）是無窮迴圈</b>，對話程式會卡到逾時（rdisp/max_wprun_time），背景作業則會一直佔用工作程序。寫 DO 之前先想清楚「怎麼出去」。CHECK／CONTINUE 以及 LOOP AT 內表見 <a href="#ch02-1-07">2-1 章 §7</a>，IF／CASE／COND／SWITCH 見 <a href="#ch02-1-06">§6</a>。</div>
+
+  <h3 id="ch05-25-14">14. Unit 4：執行時錯誤（Short Dump）與錯誤處理（MESSAGE）</h3>
+  <p><b>語法正確不代表執行一定成功</b>。原教材 Figure 66 的程式語法完全正確，但使用者輸入 0 當除數時，執行環境無法執行該敘述，便<b>終止程式並觸發執行時錯誤（runtime error）</b>。每個執行時錯誤有名稱，對應特定錯誤情境；例子中的名稱是 <b>BCD_ZERODIVIDE</b>（壓縮數除以零）。</p>
+  <p>未被攔截的執行時錯誤會產生 <b>Short Dump（錯誤記錄）</b>，內容包括：錯誤名稱、問題描述、發生當下的變數內容、造成終止的程式行；也可以從 dump 直接進 Debugger 看發生前的變數值。<b>Short Dump 預設保留 14 天</b>，用 <span class="tcode">ST22</span> 查看。最有用的是「Source Code Extract」，出錯那一行以 <b>&gt;&gt;&gt;&gt;&gt;&gt;</b> 標示。</p>
+  <p>原廠的態度：<b>開發時遇到 dump 很正常，但要想辦法預防</b>——正式機使用者看到充滿技術資訊的 dump 畫面只會困惑。預防方法有兩層：</p>
+  <ol>
+    <li><b>用條件邏輯預防</b>（原教材 Figure 69／70）：除之前先判斷除數不為 0。</li>
+    <li><b>用例外類別攔截</b>（BC100 未提，現代寫法必備）：<code>TRY … CATCH cx_sy_zerodivide … ENDTRY</code>。</li>
+  </ol>
+  <pre><code class="abap">REPORT zbc100_error.
+
+PARAMETERS: pa_total TYPE i DEFAULT 20,
+            pa_days  TYPE i DEFAULT 0.
+
+START-OF-SELECTION.
+  DATA gv_avg TYPE p LENGTH 8 DECIMALS 2.
+
+  " 做法 1：先判斷（原教材的做法）
+  IF pa_days = 0.
+    MESSAGE i002(zbc100_msgs).            "資訊訊息：跳出對話框，按確認後程式繼續
+    RETURN.
+  ENDIF.
+
+  " 做法 2：class-based exception（S/4HANA 建議）
+  TRY.
+      gv_avg = pa_total / pa_days.
+      WRITE / |平均：{ gv_avg }|.
+    CATCH cx_sy_zerodivide INTO DATA(lx_div).
+      MESSAGE lx_div-&gt;get_text( ) TYPE 'I'.
+    CATCH cx_sy_arithmetic_overflow INTO DATA(lx_ovf).
+      MESSAGE lx_ovf-&gt;get_text( ) TYPE 'E'.
+  ENDTRY.</code></pre>
+  <div class="note"><b>兩個常被忽略的細節</b>：① ABAP 中 <b>0 ÷ 0 的結果是 0，不會 dump</b>；只有「非零 ÷ 0」才觸發錯誤，所以測試時被除數也要用非零值。② 同樣是除以零，p 型別觸發 BCD_ZERODIVIDE、i 型別觸發 COMPUTE_INT_ZERODIVIDE，但兩者都可以用 <code>cx_sy_zerodivide</code> 攔截。ST22 的保留天數由清理作業 SAP_REORG_ABAPDUMPS（程式 RSSNAPDL）決定，各公司設定不一定是 14 天。</div>
+  <p><b>MESSAGE 敘述</b>：除了用 WRITE 告訴使用者出了什麼問題，更標準的方式是<b>對話訊息（dialog message）</b>，顯示在對話框或畫面底部狀態列。格式：<code>MESSAGE tnnn(訊息類別)</code>，t 是訊息類型、nnn 是 3 碼訊息號碼。練習題 4-2 的順序：<b>MESSAGE 關鍵字 → 訊息類型 → 訊息號碼 → 訊息類別</b>。</p>
+  <table>
+    <thead><tr><th>類型</th><th>名稱</th><th>行為（簡單可執行程式中）</th><th>顯示位置</th></tr></thead>
+    <tbody>
+      <tr><td><b>i</b></td><td>Information</td><td>使用者確認後程式繼續</td><td>對話框</td></tr>
+      <tr><td><b>e</b></td><td>Error</td><td>使用者確認後程式終止</td><td>狀態列</td></tr>
+      <tr><td>s</td><td>Success／Status</td><td>程式繼續，下一個畫面顯示（BC100 未列，實務最常用）</td><td>狀態列</td></tr>
+      <tr><td>w</td><td>Warning</td><td>在選擇畫面／PAI 中可按 Enter 略過</td><td>狀態列</td></tr>
+      <tr><td>a</td><td>Abort</td><td>程式終止</td><td>對話框</td></tr>
+      <tr><td>x</td><td>Exit</td><td>刻意產生 dump（MESSAGE_TYPE_X）</td><td>Short Dump</td></tr>
+    </tbody>
+  </table>
+  <p><b>訊息類別（Message Class）</b>集中存放相關訊息，用 <span class="tcode">SE91</span>（Message Maintenance）維護；自建的要以 Z／Y 開頭。原教材例：<code>MESSAGE i001(bc100_msgs).</code> 顯示訊息類別 BC100_MSGS 的 001 號資訊訊息。在原始碼雙擊訊息類別名可以顯示；先寫好 MESSAGE 敘述再雙擊號碼可以直接建立。標準示範程式 <b>DEMO_MESSAGES</b> 可以測試各類型的顯示行為。</p>
+  <p><b>佔位符</b>：訊息文字中以 <b>&amp;</b> 表示，<b>最多 4 個</b>；加編號寫成 <code>&amp;1</code>～<code>&amp;4</code>。程式用 <code>WITH</code> 依序填值，例如「剩餘休假 &amp;1 天」配 <code>WITH pa_hols</code>。</p>
+  <pre><code class="abap">" SE91：訊息類別 ZBC100_MSGS
+"   001  剩餘休假 &amp;1 天
+"   002  天數不可為 0
+"   003  員工 &amp;1 在 &amp;2 年度沒有休假資料
+
+PARAMETERS pa_hols TYPE i DEFAULT 3.
+
+START-OF-SELECTION.
+  MESSAGE i001(zbc100_msgs) WITH pa_hols.            "&amp;1 ← pa_hols
+  MESSAGE s003(zbc100_msgs) WITH sy-uname sy-datum(4).
+
+  " 報表中「顯示錯誤但回到選擇畫面」的常見寫法
+  IF pa_hols &lt; 0.
+    MESSAGE s002(zbc100_msgs) DISPLAY LIKE 'E'.
+    RETURN.
+  ENDIF.
+
+  " 動態文字（例如例外物件的訊息）用 TYPE
+  MESSAGE |處理完成：{ pa_hols } 天| TYPE 'S'.</code></pre>
+  <div class="tip">在 <code>AT SELECTION-SCREEN</code> 中送 E 訊息，選擇畫面會保持可輸入、讓使用者修正，這才是「輸入檢查」的正確位置；在 START-OF-SELECTION 之後送 E 訊息則會結束程式。事件與輸入檢查見 <a href="#ch03-1">3-1 章</a>。</div>
+
+  <h3 id="ch05-25-15">15. Unit 5-1：從資料庫讀資料——SE11、SE16、資料庫介面與 SELECT SINGLE</h3>
+  <p>大多數 ABAP 程式都要讀 SAP 資料庫中的主資料或交易資料。原廠提醒：<b>讀資料是複雜的主題，對效能影響極大</b>；BC100 只談最簡單的「讀單筆」。第一步永遠是<b>找出資料存在哪個表</b>。</p>
+  <ul>
+    <li><span class="tcode">SE11</span> ABAP Dictionary：集中管理所有資料庫表，可看欄位、型別、長度、哪些欄位組成主鍵。</li>
+    <li><span class="tcode">SE16</span> Data Browser：看表的內容，測試程式時用來核對資料（S/4HANA 多用 <span class="tcode">SE16N</span>／<span class="tcode">SE16H</span>）。</li>
+    <li><b>資料庫介面（Database Interface）</b>：程式執行時把 SELECT 翻譯成資料庫的原生 SQL，送到資料庫，再把結果送回程式——這就是「平台無關」的來源。</li>
+  </ul>
+  <p>SELECT 各子句的任務：</p>
+  <table>
+    <thead><tr><th>子句</th><th>任務</th></tr></thead>
+    <tbody>
+      <tr><td>SELECT（S/4 新語法可用 FIELDS）</td><td><b>要讀哪些欄位（columns）</b></td></tr>
+      <tr><td>FROM</td><td>資料來源：資料庫表或 View</td></tr>
+      <tr><td>INTO</td><td>放到哪裡：變數、結構或內表（依資料種類與筆數而定）</td></tr>
+      <tr><td>WHERE</td><td><b>要讀哪些列（rows）的條件</b></td></tr>
+    </tbody>
+  </table>
+  <div class="warn"><b>教材錯誤修正</b>：Col18 p120 的清單中，SELECT 子句下方沒有說明文字（排版遺漏），而 WHERE 被寫成「Specifies the columns of the table that are to be selected」。這是錯的——<b>決定欄位的是 SELECT（欄位清單），WHERE 決定的是哪些「列」</b>。應理解為「WHERE：Specifies the <i>rows</i>（conditions）」。</div>
+  <p><b>SELECT SINGLE</b> 讀一筆資料，通常在 WHERE 中給出<b>完整的業務主鍵</b>，確保拿到唯一那一筆。原教材 Figure 78：宣告與表 <b>SCARR</b> 同結構的 <code>gs_carrier</code>，讀 carrid、carrname、currcode 三個欄位，用 <code>INTO CORRESPONDING FIELDS OF</code> 放入同名欄位；找到資料時 <code>sy-subrc = 0</code>（練習題 5-1 答案），才輸出。</p>
+  <pre><code class="abap">REPORT zbc100_select.
+
+PARAMETERS pa_car TYPE scarr-carrid DEFAULT 'LH'.
+
+START-OF-SELECTION.
+  " 原教材：DATA gs_carrier TYPE scarr.
+  "         SELECT SINGLE carrid carrname currcode FROM scarr
+  "           INTO CORRESPONDING FIELDS OF gs_carrier WHERE carrid = pa_car.
+  " S/4HANA 1809+ 寫法：主機變數加 @、內嵌宣告、明列欄位
+  SELECT SINGLE FROM scarr
+    FIELDS carrid, carrname, currcode
+    WHERE carrid = @pa_car
+    INTO @DATA(ls_carrier).
+
+  IF sy-subrc = 0.
+    WRITE: / ls_carrier-carrid, ls_carrier-carrname, ls_carrier-currcode.
+  ELSE.
+    MESSAGE |找不到航空公司 { pa_car }| TYPE 'S' DISPLAY LIKE 'E'.
+  ENDIF.
+
+  " 只想知道「存不存在」，不需要讀出欄位
+  SELECT SINGLE @abap_true FROM scarr
+    WHERE carrid = @pa_car
+    INTO @DATA(lv_exists).</code></pre>
+  <div class="warn"><b>Casper 實務：HANA 沒有預設排序</b>。SELECT SINGLE 若<b>沒有給完整主鍵</b>，符合條件的可能有多筆，資料庫回哪一筆是<b>不確定的</b>——在 HANA 上今天和明天的結果可以不同。專案上真實案例：成本評價同時有 item category「H」與 cost component「E」兩種角度，程式沒排序時一下抓到 H、一下抓到 E，成本結果就不穩定，最後結論是明確固定抓 H。任何「取第一筆」的邏輯都必須寫成：
+  <br><code>SELECT FROM ... FIELDS ... WHERE ... ORDER BY 欄位 INTO @DATA(ls) UP TO 1 ROWS. ENDSELECT.</code> 不行（本圖書館禁用 ENDSELECT），請改為 <code>INTO TABLE @DATA(lt) UP TO 1 ROWS</code> 再讀 <code>VALUE #( lt[ 1 ] OPTIONAL )</code>。</div>
+  <div class="note">SCARR 是 SAP 的航班訓練資料模型（套件 SAPBC_DATAMODEL），S/4HANA 系統中表格存在但通常是空的，可執行 SAPBC_DATA_GENERATOR 產生資料。ABAP SQL 完整語法（多筆、JOIN、聚合、7.40+ 新語法）見 <a href="#ch02-2">2-2 章</a>、<a href="#ch05-1-15">5-1 章 §15</a>。</div>
+
+  <h3 id="ch05-25-16">16. Unit 5-2／5-3：模組化與函數模組——SE37、介面、測試、CALL FUNCTION 與 Pattern</h3>
+  <p>原廠的說法很實在：<b>好的程式設計師有足夠時間可以從頭寫出任何程式，但聰明的程式設計師會假設「至少一部分功能已經有人寫好了」</b>。從零開始既花時間又困難，應盡量用模組化技術重用程式碼。</p>
+  <ul>
+    <li><b>模組化單元（modularization unit）</b>：封裝某個功能的一段原始碼，可以在許多地方重複使用而不必每次都寫完整程式碼。</li>
+    <li><b>好維護</b>：Figure 79——同一段 100 行的程式複製在 50 支程式中，要改就得改 50 次；Figure 80——這 100 行集中維護一次，各程式在需要時呼叫它。</li>
+    <li><b>資料交換</b>：Figure 81——呼叫端與模組化單元<b>彼此不能直接存取對方的資料</b>；Figure 82——兩者透過<b>介面（interface）</b>交換資料，介面由<b>參數</b>組成，分為「傳進去」與「傳回來」兩種（練習題 5-2 答案：Parameters）。</li>
+  </ul>
+  <p><b>函數模組（Function Module）</b>是 SAP 最常用的模組化單元之一，用 Function Builder（<span class="tcode">SE37</span>）建立與分析。原教材情境：要算使用者剩餘休假天數，搜尋後發現 <b>BC100_CALC_HOLS</b> 可能合用（如何搜尋函數模組在 BC400 教）。評估步驟：</p>
+  <ol>
+    <li><b>Attributes 頁籤</b>：看簡短說明，判斷是否合用。</li>
+    <li><b>介面</b>：Import（函數需要呼叫端給的資料）、Export（函數傳回的資料）、Changing、Exceptions；<b>必要（非 Optional）參數呼叫時一定要給值</b>。若你的程式給不出它要的資料、或它傳回的不是你要的，就不合用。</li>
+    <li><b>測試（Test，F8）</b>：在測試環境輸入 Import 值、執行、看 Export 結果；函數觸發例外時也會顯示。</li>
+    <li><b>文件</b>：Function Module Documentation 按鈕（有登入語言的文件時）；參數旁 Long Text 欄位有綠燈表示該參數有說明。</li>
+  </ol>
+  <p><b>呼叫語法</b>：<code>CALL FUNCTION '大寫函數名'</code>。最容易搞混的方向問題（練習題 5-3 答案是 <b>False</b>）：</p>
+  <table>
+    <thead><tr><th>呼叫端寫的區塊</th><th>對應函數的</th><th>方向</th><th>記法</th></tr></thead>
+    <tbody>
+      <tr><td><b>EXPORTING</b></td><td>Import 參數</td><td>程式 → 函數</td><td>呼叫端「匯出」，函數「匯入」</td></tr>
+      <tr><td><b>IMPORTING</b></td><td>Export 參數</td><td>函數 → 程式</td><td>函數「匯出」，呼叫端「匯入」</td></tr>
+      <tr><td>CHANGING</td><td>Changing 參數</td><td>雙向</td><td>傳進去改完再帶回來</td></tr>
+      <tr><td>EXCEPTIONS</td><td>Exceptions</td><td>函數 → sy-subrc</td><td>傳統例外，靠 sy-subrc 判斷</td></tr>
+    </tbody>
+  </table>
+  <p>每一行都是「<b>左邊寫函數的參數名、右邊寫呼叫端的值或變數</b>」。編輯器工具列的 <b>Pattern</b> 按鈕（ADT 用 Ctrl+Space 內容輔助）輸入函數名即可插入骨架，只要填值就完成。</p>
+  <pre><code class="abap">REPORT zbc100_fm.
+
+PARAMETERS: pa_total TYPE i DEFAULT 20,     "全年休假天數
+            pa_used  TYPE i DEFAULT 8,      "已休天數
+            pa_mat   TYPE mara-matnr.
+
+START-OF-SELECTION.
+  DATA gv_remaining TYPE i.
+
+  " 1) 原教材範例：BC100_CALC_HOLS 是訓練系統才有的函數，一般 S/4 系統不存在
+  "    所以用動態名稱 + 例外保護，示範「呼叫前後」的完整寫法
+  TRY.
+      CALL FUNCTION 'BC100_CALC_HOLS'
+        EXPORTING                           "→ 函數的 Import 參數
+          iv_total     = pa_total
+          iv_used      = pa_used
+        IMPORTING                           "← 函數的 Export 參數
+          ev_remaining = gv_remaining.
+      WRITE / |剩餘休假：{ gv_remaining } 天|.
+    CATCH cx_sy_dyn_call_illegal_func.
+      WRITE / '本系統沒有 BC100_CALC_HOLS（非訓練系統）'.
+      gv_remaining = pa_total - pa_used.
+  ENDTRY.
+
+  " 2) 每個系統都有的標準函數：料號補前導零（ALPHA 轉換）
+  DATA lv_matnr TYPE matnr.
+  CALL FUNCTION 'CONVERSION_EXIT_ALPHA_INPUT'
+    EXPORTING
+      input  = pa_mat
+    IMPORTING
+      output = lv_matnr.
+  " 7.40+ 同等寫法，不必呼叫函數
+  DATA(lv_matnr2) = CONV matnr( |{ pa_mat ALPHA = IN }| ).
+  WRITE: / lv_matnr, / lv_matnr2.</code></pre>
+  <div class="warn"><b>Casper 實務：先找標準，再想客製</b>。BC100 這句「聰明的程式設計師假設功能已有人寫好」，在專案上的完整版是：<b>標準設定 → BAdI／Enhancement Spot → Enhancement Point → 修改標準</b>，每往右一步升級成本高一個量級；寫程式時也一樣，先找標準函數／BAPI／類別（SE37 搜尋、<span class="tcode">BAPI</span> 瀏覽器、ADT 的 Released API 清單），真的沒有才自己寫。但要注意：<b>很多標準函數沒有 Released 狀態</b>，SAP 不保證升級後介面不變；在 S/4HANA／ABAP Cloud 環境請優先選用標為 Released 的 API。函數模組與 BAPI 的完整內容見 <a href="#ch02-4">2-4 章</a>、<a href="#ch05-1-10">5-1 章 §10</a>、<a href="#ch04-1">4-1 章</a>。</div>
+
+  <h3 id="ch05-25-17">17. 本書補充：從程序到物件——第一次呼叫類別與方法</h3>
+  <p>BC100 只講到函數模組，但在 S/4HANA，<b>新程式的模組化首選是類別的方法，而不是 FORM 或新的函數模組</b>（函數模組仍是 RFC／BAPI／更新任務的載體）。初學者不必馬上懂繼承與多型，只要先建立三個觀念：</p>
+  <ul>
+    <li><b>類別（class）</b>像是一個「函數的集合＋它們共用的資料」；<b>方法（method）</b>就是類別裡的函數，一樣有 IMPORTING／EXPORTING／RETURNING 參數介面。</li>
+    <li><b>靜態方法</b>（<code>=&gt;</code>）不必建立物件就能呼叫；<b>實例方法</b>（<code>-&gt;</code>）要先用 <code>NEW</code> 建立物件。</li>
+    <li><b>RETURNING</b> 參數讓方法可以直接寫在運算式裡：<code>DATA(x) = zcl_x=&gt;calc( ... ).</code>——這是函數模組做不到的。</li>
+  </ul>
+  <pre><code class="abap">REPORT zbc100_oo_bridge.
+
+PARAMETERS: pa_total TYPE i DEFAULT 20,
+            pa_used  TYPE i DEFAULT 8.
+
+"----------------------------------------------------------------------
+" 區域類別：把 BC100_CALC_HOLS 的邏輯改寫成方法
+"----------------------------------------------------------------------
+CLASS lcl_holiday DEFINITION FINAL.
+  PUBLIC SECTION.
+    CLASS-METHODS calc_remaining          "靜態方法：不用建立物件
+      IMPORTING iv_total            TYPE i
+                iv_used             TYPE i
+      RETURNING VALUE(rv_remaining) TYPE i
+      RAISING   cx_parameter_invalid_range.
+ENDCLASS.
+
+CLASS lcl_holiday IMPLEMENTATION.
+  METHOD calc_remaining.
+    IF iv_used &gt; iv_total.
+      RAISE EXCEPTION NEW cx_parameter_invalid_range( parameter = 'IV_USED' ).
+    ENDIF.
+    rv_remaining = iv_total - iv_used.
+  ENDMETHOD.
+ENDCLASS.
+
+START-OF-SELECTION.
+  TRY.
+      " 方法有 RETURNING → 可以直接放進字串範本
+      WRITE / |剩餘：{ lcl_holiday=&gt;calc_remaining( iv_total = pa_total iv_used = pa_used ) } 天|.
+    CATCH cx_parameter_invalid_range INTO DATA(lx).
+      MESSAGE lx-&gt;get_text( ) TYPE 'S' DISPLAY LIKE 'E'.
+  ENDTRY.
+
+  " 使用標準類別：CL_SALV_TABLE（實例方法 + 工廠方法）
+  SELECT FROM scarr FIELDS carrid, carrname, currcode
+    ORDER BY carrid
+    INTO TABLE @DATA(lt_carr).
+  TRY.
+      cl_salv_table=&gt;factory( IMPORTING r_salv_table = DATA(lo_alv)
+                             CHANGING  t_table      = lt_carr ).
+      lo_alv-&gt;get_functions( )-&gt;set_all( abap_true ).   "-&gt; 呼叫實例方法
+      lo_alv-&gt;display( ).
+    CATCH cx_salv_msg INTO DATA(lx_salv).
+      MESSAGE lx_salv-&gt;get_text( ) TYPE 'E'.
+  ENDTRY.</code></pre>
+  <div class="note">注意上面的 SELECT 多筆時加了 <code>ORDER BY carrid</code>——HANA 不保證順序，要給使用者看的清單一律明確排序。全域類別（<span class="tcode">SE24</span>／ADT）、靜態與實例方法、區域類別在 BC400 Unit 4（<a href="#ch05-1-12">5-1 章 §12</a>）正式介紹，完整物件導向見 <a href="#ch05-2">5-2 章 BC401</a>。</div>
+
+  <h3 id="ch05-25-18">18. 綜合範例：休假天數試算報表（把 BC100 全部觀念串起來）</h3>
+  <p>BC100 的範例貫穿「休假天數」這個情境（pa_hols、pa_roll、gv_remaining、BC100_CALC_HOLS）。下面把 16 個 Lesson 的觀念放進同一支程式：選擇畫面與選擇文字、字典型別、常數、文字符號、算術、系統變數、IF／CASE／DO、訊息類別與佔位符、例外處理、SELECT、模組化（區域類別）、ALV 輸出。</p>
+  <pre><code class="abap">REPORT zbc100_holiday_summary.
+*---------------------------------------------------------------------*
+* 需求：輸入全年天數、已休天數、想結轉天數，試算未來 N 年的休假額度
+* 觀念：U1 PARAMETERS／U2 型別、常數、文字符號、SY-／U3 IF、DO
+*       U4 MESSAGE、TRY／U5 SELECT、模組化
+*---------------------------------------------------------------------*
+PARAMETERS: pa_total TYPE i DEFAULT 14 OBLIGATORY,
+            pa_used  TYPE i DEFAULT 10,
+            pa_roll  TYPE i DEFAULT 3,
+            pa_years TYPE i DEFAULT 3.
+
+CONSTANTS: gc_max_years TYPE i VALUE 5,
+           gc_max_roll  TYPE i VALUE 5.
+
+TYPES: BEGIN OF ty_row,
+         year      TYPE n LENGTH 4,
+         allowance TYPE i,
+         status    TYPE string,
+       END OF ty_row,
+       tt_rows TYPE STANDARD TABLE OF ty_row WITH EMPTY KEY.
+
+CLASS lcl_planner DEFINITION FINAL.
+  PUBLIC SECTION.
+    CLASS-METHODS build
+      IMPORTING iv_total       TYPE i
+                iv_used        TYPE i
+                iv_roll        TYPE i
+                iv_years       TYPE i
+      RETURNING VALUE(rt_rows) TYPE tt_rows.
+ENDCLASS.
+
+CLASS lcl_planner IMPLEMENTATION.
+  METHOD build.
+    DATA(lv_remaining) = iv_total - iv_used.
+    " 分支：能不能結轉
+    DATA(lv_roll) = COND i( WHEN lv_remaining &gt;= iv_roll
+                            THEN nmin( val1 = iv_roll val2 = gc_max_roll )
+                            ELSE 0 ).
+    DATA(lv_allow) = iv_total + lv_roll.
+
+    " 迴圈：最多 gc_max_years 年
+    DO iv_years TIMES.
+      IF sy-index &gt; gc_max_years.
+        EXIT.
+      ENDIF.
+      APPEND VALUE #( year      = sy-datum(4) + sy-index
+                      allowance = lv_allow
+                      status    = COND #( WHEN sy-index = 1 AND lv_roll &gt; 0
+                                          THEN |含結轉 { lv_roll } 天|
+                                          ELSE `標準` ) ) TO rt_rows.
+      lv_allow = iv_total.            "結轉只算第一年
+    ENDDO.
+  ENDMETHOD.
+ENDCLASS.
+
+AT SELECTION-SCREEN.
+  " 輸入檢查放在這裡：E 訊息會讓選擇畫面維持可修改
+  IF pa_used &gt; pa_total.
+    MESSAGE e004(zbc100_msgs) WITH pa_used pa_total.   "已休 &amp;1 天超過全年 &amp;2 天
+  ENDIF.
+
+START-OF-SELECTION.
+  DATA(lt_rows) = lcl_planner=&gt;build( iv_total = pa_total
+                                      iv_used  = pa_used
+                                      iv_roll  = pa_roll
+                                      iv_years = pa_years ).
+  IF lt_rows IS INITIAL.
+    MESSAGE s005(zbc100_msgs) DISPLAY LIKE 'W'.        "沒有可顯示的年度
+    RETURN.
+  ENDIF.
+
+  " 讀一筆資料：使用者全名（USR21 → ADRP），示範 SELECT SINGLE + JOIN
+  SELECT SINGLE FROM usr21 AS u
+    INNER JOIN adrp AS a ON a~persnumber = u~persnumber
+    FIELDS a~name_text
+    WHERE u~bname = @sy-uname
+    INTO @DATA(lv_name).
+
+  TRY.
+      cl_salv_table=&gt;factory( IMPORTING r_salv_table = DATA(lo_alv)
+                             CHANGING  t_table      = lt_rows ).
+      lo_alv-&gt;get_display_settings( )-&gt;set_list_header(
+        CONV #( |{ COND string( WHEN lv_name IS INITIAL THEN sy-uname ELSE lv_name ) } 的休假試算| ) ).
+      lo_alv-&gt;get_columns( )-&gt;set_optimize( abap_true ).
+      lo_alv-&gt;display( ).
+    CATCH cx_salv_msg INTO DATA(lx).
+      MESSAGE lx-&gt;get_text( ) TYPE 'E'.
+  ENDTRY.</code></pre>
+  <div class="tip">ADRP 的 JOIN 只取 USR21 對應的地址人員資料，一位使用者只有一筆，所以 SELECT SINGLE 是確定的。若日後要讀「可能多筆」的資料（例如同一人多個地址版本 DATE_FROM），就必須回到 §15 的原則：<b>明確排序、明確條件，不要讓 HANA 替你決定是哪一筆</b>。</div>
+
+  <h3 id="ch05-25-19">19. 舊語法對照與銜接 BC400 的學習路線</h3>
+  <p>BC100 教材中出現、但本圖書館改寫掉的寫法：</p>
+  <table>
+    <thead><tr><th>原教材寫法</th><th>S/4HANA 1809+ 寫法</th><th>說明</th></tr></thead>
+    <tbody>
+      <tr><td>MOVE gv_num TO gv_num2.</td><td><code>gv_num2 = gv_num.</code></td><td>MOVE 為過時敘述</td></tr>
+      <tr><td>ADD 1 TO gv_result. ／ SUBTRACT／MULTIPLY／DIVIDE</td><td><code>gv_result = gv_result + 1.</code></td><td><code>+=</code> 需 7.54（1909）以上</td></tr>
+      <tr><td>DATA gv_result(16) TYPE p DECIMALS 2.</td><td><code>DATA gv_result TYPE p LENGTH 16 DECIMALS 2.</code></td><td>括號長度寫法仍可用，但不利閱讀</td></tr>
+      <tr><td>CONCATENATE a b INTO c SEPARATED BY space.</td><td><code>c = |{ a } { b }|.</code></td><td>CONCATENATE 仍合法，字串範本較清楚</td></tr>
+      <tr><td>SELECT SINGLE f1 f2 FROM scarr INTO CORRESPONDING FIELDS OF gs WHERE carrid = pa_car.</td><td><code>SELECT SINGLE FROM scarr FIELDS f1, f2 WHERE carrid = @pa_car INTO @DATA(gs).</code></td><td>主機變數加 @、逗號分隔欄位（strict mode）</td></tr>
+      <tr><td>WRITE 清單＋List Headings</td><td>CL_SALV_TABLE</td><td>見 <a href="#ch02-3">2-3 章</a></td></tr>
+      <tr><td>FORM／PERFORM（BC100 未教，但舊程式常見）</td><td>區域類別的方法</td><td>見 <a href="#ch02-4">2-4 章</a>、<a href="#ap-01">附錄</a></td></tr>
+      <tr><td>IF 前先判斷避免 dump</td><td>判斷＋<code>TRY … CATCH cx_sy_…</code></td><td>兩者並用，不是二選一</td></tr>
+      <tr><td>SE38 經典／新前端編輯器</td><td>ADT（Eclipse）</td><td>CDS／RAP 只能在 ADT 開發</td></tr>
+    </tbody>
+  </table>
+  <p><b>BC100 與後續課程的銜接</b>：</p>
+  <table>
+    <thead><tr><th>BC100 學到</th><th>BC400 接著學</th><th>本圖書館對應</th></tr></thead>
+    <tbody>
+      <tr><td>Executable Program、$TMP／套件</td><td>程式類型、套件、傳輸、Repository</td><td><a href="#ch05-1-03">5-1 §3</a>、<a href="#ch05-1-04">§4</a>、<a href="#ch01-1">1-1 章</a></td></tr>
+      <tr><td>c／string／d／t／i／p、TYPE 表-欄位</td><td>資料元素、Domain、結構、表格型別</td><td><a href="#ch05-1-06">5-1 §6</a>、<a href="#ch01-2">1-2 章</a></td></tr>
+      <tr><td>IF／CASE／DO／WHILE</td><td>完整基本敘述、LOOP AT</td><td><a href="#ch05-1-07">5-1 §7</a>、<a href="#ch02-1">2-1 章</a></td></tr>
+      <tr><td>/h、中斷點、watchpoint</td><td>New Debugger 全功能</td><td><a href="#ch05-1-08">5-1 §8</a>、<a href="#ch05-4">5-4 章</a></td></tr>
+      <tr><td>SELECT SINGLE</td><td>多筆 SELECT、JOIN、緩衝、權限</td><td><a href="#ch05-1-15">5-1 §15</a>、<a href="#ch02-2">2-2 章</a></td></tr>
+      <tr><td>呼叫函數模組</td><td>搜尋與建立函數、BAPI、類別</td><td><a href="#ch05-1-10">5-1 §10</a>～<a href="#ch05-1-12">§12</a></td></tr>
+      <tr><td>WRITE 清單</td><td>選擇畫面事件、Dynpro、ALV</td><td><a href="#ch05-1-17">5-1 §17</a>～<a href="#ch05-1-19">§19</a></td></tr>
+    </tbody>
+  </table>
+  <div class="tip"><b>給「完全沒寫過程式」的學員的建議</b>：BC100 的 16 個 Lesson 每一個都自己在 DEV 打一次（不要複製貼上），每支程式都走一遍 Save → Check → Activate → F8 → 用 Debugger 單步跑一次，看著 Variables 區的值變化。會「看懂程式在做什麼」比會背語法重要得多——這也是 BC100 把 Debugger 放在第二單元、而不是最後的原因。</div>
+
+  <h3 id="ch05-25-qa">練習與自我檢核</h3>
+  <p><b>A. 原廠 Learning Assessment（Col15／Col18 相同，共 22 題）</b></p>
+  <ol>
+    <li>客製 ABAP 程式應使用什麼命名規則？（A 無規則／B 以 Z 或 Y 開頭／C 以 CUS 開頭／D 以 PROG 開頭）<br>→ <b>B</b>。客戶命名空間。</li>
+    <li>結束 ABAP 敘述的標點？（冒號／逗號／分號／句點）<br>→ <b>句點</b>，沒有例外。冒號與逗號是鏈式敘述用的。</li>
+    <li>行首星號表示整行為註解。（是非）<br>→ <b>True</b>。（原解答把出處寫成「Keyword Documentation」，應為 Unit 1 Lesson 2 的「Comments」段落。）</li>
+    <li>如何查詢不熟的關鍵字說明？<br>→ <b>游標停在關鍵字上按 F1</b>。雙擊是導向（forward navigation），F4 是輸入說明。</li>
+    <li>PARAMETERS 定義了哪些物件？（按鈕／輸入欄位／結構／變數／選單）<br>→ <b>輸入欄位＋變數</b>。</li>
+    <li>寫完程式後的步驟順序？<br>→ <b>Save → Check syntax → Activate → Execute</b>。</li>
+    <li>哪些是數值型別？（string／i／c／p／t）<br>→ <b>i、p</b>。</li>
+    <li>變數用 DATA 宣告，型別可用 ABAP 標準型別或字典全域型別。（是非）<br>→ <b>True</b>。</li>
+    <li>哪一項在執行時會依使用者登入語言提供文字？（字面值／文字符號／使用者名稱／string 型別）<br>→ <b>文字符號</b>。</li>
+    <li>哪些是 ABAP 算術運算子？（% ／ / ／ ! ／ x ／ *）<br>→ <b>/ 與 *</b>。</li>
+    <li>使用 SY-DATUM、SY-UZEIT 時必須自己填值。（是非）<br>→ <b>False</b>，由執行環境填入，且只供讀取。</li>
+    <li>在畫面上按按鈕時要啟動 Debugger，命令欄輸入什麼？（/x／/h／/n／/o）<br>→ <b>/h</b>。（/n 是結束目前交易、/o 是開新 session。）</li>
+    <li>哪些是 ABAP 清單不必寫程式就有的功能？（列印／加圖示／加顏色／搜尋／捲動）<br>→ <b>列印、搜尋、捲動</b>（另有另存）。圖示與顏色要寫程式。</li>
+    <li>哪個敘述可把字串切成多個子字串？<br>→ <b>SPLIT</b>。</li>
+    <li>IF 結構中哪些部分是必要的？（IF／ELSEIF／ELSE／ENDIF）<br>→ <b>IF、ENDIF</b>。</li>
+    <li>DO 迴圈中記錄目前圈數的系統變數？<br>→ <b>SY-INDEX</b>。</li>
+    <li>執行時錯誤表示程式所有敘述都成功執行了。（是非）<br>→ <b>False</b>。遇到無法執行的敘述就終止，其後的敘述都沒執行。</li>
+    <li>MESSAGE 敘述各部分的順序？<br>→ <b>MESSAGE 關鍵字 → 訊息類型 → 訊息號碼 → 訊息類別</b>，例：<code>MESSAGE i001(bc100_msgs)</code>。</li>
+    <li>SELECT 成功讀到資料時，哪個系統變數為 0？<br>→ <b>SY-SUBRC</b>。</li>
+    <li>呼叫端與模組化單元之間用什麼交換資料？（系統變數／參數／SELECT／字面值）<br>→ <b>參數</b>（介面）。</li>
+    <li>呼叫函數時，程式中的 EXPORTING 區塊把資料傳給函數的 Export 參數。（是非）<br>→ <b>False</b>。EXPORTING 對應函數的 <b>Import</b> 參數。（原解答把出處寫成 Unit 5 Lesson 2，實際在 <b>Lesson 3</b> Using Function Modules 的「Call a Function Module」。）</li>
+  </ol>
+  <p><b>B. 本書補充題</b></p>
+  <ol>
+    <li>為什麼原廠要你寫 <code>PARAMETERS pa_mat TYPE mara-matnr</code> 而不是 <code>TYPE c LENGTH 18</code>？<br>→ 字典型別隨系統定義變動；S/4HANA 的 MATNR 已是 40 碼，寫死 18 會截斷料號。也順便得到欄位標籤、F4、轉換常式（ALPHA）。</li>
+    <li><code>DATA(x) = 7 / 2.</code> 的 x 是多少？怎麼得到 3.5？怎麼得到 3？<br>→ x 為 i 型別，值 <b>4</b>（四捨五入）；要 3.5 需目標為 p／decfloat34（如 <code>DATA x TYPE p LENGTH 8 DECIMALS 1.</code>）；要 3 用 <code>7 DIV 2</code>。</li>
+    <li>一支報表上線後，使用者反映「同樣條件每次跑出來的單價不一樣」，程式用的是沒有完整主鍵的 SELECT SINGLE。原因與修法？<br>→ 符合條件有多筆，HANA 沒有預設排序，回傳哪一筆不確定。改成明確排序＋取一筆（<code>ORDER BY … INTO TABLE … UP TO 1 ROWS</code>），或補齊條件到唯一。</li>
+    <li>選擇畫面的中文標籤在 DEV 正常、在 QAS 顯示 PA_NAME，最可能的原因？<br>→ 選擇文字是獨立物件，未啟用或未一起收進傳輸請求（或 QAS 登入語言沒有該語言的文字）。</li>
+    <li>把「群組 B 到 D」寫成 <code>BETWEEN 'B' AND 'D'</code> 有什麼風險？<br>→ 比的是字典序，'B1'、'C9' 等後來新增的代碼都會被包含；應列舉 <code>WHEN 'B' OR 'C' OR 'D'</code> 或 IN 明確值。</li>
+    <li>寫一段程式：輸入兩個整數，輸出兩數相除結果到小數兩位；除數為 0 時以資訊訊息提示，不可 dump。<br>→ 要點：結果變數 <code>TYPE p LENGTH 8 DECIMALS 2</code>；先 <code>IF pa_num2 = 0</code> 給 <code>MESSAGE … TYPE 'I'</code> 後 RETURN，運算放在 <code>TRY … CATCH cx_sy_zerodivide cx_sy_arithmetic_overflow</code>。</li>
+    <li>函數模組與類別靜態方法都能封裝邏輯，新程式為什麼建議用方法？<br>→ 方法可有 RETURNING 直接用在運算式中、支援 class-based exception、可做單元測試（ABAP Unit）、不必建立函數群組；函數模組保留給 RFC／BAPI／更新任務等必須用它的場合。</li>
+    <li>Debugger 停在 watchpoint 時，應該分析哪一行？<br>→ 黃色箭頭<b>上方</b>那一行——變數在那裡已經被改變，箭頭指的是下一個要執行的敘述。</li>
+  </ol>
+</section>

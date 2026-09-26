@@ -1,0 +1,1053 @@
+<section class="chapter" id="ch05-19" data-title="BC470 SAP Smart Forms 表單列印">
+  <h2>第 5-19 章 BC470 SAP Smart Forms 表單列印</h2>
+  <p class="lede">BC470 是 SAP 原廠的 Smart Forms 專題課：用 Fly &amp; Smile 旅行社「寄機票發票給客戶」的案例，從 Form Builder 的每一種節點、Smart Styles、字型與條碼，一路講到怎麼接進應用程式與 Customizing。本章依原課程單元順序整理强晟 2007 版筆記與 SAP 原廠 Col18 英文教材，重點放在<b>節點的處理規則、版本差異與原廠強調的限制</b>；實作型的完整呼叫程式、PDF／E-mail 樣板、NACE 設定請配合 <a href="#ch04-3">4-3 章 SmartForms</a> 一起看，本章不重複那些樣板，而是補齊「為什麼這樣設計」與原廠教材獨有的細節。</p>
+
+  <div class="meta">
+    <div><b>核心 TCODE</b><span class="tcode">SMARTFORMS</span><span class="tcode">SMARTSTYLES</span><span class="tcode">SE78</span><span class="tcode">SE73</span><span class="tcode">SE75</span><span class="tcode">SE74</span><span class="tcode">SPAD</span><span class="tcode">SE63</span><span class="tcode">SE09</span><span class="tcode">SO10</span><span class="tcode">SE37</span><span class="tcode">NACE</span><span class="tcode">VOK2</span><span class="tcode">SFP</span><span class="tcode">SE80</span></div>
+    <div><b>關鍵物件</b>SSF_FUNCTION_MODULE_NAME、SSFCTRLOP（CONTROL_PARAMETERS）、SSFCOMPOP（OUTPUT_OPTIONS）、SSFCRESCL（JOB_OUTPUT_INFO）、SFSY-PAGE／FORMPAGES／JOBPAGES／COPYCOUNT／COPYCOUNT0／XSF／SUBRC／USERNAME、TDSFNAME、RS38L_FNAM、TLINE、ADDRESS_INTO_PRINTFORM、RSTXTRAN、TSP02A、RSOPRNT、TNAPR、LE_SHP_DELNOTE／RLE_DELNOTE、LB_BIL_INVOICE／RLB_INVOICE、F150_DUNN_SF／FI_PRINT_DUNNING_NOTICE_SMARTF、HPLJ4、SCUSTOM、SBOOK、SFLIGHT</div>
+  </div>
+
+  <h3 id="ch05-19-01">1. 課程定位與教材對照</h3>
+  <p>BC470〈Form Printing with SAP Smart Forms〉是 ABAP 開發路線上的表單專題課。原廠 Col18 版為 <b>2 天</b>講師授課（Material Number 50148763），所有範例物件放在套件 <b>BC470</b>，資料取自 BC4xx 共用的<b>航班資料模型</b>（SCARR、SPFLI、SFLIGHT、SBOOK、SCUSTOM）。本館把它歸在 200～300 等級：前置知識是 <a href="#ch05-1">5-1 章 BC400</a> 的 ABAP Workbench 基礎，懂內表、函數模組即可；「只改版面」的部分甚至不需要寫 ABAP，但要把表單接進程式、在表單內算小計，就一定要會 ABAP。</p>
+  <p>强晟的筆記寫於 2007 年，依據的是 R/3 4.6C 時代的教材（文中大量出現「4.6C 支援包 SP1／SP9／SP12」）；原廠 Col18 則以 SAP Web AS 6.10／6.20 之後的功能為主，並把 4.6C 的舊做法保留在附錄。對照時請記得這條分界：</p>
+  <table>
+    <thead><tr><th>單元</th><th>强晟筆記頁碼</th><th>原廠 Col18 Unit / Lesson（頁碼）</th><th>本章小節</th></tr></thead>
+    <tbody>
+      <tr><td>1 課程概覽</td><td>p4–p5</td><td>Unit 1 Lesson 1 Outlining the Course Content（p9–p13）</td><td>本節</td></tr>
+      <tr><td>2 SAP Smart Forms 概覽</td><td>p6–p15</td><td>Unit 2 Lesson 1 Explaining SAP Smart Forms（p15–p21）</td><td>2</td></tr>
+      <tr><td>3 SAP Form Builder 第一步</td><td>p16–p49</td><td>Unit 3 Lesson 1 Explaining SAP Form Builder（p23–p43）</td><td>3、4</td></tr>
+      <tr><td>4 文字、地址、圖形</td><td>p50–p84</td><td>Unit 4 Lesson 1 Texts（p47）／Lesson 2 Addresses（p63）／Lesson 3 Graphics（p67）</td><td>5、6、7</td></tr>
+      <tr><td>5 表單中的資料</td><td>p85–p97</td><td>Unit 5 Lesson 1 Defining Data in Forms（p71–p79）</td><td>8</td></tr>
+      <tr><td>6 表格與範本</td><td>p98–p128</td><td>Unit 6 Lesson 1 Tables（p83）／Lesson 2 Templates（p99）</td><td>9、10</td></tr>
+      <tr><td>7 流程控制</td><td>p129–p147</td><td>Unit 7 Lesson 1 Explaining Flow Control（p107–p118）</td><td>11</td></tr>
+      <tr><td>8 整合到應用程式</td><td>p148–p156</td><td>Unit 8 Lesson 1 Application Program Integration（p119–p127）</td><td>12、13</td></tr>
+      <tr><td>9 Smart Styles</td><td>p157–p172</td><td>Unit 9 Lesson 1 Creating Smart Styles（p129–p139）</td><td>14</td></tr>
+      <tr><td>10 字型與條碼</td><td>p173–p190</td><td>Unit 10 Lesson 1（p141–p149）；Unit 11 Lesson 3（p161–p169）</td><td>15</td></tr>
+      <tr><td>附錄：TCODE、圖形管理、傳輸</td><td>p191–p194</td><td>Unit 11 Lesson 1 Menu Paths/TCODE（p153）；Lesson 2 Customizing 與傳輸（p155–p160）</td><td>16</td></tr>
+      <tr><td>附錄：多語言</td><td>—</td><td>Unit 11 Lesson 4 Forms in Multiple Languages（p171–p172）</td><td>17</td></tr>
+      <tr><td>附錄：Undo/Redo、Copies Window、下載、HTML、動態文字</td><td>—</td><td>Unit 11 Lesson 5（p173–p184）</td><td>4、6、13、18</td></tr>
+      <tr><td>附錄：4.6C 的表格維護</td><td>（同第六單元）</td><td>Unit 11 Lesson 6 Maintaining Tables（p185–p190）</td><td>9、11</td></tr>
+      <tr><td>附錄：SAPscript 轉 Smart Forms</td><td>p18（一句帶過）</td><td>Unit 11 Lesson 7（p191–p193）</td><td>18</td></tr>
+      <tr><td>附錄：Interactive Forms（Adobe）</td><td>p195 後記一句</td><td>Unit 11 Lesson 8（p195–p209）</td><td>19</td></tr>
+    </tbody>
+  </table>
+  <p>原廠把練習分成四碼代號，看 BC470 套件裡的程式名稱就知道是哪一單元：<b>STEP</b>（Form Builder 第一步）、<b>TEXT</b>（文字地址圖形）、<b>DATA</b>（表單資料）、<b>TABL</b>（表格與範本）、<b>FLOW</b>（流程控制）、<b>PROG</b>（整合應用程式）、<b>STYL</b>（Smart Styles）。練習是一層疊一層的，每一步都有參考解答可複製當下一步的起點。</p>
+  <div class="note"><b>2007 版與新版的主要差異</b>：① 4.6C 叫「開發類（Development Class）」，新版叫「套件（Package）」；② 4.6C 要先啟用才能測試，Web AS 6.10 起可以測試未啟用版本；③ 6.10 起新增 <b>Final Window</b>、<b>Copies Window</b>、表格 <b>Calculations</b> 頁籤、Undo/Redo、表單 XML 上下載、HTML 輸出、系統欄位 SFSY-XSF／COPYCOUNT／SUBRC／USERNAME；④ 6.20 起有 Restricted Languages；⑤ 6.30 起有 <b>Dynamic Text</b>；⑥ 4.6C 的窗口邊框只能單一線寬、陰影只能黑色，6.10 起四邊可各自設定線寬顏色。强晟筆記描述的是左邊那一欄，本章以新版為準、舊做法標註出來。</div>
+  <p><b>L29 版本對照</b>：<span class="kw">L29_原廠教材</span> 資料夾另有一本 BC470 英文版，內容介於强晟筆記（4.6C）與 Col18 之間，而且是本館唯一<b>附完整練習題與參考解答全文</b>的 BC470 版本：</p>
+  <table>
+    <thead><tr><th>項目</th><th>內容</th></tr></thead>
+    <tbody>
+      <tr><td>L29 檔名</td><td>BC470+-+SMART+FORMS_2006_287_英文.pdf</td></tr>
+      <tr><td>版本</td><td>封面印「Release 640　04/05/2006」；內頁標題頁為 <b>SAP Web AS 6.20、2002/Q4</b>、Material Number <b>5005 8131</b>。投影片版式（每頁一張投影片＋講師註解），不是 Col18 那種 Lesson 式教科書</td></tr>
+      <tr><td>頁數／語言</td><td>287 頁（PDF 頁碼，下同）／英文（封面標題是德文〈Formulardruck mit SAP Smart Forms〉）</td></tr>
+      <tr><td>前置與對象</td><td>必備 BC400＋ABAP 程式能力；建議有 Level 2 應用課程；對象為負責表單列印的專案成員、開發者、顧問；2 天</td></tr>
+    </tbody>
+  </table>
+  <table>
+    <thead><tr><th>單元</th><th>L29 2006 版頁碼（課文／練習與解答）</th><th>對應 Col18</th><th>本章小節</th></tr></thead>
+    <tbody>
+      <tr><td>Unit 1 課程概覽</td><td>p9–p17</td><td>Unit 1</td><td>1</td></tr>
+      <tr><td>Unit 2 SAP Smart Forms 概覽</td><td>p19–p30</td><td>Unit 2</td><td>2</td></tr>
+      <tr><td>Unit 3 Form Builder 第一步</td><td>p31–p52／練習通則 p53–p54、STEP p55–p58</td><td>Unit 3</td><td>3、4、20</td></tr>
+      <tr><td>Unit 4 文字、地址、圖形</td><td>p61–p89／TEXT p90–p94</td><td>Unit 4</td><td>5、6、7、20</td></tr>
+      <tr><td>Unit 5 表單中的資料</td><td>p95–p105／DATA p106–p109</td><td>Unit 5</td><td>8、20</td></tr>
+      <tr><td>Unit 6 表格與範本</td><td>p111–p144／TABL p145–p153</td><td>Unit 6</td><td>9、10、20</td></tr>
+      <tr><td>Unit 7 流程控制</td><td>p155–p169／FLOW p170–p174</td><td>Unit 7</td><td>11、20</td></tr>
+      <tr><td>Unit 8 整合到應用程式</td><td>p175–p186／PROG p187–p192（含解答程式 SAPBC470_PROGS 全文）</td><td>Unit 8</td><td>12、20</td></tr>
+      <tr><td>Unit 9 Smart Styles</td><td>p193–p206／STYL p207–p210</td><td>Unit 9</td><td>14、20</td></tr>
+      <tr><td>附錄 A 選單路徑與導覽樹圖示</td><td>p213–p215</td><td>Unit 11 Lesson 1</td><td>16</td></tr>
+      <tr><td>附錄 B Customizing 與傳輸</td><td>p216–p222</td><td>Unit 11 Lesson 2</td><td>16</td></tr>
+      <tr><td>附錄 C 字型與條碼</td><td>p223–p233</td><td>Unit 10、Unit 11 Lesson 3</td><td>15</td></tr>
+      <tr><td>附錄 D 多語言</td><td>p234–p236</td><td>Unit 11 Lesson 4</td><td>17</td></tr>
+      <tr><td>附錄 E 6.10／6.20 新功能（Undo/Redo、Copies Window、下載、HTML 與 Web Form、BSP）</td><td>p237–p248</td><td>Unit 11 Lesson 5</td><td>4、13、18</td></tr>
+      <tr><td>附錄 F 4.6C 特別說明（表格、範本、後處理窗口）＋4.6C 表格練習</td><td>p249–p284</td><td>Unit 11 Lesson 6</td><td>9、10、11、20</td></tr>
+      <tr><td>附錄 G 使用 SAPscript 物件</td><td>p285–p287</td><td>Unit 11 Lesson 7</td><td>18</td></tr>
+    </tbody>
+  </table>
+  <div class="note"><b>L29 2006 版與 L28 兩個版本的差異</b>：① 章節結構是 Unit 1～9＋附錄 A～G，「字型與條碼」還在附錄 C，沒有獨立成 Col18 的 Unit 10；② <b>沒有 Interactive Forms by Adobe 那一課</b>（Col18 Unit 11 Lesson 8），所以第 19 節只來自 Col18；③ 課文以 6.20 為準，但每張投影片都用註解標出 6.10 與 4.6C 的差別，版本線比 Col18 更清楚；④ <b>七組練習（STEP、TEXT、DATA、TABL、FLOW、PROG、STYL）連同解答全文都在</b>，另附 4.6C 舊式表格的練習，這是强晟筆記與 Col18 都沒有的，整理在第 20 節；⑤ 課文內容與 Col18 大致逐字相同，兩版說法有出入時，本章以較新的 Col18 為準，另在第 20 節註明。</div>
+
+  <h3 id="ch05-19-02">2. SAP Smart Forms 概覽：為什麼要有它、文件怎麼產生</h3>
+  <p>每家公司都需要大量列印格式固定的文件：發票、交貨單、催款函⋯⋯可以送印表機、傳真或 E-mail。SAP 從 <b>R/3 4.6C</b> 開始提供 Smart Forms，同時包含「設計表單」與「定義表單和應用程式之間介面」兩套工具。SAP 也隨產品交付大量標準表單（SD、FI、HR、CRM、SRM、各國專用表單），總覽請查 <b>SAP Note 430621</b>。原廠特別說明：本課程不教任何模組知識，只教表單開發基礎。</p>
+  <p><b>Smart Forms 相對於 SAPscript 的優勢</b>（强晟 p9–p11、原廠 p18）：</p>
+  <ul>
+    <li>客製更容易：有 Table Painter 可以畫表格；表單與程式之間的介面重新設計過。</li>
+    <li>在表單內補抓資料不必再學 SAPscript 的腳本指令，<b>直接寫一般 ABAP</b>（Program Lines 節點）。</li>
+    <li>Smart Forms 是 Repository 物件，接上傳輸系統，可以測試後一路送到 PRD。</li>
+    <li>直接整合在應用程式中，和外部系統交換資料不會浪費時間；可在背景大量產生文件（例如大批催款）。</li>
+    <li>所有 SAP 支援的平台都能執行，但<b>編輯表單需要 Windows 版 SAP GUI</b>。</li>
+    <li>多語言：版面只定義一次，文字交給翻譯工具翻譯。</li>
+    <li>Web AS 6.10 起可輸出 HTML；支援把 SAPscript 表單、樣式移轉過來；SAPscript 文字可直接在 Smart Forms 中使用；SAP 仍會持續支援 SAPscript。</li>
+  </ul>
+  <p><b>文件產生：簡化視圖</b>——應用程式要輸出文件只需兩步：① 取資料（程式核心，可以任意複雜、可有使用者互動）；② 啟動表單處理，把讀到的資料寫進表單。</p>
+  <p><b>文件產生：完整視圖</b>（這三步背起來，後面 Customizing 與除錯都靠它）：</p>
+  <ol>
+    <li>交易碼先查 <b>Customizing</b>，決定要呼叫哪一支<b>列印程式</b>，列印程式負責讀資料。</li>
+    <li>交易碼再從 Customizing 得知這個情境用哪一張 Smart Form，呼叫該表單<b>產生的函數模組</b>，把讀到的資料填進介面。</li>
+    <li>表單處理開始後，背景自動呼叫<b>表單處理器（Composer，排版器）</b>：依版面資訊排版文字、在執行期填入欄位值、控制換頁，最後把成品放進 <b>Spool</b>。</li>
+  </ol>
+  <p>維護 Smart Forms 的工作因此分三類：① 調整表單（主要工作）；② 調整應用程式（只在特殊情況，例如要改 Spool 設定、或要讀一次就用在整批文件的額外資料）；③ 在 Customizing 中登記修改結果。</p>
+  <div class="tip">Casper 口訣「<b>先找標準，再想客製</b>」在表單上的具體做法：先複製 SAP 標準表單（例如 LB_BIL_INVOICE）到 Z 命名空間改版面 → 需要額外資料時先試 Program Lines 或全域初始化 → 真的不行才複製列印程式 → <b>絕不直接改 SAP 原表單或原程式</b>，升級時會被覆蓋。</div>
+
+  <h3 id="ch05-19-03">3. Form Builder：初始畫面、三個區域與表單屬性</h3>
+  <p>交易碼 <span class="tcode">SMARTFORMS</span>（選單「工具 → 表單列印輸出 → Smart Forms」），初始畫面用單選鈕選要編輯的物件：<b>表單（Form）</b>、<b>樣式（Style，第 14 節）</b>、<b>文字模組（Text Module，第 6 節）</b>。建立、顯示、修改後進入圖形化工具 <b>SAP Form Builder</b>。初始畫面也能更名、刪除、測試表單；「公用程式 → 移轉 → 匯入 SAPscript 表單」可從 SAPscript 表單產生 Smart Form（第 18 節）。</p>
+  <div class="warn"><b>永遠不要改 SAP 原始表單</b>，下次升級修改會遺失。複製到客戶命名空間（Y 或 Z 開頭）再改。複製或更名後的表單狀態<b>一律是未啟用</b>。</div>
+  <p><b>Form Builder 三區</b>：</p>
+  <table>
+    <thead><tr><th>位置</th><th>名稱</th><th>用途</th></tr></thead>
+    <tbody>
+      <tr><td>左</td><td>導覽樹（Navigation Tree）</td><td>以節點表示表單階層；下方可開欄位清單（Field List）。檢查錯誤訊息顯示在中間區下方，點訊息可跳到該節點。</td></tr>
+      <tr><td>中</td><td>維護畫面（Maintenance Screen）</td><td>多個頁籤編輯目前節點屬性；內建文字編輯器、Table Painter。</td></tr>
+      <tr><td>右</td><td>Form Painter</td><td>定義頁面版面：窗口、圖形的位置與大小。「公用程式 → Form Painter 開/關」可隱藏。</td></tr>
+    </tbody>
+  </table>
+  <p><b>導覽樹的處理規則</b>（非常重要，所有流程控制都建立在上面）：</p>
+  <ul>
+    <li>子節點<b>繼承</b>上層節點的屬性（例如樣式）。</li>
+    <li>某節點若不被處理，其所有子節點也不處理；但<b>後繼節點（同層下一個）與它無關</b>，照樣在它之後處理。</li>
+    <li>頂層節點下固定有兩個節點：<b>全域設定（Global Settings）</b>＝表單屬性、表單介面、全域定義；以及<b>頁面與窗口（Pages and Windows）</b>。</li>
+  </ul>
+  <p><b>表單屬性（Form Attributes）</b>：</p>
+  <ul>
+    <li><b>一般屬性</b>：名稱、描述、狀態（啟用／未啟用）。應用程式<b>只用啟用版</b>，所以可以暫存修改而不影響正在跑的業務。表單必須指派<b>套件</b>（4.6C 稱開發類），第一次存檔時指定，之後可在初始畫面「跳至 → 物件目錄項目」改。每張表單有一個<b>原始語言</b>，可設定要翻譯成哪些語言；6.20 起多了 <b>Restricted Languages</b>（第 17 節）。</li>
+    <li><b>輸出選項</b>：頁面格式取自 Spool 管理（<span class="tcode">SPAD</span>）；新表單預設頁面格式在初始畫面「公用程式 → 設定 → 一般」設定。<b>每張表單都必須指定樣式</b>，多數子節點可另指樣式覆蓋。</li>
+    <li><b>CPI／LPI</b>：CPI 決定水平單位 <b>CH</b> 的長度（預設 10，即 1 CH＝1/10 英吋，約 2.5 mm）；LPI 決定垂直單位 <b>LN</b>。</li>
+    <li><b>輸出格式</b>：標準列印格式是 <b>OTF</b>（Output Text Format）；另有經認證的 XML 介面 <b>XSF</b>（SAP Smart Forms XML Interface，只含內容不含排版）；6.10 起可輸出 <b>HTML</b>；另有 <b>XDF</b>（連介面參數的字典型別都帶上的 XML 格式）。勾「XSF 輸出啟用」即可（强晟註：應用程式不會考慮此設定——意指程式可用 OUTPUT_OPTIONS 動態覆蓋，見第 13 節）。</li>
+  </ul>
+  <p><b>命名規則</b>：頁面與所有節點都有技術名稱與描述，只能用字母（不可有變音字母）、數字、底線，首字須為字母；百分號 <span class="kw">%</span> 可當首字，但那是 Form Builder 自動產生名稱用的，<b>自己不要用</b>。</p>
+
+  <h3 id="ch05-19-04">4. 頁面、窗口類型、Form Painter 與啟用測試</h3>
+  <p><b>頁面（Page）</b>：每張表單至少一頁，可定義多種版面不同的頁。導覽樹中最上面的頁先處理，之後依頁面「一般屬性」的<b>下一頁（Next Page）</b>決定順序（預設是自己）；也可以用條件或 Command 節點動態決定下一頁（第 11 節）。一個頁面在文件中可依資料量被重複使用多次。刪除頁面時其下所有子節點一併刪除。</p>
+  <ul>
+    <li><b>頁碼</b>：一般屬性可設阿拉伯或羅馬數字、大小寫，以及頁碼計數器模式（遞增、初始化、不變）。<b>設了頁碼格式不代表頁面就有頁碼</b>——必須在某個文字窗口輸出 <span class="kw">&amp;SFSY-PAGE&amp;</span>。</li>
+    <li><b>輸出選項</b>：頁面格式套用整張表單，只有<b>方向（直式／橫式）</b>能逐頁設定；可逐頁指定紙匣（例如第一頁用信封紙）；雙面列印（需印表機支援）。</li>
+    <li><b>背景圖</b>：圖形須先用 <span class="tcode">SE78</span> 匯入；Object／ID 預設 <b>GRAPHICS／BMAP</b>，F4 可查；可選黑白或彩色；可填欄位名稱在執行期動態決定（但不適合拿來重繪套印範本，因為 Form Painter 看不到）。解析度以 dpi 為單位，<b>值越小圖越大</b>，空白或 000 用圖檔預設值。<b>輸出模式</b>可選「只在 Form Painter 顯示」（重繪掃描表單但不想印）、「列印預覽」、「列印預覽與列印」；預覽畫面送 Spool 前還能再選是否印背景。文字會印在圖上面。</li>
+  </ul>
+  <p><b>輸出區域</b>：頁面上必須建立輸出區域才能輸出資訊——一般窗口、<b>地址窗口</b>（用中央地址管理 CAM）、<b>圖形窗口</b>。<b>導覽樹中頁面子節點的順序不影響輸出位置，但決定處理順序</b>（由上而下，想像全部展開），用到執行期才填值的變數時順序就很關鍵。拖放移動（左鍵）、Ctrl＋左鍵複製子樹；把 A 拖到 B 上會插在 B 之後，可能時系統會問「在節點下」還是「在節點後」。</p>
+  <p>同一個窗口放在<b>多個頁面</b>上：內容（含刪除子節點）的修改會影響所有頁上同技術名稱的節點，但各頁位置可不同，且每頁各有自己的「輸出選項」與「條件」頁籤。同一窗口在<b>同一頁</b>放多次：系統會建立不同技術名稱的副本，改一個只影響那一個。</p>
+  <table>
+    <thead><tr><th>窗口類型</th><th>特性</th><th>原教材強調的限制</th></tr></thead>
+    <tbody>
+      <tr><td><b>主窗口 Main Window</b></td><td>放跨頁的主體文字與表格；填滿後自動換到下一頁的主窗口繼續</td><td>整張表單<b>只能有一個</b>；每頁<b>寬度必須相同</b>，高度與位置可不同；沒有主窗口的頁面不能以自己為下一頁，否則無窮迴圈——系統處理<b>三頁後終止</b></td></tr>
+      <tr><td><b>次窗口 Secondary Window</b></td><td>固定區域輸出（表頭、頁尾、公司資訊）</td><td><b>放不下的文字直接截掉不輸出</b>；每頁大小位置可不同</td></tr>
+      <tr><td><b>Final Window</b>（6.10+）</td><td>第二輪才處理，此時所有變數（含 SFSY-FORMPAGES）都已知</td><td>除處理時點外與次窗口相同，一樣會截斷</td></tr>
+      <tr><td><b>Copies Window</b>（6.10+）</td><td>依正本／副本決定是否處理，可多個</td><td>不能放連續文字；見下方說明</td></tr>
+    </tbody>
+  </table>
+  <p><b>Copies Window</b>（原廠 Unit 11 Lesson 5）：處理時機三選一——正本與副本都印、只印副本、只印正本；前兩者再選 <b>Copies Differ</b> 或 <b>Copies Identical</b>。Identical 時窗口內容只進 Spool 一次（其他頁以參照方式列印），對圖形效能改善明顯；Differ 時可在條件中查 <b>SFSY-COPYCOUNT0</b>（正本＝0、第一份副本＝1⋯）或 <b>SFSY-COPYCOUNT</b>（正本＝1、第一份副本＝2⋯）。副本份數由列印程式的 OUTPUT_OPTIONS-TDCOPIES 決定。</p>
+  <p><b>窗口輸出選項</b>：左上邊界＋高寬（在 Form Painter 畫的會自動回寫）；邊框與陰影；「垂直／水平間距」控制文字與框線距離（細框線可能壓到字，要留間距）；「永遠繪製框線與陰影」讓無內容時也印框。度量單位：<b>CM、MM、IN（≈2.54 cm）、PT（1/72 英吋）、TW（twip＝1/20 點）</b>，垂直可用 <b>LN</b>、水平可用 <b>CH</b>。</p>
+  <p><b>Form Painter</b>：點選輸出區域即同步到維護畫面，拖拉改大小與位置；右鍵選單可建立／刪除／剪貼，小窗口被大窗口蓋住時用「到背景（Into background）」——只影響編輯畫面，<b>列印時重疊的元素會一個疊一個全部印出，不會互相遮蔽</b>。設定：「畫窗口」模式、自動縮放、細網格與主網格、貼齊網格、十字游標（一般頁籤）、Tracker 頁籤設定選取高亮、「圖形佔位符」（電腦慢時只畫框不畫圖）。6.10 起 Form Painter 與導覽樹都支援 Ctrl-C／X／V、方向鍵展開收合、Home／End。</p>
+  <p><b>啟用與測試</b>：可在節點層級做局部檢查或檢查整張表單。啟用（「表單 → 啟用」，工具列第二個按鈕）＝整張檢查＋存檔＋<b>產生函數模組</b>；函數名稱用「環境 → 函數模組名稱」查。「公用程式 → 回到啟用版本」會<b>刪掉</b>你正在編的未啟用版本。測試（「表單 → 測試」，第三個按鈕）會跳到 Function Builder（<span class="tcode">SE37</span>），可填介面值 → 單一測試 → 執行 → 輸入輸出裝置 → 列印預覽。</p>
+  <div class="tip">原廠與强晟都提到的捷徑：在 Form Builder 中<b>連按 4 次 F8</b> 就直接到列印預覽。另外 6.10 起 Form Builder 會記錄上次存檔以來的變更，可 Undo／Redo（按 Enter 或呼叫功能時才存中間狀態，所以每次動作後導覽樹會收合）；超大表單若覺得卡，可在「公用程式 → 設定 → 一般」關掉 Undo/Redo Form Changes。</div>
+
+  <h3 id="ch05-19-05">5. 文字節點：連接方式、格式、欄位與系統欄位</h3>
+  <p>除了地址之外，所有文字都用<b>文字節點（Text）</b>輸出。文字節點應放在窗口之下，或表格、範本等節點之下；<b>文字節點本身不能有子節點</b>。次窗口（以及 6.10 起的 Copies／Final Window）放不下的文字會被丟棄，只有主窗口會把剩下的文字接到下一頁。文字節點三個頁籤：</p>
+  <ul>
+    <li><b>一般屬性</b>：文字類型——<b>Text Element</b>（存在表單內）、<b>Text Module</b>（Smart Forms 文字模組）、<b>Include Text</b>（SAPscript 文字）、6.30 起還有 <b>Dynamic Text</b>（第 6 節）；以及與前一個文字節點的連接方式。</li>
+    <li><b>輸出選項</b>：位置、大小、框線、陰影、指定樣式；在主窗口中可勾<b>頁面保護（Page Protection）</b>，整段放不下就整段移到下一頁。</li>
+    <li><b>條件</b>：見第 11 節。</li>
+  </ul>
+  <table>
+    <thead><tr><th>連接方式</th><th>行為</th><th>編輯器對應</th></tr></thead>
+    <tbody>
+      <tr><td><b>新段落（New Paragraph）</b></td><td>第二個節點從新行開始，套用自己的段落格式，兩者完全獨立</td><td>Enter＝新段落</td></tr>
+      <tr><td><b>新行（New Line）</b></td><td>從新行開始，但沿用前一節點最後一段的段落格式</td><td>Shift＋Enter＝換行不換段</td></tr>
+      <tr><td><b>直接追加（Append Directly）</b></td><td>無空白無空行直接接上，後段套用前一段格式</td><td>—</td></tr>
+    </tbody>
+  </table>
+  <div class="note">例外：<b>前一個節點有框線或陰影時，第二個節點一律以「新段落」接上</b>，不管你選什麼。</div>
+  <p><b>格式</b>：編輯器是所見即所得。每段從清單選<b>段落格式</b>（定位點、對齊⋯）；選取文字可套一或多個<b>字元格式</b>（字型、上標⋯），「重設字元格式」回到段落格式。清單內容取決於<b>樣式</b>，套用順序：節點樣式覆蓋表單屬性樣式；下層節點覆蓋上層；文字節點先看自己，沒有就往上找；沒選段落格式就用樣式的標準段落。游標所在位置的格式會自動顯示在清單中（4.6C SP9 起，見 SAP Note 327636），所以「顯示格式」只在要看細節或多重字元格式時才需要。Unicode 系統全螢幕模式可改用 Microsoft Word 當編輯器（SAP Note 742662）。</p>
+  <p><b>插入欄位</b>：最簡單是從<b>欄位清單</b>拖放；清單包含：透過表單介面進來的 Import／Export／Tables 參數、全域定義中的全域資料與 Field Symbol、系統欄位。也可按「插入欄位」手打，名稱放在兩個 <span class="kw">&amp;</span> 之間，大小寫不分，還能用 SYST 系統欄位（例如 <span class="kw">&amp;SY-UNAME&amp;</span>）。欄位在編輯器裡是灰色，不能直接改，要用「修改欄位」「刪除欄位」。編輯器的檢查會找出語法錯誤（紅三角，<b>無法啟用</b>）；Form Builder 工具列第一個按鈕的完整檢查才會做<b>資料流分析</b>，找出可能尚未賦值的欄位（黃圈警告，仍可啟用）。</p>
+  <table>
+    <thead><tr><th>系統欄位</th><th>意義</th><th>版本</th></tr></thead>
+    <tbody>
+      <tr><td>SFSY-DATE／SFSY-TIME</td><td>日期（格式依使用者主檔）／時間 HH:MM:SS</td><td>4.6C</td></tr>
+      <tr><td>SFSY-PAGE</td><td>目前列印頁碼（格式在頁面一般屬性設定）</td><td>4.6C</td></tr>
+      <tr><td>SFSY-FORMPAGES</td><td>目前這份文件的總頁數，用於「第 X 頁／共 Y 頁」</td><td>4.6C</td></tr>
+      <tr><td>SFSY-JOBPAGES</td><td>本次列印請求中<b>所有文件</b>的總頁數</td><td>4.6C</td></tr>
+      <tr><td>SFSY-WINDOWNAME／SFSY-PAGENAME</td><td>目前窗口名稱／頁面名稱</td><td>4.6C</td></tr>
+      <tr><td>SFSY-XSF</td><td>以 XSF 或 HTML 輸出時為 X</td><td>6.10+</td></tr>
+      <tr><td>SFSY-COPYCOUNT／SFSY-COPYCOUNT0</td><td>正本或第幾份副本（從 1／從 0 起算）</td><td>6.10+</td></tr>
+      <tr><td>SFSY-SUBRC</td><td>文字模組或 Include Text 存在＝0，不存在＝4</td><td>6.10+</td></tr>
+      <tr><td>SFSY-USERNAME</td><td>列印者登入名稱</td><td>6.10+</td></tr>
+    </tbody>
+  </table>
+  <p><b>格式選項（Formatting Options）</b>：大寫寫在欄位名稱後面，可組合，例如 <span class="kw">+6(9)</span>、<span class="kw">(8.2)</span>。不是每種型別都適用（數字不能用偏移）。</p>
+  <ul>
+    <li>字元欄位：預設完整輸出但截掉尾端空白。評估順序：去空白 (C) → 偏移 +n 與長度 (n) → 靠右 (R) → 填充字元 (F&lt;字元&gt;)。</li>
+    <li>數值欄位：尾端空白會被解讀成正號，用 (S) 去掉。評估順序：長度 (n) → 符號放左邊 (&lt;) → 日式日期 (L) → 去空白 (C) → 靠右 (R) → 填充 (F)。</li>
+  </ul>
+  <pre><code class="text">&amp;SFSY-PAGE&amp; / &amp;SFSY-FORMPAGES&amp;          → 1 / 3（第 X 頁共 Y 頁）
+&amp;GS_CUSTOMER-NAME&amp;                        → 客戶名稱（尾端空白自動截掉）
+&amp;GS_CUSTOMER-ID+2(6)&amp;                     → 從第 3 碼起取 6 碼
+&amp;GS_BOOKING-FORCURAM(12.2)&amp;               → 總長 12、小數 2 位
+&amp;GS_BOOKING-FORCURAM(S)&amp;                  → 去掉尾端的正號空白
+&amp;GS_BOOKING-FORCURAM(&lt;)&amp;                  → 負號放在數字左邊
+&amp;GS_BOOKING-LUGGWEIGHT(C)&amp;                → 去除前後空白
+&amp;GS_BOOKING-FLDATE(R)&amp;                    → 靠右對齊
+&amp;GV_ORDER_NO(F0)&amp;                         → 以 0 填充
+&amp;SY-UNAME&amp;                                → ABAP 系統欄位也能用</code></pre>
+  <div class="note">原教材只列出上述選項並指向線上文件〈字段內容的輸出選項〉。常見的 <span class="kw">(Z)</span> 去前導零、<span class="kw">(I)</span> 初始值不輸出、<span class="kw">(K)</span> 不走轉換常式等屬線上文件內容，使用前請在你的系統 F1 確認；更完整的欄位插入規則見 <a href="#ch04-3-08">4-3 章第 8 節</a>。</div>
+
+  <h3 id="ch05-19-06">6. 文字模組、Include Text 與 Dynamic Text</h3>
+  <p>有些文字不該存在表單裡，而是集中存放、表單只放參照：<b>寫一次、到處用；改一次、所有表單生效</b>（原教材的例子：銀行帳戶資訊變更）。切換文字類型時系統會警告已輸入的文字將遺失。段落與字元格式名稱存在文字中，實際外觀依文字節點的樣式解譯。</p>
+  <p><b>文字模組（Text Module）</b>：從 <span class="tcode">SMARTFORMS</span> 初始畫面選「文字模組」維護，可複製、更名、刪除；名稱須在客戶命名空間；和表單一樣接傳輸系統，需指派套件。文字模組編輯器<b>沒有欄位清單也沒有檢查</b>（因為它會被插進介面各不相同的表單），可以插入欄位，但<b>所有使用它的表單都必須定義並填好這些欄位</b>。「管理」頁籤必須指定樣式，預設是 <b>SYSTEM</b>。</p>
+  <ul>
+    <li>在表單中：文字節點選類型「文字模組」並輸入名稱；也可輸入以 &amp; 包住的欄位名稱，<b>執行期動態決定</b>文字模組——這時編輯器無法顯示內容，也無法檢查；<b>執行期找不到就中止本次輸出請求</b>。6.10 起可勾「No error if no text exists」避免中止，並用 <b>SFSY-SUBRC</b>（找到＝0、找不到＝4）判斷；也可為每個文字模組設定替代語言。</li>
+    <li>按「複製（Copy）」會把文字模組內容變成表單內的 Text Element，<b>切斷參照</b>，之後改文字模組不再影響此表單。</li>
+    <li>預設用文字節點或上層節點的樣式；勾「永遠從文字複製樣式」則改用文字模組自己的樣式。</li>
+  </ul>
+  <p><b>Include Text（SAPscript 文字）</b>：文字節點選「Include Text」，在文字鍵群組填 Text Name、Text Object、Text ID、語言（都可用 &amp;欄位&amp; 動態指定）；勾「文字不存在時不報錯」可避免函數模組中止。<b>Smart Forms 會忽略 SAPscript 文字中的所有控制指令</b>，需要的邏輯要自己改寫成 Smart Forms 節點。</p>
+  <p><b>覆蓋 Include Text 的段落格式</b>（L29 2006 版 p79 補充；Col18 p61 也這樣寫）：Include Text 裡的段落與字元格式一律依文字節點當時適用的 Smart Style 解讀（例如 SAPscript 裡段落 B 是粗體，Smart Style 裡 B 卻是小字，印出來就是小字）。文字節點可以覆蓋段落格式：<b>Standard Paragraph</b> 欄位指定樣式中的一個段落格式，套用到 Include Text 裡所有用標準段落（*）的段落，相當於 SAPscript <span class="kw">INCLUDE</span> 指令的 <span class="kw">PARAGRAPH</span> 附加；<b>First Paragraph</b> 則只指定第一段的格式，相當於 <span class="kw">NEW-PARAGRAPH</span> 附加（Standard Paragraph 空白時，其餘標準段落也會跟著用這個格式）。4.6C 要到 <b>Support Package 23</b> 才有這個功能，更早的版本可參考 SAP Note 422120 的預先修正。</p>
+  <div class="warn"><b>勘誤</b>：本節原本寫「4.6C 之後不能在段落格式群組覆蓋 SAPscript 文字的段落格式」，這句是錯的。L29 2006 版與 Col18 都明寫可以覆蓋，只有 <b>4.6C SP23 之前</b>不行，以此為準。</div>
+  <div class="warn"><b>新文字請一律建 Smart Forms 文字模組，不要建 SAPscript 標準文字</b>，原因（强晟 p77）：① Smart Forms 內無法維護或預覽 SAPscript 文字（只能到 <span class="tcode">SO10</span>）；② 無法檢查文字中的欄位是否在表單中有定義；③ SAPscript 文字<b>不會自動進傳輸</b>；④ SAPscript 文字是 <b>Client 相依</b>的，Smart Forms 不是——每個生產 Client 都要有。</div>
+  <p><b>Dynamic Text（6.30+）</b>：第三種長文字來源。指定一個行類型為 <b>TLINE</b> 的內表，執行期裡面放 ITF 格式文字：<span class="kw">TDFORMAT</span> 放段落格式名稱、<span class="kw">TDLINE</span> 放內容（最多 132 字元）。填 <span class="kw">*</span> 代表樣式的標準段落；要連續文字就只在第一行填段落格式。字元格式用尖括號包起來：<span class="kw">&lt;AB&gt;要加格式的字&lt;/&gt;</span>。表單內建立文字節點，類型選「Dynamic Text」，Field Name 填內表名稱。</p>
+  <pre><code class="abap">*&amp;---------------------------------------------------------------*
+*&amp; 列印程式端：組出 Dynamic Text 用的 TLINE 內表
+*&amp; 表單介面 Import 參數 IT_REMARK 以 TLINE 行類型的字典表類型定義
+*&amp; （例如 TSFTEXT，請在你的系統 SE11 確認）
+*&amp;---------------------------------------------------------------*
+TYPES tt_tline TYPE STANDARD TABLE OF tline WITH EMPTY KEY.
+
+DATA(lv_due_date) = CONV d( sy-datum + 30 ).        "先算成日期型別再格式化
+DATA(lv_due)      = |{ lv_due_date DATE = USER }|.
+
+DATA(lt_remark) = VALUE tt_tline(
+  ( tdformat = '*'  tdline = |親愛的客戶，感謝您選擇 Fly &amp; Smile。| )
+  ( tdformat = ' '  tdline = |本發票付款期限為 &lt;B&gt;{ lv_due }&lt;/&gt;，逾期將依約加計利息。| )
+  ( tdformat = 'L1' tdline = |如有疑問請洽客服專線。| ) ).
+" '*' ＝ 樣式的標準段落；空白 ＝ 連續文字（接在上一行之後，只有第一行需要段落格式）
+" &lt;B&gt;…&lt;/&gt; 的 B 必須是樣式中已定義的字元格式（一或兩碼）
+
+" 若同一段文字要隨條件切換，直接在程式中組好，比在表單裡做十個 Alternative 好維護
+IF gs_customer-custtype = 'B'.
+  APPEND VALUE #( tdformat = 'L1' tdline = |企業客戶請於匯款備註填寫發票號碼。| ) TO lt_remark.
+ENDIF.</code></pre>
+
+  <h3 id="ch05-19-07">7. 地址節點與圖形節點</h3>
+  <p><b>地址（Address）</b>：許多應用不再用自己的地址表，而改用<b>中央地址管理 CAM</b>（新版稱 Business Address Services，BAS），以地址號碼識別地址。Smart Forms 的地址節點會依各國慣例（ISO 11180 與萬國郵政聯盟準則）自動排版，空間不足時自動省略次要欄位，細節見函數 <b>ADDRESS_INTO_PRINTFORM</b> 的文件。地址節點通常直接放在頁面下當<b>地址窗口</b>（可在 Form Painter 擺位置），也可放在窗口、Loop、表格、範本之下。</p>
+  <table>
+    <thead><tr><th>地址類型</th><th>識別方式</th><th>例子</th></tr></thead>
+    <tbody>
+      <tr><td>組織地址（Organization）</td><td>地址號碼</td><td>送達方、公司代碼地址</td></tr>
+      <tr><td>個人地址（Person）</td><td>地址號碼＋人員號碼（一人可有多地址）</td><td>自然人，含稱謂</td></tr>
+      <tr><td>工作場所地址（Workplace）</td><td>地址號碼＋人員號碼</td><td>公司內個人，含部門、房號</td></tr>
+      <tr><td>動態</td><td>以 &amp;欄位&amp; 在執行期決定類型</td><td>—</td></tr>
+    </tbody>
+  </table>
+  <ul>
+    <li>地址號碼與人員號碼也可動態指定；<b>執行期 CAM 找不到該號碼時，表單函數模組帶錯誤訊息中止</b>。</li>
+    <li>「Start paragraph」設定段落格式（填 * 用樣式標準段落）；「Number of lines to be used」少於完整地址所需行數時，CAM 會壓縮次要部分（州、職稱⋯）。</li>
+    <li><b>一定要填寄件國家（Sender Country）</b>，系統才能判斷國內或國外地址，國外地址才會印國家名稱。同時有郵政信箱與街道地址時用單選鈕決定印哪一個。</li>
+    <li><b>非 CAM 地址</b>：建一個 Program Lines 節點自己呼叫 ADDRESS_INTO_PRINTFORM。</li>
+  </ul>
+  <pre><code class="abap">*&amp;---------------------------------------------------------------*
+*&amp; Program Lines 節點：格式化「非 CAM」地址（航班模型 SCUSTOM）
+*&amp; Input  參數：GS_CUSTOMER    Output 參數：GT_ADDR_LINES
+*&amp;---------------------------------------------------------------*
+DATA ls_adrs  TYPE adrs.
+DATA ls_print TYPE adrs_print.
+
+ls_adrs = VALUE #( anred = gs_customer-form
+                   name1 = gs_customer-name
+                   stras = gs_customer-street
+                   pfach = gs_customer-postbox
+                   pstlz = gs_customer-postcode
+                   ort01 = gs_customer-city
+                   land1 = gs_customer-country ).
+
+CALL FUNCTION 'ADDRESS_INTO_PRINTFORM'
+  EXPORTING
+    adrswa_in         = ls_adrs
+    sender_country    = 'TW'          "寄件國家：決定國內／國外格式
+    number_of_lines   = 6             "可用行數不足時自動壓縮次要欄位
+  IMPORTING
+    address_printform = ls_print.
+
+" ADRS_PRINT 有 LINE0～LINE9 十個欄位，轉成內表方便在 Loop 節點輸出
+gt_addr_lines = VALUE #( ( CONV #( ls_print-line0 ) ) ( CONV #( ls_print-line1 ) )
+                         ( CONV #( ls_print-line2 ) ) ( CONV #( ls_print-line3 ) )
+                         ( CONV #( ls_print-line4 ) ) ( CONV #( ls_print-line5 ) ) ).
+DELETE gt_addr_lines WHERE table_line IS INITIAL.     "GT_ADDR_LINES 型別為 STRING_TABLE</code></pre>
+  <p><b>圖形（Graphic）</b>：除了背景圖，也可建成獨立<b>圖形窗口</b>（頁面直屬子節點，Form Painter 看得到、可拖放，前提是沒勾「圖形佔位符」），或當窗口／範本等的子節點（<b>Form Painter 看不到、不能拖放</b>，輸出依附上層節點，且要在「輸出位置」頁籤指定水平位置）。名稱、Object／ID、黑白或彩色、解析度的設定與背景圖相同；最重要的是可以輸入欄位名稱，<b>執行期動態決定圖名</b>（例如依公司代碼換 Logo）。圖形會自動調整成正確大小。</p>
+  <div class="tip">圖形都要先在 <span class="tcode">SE78</span> 匯入（第 16 節），而且<b>不會自動進傳輸</b>，要在 SE78 按卡車圖示加入請求。多公司代碼共用一張表單時，把 Logo 名稱設成 <span class="kw">&amp;GV_LOGO&amp;</span>，在全域初始化依 BUKRS 決定，比做 N 個有條件的圖形節點好維護。</div>
+
+  <h3 id="ch05-19-08">8. 表單中的資料：介面、全域定義、型別、初始化、Field Symbol</h3>
+  <p>Smart Forms 內有四種資料：① <b>介面參數</b>（程式與表單之間傳遞）；② <b>全域資料</b>（所有節點可見）；③ <b>系統欄位</b>（SFSY-）；④ Program Lines 中用 DATA 宣告的<b>區域資料</b>（課程不談，屬一般 ABAP）。</p>
+  <p><b>表單介面</b>在全域設定中定義，所有參數都是全域的。四類：<b>Import、Export、Tables、Exceptions</b>。</p>
+  <ul>
+    <li><b>Import</b>：有一批固定的標準參數（輸出選項等，欄位不可輸入，見第 12 節），其餘是各表單自訂、幾乎所有要印的東西。名稱須符合 ABAP 命名（不可有變音、空白、特殊字元）；<b>必須定型</b>，用 TYPE、LIKE、TYPE REF TO，可參照 ABAP 型別（C、N、D、T、X、I、P、F、STRING、XSTRING）、字典型別（資料元素、結構、表類型）。可設預設值；勾「傳值（Pass by value）」則傳副本。</li>
+    <li><b>Export</b>：勾傳值時，<b>函數結束才</b>把值寫回程式；不勾就是傳參照——表單中改了會直接改到程式的變數，<b>表單中途中止時，之前的修改也已經生效</b>；傳參照的 Export 參數實際上變成 Import/Export 雙向參數。</li>
+    <li><b>Tables</b>：必須是<b>非巢狀</b>表類型（巢狀表請改用 Import 參數傳），<b>永遠傳參照</b>，表單中改內容會直接影響程式端。</li>
+    <li><b>Exceptions</b>：讓應用程式在呼叫後判斷表單處理錯誤。</li>
+  </ul>
+  <p><b>全域定義（Global Definitions）</b>的頁籤：</p>
+  <table>
+    <thead><tr><th>頁籤</th><th>內容</th><th>重點</th></tr></thead>
+    <tbody>
+      <tr><td>Global Data</td><td>全域變數，常當表格或 Loop 的工作區</td><td>型別可再參照表單的全域型別、或以 LIKE 參照其他全域欄位；可設初始值；勾 Constant 變常數（必須給值、表單中不可改）；雙擊字典型別可跳到字典</td></tr>
+      <tr><td>Types</td><td>ABAP 編輯器，用 TYPES 定義表單內共用型別</td><td>全域資料可參照這裡的型別</td></tr>
+      <tr><td>Field Symbols</td><td>語法同 FIELD-SYMBOLS：名稱用 &lt;&gt; 包住並定型</td><td>大內表 Loop 用 ASSIGNING 免複製，效能較好；但型別檢查較弱，非必要不用</td></tr>
+      <tr><td>Initialization</td><td>表單<b>第一頁處理之前</b>執行的 ABAP</td><td>必須明確宣告用到的介面／全域資料是 Input 還是 Output，<b>資料流分析</b>靠它判斷欄位是否已賦值</td></tr>
+      <tr><td>Form Routines</td><td>全域副程式（FORM…ENDFORM）</td><td>第 11 節說明</td></tr>
+      <tr><td>Currency/Quant. Fields</td><td>指定金額／數量欄位的參考幣別與單位</td><td>本頁籤原教材未展開，請見 <a href="#ch04-3-05">4-3 章第 5 節</a></td></tr>
+    </tbody>
+  </table>
+  <pre><code class="abap">*&amp;---------------------------------------------------------------*
+*&amp; Global Definitions → Types 頁籤
+*&amp;---------------------------------------------------------------*
+TYPES: BEGIN OF ty_booking,
+         carrid     TYPE sbook-carrid,
+         connid     TYPE sbook-connid,
+         fldate     TYPE sbook-fldate,
+         bookid     TYPE sbook-bookid,
+         class      TYPE sbook-class,
+         forcuram   TYPE sbook-forcuram,
+         forcurkey  TYPE sbook-forcurkey,
+         luggweight TYPE sbook-luggweight,
+         wunit      TYPE sbook-wunit,
+       END OF ty_booking,
+       tt_booking TYPE STANDARD TABLE OF ty_booking WITH EMPTY KEY.
+
+*&amp;---------------------------------------------------------------*
+*&amp; Global Definitions → Initialization 頁籤
+*&amp; Input  參數：IT_BOOKINGS、IS_CUSTOMER
+*&amp; Output 參數：GT_BOOKINGS、GV_TOTAL_WEIGHT、GV_LOGO、GV_CURR_MIXED
+*&amp;---------------------------------------------------------------*
+gt_bookings = it_bookings.
+
+" HANA 沒有預設排序：程式端傳進來的順序不可信，表單內要自己排
+SORT gt_bookings BY carrid connid fldate bookid.
+
+gv_total_weight = REDUCE #( INIT s = CONV sbook-luggweight( 0 )
+                            FOR ls_b IN gt_bookings
+                            NEXT s = s + ls_b-luggweight ).
+
+" 幣別不只一種時，不能直接用 Calculations 頁籤加總（它不做幣別換算）
+gv_curr_mixed = xsdbool( lines( VALUE string_table(
+                  FOR GROUPS grp OF b IN gt_bookings GROUP BY b-forcurkey
+                  ( CONV string( grp ) ) ) ) &gt; 1 ).
+
+gv_logo = SWITCH #( is_customer-country
+                    WHEN 'DE' THEN 'Z_BC470_LOGO_DE'
+                    ELSE           'Z_BC470_LOGO' ).</code></pre>
+  <div class="warn">原教材 Initialization 範例多用 <span class="kw">LOOP AT … INTO</span> 與 <span class="kw">MOVE</span>；表單內的 ABAP 一樣跑在 S/4HANA 的 ABAP 7.52+ 上，<b>照樣可以用內嵌宣告、VALUE、REDUCE、字串範本</b>。唯一的例外是 Form Routines 頁籤的語法框架本身就是 FORM（見第 11 節）。</div>
+
+  <h3 id="ch05-19-09">9. 表格（Table）：行類型、Table Painter、資料、排序、控制層級、表頭表尾與計算</h3>
+  <p>表格與範本都用 Table Painter 設計、都有行類型，但<b>最大差異</b>：表格的長度與版面要到執行期依資料筆數決定；範本的版面完全固定，執行期不能改儲存格類型與數量，主要用於預印表單（支票、稅單，也就是「套打」）。</p>
+  <p><b>表格是窗口的子節點</b>；因為長度可變，<b>應該只放在主窗口</b>，放在次窗口會被截斷。</p>
+  <ul>
+    <li><b>行類型（Line Type）</b>：在「表格」頁籤定義，指定每行有幾個儲存格與寬度（高度自動決定）。需要：名稱、<b>預設類型</b>（只能有一個，子節點沒指定行類型時使用）、防分頁保護、儲存格數量與寬度。<b>表格總寬＝每個行類型所有儲存格寬度的合計</b>。水平對齊可選靠左、靠右、置中（靠左右可設與窗口邊界的距離）。簡單表格一種行類型就夠；階層表格、小計、多行明細（例如下一行印訂位數）才需要多種。</li>
+    <li><b>Table Painter</b>：鉛筆游標垂直拖出新儲存格，或右鍵「分割 → 儲存格」；水平拖出新行，或右鍵「插入 → 行」；拖邊界改寬度（雙向箭頭）。<b>行類型不能設高度</b>——這是和範本最大的差別。設定：「畫行與列」、自動縮放、網格／貼齊、十字游標、Tracker、隱藏工具列。</li>
+    <li><b>表格樣式（Pattern）</b>：從預設樣式挑格線：第一／最後／所有行之間要不要水平線、第一／最後／所有欄之間要不要垂直線，有無外框，並設線寬。<b>樣式套用整張表格，不能依行類型各自設定</b>（强晟吐槽：中國的表格變化多端，這點很痛苦——實務上用多個行類型搭配儲存格框線設定來補）。</li>
+  </ul>
+  <p><b>技術背景</b>：表格就是對內表逐行 LOOP，每行複製到與表格結構相同的工作區（或指派給 Field Symbol）。內表通常在應用程式中填好、經介面傳入，也可在表單內填。<b>資料（Data）頁籤</b>：</p>
+  <ul>
+    <li>勾「內表」並填內表與工作區／Field Symbol（都必須在介面或全域定義中存在）；指派方式 <b>INTO</b>（複製）或 <b>ASSIGNING</b>（Field Symbol，大表建議）。沒勾就不會 LOOP——想在並排欄位中輸出文字時就這麼用。舊式有表頭行的內表：工作區名稱填得和表名一樣（仍會複製行）。</li>
+    <li>可只處理某段行號（Line … to …），或設 WHERE 條件（等同 LOOP AT … WHERE），運算子同選擇畫面：萬用字元、=、≠、≥、&gt;、≤、&lt;；不填運算子預設等於；多條件以 AND 連接，可插入 OR。</li>
+    <li><b>排序準則</b>：依清單順序排序，可升降冪；系統<b>無法判斷內表是否已排序</b>，若程式端已排好，填排序準則並勾「已排序（Already sorted）」，否則會再排一次。</li>
+  </ul>
+  <p><b>表格中的文字</b>：至少建一個文字（或地址、圖形）子節點。輸出選項多了行儲存格控制：<b>新行（New Line）</b>＋選行類型（不選用預設類型，有表格樣式時會畫格線）；<b>新儲存格（New Cell）</b>＝輸出到下一格，可跳過多格，<b>行類型已沒有空格可用時執行期報錯</b>。一格可放多個節點；<b>一個表格行最多跨兩頁</b>；同一行的節點建議包進資料夾（Folder）並標記，導覽樹才好認。</p>
+  <p><b>控制層級（Control Level）</b>：在排序準則上勾「Event on Sort Begin」及／或「Event on Sort End」，導覽樹中就會插入對應的事件節點——<b>不能直接在導覽樹建立控制層級</b>。事件節點只有「輸出選項」頁籤（可設樣式、行類型、儲存格），底下可放文字、計算小計的 Program Lines、手動換頁的 Command。每個排序欄位都能設控制層級，因此可做出「航空公司 → 航線」的多層階層表。一般只有需要小計或分組小標時才排序。</p>
+  <p><b>表頭與表尾</b>：在表格的「事件」頁籤勾 Header／Footer，自動產生事件節點（同樣不能直接建立）。表頭可在表格開始及／或換頁後輸出，常放欄標題；表尾可在表格結束及／或換頁前輸出，常放小計，而且<b>必須指定表尾高度</b>，排版器才會預留空間。<b>取消勾選表頭或表尾時，其下所有節點會遺失</b>。</p>
+  <p><b>計算（Calculations，6.10+）</b>：表格多一個頁籤，不寫程式就能計算：<b>Number</b>（每行目標欄位 +1）、<b>Total</b>（加總）、<b>Mean value</b>（平均）。時點選 Before loop／After loop 代表逐行計算；Before/After sorting 主要用來數子層級，此時「For field name」只填欄位名稱（例如 CARRID，<b>不要</b>寫 WA-CARRID）。勾 Initialize 表示表格開始時歸零；Reset 選 Sort Criterion 並在 For 欄填欄位，則每次控制層級變更就歸零——前提是資料頁籤勾了 Event on Sort Begin。</p>
+  <div class="note"><b>L29 2006 版補充（版本差異）</b>：上面「預設類型」「新行／新儲存格」是 <b>4.6C 舊式表格</b>的做法。6.10 起表格改成「表頭／主區域／表尾」三區，內容要先建 <b>Table Line</b> 並選行類型，系統自動產生對應的儲存格節點，所以原廠註明 6.10 起「Default type: without relevance（預設類型已不重要）」。6.20 另外多了 <b>Minimum Height</b>（目前窗口剩下的高度不夠時，整張表格從下一頁開始）。兩種模型的逐步對照見第 20 節。</div>
+  <div class="warn"><b>Calculations 不考慮幣別與單位</b>。原廠例子：訂位價格有歐元也有美元時不能用它加總，因為不會自動換算，只能改用 Program Lines 手動計算（下例）。</div>
+  <pre><code class="abap">*&amp;---------------------------------------------------------------*
+*&amp; Program Lines 節點（放在控制層級 CARRID 的 Sort End 事件之下）
+*&amp; Input  參數：GS_BOOKING、GT_BOOKINGS
+*&amp; Output 參數：GT_SUBTOTAL（依幣別分開的小計）
+*&amp;---------------------------------------------------------------*
+gt_subtotal = VALUE #(
+  FOR GROUPS grp OF b IN gt_bookings
+      WHERE ( carrid = gs_booking-carrid )
+      GROUP BY b-forcurkey
+  ( forcurkey = grp
+    amount    = REDUCE #( INIT s = CONV sbook-forcuram( 0 )
+                          FOR m IN GROUP grp
+                          NEXT s = s + m-forcuram ) ) ).
+" 接著用一個 Loop 節點對 GT_SUBTOTAL 輸出「EUR 1,234.00 / USD 567.00」
+" 同幣別、同單位才能交給 Calculations 頁籤自動 Total</code></pre>
+
+  <h3 id="ch05-19-10">10. 範本（Template）與套印表單的重繪</h3>
+  <p>範本用來輸出<b>版面與尺寸固定</b>的表格，典型用途是把資料印到預先印好的單據上，例如機票、報稅表。和其他節點一樣從導覽樹右鍵建立成窗口的子節點。</p>
+  <ul>
+    <li><b>範本不能巢狀</b>。</li>
+    <li>範本下可放各種節點，但<b>儲存格放不下的文字不會輸出</b>（版面固定）。</li>
+    <li>範本下的圖形在 Form Painter 看不到，只有列印預覽看得到。</li>
+    <li>寬度不可超過所在窗口；水平對齊靠左／置中／靠右（靠左右時可填與邊界距離，沒填就貼邊）。</li>
+    <li><b>垂直對齊</b>：「絕對（從頂端）」可在同一窗口挨著放多個範本（印標籤、或疊幾個範本組出複雜行結構時很有用）；「目前（Current）」則緊接在導覽樹前一個節點之後，垂直位置取決於前面處理了多少節點。</li>
+    <li>每一行都要描述：唯一的行名稱、行範圍（From–To）、<b>高度</b>、任意數量的儲存格寬度（合計必須等於範本寬度）。不連續的多行共用同一行定義時，只定義一次，其他地方用「參照（Reference）」欄位指過去。</li>
+    <li>範本也可選樣式，規則同表格，不能逐行逐格設不同樣式。</li>
+    <li>內容子節點的「輸出選項 → 輸出結構」指定要輸出到第幾行第幾格；沒指定就輸出到目前儲存格（上一筆輸出的那格）。一格可放多個節點，輸出順序依導覽樹順序。</li>
+  </ul>
+  <p><b>以重繪方式建立範本</b>（複雜套印單據的標準做法）<span class="src">（依講義步驟整理）</span>：</p>
+  <ol>
+    <li>把外部表單掃描成圖，用 <span class="tcode">SE78</span> 匯入，設成頁面的<b>背景圖</b>；輸出模式：要印到已預印的紙上就<b>留空</b>（只在畫面顯示），要在白紙上連格線一起印就選「列印預覽與列印」。按 Enter 更新 Form Painter。</li>
+    <li>在 Form Painter 畫一個窗口蓋住圖。</li>
+    <li>在窗口中建立範本，寬度＝窗口寬度；垂直對齊選「絕對（從頂端）」；從範本頁籤開 Table Painter，勾「顯示背景圖」，並在 Table Painter 設定一般頁籤勾<b>透明表格（Transparent Tables）</b>，再按 Form Painter 工具列最後一個圖示。</li>
+    <li>照著掃描圖重繪；為了畫得準，可以取消「對齊表格到網格」。原表單很複雜時，可建多個範本互相疊放或連續排列。</li>
+  </ol>
+  <div class="tip">套印的真正難點不在畫，而在印表機：不同機型的進紙誤差、印表機驅動的邊界都會讓整張偏移。定稿前務必<b>用實際印表機、實際預印紙</b>對位，並把偏移量記在窗口位置上；換印表機時重新校一次。</div>
+
+  <h3 id="ch05-19-11">11. 流程控制：條件、Alternative、Program Lines、Final Window、Command、Loop、Folder</h3>
+  <p>導覽樹預設由上而下處理，但有些部分要到執行期才能決定（例如表格長度）。Smart Forms 提供的流程控制手段：</p>
+  <p><b>節點條件（Conditions 頁籤）</b>：許多節點都有，條件不成立時該節點與所有子節點都不處理。兩種：</p>
+  <ul>
+    <li><b>欄位比較</b>：每行一個欄位名稱（<b>不加 &amp;</b>），中間按鈕選關係運算子（預設等於），比較值可以是欄位或常數。欄位必須在介面、全域定義中，或是 SFSY- 系統欄位。多行以 AND 連接，按上方按鈕可插 OR。</li>
+    <li><b>事件</b>：例如「只在第一頁」「不在第一頁」；表頭表尾等特定節點才有「只在段落開始／結束」這類事件。</li>
+    <li>有條件的節點在導覽樹前會多一個圖示；每頁上的同名窗口各有自己的條件頁籤。</li>
+  </ul>
+  <div class="warn"><b>教材勘誤與版本差異</b>：强晟筆記 p132 寫「系統欄位（SYSF-...）」，應為 <b>SFSY-</b>。同頁又說「不要在條件中使用 FORMPAGES 與 JOBPAGES，因為它們的值要整張表單處理完才知道」——這是 4.6C 的說法；新版原廠教材改為：這兩個欄位<b>只能在 Final Window 的條件中使用</b>，其他地方值尚未決定。</div>
+  <p><b>Alternative（二選一）</b>：有 TRUE、FALSE 兩個子節點，一般屬性頁籤的條件成立處理 TRUE 分支，否則處理 FALSE，相當於 IF…ELSE；可巢狀。注意區分：<b>一般屬性頁籤的條件決定走哪一支；條件頁籤的條件決定整個 Alternative 要不要處理</b>。</p>
+  <p><b>Program Lines（程式行）</b>：在表單中嵌 ABAP 而不必改應用程式，用途：程式沒直接提供但可由既有資料算出的值、清空計數器、計算小計與合計。它<b>沒有輸出、沒有子節點</b>，所以沒有輸出選項頁籤；像副程式一樣<b>必須宣告 Input／Output 參數</b>，否則只能用自己 DATA 的區域變數；參數必須是表單全域可見的（介面或全域定義）。Input 與 Output 只是語意上的區分——<b>兩者都是傳參照</b>，改 Input 參數的值也會持續生效。SFSY- 與 SY- 不必宣告就能用，但應<b>唯讀</b>。<b>程式行的結果只影響在它之後處理的節點</b>。想用舊的逐行編輯器：「公用程式 → 設定 → 編輯器 → 表格控制編輯器」。</p>
+  <p><b>Form Routines（全域副程式）</b>：多個 Program Lines 共用的程式碼，可在全域定義的 Form Routines 頁籤寫 FORM…ENDFORM，再從程式行呼叫；Program Lines 內自己寫的副程式只在該節點內有效。</p>
+  <div class="warn">Form Routines 頁籤是 Smart Forms 的既定框架，只能用 FORM 語法。依本館規範，新開發請把共用邏輯寫成<b>全域類別的靜態方法</b>（<span class="tcode">SE24</span>，可單元測試、可在列印程式重用），Program Lines 裡只留一行呼叫，例如 <span class="kw">gv_class_text = zcl_bc470_form_util=&gt;class_text( gs_booking-class ).</span>，Form Routines 頁籤保持空白。</div>
+  <p><b>Final Window 與「總頁數」問題</b>：有時第一頁就需要知道總頁數（例如裝信封機器要讀的條碼），或要在前面的頁印出最後才算出的合計。SFSY-FORMPAGES 要到表單處理結束才知道，是在<b>第二輪</b>才由排版器補進去的；一般窗口無法評估尚未決定的值。</p>
+  <ul>
+    <li><b>6.10 起</b>：把窗口類型設成 <b>Final Window</b>，它只在第二輪處理，屆時所有欄位值都已知。</li>
+    <li><b>4.6C（SP12 起）的舊做法</b>（强晟 p139–p140）：在第一個處理的頁面建一個次窗口當最上層節點，內含 Program Lines，對每個要後處理的窗口以 PERFORM set_late_window IN PROGRAM saplstxbc 並傳入窗口名稱（詳 SAP Note 359009）。原廠明講：<b>升級到 6.10 後這類表單必須改寫——刪掉這段程式碼，把次窗口改標成 Final Window</b>。這段舊碼在 S/4HANA 不該再出現，本館不收錄程式碼。</li>
+  </ul>
+  <div class="warn"><b>效能代價</b>：只要用了 SFSY-FORMPAGES 或 SFSY-JOBPAGES，所有輸出頁都要留在記憶體裡直到表單（或整個列印請求）結束。大量批次列印（例如數千封催款函）時，「第 X 頁共 Y 頁」可能讓記憶體暴增；JOBPAGES 的影響比 FORMPAGES 更大。</div>
+  <p><b>Command 節點</b>：</p>
+  <ul>
+    <li><b>Go to new page</b>：主窗口填滿時自動換頁到「下一頁」；想依條件換到別頁（例如正文結束後印封底、或自我循環的頁結束後改印條款頁）就用它。<b>只能用在主窗口</b>，否則函數模組報錯；手動換頁後主窗口中之後的節點不在本頁處理，但本頁的次窗口在換頁前仍會處理。</li>
+    <li><b>Reset paragraph numbering</b>：把指定大綱段落（須存在於樣式中）及其所有下層編號重設；沒有大綱屬性的段落格式被忽略（第 14 節）。</li>
+    <li><b>Include printer control</b>：送印表機控制給輸出裝置，使用特殊功能；列印控制在 Spool 管理維護，輸出時轉成機型專屬指令（第 15 節）。</li>
+    <li><b>Spool 屬性</b>：可自由定義 Spool 請求的屬性與值，事後從表 <b>TSP02A</b> 或報表 <b>RSOPRNT</b> 讀取（SAP Note 359379）。</li>
+  </ul>
+  <p><b>Loop</b>：和表格一樣逐行讀內表（資料頁籤：內表、INTO 工作區或 ASSIGNING Field Symbol、行範圍、WHERE、排序；排序是控制層級的前提），但<b>沒有表格頁籤、沒有行類型</b>，不決定輸出位置，所以內容節點直接掛在 Loop 下。事件頁籤可建表頭表尾（規則同表格，表尾要給高度）。Loop 可巢狀，Loop 裡也可以放表格或範本。用途例：依幣別排序輸出金額、輸出某客戶所有訂位。</p>
+  <p><b>Folder（資料夾）</b>：表單越大節點越複雜，用資料夾分組：範本每格或每行一個資料夾方便辨識搬移；催款函依逾期天數只印其中一段文字，把各段（含條件）收進資料夾；多個節點共用同一條件時，<b>把條件設在資料夾上</b>而不是每個節點各設一次。資料夾也有事件頁籤，可做表頭表尾。</p>
+
+  <h3 id="ch05-19-12">12. 整合到應用程式：產生的函數模組與標準參數</h3>
+  <p>從 Smart Forms 的角度，應用程式分三部分：</p>
+  <ol>
+    <li><b>取資料</b>——目前最大宗的部分。</li>
+    <li><b>決定產生的函數模組名稱</b>——名稱因表單、因系統而異（形如 /1BCDWB/SF00000xxx），所以要呼叫 <b>SSF_FUNCTION_MODULE_NAME</b>，傳入表單名稱（型別 <b>TDSFNAME</b>），取回函數名稱（型別 <b>RS38L_FNAM</b>）。</li>
+    <li><b>開始表單處理</b>——每一份要產生的文件呼叫一次產生的函數，例如每個要開發票的客戶各呼叫一次。</li>
+  </ol>
+  <p><b>取得正確的呼叫樣板</b>：在 Form Builder「環境 → 函數模組名稱」，Ctrl-Y、Ctrl-C 複製名稱 → ABAP 編輯器「模式（Pattern）→ CALL FUNCTION」貼上，就會插入帶完整介面的呼叫 → 最後把函數名稱換成 SSF_FUNCTION_MODULE_NAME 取回的變數。</p>
+  <p><b>標準參數</b>（每張表單都有、名稱型別不可改，<b>全部是選用參數</b>）：</p>
+  <table>
+    <thead><tr><th>參數</th><th>方向</th><th>用途</th></tr></thead>
+    <tbody>
+      <tr><td>CONTROL_PARAMETERS</td><td>Import</td><td>一般輸出控制（型別 SSFCTRLOP，下表）</td></tr>
+      <tr><td>OUTPUT_OPTIONS</td><td>Import</td><td>輸出選項，字典結構 <b>SSFCOMPOP</b>（印表機、份數 TDCOPIES、立即輸出、Spool 保留期、XSF 設定⋯）</td></tr>
+      <tr><td>USER_SETTINGS</td><td>Import</td><td>'X'＝用使用者主檔的 Spool 預設；否則採 OUTPUT_OPTIONS 的印表機、立即輸出、保留期</td></tr>
+      <tr><td>ARCHIVE_INDEX、ARCHIVE_INDEX_TAB、ARCHIVE_PARAMETERS</td><td>Import</td><td>歸檔</td></tr>
+      <tr><td>MAIL_APPL_OBJ、MAIL_RECIPIENT、MAIL_SENDER</td><td>Import</td><td>Business Communication Interface，以 E-mail 送出表單</td></tr>
+      <tr><td>DOCUMENT_OUTPUT_INFO</td><td>Export</td><td>輸出頁數（欄位 TDFPAGES）</td></tr>
+      <tr><td>JOB_OUTPUT_INFO、JOB_OUTPUT_OPTIONS</td><td>Export</td><td>輸出結果資訊（例如 OTF 資料、XML 輸出）</td></tr>
+    </tbody>
+  </table>
+  <p><b>必要參數</b>：所有 Tables 參數。4.6C 時表單自訂的 Import 參數若沒預設值也是必要的；<b>6.10 起</b>可把沒有預設值的自訂 Import 參數標成選用，Export 參數則永遠是選用（4.6C 標準參數文件見 SAP Note 433988）。呼叫後和一般函數一樣檢查 <span class="kw">sy-subrc</span>。</p>
+  <table>
+    <thead><tr><th>CONTROL_PARAMETERS 欄位</th><th>意義</th></tr></thead>
+    <tbody>
+      <tr><td>NO_OPEN／NO_CLOSE</td><td>把多份表單放進<b>同一個 Spool 請求</b>：第一次 NO_OPEN = space、NO_CLOSE = 'X'；中間 'X'／'X'；最後一次 NO_OPEN = 'X'、NO_CLOSE = space</td></tr>
+      <tr><td>DEVICE</td><td>'PRINTER'（預設）、'TELEFAX'、'MAIL'</td></tr>
+      <tr><td>NO_DIALOG</td><td>不顯示列印對話框</td></tr>
+      <tr><td>PREVIEW</td><td>列印預覽</td></tr>
+      <tr><td>LANGU</td><td>列印語言</td></tr>
+      <tr><td>REPLANGU1～3</td><td>LANGU 版本不存在時的替代語言</td></tr>
+      <tr><td>STARTPAGE</td><td>不從導覽樹第一頁開始，改從指定頁開始</td></tr>
+      <tr><td>GETOTF</td><td>不列印、不顯示、不傳真，只把 OTF 放進 JOB_OUTPUT_INFO-OTFDATA</td></tr>
+    </tbody>
+  </table>
+  <pre><code class="abap">*&amp;---------------------------------------------------------------*
+*&amp; Z_BC470_INVOICE：多位客戶的發票放進「同一個」Spool 請求
+*&amp; （單張表單的完整呼叫樣板請見 4-3 章第 11 節，本例示範 NO_OPEN/NO_CLOSE）
+*&amp;---------------------------------------------------------------*
+REPORT z_bc470_invoice.
+
+PARAMETERS p_form TYPE tdsfname DEFAULT 'Z_BC470_INVOICE'.
+DATA gv_custid TYPE s_customer.
+SELECT-OPTIONS s_cust FOR gv_custid.
+
+START-OF-SELECTION.
+  " ① 取資料：明列欄位、主機變數加 @、自己排序（HANA 沒有預設排序）
+  SELECT id, name, form, street, postbox, postcode, city, country, custtype
+    FROM scustom
+    WHERE id IN @s_cust
+    ORDER BY id
+    INTO TABLE @DATA(lt_customer).
+
+  SELECT carrid, connid, fldate, bookid, customid, class,
+         forcuram, forcurkey, luggweight, wunit
+    FROM sbook
+    WHERE customid IN @s_cust
+      AND cancelled = @space
+    ORDER BY customid, carrid, connid, fldate, bookid
+    INTO TABLE @DATA(lt_booking_all).
+
+  IF lt_customer IS INITIAL.
+    MESSAGE '沒有符合條件的客戶' TYPE 'S' DISPLAY LIKE 'E'.
+    RETURN.
+  ENDIF.
+
+  " ② 取得產生的函數模組名稱（因表單、因系統而異，絕不寫死）
+  DATA lv_fm TYPE rs38l_fnam.
+  CALL FUNCTION 'SSF_FUNCTION_MODULE_NAME'
+    EXPORTING  formname           = p_form
+    IMPORTING  fm_name            = lv_fm
+    EXCEPTIONS no_form            = 1
+               no_function_module = 2
+               OTHERS             = 3.
+  IF sy-subrc &lt;&gt; 0.
+    MESSAGE |表單 { p_form } 不存在或尚未啟用（subrc={ sy-subrc }）| TYPE 'E'.
+  ENDIF.
+
+  " ③ 每位客戶呼叫一次，全部進同一個 Spool
+  DATA(ls_output) = VALUE ssfcompop( tddest   = 'LP01'
+                                     tdnewid  = abap_true
+                                     tdimmed  = abap_false
+                                     tdcopies = 2 ).   "正本＋1 份副本 → Copies Window 生效
+  DATA(lv_last) = lines( lt_customer ).
+
+  LOOP AT lt_customer INTO DATA(ls_customer).
+    DATA(lv_idx) = sy-tabix.
+    DATA(ls_control) = VALUE ssfctrlop(
+      no_dialog = xsdbool( lv_idx &gt; 1 )           "只有第一次跳對話框
+      preview   = abap_false
+      no_open   = xsdbool( lv_idx &gt; 1 )           "第一次才開 Spool
+      no_close  = xsdbool( lv_idx &lt; lv_last ) ).  "最後一次才關 Spool
+
+    DATA(lt_bookings) = VALUE z_bc470_tt_booking(
+      FOR b IN lt_booking_all WHERE ( customid = ls_customer-id )
+      ( CORRESPONDING #( b ) ) ).
+
+    CALL FUNCTION lv_fm
+      EXPORTING
+        control_parameters = ls_control
+        output_options     = ls_output
+        user_settings      = abap_false
+        is_customer        = ls_customer
+        it_bookings        = lt_bookings
+      EXCEPTIONS
+        formatting_error   = 1
+        internal_error     = 2
+        send_error         = 3
+        user_canceled      = 4
+        OTHERS             = 5.
+    CASE sy-subrc.
+      WHEN 0.
+      WHEN 4.
+        RETURN.                                     "使用者在對話框按取消
+      WHEN OTHERS.
+        MESSAGE ID sy-msgid TYPE 'I' NUMBER sy-msgno
+                WITH sy-msgv1 sy-msgv2 sy-msgv3 sy-msgv4.
+    ENDCASE.
+  ENDLOOP.</code></pre>
+  <div class="note">上例的 <span class="kw">z_bc470_tt_booking</span> 是在 <span class="tcode">SE11</span> 建的表類型，表單介面 IT_BOOKINGS 也參照它——<b>介面參數請一律參照字典型別</b>，不要參照表單內 Types 頁籤的型別，否則程式端無法宣告相同型別。若中途某位客戶出錯而跳出迴圈，最後一次的 NO_CLOSE 沒送到，Spool 會停在未關閉狀態；正式程式應在錯誤處理中補一次關閉呼叫，或改成先收集資料、全部驗證通過後再列印。</div>
+  <p><b>什麼時候要改應用程式</b>：① 需要額外資料、且整批文件都要用——<b>基於效能不要在表單裡查</b>（表單每份文件都會跑一次）；② 要做輸出相關設定，例如禁止列印預覽。要改哪一段（函數或副程式）由交易決定；原則上只在極特殊情況才改 SAP 原程式，用自己的副本（程式、表單、文字）就必須在 Customizing 中登記（第 16 節）。</p>
+
+  <h3 id="ch05-19-13">13. 輸出格式：OTF、XSF、HTML、XDF 與 Web Form</h3>
+  <table>
+    <thead><tr><th>格式</th><th>內容</th><th>取得方式</th></tr></thead>
+    <tbody>
+      <tr><td><b>OTF</b></td><td>Spool 的標準格式，已含換行換頁與印表機控制的符號名稱；可轉 PDF（SAP Note 317851）</td><td>CONTROL_PARAMETERS-GETOTF = 'X' → JOB_OUTPUT_INFO-OTFDATA</td></tr>
+      <tr><td><b>XSF</b></td><td>只有內容、沒有版面的 XML，供外部工具以認證介面再處理</td><td>表單屬性或 OUTPUT_OPTIONS 啟用 → JOB_OUTPUT_INFO-XMLOUTPUT</td></tr>
+      <tr><td><b>HTML</b>（6.10+）</td><td>XSF＋CSS 在伺服器端自動轉 HTML，任何瀏覽器可看</td><td>同上，另要求 HTML 格式</td></tr>
+      <tr><td><b>XDF</b>（6.10+）</td><td>不處理表單，只讀介面內容，含每個欄位名稱與字典型別名稱、型別、時間戳</td><td>以特殊方式呼叫產生的函數</td></tr>
+    </tbody>
+  </table>
+  <p>表單屬性「輸出選項」的 Output Mode 決定輸出到 Spool 或內表；也可在程式中以 OUTPUT_OPTIONS 的 XSF 相關欄位動態指定。</p>
+  <pre><code class="abap">*&amp;---------------------------------------------------------------*
+*&amp; 同一張表單：① 取 OTF（後續轉 PDF） ② 取 HTML（Web Form）
+*&amp;---------------------------------------------------------------*
+DATA ls_job TYPE ssfcrescl.
+
+" ① OTF：不進 Spool、不跳對話框
+CALL FUNCTION lv_fm
+  EXPORTING
+    control_parameters = VALUE ssfctrlop( getotf = abap_true no_dialog = abap_true )
+    output_options     = VALUE ssfcompop( tddest = 'LP01' )
+    is_customer        = ls_customer
+    it_bookings        = lt_bookings
+  IMPORTING
+    job_output_info    = ls_job
+  EXCEPTIONS OTHERS    = 1.
+IF sy-subrc = 0.
+  DATA(lt_otf) = ls_job-otfdata.        "交給 CONVERT_OTF 轉 PDF，見 4-3 章第 13 節
+ENDIF.
+
+" ② HTML：由程式決定 XSF 設定（XSFCMODE = 'X' 表示以程式參數為準）
+DATA(ls_xsf_opt) = VALUE ssfcompop(
+  xsfcmode   = abap_true                "採用程式傳入的 XSF 設定，忽略表單屬性
+  xsf        = abap_true                "啟用 XSF 輸出
+  xsfoutmode = 'A'                      "A = 回傳給應用程式（不進 Spool）
+  xsfformat  = abap_true                "連同 CSS 一起產生 → HTML
+  xsfaction  = 'confirm.htm' ).         "Submit 按鈕要跳的下一頁
+
+CALL FUNCTION lv_fm
+  EXPORTING
+    control_parameters = VALUE ssfctrlop( no_dialog = abap_true )
+    output_options     = ls_xsf_opt
+    is_customer        = ls_customer
+    it_bookings        = lt_bookings
+  IMPORTING
+    job_output_info    = ls_job
+  EXCEPTIONS OTHERS    = 1.
+IF sy-subrc = 0.
+  DATA(lt_html) = ls_job-xmloutput-trfresult-content.   "HTML 內容（原始資料列）
+ENDIF.</code></pre>
+  <p><b>HTML Web Form 的輸入元素</b>（原廠 Unit 11 Lesson 5）：文字元素或文字模組中可放讓使用者在瀏覽器填寫、再由程式評估的欄位：核取方塊、單選鈕群組（每組只能選一個）、文字欄位（最多 255 字元）、Submit 按鈕（跳到表單輸出選項靜態指定、或 OUTPUT_OPTIONS-XSFACTION 動態指定的頁面，欄位值就是按鈕文字）、Reset 按鈕、隱藏欄位、清單方塊、多行文字區（6.10 SP5 起），也可把文字標成 URL。步驟：① 輸入欄位要先定義成全域欄位（或用介面欄位）；② 照常插入文字節點；③ 在文字節點的 <b>Web Attributes</b> 頁籤設定輸出方式（只影響 HTML 輸出；其他格式要隱藏時查 SFSY-XSF = 'X'）。清單方塊與單選鈕要填 Group name，同組欄位輸入類型須一致，可用 Std Val 標預設選項。</p>
+  <p>Web Form 透過 <b>BSP</b> 顯示：瀏覽器以 URL 呼叫 BSP → OnInitialization 事件呼叫表單產生的函數（HTML 輸出須啟用）→ 從 JOB_OUTPUT_INFO 取 HTML → 轉換後以 response 物件 SET_DATA 回傳 → 瀏覽器顯示。<b>每張 Smart Form 只有一個 HTML 表單、只能指定一個後續頁</b>；在後續 BSP 的 OnInitialization 用 request 物件的 GET_FORM_FIELDS 取使用者輸入。範例 BSP：<b>SF_WEBFORM_01／02／03</b>；Web Form 一般問題見 SAP Note 445605。</p>
+  <div class="warn"><b>S/4HANA 現況</b>：Smart Forms 的 HTML Web Form＋BSP 是 2000 年代初的技術，BSP 已不是 SAP 的 UI 策略方向。要讓使用者在線上填寫表單，請改用 Fiori（SAPUI5／Fiori Elements＋OData/RAP）；要產生可填寫的 PDF，用 Adobe Forms 的互動式表單（<a href="#ch05-20">5-20 章 BC480</a>）。XSF 作為資料交換介面也已被 IDoc、OData、SOAP 取代（<a href="#ch05-22">5-22 章</a>、<a href="#ch04-1">4-1 章</a>）。</div>
+
+  <h3 id="ch05-19-14">14. Smart Styles：樣式、段落格式與字元格式</h3>
+  <p>文字格式清單的內容取決於樣式，規則：<b>每張表單必須指定一個樣式</b>（表單屬性 → 輸出選項，新表單預設 <b>SYSTEM</b>）；多數節點可在輸出選項另指樣式，套用到其下所有節點。樣式是字元格式與段落格式的集合（類似 Word 的樣式範本），<b>不能選樣式中沒有的格式</b>，這保證同樣式的表單外觀一致。Include Text 裡的 SAPscript 樣式（不論靜態或動態指定）一律不理會；Include Text 用到的格式若不在套用的 Smart Style 中，就被忽略。</p>
+  <p>交易碼 <span class="tcode">SMARTSTYLES</span>（或從 SMARTFORMS 初始畫面選 Style）。只在客戶命名空間改樣式，需要時用「Smart Styles → 複製」把 SAP 樣式複製過來；樣式同樣接傳輸系統、首次存檔要指派套件，「管理」頁籤可看套件、建立者、修改者（樣式變體與 4.6C 無關）。維護工具叫 <b>Style Builder</b>：左邊導覽樹、右邊明細與預覽；樣式也有啟用與未啟用版本。</p>
+  <p><b>表頭資料（Header Data）</b> → 標準設定頁籤：</p>
+  <ul>
+    <li><b>標準段落</b>：文字沒指定格式時使用，在編輯器格式清單中標 <span class="kw">*</span>。<b>要啟用樣式就必須設標準段落（與樣式描述）</b>，而設之前至少要先定義一個段落格式。</li>
+    <li>定位點：標準定位點間距（永遠靠左）；CPI／LPI：樣式中 CH、LN 的大小。</li>
+    <li>字型群組套用到所有段落與字元格式（除非各自覆蓋）：字型族（依字型維護設定，第 15 節）、字型大小（以 PT 為單位，預設 12；强晟註：中文即「小四」）、粗體／斜體。</li>
+    <li>底線：間距（0＝壓在基線上，<b>負值會變成刪除線</b>）、粗細（預設 1 點）、亮度（0%＝全色）。各種底線在 Style Builder 與編輯器預覽中看不出差別，只有列印預覽或實際列印才看得到；不是所有印表機都支援。4.6C 的「允許標準格式」核取方塊沒有作用。</li>
+  </ul>
+  <p><b>段落格式與字元格式</b>技術名稱都是<b>兩個字元</b>，另有描述；以編輯選單、按鈕或右鍵建立、複製、更名。</p>
+  <table>
+    <thead><tr><th>段落格式頁籤</th><th>設定</th></tr></thead>
+    <tbody>
+      <tr><td>縮排與間距</td><td>左右縮排（窗口與文字的距離）、首行縮排；段前、段後間距；行距——<b>改用大字型時行距不會自動調整</b>，要自己改以免重疊；文字流：頁面保護（整段放不下就在段前自動換頁）、「下段同頁」</td></tr>
+      <tr><td>字型</td><td>同表頭資料的標準設定；沒設就用表頭；顏色與字型族等標準設定不會顯示在段落預覽中</td></tr>
+      <tr><td>定位點</td><td>各自的定位點；「符號（Sign）」對齊：靠右對齊數值並考慮尾端負號或隱含空白；「小數點」對齊：依小數點對齊；最後一個定位點之後沿用表頭標準定位點</td></tr>
+      <tr><td>編號與大綱</td><td>項目符號或自動編號。多層編號（1、1.1、1.2.1⋯）要<b>每一層各建一個段落</b>（建議用複製），指定最上層大綱段落，各層在導覽樹中成為其子節點。編號類型：清單字元（最多 8 個字元）、阿拉伯數字、羅馬數字大小寫、字母大小寫，可設左右定界符如「a)」；位置欄位是與左窗口邊界的距離（4.6C 參考點固定為左邊界），段落縮排要夠大以免重疊；勾「編號鏈（Chain）」多層編號會帶上層號碼。編輯器預覽不是精確所見即所得，要測試函數才準；重設編號用 Command 節點的 Reset Paragraph Numbering</td></tr>
+    </tbody>
+  </table>
+  <p><b>字元格式</b>有兩個頁籤：「字型」（覆蓋表頭或段落格式的字型族、大小、樣式、底線、顏色；表頭或段落的字型設定不會顯示在字元格式預覽中）、「標準設定」（上標、下標、<b>條碼</b>）。條碼的高度與寬度自動取自字型維護；<b>條碼不能與上下標併用</b>；條碼不會出現在 Style Builder 預覽，應用程式的列印預覽也只以正確尺寸粗略畫出線條圖樣。</p>
+  <div class="tip">SAPscript 樣式可以在 <span class="tcode">SMARTSTYLES</span> 初始畫面「Smart Styles → 轉換 SAPscript 樣式」直接轉成 Smart Style。樣式做好先啟用再給表單用，實作步驟與命名建議見 <a href="#ch04-3-03">4-3 章第 3 節</a>。</div>
+
+  <h3 id="ch05-19-15">15. 字型與條碼：設備類型、列印控制、SE73</h3>
+  <p><b>從表單到裝置的輸出</b>（SAPscript 與 Smart Forms 共通）：表單與樣式中選字型與印表機無關；到列印時才選印表機，也就決定了<b>設備類型（Device Type）</b>。設備類型指定用哪個印表機驅動排版、需要哪個印表機字元集；Spool 的中介格式 OTF 已考慮印表機（例如換頁），但印表機控制字元仍是符號名稱（列印控制），由輸出請求轉成機型專屬指令。設備類型描述一整個機型，可被多個輸出裝置共用，例如所有 HP LaserJet 4 相容印表機都用 <b>HPLJ4</b>。</p>
+  <div class="warn"><b>不要直接改 SAP 標準設備類型</b>，升級時會被覆蓋；一律先複製。</div>
+  <p><b>案例：字印不出來</b>——問題 1：發票部分字型印錯，原因是買了 SAP 尚未支援的印表機；問題 2：印表機有的字型選不到，原因是印表機裝了新字型模組而標準設備類型沒設定。解法：建立帶有額外字型／字級的設備類型，六步驟：</p>
+  <ol>
+    <li>在 <span class="tcode">SPAD</span>（工具 → CCMS → Spool → Spool 管理）「公用程式 → 設備類型 → 複製設備類型」，例如 HPLJ4 → <b>ZHPLJ4</b>。</li>
+    <li>為新設備類型建立新的列印控制（SPAD 或 <span class="tcode">SE73</span>）。</li>
+    <li>必要時建立新字型族。</li>
+    <li>為字型族定義系統字型（需要的字級、粗體斜體組合）。</li>
+    <li>為新設備類型定義對應的印表機字型，並指派列印控制。</li>
+    <li>把新設備類型指派給印表機（輸出裝置），例如 P280 從 HPLJ4 改成 ZHPLJ4。</li>
+  </ol>
+  <p><b>複製設備類型的「使用參照（Use References）」</b>：勾選時不複製格式動作與字型度量，而是參照來源設備類型——好處是 SAP 更新標準設備類型時新類型自動跟上；但<b>只有在確定所有用到目標類型的系統都有來源類型時才勾</b>；來源若已是客戶副本（Y/Z 開頭）就不要勾。複製的內容：設備類型定義、列印控制（之後可再加）、格式類型、字型度量／字級、Smart Forms 與 SAPscript 的印表機字型與印表機條碼。</p>
+  <p><b>新增列印控制</b>：SPAD → 完整管理 → 設備類型頁籤 → 輸入 ZHPLJ4 → 列印控制 → 修改模式 → 編輯 → 插入行，建立 <b>SFxxx</b>（xxx 編號任意）。控制字元序列要查印表機手冊並參考設備類型既有的列印控制，可輸入十六進位或文字——<b>前提是懂該印表機語言</b>。</p>
+  <p><b>字型維護 <span class="tcode">SE73</span></b>（工具 → 表單列印輸出 → 管理 → 字型）：</p>
+  <table>
+    <thead><tr><th>物件</th><th>定義</th></tr></thead>
+    <tbody>
+      <tr><td>字型族（Font Family）</td><td>可用字型名稱，須標明等比例或非等比例；可指定<b>替代字型族</b>（目標設備類型沒有該字型時使用）與 SAP 字元集（Code Page）</td></tr>
+      <tr><td>系統字型（System Font／SAP Font）</td><td>字型族＋字級＋粗體／斜體的組合；Smart Forms 文字中選的字型都是系統字型</td></tr>
+      <tr><td>印表機字型（Printer Font）</td><td>設備類型＋字型族＋字級＋粗斜體；要維護度量資料（字元寬度）與切換字型的控制資料。建立時要填：設備類型、字型族、字級、粗斜體、CPI、列印控制</td></tr>
+      <tr><td>系統條碼（System Bar Code）</td><td>與設備無關的條碼類型，要在 Smart Forms 使用，選一個啟用條碼屬性的字元格式</td></tr>
+      <tr><td>印表機條碼（Printer Bar Code）</td><td>連結到設備類型專屬的條碼控制序列</td></tr>
+    </tbody>
+  </table>
+  <div class="warn"><b>教材勘誤</b>：强晟筆記 p186 寫印表機字型大小單位為「1/20 點，例如 240」。原廠 Col18 寫的是 <b>1/10 點</b>（240＝24 點），SE73 的字級也是以 1/10 點為單位，以原廠為準。可縮放字型的驅動程式則填 <b>000</b>。比例字型（如 Times）必須維護 <b>AFM</b> 檔（每個字元的寬度）：游標放在印表機字型上按「編輯度量」，或「編輯 → 複製度量」從既有字型複製。</div>
+  <p><b>條碼原理</b>：條碼是自動識別技術，由平行的條與空白組成，以預定寬度樣式編碼，掃描器配合解碼器讀取。在 Smart Forms 裡條碼資料就是一般文字（例如字串 <span class="kw">4&lt;AMCDPQ=ghijab&gt;</span>），只是要用<b>條碼字元格式</b>排版——例如樣式中字元格式 <b>B1</b> 定義為使用 EAN13 系統條碼。列印時先送<b>條碼前置</b>列印控制（命名 <b>SBPxx</b>），再送條碼資料（例如 8 位數字），最後送<b>條碼後置</b>（<b>SBSxx</b>）；這些機型專屬序列維護在印表機條碼中，維護方式同系統字型／印表機字型。</p>
+  <p><b>相關 SAP Notes</b>（强晟 p190 整理）：8928 印表機／設備類型支援清單、5196 用 SAPscript 列印條碼、17054 如何複製或修改設備類型、12462 如何定義新印表機字型、317851 列印 PDF、201307 Smart Forms/SAPscript 中的 TrueType 字型、85469 SAPLPD 參數、25344 SAPLPD 條碼介面 DLL、119604 Code 128／EAN-128／UCC-128、45643 JetCAPS BarSIMM、133660 IBM 網路印表機 OCR/MICR、197177 SAPscript 列印二維條碼。</p>
+  <div class="warn"><b>S/4HANA 現況</b>：傳統「印表機條碼」依賴印表機硬體（BarSIMM、SAPLPD DLL），換一台印表機就可能印不出來。現在建議用 <b>New Bar Code Technology</b> 的系統條碼（由 SAP 自行把條碼繪成圖形，如 Code128、QR Code，與印表機無關；可在 SE73 系統條碼中選新技術類型），或直接改用 Adobe Forms 由 ADS 產生條碼。SAPLPD 已停止發展，Windows 前端列印請改用 SAP GUI 的 SAPSprint 或前端列印（Access Method G/F）。以上屬本館補充，細節請查 SAP 官方文件與你系統版本的 SAP Notes。</div>
+
+  <h3 id="ch05-19-16">16. Customizing 實例與傳輸：催款、交貨單、發票</h3>
+  <p><b>附錄 TCODE</b>（選單都在「工具 → 表單列印輸出」下）：<span class="tcode">SMARTFORMS</span> 表單、<span class="tcode">SMARTSTYLES</span> 樣式、<span class="tcode">SE73</span> 字型、<span class="tcode">SE78</span> 圖形、<span class="tcode">SE75</span> 設定、<span class="tcode">SE74</span> 格式轉換。</p>
+  <p><b>圖形管理 SE78</b>：左邊是儲存路徑，<b>Smart Forms 只能用「儲存在文件伺服器（Document Server）」</b>，子資料夾在 <span class="tcode">SE75</span> 設定；右邊是圖形資訊與預覽。匯入：輸入名稱、選黑白或彩色 → 工具列最左按鈕 → 輸入描述，可勾「常駐印表機記憶體」（第一次列印後存在印表機記憶體，之後同一列印請求直接取用，可明顯改善效能）→ Enter 開始。可匯入 <b>TIFF 或 BMP</b>。匯入後可刪除、加入傳輸請求、看屬性與列印預覽。</p>
+  <p><b>讓交易用你的表單：三個標準例子</b>（原廠 Unit 11 Lesson 2）<span class="src">（依講義步驟整理）</span>：</p>
+  <table>
+    <thead><tr><th>情境</th><th>SAP 標準表單／程式</th><th>Customizing</th></tr></thead>
+    <tbody>
+      <tr><td><b>催款函</b></td><td>表單 <b>F150_DUNN_SF</b>；函數 <b>FI_PRINT_DUNNING_NOTICE_SMARTF</b></td><td>① IMG：財務會計 → 財務會計全域設定 → Business Transaction Events → 設定 → P/S 模組 → SAP 應用程式的函數模組：把 BTE <b>1720</b>（應用指標 FI-FI）的函數改成 FI_PRINT_DUNNING_NOTICE_SMARTF，確保用 Smart Forms 而非 SAPscript；② 複製 F150_DUNN_SF 到 Z 命名空間修改啟用（地址、Logo 等）；③ IMG：應收應付 → 業務交易 → 催款 → 列印 → 指派催款表單：選催款程序（例如四級、每兩週），在正常或法律催款的表單樹中輸入公司代碼與各催款等級的表單。存檔時「表單不存在或未啟用」的警告<b>可忽略</b>——系統只會檢查 SAPscript 表單</td></tr>
+      <tr><td><b>交貨單</b></td><td>表單 <b>LE_SHP_DELNOTE</b>；程式 <b>RLE_DELNOTE</b></td><td>IMG：後勤執行 → 出貨 → 基本出貨功能 → 輸出控制 → 輸出決定 → 維護外向交貨的輸出決定 → 維護輸出類型；選輸出類型 <b>LD00</b> → Processing Routines：媒介（印表機／傳真）、程式、<b>FORM routine</b>、Form 欄位<b>留空</b>（那是 SAPscript 用的）、Smart Form 欄位填你的表單</td></tr>
+      <tr><td><b>發票</b></td><td>表單 <b>LB_BIL_INVOICE</b>；程式 <b>RLB_INVOICE</b></td><td>交易碼 <span class="tcode">VOK2</span> → 輸出 → 處理程式 → 發票；輸出類型 <b>RD00</b>、應用 <b>V3</b>；同樣填程式、FORM routine、Form 留空、Smart Form</td></tr>
+    </tbody>
+  </table>
+  <p>上述「程式＋FORM routine＋Smart Form」最後都存在輸出處理程式表 <b>TNAPR</b>，上線前可以用程式檢查設定是否一致（例如 DEV 改了表單名稱但 QAS 的 Customizing 沒跟上）：</p>
+  <pre><code class="abap">*&amp;---------------------------------------------------------------*
+*&amp; 檢查輸出類型的處理程式設定（TNAPR）與 Smart Form 是否已啟用
+*&amp;---------------------------------------------------------------*
+SELECT kschl, nacha, kappl, pgnam, ronam, fonam, sform
+  FROM tnapr
+  WHERE kappl IN ( 'V2', 'V3' )
+    AND kschl IN ( 'LD00', 'RD00' )
+  ORDER BY kappl, kschl, nacha
+  INTO TABLE @DATA(lt_tnapr).
+
+LOOP AT lt_tnapr INTO DATA(ls_tnapr).
+  DATA(lv_status) = COND string(
+    WHEN ls_tnapr-sform IS INITIAL AND ls_tnapr-fonam IS NOT INITIAL
+      THEN |仍使用 SAPscript 表單 { ls_tnapr-fonam }|
+    WHEN ls_tnapr-sform IS INITIAL
+      THEN |未指定表單|
+    ELSE |Smart Form { ls_tnapr-sform }| ).
+
+  IF ls_tnapr-sform IS NOT INITIAL.
+    DATA lv_fm TYPE rs38l_fnam.
+    CALL FUNCTION 'SSF_FUNCTION_MODULE_NAME'
+      EXPORTING  formname = ls_tnapr-sform
+      IMPORTING  fm_name  = lv_fm
+      EXCEPTIONS OTHERS   = 1.
+    IF sy-subrc &lt;&gt; 0.
+      lv_status = |{ lv_status }（不存在或未啟用！）|.
+    ENDIF.
+  ENDIF.
+
+  WRITE: / ls_tnapr-kappl, ls_tnapr-kschl, ls_tnapr-nacha,
+           ls_tnapr-pgnam, ls_tnapr-ronam, lv_status.
+ENDLOOP.</code></pre>
+  <div class="note">上面用 <span class="kw">IN ( 'V2', 'V3' )</span> 明確列舉應用與輸出類型，而不是寫區間——呼應 Casper 的經驗「<b>條件用列舉比用區間安全</b>」：輸出類型、應用代碼都是代碼不是連續數值，區間比的是字典序，很容易多抓或漏抓。NACE 的完整設定畫面見 <a href="#ch04-3-14">4-3 章第 14 節</a>。</div>
+  <p><b>傳輸規則</b>：</p>
+  <ul>
+    <li>表單、文字模組、Smart Styles、程式都必須指派套件，才會自動整合進 Transport Organizer，和其他 Workbench 物件一樣傳輸。</li>
+    <li><b>產生的函數模組不在傳輸中</b>——目標系統第一次呼叫表單時自動產生（所以 DEV、QAS、PRD 的函數名稱不同，才必須用 SSF_FUNCTION_MODULE_NAME）。</li>
+    <li>各語言版本自動包含在傳輸中。</li>
+    <li><b>Include Text（SAPscript 文字）不會自動連到 Workbench Organizer</b>，要手動加進請求（<span class="tcode">SE09</span>，物件 R3TR TEXT）或用報表 <b>RSTXTRAN</b>。</li>
+    <li><b>圖形也要自己加進請求</b>：<span class="tcode">SE78</span> 按卡車圖示或「圖形 → 傳輸」（强晟譯作「圖片 → 輸入」係 Import 的直譯，實際動作是加入傳輸請求）。</li>
+  </ul>
+  <p>傳輸、套件的整體觀念見 <a href="#ch01-1">1-1 章</a>；Smart Forms 的跨系統搬運實務見 <a href="#ch04-3-15">4-3 章第 15 節</a>。</p>
+
+  <h3 id="ch05-19-17">17. 多語言表單與翻譯（SE63）</h3>
+  <p><b>文字元素</b>：列印語言由程式在 CONTROL_PARAMETERS-LANGU 指定，REPLANGU1～3 可指定最多三個替代語言。<b>找語言的順序</b>：LANGU → REPLANGU1～3 → 登入語言 → 表單原始語言。6.20 起表單一般屬性可勾 <b>Restricted Languages</b>，文字不存在於處理語言時，<b>不再</b>退回登入語言與原始語言。</p>
+  <ul>
+    <li><b>文字模組</b>：以表單的輸出語言輸出；6.10 起每個文字模組可設替代語言。</li>
+    <li><b>Include Text</b>：可在文字節點明確指定語言；沒指定就用表單輸出語言，找不到再依序找登入語言、表單原始語言。</li>
+    <li><b>地址</b>：用地址節點（Business Address Services）或 Program Lines 呼叫 ADDRESS_INTO_PRINTFORM，才會依各國格式排版。</li>
+    <li><b>小數點與日期格式</b>：在應用程式用 <span class="kw">SET COUNTRY</span> 設定；沒設就用登入時使用者主檔的格式。</li>
+  </ul>
+  <p><b>維護與翻譯</b>：表單<b>只能用原始語言維護</b>——要嘛用該語言登入，要嘛修改前系統會問你要不要改原始語言。翻譯用 <span class="tcode">SE63</span>，而且只能翻成表單屬性中設定允許的語言：</p>
+  <table>
+    <thead><tr><th>翻譯對象</th><th>SE63 路徑</th></tr></thead>
+    <tbody>
+      <tr><td>表單與文字模組的短文字</td><td>翻譯 → ABAP Objects → 傳輸物件，輸入 <b>R3TR SSFO &lt;表單&gt;</b></td></tr>
+      <tr><td>表單與文字模組的長文字</td><td>翻譯 → ABAP Objects → 其他長文字 → 表單與樣式 → SAP Smart Forms</td></tr>
+      <tr><td>樣式</td><td>翻譯 → ABAP Objects → 傳輸物件，輸入 <b>R3TR SSST &lt;樣式&gt;</b></td></tr>
+    </tbody>
+  </table>
+  <p>複製或傳輸表單時，<b>所有語言一律一起</b>複製／傳輸。</p>
+  <pre><code class="abap">*&amp;---------------------------------------------------------------*
+*&amp; 依客戶語言列印：語言 fallback ＋ 國別格式
+*&amp;---------------------------------------------------------------*
+SELECT SINGLE langu, country
+  FROM scustom
+  WHERE id = @p_custid
+  INTO @DATA(ls_cust_lang).
+
+" 國別決定小數點與日期格式（會影響整個內部模式，印完要還原）
+SET COUNTRY ls_cust_lang-country.
+
+DATA(ls_ctrl) = VALUE ssfctrlop(
+  langu     = COND #( WHEN ls_cust_lang-langu IS NOT INITIAL
+                      THEN ls_cust_lang-langu ELSE sy-langu )
+  replangu1 = 'E'          "客戶語言沒有翻譯時先退英文
+  replangu2 = 'M'          "再退繁體中文（M = ZF）
+  preview   = abap_true ).
+
+CALL FUNCTION lv_fm
+  EXPORTING
+    control_parameters = ls_ctrl
+    is_customer        = ls_customer
+    it_bookings        = lt_bookings
+  EXCEPTIONS OTHERS    = 1.
+
+SET COUNTRY space.         "還原為使用者主檔設定</code></pre>
+  <div class="tip">多語言表單最常見的坑是「表單翻了、文字模組沒翻」或「Include Text 只在一個 Client 有」。上線前用 REPLANGU 設定讓缺翻譯時退到英文而不是空白，並勾 Restricted Languages 在測試系統把漏翻的地方逼出來。</div>
+
+  <h3 id="ch05-19-18">18. SAPscript 轉 Smart Forms、表單上下載與其他附錄功能</h3>
+  <p>SAP 已為重要業務流程交付 Smart Forms，你也可以把既有（已啟用的）SAPscript 表單轉過來。但兩者接入程式的方式完全不同，<b>表單與列印程式可能都要大幅手動調整</b>，表單越複雜越費工。SAPscript 本身見 <a href="#ch05-18">5-18 章 BC460</a>。</p>
+  <p><b>轉換單一表單</b>：<span class="tcode">SMARTFORMS</span> 初始畫面輸入新 Smart Form 名稱 →「公用程式 → 移轉 SAPscript 表單」→ 選來源 SAPscript 表單與語言（先找目前 Client，找不到再找 <b>Client 000</b>）→ Enter，自動進入 Form Builder 調整、存檔、啟用。</p>
+  <table>
+    <thead><tr><th>項目</th><th>轉換結果</th></tr></thead>
+    <tbody>
+      <tr><td>一般表單設定、頁面、窗口及其屬性與位置</td><td>原樣複製</td></tr>
+      <tr><td>段落與字元格式的<b>定義</b></td><td><b>遺失</b>（Smart Forms 把格式放在樣式裡，不在表單中）→ 另外用 SMARTSTYLES 轉換 SAPscript 樣式</td></tr>
+      <tr><td>文字元素</td><td>保留字元格式；<b>段落格式與 SAPscript 指令不保留</b></td></tr>
+      <tr><td>欄位</td><td>Smart Forms 的所有欄位都必須<b>明確定義</b>（介面或全域定義），SAPscript 可以直接抓程式的全域變數，這是轉換後最大的工作量</td></tr>
+      <tr><td>SAPscript 文字（Include）</td><td>可直接用，但指令不執行、樣式被忽略；文字中的欄位都要在表單中定義，否則函數模組報錯中止；SAPscript 文字是 Client 相依的，所有生產 Client 都要有</td></tr>
+      <tr><td>列印程式</td><td><b>必須手動改</b>：原本的 OPEN_FORM、START_FORM、END_FORM、CLOSE_FORM 全部換成對產生函數的一次呼叫；原本用 WRITE_FORM 處理文字元素（含設定／刪除標題）的邏輯，要<b>整個搬進 Smart Form</b></td></tr>
+    </tbody>
+  </table>
+  <pre><code class="abap">*&amp;---------------------------------------------------------------*
+*&amp; 列印程式轉換：SAPscript 的「逐元素推送」→ Smart Forms 的「一次交資料」
+*&amp; 舊：OPEN_FORM → START_FORM → 每行 WRITE_FORM( 'ITEM_LINE' ) → END_FORM → CLOSE_FORM
+*&amp; 新：程式只負責備妥資料，版面與逐行輸出全部交給表單的 Table 節點
+*&amp;---------------------------------------------------------------*
+FORM entry USING return_code TYPE i        "NACE/TNAPR 規定的進入點介面，
+                 us_screen   TYPE c.       "屬 SAP 框架既定寫法，只保留這一層
+  return_code = NEW lcl_invoice_print( )-&gt;run( is_nast   = nast
+                                               iv_screen = us_screen ).
+ENDFORM.
+
+CLASS lcl_invoice_print IMPLEMENTATION.
+  METHOD run.
+    " ① 資料：一次查好，整批傳給表單
+    SELECT carrid, connid, fldate, bookid, forcuram, forcurkey
+      FROM sbook
+      WHERE customid = @( CONV s_customer( is_nast-objky ) )
+      ORDER BY carrid, connid, fldate, bookid
+      INTO TABLE @DATA(lt_items).
+
+    " ② 取函數名稱（取代 OPEN_FORM 的 FORM 參數）
+    DATA lv_fm TYPE rs38l_fnam.
+    CALL FUNCTION 'SSF_FUNCTION_MODULE_NAME'
+      EXPORTING  formname = CONV tdsfname( tnapr-sform )
+      IMPORTING  fm_name  = lv_fm
+      EXCEPTIONS OTHERS   = 1.
+    IF sy-subrc &lt;&gt; 0.
+      rv_rc = 1.
+      RETURN.
+    ENDIF.
+
+    " ③ 一次呼叫取代 START_FORM / WRITE_FORM × n / END_FORM
+    CALL FUNCTION lv_fm
+      EXPORTING
+        control_parameters = VALUE ssfctrlop( preview   = xsdbool( iv_screen IS NOT INITIAL )
+                                              no_dialog = abap_true
+                                              langu     = is_nast-spras )
+        output_options     = VALUE ssfcompop( tddest   = is_nast-ldest
+                                              tdimmed  = is_nast-dimme
+                                              tdcopies = is_nast-anzal )
+        it_items           = CORRESPONDING z_bc470_tt_item( lt_items )
+      EXCEPTIONS OTHERS    = 1.
+    rv_rc = sy-subrc.
+  ENDMETHOD.
+ENDCLASS.</code></pre>
+  <div class="note">本例中的 FORM entry 是 NACE 輸出控制框架<b>規定</b>的進入點（TNAPR-RONAM 只能填副程式名稱），屬「框架要求、無法避免」的例外；依本館規範，進入點只放一行，所有邏輯寫在類別中。類別定義（DEFINITION）與 NAST／TNAPR 的 TABLES 宣告位置請依標準列印程式 RLB_INVOICE 的結構放在其 TOP Include，這裡為了聚焦轉換重點而省略。</div>
+  <p><b>其他附錄功能（6.10+）</b>：</p>
+  <ul>
+    <li><b>表單／子樹下載上傳</b>：「公用程式 → 下載表單」或「下載子樹」存成 XML 到 PC，再「公用程式 → 上傳」到同一或另一張表單。上傳整張表單會<b>覆蓋</b>既有表單（先警告）；上傳子樹會先放在剪貼簿，再到導覽樹適當位置右鍵貼上。<b>上傳子樹時，目標表單必須也有下載表單中用到的樣式與欄位</b>。</li>
+    <li><b>Undo／Redo</b>：見第 4 節。</li>
+    <li><b>4.6C 的表格</b>（原廠 Unit 11 Lesson 6）：當年表格的操作與現在大致相同，差別在沒有 Calculations 頁籤、總頁數要用 set_late_window 舊技巧——已整合在第 9、11 節。</li>
+  </ul>
+  <div class="tip">實務上 XML 下載是最好用的「表單備份」與跨系統比對工具：改大版前先下載一份 XML，出事可以整張上傳還原；兩個系統的表單不一致時，各自下載後用文字比對工具比 XML，比在 Form Builder 裡一個節點一個節點點開快得多。</div>
+
+  <h3 id="ch05-19-19">19. Interactive Forms by Adobe 與 S/4HANA 的表單策略</h3>
+  <p>原廠 Col18 最後一課介紹 <b>SAP Interactive Forms by Adobe</b>（SAP NetWeaver 2004 起）：部分應用改用它取代或補充 SAPscript／Smart Forms。三種情境：</p>
+  <ul>
+    <li><b>離線（Offline）</b>：產生帶 Reader 權限、可填寫的 PDF，使用者填好後隨時寄回，系統抽出資料。</li>
+    <li><b>線上（Online）</b>：可填寫的表單嵌在 Web 應用（例如 Web Dynpro，見 <a href="#ch05-23">5-23 章</a>）中，使用者填完送出，資料直接進系統。</li>
+    <li><b>列印（Print）</b>：理念與 Smart Forms 列印相同，但架構不同。</li>
+  </ul>
+  <p><b>列印情境的執行期架構</b>：ABAP 應用程式透過 <b>PPF（Post Processing Framework）</b>判斷是否需要輸出、輸出什麼——PPF 為應用提供依條件產生動作（列印交貨單、傳真訂單確認、觸發核准）的統一介面，動作可立即或稍後處理，<b>PPF 是傳統輸出控制的後繼者</b>。表單處理執行期負責開關 PDF 表單的 Spool Job，再以 Web Service（SOAP over HTTP）呼叫 <b>ADS（Adobe Document Services）</b>，由 ADS 負責渲染：填欄位、換頁、套版面；ADS 部署在 <b>J2EE Engine</b> 上。</p>
+  <p><b>設計期</b>（<span class="tcode">SFP</span> 或 <span class="tcode">SE80</span>）：先建<b>介面（Interface）</b>——決定程式能傳哪些資料，也可放全域資料與初始化程式碼；再建<b>表單</b>——<b>Context</b> 決定此表單實際用介面中的哪些部分（可再加文字模組、圖片），<b>Layout</b> 在內嵌的 <b>Adobe LiveCycle Designer</b> 設計（以特殊 XML 格式儲存）。啟用時一樣產生函數模組。LiveCycle Designer 工作區分四區，上方 Script Editor 可用 <b>JavaScript 或 FormCalc</b> 寫計算，左右是可自行配置的 Palette 視窗。</p>
+  <table>
+    <thead><tr><th>面向</th><th>Smart Forms（BC470）</th><th>Adobe Forms（BC480）</th></tr></thead>
+    <tbody>
+      <tr><td>設計工具</td><td><span class="tcode">SMARTFORMS</span>，SAP GUI for Windows</td><td><span class="tcode">SFP</span>＋Adobe LiveCycle Designer</td></tr>
+      <tr><td>資料介面</td><td>表單自帶介面</td><td>介面與表單分離，一個介面可供多張表單</td></tr>
+      <tr><td>表單內邏輯</td><td>Program Lines（ABAP）</td><td>介面初始化（ABAP）＋版面 Script（FormCalc／JavaScript）</td></tr>
+      <tr><td>渲染</td><td>ABAP 內的 Composer → OTF</td><td>外部 ADS（On-Premise 需 Java Stack；雲端有 Forms Service by Adobe）→ PDF</td></tr>
+      <tr><td>互動式表單</td><td>僅 HTML Web Form（BSP）</td><td>可填寫 PDF，離線／線上</td></tr>
+      <tr><td>取得函數名稱</td><td>SSF_FUNCTION_MODULE_NAME</td><td>FP_FUNCTION_MODULE_NAME，外加 FP_JOB_OPEN／FP_JOB_CLOSE</td></tr>
+    </tbody>
+  </table>
+  <div class="warn"><b>S/4HANA 的現況與建議</b>：① Smart Forms 在 S/4HANA On-Premise／Private Cloud 仍可使用，大量既有客製表單照常運作，維護既有表單不必急著改寫；② S/4HANA 新式 <b>Output Management</b>（以 BRF+ 決定輸出，取代傳統 NAST／NACE 的輸出決定）主要搭配 <b>Adobe Forms</b>（含 Fiori「維護表單範本」的 Adobe 範本），新單據類型的標準表單多半只提供 Adobe 版本；③ ABAP Cloud／Public Cloud 不能用 Smart Forms。<b>新開發的對外單據建議直接做 Adobe Forms</b>（<a href="#ch05-20">5-20 章 BC480</a>），Smart Forms 用在既有表單維護與仍走 NACE 的輸出類型。實際哪些單據已切換新式 Output Management 依版本與設定而異，請以你的系統與 SAP 官方文件為準。</div>
+  <div class="note">强晟在 BC470 後記中寫道：Smart Forms 比 SAPscript 進步很多，SAPscript 的優點沒丟、缺點都補足了；而 SAP 在 Smart Forms 之後又基於 Adobe PDF 開發了下一代表單技術——也就是他的下一本筆記 BC480。十幾年後回頭看，這個判斷完全應驗。</div>
+
+  <h3 id="ch05-19-20">20. L29 補充：2006 版的七組練習主線、4.6C 舊式表格與版本細節</h3>
+  <p>L29 2006 版最有價值的是<b>練習與解答全文</b>：從一張只有窗口的空白發票開始，每單元疊一層，最後變成一張有地址、Logo、訂位表格、控制層級、條件、分頁保護、條款頁、依幣別合計，再套自訂樣式的完整發票。第 1 節只列了練習代號，這裡把每一步的物件名稱、要做的事和原廠強調的重點整理出來，照著做就能重現整門課。</p>
+  <p><b>練習通則</b>（p53–p54）：講師會指定印表機，建議先在「系統 → 使用者設定檔 → 自己的資料 → 預設值」填好輸出裝置；自建套件 <b>ZBC470_##</b>（## 為兩碼組別），4.6C 在 <span class="tcode">SE80</span>「Workbench → 編輯物件 → More 頁籤」建開發類，6.10 起在「Development Coordination 頁籤」建套件、軟體元件填 <b>HOME</b>。測試程式一律是 <b>SAPBC470_DEMO</b>（選擇畫面輸入表單名稱即可列印）。</p>
+  <table>
+    <thead><tr><th>練習</th><th>複製範本 → 自己的表單（參考解答）</th><th>要做的事</th><th>原廠解答裡的重點</th></tr></thead>
+    <tbody>
+      <tr><td><b>STEP</b>（Unit 3）</td><td>BC470_STEPT → ZBC470_##_STEPS（BC470_STEPS）</td><td>設定只翻成德、法、西文；頁面格式改 <b>DINA4</b>；背景圖 BC470_FLY_AND_SMILE_WATERMARK（GRAPHICS／BMAP、黑白、300 dpi）；新增窗口 INFO（職員）並勾「永遠繪製框線與陰影」；新增頁 NEXT（FIRST、NEXT 的下一頁都是 NEXT），把 MAIN、PAGE、FOOTER 複製過去；選做：NEXT 頁起用羅馬數字 II 編頁</td><td>改 DINA4 後檢查會報 FOOTER 太寬，點錯誤訊息可直接跳到節點修正；背景圖被窗口蓋住時開 Form Painter 的<b>透明窗口</b>設定；<b>不要刪 PAGE 窗口的內容</b>，只刪 FIRST 頁上的 PAGE 窗口，因為窗口內容是跨頁共用的，刪內容會連 NEXT 頁的頁碼都不見；函數名稱只在該系統唯一，按 F8 再連按三次 F8 就到預覽</td></tr>
+      <tr><td><b>TEXT</b>（Unit 4）</td><td>BC470_TEXTT → ZBC470_##_TEXTS（BC470_TEXTS）</td><td>主窗口建 INTRODUCTION、DUMMY_TABLE、GREETINGS；ADDRESS2 用欄位清單拖出 WA_CUSTOMERS 的 FORM、NAME、STREET、POSTCODE、REGION、CITY；INFO 窗口 10% 灰底；文字模組 ZBC470_##_FOOTER 放銀行資料；彩色 Logo BC470_FLY_AND_SMILE 放右上角圖形窗口；選做：Include Text BC470_FLY_AND_SMILE（物件 TEXT、ID ADRS）當信封透明窗的寄件人列；選做：NEXT 頁印「Page X of Y」</td><td>文字模組預設樣式 SYSTEM 沒有小字，要到「管理」頁籤改成樣式 <b>BC470</b> 才選得到字元格式 S；Form Builder 裡不能直接改文字模組，也看不到 Include Text 的預覽；DUMMY_TABLE 行數太少時根本不會換到 NEXT 頁，要多打幾行或把 FIRST 的主窗口調矮</td></tr>
+      <tr><td><b>DATA</b>（Unit 5）</td><td>BC470_TEXTS → ZBC470_##_DATAS（BC470_DATAS）</td><td>介面加 Import <b>COLOR TYPE CHAR4</b>，Logo 改成「動態決定（BMON、BCOL）」填 &amp;COLOR&amp;；Tables 參數 <b>IT_BOOKINGS TYPE TY_BOOKINGS</b>；全域資料 WA_BOOKINGS TYPE SBOOK；常數 CLERK TYPE CHAR15 取代寫死的職員名；選做：Types 頁籤 <span class="kw">TYPES char_fifteen(15).</span></td><td>雙擊 TY_BOOKINGS 可跳到字典，底層結構是 <b>SBOOK</b>，外幣價格欄位是 <b>FORCURAM</b>；程式中止多半是<b>介面名稱或型別與程式不一致</b>，看錯誤訊息找原因</td></tr>
+      <tr><td><b>TABL</b>（Unit 6）</td><td>BC470_DATAS → ZBC470_##_TABLS（BC470_TABLS）</td><td>主窗口 INTRODUCTION 之後建表格 BOOKINGS：IT_BOOKINGS INTO WA_BOOKINGS，WHERE <b>CUSTOMID = WA_CUSTOMERS-ID</b>；四種行類型 HEADING（3 格）、SUBHEADING（1 格、加底色）、ITEM（3 格）、SUBTOTAL（1 格），表寬 15 cm、儲存格 2.5／4.0／8.5 cm，全部勾「不分頁」；價格欄 <span class="kw">&amp;WA_BOOKINGS-FORCURAM(13.2)&amp;</span>；排序 CARRID 並勾 Sort Begin／End；選做：Calculations 以 CNT TYPE I 計筆數，Number／Before loop／Reset 依 CARRID</td><td>表格用不到 Form Painter，可關掉騰出空間；Table Painter 的鉛筆鈕開著才能畫格，關掉才能設框線（Ctrl-A 全選行類型再按外框、內框）；IT_BOOKINGS 裝的是<b>所有客戶</b>的訂位，靠表格 WHERE 篩選</td></tr>
+      <tr><td><b>FLOW</b>（Unit 7）</td><td>BC470_TABLS → ZBC470_##_FLOWS（<b>BC470_FLOWS2</b>）</td><td>GREETINGS 後加 DISCOUNT 文字，條件 WA_CUSTOMERS-DISCOUNT &gt; 0；CLERK 改成變數，Alternative WHICH_CLERK：COUNTRY = 'US' <b>OR</b> 'CA' 走 TRUE（Program Lines CLERK_A），否則 FALSE（CLERK_B）；資料夾 PROTECT 包住 GREETINGS 與 DISCOUNT 並勾頁面保護；選做：條款頁 TERMS＋Command SHOW_TERMS；選做：依幣別合計 IT_SUM／SUM_LOOP</td><td>Alternative 要放在 GREETINGS <b>之前</b>處理，否則職員名還沒算出來；條件值 'US' 要大寫加單引號，第二行按 OR 鈕連接；Program Lines 要把 CLERK 列為 Output 參數；Command 節點若從 PROTECT 的右鍵建立會掉進資料夾<b>之下</b>，要拖到資料夾<b>之後</b>；TERMS 頁若沒有主窗口，就不可以再指定下一頁</td></tr>
+      <tr><td><b>PROG</b>（Unit 8）</td><td>程式 SAPBC470_PROGT → ZBC470_##_PROGS（SAPBC470_PROGS）</td><td>呼叫 SSF_FUNCTION_MODULE_NAME 取得 FUNC_MOD_NAME（RS38L_FNAM）；LOOP IT_CUSTOMERS 逐一呼叫；選做：CONTROL_PARAMETERS／OUTPUT_OPTIONS 關掉每位客戶都跳一次的列印對話框（USER_SETTINGS 必須給 space）；選做：NO_OPEN／NO_CLOSE 併成一個 Spool</td><td>建議開兩個 session，一邊 Workbench 一邊 Form Builder；呼叫樣板用「Pattern → CALL FUNCTION」貼上函數名稱產生，介面才不會錯（解答程式的現代寫法見下方）</td></tr>
+      <tr><td><b>STYL</b>（Unit 9）</td><td>樣式 BC470 → ZBC470_##_STYLS（BC470_STYLS）</td><td>標準字型改 Times 12 pt；段落 AS 勾頁面保護、字型留白沿用表頭；段落 TO 的兩個定位點改 13、14 cm；選做：大綱段落 G1（大寫羅馬數字、左縮排 1.2 cm）與 G2（小寫字母加右括號、左縮排 2.4 cm、勾編號鏈，印出 IIa)、IIb)）；自建一個字元格式；啟用後指派給 TERMS 頁</td><td>AS 的字型頁籤<b>不能填</b>字型族，才會沿用表頭的標準字型；G2 的最上層大綱段落也要填 G1，才會在導覽樹中掛在 G1 底下；樣式預覽不是所見即所得，以列印預覽為準</td></tr>
+    </tbody>
+  </table>
+  <p><b>4.6C 舊式表格 vs 6.10 表格</b>：附錄 F 用同一題 TABL 練習示範 4.6C 的做法。兩者差異整理如下，維護老系統移轉過來的表單時很有用（6.10 起舊式表格<b>還能編輯但不能再建立</b>，導覽樹上的圖示也不同）：</p>
+  <table>
+    <thead><tr><th>項目</th><th>4.6C 舊式表格（附錄 F 練習）</th><th>6.10 起的表格（Unit 6 練習）</th></tr></thead>
+    <tbody>
+      <tr><td>行類型</td><td>POS（3 格 2／4.0／9.3 cm，標為<b>預設類型</b>）與 ONE_CELL（1 格 15.3 cm）</td><td>HEADING、SUBHEADING、ITEM、SUBTOTAL；預設類型「已不重要」</td></tr>
+      <tr><td>內容怎麼掛</td><td>文字節點直接掛在表格下，用輸出選項的 <b>New Line＋行類型</b>、<b>New Cell</b> 決定落在哪一格</td><td>在表頭／主區域／表尾下建 <b>Table Line</b>（R_ITEM 等），選行類型後自動產生儲存格節點（C_FLIGHT、C_DATE、C_PRICE），文字再掛在儲存格下</td></tr>
+      <tr><td>表頭</td><td>要到事件頁籤勾 Header；最快是 Ctrl＋拖曳複製 C_FLIGHT 等節點到表頭再改名</td><td>表頭、主區域、表尾三區在建表時自動產生，表頭的輸出選項決定「表格開始」及／或「換頁後」印</td></tr>
+      <tr><td>框線樣式</td><td>樣式套用在<b>實際印出的表格行</b></td><td>樣式套用在<b>行類型</b>，所以行類型要依輸出順序排（表頭 → 主區域 → 表尾）</td></tr>
+      <tr><td>小計</td><td>只能先印一串星號當假小計（計算要等流程控制單元學 Program Lines）</td><td>Calculations 頁籤（Number／Total／Mean value）</td></tr>
+      <tr><td>多行不分頁</td><td>—</td><td>6.20 起把多個 Table Line 收進資料夾並勾頁面保護</td></tr>
+    </tbody>
+  </table>
+  <p><b>PROG 解答程式的現代改寫</b>：原廠解答 SAPBC470_PROGS（p189–p192）用了 <span class="kw">TABLES: spfli</span>（原文甚至漏了句點）、<span class="kw">color(4)</span>、<span class="kw">SELECT *</span>，以及 <span class="kw">AT FIRST</span>／<span class="kw">AT LAST</span> 切換 NO_CLOSE 的技巧。完整的同一 Spool 樣板已在第 12 節，這裡只改寫原廠解答中<b>本館還沒寫過的部分</b>：選擇畫面、COLOR 參數、Tables 介面參數，以及原解答的兩個隱患。</p>
+  <pre><code class="abap">*&amp;---------------------------------------------------------------*
+*&amp; ZBC470_00_PROGS：原廠解答 SAPBC470_PROGS 的 S/4HANA 改寫
+*&amp; 表單介面（沿用課程表單 BC470_FLOWS2）：
+*&amp;   Import  WA_CUSTOMERS TYPE SCUSTOM、COLOR TYPE CHAR4
+*&amp;   Tables  IT_BOOKINGS  TYPE TY_BOOKINGS（行結構 SBOOK）
+*&amp;---------------------------------------------------------------*
+REPORT zbc470_00_progs.
+
+DATA gv_custid TYPE s_customer.          "取代原解答的 TABLES 工作區，只供 SELECT-OPTIONS 參照
+DATA gv_carrid TYPE s_carr_id.
+
+SELECTION-SCREEN COMMENT /1(45) TEXT-se1.
+SELECT-OPTIONS: so_cust FOR gv_custid DEFAULT 1 TO 3,
+                so_carr FOR gv_carrid.
+PARAMETERS pa_prnt TYPE tsp03-padest DEFAULT 'P280' OBLIGATORY VISIBLE LENGTH 4.
+SELECTION-SCREEN COMMENT /1(30) TEXT-se2.
+PARAMETERS: pa_col RADIOBUTTON GROUP col,
+            pa_mon RADIOBUTTON GROUP col DEFAULT 'X'.
+
+INITIALIZATION.
+  " 原解答預設 so_carr = 'AA' TO 'LH'：區間比的是字典序，
+  " AZ、BA、DL、JL… 全部會被夾帶進來。改成明確列舉
+  so_carr[] = VALUE #( sign = 'I' option = 'EQ'
+                       ( low = 'AA' ) ( low = 'LH' ) ( low = 'UA' ) ).
+
+START-OF-SELECTION.
+  " 圖形節點的「動態決定」只認 BCOL（彩色）／BMON（黑白）
+  DATA(lv_color) = COND char4( WHEN pa_col = abap_true THEN 'BCOL' ELSE 'BMON' ).
+
+  DATA lt_customers TYPE ty_customers.
+  DATA lt_bookings  TYPE ty_bookings.
+
+  SELECT id, name, form, street, postbox, postcode, city, region,
+         country, langu, custtype, discount
+    FROM scustom
+    WHERE id IN @so_cust
+    ORDER BY id                            "HANA 沒有預設排序，發票順序要自己定
+    INTO CORRESPONDING FIELDS OF TABLE @lt_customers.
+
+  SELECT carrid, connid, fldate, bookid, customid, class,
+         forcuram, forcurkey, luggweight, wunit, cancelled
+    FROM sbook
+    WHERE customid IN @so_cust
+      AND carrid   IN @so_carr
+    ORDER BY customid, carrid, connid, fldate, bookid
+    INTO CORRESPONDING FIELDS OF TABLE @lt_bookings.
+
+  DATA lv_fm TYPE rs38l_fnam.
+  CALL FUNCTION 'SSF_FUNCTION_MODULE_NAME'
+    EXPORTING  formname           = 'BC470_FLOWS2'
+    IMPORTING  fm_name            = lv_fm
+    EXCEPTIONS no_form            = 1
+               no_function_module = 2
+               OTHERS             = 3.
+  IF sy-subrc &lt;&gt; 0.
+    MESSAGE ID sy-msgid TYPE 'E' NUMBER sy-msgno
+            WITH sy-msgv1 sy-msgv2 sy-msgv3 sy-msgv4.
+  ENDIF.
+
+  DATA(lv_spool_open) = abap_false.        "隱患①：用實際狀態決定 NO_OPEN
+  DATA(lv_last)       = lines( lt_customers ).
+
+  LOOP AT lt_customers INTO DATA(ls_customer).
+    " 隱患②：原解答把「所有客戶」的訂位整包傳進去，靠表格 WHERE 篩選，
+    " 客戶 N 位、訂位 M 筆就要掃 N×M 次。只傳這位客戶的訂位
+    DATA(lt_my_bookings) = VALUE ty_bookings(
+      FOR b IN lt_bookings WHERE ( customid = ls_customer-id ) ( b ) ).
+
+    CALL FUNCTION lv_fm
+      EXPORTING
+        control_parameters = VALUE ssfctrlop( no_dialog = abap_true
+                                              preview   = abap_true
+                                              no_open   = lv_spool_open
+                                              no_close  = xsdbool( sy-tabix &lt; lv_last ) )
+        output_options     = VALUE ssfcompop( tddest = pa_prnt )
+        user_settings      = space          "不給 space，OUTPUT_OPTIONS 的印表機不會生效
+        wa_customers       = ls_customer
+        color              = lv_color
+      TABLES
+        it_bookings        = lt_my_bookings
+      EXCEPTIONS
+        formatting_error   = 1
+        internal_error     = 2
+        send_error         = 3
+        user_canceled      = 4
+        OTHERS             = 5.
+    IF sy-subrc = 0.
+      lv_spool_open = abap_true.            "第一次成功之後才算「Spool 已開」
+    ELSE.
+      MESSAGE ID sy-msgid TYPE 'I' NUMBER sy-msgno
+              WITH sy-msgv1 sy-msgv2 sy-msgv3 sy-msgv4.
+    ENDIF.
+  ENDLOOP.</code></pre>
+  <div class="warn"><b>原廠解答的兩個隱患</b>：① 原解答在每次呼叫<b>之後</b>無條件設 <span class="kw">no_open = 'X'</span>。如果第一位客戶就失敗（例如格式錯誤），Spool 根本沒開，後面每一次都帶 NO_OPEN = 'X' 呼叫，會一路失敗。上例改成「第一次呼叫成功後才設 NO_OPEN」。最後一位失敗時 Spool 沒關的問題，第 12 節的提醒同樣適用。② 表格 WHERE 篩選在課堂上方便示範，但正式程式應在程式端先篩好再傳。另外原解答用 <span class="kw">ORDER BY PRIMARY KEY</span> 排序是對的，HANA 上<b>一定要明確排序</b>，否則發票與明細的順序每次都可能不一樣。</div>
+  <p><b>FLOW 選做題「依幣別合計」的兩種寫法</b>：原廠解答在表格主區域放 Program Lines ADD_PRICES，每一行用 <span class="kw">MOVE-CORRESPONDING</span>＋<span class="kw">COLLECT</span> 累加到 IT_SUM（型別 IT_BC470_FORCUR，行結構 BC470_FORCUR＝FORCURAM＋FORCURKEY），再用 Loop SUM_LOOP 以 FORCURKEY 排序輸出。這是第 9 節「Calculations 不能跨幣別加總」的標準解法。改寫如下，兩種擇一：</p>
+  <pre><code class="abap">*&amp;---------------------------------------------------------------*
+*&amp; 寫法 A：保留原廠結構。Program Lines 節點 ADD_PRICES
+*&amp;   位置：表格 BOOKINGS 的主區域，價格文字節點之後
+*&amp;   Input 參數：WA_BOOKINGS     Output 參數：IT_SUM
+*&amp;---------------------------------------------------------------*
+DATA(ls_sum) = CORRESPONDING bc470_forcur( wa_bookings ).   "取代 MOVE-CORRESPONDING
+COLLECT ls_sum INTO it_sum.        "非數值欄位 FORCURKEY 當鍵，FORCURAM 自動累加
+" 保險起見，在 Initialization 先 CLEAR it_sum，不要依賴全域資料的初始狀態
+
+*&amp;---------------------------------------------------------------*
+*&amp; 寫法 B：一次算完。Global Definitions → Initialization
+*&amp;   Input 參數：IT_BOOKINGS、WA_CUSTOMERS    Output 參數：IT_SUM
+*&amp;   好處：不必在表格每一行執行程式，SUM_LOOP 也不必再排序
+*&amp;---------------------------------------------------------------*
+it_sum = VALUE #(
+  FOR GROUPS grp OF b IN it_bookings
+      WHERE ( customid = wa_customers-id )
+      GROUP BY b-forcurkey ASCENDING
+  ( forcurkey = grp
+    forcuram  = REDUCE #( INIT s = CONV bc470_forcur-forcuram( 0 )
+                          FOR m IN GROUP grp
+                          NEXT s = s + m-forcuram ) ) ).
+
+*&amp;---------------------------------------------------------------*
+*&amp; 同一練習的 WHICH_CLERK：若不需要在導覽樹上看得到分支，
+*&amp; 一個 Program Lines（Input：WA_CUSTOMERS，Output：CLERK）就夠了
+*&amp;---------------------------------------------------------------*
+clerk = COND #( WHEN wa_customers-country = 'US' OR wa_customers-country = 'CA'
+                THEN 'Mr. Miller'
+                ELSE 'Ms. Favretti' ).</code></pre>
+  <div class="tip">國別判斷用 <span class="kw">'US' OR 'CA'</span> 明確列舉，正呼應 Casper 的「<b>列舉優於區間</b>」。實務上負責人對照更好的做法是放進 Z 設定表或 SM30 維護檢視，表單只讀結果，業務調整負責區域時就不必改表單、不必傳輸。</div>
+  <p><b>輸出格式的欄位組合</b>（附錄 E p242；第 13 節只示範了 HTML）：用 OUTPUT_OPTIONS 動態決定格式時，各欄位要這樣填（XSFCMODE／XDFCMODE = 'X' 代表「以程式傳入的設定為準，忽略表單屬性」）：</p>
+  <table>
+    <thead><tr><th>OUTPUT_OPTIONS 欄位</th><th>OTF</th><th>XSF</th><th>HTML</th><th>XDF</th></tr></thead>
+    <tbody>
+      <tr><td>XSFCMODE</td><td>X</td><td>X</td><td>X</td><td>X</td></tr>
+      <tr><td>XSF</td><td>space</td><td>X</td><td>X</td><td>space</td></tr>
+      <tr><td>XSFOUTMODE</td><td>space</td><td>A 或 S</td><td>A</td><td>space</td></tr>
+      <tr><td>XSFFORMAT</td><td>space</td><td>space</td><td>X</td><td>space</td></tr>
+      <tr><td>XDFCMODE</td><td>X</td><td>X</td><td>space</td><td>X</td></tr>
+      <tr><td>XDF</td><td>space</td><td>space</td><td>space</td><td>X</td></tr>
+      <tr><td>XDFOUTMODE</td><td>space</td><td>space</td><td>space</td><td>S</td></tr>
+    </tbody>
+  </table>
+  <p>OUTMODE 的 A＝回傳給應用程式（JOB_OUTPUT_INFO-XMLOUTPUT），S＝進 Spool。OTF 要取回內容時另外設 CONTROL_PARAMETERS-GETOTF。原廠 BSP 範例（p247–p248）取得 HTML 後，用 LOOP＋<span class="kw">CONCATENATE … IN BYTE MODE</span> 把原始資料列拼成 XSTRING，再呼叫 response 物件的 SET_HEADER_FIELD（content-type 取 XMLOUTPUT-TRFRESULT-TYPE）與 SET_DATA。現代寫法一行就夠：<span class="kw">CONCATENATE LINES OF ls_job-xmloutput-trfresult-content INTO DATA(lv_html) IN BYTE MODE.</span>（BSP 在 S/4HANA 的定位見第 13 節的提醒）。</p>
+  <p><b>其他只在 L29 2006 版看得到、或本章先前漏掉的版本細節</b>：</p>
+  <ul>
+    <li><b>4.6C 內部系統欄位</b>（p72，僅限 SAP 內部使用）：<b>SFSY-MAINEND</b>（本頁主窗口處理結束）、<b>SFSY-PAGEBREAK</b>（本頁發生換頁）、<b>SFSY-EXCEPTION</b>（發生會中止輸出的錯誤）。看到舊表單條件用了它們，升級後要重新驗證。</li>
+    <li><b>地址節點（6.10+，p84）</b>：一般屬性下半部多了一組參數：固定國家代碼的語言、不同的收件人語言、以收件人語言印國名、大小寫拼法，以及 <b>Priority of Lines</b>（空間不足時先省略哪一部分，例如 A＝稱謂、P＝必要空行、D＝部門，完整代碼見 ADDRESS_INTO_PRINTFORM 文件）。地址窗口的輸出選項可設位置與大小，但前提是地址節點直接建在頁面下。另外 6.10 以前 BAS 叫 CAM。</li>
+    <li><b>SE78 匯入圖形</b>（p87）：6.10 起可以<b>壓縮圖形</b>，大型 Logo 或背景圖可以縮小 Spool 體積。</li>
+    <li><b>SE63 長文字路徑</b>（p236）：6.10 為「翻譯 → 長文字 → Smart Forms」，4.6C 為「翻譯 → 長文字 → SAPscript → Smart Forms」；短文字用邏輯物件 <b>SSFO</b>（表單、文字模組）與 <b>SSST</b>（樣式）。</li>
+    <li><b>Code Page</b>：附錄 C 的 Note 清單比第 15 節多一則 <b>124987</b>（SAP Code Page 的分類），SE73 字型族指定字元集時可以參考。</li>
+    <li><b>附錄 G</b> 說 SAPscript 轉 Smart Forms「有兩個工具」，但只介紹了初始畫面的單張移轉。另一個一般認為是批次移轉報表 <b>SF_MIGRATE</b>，教材沒有提到，使用前請在你的系統 <span class="tcode">SE38</span> 確認。移轉後 SAPscript 樣式要到 <span class="tcode">SMARTSTYLES</span>「Smart Styles → 轉換 SAPscript 樣式」另外轉。</li>
+  </ul>
+  <div class="warn"><b>L29 2006 版的教材錯誤與不一致</b>（以下都已依正確說法寫進本章）：
+  ① TABL 練習題要求段落格式 <b>TB</b>（表身儲存格），解答卻寫 <b>TO</b>；子標題節點名稱在題目、解答中分別寫成 H_CARRIER_HEADING、CARRIER_SUBHEADING、CARRIER_HEADING。以題目為準：表身用 TB、表頭用 TH。
+  ② 附錄 B 投影片把傳輸 Include Text 的報表寫成「RSTXRAN」，講師註解寫 <b>RSTXTRAN</b>，後者才正確。
+  ③ Unit 6 p114 與附錄 F p251 都寫「範本完全在 <b>Form Painter</b> 定義」，應為 <b>Table Painter</b>（同一頁開頭就說表格與範本都用 Table Painter 設計，p269 也這樣寫）；p270 的提示說「可以把兩個以上的<b>表格</b>疊在一起」，從上下文看指的是<b>範本</b>（範本同一行不能有不同高度，所以才要疊多個範本）。
+  ④ 附錄 F p252 寫「本單元只說明 4.6C 的做法」，但後面投影片其實是 6.10 的通用說明，只有 p276 起的練習才是 4.6C 專用。
+  ⑤ p284 寫「Before SAP R/3 4.6C, there was no solution before Support Package 12」，依上下文應為「<b>4.6C 在 SP12 之前</b>沒有解法」（Col18 也是這個意思）。
+  ⑥ 附錄 F 事件節點說明（p264）說可在輸出選項設樣式、行類型、儲存格；Unit 6 課文（p129）卻說「只能設樣式」。前者是 4.6C 舊式表格（內容直接掛在事件節點下），後者是 6.10 表格（行類型改由 Table Line 決定），兩句都對，只是對象不同。</div>
+
+  <h3 id="ch05-19-qa">練習與自我檢核</h3>
+  <ol>
+    <li><b>Main Window 規則</b>：一張表單可以有幾個主窗口？各頁的主窗口哪些屬性必須一致、哪些可以不同？沒有主窗口的頁面若把「下一頁」設成自己會怎樣？<br><i>參考答案要點</i>：只能一個；寬度必須相同，高度與位置可不同；無窮迴圈，系統處理三頁後終止。</li>
+    <li><b>次窗口與主窗口的差異</b>：次窗口放不下的文字會怎樣？哪兩種 6.10 新窗口類型也有相同行為？<br><i>參考答案要點</i>：直接截斷不輸出；Final Window 與 Copies Window。只有主窗口會把剩餘文字接到下一頁。</li>
+    <li><b>頁碼</b>：頁面屬性設了阿拉伯數字頁碼，為什麼列印出來還是沒有頁碼？要印「第 X 頁共 Y 頁」有什麼效能代價？<br><i>參考答案要點</i>：必須在文字節點輸出 &amp;SFSY-PAGE&amp;；用 SFSY-FORMPAGES 會讓所有輸出頁留在記憶體直到表單結束（JOBPAGES 則到整個列印請求結束）。</li>
+    <li><b>勘誤題</b>：强晟筆記說「不要在條件中使用 FORMPAGES、JOBPAGES」，新版原廠教材怎麼說？4.6C 的 set_late_window 技巧升級後該怎麼處理？<br><i>參考答案要點</i>：這兩個欄位只能在 Final Window 的條件中使用；刪除 set_late_window 程式碼，把該次窗口改成 Final Window（SAP Note 359009）。</li>
+    <li><b>文字連接</b>：兩個連續文字節點，第二個選「直接追加」，第一個有框線，結果為何？<br><i>參考答案要點</i>：前一節點有框線或陰影時，一律以「新段落」接上。</li>
+    <li><b>文字類型選擇</b>：公司銀行帳號要印在 20 張表單上，應該用哪種文字類型？為什麼不建議建 SAPscript 標準文字？<br><i>參考答案要點</i>：Smart Forms 文字模組；SAPscript 文字無法在 Smart Forms 維護預覽、無法檢查欄位、不自動進傳輸、Client 相依。</li>
+    <li><b>介面參數</b>：Export 參數沒勾「傳值」、表單中途中止，程式端會看到什麼？Tables 參數可以用巢狀表嗎？<br><i>參考答案要點</i>：傳參照，中止前的修改已反映到程式端；Tables 參數必須是非巢狀表類型且永遠傳參照，巢狀表改用 Import 參數。</li>
+    <li><b>表格 vs 範本</b>：列出三個差異，並說明表格為什麼只能放主窗口。<br><i>參考答案要點</i>：表格長度執行期決定、行類型不能設高度、範本版面固定需設行高、範本不可巢狀、範本儲存格放不下的內容不輸出；表格長度可變，放次窗口會被截斷。</li>
+    <li><b>控制層級與表尾</b>：如何在表格中做「依航空公司小計」？表尾為什麼要設高度？取消勾選表尾會怎樣？<br><i>參考答案要點</i>：資料頁籤設排序準則 CARRID 並勾 Event on Sort End，在事件節點下放 Program Lines 計算與文字節點輸出；排版器需預留空間；表尾下所有節點遺失。</li>
+    <li><b>Calculations 限制</b>：訂位金額有 EUR 和 USD，可以用 Calculations 頁籤的 Total 嗎？For field name 要填 WA-CARRID 還是 CARRID？<br><i>參考答案要點</i>：不行，它不做幣別換算，要用 Program Lines 依幣別分組加總；填 CARRID（不含輸出區名稱）。</li>
+    <li><b>Alternative 的兩個條件</b>：Alternative 節點的一般屬性條件和條件頁籤的條件各控制什麼？<br><i>參考答案要點</i>：一般屬性決定走 TRUE 或 FALSE；條件頁籤決定整個 Alternative 是否處理。</li>
+    <li><b>Command 節點</b>：在次窗口中放「Go to new page」會怎樣？手動換頁後本頁次窗口還會處理嗎？<br><i>參考答案要點</i>：只能用在主窗口，否則函數模組報錯；主窗口中其後節點不在本頁處理，但本頁次窗口在換頁前仍會處理。</li>
+    <li><b>同一 Spool</b>：寫出 100 位客戶的發票放進同一個 Spool 時，第 1、第 2～99、第 100 次呼叫的 NO_OPEN／NO_CLOSE 值。<br><i>參考答案要點</i>：第一次 space／X；中間 X／X；最後 X／space。</li>
+    <li><b>傳輸</b>：表單從 DEV 傳到 PRD 後，產生的函數模組名稱一樣嗎？哪些物件必須手動加入傳輸請求？<br><i>參考答案要點</i>：不一定一樣，函數不隨傳輸，在目標系統第一次呼叫時產生，因此必須用 SSF_FUNCTION_MODULE_NAME；Include Text（SE09 或 RSTXTRAN）與 SE78 圖形要手動加。</li>
+    <li><b>Customizing</b>：發票表單換成 Z 版本要到哪裡設定？Form 欄位要填什麼？催款設定時「表單不存在」的警告要怎麼處理？<br><i>參考答案要點</i>：VOK2 → 輸出 → 處理程式 → 發票，RD00／V3，填程式、FORM routine、Smart Form 欄位；Form 欄位留空（SAPscript 用）；催款警告可忽略，系統只檢查 SAPscript 表單。</li>
+    <li><b>字型</b>：新印表機部分字型印不出來，列出六個處理步驟；SE73 的印表機字型字級 240 代表幾點？<br><i>參考答案要點</i>：SPAD 複製設備類型（HPLJ4→ZHPLJ4）、建列印控制 SFxxx、必要時建字型族、定義系統字型、定義印表機字型並指派列印控制、把新設備類型指派給輸出裝置；24 點（單位 1/10 點，强晟筆記寫 1/20 點有誤）。</li>
+    <li><b>SAPscript 轉換</b>：移轉 SAPscript 表單後，哪些東西會遺失？列印程式要怎麼改？<br><i>參考答案要點</i>：段落與字元格式定義（改用樣式轉換）、文字元素的段落格式與 SAPscript 指令；欄位要明確定義；OPEN_FORM／START_FORM／END_FORM／CLOSE_FORM 換成產生函數的一次呼叫，WRITE_FORM 的邏輯搬進表單。</li>
+    <li><b>實作題</b>：用航班資料模型做一張 Fly &amp; Smile 發票：地址窗口（SCUSTOM）、Logo 依國別動態決定、主窗口表格列出 SBOOK 並依航空公司小計（注意多幣別）、Final Window 在第一頁印「共 Y 頁」、Copies Window 在副本印「COPY」。列印程式依本章第 12 節改寫成同一 Spool 輸出多位客戶，並在程式與表單初始化兩處都明確排序。<br><i>參考答案要點</i>：Copies Window 的條件查 SFSY-COPYCOUNT0 &gt; 0 或選「只在副本」；小計用 Program Lines 依 FORCURKEY 分組；排序原因是 HANA 沒有預設排序，不排序時小計分組與列印順序會不穩定。</li>
+    <li><b>L29 4.6C 與 6.10 表格</b>：同樣要印「航班／日期／價格」三欄，4.6C 舊式表格和 6.10 表格各自怎麼決定文字落在哪一格？為什麼 6.10 起「預設行類型」變得不重要？<br><i>參考答案要點</i>：4.6C 在文字節點輸出選項勾 New Line＋行類型、New Cell；6.10 在表頭／主區域／表尾建 Table Line 並選行類型，系統自動產生儲存格節點，文字掛在儲存格下。每個 Table Line 都明確指定行類型，所以預設類型已不重要。</li>
+    <li><b>L29 PROG 解答找碴</b>：原廠解答 SAPBC470_PROGS 每次呼叫後都無條件設 NO_OPEN = 'X'，選擇畫面預設 so_carr = 'AA' TO 'LH'。各有什麼風險？<br><i>參考答案要點</i>：第一位客戶就失敗時 Spool 沒開，後續帶 NO_OPEN 的呼叫會全部失敗，要改成第一次成功後才設；區間比的是字典序，會把 AZ、BA、DL 等夾在中間的航空公司一起選進來，改用列舉（EQ 多筆）。</li>
+    <li><b>L29 FLOW 練習</b>：WHICH_CLERK 的 Alternative 為什麼一定要放在 GREETINGS 之前？SHOW_TERMS 從 PROTECT 資料夾右鍵建立後還要做什麼？<br><i>參考答案要點</i>：Program Lines 的結果只影響之後處理的節點，GREETINGS 輸出職員名之前必須先算出 CLERK；從資料夾右鍵建立的節點預設在資料夾之下，要拖到資料夾之後，否則換頁指令會變成受頁面保護的內容之一。</li>
+    <li><b>勘誤題</b>：Include Text 的段落格式能不能在 Smart Forms 覆蓋？Standard Paragraph 與 First Paragraph 各對應 SAPscript INCLUDE 的哪個附加？<br><i>參考答案要點</i>：可以（4.6C 需 SP23，Note 422120）；Standard Paragraph 對應 PARAGRAPH，套用到所有標準段落；First Paragraph 對應 NEW-PARAGRAPH，只管第一段。</li>
+  </ol>
+</section>

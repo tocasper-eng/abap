@@ -1,0 +1,1447 @@
+<section class="chapter" id="ch05-1" data-title="BC400 ABAP Workbench 基礎與概念">
+  <h2>第 5-1 章 BC400 ABAP Workbench 基礎與概念</h2>
+  <p class="lede">BC400（ABAP Workbench Foundations）是所有 ABAP 原廠課程的起點：它不追求深度，而是讓你一次走過「程式怎麼被執行 → 開發物件怎麼被管理與傳輸 → 資料型別、結構、內表 → 模組化（副程式、函數模組、BAPI、類別）→ 讀資料庫與權限 → 報表、選擇畫面、Dynpro、ALV → 品質工具 → 如何調整 SAP 標準」整條路。本章以原廠 Col18 版的 13 個單元為骨架，對照强晟 2007 年的中文筆記，把每個觀念改寫成 S/4HANA 1809+ 可直接使用的現代 ABAP，並標出哪些技術在 S/4HANA 已經過時。</p>
+
+  <div class="meta">
+    <div><b>核心 TCODE</b><span class="tcode">SE80</span><span class="tcode">SE84</span><span class="tcode">SE81</span><span class="tcode">SE38</span><span class="tcode">SE11</span><span class="tcode">SE12</span><span class="tcode">SE51</span><span class="tcode">SE41</span><span class="tcode">SE37</span><span class="tcode">SE24</span><span class="tcode">SE93</span><span class="tcode">SE01</span><span class="tcode">SE09</span><span class="tcode">SE10</span><span class="tcode">STMS</span><span class="tcode">SE36</span><span class="tcode">BAPI</span><span class="tcode">SU20</span><span class="tcode">SU21</span><span class="tcode">SU53</span><span class="tcode">SE30</span><span class="tcode">SAT</span><span class="tcode">SCI</span><span class="tcode">ATC</span><span class="tcode">SAAB</span><span class="tcode">ABAPDOCU</span><span class="tcode">SD11</span><span class="tcode">/h</span></div>
+    <div><b>關鍵物件</b>SAPBC_DATAMODEL、SCARR、SPFLI、SFLIGHT、SBOOK、SCUSTOM、S_CARR_ID、SDYN_CONN、SDYN_BOOK、BC400_S_DYNCONN、BC400_S_FLIGHT、BC400_T_FLIGHTS、BC400_S_CONNECTION、SYST（sy-subrc／sy-dbcnt／sy-tabix／sy-index／sy-lsind／sy-ucomm）、S_CARRID、TACT、TACTZ、CL_BC400_COMPUTE、CL_GUI_CUSTOM_CONTAINER、CL_GUI_ALV_GRID、CL_SALV_TABLE、BAPI_FLIGHT_GETLIST、BACV／SBF_BAPI、DEMO_MESSAGES、IF_OO_ADT_CLASSRUN</div>
+  </div>
+
+  <h3 id="ch05-1-01">1. 課程定位與教材對照</h3>
+  <p>BC400 屬於 <b>Level 100（入門級）</b>，原廠標示 5 天課程，也是 TAW10 Part I 的主體（原廠 Col18 各單元自我檢核的解答都同時註明「BC400 Unit x」與「TAW10 Part I Unit y」）。SAP 標準教材分 Level 100（基礎）、200（深入）、300（進階）三級；强晟在筆記前言也提到這個分級，並感嘆「假如一開始顧問公司就提供標準教程培訓，團隊實力會強得多」。本章取材兩份素材：</p>
+  <ul>
+    <li><b>强晟《SAP BC400 課程中文自學筆記》v1.0（2007/5/29，224 頁）</b>：依當年（NetWeaver 7.0 / ECC 6.0）的 11 個單元整理。</li>
+    <li><b>SAP 原廠 BC400 Participant Handbook Course Version 18（2022，Material Number 50148766）</b>：重排成 13 個單元，新增函數模組／全域類別的「建立」、Code Inspector、ADT（Eclipse）等課。下表的原廠頁碼為 PDF 頁。</li>
+  </ul>
+  <table>
+    <thead><tr><th>本章小節</th><th>原廠 Col18 Unit / Lesson（PDF 頁）</th><th>强晟 2007 單元（頁）</th></tr></thead>
+    <tbody>
+      <tr><td>2. 程式執行流程</td><td>Unit 1 Flow of an ABAP Program（p9–24）</td><td>第一單元 ABAP 程式的執行流程（p7–27）</td></tr>
+      <tr><td>3. Repository 與 Object Navigator</td><td>Unit 2 L1 Introducing the ABAP Workbench（p27–35）</td><td>第二單元 第一課 知識庫與物件瀏覽器（p29–37）</td></tr>
+      <tr><td>4. 套件、傳輸請求、交易碼</td><td>Unit 2 L2 Organizing ABAP Development Projects（p37–43）、L4 Finalizing（p57–60）</td><td>第二單元 第二課（p38–42、p52–53）</td></tr>
+      <tr><td>5. 語法原則、編輯器、啟用</td><td>Unit 2 L3 Developing ABAP Programs（p45–55）</td><td>第二單元 第二課（p43–51）</td></tr>
+      <tr><td>6. 資料型別與資料物件</td><td>Unit 3 L1 Defining Elementary Data Objects（p71–82）</td><td>第四單元 第一課（p67–75）</td></tr>
+      <tr><td>7. 基本敘述與訊息</td><td>Unit 3 L2 Using Basic ABAP Statements（p83–92）</td><td>第二單元（p46–47）、第四單元 第一課（p76–82）</td></tr>
+      <tr><td>8. ABAP Debugger</td><td>Unit 3 L3 Analyzing Programs with the ABAP Debugger（p93–99）</td><td>第四單元 第一課（p83–86）</td></tr>
+      <tr><td>9. 模組化與副程式</td><td>Unit 4 L1–L2（p107–124）</td><td>第七單元 在 ABAP 中使用子程式（p129–139）</td></tr>
+      <tr><td>10. 函數模組</td><td>Unit 4 L3–L4 Calling / Creating Function Modules（p125–137）</td><td>第十單元 第一課 使用功能模組（p193–200）</td></tr>
+      <tr><td>11. BAPI</td><td>Unit 4 L5 Describing BAPIs（p139–143）</td><td>第十單元 第三課 使用 BAPIs（p211–214）</td></tr>
+      <tr><td>12. 全域類別、靜態方法、區域類別</td><td>Unit 4 L6–L8（p145–165）</td><td>第十單元 第二課 使用方法（p201–204）</td></tr>
+      <tr><td>13. 結構與內表</td><td>Unit 5 Complex Data Objects（p175–201）</td><td>第四單元 第二、三課（p87–102）</td></tr>
+      <tr><td>14. 資料模型與 ABAP Dictionary</td><td>Unit 6 L1 Explaining Data Models（p209–217）</td><td>第三單元 ABAP 字典簡介（p54–65）</td></tr>
+      <tr><td>15. 讀取資料庫</td><td>Unit 6 L2–L4（p219–241）</td><td>第五單元 第一課 讀資料庫表（p104–118）</td></tr>
+      <tr><td>16. 權限檢查</td><td>Unit 6 L5 Implementing Authorization Checks（p243–248）</td><td>第五單元 第二課 權限檢查（p119–123）</td></tr>
+      <tr><td>17. 傳統報表：清單、選擇畫面、事件</td><td>Unit 7 Classic ABAP Reports（p257–277）</td><td>第八單元 ABAP 事件（p140–146）、第九單元 第一、二課（p149–163）</td></tr>
+      <tr><td>18. Dynpro 螢幕與 GUI Status</td><td>Unit 8 Screens（p283–315）</td><td>第九單元 第三、四課 螢幕、用戶介面（p164–185）</td></tr>
+      <tr><td>19. SAP List Viewer（ALV）</td><td>Unit 9 Using the SAP List Viewer（p321–335）</td><td>第十單元 第二課 Grid 控件（p204–210）</td></tr>
+      <tr><td>20. Web Dynpro ABAP</td><td>Unit 10（p339–366）</td><td>第九單元 第五課（p186–191）</td></tr>
+      <tr><td>21. 程式分析工具</td><td>Unit 11 Code Inspector（p371–378）</td><td>第六單元 執行時分析與代碼檢查員（p124–128）</td></tr>
+      <tr><td>22. ADT（Eclipse）</td><td>Unit 12 ABAP Development Tools（p381–390）</td><td>—（2007 年尚無）</td></tr>
+      <tr><td>23. 調整 SAP 標準軟體</td><td>Unit 13 SAP Standard Software Adjustments（p393–403）</td><td>第十一單元 調整 SAP 標準程式（p215–223）</td></tr>
+    </tbody>
+  </table>
+  <p><b>2007 版與新版的主要差異</b>：</p>
+  <ul>
+    <li>單元重排：2007 版把 Dictionary 放在第三單元、副程式放在事件之前；Col18 先講語言元素，再把「模組化」獨立成一個 8 課的大單元（副程式 → 函數模組 → BAPI → 全域類別 → 區域類別），並明白建議<b>程式內部模組化優先用區域類別，不要再寫 FORM</b>。</li>
+    <li>新增內容：INT8（7.50）、DECFLOAT16/34（7.0 EhP2）、命名慣例前綴（gv_／lv_／gs_／gt_…）、文字符號 <span class="kw">'...'(xxx)</span> 寫法、7.50 起「未啟用版本不能執行」、Code Inspector 單元、ADT 單元、Append 結構也可掛在 Database View。</li>
+    <li>ALV 從「第十單元的一段」升格為獨立的 Unit 9；2007 版的 ITS／清單美化等細節被移除。</li>
+    <li>兩個版本的程式碼都仍是 7.0 風格（<span class="kw">CALL METHOD</span>、<span class="kw">CREATE OBJECT</span>、<span class="kw">MOVE</span>、<span class="kw">SELECT … ENDSELECT</span>、<span class="kw">TABLES</span>），本章一律改寫為 7.40+／7.52 寫法，舊寫法只在文字與 <a href="#ap-01">附錄 ap-01</a> 對照。</li>
+  </ul>
+  <p><b>L29 版本對照</b>：<span class="kw">L29_原廠教材</span> 資料夾另有兩份 BC400，正好補上 Col18 之前的兩個版本，三份原廠教材排起來就是 BC400 在 2007 → 2018 → 2022 的演進。</p>
+  <table>
+    <thead><tr><th>L29 檔名</th><th>版本／年份</th><th>頁數</th><th>語言</th><th>單元結構</th></tr></thead>
+    <tbody>
+      <tr><td>BC400_WorkBench_Fundation_2018_371.pdf</td><td>Participant Handbook <b>Course Version 16</b>（e-book，Material Number 50134693；PDF 建立於 2018/5）</td><td>373</td><td>英文</td><td>13 單元 29 課，與 Col18 相同（256 張圖逐一比對只差標題用字）；e-book 版<b>沒有練習題</b>，只有各單元 Learning Assessment</td></tr>
+      <tr><td>BC400_ZH_Col63_FV_Part_A4_2009_469_工作台.pdf</td><td>學員手冊 <b>課程版本 63</b>（內容版次 2007/Q4，版權 2009；SAP NetWeaver 7.0）</td><td>469</td><td><b>SAP 官方簡體中文</b></td><td>9 單元 18 課＋27 個練習（附解答程式名）；標題「ABAP 工作台简介」</td></tr>
+    </tbody>
+  </table>
+  <table>
+    <thead><tr><th>本章小節</th><th>Col16 2018（PDF 頁）</th><th>Col63 2009 簡中（PDF 頁）</th></tr></thead>
+    <tbody>
+      <tr><td>2. 程式執行流程</td><td>Unit 1（p11–24）</td><td>单元1 ABAP 程序流（p10–22）</td></tr>
+      <tr><td>3. Repository 與 Object Navigator</td><td>Unit 2 L1（p26–35）</td><td>单元2 资源库与对象导航器（p24–32）</td></tr>
+      <tr><td>4. 套件、傳輸請求、交易碼</td><td>Unit 2 L2（p36–42）、L4（p54–56）</td><td>单元2 工发程序与组织开发（p33–38、交易碼 p46–47）</td></tr>
+      <tr><td>5. 語法、編輯器、啟用</td><td>Unit 2 L3（p43–53）</td><td>同上（p39–45）</td></tr>
+      <tr><td>6.～8. 資料型別、基本敘述、Debugger</td><td>Unit 3（p66–97）</td><td>单元3 使用基本数据对象（p64–102；Debugger p82–88）</td></tr>
+      <tr><td>9.～10. 副程式、函數模組</td><td>Unit 4 L1–L4（p100–129）</td><td>单元4（p105–161：子例程 p111、函数模块 p130）</td></tr>
+      <tr><td>11. BAPI</td><td>Unit 4 L5（p130–134）</td><td>併在函數模組課中「使用BAPI」（p143–145）</td></tr>
+      <tr><td>12. 全域／區域類別</td><td>Unit 4 L6–L8（p135–163）</td><td>全局类 p162–188、局部类（预览）p189–193</td></tr>
+      <tr><td>13. 結構與內表</td><td>Unit 5（p165–193）</td><td>单元5（p200–238）</td></tr>
+      <tr><td>14.～16. 資料模型、讀 DB、權限</td><td>Unit 6（p196–239）</td><td>单元6（p240–300：读取数据库表 p254、授权检查 p289）</td></tr>
+      <tr><td>17. 傳統報表</td><td>Unit 7（p241–262）</td><td>单元7 用户对话 第 3 課 传统ABAP报表（p387–416）</td></tr>
+      <tr><td>18. Dynpro 與 GUI 介面</td><td>Unit 8（p264–295）</td><td>单元7 第 1 課 屏幕（p311–352；<b>沒有 GUI Status 內容</b>）</td></tr>
+      <tr><td>19. ALV</td><td>Unit 9（p297–311）</td><td>单元7 第 4 課 SAP 列表浏览器（p417–444）</td></tr>
+      <tr><td>20. Web Dynpro ABAP</td><td>Unit 10（p313–341）</td><td>单元7 第 2 課 ABAP Web Dynpro（p353–386）</td></tr>
+      <tr><td>21. Code Inspector</td><td>Unit 11（p343–350）</td><td>单元8 代码分析器（p446–454）</td></tr>
+      <tr><td>22. ADT</td><td>Unit 12（p352–360）</td><td>—（2007 年尚無）</td></tr>
+      <tr><td>23. 調整 SAP 標準</td><td>Unit 13（p362–373）</td><td>单元9（p456–469）</td></tr>
+    </tbody>
+  </table>
+  <p><b>L29 兩個版本與 L28 版本的差異</b>（細節見 <a href="#ch05-1-25">第 25 節</a>）：</p>
+  <ul>
+    <li><b>Col16（2018）≈ Col18 的前一版</b>：單元、課、圖完全相同；主要差別是 Col16 還寫著「在編輯器按 F8 可以執行未啟用版本（系統臨時產生執行時物件）」，Col18 才改成「7.50 起只能執行已啟用版本」；Col16 多一段 SE81 應用階層的操作步驟；ADT 資源連結還是舊的 scn.sap.com。</li>
+    <li><b>Col63（2009 簡中）≈ 强晟筆記同一代的原廠版</b>（2007/Q4，NW 7.0）：只有 9 個單元，Screen、Web Dynpro、傳統報表、ALV 全塞在「单元7 用户对话」，而且<b>先講螢幕、後講報表</b>；沒有 ADT、沒有 DECFLOAT／INT8、沒有 GUI Status；BAPI 只是函數模組課的一段，區域類別標為「预览」。它最大的價值是 <b>SAP 官方的簡體中文術語</b>，對照表見第 25 節。</li>
+  </ul>
+  <div class="note">BC400 之後的學習路徑：物件導向 → <a href="#ch05-2">5-2 章 BC401</a>；程式設計技術 → <a href="#ch05-3">5-3 章 BC402</a>；報表 → <a href="#ch05-6">5-6 章 BC405</a>；Dynpro → <a href="#ch05-9">5-9 章 BC410</a>；資料庫更新與 LUW → <a href="#ch05-11">5-11 章 BC414</a>；增強 → <a href="#ch05-14">5-14 章 BC425</a>；字典 → <a href="#ch05-16">5-16 章 BC430</a>。整個第五部的導覽見 <a href="#ch05-0">5-0 章</a>。</div>
+
+  <h3 id="ch05-1-02">2. Unit 1：ABAP 程式的執行流程</h3>
+  <p><b>SAP NetWeaver AS ABAP 的三層式主從架構</b>（Client/Server，軟體導向）：</p>
+  <table>
+    <thead><tr><th>層</th><th>內容</th><th>重點</th></tr></thead>
+    <tbody>
+      <tr><td><b>展示層</b>（Presentation Server，最上層）</td><td>SAP GUI、瀏覽器</td><td>使用者輸入資料、接收工作程序（Work Process）的處理結果。强晟特別指出：SAP GUI 本身沒有預先畫好的畫面，所有版面都是應用伺服器傳過來的，工作方式很像瀏覽器，所以 SAP 也把展示層稱為「伺服器」。</td></tr>
+      <tr><td><b>應用層</b>（Application Server，中間層）</td><td>分派器（Dispatcher）＋工作程序</td><td>ABAP 程式（SAP 標準與客製）都在這裡執行：讀資料庫、處理、必要時寫回。</td></tr>
+      <tr><td><b>資料庫層</b>（最底層）</td><td>RDBMS（S/4HANA 只有 SAP HANA）</td><td>除了應用資料，SAP 系統運作所需的程式與中繼資料（Repository）也存在資料庫。</td></tr>
+    </tbody>
+  </table>
+  <p>軟體的技術分佈與硬體位置無關：<b>縱向</b>三層可以裝在同一台機器，也可各自獨立；<b>橫向</b>展示層與應用層可以分散到任意多台機器；資料庫能否橫向分散取決於 DBMS 本身。課程為了聚焦「一個使用者與一支 ABAP 程式的互動」，後續圖示會省略分派器與工作程序。</p>
+  <p>對一般使用者來說，應用層與資料庫是一個<b>黑盒子</b>；技術上有三種畫面：<b>一般螢幕（Dynpro）、選擇畫面（Selection Screen）、清單（List）</b>，開發者要依需求提供合適的畫面。</p>
+  <p><b>一支含選擇畫面與清單的程式，執行時的 7 個步驟</b>（原廠 Figure 5–14，强晟 p16–27）：</p>
+  <ol>
+    <li><b>程式啟動</b>：使用者從選單路徑或交易碼啟動程式。</li>
+    <li><b>載入程式上下文（Program Context）</b>：執行時系統把變數／複雜物件的記憶體區、使用者對話的畫面資訊、ABAP 處理區塊，從 <b>Repository</b>（資料庫中的特殊區域）載入應用伺服器。强晟筆記的原話是「上下文在漢語裡還真沒有合適的詞，只可意會」。</li>
+    <li><b>送出選擇畫面</b>：在使用者輸入完成前，由展示層掌控流程；選擇畫面可做必填、日期／數值格式等基本檢查。</li>
+    <li><b>輸入值寫入資料物件</b>：使用者按「執行」後，輸入值自動放進程式對應的資料物件，控制權回到執行時系統；型別不符（例如 2 月 30 日）會自動觸發錯誤訊息。</li>
+    <li><b>呼叫重用單元</b>（Col18 新增）：處理區塊呼叫封裝資料庫存取的重用單元（範例是全域類別的方法）；該單元所在的程式也會被載入。呼叫是<b>同步</b>的，呼叫端會等它完成。</li>
+    <li><b>向資料庫要資料、資料庫回傳</b>：讀哪個表、哪一列的資訊傳給資料庫；只讀一筆時，目標通常是一個包含所需欄位的結構。</li>
+    <li><b>送出清單</b>：處理區塊結束後，執行時系統把清單當作畫面送回展示層。</li>
+  </ol>
+  <p>Col18 在這裡提出整門課的中心思想：<b>一支程式不是單一區塊，而是由多個單元組成（模組化，Modularization）</b>；好的程式應把資料庫存取封裝在重用單元裡，讓同一段資料存取可以服務不同的使用者對話。</p>
+  <pre><code class="abap">*&amp;---------------------------------------------------------------------*
+*&amp; BC400 Unit 1 範例的現代寫法：選擇畫面 → 重用單元讀 DB → 清單
+*&amp;---------------------------------------------------------------------*
+REPORT zbc400_flow_demo.
+
+"① 選擇畫面：執行時系統先把它送到 SAP GUI
+PARAMETERS pa_car TYPE s_carr_id DEFAULT 'LH'.
+
+"② 重用單元：把資料庫存取封裝起來（原廠範例用全域類別的方法）
+CLASS lcl_carrier_dao DEFINITION FINAL.
+  PUBLIC SECTION.
+    CLASS-METHODS get_carrier
+      IMPORTING iv_carrid         TYPE s_carr_id
+      RETURNING VALUE(rs_carrier) TYPE scarr.
+ENDCLASS.
+
+CLASS lcl_carrier_dao IMPLEMENTATION.
+  METHOD get_carrier.
+    SELECT SINGLE carrid, carrname, currcode, url
+      FROM scarr
+      WHERE carrid = @iv_carrid
+      INTO CORRESPONDING FIELDS OF @rs_carrier.
+  ENDMETHOD.
+ENDCLASS.
+
+"③ 處理區塊：使用者按 F8 後才執行
+START-OF-SELECTION.
+  DATA(gs_carrier) = lcl_carrier_dao=&gt;get_carrier( pa_car ).   "同步呼叫
+  IF gs_carrier IS INITIAL.
+    MESSAGE |航空公司 { pa_car } 不存在| TYPE 'S' DISPLAY LIKE 'E'.
+    RETURN.
+  ENDIF.
+
+  "④ 清單：處理區塊結束後由執行時系統送回展示層
+  WRITE: / gs_carrier-carrid, gs_carrier-carrname,
+         / gs_carrier-currcode, gs_carrier-url.</code></pre>
+  <div class="warn">S/4HANA 的資料庫層只有 SAP HANA，因此强晟當年寫的「SAP 支援所有主流資料庫」只適用於 ECC。HANA 是欄式儲存、平行運算，<b>沒有任何預設排序</b>：同一個 SELECT 跑兩次，順序可能不同。這是本書反覆強調的第一條實務經驗（見 15 節）。</div>
+
+  <h3 id="ch05-1-03">3. Unit 2-1：ABAP Repository 與 Object Navigator</h3>
+  <p><b>Repository</b> 包含所有開發物件：程式、函數模組、資料庫表定義……既有 SAP 交貨的，也有客戶自建的。它存在資料庫中，而且<b>與用戶端無關（cross-client）</b>：任何用戶端看到的都是同一份。相對地，應用資料與 Customizing 資料通常<b>與用戶端相關（client-specific）</b>，表格第一個鍵欄位是用戶端欄位（MANDT）。</p>
+  <p>Repository 依<b>應用元件</b>（例如 MM）劃分，應用元件下再分成多個<b>套件（Package，舊稱開發類別 Development Class）</b>；每個 Repository 物件建立時都必須指定套件。物件可以有子物件，也可以參照其他物件。</p>
+  <table>
+    <thead><tr><th>工具</th><th>TCODE</th><th>用途</th></tr></thead>
+    <tbody>
+      <tr><td>Object Navigator（物件瀏覽器）</td><td><span class="tcode">SE80</span></td><td>整合所有工具的中心；左側導覽區（Navigation Area）、右側工具區（Tool Area）</td></tr>
+      <tr><td>Repository Information System</td><td><span class="tcode">SE84</span></td><td>與應用無關的自由搜尋：某人寫的所有程式、某日期後改過的函數模組⋯⋯（Easy Access：Tools → ABAP Workbench → Overview → Information System）</td></tr>
+      <tr><td>Application Hierarchy</td><td><span class="tcode">SE81</span></td><td>依應用元件的階層瀏覽套件，雙擊套件可跳到資訊系統</td></tr>
+      <tr><td>ABAP Editor</td><td><span class="tcode">SE38</span></td><td>編輯原始碼</td></tr>
+      <tr><td>ABAP Dictionary</td><td><span class="tcode">SE11</span>（維護）／<span class="tcode">SE12</span>（只顯示）</td><td>資料庫表、資料型別等</td></tr>
+      <tr><td>Screen Painter</td><td><span class="tcode">SE51</span></td><td>畫面版面與流程邏輯</td></tr>
+      <tr><td>Menu Painter</td><td><span class="tcode">SE41</span></td><td>選單列、標準工具列、應用工具列、功能鍵</td></tr>
+      <tr><td>Function Builder</td><td><span class="tcode">SE37</span></td><td>函數模組</td></tr>
+      <tr><td>Class Builder</td><td><span class="tcode">SE24</span></td><td>全域類別與介面</td></tr>
+    </tbody>
+  </table>
+  <p><b>Object Navigator 操作重點</b>：導覽區與工具區各自有前後藍色箭頭可回到之前的物件；常用的物件清單可加入<b>我的最愛</b>；工具區可開「導覽歷史」子視窗；右鍵選單（Context Menu）只顯示該物件可用的功能；「全螢幕開／關」可隱藏導覽區。兩區是獨立導覽的，要同步時：在導覽區雙擊物件（→ 工具區同步），或按導覽區的 <b>Display Object List</b>（→ 導覽區同步到工具區正在編輯的物件）。要新建物件，用物件清單上的右鍵選單，或 <b>Edit Object／Other Object</b>。</p>
+  <div class="note"><b>教材修正</b>：强晟筆記 p30 寫「可以透過事務碼 SE80 打開知識庫資訊系統」。更精確的說法是：Repository Information System 的交易碼是 <span class="tcode">SE84</span>；SE80 的導覽區有一個「Repository Information System」頁籤可以開同一個工具。</div>
+  <div class="tip">其他官方學習資源（强晟 p47）：<span class="tcode">ABAPDOCU</span>（ABAP 文件與範例程式）、<span class="tcode">BAPI</span>（BAPI Explorer）、<span class="tcode">SD11</span>（資料模型）。在 S/4HANA 還要加上 ADT 的 <b>ABAP Keyword Documentation</b>（F1）與 help.sap.com 的 ABAP Keyword Documentation（可切換版本，確認某語法從哪一版開始可用）。</div>
+
+  <h3 id="ch05-1-04">4. Unit 2-2／2-4：套件、傳輸請求、交易碼與專案收尾</h3>
+  <p><b>開發專案的組織</b>：開發在開發系統進行，專案完成後把物件傳到後續系統（測試／正式）。專案開始時，專案經理在 <b>Transport Organizer</b>（<span class="tcode">SE09</span>／<span class="tcode">SE10</span>，舊版 <span class="tcode">SE01</span>）或直接在 Workbench 建立<b>變更請求（Change Request）</b>，並把成員列進去；系統為每位成員在請求下建立一個<b>任務（Task）</b>。成員編輯或建立物件時，把它指派到請求，物件就記在該成員的任務中。</p>
+  <p>用變更請求組織專案的好處：成員能掌握自己的專案活動；專案成員都能處理指派給專案的物件，非成員則被<b>鎖住</b>直到請求釋放；請求釋放時所有物件自動傳輸，傳到哪裡由套件的<b>傳輸層（Transport Layer）</b>決定。套件是邏輯／功能上的分類，請求則是「專案、時間上」的分類：一支程式只屬於一個套件，但在不同時期可以屬於不同專案。</p>
+  <table>
+    <thead><tr><th>套件屬性</th><th>說明</th></tr></thead>
+    <tbody>
+      <tr><td>Package / Short Text</td><td>名稱須符合客戶命名空間（Z／Y 開頭或 /客戶命名空間/）</td></tr>
+      <tr><td>Application Component</td><td>在應用階層中的位置</td></tr>
+      <tr><td>Software Component</td><td>客戶開發填 <b>HOME</b></td></tr>
+      <tr><td>Transport Layer</td><td>是否傳輸、傳到哪個系統；由系統管理員在 <span class="tcode">STMS</span> 設定。即使最簡單的系統架構也至少要兩個傳輸層，區分「客戶開發」與「對 SAP 物件的修改」</td></tr>
+      <tr><td>Direct Superpackage</td><td>上層（外圍）套件，套件以樹狀階層組織</td></tr>
+      <tr><td>Package Type</td><td><b>Development package</b>（舊稱 Not a Main Package，可含 Repository 物件與其他套件）、<b>Main package</b>（只能含其他套件）、<b>Structure package</b>（只能含 Main package）</td></tr>
+      <tr><td>Package Encapsulation</td><td>勾選後只有套件介面公開的元素對外可見，使用端要宣告 Use Access</td></tr>
+    </tbody>
+  </table>
+  <p><b>建立套件</b>：SE80 導覽區選 Package、輸入名稱按 Enter → 不存在就進入建立對話；或 Edit Object → 套件頁籤 → F5；或在已開啟的套件上右鍵 Create → Package。設定屬性後指派到變更請求（可用 <b>My Tasks</b> 看自己有任務的請求）。細節見 <a href="#ch01-1">1-1 章</a>。</p>
+  <p><b>建立交易碼</b>（<span class="tcode">SE93</span>，或 SE80 在程式上右鍵 Create → Transaction）：只有交易碼能放進角色選單與使用者我的最愛，所以要讓使用者從選單執行程式，就必須建交易碼。起始物件類型必須選對，否則交易碼開不起來：</p>
+  <ul>
+    <li><b>Program and Screen（dialog transaction）</b>：對話程式</li>
+    <li><b>Program and Selection Screen（report transaction）</b>：報表程式；Col18 步驟：填程式名稱、選 <b>Professional User Transaction</b>、GUI enabled 勾 <b>SAP GUI for Windows</b></li>
+    <li><b>Method of a Class（OO transaction）</b></li>
+    <li><b>Transaction with Variant（variant transaction）</b>、<b>Transaction with Parameters（parameter transaction）</b></li>
+  </ul>
+  <p>交易碼本身也是 Repository 物件，一樣要指定套件與請求。加入我的最愛：Easy Access → Favorites 右鍵 → Insert Transaction。</p>
+  <p><b>專案收尾（釋放）</b>：成員完成工作並做品質檢查後<b>釋放自己的任務</b>；系統把物件項目與「專案開始時自動加上的變更鎖」從任務移到請求（此時專案成員仍可編輯）。所有任務釋放後，專案經理做最後檢查並<b>釋放請求</b>：請求上的鎖全部解除、物件匯出到系統的傳輸目錄等待管理員匯入目標系統，同時另存一份到版本資料庫。<b>傳輸是在「請求被釋放」時才觸發</b>（不是存檔、不是啟用、也不是釋放任務）。</p>
+  <div class="note"><b>教材補充</b>：强晟 p39 寫「開發人員不能自己建立和釋放請求號，只能使用專案經理分配的請求」。這是「依 SAP 開發組織原則」的管理規範，不是系統限制；而且開發者<b>要自己釋放任務</b>（Col18 Unit 2 自我檢核第 9 題的答案就是「在變更請求中釋放任務」）。實務上請求由誰建立、誰釋放，取決於公司的權限設計（S_TRANSPRT 權限物件）。</div>
+
+  <h3 id="ch05-1-05">5. Unit 2-3：ABAP 語言特性、語法原則、編輯器與啟用</h3>
+  <p><b>建立程式</b>：SE80 選 Program 輸入名稱；或在套件右鍵；或 Edit Object → Program 頁籤 → F5。<b>不要勾 Create with TOP Include</b>（否則原始碼會被拆成多支 Include；7.40 以前預設是勾選的，要手動取消）。課程中程式類型選 <b>Executable Program</b>。强晟的經驗：報表用 <span class="tcode">SE38</span> 最快（只產生一支程式和文字元素），對話程式用 <span class="tcode">SE80</span>（可一起建 GUI Title、GUI Status、Screen、交易碼）。</p>
+  <p><b>ABAP 語言的六大特性</b>：有型別（typed，支援型別轉換與 casting）、多語系（可翻譯的文字元素）、SQL 存取（內嵌 Open SQL，7.50 起改稱 ABAP SQL）、物件導向擴充（ABAP Objects）、平台無關（語意與 DB／OS 無關）、向上相容。專為對話式商業應用設計。</p>
+  <p><b>語法規則</b>：</p>
+  <ul>
+    <li>程式由個別敘述組成；敘述的第一個字是 <b>ABAP 關鍵字</b>；<b>每個敘述以句點結束</b>；兩個字之間至少一個空白。</li>
+    <li>敘述可以縮排、可跨多行、一行也能放多個敘述（不建議）。</li>
+    <li>不分大小寫；慣例是關鍵字大寫、運算元小寫，用 <b>Pretty Printer</b> 自動轉換（Utilities → Settings → ABAP Editor → Pretty Printer 做個人設定）。</li>
+    <li><b>第 1 欄是星號 <span class="kw">*</span> 的整行是註解</b>（前面不能有空白）；<b>雙引號 <span class="kw">"</span> 之後到行尾是註解</b>。</li>
+    <li><b>鏈式敘述</b>：開頭相同的連續敘述，寫一次開頭加冒號，後面用逗號分隔、最後句點。<b>只是簡寫，不會提高效能</b>，執行時仍逐一處理每個敘述。</li>
+  </ul>
+  <pre><code class="abap">*&amp;---------------------------------------------------------------------*
+*&amp; 第 1 欄星號＝整行註解
+*&amp;---------------------------------------------------------------------*
+REPORT zbc400_syntax_demo.
+
+DATA gv_count TYPE i.              "雙引號之後到行尾＝行尾註解
+DATA gv_text  TYPE string.
+
+"鏈式敘述：相同開頭 + 冒號，逗號分隔，句點結束
+WRITE: / 'Hello',
+       / 'ABAP',
+       / sy-datum.
+
+"與上面完全等價（效能一樣，只是寫法較長）
+WRITE / 'Hello'.
+WRITE / 'ABAP'.
+WRITE / sy-datum.
+
+"一個敘述跨多行：只要沒遇到句點就是同一句
+gv_text = |今天是 { sy-datum DATE = USER }，|
+       &amp;&amp; |使用者 { sy-uname }|.</code></pre>
+  <p><b>關鍵字說明</b>：游標放在關鍵字上按 <b>F1</b>；或按 <b>i</b>（Help on）按鈕輸入關鍵字，還能查函數模組、表格、邏輯資料庫、權限物件等。</p>
+  <p><b>新版 ABAP Editor</b>（front-end editor，NetWeaver 7.0 開發，6.40 SP18／6.20 SP59 以後也能用；Utilities → Settings → ABAP Editor 切換）：語法上色、個人字型、區塊摺疊、書籤、行號與巢狀層級、關鍵字自動補完，7.0 EhP2 起 <b>Ctrl+Space</b> 會跳出建議清單。</p>
+  <p><b>啟用（Activation）</b>：建立或修改物件並存檔後，Repository 存的是<b>非啟用版本（inactive）</b>；一個物件可同時有一個啟用版與一個非啟用版（不是兩個非啟用版）。啟用時系統做四件事：① 存成非啟用版 → ② 對非啟用版做語法／一致性檢查 → ③ 檢查成功後以它覆蓋舊的啟用版 → ④ 若是程式，產生執行時物件（<b>LOAD</b>）。啟用時會列出你所有未啟用物件（work list）讓你勾選。<b>請求中所有物件都啟用後才能釋放與傳輸</b>。</p>
+  <div class="warn"><b>7.50 的行為改變</b>：7.50 以前在 SE80 用 Direct／F8 可以執行非啟用版（系統臨時產生 LOAD）；<b>NetWeaver 7.50 起只能執行啟用版</b>，對未啟用程式按 F8 會出錯。從導覽區右鍵或交易碼執行，用的一律是最後一次啟用產生的 LOAD。S/4HANA（7.52 以上）都適用新行為——「改完沒啟用、測到的是舊版」是新手最常見的誤會之一；另外斷點也只能設在已啟用的原始碼上。</div>
+
+  <h3 id="ch05-1-06">6. Unit 3-1：資料型別與資料物件</h3>
+  <p><b>資料型別（Data Type）</b>是形式上的變數描述；依型別具體定義出來、真正存放資料的變數或常數叫<b>資料物件（Data Object）</b>。型別有三種用途：定義資料物件（決定技術屬性）、定義介面參數（決定呼叫時實參的型別）、定義輸入／輸出欄位（除技術屬性外還帶欄位說明與 F4 值說明）。</p>
+  <table>
+    <thead><tr><th>分類</th><th>型別</th><th>說明</th></tr></thead>
+    <tbody>
+      <tr><td rowspan="7"><b>完整型別</b>（長度固定）</td><td>D</td><td>日期 YYYYMMDD，長度 8</td></tr>
+      <tr><td>T</td><td>時間 HHMMSS，長度 6</td></tr>
+      <tr><td>I／INT8</td><td>整數，長度 4／8（INT8 自 AS ABAP 7.50）</td></tr>
+      <tr><td>F</td><td>二進位浮點數，長度 8</td></tr>
+      <tr><td>STRING</td><td>變長字元字串</td></tr>
+      <tr><td>XSTRING</td><td>變長位元組序列</td></tr>
+      <tr><td>DECFLOAT16／DECFLOAT34</td><td>十進位浮點數（8 bytes 16 位／16 bytes 34 位），自 7.0 EhP2；兼具 P 的精確十進位運算與 F 的大範圍</td></tr>
+      <tr><td rowspan="4"><b>不完整型別</b>（定義時才給長度）</td><td>C</td><td>字元字串</td></tr>
+      <tr><td>N</td><td>數字字元字串（前導零仍是字元）</td></tr>
+      <tr><td>X</td><td>位元組序列</td></tr>
+      <tr><td>P</td><td>壓縮數字（Packed），可加 DECIMALS 指定小數位</td></tr>
+    </tbody>
+  </table>
+  <p>型別有三大來源：<b>內建（Built-in）</b>、<b>區域（Local，用 TYPES 在程式內定義，只能在該程式用）</b>、<b>全域（Global，定義在 ABAP Dictionary，全系統可用）</b>。BC400 階段的全域型別只用<b>資料元素（Data Element）</b>。全域型別的好處：全系統一致、維護量低、可產生 <b>Where-Used List</b>、帶有業務語意（例如選擇畫面上輸入欄左側的標籤）。只有在該型別只給一支程式用、而且不需要語意時，才用區域型別。</p>
+  <p><b>預設值規則</b>：不完整型別沒給長度時用預設長度（C、N、X 為 1，P 為 8）；連型別都沒給就是 C。所以 <span class="kw">DATA gv_myvar.</span> 會得到長度 1 的 C 變數——<b>永遠明確寫出型別與長度</b>。</p>
+  <p><b>固定資料物件</b>：文字（Literal，數值文字不加引號、文字文字加單引號）與常數（<span class="kw">CONSTANTS</span>，<b>VALUE 必填</b>）。原廠提示：盡量不要在敘述裡直接寫文字，改用常數與<b>文字符號（Text Symbol）</b>。文字符號存在程式本身之外的 <b>Text Pool</b>，每筆帶語言碼，可翻譯；以三碼 ID 用 <span class="kw">TEXT-xxx</span> 引用，或寫成 <span class="kw">'原文'(xxx)</span>。維護：Goto → Text Elements → Text Symbols，或在原始碼雙擊 ID（forward navigation）；翻譯：Goto → Translation；<b>文字元素也要啟用</b>。</p>
+  <p><b>原廠命名慣例</b>（Col18 新增）：型別 <span class="kw">tv_</span>、程式全域變數 <span class="kw">gv_</span>、區域變數 <span class="kw">lv_</span>、常數 <span class="kw">gc_</span>、結構型別 <span class="kw">ts_</span>、結構 <span class="kw">gs_</span>／<span class="kw">ls_</span>、表格型別 <span class="kw">tt_</span>、內表 <span class="kw">gt_</span>／<span class="kw">lt_</span>；副程式參數 <span class="kw">p…</span>（using）、<span class="kw">c…</span>（changing）、區域 <span class="kw">l…</span>。强晟當年的建議是 g_／f_／l_，精神相同。</p>
+  <pre><code class="abap">REPORT zbc400_data_types.
+
+"── 區域型別：用 LENGTH，不要再用 TYPES tv_c(3) TYPE c. 的括號舊寫法 ──
+TYPES tv_c_type TYPE c LENGTH 3.
+TYPES tv_p_type TYPE p LENGTH 3 DECIMALS 2.
+
+"── 三種型別來源定義變數 ──
+DATA gv_int    TYPE i VALUE 17.        "內建完整型別 + 初始值
+DATA gv_char   TYPE c LENGTH 8.        "內建不完整型別，必須給長度
+DATA gv_amount TYPE tv_p_type.         "區域型別
+DATA gv_carrid TYPE s_carr_id.         "全域型別：資料元素（CHAR 3）
+DATA gv_connid TYPE spfli-connid.      "參照透明表欄位
+DATA gv_copy   LIKE gv_carrid.         "參照既有資料物件
+DATA gv_big    TYPE int8.              "7.50+
+DATA gv_dec    TYPE decfloat34.        "7.0 EhP2+
+
+"── 固定資料物件 ──
+CONSTANTS gc_lh TYPE s_carr_id VALUE 'LH'.
+
+START-OF-SELECTION.
+  "── 7.40+ 內嵌宣告：型別由右側推導 ──
+  DATA(lv_today) = sy-datum.                              "型別 D
+  DATA(lv_msg)   = |今天是 { lv_today DATE = USER }|.      "型別 STRING
+  DATA(lv_seats) = CONV i( '280' ).                        "明確轉型
+
+  WRITE: / TEXT-001,              "文字符號：依登入語言顯示
+         / 'Hello World'(002),    "文字 + ID：找不到翻譯時顯示原文
+         / lv_msg, lv_seats, gc_lh.</code></pre>
+
+  <h3 id="ch05-1-07">7. Unit 3-2：基本敘述——賦值、運算、分支、迴圈、系統欄位、訊息</h3>
+  <p><b>賦值</b>：程式啟動時每個基本資料物件都先給型別對應的初始值（除非用 VALUE）。舊教材的 <span class="kw">MOVE a TO b.</span> 與 <span class="kw">b = a.</span> 等價，但 <span class="kw">MOVE</span> 已過時，一律寫 <span class="kw">=</span>。型別不同時若存在轉換規則就自動轉換。<span class="kw">CLEAR</span> 把物件還原成型別初始值。</p>
+  <p><b>運算子</b>：<span class="kw">+ - * / **</span>（次方）、<span class="kw">DIV</span>（整除）、<span class="kw">MOD</span>（餘數）。<b>括號與運算子都是關鍵字，前後至少一個空白</b>：<span class="kw">(1+2)*3</span> 要寫成 <span class="kw">( 1 + 2 ) * 3</span>。內建函數的左括號是函數名稱的一部分，例如 <span class="kw">strlen( gv_cityfrom )</span>；優先順序：括號 → 函數 → 次方 → 乘除 → 加減。</p>
+  <div class="note"><b>教材修正</b>：① Col18 p85 印成 <span class="kw">STRLEN (gd_cityfrom)</span>——函數名與左括號之間<b>不可</b>有空白，而且括號內側要有空白，正確是 <span class="kw">strlen( gv_cityfrom )</span>。② 强晟 p78 寫「參考 COMPUTER 語句」應為 <span class="kw">COMPUTE</span>（而且 COMPUTE 本身也已過時）。③ 强晟 p78 說「ABAP 字串不能用 &amp; 或 + 連接，很麻煩」——這是 7.0 的情況；7.02 起有字串範本 <span class="kw">|…{ }…|</span> 與連接運算子 <span class="kw">&amp;&amp;</span>，舊的 <span class="kw">CONCATENATE</span> 已很少需要。</div>
+  <p><b>條件分支</b>：<span class="kw">IF … ELSEIF … ELSE … ENDIF</span> 可寫任意邏輯運算式；<span class="kw">CASE … WHEN … WHEN OTHERS … ENDCASE</span> 用於明確區分值（第一個 WHEN 必要，其餘可選）。兩者都由上往下比對，第一個成立的分支執行完就跳到 ENDIF／ENDCASE。<b>同一欄位比對多個值時，CASE 比 IF 清楚且效能較好</b>。否定用 <span class="kw">NOT</span>；否定 IS INITIAL 請寫 <span class="kw">IS NOT INITIAL</span>，SAP 不建議 <span class="kw">IF NOT var IS INITIAL</span>（語法對但難讀）。</p>
+  <p><b>四種迴圈</b>：<span class="kw">DO … ENDDO</span>（無條件／次數控制，沒給次數又沒 EXIT 就是無窮迴圈）、<span class="kw">WHILE … ENDWHILE</span>（先判斷，可能一次都不執行）、<span class="kw">SELECT</span> 迴圈（讀資料庫）、<span class="kw">LOOP AT</span>（讀內表）。<b>sy-index</b> 只在 DO／WHILE 中有意義；巢狀迴圈中它永遠是「目前這一層」的圈數，內層結束後自動恢復外層的值。</p>
+  <table>
+    <thead><tr><th>系統欄位</th><th>意義</th><th>系統欄位</th><th>意義</th></tr></thead>
+    <tbody>
+      <tr><td>sy-mandt</td><td>登入用戶端</td><td>sy-tcode</td><td>目前交易碼</td></tr>
+      <tr><td>sy-uname</td><td>登入使用者</td><td>sy-repid</td><td>目前程式名稱</td></tr>
+      <tr><td>sy-langu</td><td>登入語言</td><td>sy-index</td><td>DO／WHILE 圈數</td></tr>
+      <tr><td>sy-datum</td><td>ABAP 系統本地日期</td><td>sy-tabix</td><td>LOOP／READ 內表的列號</td></tr>
+      <tr><td>sy-uzeit</td><td>ABAP 系統本地時間</td><td>sy-subrc</td><td>回傳碼：0＝成功，非 0 依敘述而定</td></tr>
+      <tr><td>sy-dbcnt</td><td>SQL 處理筆數</td><td>sy-ucomm／sy-lsind</td><td>功能碼／清單層級</td></tr>
+    </tbody>
+  </table>
+  <p>所有系統欄位都在結構 <b>SYST</b> 中，以 <span class="kw">sy-xxx</span> 引用；<b>只讀不寫</b>，寫入可能讓其他程式段失去重要資訊，執行時系統也可能再改掉。</p>
+  <p><b>對話訊息</b>：<span class="kw">MESSAGE</span> 要指定三位數訊息號碼與訊息類別（Message Class，<span class="tcode">SE91</span>），訊息類型（A／E／I／S／W／X）決定顯示位置與後續行為；可以執行標準示範程式 <b>DEMO_MESSAGES</b> 比較各類型。有預留位置 <span class="kw">&amp;</span> 的訊息用 <span class="kw">WITH</span> 帶值——執行標準程式偶爾看到畫面上出現 &amp;，通常是設定不完整、沒有值傳入。</p>
+  <pre><code class="abap">REPORT zbc400_calculator.
+
+PARAMETERS: pa_int1 TYPE i,
+            pa_op   TYPE c LENGTH 1 DEFAULT '+',
+            pa_int2 TYPE i.
+
+AT SELECTION-SCREEN.
+  IF pa_op NA '+-*/%'.                         "NA：不含任何一個字元
+    MESSAGE |運算子 { pa_op } 不合法（只接受 + - * / %）| TYPE 'E'.
+  ENDIF.
+
+START-OF-SELECTION.
+  TRY.
+      "SWITCH 取代 CASE + 多次賦值；除法先轉 DECFLOAT34 避免整數截斷
+      DATA(gv_result) = SWITCH decfloat34( pa_op
+        WHEN '+' THEN pa_int1 + pa_int2
+        WHEN '-' THEN pa_int1 - pa_int2
+        WHEN '*' THEN pa_int1 * pa_int2
+        WHEN '/' THEN CONV decfloat34( pa_int1 ) / pa_int2
+        WHEN '%' THEN pa_int1 MOD pa_int2 ).
+      WRITE: / |{ pa_int1 } { pa_op } { pa_int2 } = { gv_result }|.
+    CATCH cx_sy_zerodivide.
+      MESSAGE '除數不可為 0' TYPE 'S' DISPLAY LIKE 'E'.
+  ENDTRY.
+
+  "── 迴圈與 sy-index ──
+  DO 3 TIMES.
+    WRITE: / |外層第 { sy-index } 圈|.
+    DO 2 TIMES.
+      WRITE: |內層 { sy-index }|.         "只反映內層
+    ENDDO.
+    WRITE: |回到外層 { sy-index }|.       "自動恢復外層的值
+  ENDDO.
+
+  DATA(lv_n) = 1.
+  WHILE lv_n &lt; 100.                      "先判斷，可能一次都不跑
+    lv_n = lv_n * 2.
+  ENDWHILE.
+
+  "── 系統欄位只讀 ──
+  WRITE: / sy-uname, sy-datum, sy-uzeit, sy-repid, sy-langu.</code></pre>
+
+  <h3 id="ch05-1-08">8. Unit 3-3：ABAP Debugger</h3>
+  <p><b>以除錯模式啟動</b>：在 SE80 導覽區對程式右鍵 Execute → Debugging；或在編輯器設中斷點（只能對<b>已啟用</b>的原始碼設）後用 F8／右鍵 Execute → Direct 執行。<b>執行中途切入除錯</b>：選單 System → Utilities → Debug ABAP（或 Debug Screen），或在命令欄輸入 <span class="tcode">/h</span> 再按 Enter——適合想看標準程式某個按鈕背後在做什麼。</p>
+  <table>
+    <thead><tr><th>功能</th><th>重點</th></tr></thead>
+    <tbody>
+      <tr><td>Single Step（F5）</td><td>逐句執行，遇到呼叫會進入副程式／方法內部</td></tr>
+      <tr><td>Execute（F6）</td><td>把整個呼叫當成一步跑完，停在下一行</td></tr>
+      <tr><td>Return（F7）</td><td>跑完目前模組化單元剩下的敘述後停下</td></tr>
+      <tr><td>Continue（F8）</td><td>跑到下一個中斷點</td></tr>
+      <tr><td>變數顯示</td><td>輸入名稱或在原始碼雙擊變數；傳統除錯器最多同時看 8 個</td></tr>
+      <tr><td>中斷點</td><td>新版單擊行首（傳統版雙擊）；Breakpoints → Breakpoint at → Statement 可對某類敘述下斷點。只對本次除錯有效，按 Save 後在整個登入期間都有效</td></tr>
+      <tr><td>觀察點（Watchpoint）</td><td>依欄位內容觸發的中斷點：沒給比較條件＝值一改變就停；有條件＝符合才停。傳統版最多 10 個，可用 AND／OR 連結</td></tr>
+      <tr><td>修改變數值</td><td>新版在變數顯示區雙擊鉛筆圖示、改值按 Enter</td></tr>
+      <tr><td>Call Stack</td><td>Standard 頁籤，看目前單元是從哪裡被呼叫的</td></tr>
+    </tbody>
+  </table>
+  <p><b>新版除錯器</b>的附加能力：在第二個 session 除錯（應用程式的輸入同時可見）、可自由設定的多個顯示區、整合新版編輯器、原始碼 Quick Info、對內表與物件參照設觀察點、字串／結構／內表的值比較、強化的表格工具與 Web Dynpro 工具；進階功能有 <b>Software-Layer-Aware Debugging（SLAD）</b>、除錯器腳本（Debugger Scripting）、記憶體用量分析。切換：Debugger → Switch to Classic ABAP Debugger。</p>
+  <div class="note"><b>版本說明不一致</b>：强晟 p86 寫新版除錯器「SAP Web AS 6.10 以後」可用；Col18 p95 寫「6.40 以前只有傳統除錯器」。以較新的原廠說法為準——新版除錯器自 NetWeaver 6.40（2004）起提供、7.0 起成為預設。在 S/4HANA 傳統除錯器僅供相容，另外 ADT 內建的 Eclipse 除錯器是 S/4HANA 的主力（見 <a href="#ch05-4">5-4 章 BC403</a>）。</div>
+  <pre><code class="abap">"正式環境也不怕誤停的「條件式」斷點：檢查點群組（SAAB 啟用，可限定使用者／伺服器）
+BREAK-POINT ID zbc400_cg.
+
+"斷言：條件不成立時依 SAAB 設定停下、記錄或短傾印（dump）
+ASSERT ID zbc400_cg CONDITION gv_result IS NOT INITIAL.
+
+"只在自己的使用者生效的靜態斷點——上線前務必移除（ATC 會抓）
+BREAK-POINT.</code></pre>
+  <div class="tip">除錯時看內表請用 <b>Table</b> 頁籤或變數區雙擊內表名稱；看結構雙擊結構名稱會展開每個元件的名稱、值與型別。找「這個值是在哪裡被改掉的」，觀察點永遠比一步一步按 F5 快。</div>
+
+  <h3 id="ch05-1-09">9. Unit 4-1／4-2：模組化技術與副程式</h3>
+  <p><b>模組化單元</b>是封裝某個功能的程式片段。好處：程式更易讀（變成功能導向，整體任務拆成子功能）、同一功能可多次使用不必重寫、只需在單元內修改（中央維護）、除錯時可把呼叫當成一個單位執行後看結果，容易找到錯誤源頭。</p>
+  <table>
+    <thead><tr><th>範圍</th><th>技術</th><th>特性</th></tr></thead>
+    <tbody>
+      <tr><td>程式內（Local）</td><td>副程式（FORM routine）、區域類別的方法</td><td>只在定義它的程式內可用；不需載入其他程式；不同程式可同名不衝突</td></tr>
+      <tr><td>全系統（Global）</td><td>函數群組中的函數模組、全域類別的方法</td><td>集中存在 Repository，呼叫時載入呼叫端的程式上下文，任意多支程式可同時使用</td></tr>
+    </tbody>
+  </table>
+  <p><b>資料封裝</b>：理想上被呼叫的單元不直接使用呼叫端的資料，呼叫端也不直接改單元內的資料——所有資料只透過<b>參數</b>進出。參數的總合稱為<b>介面（Interface）或簽章（Signature）</b>，分 Importing（傳入）、Exporting（傳回）、Changing（傳入、修改後傳回）。原廠舉例：處理一組發票時，若相關的發票項目被填了不同的發票號碼，沒有封裝就很難追出是誰改壞的。</p>
+  <p><b>副程式的三種傳遞方式</b>：</p>
+  <table>
+    <thead><tr><th>傳遞方式</th><th>FORM 寫法（舊）</th><th>行為</th><th>現代方法對應</th></tr></thead>
+    <tbody>
+      <tr><td>Call by value</td><td><span class="kw">USING VALUE(f1)</span></td><td>複製一份給形參，改了不影響實參；大內表複製很耗時</td><td><span class="kw">IMPORTING VALUE(iv_x)</span></td></tr>
+      <tr><td>Call by value and result</td><td><span class="kw">CHANGING VALUE(f2)</span></td><td>複製；正常結束才寫回。遇 <span class="kw">STOP</span> 或 E 類訊息提早結束則<b>不寫回</b></td><td><span class="kw">CHANGING VALUE(cv_x)</span></td></tr>
+      <tr><td>Call by reference</td><td><span class="kw">CHANGING f3</span>（無 VALUE）</td><td>形參直接指向實參，修改立即生效；適合大內表</td><td><span class="kw">CHANGING cv_x</span>／<span class="kw">EXPORTING ev_x</span></td></tr>
+      <tr><td>（特例）</td><td><span class="kw">USING f</span>（無 VALUE）</td><td>其實也是 by reference；只為了傳大內表避免複製，<b>語意上不應修改</b></td><td><span class="kw">IMPORTING iv_x</span>（by reference 且唯讀，編譯器擋修改）</td></tr>
+    </tbody>
+  </table>
+  <p>其他規則：實參依 USING／CHANGING 的<b>順序</b>對應形參，與名稱無關；形參用 <span class="kw">TYPE ANY</span> 或不指定型別時為<b>泛型</b>，執行時繼承實參型別，敘述與型別不合就是執行時錯誤——只在動態程式設計時使用；用 C／N／P／X 等不完整型別時長度在執行時由實參帶入；<b>結構與內表的形參一定要指定型別</b>才能存取元件。主程式定義的是全域物件，副程式內定義的是區域物件（呼叫時配置、結束釋放）；區域物件與全域物件同名時，副程式內看到的是區域的——這叫<b>遮蔽規則（shadowing）</b>。</p>
+  <div class="warn"><b>在 S/4HANA 新程式中不要再寫 FORM／PERFORM。</b>FORM 自 7.02 起被 SAP 標為過時（obsolete），原廠 Col18 也明說「副程式只有 changing 與非常特殊的 using 參數，嚴重限制資料傳遞的控制，程式內模組化請盡量用區域類別」，並提醒不要從別的程式呼叫副程式（違反封裝）。維護舊程式時仍要看得懂 FORM 與其除錯方式（F5 進入、F6 跳過、F7 跳出；可從導覽區把 FORM 拖到編輯器自動產生 PERFORM）。下面用區域類別重寫原廠「百分比計算＋區域輔助變數四捨五入」範例。</div>
+  <pre><code class="abap">REPORT zbc400_modularization.
+
+CLASS lcl_calc DEFINITION FINAL.
+  PUBLIC SECTION.
+    TYPES tv_percent TYPE p LENGTH 6 DECIMALS 2.
+    "IMPORTING 預設 by reference 且唯讀；RETURNING 一定是 by value
+    CLASS-METHODS calc_percentage
+      IMPORTING iv_act            TYPE i
+                iv_max            TYPE i
+      RETURNING VALUE(rv_percent) TYPE tv_percent
+      RAISING   cx_sy_zerodivide.
+ENDCLASS.
+
+CLASS lcl_calc IMPLEMENTATION.
+  METHOD calc_percentage.
+    "區域輔助變數只留 1 位小數 → 賦值時系統自動四捨五入
+    DATA lv_percent_1 TYPE p LENGTH 6 DECIMALS 1.
+    lv_percent_1 = iv_act * 100 / iv_max.   "iv_max = 0 → CX_SY_ZERODIVIDE
+    rv_percent   = lv_percent_1.            "傳回時第 2 位小數補 0
+  ENDMETHOD.
+ENDCLASS.
+
+PARAMETERS: pa_act TYPE i DEFAULT 7,
+            pa_max TYPE i DEFAULT 30.
+
+START-OF-SELECTION.
+  TRY.
+      DATA(gv_percent) = lcl_calc=&gt;calc_percentage( iv_act = pa_act
+                                                    iv_max = pa_max ).
+      WRITE: / |使用率 { gv_percent }%|.          "23.30
+    CATCH cx_sy_zerodivide.
+      MESSAGE '最大值不可為 0' TYPE 'S' DISPLAY LIKE 'E'.
+  ENDTRY.</code></pre>
+  <div class="tip">原廠提醒：<b>區域類別必須定義在呼叫之前</b>（與 FORM 習慣寫在呼叫下方相反）。大程式可以把類別放進 Include。更完整的模組化討論見 <a href="#ch02-4">2-4 章</a>。</div>
+
+  <h3 id="ch05-1-10">10. Unit 4-3／4-4：函數模組——搜尋、測試、呼叫、建立</h3>
+  <p><b>函數模組（Function Module）</b>是集中存放在 Function Library 的程序，有傳入／傳出參數介面，目的是重用。函數模組一定屬於某個<b>函數群組（Function Group）</b>——功能相關或處理同一類資料的函數模組集合。函數群組可含與執行檔程式相同的元件：<b>全域資料</b>（群組內所有函數模組可見可改）、<b>副程式</b>、<b>螢幕</b>。</p>
+  <p><b>記憶體行為（重要）</b>：程式呼叫函數模組時，<b>整個函數群組被載入</b>，並留在記憶體直到呼叫端程式結束；再呼叫同群組的其他函數模組不必重新載入，而且共用同一份群組全域資料。所以一個函數模組寫進全域資料的值，同一次執行中呼叫同群組的其他函數模組時看得到——很多標準函數群組（例如 BAPI 的 buffer）就是靠這個特性運作，也是「同一支程式連續呼叫兩次結果不同」的常見原因。</p>
+  <p><b>介面元素</b>：Import（可設 optional）、Export（呼叫端永遠可選擇不接）、Changing、Exceptions；參數一般以 Dictionary 型別定義；一樣分 pass by value／by reference。</p>
+  <p><b>搜尋函數模組</b>：依應用（<span class="tcode">SE81</span> 應用階層）、與應用無關（<span class="tcode">SE84</span> 資訊系統）、依程式（在原始碼搜尋 <span class="kw">CALL FUNCTION</span>；或 <span class="tcode">/h</span> 後對 CALL FUNCTION 下斷點；或 F1 → Technical Information 找到螢幕號碼再做 Where-Used List）。找到後先看屬性的 <b>Released</b>——只有已釋放的函數模組享有支援與向上相容保證。文件分「函數模組文件」與「參數文件」（Long Text 欄的綠燈表示已有文件）。<b>測試環境</b>（SE37 F8）可填參數試跑、進除錯、看執行時間與例外；可存<b>測試資料目錄</b>與測試序列，執行時間請重複量幾次。</p>
+  <p><b>呼叫語法</b>：函數名稱<b>大寫加單引號</b>；站在呼叫端看，<span class="kw">EXPORTING</span> 傳給函數的 Import 參數、<span class="kw">IMPORTING</span> 接函數的 Export 參數；左邊是形參、右邊是實參。用 <b>Pattern</b> 按鈕或把函數從導覽區拖到編輯器產生呼叫，避免拼錯（選用參數會被註解起來）。<b>傳統例外</b>：在 <span class="kw">EXCEPTIONS</span> 區塊列出例外並給回傳碼，發生時寫入呼叫端 sy-subrc；<span class="kw">OTHERS</span> 接住所有未列出的例外；<b>未被接住的例外會造成執行時錯誤</b>。</p>
+  <p><b>建立</b>：先建函數群組（SE80 套件右鍵 Create → Function Group，或 SE37 Goto → Function Groups），再建函數模組；客戶命名空間是 <span class="kw">Z_</span>／<span class="kw">Y_</span> 開頭。定義好 Import／Export 參數後切到 Source code 頁籤實作；FUNCTION 關鍵字下方的註解區塊由 Function Builder 自動產生與維護，不要手改。</p>
+  <pre><code class="abap">FUNCTION z_bc400_calc_percentage.
+*"----------------------------------------------------------------------
+*"*"Local Interface:
+*"  IMPORTING
+*"     VALUE(IV_ACT) TYPE  I
+*"     VALUE(IV_MAX) TYPE  I
+*"  EXPORTING
+*"     VALUE(EV_PERCENTAGE) TYPE  DECFLOAT16
+*"  EXCEPTIONS
+*"      DIVISION_BY_ZERO
+*"----------------------------------------------------------------------
+  IF iv_max = 0.
+    RAISE division_by_zero.            "傳統例外：結束函數、回到呼叫端
+  ENDIF.
+  ev_percentage = CONV decfloat16( iv_act ) * 100 / iv_max.
+ENDFUNCTION.
+
+*---------------------------------------------------------------------*
+* 呼叫端
+*---------------------------------------------------------------------*
+DATA gv_percentage TYPE decfloat16.    "CALL FUNCTION 不支援內嵌宣告，須先宣告
+
+CALL FUNCTION 'Z_BC400_CALC_PERCENTAGE'
+  EXPORTING
+    iv_act           = pa_act          "形參 = 實參
+    iv_max           = pa_max
+  IMPORTING
+    ev_percentage    = gv_percentage
+  EXCEPTIONS
+    division_by_zero = 1
+    OTHERS           = 2.
+
+CASE sy-subrc.
+  WHEN 0. WRITE: / |百分比：{ gv_percentage }|.
+  WHEN 1. MESSAGE '最大值不可為 0' TYPE 'S' DISPLAY LIKE 'E'.
+  WHEN 2. MESSAGE '計算失敗' TYPE 'S' DISPLAY LIKE 'E'.
+ENDCASE.</code></pre>
+  <div class="warn"><span class="kw">CALL FUNCTION</span> 的 IMPORTING／TABLES 參數<b>不能</b>寫 <span class="kw">DATA( )</span> 內嵌宣告（方法呼叫才可以），這是 7.40 後大家最常踩的語法錯。新函數模組也可以改用 class-based exception（<span class="kw">RAISING cx_…</span>），但一個函數模組只能二選一。在 S/4HANA，新的可重用邏輯建議寫成<b>全域類別</b>；只有需要 RFC（遠端呼叫）、更新函數（<span class="kw">IN UPDATE TASK</span>）或要掛在 Dynpro 的情況才建函數模組（見 <a href="#ch04-1">4-1 章</a>）。</div>
+
+  <h3 id="ch05-1-11">11. Unit 4-5：BAPI（Business Application Programming Interface）</h3>
+  <p><b>Business Object Repository（BOR）</b>存放<b>商業物件型別</b>：它是一支「行為像類別」的程式，代表一張 SAP 表或一組表的階層，BAPI 就是它的方法——BAPI 是存取 SAP 系統資料的一種方式。BAPI 的功能封裝在<b>可遠端呼叫的函數模組</b>中，所以同系統的 ABAP 程式與外部程式都能呼叫。强晟的說法很到位：SAP 設計 BAPI，是為了讓開發者依需求加入資料時「不違反資料相關性原則、不必直接寫表」。</p>
+  <table>
+    <thead><tr><th>標準 BAPI 方法名</th><th>作用</th></tr></thead>
+    <tbody>
+      <tr><td>GetList</td><td>傳回符合選擇條件的物件清單</td></tr>
+      <tr><td>GetDetail</td><td>傳回某物件的詳細屬性（必須給完整鍵）</td></tr>
+      <tr><td>Create／Change／Delete／Cancel</td><td>建立、修改、刪除、取消物件</td></tr>
+      <tr><td>AddItem／RemoveItem</td><td>增刪子物件（例如訂單項目）</td></tr>
+    </tbody>
+  </table>
+  <p><b>BAPI 函數模組的技術條件</b>：命名 <span class="kw">BAPI_&lt;商業物件名&gt;_&lt;方法名&gt;</span>；Remote-enabled；<b>不得有使用者對話與訊息</b>；介面參數以專為該 BAPI 建立、字首為 <span class="kw">BAPI</span> 的 Dictionary 結構定型；Release 4.6 以前不允許 Changing 參數；<b>不觸發例外</b>，錯誤一律透過特殊 Export 參數 <b>RETURN</b> 回報。找 BAPI 用 <b>BAPI Explorer</b>（<span class="tcode">BAPI</span>，Tools → Business Framework → BAPI Explorer），雙擊顯示的函數模組可跳到 Function Builder。</p>
+  <p><b>金額格式陷阱</b>：BAPI 介面是依「外部呼叫」的需求設計的，金額預期是外部格式（4 或 9 位小數），即使該幣別沒有小數（例如 JPY、TWD 在 TCURX 設為 0 位）也要轉換後再傳。轉換用套件 <b>SBF_BAPI</b> 中函數群組 <b>BACV</b> 的函數模組。</p>
+  <pre><code class="abap">PARAMETERS pa_car TYPE s_carr_id DEFAULT 'LH'.
+
+START-OF-SELECTION.
+  DATA: gt_flights TYPE STANDARD TABLE OF bapisfldat WITH EMPTY KEY,
+        gt_return  TYPE STANDARD TABLE OF bapiret2   WITH EMPTY KEY.
+
+  "航班資料模型的讀取型 BAPI（BOR 物件 Flight 的 GetList 方法）
+  CALL FUNCTION 'BAPI_FLIGHT_GETLIST'
+    EXPORTING
+      airline     = pa_car
+      max_rows    = 50
+    TABLES
+      flight_list = gt_flights
+      return      = gt_return.
+
+  "BAPI 不拋例外：一定要自己檢查 RETURN 的 TYPE
+  IF line_exists( gt_return[ type = 'E' ] ) OR line_exists( gt_return[ type = 'A' ] ).
+    LOOP AT gt_return INTO DATA(gs_ret) WHERE type CA 'EA'.
+      WRITE: / gs_ret-type, gs_ret-id, gs_ret-number, gs_ret-message.
+    ENDLOOP.
+    RETURN.
+  ENDIF.
+
+  "金額：內部格式 → BAPI 外部格式（函數群組 BACV）
+  "（參數型別請以 SE37 顯示的介面為準）
+  DATA gv_amount_int TYPE wertv8 VALUE '12.34'.  "JPY 1234 在 SAP 內部以 2 位小數存成 12.34
+  DATA gv_amount_ext TYPE bapicurr_d.
+  CALL FUNCTION 'BAPI_CURRENCY_CONV_TO_EXTERNAL'
+    EXPORTING
+      currency        = 'JPY'
+      amount_internal = gv_amount_int
+    IMPORTING
+      amount_external = gv_amount_ext.   "→ 1234（外部格式）
+  "反方向：BAPI_CURRENCY_CONV_TO_INTERNAL</code></pre>
+  <div class="note">讀取型 BAPI 不需要 COMMIT；<b>寫入型 BAPI（Create／Change…）呼叫後必須由呼叫端執行 <span class="kw">BAPI_TRANSACTION_COMMIT</span></b>，BAPI 自己不 commit。實戰案例（請購單、採購單、物料、BP）見 <a href="#ch04-1">4-1 章</a>，BAPI 的設計與開發見 <a href="#ch05-12">5-12 章 BC415</a>。在 S/4HANA 新場景，SAP 優先提供的是 <b>RAP 商業物件／OData API</b>（api.sap.com），但大量 BAPI 仍是 on-premise 的主力介面。</div>
+
+  <h3 id="ch05-1-12">12. Unit 4-6～4-8：全域類別、靜態方法與區域類別</h3>
+  <p>全域類別以<b>方法</b>提供功能；方法和函數模組一樣有簽章（import、export、changing、exceptions）。類別的全域資料叫<b>屬性（Attribute）</b>，所有方法都可存取——就像函數群組的全域資料。差異在於：</p>
+  <table>
+    <thead><tr><th>比較</th><th>函數群組</th><th>全域類別</th></tr></thead>
+    <tbody>
+      <tr><td>對外可見性</td><td>全域資料一律不對外；所有函數模組都可從外部呼叫</td><td>屬性與方法都可分 <b>public／private</b>；private 方法像函數群組內的副程式</td></tr>
+      <tr><td>載入次數</td><td>每個主程式只載入一次，所有呼叫共用同一份全域資料</td><td>可<b>多重實例化</b>：每個實例（物件）有自己的屬性值</td></tr>
+      <tr><td>元件種類</td><td>—</td><td>實例屬性／方法（要先建實例）與<b>靜態（類別）屬性／方法</b>（每個程式上下文只有一份，不用建實例即可呼叫）</td></tr>
+    </tbody>
+  </table>
+  <p><b>Class Builder（<span class="tcode">SE24</span>）</b>：Attributes 頁籤看屬性；Methods 頁籤看方法，對方法按 <b>Parameter</b> 看參數（方法的參數不分三張表，而在 Type 欄標示 Importing／Exporting／Changing／Returning）、按 <b>Exceptions</b> 看例外（有勾選框表示是 class-based 或 classic——<b>同一個方法只能二選一，不能混用</b>）；Class Documentation 與各元件文件；啟用後可直接測試（靜態方法直接 Execute Method，實例方法要先按 Instance）。</p>
+  <p><b>Class-based exception</b> 自 Basis 6.10 引入：用例外類別（CX_ 開頭）取代任意命名的例外 ID；呼叫必須包在 <span class="kw">TRY … ENDTRY</span>，由 <span class="kw">CATCH 例外類別</span> 處理；函數模組也能用。用 Pattern 或拖放產生呼叫時，系統會一併產生 CATCH 骨架。</p>
+  <p><b>建立全域類別與靜態方法</b>（Unit 4-7）：套件右鍵 Create → Class Library → Class（或導覽區選 Class/Interface 輸入新名稱）→ 在 Methods 頁籤輸入方法名，Level 選 Static Method、Visibility 選 Public → Parameter 定義參數 → Source Code 在 <span class="kw">METHOD … ENDMETHOD</span> 之間實作；編輯時可按 <b>Signature</b> 顯示方法簽章。<b>區域類別</b>（Unit 4-8）直接寫在程式原始碼中，分 <span class="kw">CLASS … DEFINITION</span>（PUBLIC SECTION／PRIVATE SECTION、屬性與方法簽章）與 <span class="kw">CLASS … IMPLEMENTATION</span>（方法本體）；靜態方法用 <span class="kw">CLASS-METHODS</span>、實例方法用 <span class="kw">METHODS</span>；輸入參數可加 <span class="kw">OPTIONAL</span> 或 <span class="kw">DEFAULT</span>。</p>
+  <pre><code class="abap">REPORT zbc400_oo_demo.
+
+*---------------------------------------------------------------------*
+* 區域類別：必須在使用之前定義（與 FORM 寫在呼叫下方的習慣相反）
+*---------------------------------------------------------------------*
+CLASS lcl_counter DEFINITION FINAL.
+  PUBLIC SECTION.
+    CLASS-DATA gv_instances TYPE i READ-ONLY.     "靜態屬性：所有實例共用一份
+    METHODS constructor IMPORTING iv_start TYPE i DEFAULT 0.
+    METHODS add.
+    METHODS get RETURNING VALUE(rv_value) TYPE i.
+  PRIVATE SECTION.
+    DATA mv_value TYPE i.                         "實例屬性：每個實例各一份
+ENDCLASS.
+
+CLASS lcl_counter IMPLEMENTATION.
+  METHOD constructor.                             "建立實例後立刻自動執行
+    mv_value = iv_start.
+    gv_instances = gv_instances + 1.
+  ENDMETHOD.
+  METHOD add.
+    mv_value = mv_value + 1.
+  ENDMETHOD.
+  METHOD get.
+    rv_value = mv_value.
+  ENDMETHOD.
+ENDCLASS.
+
+PARAMETERS: pa_int1 TYPE i DEFAULT 2,
+            pa_int2 TYPE i DEFAULT 3.
+
+START-OF-SELECTION.
+  "① 靜態方法 + class-based exception（原廠 CL_BC400_COMPUTE=&gt;GET_POWER 的現代寫法）
+  "   舊寫法 CALL METHOD cl_bc400_compute=&gt;get_power EXPORTING … IMPORTING … 已不建議
+  TRY.
+      cl_bc400_compute=&gt;get_power( EXPORTING iv_base   = pa_int1
+                                             iv_power  = pa_int2
+                                   IMPORTING ev_result = DATA(gv_result) ).  "方法呼叫可內嵌宣告
+      WRITE: / |{ pa_int1 } 的 { pa_int2 } 次方 = { gv_result }|.
+    CATCH cx_bc400_power_too_high.
+      WRITE: / 'Max Value for Power is 4'.
+    CATCH cx_bc400_result_too_high.
+      WRITE: / 'Result value was too high'.
+  ENDTRY.
+
+  "② 實例：NEW 取代「DATA … TYPE REF TO + CREATE OBJECT」
+  DATA(go_counter1) = NEW lcl_counter( iv_start = 10 ).
+  DATA(go_counter2) = NEW lcl_counter( ).
+  go_counter1-&gt;add( ).                  "實例方法：必須指定是哪個實例（-&gt;）
+  go_counter1-&gt;add( ).
+  go_counter2-&gt;add( ).
+  WRITE: / |實例 1 = { go_counter1-&gt;get( ) }，實例 2 = { go_counter2-&gt;get( ) }|,
+         / |已建立實例數（靜態屬性）= { lcl_counter=&gt;gv_instances }|.   "12、1、2</code></pre>
+  <div class="note">原廠範例中 get_power 的兩個版本分別示範「傳統例外（EXCEPTIONS power_value_too_high = 1 …，再 CASE sy-subrc）」與「class-based 例外（TRY／CATCH）」；兩者在同一個方法上不能並存。CL_BC400_COMPUTE、CX_BC400_* 只存在原廠訓練系統，在自己的系統練習請自建同名的 Z 類別。物件導向完整內容見 <a href="#ch05-2">5-2 章 BC401</a>。</div>
+
+  <h3 id="ch05-1-13">13. Unit 5：結構與內表</h3>
+  <p><b>結構（Structure）</b>把邏輯上相關的值組成一個資料物件，可巢狀（元件本身是結構或內表）。型別可參照 Dictionary 結構、透明表，或程式內用 <span class="kw">TYPES: BEGIN OF … END OF</span> 定義的區域結構型別；不需重用時可直接 <span class="kw">DATA: BEGIN OF … END OF</span>。元件以連字號存取 <span class="kw">結構-元件</span>，所以<b>資料物件名稱不要含連字號</b>（語法允許，但會混淆）。<span class="kw">MOVE-CORRESPONDING</span> 只複製同名元件、其他不變；7.40 起用 <span class="kw">CORRESPONDING #( )</span>（可加 <span class="kw">BASE</span>、<span class="kw">MAPPING</span>、<span class="kw">EXCEPT</span>）。</p>
+  <p><b>內表（Internal Table）</b>是執行時可存多筆同結構資料的資料物件，大小由執行時系統動態管理，開發者不用管記憶體。每筆叫<b>表列（row／entry）</b>，每個元件叫<b>欄位（column）</b>。用途：暫存 DB 或檔案資料再處理、為畫面／列印整理資料（排序等）、為其他服務（方法、函數、副程式）準備資料。一個內表由三個屬性完整描述：<b>列型別（Line type）、主鍵（Primary key，唯一或不唯一，鍵欄位順序有意義）、表種類（Table kind）</b>。</p>
+  <table>
+    <thead><tr><th></th><th>Standard</th><th>Sorted</th><th>Hashed</th></tr></thead>
+    <tbody>
+      <tr><td>索引存取</td><td>✔</td><td>✔</td><td>✘</td></tr>
+      <tr><td>鍵存取</td><td>✔（線性搜尋）</td><td>✔（二分搜尋）</td><td>✔（雜湊，常數時間）</td></tr>
+      <tr><td>主鍵唯一性</td><td>只能 NON-UNIQUE</td><td>UNIQUE 或 NON-UNIQUE</td><td>只能 UNIQUE</td></tr>
+      <tr><td>適合</td><td>主要用索引存取</td><td>主要用鍵存取、要自動依鍵排序</td><td>很大、只用完整主鍵存取</td></tr>
+    </tbody>
+  </table>
+  <p>單筆操作需要一個與列型別相同的<b>工作區（Work Area）</b>：<span class="kw">APPEND</span>（附加到尾端，只限 standard）、<span class="kw">INSERT</span>（standard＝附加、sorted 插入正確位置、hashed 依雜湊）、<span class="kw">READ TABLE</span>、<span class="kw">MODIFY</span>、<span class="kw">DELETE</span>、<span class="kw">COLLECT</span>（同鍵的列把非鍵欄位累加，<b>非鍵欄位必須全是數值</b>）。多筆操作：<span class="kw">LOOP AT … ENDLOOP</span>（sy-tabix＝目前列號；可加 FROM／TO、WHERE）、<span class="kw">DELETE … WHERE</span>、<span class="kw">INSERT LINES OF</span>、<span class="kw">APPEND LINES OF</span>。<span class="kw">READ TABLE … WITH TABLE KEY</span> 必須給<b>全部</b>鍵欄位；只想給部分欄位用 <span class="kw">WITH KEY</span>。</p>
+  <p>清除：<span class="kw">REFRESH</span>（清內容、保留部分記憶體供後續使用；已過時）、<span class="kw">CLEAR</span>（無表頭的內表效果同 REFRESH；有表頭則只清表頭）、<span class="kw">FREE</span>（清內容並釋放全部記憶體，用於之後不再使用的大內表）。排序：<span class="kw">SORT … BY 欄位 ASCENDING/DESCENDING</span>（預設遞增）、<span class="kw">AS TEXT</span>（依語言字典序，德文 ä 排在 b 前而不是 z 後）、<span class="kw">STABLE</span>（排序鍵相同的列維持原相對順序）。</p>
+  <pre><code class="abap">TYPES: BEGIN OF ts_flight,
+         carrid   TYPE s_carr_id,
+         connid   TYPE s_conn_id,
+         fldate   TYPE s_date,
+         seatsmax TYPE s_seatsmax,
+         seatsocc TYPE s_seatsocc,
+       END OF ts_flight.
+
+"三種表種類的區域表格型別
+TYPES tt_flight_std    TYPE STANDARD TABLE OF ts_flight WITH NON-UNIQUE KEY carrid connid fldate.
+TYPES tt_flight_sorted TYPE SORTED TABLE OF ts_flight   WITH UNIQUE KEY carrid connid fldate.
+TYPES tt_flight_hashed TYPE HASHED TABLE OF ts_flight   WITH UNIQUE KEY carrid connid fldate.
+
+DATA gt_flights TYPE tt_flight_std.
+DATA gs_flight  TYPE ts_flight.                   "工作區
+"✘ 新手常見錯誤：DATA gt_x TYPE TABLE OF tt_flight_std.  → 每一列都是一個內表！
+
+START-OF-SELECTION.
+  "── 單筆：VALUE #( ) 建構 + INSERT／APPEND ──
+  gt_flights = VALUE #(
+    ( carrid = 'LH' connid = '0400' fldate = '20260105' seatsmax = 280 seatsocc = 120 )
+    ( carrid = 'AA' connid = '0017' fldate = '20260102' seatsmax = 380 seatsocc = 310 ) ).
+  INSERT VALUE #( carrid = 'LH' connid = '0402' fldate = '20260106' seatsmax = 280 seatsocc = 0 )
+         INTO TABLE gt_flights.
+
+  "── 讀取：索引、完整鍵、部分鍵 ──
+  READ TABLE gt_flights INTO gs_flight INDEX 1.
+  READ TABLE gt_flights INTO gs_flight
+       WITH TABLE KEY carrid = 'LH' connid = '0400' fldate = '20260105'.
+  READ TABLE gt_flights INTO gs_flight WITH KEY carrid = 'AA'.
+
+  "── 7.40+ 表格運算式：找不到會拋 CX_SY_ITAB_LINE_NOT_FOUND ──
+  IF line_exists( gt_flights[ carrid = 'LH' connid = '0400' ] ).
+    DATA(gs_lh) = gt_flights[ carrid = 'LH' connid = '0400' ].
+  ENDIF.
+  DATA(gs_safe) = VALUE #( gt_flights[ carrid = 'XX' ] OPTIONAL ).   "找不到就給初始值
+
+  "── LOOP：用 FIELD-SYMBOL 直接改，不必再 MODIFY ──
+  LOOP AT gt_flights ASSIGNING FIELD-SYMBOL(&lt;ls_flight&gt;) WHERE carrid = 'LH'.
+    &lt;ls_flight&gt;-seatsocc = &lt;ls_flight&gt;-seatsocc + 1.
+  ENDLOOP.
+  LOOP AT gt_flights INTO gs_flight FROM 1 TO 2.
+    WRITE: / sy-tabix, gs_flight-carrid, gs_flight-connid.
+  ENDLOOP.
+
+  "── COLLECT：非鍵欄位必須全為數值 ──
+  TYPES: BEGIN OF ts_sum,
+           carrid   TYPE s_carr_id,
+           seatsocc TYPE s_seatsocc,
+         END OF ts_sum.
+  DATA gt_sum TYPE SORTED TABLE OF ts_sum WITH UNIQUE KEY carrid.
+  LOOP AT gt_flights INTO gs_flight.
+    DATA(gs_sum) = VALUE ts_sum( carrid = gs_flight-carrid seatsocc = gs_flight-seatsocc ).
+    COLLECT gs_sum INTO gt_sum.
+  ENDLOOP.
+  DATA(gv_total) = REDUCE i( INIT s = 0 FOR f IN gt_flights NEXT s = s + f-seatsocc ).
+
+  "── 排序、刪除、清除 ──
+  SORT gt_flights BY carrid ASCENDING fldate DESCENDING.
+  SORT gt_flights STABLE BY carrid.
+  DELETE gt_flights WHERE seatsocc = 0.
+  DELETE ADJACENT DUPLICATES FROM gt_flights COMPARING carrid connid.
+  CLEAR gt_flights.            "舊程式的 REFRESH 改寫成 CLEAR
+  FREE gt_sum.                 "不再使用的大內表才 FREE</code></pre>
+  <div class="note"><b>教材修正</b>：① 强晟 p94 說「內表會根據鍵欄位的先後順序自動排序」——只有 <b>sorted table</b> 會自動排序，standard table 的鍵完全不影響存放順序。② 强晟 p100 寫「標準表和排序表可以使用 SORT」——錯，<b>sorted table 不能用 SORT</b>（語法錯誤），Col18 p198 正確寫的是 standard 與 hashed。③ 强晟 p100「READ 中用 WHERE TABLE KEY」應為 <span class="kw">WITH TABLE KEY</span>。④ 强晟 p99 說「只能先讀到工作區、改完再寫回，不能像陣列一樣直接存取某一列」——7.40 起可以用表格運算式 <span class="kw">itab[ … ]</span> 與 <span class="kw">ASSIGNING</span> 直接存取與修改。</div>
+  <div class="warn"><b>表頭（Header Line）在新程式一律禁用。</b><span class="kw">WITH HEADER LINE</span> 會自動建立一個與內表同名的工作區，<span class="kw">itab-col</span> 指表頭欄位、<span class="kw">itab[]</span> 指表身；舊的 <span class="kw">DATA: BEGIN OF itab OCCURS n … END OF itab.</span> 也隱含表頭。禁用理由（原廠）：同名影響可讀性；不能用於巢狀資料物件（內表中含內表）與 ABAP Objects。維護舊程式時要能辨認 <span class="kw">itab = itab2</span>（只複製表頭）與 <span class="kw">itab[] = itab2[]</span>（複製表身）的差別。更完整的內表與 7.40+ 語法見 <a href="#ch02-2">2-2 章</a>。</div>
+
+  <h3 id="ch05-1-14">14. Unit 6-1：資料模型與 ABAP Dictionary（航班資料模型）</h3>
+  <p>商業應用要把真實世界的相關部分表示成資料：業務單位是<b>實體</b>，實體間的關係固定在資料模型中（原廠稱 SERM，Structured Entity Relationship Model；强晟稱 ERM）。開發者依模型在 ABAP Dictionary 定義<b>透明表</b>及其關係，<b>啟用時資料庫中自動建立同名的實體表</b>。</p>
+  <p><b>SAP 航班資料模型</b>是所有 ABAP 訓練課程、線上文件、關鍵字文件的共同範例，物件在套件 <b>SAPBC_DATAMODEL</b>（可在 SE80 查看，內含表、視圖、結構、資料元素、網域、搜尋說明、資料模型、實體型別⋯⋯）。實體：城市、機場、航空公司、航線、航班；關係：每條航線有一家航空公司、一個出發機場、一個目的機場；每個可訂位的航班屬於一條既有航線；城市與鄰近機場可以對應。旅客想知道「最直接的航線、出發當天的時間、最便宜／最快／時間最合適的選擇」，旅行社則依技術標準存放遠超過客戶需要的資料——開發者的任務就是寫程式把後者組成前者。</p>
+  <table>
+    <thead><tr><th>表</th><th>內容</th><th>主鍵</th></tr></thead>
+    <tbody>
+      <tr><td>SCARR</td><td>航空公司（名稱、幣別、URL）</td><td>MANDT、CARRID</td></tr>
+      <tr><td>SPFLI</td><td>航線／飛行時刻表（出發、目的城市與機場、時間）</td><td>MANDT、CARRID、CONNID</td></tr>
+      <tr><td>SFLIGHT</td><td>航班（日期、票價、座位數、已訂座位）</td><td>MANDT、CARRID、CONNID、FLDATE</td></tr>
+      <tr><td>SBOOK</td><td>訂位</td><td>MANDT、CARRID、CONNID、FLDATE、BOOKID</td></tr>
+      <tr><td>SCUSTOM</td><td>旅客</td><td>MANDT、ID</td></tr>
+    </tbody>
+  </table>
+  <p><b>Dictionary 的描述性元素</b>：<b>資料元素</b>描述欄位的語意（欄位標籤、F1 文件），技術屬性（資料型別、長度）通常放在它參照的<b>網域（Domain）</b>，以提高重用與一致性。<b>透明表</b>是資料庫表的平台無關描述（不是表本身），欄位成為資料庫中同名的欄；除欄位清單外還包含主鍵、技術設定（預期大小、存取頻率）、加速存取的設定（次級索引、緩衝）。主鍵值在表內必須唯一；原廠建議用有意義的一個或多個欄位當主鍵，不要用自動遞增流水號。<b>結構</b>的定義幾乎與表相同，差別是不需要主鍵、元件可以再是結構（巢狀）甚至表格型別（deep structure）；透明表則只是一串基本欄位。</p>
+  <div class="warn">原廠 Col18 特別提醒：舊程式常把透明表隨意當資料型別用（<span class="kw">DATA wa TYPE spfli</span>），<b>現在的建議是透明表只在存取資料庫時使用，尤其不要用來定義使用者介面</b>，否則資料庫物件與 UI 之間會產生不必要的相依。當透明表用作型別時，只有欄位清單有意義，主鍵與技術設定都無關。字典的完整內容見 <a href="#ch01-2">1-2 章</a> 與 <a href="#ch05-16">5-16 章 BC430</a>。</div>
+  <p><b>在程式中用字典元素定義資料物件</b>（强晟 p63–65）：<span class="kw">DATA gv_carrid TYPE s_carr_id.</span>（資料元素，CHAR 3）、<span class="kw">DATA gv_connid TYPE sbc400focc-connid.</span>（結構欄位；SBC400FOCC 是訓練系統專用結構，一般系統查不到）、<span class="kw">DATA gs_spfli TYPE spfli.</span>（表的一列）、<span class="kw">PARAMETERS pa_car TYPE spfli-carrid.</span>——用資料元素、結構欄位或表欄位定義選擇畫面欄位，就自動得到語意屬性：F1 帶出資料元素文件、F4 帶出搜尋說明。</p>
+
+  <h3 id="ch05-1-15">15. Unit 6-2～6-4：讀取資料庫——單筆、多筆、用戶端、索引、緩衝、JOIN</h3>
+  <p><b>Native SQL vs Open SQL</b>：每種 RDBMS 都有自己的 Native SQL，寫在 ABAP 裡就不能在所有 SAP 系統通用；<b>Open SQL</b>（7.50 起稱 <b>ABAP SQL</b>）是 SAP 定義、與資料庫無關的標準，由資料庫介面在執行時轉成目標資料庫的 Native SQL，並先經過<b>表緩衝</b>。</p>
+  <p><b>找資料表的方法</b>：依應用（應用階層中的套件）；依程式（在原始碼搜尋 SELECT、<span class="tcode">/h</span> 後對 SELECT 下斷點、在畫面欄位 F1 → Technical Information 看所屬表／結構，再從資料元素做 Where-Used List in Table Fields）；或用 <span class="tcode">SE84</span> 自由搜尋。强晟另提到「根據螢幕欄位找資料表的 18 種方法」一文。<b>寫 SELECT 前先找重用元件</b>：邏輯資料庫（<span class="tcode">SE36</span>）、函數模組（<span class="tcode">SE37</span>）、BAPI（<span class="tcode">BAPI</span>）、全域類別方法（<span class="tcode">SE24</span>）；都沒有才自己寫，而且寫完要封裝成函數模組或方法。</p>
+  <p><b>SELECT 四個子句</b>：SELECT（讀哪些欄位）、FROM（表或視圖）、INTO（放到哪個目標資料物件）、WHERE（條件）。</p>
+  <ul>
+    <li><b>SELECT SINGLE</b>：讀一筆；要確保唯一，WHERE 要給<b>全部主鍵</b>（用戶端欄位除外，系統自動帶目前用戶端）。成功時 sy-subrc = 0。</li>
+    <li>欄位清單與目標：目標結構要與欄位清單「靠左對齊」（名稱不管、型別要相容）；或用 <span class="kw">INTO (f1, …, fn)</span>；或 <span class="kw">INTO CORRESPONDING FIELDS OF</span>（依名稱對應，擴欄位時不用改程式，但同名欄位型別不同會做複雜轉換甚至截斷）。7.40 起最佳做法是<b>明列欄位＋<span class="kw">@DATA( )</span> 內嵌宣告</b>，目標自動與欄位清單一致。</li>
+    <li><b>SELECT 迴圈</b>（SELECT … ENDSELECT）：資料庫以封包傳到資料庫介面，再逐筆複製到工作區；結束後 sy-subrc = 0 表示至少一筆、sy-dbcnt 為筆數。<b>本書禁用</b>，改用 array fetch。</li>
+    <li><b>Array fetch</b>（<span class="kw">INTO TABLE</span>）：整塊傳輸，效能高；不是迴圈，所以沒有也不能有 ENDSELECT；會<b>覆蓋</b>內表原內容，要附加用 <span class="kw">APPENDING TABLE</span>；sy-subrc／sy-dbcnt 行為相同。</li>
+  </ul>
+  <p><b>用戶端相關表</b>：第一個鍵欄位是 CLNT 型別（MANDT）。不指定用戶端時只讀目前用戶端（系統自動加進 WHERE）。跨用戶端讀取在 7.0 用 <span class="kw">CLIENT SPECIFIED</span>（放在 FROM 後，並在 WHERE 指定 MANDT），7.51 起改用 <span class="kw">USING CLIENT</span>——CLIENT SPECIFIED 已過時。實務上很少需要。</p>
+  <p><b>效能</b>：依完整主鍵或前幾個鍵欄位存取最快；用非鍵欄位查詢最壞要<b>循序掃描</b>整張表。常用某組條件查詢時可建<b>次級索引</b>（SE11 表顯示模式 → Indexes 按鈕，啟用時在資料庫建立）；條件欄位要「靠左、無間隙」地符合索引欄位才會用上；是否使用由資料庫的<b>最佳化器（Optimizer）</b>決定，Open SQL 裡不需也不能指定索引；用戶端相關表的索引應把 MANDT 放第一個。<b>SAP 表緩衝</b>：資料放在每台應用伺服器上，讀取可快 10～100 倍；設定在 SE11 的 Technical Settings；適合「常讀、很少改」的表；多台應用伺服器之間的同步有時間差，短時間內可能讀到舊資料，所以<b>要不要緩衝需由資深開發者與系統管理員共同決定</b>。某些 SELECT 變體（例如 <span class="kw">BYPASSING BUFFER</span>、彙總、JOIN 在 7.0）會繞過緩衝，對已緩衝的表應避免。</p>
+  <p><b>讀多張表</b>：效能最好的通常是 <b>JOIN</b>；定義時要決定：JOIN 哪些表、JOIN 條件、要哪些欄位。兩種做法：在 Dictionary 建<b>資料庫視圖</b>，或在 SELECT 中直接寫 <b>ABAP JOIN</b>（執行時由資料庫介面動態產生查詢）。JOIN 與視圖都不重複存資料，選取時從底層表讀；可以 JOIN 三張以上。<b>寫入</b>：Open SQL 還有 UPDATE、INSERT、DELETE、MODIFY，但 SAP 資料關聯性很強，直接改表極易造成不一致，必須先懂 SAP LUW 與鎖（<a href="#ch05-11">5-11 章 BC414</a>）。</p>
+  <pre><code class="abap">PARAMETERS pa_car TYPE s_carr_id DEFAULT 'LH'.
+
+START-OF-SELECTION.
+  "① SELECT SINGLE：給完整主鍵（MANDT 自動帶入），明列欄位 + 內嵌宣告
+  SELECT SINGLE carrid, carrname, currcode
+    FROM scarr
+    WHERE carrid = @pa_car
+    INTO @DATA(gs_scarr).
+  IF sy-subrc &lt;&gt; 0.
+    MESSAGE |找不到航空公司 { pa_car }| TYPE 'S' DISPLAY LIKE 'E'.
+    RETURN.
+  ENDIF.
+
+  "② Array fetch：一次讀進內表。HANA 沒有預設排序 → 需要順序就一定寫 ORDER BY
+  SELECT carrid, connid, cityfrom, cityto, deptime
+    FROM spfli
+    WHERE carrid = @pa_car
+    ORDER BY carrid, connid
+    INTO TABLE @DATA(gt_spfli).
+  WRITE: / |讀到 { sy-dbcnt } 條航線|.
+
+  "③ APPENDING TABLE：附加而不是覆蓋
+  SELECT carrid, connid, cityfrom, cityto, deptime
+    FROM spfli
+    WHERE carrid = 'UA'
+    ORDER BY carrid, connid
+    APPENDING TABLE @gt_spfli.
+
+  "④「取第一筆」＝先排序再 UP TO 1 ROWS；不要用非完整主鍵的 SELECT SINGLE 碰運氣
+  SELECT carrid, connid, fldate, price, currency
+    FROM sflight
+    WHERE carrid = @pa_car
+    ORDER BY fldate DESCENDING, connid
+    INTO TABLE @DATA(gt_latest)
+    UP TO 1 ROWS.
+
+  "⑤ ABAP JOIN：SPFLI 每條航線帶出 SCARR 的航空公司全名
+  SELECT s~carrid, c~carrname, s~connid, s~cityfrom, s~cityto
+    FROM spfli AS s
+    INNER JOIN scarr AS c ON c~carrid = s~carrid
+    WHERE s~carrid = @pa_car
+    ORDER BY s~carrid, s~connid
+    INTO TABLE @DATA(gt_join).
+
+  "⑥ 跨用戶端（7.51+ USING CLIENT，取代過時的 CLIENT SPECIFIED）
+  SELECT carrid, carrname
+    FROM scarr USING CLIENT '100'
+    ORDER BY carrid
+    INTO TABLE @DATA(gt_other_client).
+
+  cl_demo_output=&gt;display( gt_join ).</code></pre>
+  <div class="warn"><b>Casper 實務經驗①：HANA 沒有預設排序。</b>成本評價同時存在 item category「H」與 cost component「E」兩種角度，成本構成欄位數量不同；程式沒排序時一下抓到 H、一下抓到 E，成本結果就不穩定。凡是「取第一筆」的邏輯（<span class="kw">SELECT SINGLE</span> 沒給完整主鍵、<span class="kw">UP TO 1 ROWS</span>、<span class="kw">READ TABLE … INDEX 1</span>、<span class="kw">DELETE ADJACENT DUPLICATES</span>）都必須先明確 <span class="kw">ORDER BY</span>／<span class="kw">SORT</span>——那個案子最後的結論是固定抓 H。ECC 時代在 Oracle／MSSQL 上「剛好」依主鍵回傳的程式，搬到 HANA 就會出事。</div>
+  <div class="note"><b>教材說明</b>：强晟 p110 與 Col18 p225 都推薦 <span class="kw">INTO CORRESPONDING FIELDS OF</span>，理由是「目標結構不必與欄位清單對齊、擴欄位時不用改查詢」。在 7.40+ 用 <span class="kw">@DATA( )</span> 內嵌宣告就沒有對齊問題，而且不會有同名不同型別的隱性轉換，所以本書以明列欄位＋內嵌宣告為優先；目標是既有 Dictionary 結構時，CORRESPONDING FIELDS 仍然合理。邏輯資料庫（SE36）在 S/4HANA 已過時，改用 CDS View（<a href="#ch01-3">1-3 章</a>）。</div>
+
+  <h3 id="ch05-1-16">16. Unit 6-5：權限概念與 AUTHORITY-CHECK</h3>
+  <p>關鍵資料與功能必須防止未授權存取，因此要在程式中實作權限檢查。<b>權限物件（Authorization Object）</b>定義在<b>物件類別（Object Class）</b>之下，開發者定義物件時只指定欄位（不給值）；<b>權限（Authorization）</b>是給這些欄位填上值；權限透過<b>權限參數檔（Profile）</b>（今日由角色 <span class="tcode">PFCG</span> 產生）進入<b>使用者主記錄</b>。一個權限物件可以建多個權限給不同使用者。以航班模型的 <b>S_CARRID</b> 為例：欄位 CARRID、ACTVT；權限 DISPLAY_ALL＝CARRID *、ACTVT 03；權限 CHANGE_LH＝CARRID LH、ACTVT 02。</p>
+  <p><b>分工</b>：定義權限物件（通常是資料建模的一部分）與在程式中檢查是<b>開發者</b>的責任；定義權限、參數檔與使用者主記錄是<b>管理員</b>的工作。權限物件通常由 ACTVT（活動）加一個代表受保護資料的欄位組成（物料、航空公司⋯⋯）。<span class="tcode">SU20</span> 建權限欄位、<span class="tcode">SU21</span> 建物件類別與權限物件（含 ACTVT 時要維護可用值）；表 <b>TACT</b> 存 ACTVT 所有可能值、<b>TACTZ</b> 存各權限物件允許的活動值。</p>
+  <p><b>AUTHORITY-CHECK</b>：執行時檢查目前使用者主記錄中是否有該權限；結果在 sy-subrc（0＝通過，非 0＝不足，給錯誤或警告訊息）。不需要列出物件的所有欄位——沒寫的欄位不檢查，也可以寫 <span class="kw">DUMMY</span>（不加引號的預定義字）明確表示忽略。用 <b>Pattern</b> 產生敘述避免拼錯物件名與欄位名。原廠提醒：用權限控制整支程式或交易碼只是補充，不能取代開發者在程式中的明確檢查。</p>
+  <pre><code class="abap">PARAMETERS pa_car TYPE s_carr_id OBLIGATORY.
+
+AT SELECTION-SCREEN.
+  "顯示權限：CARRID = 使用者輸入、ACTVT = 03（顯示）
+  AUTHORITY-CHECK OBJECT 'S_CARRID'
+    ID 'CARRID' FIELD pa_car
+    ID 'ACTVT'  FIELD '03'.
+  IF sy-subrc &lt;&gt; 0.
+    "在 AT SELECTION-SCREEN 發 E 訊息 → 回到選擇畫面讓使用者重輸
+    MESSAGE |您沒有航空公司 { pa_car } 的顯示權限| TYPE 'E'.
+  ENDIF.
+
+START-OF-SELECTION.
+  "變更交易一進來先檢查「對任何航空公司」有沒有變更權：CARRID 用 DUMMY
+  AUTHORITY-CHECK OBJECT 'S_CARRID'
+    ID 'CARRID' DUMMY
+    ID 'ACTVT'  FIELD '02'.
+  IF sy-subrc &lt;&gt; 0.
+    MESSAGE '您沒有任何航空公司的變更權限' TYPE 'S' DISPLAY LIKE 'E'.
+    RETURN.
+  ENDIF.</code></pre>
+  <div class="tip">使用者回報「沒權限」時，請他<b>立刻</b>執行 <span class="tcode">SU53</span> 看最後一次失敗的權限檢查；開發者可用 <span class="tcode">STAUTHTRACE</span>（或舊的 ST01）追蹤。Code Inspector 會抓出「AUTHORITY-CHECK 之後沒檢查 sy-subrc」這類典型錯誤。S/4HANA 的 CDS View 另有 DCL（<span class="kw">@AccessControl.authorizationCheck</span>）做資料列層級的權限，ABAP SQL 讀 CDS 時自動套用。</div>
+
+  <h3 id="ch05-1-17">17. Unit 7：傳統報表——清單、選擇畫面與事件</h3>
+  <p><b>清單（List）</b>用最少的程式碼輸出資料：支援多語系（文字與標題以登入語言顯示）、金額依幣別顯示；可輸出到螢幕（顏色、圖示）、印表機、網際網路（自動轉 HTML）、存檔（SAP 內或外部，例如試算表）。標準清單介面提供常用功能，可用 Menu Painter 調整。每個清單有<b>一行清單標題</b>與<b>最多 4 行欄標題</b>，沒定義標題就用程式標題。維護方式：<b>初次</b>維護要先啟用、執行出清單，再從 System → List → List Header 直接在清單上方編輯；<b>後續</b>修改不必再執行，從編輯器 Goto → Text Elements → List Headers；翻譯用 Goto → Translation（强晟提到 ECC 5.0 起建立並啟用程式後就能直接維護）。清單標題、欄標題、文字符號與<b>選擇文字（Selection Texts）</b>合稱程式的<b>文字元素</b>。</p>
+  <p><b>選擇畫面</b>讓使用者輸入選擇條件，只讀真正需要的資料，減少記憶體與網路負擔。技術上它也是 Dynpro，但不用 Screen Painter 畫，而是由原始碼中的宣告式敘述自動產生。標準功能：多語系文字、自動型別檢查（型別不符的輸入 SAP GUI 不接受）、複雜選擇（區間、比較條件、樣式）、F1 欄位文件、F4 搜尋說明、存成<b>變式（Variant）</b>。</p>
+  <ul>
+    <li><b>PARAMETERS</b>（單值）：同時建立程式變數與畫面欄位；<b>名稱最多 8 個字元</b>；<b>不能用 F、STRING、XSTRING 型別</b>；預設值用 <span class="kw">DEFAULT</span> 而不是 VALUE。</li>
+    <li><b>SELECT-OPTIONS 名稱 FOR 資料物件</b>（複雜選擇）：建立同名內表（含表頭），四欄 <b>SIGN</b>（I 包含／E 排除）、<b>OPTION</b>（EQ、NE、GT、GE、LT、LE、BT、NB、CP、NP）、<b>LOW</b>、<b>HIGH</b>。例：輸入 LH → I EQ LH；區間 AA～DL → I BT AA DL；排除 BA → E EQ BA。組合語意是 <b>( I1 OR … OR In ) AND ( NOT E1 ) AND … AND ( NOT Em )</b>；<b>內表是空的時條件恆成立</b>（不過濾）。也可用在一般邏輯運算式 <span class="kw">IF gs_spfli-carrid IN so_car</span>。</li>
+    <li>欄位以資料元素定型時：選擇文字可直接取 Dictionary 的長標籤（Dictionary reference）、F1 顯示資料元素文件、F4 用連結的搜尋說明；結構欄位自己定義的搜尋說明會覆蓋資料元素的。</li>
+    <li><b>變式</b>：背景執行帶選擇畫面的程式<b>一定要有變式</b>（背景沒有人輸入）。名稱以 <b>CUS&amp;</b>（客戶）或 <b>SAP&amp;</b>（SAP）開頭的是<b>系統變式</b>，與用戶端無關、自動連結傳輸系統；其他變式與用戶端相關，要在編輯器 Goto → Variants → Utilities → Transport Request 手動掛到請求上傳輸。</li>
+  </ul>
+  <p><b>ABAP 事件</b>：程式啟動時先在記憶體建立所有全域資料物件，然後執行時系統依序觸發事件，有對應處理區塊就執行。</p>
+  <table>
+    <thead><tr><th>事件</th><th>時機與用途</th></tr></thead>
+    <tbody>
+      <tr><td><span class="kw">LOAD-OF-PROGRAM</span></td><td>程式載入時。4.6 起與 INITIALIZATION 並存，主要給函數群組、module pool 用；<b>執行檔程式不要用</b></td></tr>
+      <tr><td><span class="kw">INITIALIZATION</span></td><td>顯示選擇畫面前。在這裡給 PARAMETERS 賦值＝<b>動態預設值</b>（DEFAULT 的補充）</td></tr>
+      <tr><td><span class="kw">AT SELECTION-SCREEN</span></td><td>使用者在選擇畫面按 Enter 或 F8（PAI）後觸發，輸入值此時已傳入變數，適合<b>輸入檢查與權限檢查</b>；在此發 E 訊息會回到選擇畫面讓使用者修正。按 Enter 會重新顯示選擇畫面，按 F8 才繼續往下</td></tr>
+      <tr><td><span class="kw">START-OF-SELECTION</span></td><td>主處理；程式中沒有任何事件關鍵字時，所有敘述都屬於這個<b>隱含的標準事件</b>。在此發 E 訊息會<b>終止程式</b></td></tr>
+      <tr><td><span class="kw">AT LINE-SELECTION</span></td><td>在清單上雙擊或 F2 時觸發，用來顯示明細清單</td></tr>
+    </tbody>
+  </table>
+  <p>事件區塊的特性：以事件關鍵字開始、遇到下一個處理區塊就結束（沒有結束關鍵字）、不能巢狀、可以不存在（沒寫就什麼都不做）、<b>在原始碼中的先後順序不重要</b>。WRITE 的輸出先放在清單緩衝區，START-OF-SELECTION 處理完才顯示。</p>
+  <p><b>互動清單</b>（强晟 p153–155）：AT LINE-SELECTION 產生的明細清單會蓋在基本清單上，F3 回上一層；明細清單上再選行又會觸發同一事件，所以要用 <b>sy-lsind</b> 判斷層級：0＝基本清單，每次選行加 1，<b>最多 20 層</b>；若事件中沒有產生新清單，sy-lsind 自動減 1、停在目前這層。用 <span class="kw">HIDE</span> 把鍵值存起來，選行時自動還原到對應變數。</p>
+  <pre><code class="abap">REPORT zbc400_classic_report.
+
+DATA gv_carrid TYPE s_carr_id.                 "SELECT-OPTIONS FOR 需要一個資料物件
+
+PARAMETERS     pa_date TYPE sy-datum DEFAULT sy-datum.
+SELECT-OPTIONS so_car  FOR gv_carrid.
+
+INITIALIZATION.
+  "動態預設值：傍晚 6 點後執行，日期預設為下週同一天
+  IF sy-uzeit &gt; '180000'.
+    pa_date = pa_date + 7.
+  ENDIF.
+  "預設條件用「列舉」而不是區間
+  so_car[] = VALUE #( ( sign = 'I' option = 'EQ' low = 'LH' )
+                      ( sign = 'I' option = 'EQ' low = 'UA' ) ).
+
+AT SELECTION-SCREEN.
+  LOOP AT so_car INTO DATA(gs_car) WHERE sign = 'I' AND option = 'EQ'.
+    AUTHORITY-CHECK OBJECT 'S_CARRID'
+      ID 'CARRID' FIELD gs_car-low
+      ID 'ACTVT'  FIELD '03'.
+    IF sy-subrc &lt;&gt; 0.
+      MESSAGE |您沒有航空公司 { gs_car-low } 的顯示權限| TYPE 'E'.   "回到選擇畫面
+    ENDIF.
+  ENDLOOP.
+
+START-OF-SELECTION.
+  SELECT carrid, connid, fldate, seatsmax, seatsocc
+    FROM sflight
+    WHERE carrid IN @so_car
+      AND fldate &gt;= @pa_date
+    ORDER BY carrid, connid, fldate
+    INTO TABLE @DATA(gt_flights).
+
+  LOOP AT gt_flights INTO DATA(gs_flight).
+    WRITE: / gs_flight-carrid, gs_flight-connid, gs_flight-fldate,
+             gs_flight-seatsmax, gs_flight-seatsocc.
+    HIDE: gs_flight-carrid, gs_flight-connid, gs_flight-fldate.  "選行時自動還原
+  ENDLOOP.
+  CLEAR gs_flight.
+
+AT LINE-SELECTION.
+  CASE sy-lsind.
+    WHEN 1.
+      "第一層明細：這個航班的訂位
+      SELECT bookid, customid, luggweight, wunit
+        FROM sbook
+        WHERE carrid = @gs_flight-carrid
+          AND connid = @gs_flight-connid
+          AND fldate = @gs_flight-fldate
+        ORDER BY bookid
+        INTO TABLE @DATA(gt_book).
+      WRITE: / |{ gs_flight-carrid } { gs_flight-connid } { gs_flight-fldate DATE = USER } 的訂位|.
+      ULINE.
+      LOOP AT gt_book INTO DATA(gs_book).
+        WRITE: / gs_book-bookid, gs_book-customid, gs_book-luggweight, gs_book-wunit.
+      ENDLOOP.
+    WHEN OTHERS.
+      "不產生新清單 → sy-lsind 自動減 1，停在目前層
+  ENDCASE.</code></pre>
+  <div class="warn"><b>Casper 實務經驗②：條件用列舉（多筆 EQ）比用區間（BT）安全。</b>SELECT-OPTIONS 的 BT 比的是<b>字典序</b>，不是業務語意：號碼段不連續、ALPHA 轉換的前導零（'10' 與 '0000000010'）、編碼規則改過，都會讓區間漏抓或多抓。預設值、變式、介面傳進來的條件，能列舉就列舉。另外記得：<b>SELECT-OPTIONS 是空的時等於不過濾</b>——如果業務上「沒給條件就不該查全部」，要在 AT SELECTION-SCREEN 自己擋（或加 OBLIGATORY）。</div>
+  <div class="note">WRITE 清單在 S/4HANA 仍可用，但新報表的輸出請用 ALV（第 19 節、<a href="#ch02-3">2-3 章</a>）；選擇畫面的進階技巧（區塊、單選鈕、動態修改畫面、F4）見 <a href="#ch03-1">3-1 章</a>，報表程式的完整內容見 <a href="#ch05-6">5-6 章 BC405</a>、互動清單見 <a href="#ch05-7">5-7 章 BC406</a>。</div>
+
+  <h3 id="ch05-1-18">18. Unit 8：Dynpro 螢幕與 GUI 介面</h3>
+  <p><b>螢幕（Screen／Dynpro）</b>不只是版面上的輸入輸出欄位、按鈕等元素，還包括<b>處理邏輯</b>（顯示前後執行的程式片段）。與 Dictionary 整合帶來自動的一致性檢查：型別檢查、<b>外鍵檢查</b>、<b>固定值檢查</b>；也可在程式中自訂檢查，控制順序並在出錯時讓欄位重新可輸入。格式依使用者主記錄設定（日期、小數點、千分位），金額依幣別欄、數量依單位欄格式化。</p>
+  <p><b>啟動螢幕序列</b>：在處理區塊中 <span class="kw">CALL SCREEN nnnn</span>，或建立參照程式與第一個螢幕的<b>對話交易（dialog transaction）</b>。<b>哪些程式類型可以有螢幕</b>：執行檔程式（可以，但為重用與封裝 SAP 建議用函數群組的螢幕）、<b>函數群組</b>（可用對話交易或在函數模組中 CALL SCREEN；<b>SAP 建議</b>）、Module pool（只能用對話交易，無法封裝、沒有明確的外部介面，SAP 建議改用函數群組）。</p>
+  <p><b>螢幕四元件</b>：<b>屬性</b>（4 位數螢幕號、短文、螢幕類型如 Normal、預設下一螢幕）、<b>版面</b>（Screen Painter 圖形編輯器，可「Get from Dictionary」或「Get from program」建立欄位、維護元素屬性、顯示元素清單）、<b>元素清單</b>（每個元素的位置、大小、資料型別⋯⋯）、<b>流程邏輯</b>（PBO 與 PAI，<b>只能引用 MODULE，不能直接寫 ABAP 敘述</b>）。</p>
+  <ul>
+    <li><b>Get from Dictionary</b>：帶入 Dictionary 欄位的全部屬性（語意、外鍵相依），欄位名就是 Dictionary 欄位名。<b>Get from program</b>：帶入程式內資料物件的屬性，程式必須先啟用（要有產生版本）。必填欄位勾 <b>Required</b>。</li>
+    <li><b>按鈕與功能碼</b>：按鈕在屬性中指定名稱與<b>功能碼（Function Code）</b>；使用者按下時，執行時系統把功能碼放進 OK 類型的<b>命令欄位</b>（預設就在元素清單中，通常命名為 <b>OK_CODE</b>）；程式中若有同名資料物件（<span class="kw">DATA ok_code TYPE sy-ucomm</span>），值會自動傳入，然後觸發 PAI。</li>
+    <li><b>執行時的 5 步驟</b>：① PBO 模組依序執行 → ② 同名欄位從程式傳到螢幕 → ③ 螢幕送到 SAP GUI 顯示 → ④ 使用者動作後，螢幕欄位傳回程式同名欄位 → ⑤ PAI 模組依序執行。模組是沒有介面的處理區塊（<span class="kw">MODULE … ENDMODULE</span>）；<span class="kw">MODULE … OUTPUT</span> 只能被 PBO 呼叫、<span class="kw">MODULE … INPUT</span> 只能被 PAI 呼叫；模組中定義的變數<b>永遠是全域的</b>；一個模組可被多個螢幕呼叫。PAI 主模組慣例命名 <b>USER_COMMAND_nnnn</b>。</li>
+    <li><b>下一螢幕</b>：屬性填 <b>0</b>＝處理完回到 CALL SCREEN 的呼叫點（或結束對話交易；0 是初始值，在屬性畫面上會顯示成空白）；填自己的號碼＝關閉後再處理一次；PAI 中用 <span class="kw">SET SCREEN nnnn</span> 動態覆蓋。SAP 標準做法：Enter 停在同一螢幕、只有特定按鈕才跳走——Enter 預設不放功能碼，程式收到的是空白。</li>
+  </ul>
+  <p><b>TABLES 結構作為螢幕介面</b>：教材用 <span class="kw">TABLES</span> 宣告一個與 Dictionary 結構同名同型的結構變數（例如 SDYN_CONN 取自 SCARR、SPFLI、SFLIGHT；SDYN_BOOK 取自 SBOOK、SCUSTOM；Col18 用 BC400_S_DYNCONN），螢幕欄位參照同一結構，PBO 後由程式傳到螢幕、PAI 前由螢幕傳回程式。原廠範例在 PAI 模組中把 TABLES 結構複製到函數模組介面用的結構（gs_connection，型別 BC400_S_CONNECTION）再呼叫函數模組讀資料，刻意把「螢幕介面」與「函數介面」分開；在 PAI 發 E 訊息時螢幕會<b>不經 PBO</b> 直接重新顯示。</p>
+  <div class="warn"><b>本書不用 TABLES。</b>自動傳輸的真正條件是「<b>程式中有與螢幕欄位同名的全域資料物件</b>」，不一定要 TABLES：螢幕欄位用 <b>Get from program</b> 參照一個全域結構（例如 gs_dynconn-carrid）即可，效果相同又不會引入隱式的表工作區。<b>重新處理同一螢幕時所有 PBO 模組會再跑一次</b>，若在 PBO 填螢幕結構，要確保不會蓋掉使用者剛輸入的值。</div>
+  <pre><code class="abap">*---- 螢幕 0100 的流程邏輯（Screen Painter → Flow Logic）----
+PROCESS BEFORE OUTPUT.
+  MODULE status_0100.
+  MODULE clear_ok_code.
+PROCESS AFTER INPUT.
+  MODULE user_command_0100.
+
+*---- 螢幕 0200：只顯示 ----
+PROCESS BEFORE OUTPUT.
+  MODULE status_0200.
+PROCESS AFTER INPUT.
+  MODULE user_command_0200.
+
+*---- 主程式（實務上建議放在函數群組中）----
+REPORT zbc400_dynpro_demo.
+
+TYPES: BEGIN OF ts_dynconn,
+         carrid   TYPE spfli-carrid,
+         connid   TYPE spfli-connid,
+         airpfrom TYPE spfli-airpfrom,
+         airpto   TYPE spfli-airpto,
+         deptime  TYPE spfli-deptime,
+         arrtime  TYPE spfli-arrtime,
+       END OF ts_dynconn.
+
+DATA gs_dynconn TYPE ts_dynconn.   "螢幕欄位以 Get from program 參照 → 同名自動傳輸
+DATA ok_code    TYPE sy-ucomm.     "與螢幕的 OK 欄位同名
+DATA gv_ucomm   TYPE sy-ucomm.     "功能碼的安全副本
+
+START-OF-SELECTION.
+  CALL SCREEN 100.
+
+MODULE status_0100 OUTPUT.
+  SET PF-STATUS 'STATUS_0100'.     "雙擊名稱即可建立（Menu Painter）
+  SET TITLEBAR 'TITLE_0100'.
+ENDMODULE.
+
+MODULE clear_ok_code OUTPUT.
+  CLEAR ok_code.                   "避免殘留功能碼（見下方陷阱）
+ENDMODULE.
+
+MODULE user_command_0100 INPUT.
+  gv_ucomm = ok_code.
+  CLEAR ok_code.
+  CASE gv_ucomm.
+    WHEN 'GO'.
+      SELECT SINGLE carrid, connid, airpfrom, airpto, deptime, arrtime
+        FROM spfli
+        WHERE carrid = @gs_dynconn-carrid
+          AND connid = @gs_dynconn-connid
+        INTO CORRESPONDING FIELDS OF @gs_dynconn.
+      IF sy-subrc &lt;&gt; 0.
+        MESSAGE |航線 { gs_dynconn-carrid } { gs_dynconn-connid } 不存在| TYPE 'E'.
+      ENDIF.
+      SET SCREEN 200.              "屬性的下一螢幕是 100（Enter 停留），按 GO 才跳
+    WHEN 'EXIT'.
+      SET SCREEN 0.                "回到 CALL SCREEN 之後
+  ENDCASE.
+ENDMODULE.
+
+MODULE status_0200 OUTPUT.
+  SET PF-STATUS 'STATUS_0200'.
+  SET TITLEBAR 'TITLE_0200'.
+ENDMODULE.
+
+MODULE user_command_0200 INPUT.
+  gv_ucomm = ok_code.
+  CLEAR ok_code.
+  CASE gv_ucomm.
+    WHEN 'BACK'. SET SCREEN 100.
+    WHEN 'EXIT'. SET SCREEN 0.
+  ENDCASE.
+ENDMODULE.</code></pre>
+  <div class="warn"><b>功能碼殘留陷阱</b>（强晟 p179）：使用者在明細螢幕按「儲存」（ok_code＝'SAVE'），回到清單、選另一行進入螢幕後直接按 Enter，結果資料又被存了一次、還跳回清單——因為 Enter 不放功能碼，ok_code 還留著上一次的 'SAVE'。解法兩種都要會：① 在 PBO 清空 ok_code；② PAI 一開始把 ok_code 複製到輔助變數後立刻清空，之後只判斷輔助變數。</div>
+  <p><b>GUI 介面（Unit 8／强晟第九單元第四課）</b>：標題列（GUI Title，<span class="kw">SET TITLEBAR</span>，名稱最多 20 字元）；選單列＋標準工具列＋功能鍵＋應用工具列合稱 <b>GUI Status</b>（<span class="kw">SET PF-STATUS</span>）。一旦設定，<b>後續螢幕會繼承</b>，除非另外指定。選單列最多 8 個選單，System 與 Help 固定佔 2 個，自訂最多 6 個；標準工具列按鈕連結固定功能；SAP 建議的功能鍵配置（F3 返回、F12 取消…）不要改；其餘可自由指定，常用的可放到應用工具列（圖示或圖示＋文字）。螢幕類型一般選 <b>Dialog Status</b>；可用 Extras → Adjust Template 引用其他程式或清單的標準狀態當範本；若 PBO 使用預定義的 STATUS_nnnn 模組並用前向導覽建立，系統會自動產生註解掉的 SET PF-STATUS／SET TITLEBAR。<b>狀態改完要啟用</b>，否則執行時看不到。應用工具列按鈕與螢幕上的按鈕效果相近（都把功能碼放進命令欄位並觸發 PAI），差別是在清單上工具列按鈕會觸發 <span class="kw">AT USER-COMMAND</span>，功能碼在 sy-ucomm。</p>
+  <p><span class="src">（依講義步驟整理）</span>强晟 p185 自註「實在沒看懂」的段落，是 Menu Painter 中「以參照方式重用子物件」：一個 Status 可以直接參照另一個 Status 的選單列、功能鍵設定或應用工具列（Link），而不是複製一份；之後只需決定每個 Status 中哪些功能碼要啟用（Active／Inactive）。</p>
+  <div class="note">Dialog 程式的完整實戰見 <a href="#ch04-2">4-2 章</a> 與 <a href="#ch05-9">5-9 章 BC410</a>；子螢幕、Table Control、Tabstrip 見 <a href="#ch03-2">3-2 章</a>。在 S/4HANA 新的交易型 UI 由 Fiori（RAP＋Fiori Elements）承接，但 SAP GUI Dynpro 在 on-premise 仍大量使用。</div>
+
+  <h3 id="ch05-1-19">19. Unit 9：SAP List Viewer（ALV Grid Control）</h3>
+  <p>SAP 從 4.6 起提供大量 <b>EnjoySAP Controls</b>：<b>Grid Control</b>（在螢幕上顯示內表，含排序、篩選、合計）、<b>Picture Control</b>、<b>HTML Viewer Control</b>、<b>Tree Control</b>。程式透過標準類別的方法與 Control 溝通（Controls 詳見 <a href="#ch05-10">5-10 章 BC412</a>）。<b>ALV Grid</b>（SAP List Viewer／ABAP List Viewer）提供：使用者可調整欄寬（或依內容自動）、拖拉調整欄位順序、詳細資訊（Detail，以對話窗顯示游標所在列）、複雜排序、搜尋字串、對一或多個數值欄合計並依非數值欄做小計（控制層級清單）、列印與下載、<b>存成顯示變式（Layout）</b>重複使用。</p>
+  <p><b>執行時架構</b>：EnjoySAP Control 一定與螢幕一起顯示。最簡單的掛法：用 Screen Painter 的 <b>Custom Control</b> 按鈕在版面上畫出控制區並命名（例如 CONTAINER_AREA_1，可設 Resizing Vertical／Horizontal 與 Min. Lines／Min. Columns）；<b>容器（CL_GUI_CUSTOM_CONTAINER）</b>連接控制區，ALV Grid 嵌在容器中。程式裡要建立對應的「替身」實例：容器建構子的必填參數是 <b>CONTAINER_NAME</b>（控制區名稱）；<b>CL_GUI_ALV_GRID</b> 建構子唯一必填參數是 <b>I_PARENT</b>（容器實例）。三個關鍵方法：<b>CONSTRUCTOR</b>、<b>SET_TABLE_FOR_FIRST_DISPLAY</b>（IT_OUTTAB 傳內表，必須是 standard table；欄位資訊最簡單是 I_STRUCTURE_NAME 傳 Dictionary 結構名，或自建欄位目錄傳 IT_FIELDCATALOG）、<b>REFRESH_TABLE_DISPLAY</b>（內表內容變了，在下次顯示前呼叫）。實例在 PBO 建立、<b>每個螢幕只建一次</b>（先判斷參照是否已建立）。</p>
+  <pre><code class="abap">DATA gt_flights  TYPE bc400_t_flights.             "列型別 BC400_S_FLIGHT（訓練系統）
+DATA go_container TYPE REF TO cl_gui_custom_container.
+DATA go_alv_grid  TYPE REF TO cl_gui_alv_grid.
+
+MODULE init_control_0100 OUTPUT.
+  IF go_container IS NOT BOUND.                    "螢幕重跑 PBO 時不要重建
+    CREATE OBJECT go_container
+      EXPORTING
+        container_name = 'CONTAINER_AREA_1'        "Screen Painter 中的 Custom Control 名稱
+      EXCEPTIONS
+        OTHERS         = 1.
+    IF sy-subrc &lt;&gt; 0.
+      MESSAGE '無法建立容器（背景執行時沒有 GUI）' TYPE 'A'.
+    ENDIF.
+
+    go_alv_grid = NEW cl_gui_alv_grid( i_parent = go_container ).
+
+    go_alv_grid-&gt;set_table_for_first_display(
+      EXPORTING
+        i_structure_name = 'BC400_S_FLIGHT'        "由 Dictionary 自動產生欄位目錄
+      CHANGING
+        it_outtab        = gt_flights               "必須是 standard table
+      EXCEPTIONS
+        OTHERS           = 1 ).
+    IF sy-subrc &lt;&gt; 0.
+      MESSAGE 'ALV 顯示失敗' TYPE 'E'.
+    ENDIF.
+  ELSE.
+    go_alv_grid-&gt;refresh_table_display( ).          "內表變動後更新畫面
+  ENDIF.
+ENDMODULE.
+
+*---------------------------------------------------------------------*
+* 只要「顯示一張表」時，S/4HANA 的首選：CL_SALV_TABLE（不需螢幕與容器）
+*---------------------------------------------------------------------*
+START-OF-SELECTION.
+  SELECT carrid, connid, fldate, price, currency, seatsmax, seatsocc
+    FROM sflight
+    ORDER BY carrid, connid, fldate
+    INTO TABLE @DATA(gt_sflight)
+    UP TO 200 ROWS.
+
+  TRY.
+      cl_salv_table=&gt;factory( IMPORTING r_salv_table = DATA(go_salv)
+                              CHANGING  t_table      = gt_sflight ).
+      go_salv-&gt;get_functions( )-&gt;set_all( abap_true ).
+      go_salv-&gt;get_columns( )-&gt;set_optimize( abap_true ).
+      go_salv-&gt;display( ).
+    CATCH cx_salv_msg INTO DATA(gx_salv).
+      MESSAGE gx_salv TYPE 'I' DISPLAY LIKE 'E'.
+  ENDTRY.</code></pre>
+  <div class="warn">原廠 BC400 教的是 <b>CL_GUI_ALV_GRID</b>（要螢幕＋容器），適合需要編輯或事件細控的情境；純顯示報表請用 <b>CL_SALV_TABLE</b>。舊的 <span class="kw">REUSE_ALV_GRID_DISPLAY</span> 函數在新程式禁用。CL_GUI_* 控制項需要 SAP GUI 前端，<b>背景作業中無法建立</b>（容器建構會失敗），背景要輸出請改寫成 SALV 的清單模式或產生檔案。ALV 完整技巧見 <a href="#ch02-3">2-3 章</a>、<a href="#ch03-2">3-2 章</a>。</div>
+
+  <h3 id="ch05-1-20">20. Unit 10：Web Dynpro ABAP（WDA）</h3>
+  <p>NetWeaver 7.0 引入的 Web UI 程式模型，與用戶端及通訊協定無關（靠中繼資料達成），當年定位為「ABAP 環境開發 Web 應用的標準 UI 技術」。特性：版面、程式流程與商業邏輯嚴格分離；版面與流程有圖形化工具；開發工具（Web Dynpro Explorer）整合在 SE80；可重用元件；可透過 Web Service 存取後端；支援無障礙標準 Section 508（鍵盤操作、螢幕閱讀）。以 SAP GUI 開發，透過 URL、瀏覽器或 SAP Portal 執行。</p>
+  <table>
+    <thead><tr><th>傳統 Dynpro</th><th>Web Dynpro</th></tr></thead>
+    <tbody>
+      <tr><td>程式（例如 module pool）</td><td>Web Dynpro Component</td></tr>
+      <tr><td>對話交易</td><td>Web Dynpro Application</td></tr>
+      <tr><td>螢幕（Screen）</td><td>View</td></tr>
+      <tr><td>螢幕序列</td><td>Window</td></tr>
+      <tr><td>TABLES 結構</td><td>Context</td></tr>
+      <tr><td>功能碼</td><td>Action</td></tr>
+      <tr><td>PAI 模組 USER_COMMAND_nnnn</td><td>ONACTIONxyz 方法</td></tr>
+      <tr><td>SET SCREEN nnnn</td><td>FIRE_xyz_PLG（觸發 Outbound Plug）</td></tr>
+    </tbody>
+  </table>
+  <p><b>MVC 架構</b>：Model（商業互動層，與顯示無關的資料存取，可以是封裝資料存取的應用類別，也可沿用 BAPI、函數模組、Web Service）、View（使用者互動層，只管版面）、Controller（綁定層，格式化資料、處理輸入、控制流程）。<b>View</b> 由 UI 元素組成，執行時一次只顯示一個（相當於沒有流程邏輯的傳統螢幕），可用容器技術嵌入其他 View；每個 View 有自己的 <b>View Controller</b>（技術上是 ABAP 類別，大部分程式碼自動產生），其 <b>Context</b> 是資料容器。<b>Window</b> 綁定多個 View 並定義導覽；<b>Component</b> 含一或多個 Window 與自己的 Component Controller／Context；<b>Application</b> 指向某個 Window 的預設 View（啟動 View），是整個 View 序列的入口。</p>
+  <p><b>導覽</b>：View 之間以 <b>Navigation Link</b> 連接，從一個 View 的 <b>Outbound Plug</b> 連到另一個的 <b>Inbound Plug</b>（例：INPUT_VIEW 的 OUT_GO → OUTPUT_VIEW 的 IN_DEFAULT）；按鈕的 onAction 指定 Action，Action Handler 方法中「fire」Outbound Plug。<b>資料傳輸</b>：資料讀取集中寫在 Component Controller 的方法中（用 <b>Service Call 精靈</b>產生 EXECUTE_ 開頭的方法、依函數模組介面產生 Context 節點與呼叫程式）；Component Controller 與 View Controller 之間用 <b>Context Mapping</b>（雙向自動）；View 的 UI 元素與 View Context 之間用 <b>Data Binding</b>（可用精靈的 Form 範本產生）。7.0 EhP2 起 Window Editor 可切換階層檢視與圖形模型檢視。</p>
+  <div class="warn"><b>S/4HANA 現況</b>：Web Dynpro ABAP 仍受支援（大量標準應用與 FPM、部分 Fiori「GUI／WDA 型」App 仍是 WDA），但<b>已不是 SAP 的策略 UI</b>。新開發請用 <b>SAP Fiori</b>：後端以 CDS＋RAP（或 SEGW OData）提供服務，前端用 Fiori Elements 或 SAPUI5。ABAP Cloud 中完全不能使用 WDA。完整 WDA 內容見 <a href="#ch05-23">5-23 章 NET310</a>。</div>
+
+  <h3 id="ch05-1-21">21. Unit 11：程式分析工具——Code Inspector 與執行時分析</h3>
+  <p><b>Code Inspector</b>從程式碼角度檢查效能、安全與典型語意錯誤：效能（資料庫存取有沒有用到索引？SELECT 是否寫在迴圈裡？）、安全（是否讀其他用戶端的資料？SELECT 的表名或 WHERE 是否動態指定？）、典型語意錯誤（AUTHORITY-CHECK 之後有沒有檢查 sy-subrc？CLIENT SPECIFIED 後真的有指定用戶端嗎？是否連續使用 E 類訊息？）。</p>
+  <ul>
+    <li><b>呼叫</b>：物件清單右鍵 Check → Code Inspector（標準檢查，使用 DEFAULT 檢查變式）；結果是樹狀的錯誤／警告清單，資訊按鈕顯示說明與改善建議，雙擊跳到程式行。</li>
+    <li>刻意寫的、會被報出的程式碼可加虛擬註解 <span class="kw">"#EC …</span>（與延伸語法檢查相同做法）。</li>
+    <li>可自建名為 <b>DEFAULT</b> 的檢查變式覆蓋標準變式，但它會對你<b>在所有用戶端</b>生效；刪掉後又回到標準變式。原廠建議<b>自己另建檢查變式</b>，不要覆寫 DEFAULT。</li>
+    <li><span class="tcode">SCI</span>（Tools → ABAP Workbench → Test → Code Inspector）：<b>檢查變式</b>（查什麼）、<b>物件集合</b>（查哪些物件）、<b>檢查（Inspection）</b>（實際執行；要存結果或背景執行必須命名）。三者都可設 private／public。</li>
+    <li>檢查類別：General（例如列出 SELECT 用到的表名）、Performance（WHERE 分析、繞過緩衝的 SELECT、低效的內表存取）、Security（關鍵敘述、跨用戶端、權限檢查不足）、Syntax Check／Generation（語法、延伸程式檢查、產生）、Programming Conventions（命名規則）、Search Functions（搜尋字詞與敘述）。</li>
+  </ul>
+  <p><b>執行時分析</b>（强晟第六單元）：量測程式執行時的實際消耗，找出低效程式碼；結果以長條圖區分 ABAP、資料庫、系統的時間，Hit List 顯示每個操作的<b>總時間（gross）</b>與<b>淨時間（net，不含子操作）</b>，可直接跳到原始碼；初始畫面的 Tips &amp; Tricks 有效能範例。强晟建議自建分析變式並把彙總設為「無」，才能看到每個細節。<b>注意量測結果取決於當時的硬體與網路</b>，換環境結果會變。</p>
+  <pre><code class="abap">"刻意的全表讀取（SCARR 很小）→ 以虛擬註解告訴 Code Inspector 這是有意的
+SELECT carrid, carrname
+  FROM scarr
+  ORDER BY carrid
+  INTO TABLE @DATA(gt_all_carriers).                    "#EC CI_NOWHERE
+
+"7.02 起的 pragma：寫在敘述句點之前，關閉特定的延伸檢查訊息
+DATA(gv_title) = 'Flight Overview' ##NO_TEXT.
+
+"迴圈中的 SELECT（Code Inspector 會報 performance）→ 改成一次讀取
+SELECT carrid, connid, fldate, seatsocc
+  FROM sflight
+  FOR ALL ENTRIES IN @gt_all_carriers
+  WHERE carrid = @gt_all_carriers-carrid
+  INTO TABLE @DATA(gt_occ).                             "FAE 前務必確認驅動表不為空</code></pre>
+  <div class="warn"><b>S/4HANA 的對應工具</b>：舊的 <span class="tcode">SE30</span> 已由 <span class="tcode">SAT</span> 取代（ADT 中另有 ABAP Profiler）；Code Inspector 的檢查整合進 <b>ABAP Test Cockpit</b>（<span class="tcode">ATC</span>），S/4HANA 轉換時用 ATC 的 S/4HANA Readiness 檢查變式找出不相容的客製程式；SQL 效能再搭配 <span class="tcode">ST05</span> 與 SQL Monitor（<span class="tcode">SQLM</span>）。上例的 <span class="kw">FOR ALL ENTRIES</span> 若驅動表是空的，WHERE 條件會被整個忽略、讀出全表——這是 Code Inspector 也會提醒的經典坑。效能調校完整內容見 <a href="#ch05-21">5-21 章 BC490</a>。</div>
+
+  <h3 id="ch05-1-22">22. Unit 12：ABAP Development Tools（ADT，Eclipse）</h3>
+  <p><b>ADT</b> 是 ABAP Workbench 的替代開發環境：建立在 Eclipse 上的新開發體驗、開放的工具開發平台、一組與語言及平台無關的 API。好處：Eclipse 的易用、速度與彈性，加上 Workbench 經過驗證的功能；更好的<b>重構（Refactoring）</b>、程式碼補完、自動插入、程式碼範本、<b>Quick Fix</b>、易於導覽；可同時連多個 ABAP 系統並有 session failover（斷線影響小）；ABAP 與非 ABAP 工具整合在同一 IDE，並與 SAP HANA Studio、SAPUI5 工具、Java 緊密整合。Eclipse 以<b>透視圖（Perspective）</b>組合不同語言的工具，裝好 ADT 後切到 <b>ABAP Perspective</b>。</p>
+  <ul>
+    <li><b>ABAP Project</b>：先建立專案連線到後端系統（System、Client、User、Language），專案是某個後端系統開發物件的容器；直接編輯後端 Repository 物件，<b>沒有 check-out／check-in</b>，與 Workbench 相同。</li>
+    <li><b>Project Explorer</b>：類似 SE80 導覽區；每個專案可設我的最愛套件，展開 System Library 可看所有套件；每開一個物件就多一個頁籤。</li>
+    <li><b>兩種編輯器</b>：原生 Eclipse 編輯器（例如 ABAP 原始碼編輯器）與內嵌 SAP GUI 的編輯器（例如交易碼維護以傳統 GUI 畫面嵌在 Eclipse 中）。</li>
+    <li>原廠說法：不強制使用 ADT，開發者可自由選擇；ADT 特別適合物件導向開發（內建重構與單元測試支援）。資源：SAP Development Tools（tools.hana.ondemand.com）、SAP Community。</li>
+  </ul>
+  <pre><code class="abap">"ADT 中最快的練習方式：實作 IF_OO_ADT_CLASSRUN，按 F9 在 Console 看結果
+"（此介面約自 NetWeaver 7.51 起提供，請先在 SE24 確認系統中存在）
+CLASS zcl_bc400_adt_demo DEFINITION PUBLIC FINAL CREATE PUBLIC.
+  PUBLIC SECTION.
+    INTERFACES if_oo_adt_classrun.
+ENDCLASS.
+
+CLASS zcl_bc400_adt_demo IMPLEMENTATION.
+  METHOD if_oo_adt_classrun~main.
+    SELECT carrid, carrname, currcode
+      FROM scarr
+      ORDER BY carrid
+      INTO TABLE @DATA(lt_carriers).
+    out-&gt;write( lt_carriers ).
+    out-&gt;write( |共 { lines( lt_carriers ) } 家航空公司| ).
+  ENDMETHOD.
+ENDCLASS.</code></pre>
+  <pre><code class="sql">-- CDS View 只能在 ADT 建立（SE80 不行）。S/4HANA 1809（7.53）可用的 DDIC-based 寫法：
+@AbapCatalog.sqlViewName: 'ZBC400VCONN'
+@AccessControl.authorizationCheck: #NOT_REQUIRED
+@EndUserText.label: 'BC400 航線與航空公司'
+define view ZBC400_I_Connection
+  as select from spfli as s
+    inner join   scarr as c on c.carrid = s.carrid
+{
+  key s.carrid,
+  key s.connid,
+      c.carrname,
+      s.cityfrom,
+      s.cityto,
+      s.deptime
+}
+-- 7.55+（S/4HANA 2020 起）改用 define view entity，不再需要 sqlViewName</code></pre>
+  <div class="warn"><b>S/4HANA 的現實</b>：原廠教材說「ADT 是選擇性的替代品」，但在 S/4HANA 這已經不成立——<b>CDS View、AMDP、RAP 行為定義、Service Definition／Binding 都只能在 ADT 開發</b>，ABAP Cloud（BTP ABAP Environment、S/4HANA Cloud）更是只有 ADT。SE80 仍可維護傳統物件，但新人請直接以 ADT 為主要工具。ADT 的完整操作見 <a href="#ch05-5">5-5 章 BC404</a>。</div>
+
+  <h3 id="ch05-1-23">23. Unit 13：調整 SAP 標準軟體（概覽）</h3>
+  <p><b>基本術語</b>：</p>
+  <ul>
+    <li><b>Original／Copy</b>：物件在開發它的系統是<b>原件</b>，傳輸到其他系統的只是<b>副本</b>；原件系統（出生地）記錄在物件屬性中。原件<b>永遠不會被傳輸覆蓋</b>；只改副本會造成系統不一致（之後改原件傳過來又蓋掉），強烈建議只改原件。</li>
+    <li><b>Correction</b>：修改原件，在開發／修正類型的任務中進行。</li>
+    <li><b>Repair</b>：修改副本，在修補類型的任務中進行；例如正式機緊急修正後，<b>必須到原件系統做相同修改</b>。</li>
+    <li><b>Modification</b>：在客戶系統修補 SAP 的 Repository 物件。</li>
+    <li><b>升級時的修改調整</b>：升級會用 SAP 新版覆蓋被修改的 SAP 物件，必須比對新舊版並把修改搬回來（<span class="tcode">SPDD</span> 字典物件、<span class="tcode">SPAU</span> 其他物件），費時又易錯；SAP 建議在開發系統做調整再傳輸。</li>
+  </ul>
+  <table>
+    <thead><tr><th>調整方式</th><th>說明</th></tr></thead>
+    <tbody>
+      <tr><td><b>Customizing</b></td><td>用維護交易設定系統屬性與功能（<span class="tcode">SPRO</span>），是 SAP 設計好的調整方式，也是導入必經步驟</td></tr>
+      <tr><td><b>Enhancement</b></td><td>不修改 SAP 物件就調整功能；與版本無關、升級免調整；但不是所有需求都有對應增強點</td></tr>
+      <tr><td><b>Customer Development</b></td><td>在客戶命名空間自建 Repository 物件，標準沒有類似功能時使用</td></tr>
+      <tr><td><b>Modification</b></td><td>沒有合適增強點、需求又必要時才做；維護負擔大。SAP R/3 4.6B 起有 <b>Modification Assistant</b> 協助組織修改與後續調整</td></tr>
+    </tbody>
+  </table>
+  <p><b>增強類型</b>：<b>Program Exit</b>（SAP 在程式中預留、客戶可掛自己程式碼的位置，執行時一起跑；非常重要的一類）有四種技術：<b>User Exit</b>、<b>Customer Exit</b>、<b>Business Transaction Events（BTE）</b>、<b>Business Add-Ins（BAdI）</b>，每種都有專屬的搜尋方法（見 BC425）。其他：<b>Menu Exit</b>（SAP 選單中預留的項目）、<b>Screen Exit</b>（SAP 螢幕中的子螢幕區，可放自訂螢幕）、<b>Field Exit</b>（强晟版列出；在 SAP 螢幕欄位上做自訂輸入檢查，已過時）；Dictionary 中可<b>覆寫資料元素的 F1 文件與欄位標籤</b>；<b>Append Structure</b> 可加到大多數透明表、Dictionary 結構型別，Col18 新增<b>也可加到 Database View</b>（能從既有基表多選欄位，但不能加新的基表）；SAP 程式中註解掉的原始碼區段，SAP 建議時可取消註解啟用額外功能——技術上屬於修改。</p>
+  <p><b>SSCR（SAP Software Change Registration）</b>：開發者第一次建立或修改 Repository 物件時，系統要求<b>開發者金鑰（Developer Key）</b>，需一次性註冊，綁定使用者 ID 與系統授權號碼（Installation Number）；每個要修改的 SAP 物件另需<b>物件金鑰（Object Key）</b>，註冊時提供物件名稱、物件類型、系統授權號碼與版本。</p>
+  <div class="warn"><b>Casper 實務經驗③：先找標準，再想客製。</b>順序是：<b>標準設定（Customizing）→ BAdI／Enhancement Spot → Enhancement Point（隱式／顯式增強）→ 修改標準</b>，每往右一步，升級成本高一個量級。S/4HANA 現況：Field Exit 早已停用；User Exit（例如 MV45AFZZ）與 Customer Exit（<span class="tcode">SMOD</span>／<span class="tcode">CMOD</span>）在 on-premise 仍可用但屬舊技術；新開發優先用 <b>New BAdI（Enhancement Framework）</b>，在 S/4HANA Cloud／ABAP Cloud 只能用已釋放（released）的 BAdI 與 Key User Extensibility（自訂欄位與邏輯）。SSCR 金鑰在 on-premise 仍需要（透過 SAP for Me 申請），ABAP Cloud 則根本不允許修改。詳細內容見 <a href="#ch03-3">3-3 章</a>、<a href="#ch03-4">3-4 章</a>、<a href="#ch05-14">5-14 章 BC425</a>、<a href="#ch05-15">5-15 章 BC427</a>。</div>
+
+  <h3 id="ch05-1-24">24. 舊語法 → S/4HANA 寫法對照（本章涉及部分）</h3>
+  <table>
+    <thead><tr><th>教材中的舊寫法</th><th>問題</th><th>本書寫法</th></tr></thead>
+    <tbody>
+      <tr><td><span class="kw">MOVE a TO b.</span>／<span class="kw">COMPUTE</span>／<span class="kw">ADD 1 TO x</span></td><td>過時</td><td><span class="kw">b = a.</span>、<span class="kw">x = x + 1.</span>（7.54+ 才能寫 <span class="kw">x += 1.</span>）</td></tr>
+      <tr><td><span class="kw">TYPES t(8) TYPE c.</span>、<span class="kw">DATA v(15) TYPE c.</span></td><td>括號長度難讀</td><td><span class="kw">TYPE c LENGTH 8</span></td></tr>
+      <tr><td><span class="kw">CONCATENATE … INTO …</span></td><td>冗長</td><td>字串範本 <span class="kw">|…{ x }…|</span> 與 <span class="kw">&amp;&amp;</span></td></tr>
+      <tr><td><span class="kw">WITH HEADER LINE</span>、<span class="kw">OCCURS n</span>、<span class="kw">itab[]</span></td><td>同名混淆，OO 中禁用</td><td>明確的工作區、<span class="kw">VALUE #( )</span>、表格運算式</td></tr>
+      <tr><td><span class="kw">READ TABLE … INTO wa</span> + <span class="kw">MODIFY … FROM wa</span></td><td>多一次複製</td><td><span class="kw">ASSIGNING FIELD-SYMBOL( )</span>、<span class="kw">itab[ … ]</span>、<span class="kw">line_exists( )</span></td></tr>
+      <tr><td><span class="kw">MOVE-CORRESPONDING</span></td><td>可用但無法對應不同名</td><td><span class="kw">CORRESPONDING #( … MAPPING … )</span></td></tr>
+      <tr><td>SELECT 迴圈（SELECT … 至 ENDSELECT）、沒有 @ 的主機變數、<span class="kw">SELECT *</span></td><td>逐筆傳輸、舊語法</td><td>明列欄位＋<span class="kw">INTO TABLE @DATA( )</span>＋ORDER BY</td></tr>
+      <tr><td><span class="kw">CLIENT SPECIFIED</span></td><td>7.51 起過時</td><td><span class="kw">USING CLIENT</span></td></tr>
+      <tr><td><span class="kw">FORM</span>／<span class="kw">PERFORM</span></td><td>7.02 起過時，只有 USING／CHANGING</td><td>區域類別的方法</td></tr>
+      <tr><td><span class="kw">CALL METHOD o-&gt;m EXPORTING …</span>、<span class="kw">CREATE OBJECT o.</span></td><td>冗長</td><td>函數式呼叫 <span class="kw">o-&gt;m( … )</span>、<span class="kw">NEW #( )</span>（需處理傳統例外時保留 CREATE OBJECT）</td></tr>
+      <tr><td><span class="kw">TABLES sdyn_conn.</span>（螢幕介面）</td><td>隱式表工作區</td><td>同名全域結構＋Get from program</td></tr>
+      <tr><td><span class="kw">REUSE_ALV_GRID_DISPLAY</span></td><td>函數式 ALV，已不維護</td><td><span class="kw">CL_SALV_TABLE</span>；需編輯才用 <span class="kw">CL_GUI_ALV_GRID</span></td></tr>
+      <tr><td>邏輯資料庫（SE36）</td><td>S/4HANA 過時</td><td>CDS View＋ABAP SQL</td></tr>
+      <tr><td><span class="tcode">SE30</span>、Code Inspector 單獨使用</td><td>舊工具</td><td><span class="tcode">SAT</span>、<span class="tcode">ATC</span></td></tr>
+    </tbody>
+  </table>
+  <p>完整對照表見 <a href="#ap-01">附錄 ap-01</a>；基本語法見 <a href="#ch02-1">2-1 章</a>。</p>
+
+  <h3 id="ch05-1-25">25. L29 補充：Col16 e-book、2009 官方簡中版與 SAP 官方中文術語</h3>
+  <p>本節整理 L29 兩份 BC400 有、前面 24 節沒寫到的內容：版本演進的關鍵差異、Col16 多出的操作步驟、Col63 的 27 個練習與過時說法，以及本節重點——<b>英文術語、SAP 官方簡中譯名、台灣慣用說法三方對照</b>。</p>
+
+  <h4>25.1 三個原廠版本的演進</h4>
+  <table>
+    <thead><tr><th>項目</th><th>Col63（2007/Q4，簡中 2009）</th><th>Col16（2018 e-book）</th><th>Col18（2022，L28）</th></tr></thead>
+    <tbody>
+      <tr><td>單元數</td><td>9（螢幕、WDA、報表、ALV 同屬「用户对话」）</td><td>13</td><td>13</td></tr>
+      <tr><td>完整型別</td><td>D、T、I、F、STRING、XSTRING（p65–66）</td><td>型別表頁（PDF p66–67）只有圖片、沒有文字層；Learning Assessment 已含 INT8</td><td>加上 INT8（7.50）、DECFLOAT16／34（7.0 EhP2）</td></tr>
+      <tr><td>F8 執行未啟用版本</td><td>可以，產生臨時執行時物件（p44）</td><td>同左（PDF p52）</td><td><b>7.50 起不行</b>，會出錯</td></tr>
+      <tr><td>BAPI</td><td>函數模組課中的一段</td><td>獨立一課（Unit 4 L5）</td><td>同 Col16</td></tr>
+      <tr><td>區域類別</td><td>「预览」，僅 5 頁</td><td>獨立一課，建議取代 FORM</td><td>同 Col16</td></tr>
+      <tr><td>GUI Status／Menu Painter 操作</td><td>無（只在工具清單提到菜单绘制器）</td><td>有</td><td>有</td></tr>
+      <tr><td>ADT（Eclipse）</td><td>無</td><td>Unit 12，兩課</td><td>同 Col16</td></tr>
+      <tr><td>練習</td><td>27 個練習＋解答程式</td><td>無（e-book 只有 Learning Assessment）</td><td>有</td></tr>
+    </tbody>
+  </table>
+  <div class="note"><b>版本說法不一致</b>：Col16 的 Learning Assessment 已考 INT8（SAP AS 7.50 才有），正文卻仍寫「F8 可以執行未啟用版本」（7.50 以前的行為），同一本教材前後對不上。<b>以 Col18 為準</b>：NetWeaver 7.50 起只能執行已啟用的版本；S/4HANA 1809（7.53）當然適用新行為（第 5 節）。</div>
+
+  <h4>25.2 Col16 多出的內容：SE81 應用階層操作</h4>
+  <p>Col16 Unit 2 L1（PDF p28–29）多一段 Col18 刪掉的操作步驟，想「只在某個應用模組裡找物件」時很好用：</p>
+  <ol>
+    <li>SAP Easy Access → Tools → ABAP Workbench → Overview → Application Hierarchy → SAP，或直接執行 <span class="tcode">SE81</span>。</li>
+    <li>展開應用元件節點，顯示這個元件底下所有套件。</li>
+    <li>按 <b>Select</b> 圈選任意子樹，再按 <b>Information System</b> 跳到 <span class="tcode">SE84</span>。</li>
+    <li>系統會記住選取子樹的所有套件，並自動填入資訊系統的選擇畫面，這時搜尋只在這些應用範圍內進行（例如只找 SD 底下的函數模組）。</li>
+  </ol>
+  <p>Col16 Unit 12 的 ADT 資源還寫 scn.sap.com／community/abap/eclipse，這些網址已經搬到 <b>community.sap.com</b>；ADT 安裝請用 tools.hana.ondemand.com（現為 SAP Development Tools 網站）。</p>
+
+  <h4>25.3 Col63 的 27 個練習與解答程式</h4>
+  <p>Col63 每個練習都有「模板」與「解決方案」程式名，訓練系統中可以直接執行解答來對照。解答程式命名可以看出規律：<span class="kw">DOS</span>＝資料物件、<span class="kw">MOS</span>＝模組化、<span class="kw">STS</span>／<span class="kw">ITS</span>＝結構／內表、<span class="kw">DDS</span>＝資料庫讀取、<span class="kw">UDS</span>＝使用者對話、<span class="kw">WDS</span>＝Web Dynpro、<span class="kw">RPT</span>／<span class="kw">RPS</span>＝報表的模板／解答（結尾 T＝Template、S＝Solution，這是依名稱推測的規則，教材沒有明寫）。</p>
+  <table>
+    <thead><tr><th>練習</th><th>主題</th><th>模板 → 解答</th></tr></thead>
+    <tbody>
+      <tr><td>1～3</td><td>組織開發、開發簡單程式、建立交易碼</td><td>—</td></tr>
+      <tr><td>4～5</td><td>基本 ABAP 敘述（計算機）、除錯</td><td>無 → BC400_DOS_COMPUTE</td></tr>
+      <tr><td>6</td><td>子例程（百分比計算）</td><td>BC400_DOS_COMPUTE → BC400_MOS_SUBROUTINE</td></tr>
+      <tr><td>7～9</td><td>使用函數模組、建立函數群組、建立並使用函數模組</td><td>→ BC400_MOS_FUNCTION_MODULE_1、函數群組 BC400_MOS、BC400_MOS_FUNCTION_MODULE_2</td></tr>
+      <tr><td>10～12</td><td>使用全域靜態方法、建立全域類別、建立並使用全域靜態方法</td><td>→ BC400_MOS_GLOBAL_CLASS_1、CL_BC400_MOS_COMPUTE、BC400_MOS_GLOBAL_CLASS_2</td></tr>
+      <tr><td>13～14</td><td>使用結構、使用內表</td><td>→ BC400_STS_STRUCTURE、BC400_ITS_ITAB_LOOP</td></tr>
+      <tr><td>15</td><td>分析 ABAP 字典中的透明表</td><td>—</td></tr>
+      <tr><td>16～18</td><td>單筆讀取（SELECT SINGLE，函數模組 BC400_DDS_CONNECTION_GET）、SELECT 迴圈、（選做）Array fetch（FLIGHTLIST_GET）</td><td>→ 函數群組 BC400_DDS</td></tr>
+      <tr><td>19</td><td>權限檢查</td><td>→ BC400_DDS_AUTH_CHECK</td></tr>
+      <tr><td>20～22</td><td>建立螢幕與下一螢幕、輸入／輸出欄位、資料傳輸</td><td>→ SAPMBC400_UDS_A → _B → _C</td></tr>
+      <tr><td>23～24</td><td>Web Dynpro 導覽、資料傳輸與版面</td><td>→ BC400_WDS_A → BC400_WDS_B</td></tr>
+      <tr><td>25～26</td><td>選擇畫面與傳統清單、ABAP 事件</td><td>BC400_RPT_REP_A → BC400_RPS_REP_A → BC400_RPS_REP_B</td></tr>
+      <tr><td>27</td><td>用 ALV 顯示內表</td><td>SAPMBC400_UDS_C → SAPMBC400_UDS_D</td></tr>
+    </tbody>
+  </table>
+  <p>練習 16～18 是一組：同一個函數群組裡先寫單筆讀 SPFLI 的函數模組（傳統例外 NO_DATA），再用 SELECT 迴圈與 Array fetch 讀 SFLIGHT。下面把它改寫成 S/4HANA 寫法：函數模組換成全域類別的靜態方法、傳統例外換成例外類別、SELECT 迴圈直接改成 array fetch 並加 ORDER BY。</p>
+  <pre><code class="abap">"Col63 練習 16～18（BC400_DDS）的現代寫法：資料存取封裝在全域類別
+CLASS zcl_bc400_flight_dao DEFINITION PUBLIC FINAL CREATE PUBLIC.
+  PUBLIC SECTION.
+    TYPES tt_flights TYPE STANDARD TABLE OF bc400_s_flight WITH EMPTY KEY.
+
+    "練習 16：單筆讀取（原為 Z_BC400_##_CONNECTION_GET + EXCEPTIONS no_data）
+    CLASS-METHODS get_connection
+      IMPORTING iv_carrid            TYPE s_carr_id
+                iv_connid            TYPE s_conn_id
+      RETURNING VALUE(rs_connection) TYPE bc400_s_connection
+      RAISING   zcx_bc400_no_data.     "SE24 自建，繼承 CX_STATIC_CHECK
+
+    "練習 17／18：多筆讀取（原為 SELECT 迴圈逐筆 APPEND，本書禁用）
+    CLASS-METHODS get_flights
+      IMPORTING iv_carrid         TYPE s_carr_id
+                iv_connid         TYPE s_conn_id
+      RETURNING VALUE(rt_flights) TYPE tt_flights.
+ENDCLASS.
+
+CLASS zcl_bc400_flight_dao IMPLEMENTATION.
+  METHOD get_connection.
+    "給完整主鍵（MANDT 自動帶入）才用 SELECT SINGLE
+    SELECT SINGLE carrid, connid, cityfrom, airpfrom, cityto, airpto,
+                  fltime, deptime, arrtime
+      FROM spfli
+      WHERE carrid = @iv_carrid
+        AND connid = @iv_connid
+      INTO CORRESPONDING FIELDS OF @rs_connection.
+    IF sy-subrc &lt;&gt; 0.
+      RAISE EXCEPTION TYPE zcx_bc400_no_data.   "取代傳統例外 RAISE no_data
+    ENDIF.
+  ENDMETHOD.
+
+  METHOD get_flights.
+    "HANA 沒有預設排序：要依日期顯示就一定寫 ORDER BY
+    SELECT carrid, connid, fldate, seatsmax, seatsocc
+      FROM sflight
+      WHERE carrid = @iv_carrid
+        AND connid = @iv_connid
+      ORDER BY fldate
+      INTO CORRESPONDING FIELDS OF TABLE @rt_flights.
+  ENDMETHOD.
+ENDCLASS.</code></pre>
+
+  <h4>25.4 Col63 的過時說法與教材修正</h4>
+  <ul>
+    <li><b>RETURNING 參數的限制</b>（p191）：Col63 寫「用 RETURNING 定義函數方法時，就不能再定義 EXPORTING 和 CHANGING 參數」。這是 7.0 的限制；依 ABAP Keyword Documentation 的版本說明，<b>7.0 EhP2（7.02）起</b>函數方法也可以有 EXPORTING／CHANGING 參數，S/4HANA 可以放心使用（見下例）。不過一般還是建議函數方法只回傳一個值，讓呼叫端可以寫在運算式裡。</li>
+    <li><b>練習 20 用 module pool</b>（p335）：課文（p313）才說過「函數群組是建立螢幕的建議程式類型，module pool 無法封裝，應盡量避免」，練習卻要學員建 TOP Include 的 module pool <span class="kw">SAPMZBC400_##_A</span>（類型 M）。教材前後說法不一；新程式請照課文建議放在函數群組，或直接改用 Fiori。</li>
+    <li><b>除錯器版本</b>（p84）：「SAP Web AS 6.40 及更低版本只有傳統除錯器」，與 Col18 說法相同，也印證第 8 節「以原廠說法為準」的結論。</li>
+    <li><b>開發類</b>（p35）：「SAP R/3 4.6 仍把套件稱為開發類（Development Class）」，4.6A/B 只能用其中一種方式建立。老系統的文件與 TADIR 欄位 DEVCLASS 還看得到這個舊名稱。</li>
+    <li><b>BAPI 結構前綴</b>（p146）：Col63 寫介面結構前綴是 <span class="kw">BAPI_</span>，Col16／Col18 寫 <span class="kw">BAPI</span>。實際系統中兩種都有（BAPIRET2、BAPISFLDAT；BAPI_…），重點是「為 BAPI 專門建立的字典結構」，不要糾結底線。</li>
+    <li><b>解答程式碼的德文殘留</b>（p275）：函數模組註解區寫的是 <span class="kw">*"*"Lokale Schnittstelle:</span>——Function Builder 依<b>登入語言</b>產生這段註解，原廠系統是用德文登入產生的，不是錯誤。</li>
+  </ul>
+  <pre><code class="abap">"7.02 起：有 RETURNING 的函數方法也能同時帶 EXPORTING（Col63 p191 的說法已過時）
+CLASS lcl_seat_calc DEFINITION FINAL.
+  PUBLIC SECTION.
+    CLASS-METHODS occupancy
+      IMPORTING iv_max           TYPE s_seatsmax
+                iv_occ           TYPE s_seatsocc
+      EXPORTING ev_free          TYPE i
+      RETURNING VALUE(rv_percent) TYPE decfloat16.
+ENDCLASS.
+
+CLASS lcl_seat_calc IMPLEMENTATION.
+  METHOD occupancy.
+    ev_free    = iv_max - iv_occ.
+    rv_percent = COND #( WHEN iv_max = 0 THEN 0
+                         ELSE CONV decfloat16( iv_occ ) * 100 / iv_max ).
+  ENDMETHOD.
+ENDCLASS.
+
+START-OF-SELECTION.
+  "函數式呼叫同時接回傳值與 EXPORTING 參數（7.02+）
+  DATA gv_free TYPE i.
+  DATA(gv_percent) = lcl_seat_calc=&gt;occupancy( EXPORTING iv_max  = 280
+                                                         iv_occ  = 196
+                                               IMPORTING ev_free = gv_free ).
+  WRITE: / |佔用率 { gv_percent }%，剩餘 { gv_free } 位|.</code></pre>
+
+  <h4>25.5 英文術語 ↔ SAP 官方簡中 ↔ 台灣慣用說法</h4>
+  <p>SAP 官方簡中譯名取自 Col63 正文（括號內為 PDF 頁碼，選代表性的一處）。台灣慣用說法是本書與台灣 SAP 專案現場的講法；很多詞台灣顧問其實直接講英文，表中一併列出。看大陸社群的文章、SAP 簡中介面（登入語言 ZH）或 SAP Help 簡中版時，用這張表對照。</p>
+  <table>
+    <thead><tr><th>英文術語</th><th>SAP 官方簡中（Col63）</th><th>台灣慣用說法</th></tr></thead>
+    <tbody>
+      <tr><td>Repository</td><td>资源库（p24）</td><td>儲存庫、直接說 Repository</td></tr>
+      <tr><td>Object Navigator（SE80）</td><td>对象导航器（p24）</td><td>物件導覽器、SE80</td></tr>
+      <tr><td>Repository Information System（SE84）</td><td>资源库信息系统（p26）</td><td>儲存庫資訊系統</td></tr>
+      <tr><td>Application Hierarchy（SE81）</td><td>应用程序层次结构（p26）</td><td>應用階層</td></tr>
+      <tr><td>Package（舊稱 Development Class）</td><td>包（旧称开发类）（p35）</td><td>套件（開發類別）、Package</td></tr>
+      <tr><td>Transport Layer</td><td>传输层（p36）</td><td>傳輸層</td></tr>
+      <tr><td>Change Request／Task</td><td>变更请求／任务（p34）</td><td>傳輸請求（Request 號）／任務（Task）</td></tr>
+      <tr><td>Transport Organizer</td><td>传输组织器（p34）</td><td>傳輸管理（SE09／SE10）</td></tr>
+      <tr><td>Activate／active／inactive version</td><td>激活／活动版本／不活动版本（p43）</td><td>啟用／已啟用版本／未啟用版本</td></tr>
+      <tr><td>Runtime object（LOAD）</td><td>运行时对象（p44）</td><td>執行時物件、Load</td></tr>
+      <tr><td>Program context</td><td>程序背景（p15）；程序上下文（p74）</td><td>程式上下文（程式執行環境）</td></tr>
+      <tr><td>Presentation Server</td><td>演示服务器（p11）</td><td>展示層、前端（SAP GUI）</td></tr>
+      <tr><td>Dispatcher／Work Process</td><td>调度器／工作进程（p11）</td><td>分派器／工作程序（WP）</td></tr>
+      <tr><td>Runtime system</td><td>运行时系统（p15）</td><td>執行時系統</td></tr>
+      <tr><td>Reuse unit</td><td>重用单元（p13）</td><td>重用單元、共用元件</td></tr>
+      <tr><td>Transaction code</td><td>事务代码（p46）</td><td>交易碼、T-Code</td></tr>
+      <tr><td>Dialog transaction／Report transaction</td><td>对话事务／报表事务（p46）</td><td>對話交易／報表交易</td></tr>
+      <tr><td>SAP Easy Access／Favorites</td><td>SAP 轻松访问菜单／收藏夹（p47）</td><td>SAP Easy Access 選單／我的最愛</td></tr>
+      <tr><td>Data object／Data type</td><td>数据对象／数据类型（p65）</td><td>資料物件／資料型別</td></tr>
+      <tr><td>Complete／incomplete type</td><td>完整型／不完整型（p65）</td><td>完整型別／不完整型別</td></tr>
+      <tr><td>Data element</td><td>数据元素（p67 附近）</td><td>資料元素</td></tr>
+      <tr><td>Literal／Constant</td><td>文字／常量（p71）</td><td>常值（文字）／常數</td></tr>
+      <tr><td>Text symbol／Selection text／Text element</td><td>文本符号／选择文本／文本元素（p390）</td><td>文字符號／選擇文字／文字元素</td></tr>
+      <tr><td>Chained statement</td><td>链式语句（p41）</td><td>鏈式敘述</td></tr>
+      <tr><td>System field／Return code</td><td>系统字段／返回代码（p78）</td><td>系統欄位／回傳碼（sy-subrc）</td></tr>
+      <tr><td>Message class</td><td>消息类（p80 附近）</td><td>訊息類別</td></tr>
+      <tr><td>Debugger／Breakpoint／Watchpoint／Call stack</td><td>调试器（亦作调试程序）／断点／观察点／调用堆栈（p82–85、p121）</td><td>除錯器／中斷點／監看點（觀察點）／呼叫堆疊</td></tr>
+      <tr><td>Subroutine</td><td>子例程（p111）</td><td>副程式、FORM</td></tr>
+      <tr><td>Actual／formal parameter</td><td>实际参数／形式参数（p113）</td><td>實參／形參（實際參數／形式參數）</td></tr>
+      <tr><td>Call by value／by value and result</td><td>按值调用／按值和结果调用（p114）</td><td>傳值呼叫／傳值並回傳結果</td></tr>
+      <tr><td>Signature／Interface</td><td>签名／接口（p105）</td><td>簽章／介面</td></tr>
+      <tr><td>Function module／Function group</td><td>函数模块／函数组（p130）</td><td>函數模組／函數群組（俗稱 FM）</td></tr>
+      <tr><td>Function Builder／Class Builder</td><td>函数构建器（p27，亦作函数编制器 p274）／类构建器（p27，亦作类制作器 p189）</td><td>函數建構器（SE37）／類別建構器（SE24）</td></tr>
+      <tr><td>Business Object Repository（BOR）</td><td>业务对象资源库（p143）</td><td>商業物件儲存庫（BOR）</td></tr>
+      <tr><td>Global class／Local class／Static method</td><td>全局类／局部类／静态方法（p162、p189）</td><td>全域類別／區域類別／靜態方法</td></tr>
+      <tr><td>Reference variable／Constructor</td><td>参考变量／构造函数（p164 附近、p424 附近）</td><td>參照變數／建構子</td></tr>
+      <tr><td>Structure／Work area</td><td>结构／工作区域（p200、p217）</td><td>結構／工作區</td></tr>
+      <tr><td>Internal table；Standard／Sorted／Hashed</td><td>内部表；标准表／排序表／散列表（p213）</td><td>內表；標準表／排序表／雜湊表</td></tr>
+      <tr><td>Line type／Table kind</td><td>行类型／表种类（亦作表类型、表类别）（p213）</td><td>列型別／表種類</td></tr>
+      <tr><td>Transparent table</td><td>透明表（p240）</td><td>透明表</td></tr>
+      <tr><td>Secondary index</td><td>次级索引（p263）</td><td>次級索引（Secondary Index）</td></tr>
+      <tr><td>SAP table buffer／Bypassing buffer</td><td>SAP 表缓冲／回避缓冲（p267）</td><td>表格緩衝／略過緩衝</td></tr>
+      <tr><td>SELECT loop／Array fetch</td><td>SELECT 循环／阵列获取（p260–261）</td><td>SELECT 迴圈／整批讀取（Array Fetch）</td></tr>
+      <tr><td>Client-specific／Cross-client</td><td>客户端特定／跨客户端（p24、p61）</td><td>用戶端相關（集團相關）／跨用戶端</td></tr>
+      <tr><td>Authorization object／Activity（ACTVT）</td><td>授权对象／活动（p290–293）</td><td>權限物件／活動</td></tr>
+      <tr><td>User master record／Authorization profile</td><td>用户主记录／授权参数文件（p290）</td><td>使用者主檔／權限設定檔（Profile）</td></tr>
+      <tr><td>Selection screen／SELECT-OPTIONS</td><td>选择屏幕／选择选项（p393）</td><td>選擇畫面／選擇條件（Select-Options）</td></tr>
+      <tr><td>List header／Column header</td><td>列表抬头／列抬头（p390）</td><td>清單標題／欄標題</td></tr>
+      <tr><td>Processing block／Event block</td><td>处理块／事件块（p15、p317）</td><td>處理區塊／事件區塊</td></tr>
+      <tr><td>Screen（Dynpro）</td><td>屏幕（p311）</td><td>畫面、螢幕、Dynpro</td></tr>
+      <tr><td>Screen Painter／Menu Painter</td><td>屏幕制作器（p315，p27 作屏幕绘图器）／菜单绘制器（p27）</td><td>畫面繪製器／選單繪製器（多直接說 Screen Painter）</td></tr>
+      <tr><td>Flow logic／Element list</td><td>流程逻辑／元素列表（p314）</td><td>流程邏輯／元素清單</td></tr>
+      <tr><td>Function code</td><td>函数代码（p319）</td><td>功能碼（OK Code）</td></tr>
+      <tr><td>Module pool</td><td>模块库（p313）</td><td>Module Pool（模組池）</td></tr>
+      <tr><td>SAP List Viewer／Grid control</td><td>SAP 列表浏览器／栅格控件（p417）</td><td>ALV／ALV Grid</td></tr>
+      <tr><td>Custom control／Container</td><td>定制控件（定制控制范围）／容器（p424）</td><td>自訂控制區（Custom Control）／容器</td></tr>
+      <tr><td>Field catalog／Display variant</td><td>字段目录／显示变式（p419）</td><td>欄位目錄（Fieldcat）／版面配置（Layout）</td></tr>
+      <tr><td>Outbound／Inbound plug</td><td>出站插入／入站插入（p353 以後）</td><td>Outbound／Inbound Plug</td></tr>
+      <tr><td>Action／Action handler</td><td>活动代码／活动处理器方法（p365）</td><td>Action／ONACTION 事件方法</td></tr>
+      <tr><td>Component controller／View controller</td><td>组件控制器／视图控制器（p354 以後）</td><td>元件控制器／View 控制器</td></tr>
+      <tr><td>Context mapping／Data binding</td><td>上下文映射／数据绑定（p374 附近）</td><td>Context 對應／資料繫結</td></tr>
+      <tr><td>Code Inspector／Check variant／Object set</td><td>代码分析器／检查变式／对象集（p446–448）</td><td>Code Inspector（程式碼檢查）／檢查變式／物件集合</td></tr>
+      <tr><td>Pseudo comment</td><td>虚伪注释（p448）</td><td>虛擬註解（"#EC）</td></tr>
+      <tr><td>Original／Copy／Correction／Repair</td><td>原件／副本／修正／修复（p457）</td><td>原件／副本／修正／修復</td></tr>
+      <tr><td>Customizing／Enhancement／Modification</td><td>定制／增强／修改（p459）</td><td>組態設定（Customizing）／增強／修改標準</td></tr>
+      <tr><td>Modification Assistant</td><td>修正帮助程序（p459）</td><td>修改助理（Modification Assistant）</td></tr>
+      <tr><td>Program exit／User exit／Customer exit／BTE／BAdI</td><td>程序出口／用户出口／客户出口／业务交易事件／附加商务（p460）</td><td>程式出口／User Exit／Customer Exit／BTE／BAdI（直接講英文）</td></tr>
+      <tr><td>Menu exit／Screen exit</td><td>菜单退出／屏幕退出（p461）</td><td>選單出口／畫面出口</td></tr>
+      <tr><td>Append structure</td><td>附加结构（p461）</td><td>附加結構（Append）</td></tr>
+      <tr><td>Developer key／Object key（SSCR）</td><td>开发人员代码／对象键（p462）</td><td>開發者金鑰／物件金鑰（Access Key）</td></tr>
+      <tr><td>Modification adjustment</td><td>修改调整（p458）</td><td>修改調整（SPDD／SPAU）</td></tr>
+    </tbody>
+  </table>
+  <div class="warn"><b>SAP 官方簡中譯名的陷阱</b>（查簡中資料時要特別小心）：
+    <ul>
+      <li><b>「客户端」一詞兩義</b>：同時指 client/server 架構的「用戶端」與 MANDT 的「用戶端（集團）」。台灣講 MANDT 多說「用戶端」或「集團」，不會跟前端混淆。</li>
+      <li><b>「活动」三種意思</b>：ACTVT 權限欄位（活动）、已啟用版本（活动版本）、Web Dynpro 的 Action（活动代码、活动处理器）。看到「活动」要先判斷是哪一個。</li>
+      <li><b>「转机」其實是航線</b>：Col63 把 flight connection（SPFLI 的一條航線）一律譯成「转机」（例：「单项转机的数据」p271），中文字面是「轉機航班」，是誤譯；本書一律稱「航線」。</li>
+      <li><b>同一工具多種譯名</b>：Screen Painter 有屏幕绘图器／屏幕制作器，Function Builder 有函数构建器／函数编制器，Class Builder 有类构建器／类制作器；exit 有時譯「出口」（程序出口）、有時譯「退出」（菜单退出、屏幕退出）；interface 在 BAPI 名稱裡譯「界面」，其他地方譯「接口」。</li>
+      <li><b>BAdI 譯成「附加商务」</b>（p460）：看不出是什麼東西，實務上沒人這樣講，直接講 BAdI。「虚伪注释」（pseudo comment）也一樣，講 pseudo comment 或 "#EC 即可。</li>
+      <li><b>「修正」被借用</b>：建立函數群組、類別時的對話框寫「將…分配給包和修正」（p140、p174），這裡的「修正」其實是指變更請求（correction request），不是 25.5 表中「修改原件」的那個 Correction。</li>
+      <li><b>課名錯字</b>：第二單元第 2 課標題「工发程序与组织开发」（p33）應為「开发程序与组织开发」（Developing Programs and Organizing Developments）。</li>
+    </ul>
+  </div>
+  <p>系統裡也查得到官方譯名：資料元素的欄位標籤存在 <b>DD04T</b>，每種語言一筆。下面的程式把同一批資料元素的英文、簡中、繁中標籤並排列出，可用來核對某個欄位在簡中介面上叫什麼（簡中語言碼 ZH 的內部碼是 <span class="kw">'1'</span>，繁中 ZF 是 <span class="kw">'M'</span>；該語言沒有安裝或沒翻譯就查不到）。</p>
+  <pre><code class="abap">REPORT zbc400_term_compare.
+
+"要比對的資料元素：用列舉（多筆 EQ），不要用區間
+DATA gv_roll_sel TYPE rollname.
+SELECT-OPTIONS so_roll FOR gv_roll_sel NO INTERVALS.
+
+INITIALIZATION.
+  so_roll[] = VALUE #( sign = 'I' option = 'EQ'
+                       ( low = 'S_CARR_ID' ) ( low = 'S_CONN_ID' )
+                       ( low = 'S_DATE' )    ( low = 'MATNR' ) ( low = 'KUNNR' ) ).
+
+START-OF-SELECTION.
+  "內部語言碼：E＝英文、1＝簡中（ZH）、M＝繁中（ZF）
+  DATA gt_langu TYPE RANGE OF spras.
+  gt_langu = VALUE #( sign = 'I' option = 'EQ'
+                      ( low = 'E' ) ( low = '1' ) ( low = 'M' ) ).
+
+  SELECT rollname, ddlanguage, scrtext_l
+    FROM dd04t
+    WHERE rollname   IN @so_roll
+      AND ddlanguage IN @gt_langu
+      AND as4local   = 'A'                 "只看已啟用版本
+    ORDER BY rollname, ddlanguage          "HANA 無預設排序，一定要排
+    INTO TABLE @DATA(gt_texts).
+
+  "一個資料元素一列：英文｜簡中｜繁中
+  TYPES: BEGIN OF ts_row,
+           rollname TYPE rollname,
+           en       TYPE scrtext_l,
+           zh       TYPE scrtext_l,
+           zf       TYPE scrtext_l,
+         END OF ts_row.
+  DATA gt_out TYPE STANDARD TABLE OF ts_row WITH EMPTY KEY.
+
+  LOOP AT gt_texts INTO DATA(gs_text) GROUP BY gs_text-rollname INTO DATA(gv_grp).
+    APPEND VALUE #(
+      rollname = gv_grp
+      en = VALUE #( gt_texts[ rollname = gv_grp ddlanguage = 'E' ]-scrtext_l OPTIONAL )
+      zh = VALUE #( gt_texts[ rollname = gv_grp ddlanguage = '1' ]-scrtext_l OPTIONAL )
+      zf = VALUE #( gt_texts[ rollname = gv_grp ddlanguage = 'M' ]-scrtext_l OPTIONAL ) )
+      TO gt_out.
+  ENDLOOP.
+
+  TRY.
+      cl_salv_table=&gt;factory( IMPORTING r_salv_table = DATA(go_salv)
+                              CHANGING  t_table      = gt_out ).
+      go_salv-&gt;get_columns( )-&gt;set_optimize( abap_true ).
+      go_salv-&gt;display( ).
+    CATCH cx_salv_msg INTO DATA(gx_salv).
+      MESSAGE gx_salv TYPE 'I' DISPLAY LIKE 'E'.
+  ENDTRY.</code></pre>
+  <div class="tip">大陸同事的程式或文件寫「集团」「客户端」時，幾乎都是指 MANDT；寫「请求号」就是傳輸請求。另外 SAP 官方的多語術語庫是 <b>SAPterm</b>（SAP 網站上的 SAP Terminology），比教材譯名更新也更一致；教材譯名跟 SAPterm 不同時，<b>以系統介面與 SAPterm 為準</b>。</div>
+
+  <h3 id="ch05-1-qa">練習與自我檢核</h3>
+  <p>前 12 題取自原廠 Col18 各單元 Learning Assessment（改寫成問答），後面為本章補充題。</p>
+  <ol>
+    <li><b>（Unit 1）</b>哪一層包含使用者介面，讓使用者存取程式、輸入資料並接收工作程序的結果？一支程式由多個單元而非單一區塊組成，這個概念叫什麼？<br><b>答：</b>展示層（Presentation Server layer）；模組化（Modularity／Modularization）。</li>
+    <li><b>（Unit 2）</b>下列何者屬於 Repository：程式、函數模組、Object Navigator、資料庫表定義？<br><b>答：</b>程式、函數模組、資料庫表定義。Object Navigator 是工具，不是 Repository 物件。</li>
+    <li><b>（Unit 2）</b>套件類型有哪三種？傳輸在什麼時候觸發？<br><b>答：</b>Development package、Main package、Structure package（Application／Software Component 是屬性不是類型）。在<b>請求（request）被釋放</b>時觸發，不是存檔、啟用或釋放任務時。</li>
+    <li><b>（Unit 2）</b>「存檔時 Repository 會存兩個非啟用版本」對嗎？<br><b>答：</b>錯。只存一個非啟用版；物件可同時有一個啟用版與一個非啟用版，啟用後非啟用版成為新的啟用版。</li>
+    <li><b>（Unit 2）</b>怎麼寫整行註解？專案成員完成任務後應該做什麼？<br><b>答：</b>第 1 欄寫星號 <span class="kw">*</span>；在變更請求中<b>釋放自己的任務</b>。</li>
+    <li><b>（Unit 3）</b>T、C、N、INT8、D 哪些是完整型別？IF 中否定邏輯條件用哪個運算子？<br><b>答：</b>T、INT8、D（完整型別共有 D、T、I、INT8、F、STRING、XSTRING、DECFLOAT16、DECFLOAT34）；<span class="kw">NOT</span>，否定 IS INITIAL 寫 <span class="kw">IS NOT INITIAL</span>。</li>
+    <li><b>（Unit 4）</b>模組化的用途有哪些？呼叫時實參指定給形參的過程叫什麼？<br><b>答：</b>讓程式結構更清楚、封裝需多次使用的功能、功能集中維護、讓功能全系統可用（「提升效能」不是模組化的目的）；參數傳遞（Parameter passing）。</li>
+    <li><b>（Unit 5）</b>哪個敘述逐一複製同名元件？定義內表必須具備哪些規格？<br><b>答：</b><span class="kw">MOVE-CORRESPONDING</span>（現代寫法 <span class="kw">CORRESPONDING #( )</span>）；列型別、主鍵、表種類三者完整描述一個內表（次級鍵不是必要的；簡寫形式會用預設值）。</li>
+    <li><b>（Unit 6）</b>把透明表當資料型別使用時，主鍵與技術設定有意義嗎？哪些是封裝資料庫存取的重用元件？<br><b>答：</b>沒有意義，只有欄位清單有用。邏輯資料庫、函數模組、BAPI、全域類別的方法。</li>
+    <li><b>（Unit 7）</b>選擇畫面有哪些標準功能？事件區塊的特性為何？<br><b>答：</b>多語系文字、自動型別檢查、複雜選擇、F1 欄位文件、F4 搜尋說明、變式。事件區塊以下一個處理區塊開始為結束、不能巢狀、可以不存在、在原始碼中的順序不重要。</li>
+    <li><b>（Unit 8／9）</b>用什麼啟動螢幕處理？讓欄位必填的屬性？連結 EnjoySAP Control 與螢幕控制區的類別？CL_GUI_ALV_GRID 有哪些方法？<br><b>答：</b>對話交易（或 CALL SCREEN）；Required；CL_GUI_CUSTOM_CONTAINER；CONSTRUCTOR、SET_TABLE_FOR_FIRST_DISPLAY、REFRESH_TABLE_DISPLAY（沒有 CREATE_TABLE_FOR_DISPLAY）。</li>
+    <li><b>（Unit 10～13）</b>Web Dynpro 中啟動 Window 螢幕序列的是什麼？Component Controller 與 View Controller 之間靠什麼傳資料？Code Inspector 的檢查變式、物件集合、檢查在哪個交易維護？在客戶系統修補 SAP 物件叫什麼？<br><b>答：</b>Web Dynpro Application；Context Mapping；<span class="tcode">SCI</span>；Modification。</li>
+    <li><b>（補充）</b>改寫下列舊程式：<span class="kw">DATA: BEGIN OF itab OCCURS 0, carrid LIKE spfli-carrid, END OF itab.</span> 加上 SELECT 迴圈逐筆 APPEND。<br><b>答：</b>定義結構型別與 standard table（不帶表頭），用 <span class="kw">SELECT carrid FROM spfli WHERE … ORDER BY carrid INTO TABLE @DATA(lt_spfli).</span> 一次讀入；需要唯一值再加 DISTINCT。</li>
+    <li><b>（補充）</b>一支程式「取某物料最新一筆成本」用 <span class="kw">SELECT SINGLE … WHERE matnr = @lv_matnr</span>（沒給完整主鍵），在 ECC 一直正常，升級到 S/4HANA 後結果時對時錯，為什麼？怎麼改？<br><b>答：</b>非完整主鍵的 SELECT SINGLE 會回傳「任一筆」，HANA 沒有預設排序，每次可能不同（Casper 經驗①的 H／E 案例）。改成 <span class="kw">ORDER BY</span> 明確排序加 <span class="kw">UP TO 1 ROWS</span>，並把業務規則（例如固定取 H）寫進 WHERE。</li>
+    <li><b>（補充）</b>選擇畫面上使用者輸入物料區間 1000～1999，結果漏了 ALPHA 轉換後的號碼、也多抓了 '1000A'。為什麼？<br><b>答：</b>BT 比較的是字典序；CHAR 欄位中 '1000A' 落在區間內，而前導零與編碼規則改變會讓看似連續的號碼不連續。改用列舉（多筆 I EQ）或以業務屬性（物料類型、物料群組）當條件（Casper 經驗②）。</li>
+    <li><b>（補充）</b>使用者要求在 VA01 存檔時多檢查一個欄位。依 Casper 經驗③，考慮順序為何？<br><b>答：</b>先看標準設定能否滿足（例如不完整性程序、訊息控制）→ 找 BAdI／Enhancement Spot → 再考慮 Enhancement Point 或既有 User Exit（MV45AFZZ）→ 最後才修改標準（需 SSCR 物件金鑰、升級要 SPAU 調整）。</li>
+    <li><b>（補充）</b>Dynpro 程式中，使用者存檔後回到清單、再進入螢幕按 Enter，資料又被存了一次。原因與兩種解法？<br><b>答：</b>Enter 不放功能碼，ok_code 殘留上次的 'SAVE'。解法：PBO 清空 ok_code；PAI 一開始把 ok_code 複製到輔助變數並立即清空，只判斷輔助變數。</li>
+    <li><b>（補充）</b>下列何者在 7.52 可用、何者需要更高版本：<span class="kw">DATA( )</span>、<span class="kw">x += 1</span>、<span class="kw">USING CLIENT</span>、<span class="kw">define view entity</span>、<span class="kw">INT8</span>？<br><b>答：</b>DATA( )（7.40）、USING CLIENT（7.51）、INT8（7.50）可用；<span class="kw">+=</span> 需 7.54；<span class="kw">define view entity</span> 需 7.55（S/4HANA 2020）。</li>
+    <li><b>（L29）</b>Col16（2018）與 Col18（2022）對「在編輯器按 F8 執行未啟用的程式」說法不同，各怎麼說？以哪個為準？<br><b>答：</b>Col16 說會臨時產生執行時物件並執行；Col18 說 NetWeaver 7.50 起只能執行已啟用版本，F8 會出錯。以 Col18 為準，S/4HANA（7.52 以上）都是新行為。</li>
+    <li><b>（L29）</b>大陸同事的文件寫「客户端 100 的授权对象 S_CARRID，活动 03」，還有「在栅格控件中保存显示变式」，請翻成台灣慣用說法。<br><b>答：</b>用戶端（集團）100 的權限物件 S_CARRID、活動（ACTVT）03＝顯示；在 ALV Grid 中儲存版面配置（Layout／顯示變式）。注意「客户端」與「活动」在簡中都是一詞多義。</li>
+    <li><b>（L29）</b>Col63 說「有 RETURNING 參數的方法不能再定義 EXPORTING／CHANGING 參數」，在 S/4HANA 還對嗎？<br><b>答：</b>不對，這是 7.0 的限制；7.02 起函數方法也可以有 EXPORTING／CHANGING，並可在函數式呼叫中用 IMPORTING 接回（見 25.4 範例）。</li>
+    <li><b>（L29）</b>Col63 練習 17 用 SELECT 迴圈逐筆讀 SFLIGHT 放進內表，改寫重點？<br><b>答：</b>改成 array fetch（<span class="kw">INTO TABLE @…</span>），明列欄位並加 <span class="kw">ORDER BY</span>（HANA 無預設排序），整段封裝在全域類別的方法中；SELECT … ENDSELECT 在本書禁用。</li>
+  </ol>
+</section>

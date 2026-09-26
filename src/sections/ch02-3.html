@@ -1,0 +1,1495 @@
+<section class="chapter" id="ch02-3" data-title="ALV 報表：欄位目錄 / 事件 / 紅綠燈 / 小計 / 下載 / 新式 ALV">
+  <h2 id="ch02-3">第 2-3 章 ALV 報表：欄位目錄 / 事件 / 紅綠燈 / 小計 / 下載 / 新式 ALV</h2>
+  <p class="lede">ABAP 顧問一輩子寫最多的東西就是報表，而 SAP 的報表標準就叫 ALV（SAP List Viewer）。這一章從 1996 年的 <span class="kw">REUSE_ALV_GRID_DISPLAY</span> 一路走到 2004 年的 <span class="kw">CL_SALV_TABLE</span>，再走到 S/4HANA 的 CDS + Fiori List Report：告訴你欄位目錄（Field Catalog）怎麼建、17 個事件怎麼掛、紅綠燈與顏色怎麼點亮、小計與變式怎麼做、雙擊怎麼跳到 ME23N、以及怎麼把畫面丟成 Excel／PDF。學完之後，你能在 30 秒內生一支能看的報表，也能在半天內生一支能編輯、能存檔、能鑽取、能匯出的正式報表。</p>
+
+  <div class="meta">
+    <div><b>核心 TCODE</b><span class="tcode">SE38</span><span class="tcode">SE80</span><span class="tcode">SE37</span><span class="tcode">SE41</span><span class="tcode">SE11</span><span class="tcode">OAER</span><span class="tcode">SE78</span><span class="tcode">ABAPDOCU</span><span class="tcode">ABAPHELP</span><span class="tcode">ME23N</span><span class="tcode">VA03</span><span class="tcode">VL03N</span><span class="tcode">MM03</span><span class="tcode">FB03</span><span class="tcode">MIGO</span><span class="tcode">SE93</span></div>
+    <div><b>關鍵物件</b>CL_SALV_TABLE、CL_GUI_ALV_GRID、CL_GUI_CUSTOM_CONTAINER、CL_SALV_COLUMNS_TABLE、CL_SALV_SORTS、CL_SALV_EVENTS_TABLE、SLIS 類型組、LVC_T_FCAT／LVC_S_LAYO、DISVARIANT、REUSE_ALV_GRID_DISPLAY、REUSE_ALV_HIERSEQ_LIST_DISPLAY、VBAK／VBAP、EKKO／EKPO／EKET、SFLIGHT／SCARR／SPFLI</div>
+  </div>
+
+  <h3 id="ch02-3-01">1. ALV 家族演進：先知道自己站在哪一代</h3>
+  <p>老師在講義裡把 ABAP 的工作排序講得很直白：<b>報表開發＝ALV、單據列印＝SmartForms／Form、財務樞紐＝Report Painter</b>。而 ALV 本身歷經三代，第四代則已經跳到 Fiori。</p>
+  <p>R/3 4.6C 之前 ALV 全稱是 <i>ABAP List Viewer</i>，之後正式更名為 <i>SAP List Viewer</i>。ALV 從最早的 List Viewer 發展到 Grid Control：LIST 型 ALV 跟傳統 <span class="kw">WRITE</span> 輸出樣式相近，只是多了一排功能按鈕；GRID 型 ALV 則長得像 Excel。</p>
+
+  <table>
+    <thead><tr><th>世代</th><th>Function ALV</th><th>GRID ALV（OOALV）</th><th>SALV（OOALV）</th><th>Fiori（S/4HANA）</th></tr></thead>
+    <tbody>
+      <tr><td>年代</td><td>1996</td><td>2000</td><td>2004</td><td>2015 以後</td></tr>
+      <tr><td>版本</td><td>SAP R/3 3.11</td><td>SAP R/3 4.5</td><td>SAP NetWeaver</td><td>S/4HANA</td></tr>
+      <tr><td>代表物件</td><td>REUSE_ALV_LIST_DISPLAY<br>REUSE_ALV_GRID_DISPLAY</td><td>CL_GUI_ALV_GRID<br>REUSE_ALV_GRID_DISPLAY_LVC</td><td>CL_SALV_TABLE<br>CL_SALV_FUNCTIONS_LIST</td><td>CDS View + Annotation<br>List Report / OData</td></tr>
+      <tr><td>要不要 Screen</td><td>不需螢幕控制就能顯示</td><td>需要螢幕控制（Dialog + Custom Control）</td><td>不需螢幕控制就能顯示（也可嵌在容器）</td><td>不需 SAP GUI，瀏覽器執行</td></tr>
+      <tr><td>物件導向</td><td>非</td><td>是</td><td>是</td><td>是（宣告式）</td></tr>
+      <tr><td>功能</td><td>普通</td><td>豐富（可編輯、細部事件）</td><td>豐富且簡潔</td><td>最豐富（含搜尋、變式、匯出）</td></tr>
+      <tr><td>本書案例</td><td>本章第 1～3 節</td><td>本章第 10 節、ABAP3_2 第 1–13 節</td><td>本章第 2～3 節、ABAP3_2 第 16 節</td><td>本章第 15 節</td></tr>
+    </tbody>
+  </table>
+
+  <div class="tip">選型口訣：<b>「看就好 → SALV；要編輯／要細部事件 → CL_GUI_ALV_GRID；要給業務在手機上看 → CDS + Fiori」</b>。新專案不要再從 <span class="kw">REUSE_ALV_GRID_DISPLAY</span> 開始寫。</div>
+
+  <div class="warn">講義的第一個範例是 <span class="kw">REUSE_ALV_LIST_DISPLAY / REUSE_ALV_GRID_DISPLAY</span> 直接餵 <span class="kw">I_STRUCTURE_NAME = 'MATDOC'</span>。在 S/4HANA 上要特別注意兩件事：<br>（1）<b>MATDOC 是 S/4 的物料憑證單一來源</b>（取代 MKPF/MSEG），欄位極多（數百欄），整表丟 ALV 會非常慢，務必只選需要的欄位；<br>（2）這兩支 FM 至今仍可用、但已被 SAP 標記為「不再增強」，新程式請改用 <span class="kw">CL_SALV_TABLE</span>。</div>
+
+  <p>下面是講義最原始的兩支範例（ZREUSE_ALV01 / ZREUSE_ALV02）改寫成現代寫法後的等價版本，用來體會「三行就有一張報表」的感覺：</p>
+
+<pre><code class="abap">REPORT zreuse_alv01.
+" 講義原文用 REUSE_ALV_LIST_DISPLAY / REUSE_ALV_GRID_DISPLAY 直接吃 MATDOC
+" S/4HANA 建議寫法：明列欄位 + CL_SALV_TABLE
+SELECT mblnr, mjahr, zeile, bwart, matnr, werks, lgort, menge, meins
+  FROM matdoc
+  UP TO 5 ROWS
+  INTO TABLE @DATA(lt_matdoc).
+
+TRY.
+    cl_salv_table=&gt;factory(
+      IMPORTING r_salv_table = DATA(lo_alv)
+      CHANGING  t_table      = lt_matdoc ).
+    lo_alv-&gt;display( ).
+  CATCH cx_salv_msg INTO DATA(lx_msg).
+    MESSAGE lx_msg-&gt;get_text( ) TYPE 'E'.
+ENDTRY.</code></pre>
+
+  <h3 id="ch02-3-02">2. 最短的 ALV：CL_SALV_TABLE 三步驟</h3>
+  <p>講義第 04 節標題就叫「NEW ALV(SALV) 2004 發佈，最短的 ALV」，原始程式是 <span class="kw">ZSALV</span>。SALV 的三步驟永遠一樣：</p>
+  <ol>
+    <li><b>備資料</b>：SELECT 進內表。</li>
+    <li><b>factory</b>：<span class="kw">cl_salv_table=&gt;factory( )</span> 把內表交給 ALV，拿回一個 <span class="kw">lo_alv</span> 參考。</li>
+    <li><b>display</b>：<span class="kw">lo_alv-&gt;display( )</span>。</li>
+  </ol>
+
+<pre><code class="abap">REPORT zsalv.
+" 講義原始 ZSALV：SELECT * FROM sflight ... + cl_salv_table=&gt;factory + display
+" 現代寫法：明列欄位、內嵌宣告、TRY/CATCH
+
+SELECT carrid, connid, fldate, price, currency, seatsmax, seatsocc
+  FROM sflight
+  UP TO 25 ROWS
+  INTO TABLE @DATA(lt_flight).
+
+TRY.
+    " list_display = IF_SALV_C_BOOL_SAP=&gt;false → GRID 樣式（Excel 風格）
+    " list_display = IF_SALV_C_BOOL_SAP=&gt;true  → LIST 樣式（傳統清單）
+    cl_salv_table=&gt;factory(
+      EXPORTING list_display = if_salv_c_bool_sap=&gt;false
+      IMPORTING r_salv_table = DATA(lo_alv)
+      CHANGING  t_table      = lt_flight ).
+
+    lo_alv-&gt;display( ).
+
+  CATCH cx_salv_msg INTO DATA(lx_msg).
+    MESSAGE lx_msg-&gt;get_text( ) TYPE 'E'.
+ENDTRY.</code></pre>
+
+  <div class="note"><b>factory 的三種輸出容器</b>：<br>• 不帶 <span class="kw">r_container</span> → 全螢幕 ALV（最常用）。<br>• 帶 <span class="kw">r_container = lo_container</span>（<span class="kw">CL_GUI_CUSTOM_CONTAINER</span>）＋ <span class="kw">container_name</span> → 嵌在自畫的 Screen 裡。<br>• 帶 <span class="kw">CL_GUI_DOCKING_CONTAINER</span> → 停靠在選擇畫面旁邊，做「不用另開畫面」的報表。</div>
+
+  <div class="warn"><b>SALV 的資料表不能是有 HEADER LINE 的舊式內表</b>，也不能是深層巢狀（含內表的內表）結構，否則 factory 會丟 <span class="kw">CX_SALV_MSG</span>。另外 <span class="kw">t_table</span> 是 CHANGING 參數，代表 ALV 直接引用你的內表——顯示期間不要把它 REFRESH 掉。</div>
+
+  <h3 id="ch02-3-03">3. CL_SALV_TABLE 完整用法（一支可直接跑的範例）</h3>
+  <p>SALV 的設計是「一個 ALV 分成好幾個管理員物件，各管一件事」。把下表背起來，SALV 就等於學會了：</p>
+
+  <table>
+    <thead><tr><th>取得方法</th><th>回傳類別</th><th>管什麼</th></tr></thead>
+    <tbody>
+      <tr><td>get_functions( )</td><td>CL_SALV_FUNCTIONS_LIST</td><td>工具列按鈕：set_all、set_export_xxl、set_default</td></tr>
+      <tr><td>get_columns( )</td><td>CL_SALV_COLUMNS_TABLE</td><td>欄位：抬頭、寬度、隱藏、順序、紅綠燈、熱點</td></tr>
+      <tr><td>get_column( 'X' )</td><td>CL_SALV_COLUMN_TABLE</td><td>單一欄位的細部設定</td></tr>
+      <tr><td>get_sorts( )</td><td>CL_SALV_SORTS</td><td>排序、群組、小計（subtotal）</td></tr>
+      <tr><td>get_aggregations( )</td><td>CL_SALV_AGGREGATIONS</td><td>合計／平均／最大最小</td></tr>
+      <tr><td>get_display_settings( )</td><td>CL_SALV_DISPLAY_SETTINGS</td><td>抬頭文字、斑馬紋、水平／垂直格線</td></tr>
+      <tr><td>get_layout( )</td><td>CL_SALV_LAYOUT</td><td>Layout 變式（儲存／預設／限制）</td></tr>
+      <tr><td>get_selections( )</td><td>CL_SALV_SELECTIONS</td><td>選取模式、取得選取行／選取格</td></tr>
+      <tr><td>get_event( )</td><td>CL_SALV_EVENTS_TABLE</td><td>事件：ADDED_FUNCTION、DOUBLE_CLICK、LINK_CLICK</td></tr>
+      <tr><td>get_functional_settings( )</td><td>CL_SALV_FUNCTIONAL_SETTINGS</td><td>Tooltip、F4 說明</td></tr>
+      <tr><td>top_of_page / end_of_page</td><td>CL_SALV_FORM_LAYOUT_GRID</td><td>報表抬頭／頁尾（取代 TOP_OF_PAGE 事件）</td></tr>
+    </tbody>
+  </table>
+
+  <p>以下是把講義精神（VBAK ⋈ VBAP、紅綠燈、排序小計、雙擊跳 VA03、自訂按鈕）全部用 SALV 重寫的<b>完整可執行範例</b>。這支可以當你日後所有 SALV 報表的骨架：</p>
+
+<pre><code class="abap">*&amp;--------------------------------------------------------------------*
+*&amp; Report ZSALV_DEMO_FULL   ── CL_SALV_TABLE 完整範本（S/4HANA 1809+）
+*&amp; 對應講義 Z202202_24 / _25 / _26 的所有功能，但改用 SALV 實作
+*&amp;--------------------------------------------------------------------*
+REPORT zsalv_demo_full.
+
+TYPES: BEGIN OF ty_out,
+         light TYPE char4,       " 紅綠燈欄位（exception column，值 1/2/3）
+         vbeln TYPE vbak-vbeln,  " 訂單編號
+         erdat TYPE vbak-erdat,  " 訂單日期
+         ernam TYPE vbak-ernam,  " 輸入人員
+         kunnr TYPE vbak-kunnr,  " 客戶編號
+         posnr TYPE vbap-posnr,  " 訂單項次
+         matnr TYPE vbap-matnr,  " 物料編號
+         matkl TYPE vbap-matkl,  " 物料組
+         zmeng TYPE vbap-zmeng,  " 銷售數量
+         zieme TYPE vbap-zieme,  " 銷售單位
+         werks TYPE vbap-werks,  " 工廠
+         lgort TYPE vbap-lgort,  " 儲存位置
+       END OF ty_out.
+
+DATA gt_out TYPE STANDARD TABLE OF ty_out WITH EMPTY KEY.
+DATA go_alv TYPE REF TO cl_salv_table.
+
+*--------------------------------------------------------------------*
+* 事件處理類別：SALV 的事件一定要有一個 handler 類別
+*--------------------------------------------------------------------*
+CLASS lcl_handler DEFINITION.
+  PUBLIC SECTION.
+    METHODS on_user_command FOR EVENT added_function OF cl_salv_events
+      IMPORTING e_salv_function.
+    METHODS on_double_click FOR EVENT double_click  OF cl_salv_events_table
+      IMPORTING row column.
+    METHODS on_link_click   FOR EVENT link_click    OF cl_salv_events_table
+      IMPORTING row column.
+ENDCLASS.
+
+CLASS lcl_handler IMPLEMENTATION.
+
+  " 自訂按鈕（GUI Status 上的功能碼）
+  METHOD on_user_command.
+    CASE e_salv_function.
+      WHEN 'ZCAS'.
+        MESSAGE '你按下了 CASPER 按鈕' TYPE 'I'.
+      WHEN 'ZADD'.
+        MESSAGE '你按下了 新增2 按鈕' TYPE 'I'.
+      WHEN 'ZEXP'.
+        PERFORM download_xlsx.       " 見第 14 節
+      WHEN 'EXIT'.
+        LEAVE PROGRAM.
+    ENDCASE.
+  ENDMETHOD.
+
+  " 雙擊：Drilldown 到 VA03
+  METHOD on_double_click.
+    READ TABLE gt_out INTO DATA(ls_row) INDEX row.
+    CHECK sy-subrc = 0.
+    CASE column.
+      WHEN 'VBELN'.
+        SET PARAMETER ID 'AUN' FIELD ls_row-vbeln.
+        CALL TRANSACTION 'VA03' AND SKIP FIRST SCREEN.
+      WHEN 'MATNR'.
+        SET PARAMETER ID 'MAT' FIELD ls_row-matnr.
+        CALL TRANSACTION 'MM03' AND SKIP FIRST SCREEN.
+    ENDCASE.
+  ENDMETHOD.
+
+  " 熱點單擊（滑鼠變成手指、按一下就觸發）
+  METHOD on_link_click.
+    READ TABLE gt_out INTO DATA(ls_row) INDEX row.
+    CHECK sy-subrc = 0.
+    MESSAGE |熱點：{ column } = { ls_row-vbeln }| TYPE 'S'.
+  ENDMETHOD.
+
+ENDCLASS.
+
+*--------------------------------------------------------------------*
+START-OF-SELECTION.
+
+  " ── 1. 取資料：明列欄位、用 @ 逸出主機變數 ──────────────────
+  SELECT FROM vbak AS a
+         INNER JOIN vbap AS b ON a~vbeln = b~vbeln
+         FIELDS a~vbeln, a~erdat, a~ernam, a~kunnr,
+                b~posnr, b~matnr, b~matkl, b~zmeng, b~zieme,
+                b~werks, b~lgort
+         ORDER BY a~vbeln, b~posnr
+         INTO CORRESPONDING FIELDS OF TABLE @gt_out
+         UP TO 200 ROWS.
+
+  IF gt_out IS INITIAL.
+    MESSAGE '查無資料' TYPE 'S' DISPLAY LIKE 'E'.
+    RETURN.
+  ENDIF.
+
+  " ── 2. 算紅綠燈：1=紅 2=黃 3=綠 ─────────────────────────────
+  LOOP AT gt_out ASSIGNING FIELD-SYMBOL(&lt;ls_out&gt;).
+    &lt;ls_out&gt;-light = COND #( WHEN &lt;ls_out&gt;-zmeng &gt;= 100 THEN '1'
+                             WHEN &lt;ls_out&gt;-zmeng &gt;=  10 THEN '2'
+                             ELSE                            '3' ).
+  ENDLOOP.
+
+  PERFORM show_alv.
+
+*&amp;--------------------------------------------------------------------*
+FORM show_alv.
+
+  TRY.
+      cl_salv_table=&gt;factory(
+        IMPORTING r_salv_table = go_alv
+        CHANGING  t_table      = gt_out ).
+
+      " ── 3. 工具列：把標準功能全開 ──────────────────────────
+      DATA(lo_func) = go_alv-&gt;get_functions( ).
+      lo_func-&gt;set_all( abap_true ).        " 排序/篩選/合計/匯出/變式全開
+
+      " ── 4. 自訂 GUI Status（SE41 複製 SAPLSALV 的 STANDARD）──
+      go_alv-&gt;set_screen_status(
+        report        = sy-repid
+        pfstatus      = 'ZSALV_STATUS'
+        set_functions = go_alv-&gt;c_functions_all ).
+
+      " ── 5. 事件註冊 ────────────────────────────────────────
+      DATA(lo_events) = go_alv-&gt;get_event( ).
+      DATA(lo_handler) = NEW lcl_handler( ).
+      SET HANDLER lo_handler-&gt;on_user_command FOR lo_events.
+      SET HANDLER lo_handler-&gt;on_double_click FOR lo_events.
+      SET HANDLER lo_handler-&gt;on_link_click   FOR lo_events.
+
+      " ── 6. 欄位設定 ────────────────────────────────────────
+      DATA(lo_cols) = go_alv-&gt;get_columns( ).
+      lo_cols-&gt;set_optimize( abap_true ).           " 自動最佳欄寬
+      lo_cols-&gt;set_exception_column( 'LIGHT' ).     " 指定紅綠燈欄位
+      lo_cols-&gt;set_key_fixation( abap_true ).       " Key 欄位凍結不捲動
+
+      " 單一欄位：抬頭文字、隱藏、熱點、加總
+      DATA(lo_col) = CAST cl_salv_column_table( lo_cols-&gt;get_column( 'VBELN' ) ).
+      lo_col-&gt;set_short_text( '訂單' ).
+      lo_col-&gt;set_medium_text( '訂單編號' ).
+      lo_col-&gt;set_long_text( '客戶訂單編號' ).
+      lo_col-&gt;set_key( abap_true ).                                  " 藍色鍵值欄
+      lo_col-&gt;set_cell_type( if_salv_c_cell_type=&gt;hotspot ).         " 熱點
+
+      CAST cl_salv_column_table( lo_cols-&gt;get_column( 'LGORT' )
+        )-&gt;set_visible( abap_false ).                                " 隱藏欄位
+
+      CAST cl_salv_column_table( lo_cols-&gt;get_column( 'ZMENG' )
+        )-&gt;set_quantity_column( 'ZIEME' ).   " 數量欄要綁單位欄才會正確顯示
+
+      " ── 7. 排序 + 小計 ─────────────────────────────────────
+      DATA(lo_sorts) = go_alv-&gt;get_sorts( ).
+      lo_sorts-&gt;add_sort( columnname = 'KUNNR'
+                          sequence   = if_salv_c_sort=&gt;sort_up
+                          subtotal   = abap_true ).   " 依客戶小計
+      lo_sorts-&gt;add_sort( columnname = 'ERDAT'
+                          sequence   = if_salv_c_sort=&gt;sort_down ).
+
+      " ── 8. 合計 ────────────────────────────────────────────
+      DATA(lo_aggr) = go_alv-&gt;get_aggregations( ).
+      lo_aggr-&gt;add_aggregation( columnname  = 'ZMENG'
+                                aggregation = if_salv_c_aggregation=&gt;total ).
+
+      " ── 9. 顯示設定 ────────────────────────────────────────
+      DATA(lo_disp) = go_alv-&gt;get_display_settings( ).
+      lo_disp-&gt;set_striped_pattern( abap_true ).       " 斑馬紋（= zebra）
+      lo_disp-&gt;set_list_header( |VA01 客戶訂單　共 { lines( gt_out ) } 筆| ).
+
+      " ── 10. Layout 變式（等同 disvariant / I_SAVE = 'A'）────
+      DATA(lo_layout) = go_alv-&gt;get_layout( ).
+      lo_layout-&gt;set_key( VALUE #( report = sy-repid handle = '0001' ) ).
+      lo_layout-&gt;set_save_restriction( cl_salv_layout=&gt;restrict_none ).
+      lo_layout-&gt;set_default( abap_true ).
+
+      " ── 11. 選取模式：讓使用者可以勾選整列 ──────────────────
+      go_alv-&gt;get_selections( )-&gt;set_selection_mode(
+        if_salv_c_selection_mode=&gt;row_column ).
+
+      " ── 12. 報表抬頭（取代舊的 TOP_OF_PAGE 事件）────────────
+      DATA(lo_grid) = NEW cl_salv_form_layout_grid( ).
+      lo_grid-&gt;create_label( row = 1 column = 1 text = 'VA01 客戶訂單' ).
+      lo_grid-&gt;create_label( row = 2 column = 1 text = '僅顯示部份欄位' ).
+      lo_grid-&gt;create_label( row = 2 column = 2
+                             text = |執行者：{ sy-uname } { sy-datum DATE = USER }| ).
+      go_alv-&gt;set_top_of_list( lo_grid ).
+
+      go_alv-&gt;display( ).
+
+    CATCH cx_salv_error INTO DATA(lx).
+      MESSAGE lx-&gt;get_text( ) TYPE 'E'.
+  ENDTRY.
+
+ENDFORM.</code></pre>
+
+  <div class="tip">老師的口訣：<b>「SALV 就是拿管理員、下指令、再 display」</b>。每一段 <span class="kw">get_xxx( )</span> 都可以獨立抄，忘記哪個方法就在 SE24 打開 <span class="kw">CL_SALV_COLUMN_TABLE</span> 看方法清單，比查文件快。</div>
+
+  <div class="note">取得使用者<b>勾選了哪幾行</b>：<br><span class="kw">DATA(lt_rows) = go_alv-&gt;get_selections( )-&gt;get_selected_rows( ).</span><br>回傳的是 <span class="kw">SALV_T_ROW</span>（列號清單），再用 <span class="kw">LOOP AT lt_rows INTO DATA(lv_row). READ TABLE gt_out INDEX lv_row ...</span> 取值。<br>取得游標所在儲存格：<span class="kw">get_current_cell( )</span>。</div>
+
+  <h3 id="ch02-3-04">4. Field Catalog（欄位目錄）：ALV 的靈魂</h3>
+  <p>欄位目錄用來控制 ALV 每一欄的屬性：順序、對齊、可編輯、顏色、加總、要不要顯示⋯⋯。傳統 ALV 有三種建法，各有適用場合：</p>
+
+  <table>
+    <thead><tr><th>作法</th><th>怎麼做</th><th>適合</th></tr></thead>
+    <tbody>
+      <tr><td>① 全自動（DDIC）</td><td>FM 參數 <span class="kw">I_STRUCTURE_NAME = 'SFLIGHT'</span>；SALV 則是 factory 自動依內表行型別產生</td><td>內表結構＝某個 DDIC 結構／資料表，欄位全部要顯示</td></tr>
+      <tr><td>② 半自動（MERGE）</td><td><span class="kw">REUSE_ALV_FIELDCATALOG_MERGE</span> 讀程式內表的宣告或 DDIC 結構自動產生，再手工覆寫少數欄位</td><td>欄位很多、只想改其中幾個屬性</td></tr>
+      <tr><td>③ 全手動</td><td>逐欄 APPEND 一筆 <span class="kw">SLIS_FIELDCAT_ALV</span> / <span class="kw">LVC_S_FCAT</span></td><td>內表是自訂 TYPES、抬頭要中文、要精準控制</td></tr>
+    </tbody>
+  </table>
+
+  <p>講義 Z202202_24 是<b>全手動</b>版本，逐欄 <span class="kw">CLEAR / col_pos + 1 / APPEND</span>，寫了一百多行。現代 ABAP 可以用 <span class="kw">VALUE #( )</span> 一次寫完，可讀性天差地遠：</p>
+
+<pre><code class="abap">" ── 手動建 Field Catalog（LVC 版，給 CL_GUI_ALV_GRID 用）──────────
+" 講義 Z202202_24 逐欄 APPEND 的一百多行，用 VALUE #( ) 濃縮成一段
+DATA(lt_fcat) = VALUE lvc_t_fcat(
+  " col_pos 若照順序寫可以省略，ALV 會依 table 順序排
+  ( fieldname = 'VBELN' col_pos = 1  key = abap_true
+    outputlen = 10 scrtext_m = '訂單編號' hotspot = abap_true )
+  ( fieldname = 'ERDAT' col_pos = 2  outputlen = 10 scrtext_m = '訂單日期' )
+  ( fieldname = 'ERNAM' col_pos = 3  outputlen = 12 scrtext_m = '輸入人員' )
+  ( fieldname = 'KUNNR' col_pos = 4  outputlen = 10 scrtext_m = '客戶編號' )
+  ( fieldname = 'POSNR' col_pos = 5  outputlen = 6  scrtext_m = '項次' )
+  ( fieldname = 'MATNR' col_pos = 6  outputlen = 40 scrtext_m = '物料編號'
+    ref_table = 'VBAP' ref_field = 'MATNR' )   " 給 F1/F4 說明用
+  ( fieldname = 'MATKL' col_pos = 7  outputlen = 9  scrtext_m = '物料組' )
+  ( fieldname = 'ZMENG' col_pos = 8  outputlen = 15 scrtext_m = '銷售數量'
+    do_sum = abap_true            " 自動加總
+    edit   = abap_true            " 可編輯
+    decimals_o = 3                " 可編輯且有小數，一定要指定小數位
+    qfieldname = 'ZIEME' )        " 綁單位欄位
+  ( fieldname = 'ZIEME' col_pos = 9  outputlen = 3  scrtext_m = '銷售單位' )
+  ( fieldname = 'WERKS' col_pos = 10 outputlen = 4  scrtext_m = '工廠' )
+  ( fieldname = 'LGORT' col_pos = 11 outputlen = 4  scrtext_m = '儲存位置' ) ).</code></pre>
+
+  <p>如果內表結構直接來自 DDIC，最省事的是讓系統自己生，再微調：</p>
+
+<pre><code class="abap">" ── 半自動：先讓系統依 DDIC 結構生成，再覆寫個別欄位 ──────────────
+" 舊法：REUSE_ALV_FIELDCATALOG_MERGE（講義 BALVSD11 / BALVHD01 用它）
+" 新法（推薦）：CL_SALV_DATA_DESCR 或直接用 SALV，不必自己生 fieldcat
+DATA lt_fcat TYPE lvc_t_fcat.
+
+CALL FUNCTION 'LVC_FIELDCATALOG_MERGE'
+  EXPORTING
+    i_structure_name       = 'SFLIGHT'
+    i_client_never_display = abap_true   " 自動隱藏 MANDT
+  CHANGING
+    ct_fieldcat            = lt_fcat
+  EXCEPTIONS
+    inconsistent_interface = 1
+    program_error          = 2
+    OTHERS                 = 3.
+IF sy-subrc &lt;&gt; 0.
+  MESSAGE '欄位目錄建立失敗' TYPE 'E'.
+ENDIF.
+
+" 覆寫個別欄位：用 LOOP ... ASSIGNING 修改，不要重建整張表
+LOOP AT lt_fcat ASSIGNING FIELD-SYMBOL(&lt;ls_fcat&gt;).
+  CASE &lt;ls_fcat&gt;-fieldname.
+    WHEN 'CARRID'.   &lt;ls_fcat&gt;-key       = abap_true.
+                     &lt;ls_fcat&gt;-outputlen = 7.
+    WHEN 'PRICE'.    &lt;ls_fcat&gt;-do_sum    = abap_true.
+    WHEN 'SEATSMAX'. &lt;ls_fcat&gt;-no_out    = abap_true.   " 隱藏但可從 layout 拉出來
+    WHEN 'SEATSOCC'. &lt;ls_fcat&gt;-no_sum    = abap_true.   " 禁止加總
+  ENDCASE.
+ENDLOOP.</code></pre>
+
+  <div class="warn"><b>三個一定會踩的坑：</b><br>1. <span class="kw">fieldname</span> 必須<b>大寫</b>，而且要跟內表欄位名一字不差，寫錯不會報錯、只是那欄空白或不見。<br>2. 所有要顯示的欄位，內表<b>一定要有對應欄位</b>；ALV 不會幫你補。<br>3. 單引號內的字串（結構名、欄位名、功能碼）在呼叫系統物件時<b>一律大寫</b>。</div>
+
+  <h4>4-1. SLIS_FIELDCAT_ALV 常用屬性總表</h4>
+  <p>這張表要自己找得到（SE11 查 <span class="kw">SLIS_FIELDCAT_ALV</span>；查不到的 SLIS 結構改用 SE80 開 type-pool <span class="kw">SLIS</span>）。以下屬性對 <span class="kw">REUSE_ALV_LIST_DISPLAY</span> 與 <span class="kw">REUSE_ALV_GRID_DISPLAY</span> 皆生效；LVC 版（<span class="kw">LVC_S_FCAT</span>）欄位名略有不同（例如 SELTEXT_M → SCRTEXT_M、REF_TABNAME → REF_TABLE）。</p>
+
+  <table>
+    <thead><tr><th>屬性</th><th>用途</th><th>類別</th></tr></thead>
+    <tbody>
+      <tr><td>FIELDNAME</td><td>內表欄位名（必填、大寫）</td><td>對應輸出表</td></tr>
+      <tr><td>TABNAME</td><td>內表名稱（多表／階層式必填）</td><td>對應輸出表</td></tr>
+      <tr><td>COL_ID / COL_POS</td><td>欄位識別碼（唯讀）／輸出位置</td><td>輸出選項</td></tr>
+      <tr><td>ROW_POS</td><td>第幾列顯示，預設 0，可 1/2/3，最多分 3 級</td><td>輸出選項</td></tr>
+      <tr><td>KEY</td><td>鍵值欄（藍底、固定在左）</td><td>輸出選項</td></tr>
+      <tr><td>KEY_SEL</td><td>與 KEY 併用，允許互動式隱藏 KEY 欄（LIST 有效）</td><td>輸出選項</td></tr>
+      <tr><td>NO_OUT</td><td>預設不顯示（使用者仍可由 Layout 拉出）</td><td>輸出選項</td></tr>
+      <tr><td>TECH</td><td>技術欄位，完全不顯示也不可拉出（像 MANDT）</td><td>輸出選項</td></tr>
+      <tr><td>OUTPUTLEN / DD_OUTLEN / INTLEN</td><td>輸出寬度／DDIC 輸出長度／內部長度</td><td>寬度</td></tr>
+      <tr><td>EDIT</td><td>該欄可編輯</td><td>輸出選項</td></tr>
+      <tr><td>EMPHASIZE</td><td>整欄顏色，格式 <span class="kw">C(1-7)(0-1)(0-1)</span>；與 EDIT 同時設定會互相衝突</td><td>顏色</td></tr>
+      <tr><td>HOTSPOT</td><td>熱點：滑鼠變手指，單擊即觸發</td><td>互動</td></tr>
+      <tr><td>CHECKBOX</td><td>以核取方塊呈現</td><td>輸出選項</td></tr>
+      <tr><td>ICON</td><td>以圖示輸出，欄位內容須為有效 ICON 名稱（見 DDIC 的 ICON 表）</td><td>格式化</td></tr>
+      <tr><td>SYMBOL</td><td>以 Symbol 輸出，值可用常數如 SYM_FILLED_SQUARE（不加引號），程式要 <span class="kw">INCLUDE &lt;LIST&gt;</span>；參考 RSTXSYMB</td><td>格式化</td></tr>
+      <tr><td>DO_SUM / NO_SUM</td><td>自動加總／禁止加總</td><td>小計</td></tr>
+      <tr><td>CFIELDNAME / CTABNAME</td><td>貨幣單位欄位名／其所屬內表</td><td>金額顯示</td></tr>
+      <tr><td>QFIELDNAME / QTABNAME</td><td>計量單位欄位名／其所屬內表</td><td>數量顯示</td></tr>
+      <tr><td>CURRENCY / QUANTITY</td><td>固定的幣別／單位</td><td>金額數量</td></tr>
+      <tr><td>REF_FIELD(NAME) / REF_TAB(NAME)</td><td>參考 DDIC 欄位／資料表，用來產生 F1、F4</td><td>DDIC 參照</td></tr>
+      <tr><td>ROLLNAME</td><td>資料元素（F1 說明）</td><td>無 DDIC 參照時使用</td></tr>
+      <tr><td>DATATYPE / INTTYPE</td><td>DDIC 資料型別（CHAR/DATS/QUAN/CURR/NUMC/UNIT）／ABAP 型別</td><td>無 DDIC 參照時使用</td></tr>
+      <tr><td>DECIMALS_O(UT) / DECMLFIELD</td><td>輸出小數位數／小數位取自哪個欄位</td><td>格式化</td></tr>
+      <tr><td>ROUND / ROUNDFIELD / EXPONENT</td><td>四捨五入位數／來源欄位／浮點指數</td><td>格式化</td></tr>
+      <tr><td>EDIT_MASK</td><td>同 WRITE 的 edit mask，常用來格式化日期時間</td><td>格式化</td></tr>
+      <tr><td>JUST</td><td>對齊：R / L / C</td><td>格式化</td></tr>
+      <tr><td>LZERO / NO_ZERO / NO_SIGN</td><td>顯示前置零（NUMC 有效）／零值顯示空白／不顯示正負號</td><td>格式化</td></tr>
+      <tr><td>LOWERCASE</td><td>允許小寫</td><td>輸出選項</td></tr>
+      <tr><td>FIX_COLUMN</td><td>固定欄不隨捲軸捲動（必須排在左邊才生效）</td><td>輸出選項</td></tr>
+      <tr><td>NO_MERGING</td><td>不合併相同儲存格</td><td>輸出選項</td></tr>
+      <tr><td>SELTEXT_S/M/L（LVC：SCRTEXT_S/M/L）</td><td>短／中／長欄位抬頭</td><td>文字</td></tr>
+      <tr><td>REPTEXT(_DDIC)</td><td>抬頭，取自資料元素主標題</td><td>文字</td></tr>
+      <tr><td>DDICTXT</td><td>指定用 S / M / L 哪一種抬頭，設定後抬頭固定</td><td>文字</td></tr>
+      <tr><td>COLTEXT / TOOLTIP</td><td>對話功能用的欄名／欄抬頭提示</td><td>文字</td></tr>
+      <tr><td>SP_GROUP</td><td>群組鍵（配合 IT_SPECIAL_GROUPS 做欄位分群）</td><td>其他</td></tr>
+      <tr><td>STYLE</td><td>以按鈕呈現</td><td>輸出選項</td></tr>
+      <tr><td>HREF_HNDLE / WEB_FIELD</td><td>超連結代號／超連結欄位</td><td>其他</td></tr>
+      <tr><td>DRAGDROPID</td><td>拖放物件的 handle</td><td>其他</td></tr>
+      <tr><td>REPREP</td><td>作為 report/report 介面的選擇條件</td><td>其他</td></tr>
+    </tbody>
+  </table>
+
+  <h4>4-2. Layout（版面）常用屬性</h4>
+  <p>講義所有範例都會設這五行，可以當固定套路（<span class="kw">SLIS_LAYOUT_ALV</span> 版）：</p>
+
+<pre><code class="abap">" ── 傳統 Layout（SLIS 版）常用設定，講義 Z202202_24～26 的固定五行 ──
+DATA(ls_layout) = VALUE slis_layout_alv(
+  zebra             = abap_true      " 黃白（斑馬）相間
+  detail_popup      = abap_true      " 彈出明細視窗
+  detail_titlebar   = '詳細訊息'      " 明細視窗抬頭
+  f2code            = '&amp;ETA'         " 設定觸發明細視窗的功能碼（雙擊）
+  colwidth_optimize = abap_true      " 最佳欄寬
+  no_vline          = abap_false     " 欄間隔線
+  no_colhead        = abap_false     " 不顯示欄抬頭
+  no_input          = abap_false     " 全部欄位唯讀
+  box_fieldname     = 'BOX'          " 勾選欄綁到內表的 BOX 欄位
+  lights_fieldname  = 'LIGHTS'       " 紅綠燈綁到內表的 LIGHTS 欄位
+  lights_condense   = abap_true      " 小計列的燈號取最差的一顆
+  key_hotspot       = abap_true      " Key 欄位自動變熱點
+  totals_text       = '總計'
+  subtotals_text    = '小計'
+  totals_only       = abap_false
+  cell_merge        = abap_false
+  group_change_edit = abap_true      " 允許群組換行控制
+  detail_initial_lines = abap_true ).
+
+" ── LVC 版（CL_GUI_ALV_GRID / REUSE_ALV_GRID_DISPLAY_LVC 用）──────
+DATA(ls_layo) = VALUE lvc_s_layo(
+  zebra      = abap_true
+  cwidth_opt = abap_true        " 最佳欄寬（LVC 叫 cwidth_opt）
+  sel_mode   = 'A'              " A=多列多格 B=單列 C=多列 D=儲存格
+  grid_title = 'VA01 客戶訂單'
+  smalltitle = abap_true
+  box_fname  = 'BOX'            " 勾選欄
+  excp_fname = 'LIGHT'          " 紅綠燈欄（LVC 叫 excp_fname）
+  info_fname = 'ROWCOLOR'       " 整列顏色欄
+  ctab_fname = 'CELLTAB'        " 單格樣式表（可編輯/顏色）
+  stylefname = 'STYLETAB' ).</code></pre>
+
+  <div class="note">Grid 設定 <span class="kw">I_GRID_SETTINGS</span>（型別 <span class="kw">LVC_S_GLAY</span>）中最重要的一欄是 <span class="kw">EDT_CLL_CB = 'X'</span>：<b>編輯儲存格後把值回傳給程式</b>。講義第 26 支程式特別強調——沒設這個，你在畫面上改的數字根本不會進到內表，存檔就會存到舊值。</div>
+
+  <h3 id="ch02-3-05">5. 紅綠燈（Exception / Lights）與圖示欄位</h3>
+  <p>紅綠燈有兩種做法，講義兩種都示範了：</p>
+  <ol>
+    <li><b>Exception 欄位</b>：內表加一個 <span class="kw">CHAR1</span>（或 CHAR4）欄位，值填 <b>1 = 紅、2 = 黃、3 = 綠</b>，再告訴 ALV 這欄是燈號欄。<br>傳統：<span class="kw">layout-lights_fieldname = 'LIGHTS'</span>（LVC：<span class="kw">excp_fname</span>）。<br>SALV：<span class="kw">lo_cols-&gt;set_exception_column( 'LIGHT' )</span>。</li>
+    <li><b>ICON 欄位</b>：內表欄位型別 <span class="kw">icon-id</span>（或 CHAR4），值填 <span class="kw">icon_led_green</span> / <span class="kw">icon_led_red</span> / <span class="kw">icon_led_yellow</span> 等常數，fieldcat 該欄設 <span class="kw">icon = 'X'</span>。這種做法可以一列放好幾顆燈（講義 ZEKET_43 就放了 LIGHT1/2/3 三顆）。</li>
+  </ol>
+
+<pre><code class="abap">*&amp;--------------------------------------------------------------------*
+*&amp; Report ZSALV_LIGHT  ── 掛上警示燈的 NEW ALV（講義原名 ZSALV_LIGHT）
+*&amp;--------------------------------------------------------------------*
+REPORT zsalv_light.
+
+TYPES: BEGIN OF ty_row.
+         INCLUDE TYPE sflight.
+TYPES:   light TYPE char1,     " 講義原本欄位名叫 EXCEPTION，屬保留字風險，改名
+       END OF ty_row.
+
+DATA gt_out TYPE STANDARD TABLE OF ty_row WITH EMPTY KEY.
+
+SELECT carrid, connid, fldate, price, currency, seatsmax, seatsocc
+  FROM sflight
+  UP TO 25 ROWS
+  INTO CORRESPONDING FIELDS OF TABLE @gt_out.
+
+" 1=紅 2=黃 3=綠：座位佔用率越高越危險
+LOOP AT gt_out ASSIGNING FIELD-SYMBOL(&lt;ls&gt;).
+  &lt;ls&gt;-light = COND #( WHEN &lt;ls&gt;-seatsocc &gt;= 90 THEN '1'
+                       WHEN &lt;ls&gt;-seatsocc &gt;= 50 THEN '2'
+                       ELSE                          '3' ).
+ENDLOOP.
+
+TRY.
+    cl_salv_table=&gt;factory(
+      IMPORTING r_salv_table = DATA(lo_alv)
+      CHANGING  t_table      = gt_out ).
+
+    DATA(lo_cols) = lo_alv-&gt;get_columns( ).
+    lo_cols-&gt;set_exception_column( 'LIGHT' ).   " 指定燈號欄
+    CAST cl_salv_column_table( lo_cols-&gt;get_column( 'LIGHT' )
+      )-&gt;set_short_text( '提示' ).
+
+    " 滑到燈上時顯示的說明文字（Tooltip）
+    DATA(lo_tips) = lo_alv-&gt;get_functional_settings( )-&gt;get_tooltips( ).
+    lo_tips-&gt;add_tooltip( type  = cl_salv_tooltip=&gt;c_type_exception
+                          value = '1' tooltip = '爆量：需立即處理' ).
+    lo_tips-&gt;add_tooltip( type  = cl_salv_tooltip=&gt;c_type_exception
+                          value = '2' tooltip = '偏高：請留意' ).
+    lo_tips-&gt;add_tooltip( type  = cl_salv_tooltip=&gt;c_type_exception
+                          value = '3' tooltip = '正常' ).
+
+    lo_alv-&gt;get_functions( )-&gt;set_all( abap_true ).
+    lo_alv-&gt;display( ).
+
+  CATCH cx_salv_error INTO DATA(lx).
+    MESSAGE lx-&gt;get_text( ) TYPE 'E'.
+ENDTRY.</code></pre>
+
+  <p>ICON 做法（講義 ZEKET_43 的 <span class="kw">SET_LIGHT</span> 副程式）現代化寫法：</p>
+
+<pre><code class="abap">" ── ICON 欄位版紅綠燈：一列可以放好幾顆燈 ──────────────────────
+" 程式開頭要 TYPE-POOLS: icon.（S/4 亦可直接用 ICON 常數，不必宣告）
+" 內表欄位：light1 TYPE icon-id, light2 TYPE icon-id, light3 TYPE icon-id
+
+LOOP AT it_zeket ASSIGNING FIELD-SYMBOL(&lt;ls_zeket&gt;).
+  " 交期已過 → 紅燈；三天內到期 → 黃燈；其餘 → 綠燈
+  &lt;ls_zeket&gt;-light1 = SWITCH #( abap_true
+      WHEN boolc( &lt;ls_zeket&gt;-eindt &lt;  sy-datum )     THEN icon_led_red
+      WHEN boolc( &lt;ls_zeket&gt;-eindt &lt;= sy-datum + 3 ) THEN icon_led_yellow
+      ELSE                                                icon_led_green ).
+
+  " 也可以直接用 icon 常數表達語意：
+  &lt;ls_zeket&gt;-light2 = COND #( WHEN &lt;ls_zeket&gt;-menge = 0
+                              THEN icon_incomplete ELSE icon_complete ).
+  &lt;ls_zeket&gt;-light3 = icon_display_more.
+ENDLOOP.
+
+" fieldcat 對應設定（LVC）：
+DATA(ls_fcat_light) = VALUE lvc_s_fcat(
+  fieldname = 'LIGHT1' col_pos = 1 outputlen = 4
+  scrtext_m = '燈' icon = abap_true ).</code></pre>
+
+  <div class="tip">常用 ICON 常數：<span class="kw">icon_led_red / icon_led_yellow / icon_led_green / icon_led_inactive</span>、<span class="kw">icon_green_light / icon_yellow_light / icon_red_light</span>、<span class="kw">icon_complete / icon_incomplete</span>、<span class="kw">icon_display / icon_change / icon_delete</span>。在 SE11 打開資料表 <span class="kw">ICON</span> 可以查全部，或執行 <span class="tcode">SHOWICON</span> 目視挑選。</div>
+
+  <div class="warn">燈號欄位<b>不要用名稱 EXCEPTION</b>（講義原文用了 <span class="kw">EXCEPTION type char1</span>）。EXCEPTION 是 ABAP 關鍵字家族的一員，在某些語法情境會造成編譯困擾，建議改名 <span class="kw">LIGHT</span>、<span class="kw">STATUS_LIGHT</span>。<br>另外，SALV 的 exception 欄位<b>寬度不要自己設太寬</b>，設 <span class="kw">set_optimize( abap_true )</span> 讓它自己算最好看。</div>
+
+  <h3 id="ch02-3-06">6. 顏色：整列、整欄、單一儲存格</h3>
+  <p>ALV 的顏色碼是 4 個字元：<b>C + 顏色碼(1–7) + 反白(0/1) + 反轉(0/1)</b>。</p>
+
+  <table>
+    <thead><tr><th>顏色碼</th><th>顏色</th><th>慣用語意</th></tr></thead>
+    <tbody>
+      <tr><td>C100</td><td>灰藍</td><td>抬頭／標題列</td></tr>
+      <tr><td>C200</td><td>淺灰藍</td><td>Key 欄位</td></tr>
+      <tr><td>C300</td><td>黃</td><td>小計列</td></tr>
+      <tr><td>C400</td><td>藍綠</td><td>一般強調</td></tr>
+      <tr><td>C500</td><td>綠</td><td>正常／已完成</td></tr>
+      <tr><td>C600</td><td>紅</td><td>異常／需處理</td></tr>
+      <tr><td>C700</td><td>橘</td><td>警示</td></tr>
+    </tbody>
+  </table>
+
+<pre><code class="abap">" ── 三種上色方式（CL_GUI_ALV_GRID / REUSE_..._LVC 都適用）─────────
+TYPES: BEGIN OF ty_out,
+         vbeln    TYPE vbak-vbeln,
+         zmeng    TYPE vbap-zmeng,
+         rowcolor TYPE char4,             " ① 整列顏色
+         cellcolor TYPE lvc_t_scol,       " ② 單格顏色（內表）
+         celltab   TYPE lvc_t_styl,       " ③ 單格可否編輯
+       END OF ty_out.
+
+DATA gt_out TYPE STANDARD TABLE OF ty_out WITH EMPTY KEY.
+
+LOOP AT gt_out ASSIGNING FIELD-SYMBOL(&lt;ls&gt;).
+
+  " ① 整列上色：layout-info_fname = 'ROWCOLOR'
+  &lt;ls&gt;-rowcolor = COND #( WHEN &lt;ls&gt;-zmeng &gt; 1000 THEN 'C600'    " 紅
+                          WHEN &lt;ls&gt;-zmeng &gt;  100 THEN 'C300'    " 黃
+                          ELSE                        space ).
+
+  " ② 單格上色：layout-ctab_fname = 'CELLCOLOR'
+  &lt;ls&gt;-cellcolor = VALUE #(
+    ( fname = 'ZMENG'
+      color-col = COND #( WHEN &lt;ls&gt;-zmeng &gt; 1000 THEN col_negative
+                          ELSE                        col_positive )
+      color-int = 0        " 0 = 淡色底，1 = 強烈底色
+      color-inv = 0 ) ).   " 0 = 底色，1 = 只有文字上色
+
+  " ③ 單格可否編輯：layout-stylefname = 'CELLTAB'
+  "    整欄 edit=X 之後，用 celltab 針對個別儲存格「開特例／關特例」
+  &lt;ls&gt;-celltab = VALUE #(
+    ( fieldname = 'ZMENG'
+      style = COND #( WHEN &lt;ls&gt;-vbeln IS INITIAL
+                      THEN cl_gui_alv_grid=&gt;mc_style_disabled
+                      ELSE cl_gui_alv_grid=&gt;mc_style_enabled ) ) ).
+ENDLOOP.
+
+" 顏色常數：col_heading / col_normal / col_total / col_key
+"           col_positive / col_negative / col_group / col_background</code></pre>
+
+  <div class="note">SALV 也能上色，但介面不同：<br>整欄顏色 → <span class="kw">CAST cl_salv_column_table( ... )-&gt;set_color( VALUE #( col = 6 int = 0 inv = 0 ) )</span>。<br>單格顏色 → 內表加一個 <span class="kw">lvc_t_scol</span> 欄位，再 <span class="kw">lo_cols-&gt;set_color_column( 'CELLCOLOR' )</span>。<br><b>SALV 不支援編輯</b>——要能改資料就得改用 <span class="kw">CL_GUI_ALV_GRID</span>。</div>
+
+  <h3 id="ch02-3-07">7. 排序、小計與合計</h3>
+  <p>ALV 的小計是「排序」帶出來的：先用 <span class="kw">IT_SORT</span> 指定排序欄位，再在該排序項上打開 <span class="kw">SUBTOT</span>，同時要有欄位設 <span class="kw">DO_SUM</span>，小計才會出現。</p>
+
+<pre><code class="abap">" ── 傳統 ALV 的排序＋小計（講義 Z202202_25 / BALVHD01_GROUP）───────
+DATA(lt_sort) = VALUE slis_t_sortinfo_alv(
+  ( spos = 1 fieldname = 'KUNNR' up = abap_true
+    subtot = abap_true            " 依客戶小計
+    group  = '*' )                " '*' = 換頁，'UL' = 加底線
+  ( spos = 2 fieldname = 'ERDAT' down = abap_true ) ).
+
+" LVC 版（CL_GUI_ALV_GRID）
+DATA(lt_sort_lvc) = VALUE lvc_t_sort(
+  ( spos = 1 fieldname = 'KUNNR' up = abap_true subtot = abap_true )
+  ( spos = 2 fieldname = 'ERDAT' down = abap_true ) ).
+
+" ── SALV 的排序＋小計＋合計 ──────────────────────────────────
+DATA(lo_sorts) = lo_alv-&gt;get_sorts( ).
+lo_sorts-&gt;add_sort( columnname = 'KUNNR'
+                    sequence   = if_salv_c_sort=&gt;sort_up
+                    subtotal   = abap_true
+                    group      = if_salv_c_sort=&gt;group_none ).
+
+DATA(lo_aggr) = lo_alv-&gt;get_aggregations( ).
+lo_aggr-&gt;add_aggregation( columnname  = 'ZMENG'
+                          aggregation = if_salv_c_aggregation=&gt;total ).
+" 也可以 =&gt;average / =&gt;maximum / =&gt;minimum
+
+" 小計文字
+lo_alv-&gt;get_display_settings( )-&gt;set_list_header( '客戶訂單彙總' ).</code></pre>
+
+  <p>另一種常被搞混的是<b>自己在 LOOP 裡算小計</b>（<span class="kw">AT END OF</span>）。兩者差別如下：</p>
+
+  <table>
+    <thead><tr><th></th><th>ALV 自動小計（IT_SORT + DO_SUM）</th><th>AT END OF 自己算</th></tr></thead>
+    <tbody>
+      <tr><td>誰算</td><td>ALV 控制項在前端算</td><td>你在程式裡算，多插一列進內表</td></tr>
+      <tr><td>使用者拖欄位重排</td><td>小計自動跟著重算</td><td>不會重算，數字會錯</td></tr>
+      <tr><td>匯出 Excel</td><td>會帶小計列</td><td>會帶（因為它就是資料列）</td></tr>
+      <tr><td>建議</td><td><b>優先使用</b></td><td>只有要特殊格式（例如小計列要不同文字）才用</td></tr>
+    </tbody>
+  </table>
+
+<pre><code class="abap">" ── AT END OF 的正確用法：使用前必須先 SORT，而且只看「該欄與其左邊所有欄」──
+SORT lt_out BY kunnr matnr.
+
+DATA lv_sum TYPE vbap-zmeng.
+
+LOOP AT lt_out INTO DATA(ls_out).
+  lv_sum = lv_sum + ls_out-zmeng.
+
+  AT END OF kunnr.          " 注意：判斷的是 kunnr 及其「左側全部欄位」
+    WRITE: / |客戶 { ls_out-kunnr } 小計：{ lv_sum NUMBER = USER }|.
+    CLEAR lv_sum.
+  ENDAT.
+ENDLOOP.</code></pre>
+
+  <div class="warn"><b>AT END OF 的三個陷阱：</b><br>1. 一定要先 <span class="kw">SORT</span>，否則群組會斷斷續續。<br>2. <span class="kw">AT ... ENDAT</span> 區塊內，除了控制欄位以外的其他欄位都會被填成 <b>*</b>（星號），所以要在進入 AT 之前先把要用的值存起來。<br>3. 講義 ZEKET_43 註記「<b>DO_SUM 做不出來，可能跟 JOIN 有關</b>」——真正原因通常是：<b>數量欄沒有綁單位欄</b>（qfieldname／cfieldname 沒設），或該欄的 <span class="kw">datatype</span> 被手動指定成 CHAR。金額欄要綁 <span class="kw">CFIELDNAME</span>，數量欄要綁 <span class="kw">QFIELDNAME</span>，否則 ALV 不知道能不能加總。</div>
+
+  <h3 id="ch02-3-08">8. Layout 變式（DISVARIANT）：讓使用者自己排版面</h3>
+  <p>使用者最常抱怨的是「欄位太多、順序不對」。正解不是改程式，而是<b>把版面存成變式</b>。傳統做法要自己接 4 支 FM（講義 BALVSD01 / BALVSD11 就是完整示範）：</p>
+
+  <table>
+    <thead><tr><th>FM</th><th>時機</th><th>用途</th></tr></thead>
+    <tbody>
+      <tr><td>REUSE_ALV_VARIANT_DEFAULT_GET</td><td>INITIALIZATION</td><td>取得預設變式，填進選擇畫面的 P_VARI</td></tr>
+      <tr><td>REUSE_ALV_VARIANT_F4</td><td>AT SELECTION-SCREEN ON VALUE-REQUEST</td><td>提供 F4 選變式</td></tr>
+      <tr><td>REUSE_ALV_VARIANT_EXISTENCE</td><td>AT SELECTION-SCREEN</td><td>檢查使用者輸入的變式存不存在</td></tr>
+      <tr><td>REUSE_ALV_LIST/GRID_DISPLAY 的 IS_VARIANT / I_SAVE</td><td>顯示時</td><td>I_SAVE：' '不可存、'U' 只能存個人、'X' 只能存共用、<b>'A' 兩種都可</b></td></tr>
+    </tbody>
+  </table>
+
+<pre><code class="abap">*&amp;--------------------------------------------------------------------*
+*&amp; Layout 變式完整套路（講義 BALVSD01 / BALVSD11 的現代化版本）
+*&amp;--------------------------------------------------------------------*
+DATA: gs_variant  TYPE disvariant,
+      gs_variant_x TYPE disvariant,
+      gv_exit     TYPE char1.
+CONSTANTS gc_save TYPE char1 VALUE 'A'.   " A = 個人 + 共用皆可儲存
+
+SELECTION-SCREEN BEGIN OF BLOCK b_var WITH FRAME TITLE TEXT-064.
+PARAMETERS p_vari TYPE disvariant-variant.
+SELECTION-SCREEN END OF BLOCK b_var.
+
+INITIALIZATION.
+  gs_variant-report = sy-repid.
+  gs_variant_x      = gs_variant.
+  CALL FUNCTION 'REUSE_ALV_VARIANT_DEFAULT_GET'
+    EXPORTING  i_save     = gc_save
+    CHANGING   cs_variant = gs_variant_x
+    EXCEPTIONS not_found  = 2.
+  IF sy-subrc = 0.
+    p_vari = gs_variant_x-variant.
+  ENDIF.
+
+AT SELECTION-SCREEN ON VALUE-REQUEST FOR p_vari.
+  CALL FUNCTION 'REUSE_ALV_VARIANT_F4'
+    EXPORTING  is_variant = gs_variant
+               i_save     = gc_save
+    IMPORTING  e_exit     = gv_exit
+               es_variant = gs_variant_x
+    EXCEPTIONS not_found  = 2.
+  IF sy-subrc = 2.
+    MESSAGE ID sy-msgid TYPE 'S' NUMBER sy-msgno
+       WITH sy-msgv1 sy-msgv2 sy-msgv3 sy-msgv4.
+  ELSEIF gv_exit IS INITIAL.
+    p_vari = gs_variant_x-variant.
+  ENDIF.
+
+AT SELECTION-SCREEN.
+  IF p_vari IS NOT INITIAL.
+    gs_variant_x         = gs_variant.
+    gs_variant_x-variant = p_vari.
+    CALL FUNCTION 'REUSE_ALV_VARIANT_EXISTENCE'
+      EXPORTING i_save     = gc_save
+      CHANGING  cs_variant = gs_variant_x.
+    gs_variant = gs_variant_x.
+  ELSE.
+    CLEAR gs_variant.
+    gs_variant-report = sy-repid.
+  ENDIF.</code></pre>
+
+  <div class="tip"><b>SALV 只要三行就搞定同一件事</b>（而且 F4、儲存、預設全部自動）：<br><span class="kw">DATA(lo_layout) = lo_alv-&gt;get_layout( ).</span><br><span class="kw">lo_layout-&gt;set_key( VALUE #( report = sy-repid handle = '0001' ) ).</span><br><span class="kw">lo_layout-&gt;set_save_restriction( cl_salv_layout=&gt;restrict_none ).</span><br>其中 <span class="kw">handle</span> 是同一支程式有多個 ALV 時用來區分的代號；<span class="kw">restrict_none / restrict_user_dependant / restrict_user_independant</span> 對應舊的 A / U / X。</div>
+
+  <h3 id="ch02-3-09">9. ALV 事件全覽：傳統 17 個事件與 OO 事件</h3>
+  <p>傳統 ALV 的事件是「填一張 <span class="kw">SLIS_T_EVENT</span> 表，指定事件名稱對應到哪個 FORM」。講義列出全部 17 個事件名稱，其中<b>標黃色的四個一定要會</b>：</p>
+
+  <table>
+    <thead><tr><th>事件名稱</th><th>觸發時機</th><th>重要度</th></tr></thead>
+    <tbody>
+      <tr><td><b>TOP_OF_PAGE</b></td><td>每頁開始時執行（畫抬頭、放 LOGO）</td><td>★必會</td></tr>
+      <tr><td><b>USER_COMMAND</b></td><td>使用者按下功能鍵／按鈕／雙擊</td><td>★必會</td></tr>
+      <tr><td><b>PF_STATUS_SET</b></td><td>設定 GUI Status（自訂工具列）</td><td>★必會</td></tr>
+      <tr><td><b>END_OF_PAGE</b></td><td>每頁結束時執行（頁尾）</td><td>★必會</td></tr>
+      <tr><td>CALLER_EXIT</td><td>ALV 顯示前最後一個掛勾</td><td>進階</td></tr>
+      <tr><td>TOP_OF_LIST / END_OF_LIST</td><td>整份清單的開頭／結尾（只出現一次）</td><td>常用</td></tr>
+      <tr><td>TOP_OF_COVERPAGE / END_OF_COVERPAGE</td><td>封面頁開頭／結尾</td><td>少用</td></tr>
+      <tr><td>FOREIGN_TOP_OF_PAGE / FOREIGN_END_OF_PAGE</td><td>外部呼叫時的頁首頁尾</td><td>少用</td></tr>
+      <tr><td>LIST_MODIFY</td><td>清單輸出後可再修改內容</td><td>少用</td></tr>
+      <tr><td>AFTER_LINE_OUTPUT / BEFORE_LINE_OUTPUT</td><td>每一行輸出前後</td><td>少用</td></tr>
+      <tr><td>SUBTOTAL_TEXT</td><td>自訂小計列的文字</td><td>常用</td></tr>
+      <tr><td>GROUPLEVEL_CHANGE</td><td>群組層級改變時</td><td>少用</td></tr>
+      <tr><td>REPREP_SEL_MODIFY</td><td>report/report 介面的選擇條件修改</td><td>少用</td></tr>
+    </tbody>
+  </table>
+
+  <p>這些事件常搭配兩個古典的清單事件：<span class="kw">AT LINE-SELECTION</span>（在 LIST 中雙擊）與 <span class="kw">AT USER-COMMAND</span>（按下功能表的某鍵）。</p>
+
+<pre><code class="abap">" ── 傳統事件表建法（講義 Z202202_25 的 step5）─────────────────────
+DATA(lt_event) = VALUE slis_t_event(
+  ( name = 'USER_COMMAND'  form = 'FORM_USER_COMMAND' )   " 用戶回應
+  ( name = 'TOP_OF_PAGE'   form = 'FORM_TOP_OF_PAGE' )    " 顯示標題欄
+  ( name = 'PF_STATUS_SET' form = 'FORM_PF_STATUS_SET' )  " GRID 狀態欄
+  ( name = 'END_OF_PAGE'   form = 'FORM_END_OF_PAGE' ) ).
+
+" 也可以先向系統要「標準事件表」再改（講義 BALVSD01 的 E03_EVENTTAB_BUILD）
+DATA lt_std_event TYPE slis_t_event.
+CALL FUNCTION 'REUSE_ALV_EVENTS_GET'
+  EXPORTING i_list_type = 0        " 0=簡單清單 1=階層 2=區塊 3=順序
+  IMPORTING et_events   = lt_std_event.
+
+READ TABLE lt_std_event INTO DATA(ls_ev)
+     WITH KEY name = slis_ev_top_of_page.
+IF sy-subrc = 0.
+  ls_ev-form = 'TOP_OF_PAGE'.
+  MODIFY lt_std_event FROM ls_ev INDEX sy-tabix.
+ENDIF.
+
+" ── 三個 callback FORM（名稱要跟事件表一致，或直接用 I_CALLBACK_xxx 傳）──
+FORM form_pf_status_set USING rt_extab TYPE slis_t_extab.
+  " RT_EXTAB 是「目前不能啟用」的 ALV 功能碼清單，要原封不動傳給 SET PF-STATUS
+  SET PF-STATUS 'STANDARD' EXCLUDING rt_extab.
+ENDFORM.
+
+FORM form_top_of_page.
+  DATA(lt_comment) = VALUE slis_t_listheader(
+    ( typ = 'H' info = 'VA01 客戶訂單' )              " H = Header 大標題
+    ( typ = 'S' key = '選擇條件' info = '僅顯示部份欄位' ) " S = Selection
+    ( typ = 'A' info = |列印者 { sy-uname }| ) ).      " A = Action
+
+  CALL FUNCTION 'REUSE_ALV_COMMENTARY_WRITE'
+    EXPORTING
+      it_list_commentary = lt_comment
+      i_logo             = 'ZNCU'.     " OAER 上傳的 LOGO 物件名稱
+ENDFORM.
+
+FORM form_user_command USING r_ucomm     LIKE sy-ucomm
+                             rs_selfield TYPE slis_selfield.
+  CASE r_ucomm.
+    WHEN '&amp;IC1'.                       " 雙擊（Interactive Command 1）
+      CASE rs_selfield-fieldname.
+        WHEN 'VBELN'.
+          SET PARAMETER ID 'AUN' FIELD rs_selfield-value.
+          CALL TRANSACTION 'VA03' AND SKIP FIRST SCREEN.
+        WHEN 'MATNR'.
+          SET PARAMETER ID 'MAT' FIELD rs_selfield-value.
+          CALL TRANSACTION 'MM03' AND SKIP FIRST SCREEN.
+      ENDCASE.
+    WHEN 'ZCAS'.  MESSAGE '你按下了 CASPER 按鈕' TYPE 'I'.
+    WHEN 'ZADD'.  MESSAGE '你按下了 新增2 按鈕' TYPE 'I'.
+    WHEN 'EXIT'.  LEAVE PROGRAM.
+    WHEN OTHERS.
+  ENDCASE.
+  rs_selfield-refresh = abap_true.     " 要求 ALV 重新整理畫面
+ENDFORM.</code></pre>
+
+  <div class="tip">功能碼 <span class="kw">'&amp;IC1'</span> 就是雙擊；<span class="kw">'&amp;ETA'</span> 是彈出明細視窗（layout-f2code 預設用它）。<span class="kw">rs_selfield</span> 裡最好用的三個欄位：<span class="kw">tabindex</span>（第幾列）、<span class="kw">fieldname</span>（哪一欄）、<span class="kw">value</span>（那一格的值）。設 <span class="kw">rs_selfield-refresh = 'X'</span> 才會刷新畫面。</div>
+
+  <h4>9-1. OO ALV 的事件對照</h4>
+  <table>
+    <thead><tr><th>要做的事</th><th>CL_SALV_TABLE</th><th>CL_GUI_ALV_GRID</th></tr></thead>
+    <tbody>
+      <tr><td>自訂按鈕被按</td><td>ADDED_FUNCTION</td><td>USER_COMMAND（＋ TOOLBAR 加按鈕）</td></tr>
+      <tr><td>雙擊某一格</td><td>DOUBLE_CLICK</td><td>DOUBLE_CLICK</td></tr>
+      <tr><td>單擊熱點</td><td>LINK_CLICK</td><td>HOTSPOT_CLICK</td></tr>
+      <tr><td>編輯後回寫內表</td><td>不支援（SALV 唯讀）</td><td>DATA_CHANGED / DATA_CHANGED_FINISHED</td></tr>
+      <tr><td>自畫工具列</td><td>set_screen_status( )</td><td>TOOLBAR + MENU_BUTTON</td></tr>
+      <tr><td>報表抬頭</td><td>set_top_of_list( )</td><td>TOP_OF_PAGE（＋ CL_DD_DOCUMENT）</td></tr>
+      <tr><td>右鍵選單</td><td>不支援</td><td>ONF4 / CONTEXT_MENU_REQUEST</td></tr>
+    </tbody>
+  </table>
+
+  <h3 id="ch02-3-10">10. CL_GUI_ALV_GRID 完整範例（可編輯 + 事件 + 回寫資料庫）</h3>
+  <p>當你需要「使用者在 ALV 上直接改資料 → 按存檔 → 寫回資料表」時，SALV 就不夠用了，必須用 <span class="kw">CL_GUI_ALV_GRID</span>。這需要一個 Dialog Screen（SE80 建 Screen 0100 + 一個 Custom Control，名稱例如 <span class="kw">CC_ALV</span>）與一個 GUI Status。以下是<b>完整可跑</b>的骨架，功能對應講義第 26 支程式與 ZEKET_43（EKKO ⋈ EKPO ⋈ EKET 三表 JOIN、改交期、存檔回寫）：</p>
+
+<pre><code class="abap">*&amp;--------------------------------------------------------------------*
+*&amp; Report ZGRID_EKET_EDIT
+*&amp; CL_GUI_ALV_GRID 完整範例：三表 JOIN、紅綠燈、可編輯、存檔回寫 EKET
+*&amp; 前置：SE80 建 Screen 0100（含 Custom Control 名稱 CC_ALV）
+*&amp;       SE41 建 GUI Status ZSTATUS（含 ZSAV 存檔、BACK/EXIT/CANC）
+*&amp;--------------------------------------------------------------------*
+REPORT zgrid_eket_edit.
+
+TYPES: BEGIN OF ty_out,
+         light   TYPE char4,        " 紅綠燈（ICON）
+         ebeln   TYPE eket-ebeln,   " 採購編號
+         ebelp   TYPE eket-ebelp,   " 採購項次
+         etenr   TYPE eket-etenr,   " 交貨排程行
+         lifnr   TYPE ekko-lifnr,   " 廠商編號
+         name1   TYPE lfa1-name1,   " 廠商名稱
+         bedat   TYPE ekko-bedat,   " 採購日期
+         matnr   TYPE ekpo-matnr,   " 物料編號
+         maktx   TYPE makt-maktx,   " 物料名稱
+         menge   TYPE ekpo-menge,   " 採購數量
+         meins   TYPE ekpo-meins,   " 採購單位
+         eindt   TYPE eket-eindt,   " 廠商交期（可編輯）
+         slfdt   TYPE eket-slfdt,   " 統計交期
+         celltab TYPE lvc_t_styl,   " 單格可編輯控制
+       END OF ty_out.
+
+DATA: gt_out    TYPE STANDARD TABLE OF ty_out WITH EMPTY KEY,
+      go_cont   TYPE REF TO cl_gui_custom_container,
+      go_grid   TYPE REF TO cl_gui_alv_grid,
+      gv_ok     TYPE sy-ucomm.
+
+SELECT-OPTIONS: s_matnr FOR  gt_out-matnr,     " 用內表欄位當參照即可
+                s_bedat FOR  gt_out-bedat.
+
+*--------------------------------------------------------------------*
+* 事件處理類別
+*--------------------------------------------------------------------*
+CLASS lcl_evt DEFINITION.
+  PUBLIC SECTION.
+    METHODS on_toolbar      FOR EVENT toolbar       OF cl_gui_alv_grid
+      IMPORTING e_object e_interactive.
+    METHODS on_user_command FOR EVENT user_command  OF cl_gui_alv_grid
+      IMPORTING e_ucomm.
+    METHODS on_hotspot      FOR EVENT hotspot_click OF cl_gui_alv_grid
+      IMPORTING e_row_id e_column_id.
+    METHODS on_double_click FOR EVENT double_click  OF cl_gui_alv_grid
+      IMPORTING e_row e_column.
+    METHODS on_data_changed FOR EVENT data_changed  OF cl_gui_alv_grid
+      IMPORTING er_data_changed e_onf4.
+ENDCLASS.
+
+CLASS lcl_evt IMPLEMENTATION.
+
+  " 在 ALV 工具列自己加按鈕
+  METHOD on_toolbar.
+    APPEND VALUE #( butn_type = 3 ) TO e_object-&gt;mt_toolbar.   " 分隔線
+    APPEND VALUE #( function  = 'ZSAV'
+                    icon      = icon_system_save
+                    quickinfo = '存檔回寫 EKET'
+                    text      = '存檔' ) TO e_object-&gt;mt_toolbar.
+    APPEND VALUE #( function  = 'ZXLS'
+                    icon      = icon_xls
+                    quickinfo = '匯出 Excel'
+                    text      = '匯出' ) TO e_object-&gt;mt_toolbar.
+  ENDMETHOD.
+
+  " 自訂按鈕被按
+  METHOD on_user_command.
+    CASE e_ucomm.
+      WHEN 'ZSAV'.
+        " 先強迫 ALV 把畫面上編輯中的值送回內表，否則會存到舊值
+        go_grid-&gt;check_changed_data( ).
+        PERFORM save_to_db.
+      WHEN 'ZXLS'.
+        PERFORM download_xlsx.
+    ENDCASE.
+  ENDMETHOD.
+
+  " 熱點單擊 → 跳 ME23N
+  METHOD on_hotspot.
+    READ TABLE gt_out INTO DATA(ls) INDEX e_row_id-index.
+    CHECK sy-subrc = 0.
+    IF e_column_id-fieldname = 'EBELN'.
+      SET PARAMETER ID 'BES' FIELD ls-ebeln.
+      CALL TRANSACTION 'ME23N' AND SKIP FIRST SCREEN.
+    ENDIF.
+  ENDMETHOD.
+
+  " 雙擊 → 顯示物料
+  METHOD on_double_click.
+    READ TABLE gt_out INTO DATA(ls) INDEX e_row-index.
+    CHECK sy-subrc = 0.
+    IF e_column-fieldname = 'MATNR'.
+      CALL FUNCTION 'MMPUR_MATERIAL_DISPLAY'
+        EXPORTING im_matnr = ls-matnr.
+    ENDIF.
+  ENDMETHOD.
+
+  " 編輯即時檢核：交期不可早於今天
+  METHOD on_data_changed.
+    LOOP AT er_data_changed-&gt;mt_good_cells INTO DATA(ls_cell).
+      IF ls_cell-fieldname = 'EINDT' AND ls_cell-value &lt; sy-datum.
+        er_data_changed-&gt;add_protocol_entry(
+          i_msgid = '00' i_msgty = 'E' i_msgno = '001'
+          i_msgv1 = '交期不可早於今天'
+          i_fieldname = ls_cell-fieldname
+          i_row_id    = ls_cell-row_id ).
+      ENDIF.
+    ENDLOOP.
+  ENDMETHOD.
+
+ENDCLASS.
+
+DATA go_evt TYPE REF TO lcl_evt.
+
+*--------------------------------------------------------------------*
+START-OF-SELECTION.
+  PERFORM get_data.
+  IF gt_out IS INITIAL.
+    MESSAGE '查無資料' TYPE 'S' DISPLAY LIKE 'E'.
+    RETURN.
+  ENDIF.
+  CALL SCREEN 0100.
+
+*&amp;--------------------------------------------------------------------*
+FORM get_data.
+
+  " 三表 JOIN：EKET ⋈ EKPO ⋈ EKKO，再左外聯 LFA1 / MAKT 取名稱
+  SELECT FROM eket AS a
+         INNER JOIN ekpo AS b ON  a~ebeln = b~ebeln
+                              AND a~ebelp = b~ebelp
+         INNER JOIN ekko AS c ON  a~ebeln = c~ebeln
+         LEFT OUTER JOIN lfa1 AS d ON c~lifnr = d~lifnr
+         LEFT OUTER JOIN makt AS e ON  b~matnr = e~matnr
+                                   AND e~spras = @sy-langu
+         FIELDS a~ebeln, a~ebelp, a~etenr, a~eindt, a~slfdt,
+                b~matnr, b~menge, b~meins,
+                c~bedat, c~lifnr, d~name1, e~maktx
+         WHERE b~matnr IN @s_matnr
+           AND c~bedat IN @s_bedat
+         ORDER BY a~ebeln, a~ebelp, a~etenr
+         INTO CORRESPONDING FIELDS OF TABLE @gt_out
+         UP TO 500 ROWS.
+
+  " 紅綠燈 + 單格可編輯控制
+  LOOP AT gt_out ASSIGNING FIELD-SYMBOL(&lt;ls&gt;).
+    &lt;ls&gt;-light = COND #( WHEN &lt;ls&gt;-eindt &lt;  sy-datum     THEN icon_led_red
+                         WHEN &lt;ls&gt;-eindt &lt;= sy-datum + 7 THEN icon_led_yellow
+                         ELSE                                 icon_led_green ).
+    " 只有未逾期的行才允許改交期
+    &lt;ls&gt;-celltab = VALUE #(
+      ( fieldname = 'EINDT'
+        style = COND #( WHEN &lt;ls&gt;-eindt &lt; sy-datum
+                        THEN cl_gui_alv_grid=&gt;mc_style_disabled
+                        ELSE cl_gui_alv_grid=&gt;mc_style_enabled ) ) ).
+  ENDLOOP.
+
+ENDFORM.
+
+*&amp;--------------------------------------------------------------------*
+MODULE status_0100 OUTPUT.
+  SET PF-STATUS 'ZSTATUS'.
+  SET TITLEBAR  'T100'.
+
+  IF go_grid IS INITIAL.
+
+    go_cont = NEW cl_gui_custom_container( container_name = 'CC_ALV' ).
+    go_grid = NEW cl_gui_alv_grid( i_parent = go_cont ).
+
+    " 註冊事件：TOOLBAR 必須在 set_table_for_first_display 之前註冊
+    go_evt = NEW lcl_evt( ).
+    SET HANDLER go_evt-&gt;on_toolbar      FOR go_grid.
+    SET HANDLER go_evt-&gt;on_user_command FOR go_grid.
+    SET HANDLER go_evt-&gt;on_hotspot      FOR go_grid.
+    SET HANDLER go_evt-&gt;on_double_click FOR go_grid.
+    SET HANDLER go_evt-&gt;on_data_changed FOR go_grid.
+
+    " 編輯後每一格都立刻回報（等同舊 I_GRID_SETTINGS-EDT_CLL_CB = 'X'）
+    go_grid-&gt;register_edit_event(
+      i_event_id = cl_gui_alv_grid=&gt;mc_evt_modified ).
+
+    DATA(ls_layo) = VALUE lvc_s_layo(
+      zebra      = abap_true
+      cwidth_opt = abap_true
+      sel_mode   = 'A'
+      grid_title = '採購交貨排程（可修改交期）'
+      excp_fname = space           " 這裡用 ICON 欄，不用 exception
+      stylefname = 'CELLTAB' ).
+
+    DATA(lt_fcat) = VALUE lvc_t_fcat(
+      ( fieldname = 'LIGHT' col_pos = 1  outputlen = 4  scrtext_m = '燈'
+        icon = abap_true )
+      ( fieldname = 'EBELN' col_pos = 2  outputlen = 10 scrtext_m = '採購編號'
+        key = abap_true hotspot = abap_true )
+      ( fieldname = 'EBELP' col_pos = 3  outputlen = 5  scrtext_m = '項次'
+        key = abap_true )
+      ( fieldname = 'ETENR' col_pos = 4  outputlen = 4  scrtext_m = '排程行'
+        key = abap_true )
+      ( fieldname = 'LIFNR' col_pos = 5  outputlen = 10 scrtext_m = '廠商編號' )
+      ( fieldname = 'NAME1' col_pos = 6  outputlen = 35 scrtext_m = '廠商名稱' )
+      ( fieldname = 'BEDAT' col_pos = 7  outputlen = 10 scrtext_m = '採購日期' )
+      ( fieldname = 'MATNR' col_pos = 8  outputlen = 18 scrtext_m = '物料編號' )
+      ( fieldname = 'MAKTX' col_pos = 9  outputlen = 40 scrtext_m = '物料名稱' )
+      ( fieldname = 'MENGE' col_pos = 10 outputlen = 15 scrtext_m = '採購數量'
+        qfieldname = 'MEINS' do_sum = abap_true )
+      ( fieldname = 'MEINS' col_pos = 11 outputlen = 3  scrtext_m = '單位' )
+      ( fieldname = 'EINDT' col_pos = 12 outputlen = 10 scrtext_m = '廠商交期'
+        edit = abap_true )
+      ( fieldname = 'SLFDT' col_pos = 13 outputlen = 10 scrtext_m = '統計交期' ) ).
+
+    DATA(lt_sort) = VALUE lvc_t_sort(
+      ( spos = 1 fieldname = 'LIFNR' up = abap_true subtot = abap_true )
+      ( spos = 2 fieldname = 'EBELN' up = abap_true ) ).
+
+    DATA(ls_variant) = VALUE disvariant( report = sy-repid handle = '0001' ).
+
+    go_grid-&gt;set_table_for_first_display(
+      EXPORTING is_layout        = ls_layo
+                is_variant       = ls_variant
+                i_save           = 'A'
+      CHANGING  it_outtab        = gt_out
+                it_fieldcatalog  = lt_fcat
+                it_sort          = lt_sort ).
+
+  ELSE.
+    " 資料變更後刷新，並保留捲軸位置
+    go_grid-&gt;refresh_table_display(
+      EXPORTING is_stable = VALUE lvc_s_stbl( row = abap_true col = abap_true ) ).
+  ENDIF.
+
+ENDMODULE.
+
+MODULE user_command_0100 INPUT.
+  CASE gv_ok.
+    WHEN 'BACK' OR 'EXIT' OR 'CANC'.
+      go_grid-&gt;free( ).
+      go_cont-&gt;free( ).
+      CLEAR: go_grid, go_cont.
+      LEAVE TO SCREEN 0.
+  ENDCASE.
+  CLEAR gv_ok.
+ENDMODULE.
+
+*&amp;--------------------------------------------------------------------*
+FORM save_to_db.
+
+  " 依內表的 key 撈出實體表資料（FOR ALL ENTRIES 前務必檢查非空）
+  IF gt_out IS INITIAL.
+    MESSAGE '無資料可存' TYPE 'S' DISPLAY LIKE 'E'.
+    RETURN.
+  ENDIF.
+
+  SELECT ebeln, ebelp, etenr, eindt, slfdt, menge
+    FROM eket
+    FOR ALL ENTRIES IN @gt_out
+    WHERE ebeln = @gt_out-ebeln
+      AND ebelp = @gt_out-ebelp
+      AND etenr = @gt_out-etenr
+    INTO TABLE @DATA(lt_eket).
+
+  LOOP AT lt_eket ASSIGNING FIELD-SYMBOL(&lt;ls_eket&gt;).
+    " line_exists / 讀表：用 key 精準對應
+    ASSIGN gt_out[ ebeln = &lt;ls_eket&gt;-ebeln
+                   ebelp = &lt;ls_eket&gt;-ebelp
+                   etenr = &lt;ls_eket&gt;-etenr ] TO FIELD-SYMBOL(&lt;ls_out&gt;).
+    IF sy-subrc = 0.
+      &lt;ls_eket&gt;-eindt = &lt;ls_out&gt;-eindt.
+      &lt;ls_eket&gt;-slfdt = &lt;ls_out&gt;-eindt.
+    ENDIF.
+  ENDLOOP.
+
+  " 標準 SAP 表建議走 BAPI（BAPI_PO_CHANGE），示範用 UPDATE 說明交易一致性
+  UPDATE eket FROM TABLE @lt_eket.
+  IF sy-subrc = 0.
+    COMMIT WORK AND WAIT.
+    MESSAGE '存檔成功！' TYPE 'S'.
+  ELSE.
+    ROLLBACK WORK.
+    MESSAGE '存檔失敗！' TYPE 'S' DISPLAY LIKE 'E'.
+  ENDIF.
+
+ENDFORM.</code></pre>
+
+  <div class="warn"><b>直接 UPDATE 標準表是大忌。</b>講義為了教「內表 → 實體表回寫」與 <span class="kw">COMMIT WORK / ROLLBACK WORK</span> 的觀念才這樣寫；正式專案改採購單一定要用 <span class="kw">BAPI_PO_CHANGE</span> + <span class="kw">BAPI_TRANSACTION_COMMIT</span>，改銷售訂單用 <span class="kw">BAPI_SALESORDER_CHANGE</span>。直接 UPDATE 會略過所有檢核、不寫變更文件（CDHDR/CDPOS）、不觸發後續流程，之後帳一定對不起來。</div>
+
+  <div class="warn"><b>FOR ALL ENTRIES 三大陷阱：</b>（1）驅動內表為空 → 條件被忽略，等於全表掃描；使用前一定要 <span class="kw">IF lt_x IS NOT INITIAL</span>。（2）結果會自動去重複（等同 DISTINCT），所以 SELECT 欄位一定要包含完整主鍵。（3）驅動內表太大時會被切成多次 DB 呼叫，效能不見得比 JOIN 好——能 JOIN 就 JOIN。</div>
+
+  <div class="tip"><b>可編輯 ALV 的三個必要條件</b>，缺一不可：<br>① fieldcat 該欄 <span class="kw">edit = 'X'</span>（或 layout <span class="kw">edit = 'X'</span> 整張開放）。<br>② 呼叫 <span class="kw">register_edit_event( mc_evt_modified )</span>（或舊式 <span class="kw">I_GRID_SETTINGS-EDT_CLL_CB = 'X'</span>）。<br>③ 存檔前呼叫 <span class="kw">go_grid-&gt;check_changed_data( )</span>，把游標還停在編輯格的最後一筆值 flush 回內表。<br>另外，<b>可編輯且有小數的數量／金額欄一定要指定 <span class="kw">decimals_o</span></b>（講義第 26 支程式特別註記），否則使用者輸入 1.5 會被吃成 15。</div>
+
+  <h3 id="ch02-3-11">11. GUI Status 與自訂按鈕：SE41 的正確作法</h3>
+  <p>講義第 25 支程式的「特色一」就是 <span class="kw">PF_STATUS_SET</span> 前置準備。SAP 官方說明講得很清楚：<b>要設自訂 Status，請以函數群組 SALV 的 STANDARD 為樣板複製</b>。步驟如下<span class="src">（依講義步驟整理）</span>：</p>
+  <ol>
+    <li><span class="tcode">SE41</span> Menu Painter → 程式名輸入 <span class="kw">SAPLSALV</span>、Status 輸入 <span class="kw">STANDARD</span>（或 <span class="kw">STANDARD_FULLSCREEN</span>）。</li>
+    <li>功能表 <b>Status → 複製</b>，目標程式填你自己的 Z 程式、Status 名稱自取（例如 <span class="kw">ZSTATUS</span>）。</li>
+    <li>在 <b>Application Toolbar</b>（應用工具列）新增按鈕，功能碼取 <span class="kw">ZADD</span>、<span class="kw">ZSAV</span>、<span class="kw">ZCAS</span> 之類的 Z 開頭代碼，填上圖示與 Quickinfo。<b>建議放 Application Bar，不要塞進 Menu Bar</b>——使用者根本不會去點選單。</li>
+    <li>存檔後<b>一定要啟動（Activate）</b>。物件變多時，可用 SE80 的物件清單一次全選啟動，或用 <span class="tcode">SE38</span> 執行 <span class="kw">RS_WORKING_AREA_ACTIVATE</span>／在 SE80 對 Package 按「Activate All」。</li>
+    <li>在程式的 <span class="kw">PF_STATUS_SET</span> 事件裡 <span class="kw">SET PF-STATUS 'ZSTATUS' EXCLUDING rt_extab.</span></li>
+  </ol>
+
+  <div class="note"><b>RT_EXTAB 是什麼？</b>SAP 說明原文：Parameter RT_EXTAB 內含「目前必須停用」的 ALV 專屬功能碼，你必須把這張表原封不動傳給 <span class="kw">SET PF-STATUS ... EXCLUDING</span>。不傳的話，畫面上會出現一些當下根本不能用的按鈕，按下去就 dump。因為這個 callback 太常用，SAP 讓你可以直接用 <span class="kw">I_CALLBACK_PF_STATUS_SET</span> 參數傳 FORM 名稱，不必建事件表。</div>
+
+  <p>SALV 的自訂按鈕作法不同——它用 <span class="kw">set_screen_status( )</span>，而且要先在自己的程式裡建一個 Status（同樣從 SAPLSALV 的 STANDARD 複製）：</p>
+
+<pre><code class="abap">" ── SALV 掛自訂 GUI Status ─────────────────────────────────────
+" set_functions 三個選項：
+"   c_functions_none / c_functions_default / c_functions_all
+lo_alv-&gt;set_screen_status(
+  report        = sy-repid          " Status 存在哪一支程式
+  pfstatus      = 'ZSALV_STATUS'    " SE41 從 SAPLSALV-STANDARD 複製而來
+  set_functions = lo_alv-&gt;c_functions_all ).
+
+" 或者不自訂 Status，只把標準功能全開（最省事）
+lo_alv-&gt;get_functions( )-&gt;set_all( abap_true ).
+
+" 也可以逐項開關
+DATA(lo_func) = lo_alv-&gt;get_functions( ).
+lo_func-&gt;set_default( abap_true ).
+lo_func-&gt;set_export_localfile( abap_true ).   " 本機檔案
+lo_func-&gt;set_export_spreadsheet( abap_true ). " 試算表
+lo_func-&gt;set_print( abap_true ).
+lo_func-&gt;set_graphics( abap_false ).</code></pre>
+
+  <h4>11-1. 報表 LOGO：OAER 上傳圖片</h4>
+  <p>講義第 25 支程式「特色四」是在 TOP_OF_PAGE 放一張 LOGO。做法<span class="src">（依講義步驟整理）</span>：</p>
+  <ol>
+    <li>執行 <span class="tcode">OAER</span>，Class Name 填 <span class="kw">PICTURES</span>、Class Type 填 <span class="kw">OT</span>、Object Key 填你自取的名稱（講義用 <span class="kw">ZNCU</span>、<span class="kw">ZCERPS43</span>）。</li>
+    <li>進入主控畫面後選「新增」，在視窗下方的 <b>Standard Doc. Type</b> 一定要選 <span class="kw">SCREEN</span>（若要列印用則選 <span class="kw">PRINT</span>）。</li>
+    <li>選擇本機圖檔上傳。建立成功後，重新進入該物件點 <b>Attachment</b> 就能看到 LOGO。</li>
+    <li>程式中 <span class="kw">REUSE_ALV_COMMENTARY_WRITE</span> 的 <span class="kw">I_LOGO</span> 填該 Object Key。</li>
+  </ol>
+  <div class="note">若是 SmartForms／SAPscript 要用的圖檔，改走 <span class="tcode">SE78</span>（Form Graphics）上傳，不是 OAER。兩者的圖庫是分開的。</div>
+
+  <h3 id="ch02-3-12">12. Drilldown：從報表跳到標準交易</h3>
+  <p>ALV 報表的價值一半來自「雙擊能跳過去看單據」。SAP 的作法是先 <span class="kw">SET PARAMETER ID</span> 把值塞進使用者的 SPA/GPA 記憶區，再 <span class="kw">CALL TRANSACTION ... AND SKIP FIRST SCREEN</span>；或直接呼叫該模組提供的顯示 FM。</p>
+
+  <table>
+    <thead><tr><th>要跳到</th><th>Parameter ID</th><th>作法</th></tr></thead>
+    <tbody>
+      <tr><td>採購單 ME23N</td><td>BES</td><td>SET PARAMETER + CALL TRANSACTION，或 FM <span class="kw">ME_DISPLAY_PURCHASE_DOCUMENT</span></td></tr>
+      <tr><td>銷售訂單 VA03</td><td>AUN</td><td>SET PARAMETER + CALL TRANSACTION</td></tr>
+      <tr><td>交貨單 VL03N</td><td>VL</td><td>SET PARAMETER + CALL TRANSACTION</td></tr>
+      <tr><td>物料 MM03</td><td>MAT（＋WRK 工廠、LIF 廠商、<b>MXX 視圖</b>）</td><td>SET PARAMETER + CALL TRANSACTION，或 FM <span class="kw">MMPUR_MATERIAL_DISPLAY</span></td></tr>
+      <tr><td>會計傳票 FB03</td><td>BLN + BUK + GJR</td><td>SET PARAMETER + CALL TRANSACTION</td></tr>
+      <tr><td>物料憑證 MIGO</td><td>MBN + MJA + BUK</td><td>FM <span class="kw">MIGO_DIALOG</span></td></tr>
+      <tr><td>供應商</td><td>—</td><td>FM <span class="kw">MMPUR_VENDOR_DISPLAY</span>（im_lifnr、im_ekorg）</td></tr>
+      <tr><td>採購資訊記錄</td><td>—</td><td>FM <span class="kw">MMPUR_INFO_RECORD_DISPLAY</span>（im_infnr、im_ekorg、im_werks）</td></tr>
+      <tr><td>維護視圖（如工廠 V_T001W）</td><td>—</td><td>FM <span class="kw">VIEW_MAINTENANCE_SINGLE_ENTRY</span>（action='SHOW'）</td></tr>
+      <tr><td>程式碼</td><td>—</td><td>FM <span class="kw">EDITOR_PROGRAM</span>（display='X'）</td></tr>
+      <tr><td>函數群組</td><td>—</td><td>FM <span class="kw">RS_FUNCTION_POOL_CHANGE</span>（aktion='SHOW'）</td></tr>
+    </tbody>
+  </table>
+
+<pre><code class="abap">*&amp;--------------------------------------------------------------------*
+*&amp; Report ZDRILLDOWN  ── 雙擊跳 ME23N（講義原例，改為 LVC + 現代語法）
+*&amp;--------------------------------------------------------------------*
+REPORT zdrilldown.
+
+DATA gt_ekko TYPE STANDARD TABLE OF ekko WITH EMPTY KEY.
+
+START-OF-SELECTION.
+
+  SELECT ebeln, bukrs, bsart, lifnr, bedat, waers
+    FROM ekko
+    UP TO 10 ROWS
+    INTO CORRESPONDING FIELDS OF TABLE @gt_ekko.
+
+  DATA(lt_fcat) = VALUE lvc_t_fcat(
+    ( fieldname = 'EBELN' col_pos = 1 outputlen = 10 scrtext_m = '採購單號'
+      key = abap_true hotspot = abap_true )
+    ( fieldname = 'LIFNR' col_pos = 2 outputlen = 10 scrtext_m = '廠商' )
+    ( fieldname = 'BEDAT' col_pos = 3 outputlen = 10 scrtext_m = '採購日期' )
+    ( fieldname = 'WAERS' col_pos = 4 outputlen = 5  scrtext_m = '幣別' ) ).
+
+  DATA(ls_layo) = VALUE lvc_s_layo( zebra      = abap_true
+                                    sel_mode   = 'A'
+                                    cwidth_opt = abap_true ).
+
+  CALL FUNCTION 'REUSE_ALV_GRID_DISPLAY_LVC'
+    EXPORTING
+      i_callback_program      = sy-repid
+      i_callback_user_command = 'FRM_USER_COMMAND'
+      is_layout_lvc           = ls_layo
+      it_fieldcat_lvc         = lt_fcat
+    TABLES
+      t_outtab                = gt_ekko
+    EXCEPTIONS
+      program_error           = 1
+      OTHERS                  = 2.
+
+*&amp;--------------------------------------------------------------------*
+FORM frm_user_command USING i_ucomm    TYPE sy-ucomm
+                            is_selfield TYPE slis_selfield.
+  CASE i_ucomm.
+    WHEN '&amp;IC1'.                     " 雙擊 / 熱點
+      CASE is_selfield-fieldname.
+        WHEN 'EBELN'.
+          " 作法一：Parameter ID + CALL TRANSACTION
+          SET PARAMETER ID 'BES' FIELD is_selfield-value.
+          CALL TRANSACTION 'ME23N' AND SKIP FIRST SCREEN.
+          " 作法二（更安全，會做權限檢查）：
+          " CALL FUNCTION 'ME_DISPLAY_PURCHASE_DOCUMENT'
+          "   EXPORTING i_ebeln = CONV ekko-ebeln( is_selfield-value )
+          "             i_enjoy = abap_true
+          "   EXCEPTIONS not_found = 1 no_authority = 2
+          "              invalid_call = 3 OTHERS = 4.
+      ENDCASE.
+  ENDCASE.
+ENDFORM.</code></pre>
+
+  <div class="note"><b>MM03 要跳到哪一個視圖？</b>由 Parameter ID <span class="kw">MXX</span> 決定，對應表 <span class="kw">T132</span>（同時參考 <span class="kw">MOFF</span>）：<br>A 工作計畫｜B 會計｜C 分類｜D 物料需求規劃｜E 採購｜F 生產資源／工具｜G 成本核算｜K 基本資料｜L 儲存｜P 預測｜Q 品質管制｜S 倉庫管理｜V 銷售｜X 工廠庫存｜Z 儲存位置庫存。<br>例：<span class="kw">SET PARAMETER ID 'MXX' FIELD 'E'.</span> 就會直接開採購視圖。<br>各模組的顯示 FM 多半集中在幾個函數群組：<span class="kw">CK50</span>、<span class="kw">EDI5</span>、<span class="kw">MEEXT</span> 等。</div>
+
+  <div class="warn"><span class="kw">CALL TRANSACTION</span> 之後使用者按上一頁會回到你的報表，但<b>不會自動刷新資料</b>。若跳過去有改資料，回來要重新 SELECT 並 <span class="kw">refresh_table_display( )</span>。另外 <span class="kw">CALL TRANSACTION</span> 不做權限檢查（<span class="kw">WITH AUTHORITY-CHECK</span> 才會做），有敏感資料的報表請加上 <span class="kw">AUTHORITY-CHECK OBJECT ...</span>。</div>
+
+  <h3 id="ch02-3-13">13. 階層式 ALV 與 SAP 標準示範程式庫</h3>
+  <p>兩層（Header–Item）的清單用 <span class="kw">REUSE_ALV_HIERSEQ_LIST_DISPLAY</span>：兩張內表、一張 <span class="kw">SLIS_KEYINFO_ALV</span> 說明兩表怎麼對應。講義以 SCARR（航空公司）＋ SPFLI（航班）示範。</p>
+
+<pre><code class="abap">" ── 階層式 ALV（BALVHD01 / BALVHD01_GROUP 的核心）─────────────────
+" KEYINFO：header01..05 對 item01..05，說明兩表的關聯欄位
+DATA(ls_keyinfo) = VALUE slis_keyinfo_alv(
+  header01 = 'CARRID'  item01 = 'CARRID'     " 表頭鍵 = 項目鍵
+  header02 = space     item02 = 'CONNID' ).  " 項目自己的第二層鍵
+
+DATA(ls_layout) = VALUE slis_layout_alv(
+  header_text       = '航空公司'
+  item_text         = '航班'
+  default_item      = abap_true        " 預設展開項目
+  group_change_edit = abap_true
+  lights_fieldname  = 'LIGHTS'
+  lights_tabname    = 'GT_SPFLI' ).    " 燈號長在哪張表
+
+CALL FUNCTION 'REUSE_ALV_HIERSEQ_LIST_DISPLAY'
+  EXPORTING
+    i_callback_program      = sy-repid
+    i_structure_name_header = 'SCARR'
+    i_structure_name_item   = 'SFLIGHT'
+    i_tabname_header        = '1'
+    i_tabname_item          = '2'
+    is_keyinfo              = ls_keyinfo
+    is_layout               = ls_layout
+    it_fieldcat             = lt_fieldcat
+    it_sort                 = lt_sort
+    it_events               = lt_events
+    i_save                  = 'A'
+  TABLES
+    t_outtab_header         = gt_scarr
+    t_outtab_item           = gt_sflight.</code></pre>
+
+  <div class="tip"><b>階層式 ALV 的 fieldcat 一定要填 TABNAME</b>（哪張表的欄位），否則欄位會亂跑或不顯示。排序 <span class="kw">SLIS_SORTINFO_ALV</span> 也要填 <span class="kw">TABNAME</span>。<br>S/4HANA 上要做樹狀報表，建議改用 <span class="kw">CL_GUI_ALV_TREE</span>，或乾脆用 CDS 的 parent-child association 交給 Fiori 呈現。</div>
+
+  <p>SAP 內建一整套 ALV 示範程式，都在 SE38 直接執行、SE80 直接讀原始碼，是最好的自學教材：</p>
+
+  <table>
+    <thead><tr><th>程式</th><th>示範內容</th><th>用到的關鍵 FM</th></tr></thead>
+    <tbody>
+      <tr><td>BALVSD01</td><td>飛機模型 Simple list：變式、事件、抬頭、群組、紅綠燈、勾選欄，全部參數化成 CheckBox</td><td>REUSE_ALV_VARIANT_DEFAULT_GET / _F4 / _EXISTENCE、REUSE_ALV_EVENTS_GET、REUSE_ALV_COMMENTARY_WRITE、REUSE_ALV_LIST_DISPLAY</td></tr>
+      <tr><td>BALVSD02</td><td>最簡版本：SELECT + I_STRUCTURE_NAME 就出報表</td><td>REUSE_ALV_LIST_DISPLAY</td></tr>
+      <tr><td>BALVSD02_GRID</td><td>同上，但全螢幕 GRID 模式</td><td>REUSE_ALV_GRID_DISPLAY</td></tr>
+      <tr><td>BALVSD02_SAVE</td><td>加上 I_SAVE = 'A' 的變式儲存</td><td>REUSE_ALV_LIST_DISPLAY</td></tr>
+      <tr><td>BALVSD03</td><td>自建 fieldcat（欄位名寫成 <span class="kw">SCARR-CARRID</span> 這種巢狀形式）</td><td>REUSE_ALV_LIST_DISPLAY</td></tr>
+      <tr><td>BALVSD04</td><td>Merged list：多表 JOIN 後輸出，示範自訂欄位 SEATSFREE（DDIC 沒有的欄位）</td><td>REUSE_ALV_LIST_DISPLAY</td></tr>
+      <tr><td>BALVSD06</td><td>simple version + save，示範 SELECT-OPTIONS 過濾</td><td>REUSE_ALV_LIST_DISPLAY</td></tr>
+      <tr><td>BALVSD11</td><td>互動＋Layout：自訂 GUI Status STANDA02、USER_COMMAND 用 SUBMIT 跳程式</td><td>REUSE_ALV_FIELDCATALOG_MERGE、REUSE_ALV_LIST_DISPLAY</td></tr>
+      <tr><td>BALVHD01</td><td>階層式（Header–Item）完整版</td><td>REUSE_ALV_HIERSEQ_LIST_DISPLAY 等 7 支</td></tr>
+      <tr><td>BALVHD01_GROUP</td><td>階層式 + 群組小計（GT_SORT 的 SUBTOT / GROUP）</td><td>REUSE_ALV_EVENTS_GET、REUSE_ALV_HIERSEQ_LIST_DISPLAY</td></tr>
+      <tr><td>BALV1F01</td><td>超級複雜版——老師的原話是「等著您進入專業程式師的領域」</td><td>—</td></tr>
+      <tr><td>SLIS_DUMMY</td><td>BALVSD11 用 SUBMIT 呼叫的示範被叫程式</td><td>—</td></tr>
+    </tbody>
+  </table>
+
+  <div class="tip">善用輔助說明：<span class="tcode">ABAPDOCU</span>（ABAP 說明文件與可執行範例）、<span class="tcode">ABAPHELP</span>（關鍵字說明）。飛行資料（SFLIGHT/SCARR/SPFLI/SBOOK）若是空的，執行程式 <span class="kw">SAPBC_DATA_GENERATOR</span> 或 <span class="tcode">BC_DATA_GEN</span> 可以重新產生。</div>
+
+  <h3 id="ch02-3-14">14. 匯出：Excel、XLSX 與 PDF</h3>
+  <p>ALV 標準工具列本身就有「匯出 → 試算表 / 本機檔案」。真正要自己寫程式的情境有三種：</p>
+
+  <h4>14-1. SALV 內建匯出（最推薦）</h4>
+<pre><code class="abap">" ── SALV 直接把目前畫面轉成 XLSX（S/4HANA 建議作法）─────────────
+" cl_salv_export_xml_xlsx 需要 SALV 已 display 過或已有 model
+DATA(lv_xlsx) = lo_alv-&gt;to_xml( xml_type = if_salv_bs_xml=&gt;c_type_xlsx ).
+" lv_xlsx 是 XSTRING，可直接下載或當附件寄出
+
+" 下載到本機
+DATA lt_bin TYPE STANDARD TABLE OF x255.
+DATA lv_len TYPE i.
+
+CALL FUNCTION 'SCMS_XSTRING_TO_BINARY'
+  EXPORTING buffer        = lv_xlsx
+  IMPORTING output_length = lv_len
+  TABLES    binary_tab    = lt_bin.
+
+cl_gui_frontend_services=&gt;gui_download(
+  EXPORTING
+    bin_filesize = lv_len
+    filename     = 'C:\temp\alv_export.xlsx'
+    filetype     = 'BIN'                  " XLSX 一定要用 BIN
+  CHANGING
+    data_tab     = lt_bin
+  EXCEPTIONS
+    OTHERS       = 1 ).
+IF sy-subrc &lt;&gt; 0.
+  MESSAGE '下載失敗' TYPE 'E'.
+ENDIF.</code></pre>
+
+  <h4>14-2. 純文字 / CSV 下載（GUI_DOWNLOAD 的正確用法）</h4>
+<pre><code class="abap">" ── GUI_DOWNLOAD 下載 CSV：中文一定要注意編碼 ──────────────────
+DATA(lt_csv) = VALUE string_table(
+  ( |訂單編號,訂單日期,客戶,數量| ) ).
+
+LOOP AT gt_out INTO DATA(ls_out).
+  APPEND |{ ls_out-vbeln },{ ls_out-erdat DATE = ISO },| &amp;&amp;
+         |{ ls_out-kunnr },{ ls_out-zmeng NUMBER = RAW }| TO lt_csv.
+ENDLOOP.
+
+" 讓使用者選存檔位置
+DATA lv_path TYPE string.
+DATA lv_file TYPE string.
+DATA lv_full TYPE string.
+DATA lv_act  TYPE i.
+
+cl_gui_frontend_services=&gt;file_save_dialog(
+  EXPORTING
+    default_extension = 'csv'
+    default_file_name = 'sales_order'
+    file_filter       = |CSV (*.csv)\|*.csv\|| " 注意管線符號要逸出
+  CHANGING
+    filename          = lv_file
+    path              = lv_path
+    fullpath          = lv_full
+    user_action       = lv_act ).
+
+CHECK lv_act = cl_gui_frontend_services=&gt;action_ok.
+
+cl_gui_frontend_services=&gt;gui_download(
+  EXPORTING
+    filename                = lv_full
+    filetype                = 'ASC'
+    write_field_separator   = abap_false
+    codepage                = '4110'        " UTF-8
+    write_bom               = abap_true     " 沒有 BOM，Excel 開中文會變亂碼
+  CHANGING
+    data_tab                = lt_csv
+  EXCEPTIONS
+    OTHERS                  = 1 ).</code></pre>
+
+  <div class="warn"><b>中文亂碼的標準解法</b>：<span class="kw">codepage = '4110'</span>（UTF-8）＋ <span class="kw">write_bom = abap_true</span>。少了 BOM，Excel 在中文 Windows 上會用 Big5 解讀 UTF-8，全部變亂碼。若要相容舊系統，改 <span class="kw">codepage = '8300'</span>（Big5）。<br>另外 <span class="kw">GUI_DOWNLOAD</span> 屬於前端服務，<b>背景作業（SM36/SM37）不能用</b>，會 dump。背景排程要輸出檔案請改 <span class="kw">OPEN DATASET ... FOR OUTPUT IN TEXT MODE ENCODING UTF-8</span> 寫到 AL11 應用伺服器目錄，再由 FTP／介面取走。</div>
+
+  <h4>14-3. 產生真正的 Excel 檔（XLSX）</h4>
+  <ul>
+    <li><b>SALV to_xml</b>：如上，最省事，格式與畫面一致，S/4HANA 首選。</li>
+    <li><b>abap2xlsx（開源）</b>：需要多工作表、公式、格式化、圖表時使用。核心是 <span class="kw">zcl_excel</span>、<span class="kw">zcl_excel_worksheet</span>、<span class="kw">zcl_excel_writer_2007</span>，寫法概念是「建 workbook → 加 worksheet → set_cell( ip_row / ip_column / ip_value ) → writer 產出 XSTRING → 下載」。屬非 SAP 標準物件，導入前要確認公司政策。</li>
+    <li><b>OLE 自動化</b>（<span class="kw">CREATE OBJECT ole 'EXCEL.APPLICATION'</span>）：老專案常見，速度極慢且需要用戶端裝 Excel，<b>新程式不要用</b>。</li>
+    <li><b>XML Spreadsheet 2003 / MHTML</b>：舊式「假 Excel」，副檔名 .xls 但內容是 XML，開啟會跳警告，也不建議。</li>
+  </ul>
+
+  <h4>14-4. 匯出 PDF</h4>
+<pre><code class="abap">" ── ALV 轉 PDF：先送到 Spool，再把 Spool 轉 PDF ──────────────────
+" 步驟一：用 NEW-PAGE PRINT ON 把 ALV 輸出導到 spool
+NEW-PAGE PRINT ON
+  DESTINATION 'LOCL'
+  IMMEDIATELY ' '
+  KEEP IN SPOOL 'X'
+  NEW LIST IDENTIFICATION 'X'
+  NO DIALOG.
+
+lo_alv-&gt;display( ).
+
+NEW-PAGE PRINT OFF.
+
+DATA(lv_spool) = sy-spono.
+
+" 步驟二：Spool → PDF
+CALL FUNCTION 'CONVERT_ABAPSPOOLJOB_2_PDF'
+  EXPORTING
+    src_spoolid   = lv_spool
+    no_dialog     = abap_true
+    dst_device    = 'LOCL'
+  IMPORTING
+    pdf_bytecount = DATA(lv_bytes)
+  TABLES
+    pdf           = DATA(lt_pdf)
+  EXCEPTIONS
+    err_no_abap_spooljob = 1
+    OTHERS               = 12.
+IF sy-subrc &lt;&gt; 0.
+  MESSAGE '轉 PDF 失敗' TYPE 'E'.
+ENDIF.
+
+" lt_pdf 可再 gui_download（filetype = 'BIN'）或當 Email 附件送出</code></pre>
+
+  <h3 id="ch02-3-15">15. S/4HANA：什麼時候該離開 ALV，改用 CDS + Fiori</h3>
+  <p>ALV 依然是 SAP GUI 報表的標準，但在 S/4HANA 上有些情境明顯應該換路線：</p>
+
+  <table>
+    <thead><tr><th>情境</th><th>建議作法</th></tr></thead>
+    <tbody>
+      <tr><td>只給 IT／Key User 在 GUI 上跑，欄位固定</td><td>CL_SALV_TABLE，最快</td></tr>
+      <tr><td>需要在 ALV 上編輯並回寫</td><td>CL_GUI_ALV_GRID（或改做 Fiori RAP 應用）</td></tr>
+      <tr><td>要給業務單位／主管在瀏覽器或手機看</td><td><b>CDS View + Annotation + Fiori List Report</b></td></tr>
+      <tr><td>資料量大、需要 HANA 下推運算</td><td>CDS View（含 aggregation、association），不要在 ABAP 端 LOOP 加總</td></tr>
+      <tr><td>要對外提供資料（Excel 抓、Power BI 抓）</td><td>CDS View 加 <span class="kw">@OData.publish: true</span> 曝露成 OData</td></tr>
+      <tr><td>需要跨模組彙總（銷售＋庫存＋成本）</td><td>建 Composite CDS View 疊在標準 I_ CDS 之上</td></tr>
+    </tbody>
+  </table>
+
+<pre><code class="abap">" ── S/4HANA 觀念示範：同樣一張報表，改用 CDS View 當資料來源 ────────
+" ① 先在 ADT（Eclipse）建 CDS View（此段為 CDS DDL，不是 ABAP）
+"
+"   @AbapCatalog.sqlViewName: 'ZVSOITEM'
+"   @OData.publish: true
+"   @UI.headerInfo.typeName: 'Sales Order Item'
+"   define view Z_C_SalesOrderItem
+"     as select from vbak as h
+"     inner join      vbap as i on h.vbeln = i.vbeln
+"   {
+"     key h.vbeln  as SalesOrder,
+"     key i.posnr  as Item,
+"         h.kunnr  as Customer,
+"         h.erdat  as CreatedOn,
+"         i.matnr  as Material,
+"         @Semantics.quantity.unitOfMeasure: 'SalesUnit'
+"         i.zmeng  as Quantity,
+"         i.zieme  as SalesUnit
+"   }
+"
+" ② ABAP 端只要把 CDS 當成一張表 SELECT，欄位語意、單位、文字都自動帶
+SELECT SalesOrder, Item, Customer, CreatedOn, Material, Quantity, SalesUnit
+  FROM z_c_salesorderitem
+  WHERE CreatedOn IN @s_erdat
+  INTO TABLE @DATA(lt_out)
+  UP TO 500 ROWS.
+
+TRY.
+    cl_salv_table=&gt;factory(
+      IMPORTING r_salv_table = DATA(lo_alv)
+      CHANGING  t_table      = lt_out ).
+    lo_alv-&gt;get_functions( )-&gt;set_all( abap_true ).
+    lo_alv-&gt;display( ).
+  CATCH cx_salv_msg INTO DATA(lx).
+    MESSAGE lx-&gt;get_text( ) TYPE 'E'.
+ENDTRY.</code></pre>
+
+  <div class="warn"><b>S/4HANA 常見的資料來源變動</b>，寫 ALV 前一定要確認：<br>• 物料憑證：MKPF/MSEG → <span class="kw">MATDOC</span>（MSEG 仍以相容視圖存在，但效能差）。<br>• 會計傳票：BKPF/BSEG/FAGLFLEXA/COEP → <span class="kw">ACDOCA</span> 單一總帳行項目表。<br>• 庫存：MARD/MARC/MCHB 的數量欄位在部分版本已改由 <span class="kw">MATDOC_EXTRACT</span> 聚合；MB5B 類報表要改讀 MATDOC。<br>• 客戶／供應商：KNA1／LFA1 → 商業夥伴 <span class="kw">BUT000</span>（KNA1/LFA1 仍在，但主檔維護走 BP）。<br>• 自建 DB View → 一律改用 CDS View。</div>
+
+  <div class="warn"><b>SELECT SINGLE 沒有排序保證</b>：若 WHERE 條件不是完整主鍵，HANA 回哪一筆是不確定的（不同時間、不同節點可能不同）。講義 ZEKET_43 的 <span class="kw">SELECT SINGLE maktx FROM makt WHERE matnr = ...</span> 就少了 <span class="kw">spras</span>，一定要補：<span class="kw">AND spras = @sy-langu</span>。<br>另外，講義用 <b>LOOP 內逐筆 SELECT SINGLE</b> 補廠商名稱／物料名稱，這是效能殺手（N+1 查詢）。正解：一次 JOIN 進來，或先把 key 收集起來一次 SELECT 進暫存內表，再用 <span class="kw">line_exists( )</span> 對應。</div>
+
+  <h3 id="ch02-3-16">16. 老師強調的注意事項與坑</h3>
+  <ol>
+    <li>在 ALV 中，<b>所有要顯示的欄位都必須在對應內表中有欄位</b>，欄位名不能寫錯。</li>
+    <li>ABAP 字串大小寫很重要。<b>單引號包起來的字串，呼叫系統方法時一律用大寫</b>。</li>
+    <li>傳給 ALV 的欄位名稱<b>必須大寫</b>，否則資料不會顯示。</li>
+    <li>用 <b>巨集（DEFINE）或副程式（FORM）可以大幅縮短欄位目錄的程式碼</b>並重複使用；現代寫法更推薦 <span class="kw">VALUE #( )</span> 或抽成方法。</li>
+    <li>FORM 內定義的變數在離開 FORM 後就被系統釋放、記憶體回收——不要期待它跨 FORM 存活。</li>
+    <li>程式一直出錯時，<b>建議把關鍵字都改成大寫</b>再試（講義 Z202202_25 的註記）。</li>
+    <li>有些 SLIS 結構<b>無法用 SE11 直接查</b>，要用 <span class="tcode">SE80</span> 打開 type-pool <span class="kw">SLIS</span> 來看。</li>
+    <li>ZEKET_43 的功能演進清單（可當作自己練習的檢核表）：排序、抓供應商編號、加物料編號、TOP_OF_PAGE 抬頭與圖片、日期格式化、日期可修改、PF_STATUS_SET 功能表、USER_COMMAND 存檔、回寫 EKET、單位欄位、紅綠燈、LEAVE PROGRAM 退出、DO_SUM、用副程式改寫、兩次 INNER JOIN。</li>
+  </ol>
+
+  <h3 id="ch02-3-qa">練習與自我檢核</h3>
+  <ol>
+    <li><b>（講義題）</b>把 VBAK、VBAP、EKKO、EKPO、EKET、LFA1、MAKT 這幾張表的關聯圖畫出來，標出主鍵與外鍵。<i>提示：VBAK-VBELN ↔ VBAP-VBELN；EKKO-EBELN ↔ EKPO-EBELN ↔ EKET-EBELN+EBELP；MAKT 要加 SPRAS。</i></li>
+    <li><b>（講義題，第 88 題）</b>把 Z202202_24 改寫成<b>採購訂單版</b>報表，欄位為：採購編號、採購日期、廠商編號、物料編號、採購數量、採購單位、工廠代碼、儲存位置。若能再加上 Z202202_25 的特色（TOP_OF_PAGE 抬頭、LOGO、PF_STATUS 自訂按鈕、USER_COMMAND、排序），<b>每個特色加 2 分</b>。<i>提示：資料來自 EKKO ⋈ EKPO；工廠 WERKS、儲位 LGORT 都在 EKPO。</i></li>
+    <li>把上題改用 <span class="kw">CL_SALV_TABLE</span> 重寫，要求：欄寬自動最佳化、依廠商小計、數量合計、雙擊採購單號跳 ME23N、可儲存 Layout 變式。</li>
+    <li>做一支「交期預警報表」：交期已過＝紅燈、7 天內＝黃燈、其餘＝綠燈，並在燈號上加 Tooltip。<i>提示：exception column 用 1/2/3；Tooltip 用 <span class="kw">cl_salv_tooltip=&gt;c_type_exception</span>。</i></li>
+    <li>ALV 上的數量欄位設了 <span class="kw">do_sum = 'X'</span> 卻加總不出來，列出至少三個可能原因。<i>答案要點：沒綁 qfieldname／cfieldname；datatype 被指定成 CHAR；欄位設了 no_sum；資料型別本身不是 QUAN/CURR/數值。</i></li>
+    <li>使用者反映「我在 ALV 上改了數量，按存檔卻存到舊值」，請說出三個檢查點。<i>答案要點：fieldcat 沒設 edit；沒有 <span class="kw">register_edit_event</span>／<span class="kw">EDT_CLL_CB</span>；存檔前沒呼叫 <span class="kw">check_changed_data( )</span>。</i></li>
+    <li>寫出 <span class="kw">AT END OF</span> 的三個使用前提，並說明為什麼 ALV 的自動小計通常比它更好。</li>
+    <li>解釋 <span class="kw">I_SAVE</span> 的四個值（' '、'U'、'X'、'A'）分別代表什麼，以及 SALV 對應的 <span class="kw">restrict_*</span> 常數。</li>
+    <li>下載 CSV 給業務，對方回報中文全是亂碼。請寫出 <span class="kw">gui_download</span> 應該怎麼設參數，並說明為什麼背景作業不能用這個方法。</li>
+    <li>列出 ALV 17 個事件中「一定要會」的四個，並各寫一句話說明用途。</li>
+    <li>說明 <span class="kw">RT_EXTAB</span> 的作用，以及不把它傳給 <span class="kw">SET PF-STATUS ... EXCLUDING</span> 會發生什麼事。</li>
+    <li>在 S/4HANA 上，若使用者要求「這張報表要能在手機看、要能匯出 Excel、要能存我自己的篩選條件」，你會怎麼設計？<i>答案要點：CDS View + Annotation + Fiori List Report，Excel 匯出與變式是 Fiori 內建能力。</i></li>
+  </ol>
+</section>

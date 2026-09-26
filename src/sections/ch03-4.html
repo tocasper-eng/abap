@@ -1,0 +1,1002 @@
+<section class="chapter" id="ch03-4" data-title="增強技術（二）：Classic BAdI / New BAdI / Enhancement Framework（第三、四代）">
+  <h2 id="ch03-4">第 3-4 章 增強技術（二）：Classic BAdI / New BAdI / Enhancement Framework（第三、四代）</h2>
+  <p class="lede">這一章把「不改標準程式，卻能讓標準程式照我的規則跑」講到底。第三代 Classic BAdI 用 SE18 定義、SE19 實作、靠 <span class="kw">CL_EXITHANDLER=&gt;GET_INSTANCE</span> 動態產生實例；第四代 Enhancement Framework 用 Enhancement Spot ＋ <span class="kw">GET BADI</span> / <span class="kw">CALL BADI</span>，再加上「隱式增強點」讓你幾乎可以在標準程式的任何 FORM／METHOD 開頭結尾插自己的程式。學完之後，你會有一套固定的實戰流程：<b>從畫面找到程式 → 從程式找到增強點 → 選對 BAdI → 寫對 method → 只擋自己的帳號</b>，並且知道在 S/4HANA 與 Clean Core 時代，哪些寫法還能用、哪些已經是死路。</p>
+
+  <div class="meta">
+    <div><b>核心 TCODE</b><span class="tcode">SE18</span><span class="tcode">SE19</span><span class="tcode">SE24</span><span class="tcode">SE38</span><span class="tcode">SE80</span><span class="tcode">SE84</span><span class="tcode">SE11</span><span class="tcode">SE16N</span><span class="tcode">SAT</span><span class="tcode">SE30</span><span class="tcode">ST05</span><span class="tcode">SMOD</span><span class="tcode">CMOD</span><span class="tcode">SPAU</span><span class="tcode">SPAU_ENH</span><span class="tcode">SPDD</span><span class="tcode">SE09</span><span class="tcode">MM02</span><span class="tcode">ME21N</span><span class="tcode">ME22N</span><span class="tcode">MIGO</span><span class="tcode">MD04</span><span class="tcode">SE93</span></div>
+    <div><b>關鍵物件</b>CL_EXITHANDLER、IF_EX_*、CL_EX_*、SXS_ATTR、SXS_ATTRT、SXC_EXIT、SXC_CLASS、ENHSPOTHEADER、ENHHEADER、ENHOBJ、BADI_MATERIAL_CHECK、ME_PROCESS_PO_CUST、IF_PURCHASE_ORDER_ITEM_MM、MB_MIGO_BADI、MB_DOCUMENT_BADI、MB_GOODSMOVEMENT、CX_BADI_NOT_IMPLEMENTED、CX_BADI_MULTIPLY_IMPLEMENTED、EKPO、EKBE、MSEG、MATDOC</div>
+  </div>
+
+  <h3 id="ch03-4-01">1. 四代增強技術總覽：先搞清楚你在第幾代</h3>
+  <p>SAP 的「增強（Enhancement）」演進了四代。每一代都還活著、都還會在標準程式裡遇到，所以你必須一眼認出現在看到的是哪一代，才知道要去哪個交易碼做。</p>
+
+  <table>
+    <thead><tr><th>代</th><th>名稱</th><th>在標準程式裡長什麼樣</th><th>工具</th><th>特性</th></tr></thead>
+    <tbody>
+      <tr><td>第一代</td><td>User Exit（客戶出口／原始碼出口）</td><td><span class="kw">PERFORM userexit_xxx</span>、SAPMV45A 的 MV45AFZZ 等 Z 開頭 Include</td><td>SE38 直接寫 FORM</td><td>其實是「被 SAP 預留的修改」，要 Access Key，會列入 SPAU</td></tr>
+      <tr><td>第二代</td><td>Customer Exit（FUNCTION／SCREEN／MENU EXIT）</td><td><span class="kw">CALL CUSTOMER-FUNCTION '001'</span></td><td>SMOD 看定義、CMOD 建專案並實作 EXIT_* 的 ZX* Include</td><td>一個 Exit 全系統只能有一個實作；不需 Access Key</td></tr>
+      <tr><td><b>第三代</b></td><td><b>Classic BAdI</b>（商業附加元件）</td><td><span class="kw">CALL METHOD cl_exithandler=&gt;get_instance</span></td><td>SE18 定義、SE19 實作</td><td>物件導向；可多重使用（Multiple Use）、可過濾（Filter）；一個定義可有多個實作</td></tr>
+      <tr><td><b>第四代</b></td><td><b>New BAdI ＋ Enhancement Framework</b></td><td><span class="kw">GET BADI</span> / <span class="kw">CALL BADI</span>；以及原始碼中的 <span class="kw">ENHANCEMENT-POINT</span></td><td>SE18／SE19（新式）、SE80／SE38 的 Enhance 模式、ADT</td><td>Enhancement Spot 為容器；支援 Fallback Class、實作排序、Switch Framework；<b>隱式增強點</b>幾乎無所不在</td></tr>
+    </tbody>
+  </table>
+
+  <div class="tip"><b>老師的選用順序（S/4HANA 一樣適用）</b>：<br>
+  ① 先問「標準設定能不能做到？」（IMG／SPRO、容差、欄位選擇、訊息控制 OBA5）<br>
+  ② 做不到 → 找 <b>BAdI</b>（第三／四代）<br>
+  ③ 沒有 BAdI → 找 <b>Enhancement Point（隱式／顯式）</b><br>
+  ④ 都沒有 → 才考慮 <b>Modification（修改標準）</b>，需要 Access Key，且每次升級都要在 SPAU 對帳。<br>
+  換句話說：<b>能設定就不寫程式，能掛勾就不改標準。</b></div>
+
+  <div class="warn">第一條鐵律，老師在講義裡用最大的字寫著：<b>一定要加上 <span class="kw">IF sy-uname = 'ERPXXX'</span> 防止干擾到全部的人。</b> 教學機／開發機是共用的，你在 BAdI 裡寫的檢查會對所有人生效，沒有加帳號判斷，隔壁同學的 ME21N 全都會被你擋住。上正式環境時，這個條件要換成正式的判斷邏輯（工廠、公司代碼、料號群組、Z 表控制），而不是留著寫死的帳號。</div>
+
+  <h3 id="ch03-4-02">2. 第三代 Classic BAdI 的運作原理</h3>
+  <p>Classic BAdI 是一組互相搭配的物件，理解它們的關係，你才知道 SE18／SE19 每個畫面在做什麼：</p>
+
+  <table>
+    <thead><tr><th>物件</th><th>命名慣例</th><th>由誰產生</th><th>作用</th></tr></thead>
+    <tbody>
+      <tr><td><b>BAdI 定義</b>（Definition）</td><td><span class="kw">BADI_MATERIAL_CHECK</span>、<span class="kw">Z_BADIDEF_BADITEST2</span></td><td>SE18 建立</td><td>宣告「這裡有一個掛勾點」，資料存在 <b>SXS_ATTR</b></td></tr>
+      <tr><td><b>BAdI 介面</b>（Interface）</td><td><span class="kw">IF_EX_&lt;定義名&gt;</span></td><td>SE18 自動產生（可在 SE24 看）</td><td>規範方法名稱與參數；實作類別必須實作它<b>所有</b>方法</td></tr>
+      <tr><td><b>介面卡類別</b>（Adapter Class）</td><td><span class="kw">CL_EX_&lt;定義名&gt;</span></td><td>SE18 自動產生</td><td>執行期由它負責把呼叫轉發給所有作用中的實作</td></tr>
+      <tr><td><b>BAdI 實作</b>（Implementation）</td><td><span class="kw">Z_BADI_ERP000_CHECK</span></td><td>SE19 建立</td><td>對應一個實作類別 <span class="kw">ZCL_IM_*</span>，資料存在 <b>SXC_EXIT</b>／<b>SXC_CLASS</b></td></tr>
+      <tr><td><b>Exit Handler</b></td><td><span class="kw">CL_EXITHANDLER</span></td><td>SAP 標準</td><td>靜態方法 <span class="kw">GET_INSTANCE</span>，執行期動態產生介面卡實例</td></tr>
+    </tbody>
+  </table>
+
+  <p>標準程式呼叫 Classic BAdI 的固定樣式長這樣，<b>認得這 10 行，你就認得所有第三代增強點</b>：</p>
+
+  <pre><code class="abap">" 標準程式（例如 SAPLMIGO）裡的典型第三代 BAdI 呼叫
+DATA lo_badi TYPE REF TO if_ex_mb_migo_badi.   "介面型別 = IF_EX_ + BAdI 名稱
+
+CALL METHOD cl_exithandler=&gt;get_instance
+  EXPORTING
+    exit_name              = 'MB_MIGO_BADI'    "BAdI 定義名稱
+    null_instance_accepted = 'X'               "沒有任何實作時允許回傳空參照
+  CHANGING
+    instance               = lo_badi.
+
+IF lo_badi IS BOUND.                            "沒有實作時就跳過
+  CALL METHOD lo_badi-&gt;check_item
+    EXPORTING
+      i_line_id = lv_line_id
+    CHANGING
+      ct_msg    = lt_msg.
+ENDIF.</code></pre>
+
+  <div class="note"><b>為什麼 <span class="kw">GET_INSTANCE</span> 有時候沒有 EXPORTING？</b> 因為 <span class="kw">exit_name</span> 是選擇性參數。當 CHANGING 的參照變數型別是 <span class="kw">IF_EX_XXX</span> 時，框架可以由型別反推 BAdI 名稱，所以講義中的簡寫 <span class="kw">CALL METHOD cl_exithandler=&gt;get_instance CHANGING instance = exit.</span> 也能跑。實務上建議明寫 <span class="kw">exit_name</span>，除錯時比較好讀。</div>
+
+  <div class="tip"><b>介面卡的魔法</b>：<span class="kw">lo_badi</span> 指向的不是你的 ZCL_IM_* 類別，而是 SAP 產生的 <span class="kw">CL_EX_*</span> 介面卡。你呼叫一次 <span class="kw">check_item</span>，介面卡會<b>依序呼叫所有作用中的實作</b>。這就是「Multiple Use（多重使用）」能成立的原因。</div>
+
+  <h3 id="ch03-4-03">3. SE18：建立 Classic BAdI 定義（含多重使用與過濾器）</h3>
+  <p>進入 <span class="tcode">SE18</span>，輸入定義名稱（自建一律 Z／Y 開頭），按建立。畫面上有四個頁籤要填：<span class="src">（依講義步驟整理）</span></p>
+
+  <ol>
+    <li><b>Attributes（屬性）</b>：
+      <ul>
+        <li><b>Type</b>：Multiple Use（多重使用）／Filter-Dependent（依過濾器）</li>
+        <li><b>Filter Type</b>：勾了 Filter-Dependent 才要填，通常填一個 Data Element（例如 <span class="kw">BUKRS</span>、<span class="kw">WERKS_D</span>、<span class="kw">LAND1</span>）</li>
+        <li><b>Instance Creation</b>：預設每次呼叫產生新實例</li>
+      </ul>
+    </li>
+    <li><b>Interface（介面）</b>：填介面名稱，預設就是 <span class="kw">ZIF_EX_&lt;定義名&gt;</span>。存檔後按介面名稱會跳到 SE24，在那裡定義方法與參數。</li>
+    <li><b>Subscreens（子畫面）</b>：需要在標準畫面上加自己的頁籤時才用。</li>
+    <li><b>Imp. Example（範例實作）</b>：可選，給實作者參考用的樣板類別。</li>
+  </ol>
+
+  <table>
+    <thead><tr><th>選項</th><th>意義</th><th>什麼時候勾</th><th>陷阱</th></tr></thead>
+    <tbody>
+      <tr><td><b>Multiple Use</b></td><td>同一個定義可以同時有<b>多個作用中的實作</b>，全部都會被呼叫</td><td>純檢查、純寫 Log、純通知</td><td>執行順序<b>不保證</b>！不要讓兩個實作互相依賴。這正是「沒排序就抓錯資料」那類 bug 的根源</td></tr>
+      <tr><td><b>Filter-Dependent</b></td><td>實作上掛過濾值，只有值相符時才被呼叫</td><td>不同公司代碼／國家／工廠要不同邏輯</td><td>介面的每個方法會<b>自動多出一個 <span class="kw">FLT_VAL</span> importing 參數</b>，呼叫端必須傳值</td></tr>
+      <tr><td>Instance Creation</td><td>實例產生模式</td><td>幾乎都用預設</td><td>Context-dependent 只在少數 SAP 內部 BAdI 使用</td></tr>
+    </tbody>
+  </table>
+
+  <p>介面方法在 SE24 定義時，參數方向的意義要抓對：</p>
+  <table>
+    <thead><tr><th>方向</th><th>你在實作裡能做什麼</th></tr></thead>
+    <tbody>
+      <tr><td>IMPORTING</td><td>只能讀。標準程式把當下的資料交給你判斷</td></tr>
+      <tr><td>CHANGING</td><td>可讀可寫，<b>寫回去會影響標準流程</b>（例如改欄位值、加旗標）</td></tr>
+      <tr><td>EXPORTING</td><td>你回傳結果給標準程式（例如回傳訊息表、回傳「檢查失敗」）</td></tr>
+      <tr><td>EXCEPTIONS／RAISING</td><td>丟例外中斷流程；Classic BAdI 多半用訊息表或 <span class="kw">MESSAGE</span> 而非例外</td></tr>
+    </tbody>
+  </table>
+
+  <div class="warn"><b>講義第一頁的紅字</b>：<b>「同一個 interface 底下的所有 method 都要正確，否則會無效。」</b><br>
+  Classic BAdI 的實作類別必須實作介面的<b>每一個</b>方法。你只想寫 <span class="kw">PROCESS_ITEM</span>，但介面還有 10 個方法，那 10 個方法也必須存在（可以是空的 <span class="kw">METHOD ... ENDMETHOD.</span>）。只要有一個方法語法錯誤，整個類別無法啟動，於是<b>整個 BAdI 實作等於沒作用</b>——而且不會有任何錯誤訊息告訴你，你會以為「BAdI 沒被呼叫」。這是初學者最常卡住的地方。</div>
+
+  <h3 id="ch03-4-04">4. SE19：建立 Classic BAdI 實作</h3>
+  <p>進入 <span class="tcode">SE19</span>，在「Create Implementation」區選 <b>Classic BAdI</b>，輸入 BAdI 定義名稱，再給實作名稱（Z 開頭），系統會產生實作類別 <span class="kw">ZCL_IM_&lt;實作名&gt;</span>。<span class="src">（依講義步驟整理）</span></p>
+
+  <ol>
+    <li>輸入短文字說明。</li>
+    <li>切到 <b>Interface</b> 頁籤，會看到介面的所有方法列表。</li>
+    <li>雙擊要寫的方法 → 進入類別編輯器 → 寫程式 → 存檔。</li>
+    <li>回到 SE19 按 <b>Activate（啟動）</b>。<b>沒有啟動的實作等於不存在。</b></li>
+    <li>指定傳輸請求（Workbench Request）。</li>
+  </ol>
+
+  <p>實作的骨架就是這樣，記得<b>第一行永遠是帳號／範圍防護</b>：</p>
+
+  <pre><code class="abap">METHOD if_ex_z_badidef_baditest2~method.
+
+  "★★ 防護：只對自己的帳號生效，避免干擾同一台機器的其他人 ★★
+  CHECK sy-uname = 'ERP000'.
+
+  "把傳進來的字串轉大寫後寫回去（CHANGING 參數）
+  parameter = to_upper( parameter ).
+
+ENDMETHOD.</code></pre>
+
+  <div class="note">講義原文寫的是 <span class="kw">TRANSLATE parameter TO UPPER CASE.</span>——這在 S/4HANA 仍可執行，但現代寫法建議用內建函數 <span class="kw">to_upper( )</span> / <span class="kw">to_lower( )</span> / <span class="kw">to_mixed( )</span>，可以直接寫在運算式裡，不必先搬到變數。</div>
+
+  <div class="tip"><b>SE19 的另一個用法：反查。</b> 講義 02-19 的「省思過程」就是這招——在 SE19 輸入你自己的實作名稱（例如 <span class="kw">Z_BADI_ERP000_CHECK</span>）按 <b>Change / Display</b>，畫面上就會顯示它屬於哪一個 <b>BAdI 定義</b>與哪一個 <b>Enhancement Spot</b>。忘記自己當初掛在哪裡時，這是最快的路。</div>
+
+  <h3 id="ch03-4-05">5. 自建第三代增強完整實例：Z_BADIDEF_BADITEST2</h3>
+  <p>講義第 03 節的完整流程，把「定義 → 實作 → 呼叫」三件事一次走完，這是理解 Classic BAdI 最好的沙盤。</p>
+
+  <p><b>步驟 1</b>：<span class="tcode">SE18</span> 建立定義 <span class="kw">Z_BADIDEF_BADITEST2</span>，介面 <span class="kw">ZIF_EX__BADIDEF_BADITEST2</span>，在 SE24 為介面新增一個方法 <span class="kw">METHOD</span>，參數 <span class="kw">PARAMETER</span> 型別 <span class="kw">STRING</span>，方向 <b>CHANGING</b>。</p>
+
+  <p><b>步驟 2</b>：<span class="tcode">SE19</span> 建立實作，方法內容如下。</p>
+
+  <pre><code class="abap">METHOD zif_ex__badidef_baditest2~method.
+  "示範：把呼叫端傳來的字串改成大寫再送回去
+  parameter = to_upper( parameter ).
+ENDMETHOD.</code></pre>
+
+  <p><b>步驟 3</b>：寫一支測試程式（講義的 <span class="kw">Z_BUSINESSADDIN</span>），親手做一次標準程式在做的事。以下是<b>現代化改寫版</b>：</p>
+
+  <pre><code class="abap">REPORT z_businessaddin.
+
+"講義原文有一行 CLASS cl_exithandler DEFINITION LOAD.
+"那是舊式的「先載入類別定義」宣告，S/4HANA 已不需要，可直接刪除。
+
+PARAMETERS p_word TYPE string LOWER CASE
+           DEFAULT 'change to upper case'.
+
+START-OF-SELECTION.
+
+  DATA lo_badi TYPE REF TO zif_ex__badidef_baditest2.
+
+  "① 由 Exit Handler 動態取得介面卡實例
+  CALL METHOD cl_exithandler=&gt;get_instance
+    EXPORTING
+      exit_name              = 'Z_BADIDEF_BADITEST2'
+      null_instance_accepted = 'X'
+    CHANGING
+      instance               = lo_badi.
+
+  "② 沒有任何作用中的實作時，lo_badi 會是空的，一定要擋
+  IF lo_badi IS NOT BOUND.
+    MESSAGE |目前沒有任何作用中的 BAdI 實作| TYPE 'I'.
+    RETURN.
+  ENDIF.
+
+  DATA(lv_word) = p_word.
+  WRITE: / |原始字串：{ lv_word }|.
+
+  "③ 呼叫 BAdI，CHANGING 參數會被實作改掉
+  lo_badi-&gt;method( CHANGING parameter = lv_word ).
+
+  WRITE: / |增強後字串：{ lv_word }|.</code></pre>
+
+  <div class="warn"><b>不要忘了 <span class="kw">IS BOUND</span> 檢查。</b> 若沒有作用中的實作，且呼叫時沒有傳 <span class="kw">null_instance_accepted = 'X'</span>，<span class="kw">GET_INSTANCE</span> 會丟出例外；若傳了 'X'，回傳的是空參照，接著直接呼叫方法就會得到 <b>CX_SY_REF_IS_INITIAL</b> 短傾印。標準程式一律先 <span class="kw">IF lo_badi IS BOUND.</span>，你自己寫也要照做。</div>
+
+  <p>如果這個 BAdI 是 <b>Filter-Dependent</b>，呼叫時要多帶過濾值：</p>
+
+  <pre><code class="abap">"Filter-dependent 的 Classic BAdI：介面方法會自動多一個 FLT_VAL 參數
+DATA lo_badi TYPE REF TO zif_ex_z_badi_by_bukrs.
+
+CALL METHOD cl_exithandler=&gt;get_instance
+  EXPORTING
+    exit_name = 'Z_BADI_BY_BUKRS'
+  CHANGING
+    instance  = lo_badi.
+
+IF lo_badi IS BOUND.
+  lo_badi-&gt;check_document(
+    EXPORTING flt_val  = lv_bukrs      "只有掛這個公司代碼的實作會被執行
+    CHANGING  cs_data  = ls_data ).
+ENDIF.</code></pre>
+
+  <h3 id="ch03-4-06">6. 怎麼找到「該用哪個 BAdI」——五種找法</h3>
+  <p>這是增強工作真正花時間的地方。<b>寫程式 10 分鐘，找增強點 3 小時</b>，講義 02-03 到 02-08 整整六頁都在做這件事。下面把老師的流程整理成可重複執行的 SOP。</p>
+
+  <h4>找法 A：從畫面找到程式，再在程式裡搜尋關鍵字（講義主線）</h4>
+  <ol>
+    <li>在交易畫面（例如 <span class="tcode">MIGO</span>）按 <b>F1</b> → <b>技術資訊</b>，或選單 <b>System → Status</b>，取得<b>程式名稱</b>（MIGO 是 <span class="kw">SAPLMIGO</span>）。</li>
+    <li>進 <span class="tcode">SE38</span> ／ <span class="tcode">SE80</span> 開啟該程式 → 選單 <b>Utilities → Find in Source Code</b>（或 Ctrl+F 勾「In main program」＋「In includes」）。</li>
+    <li>搜尋這四組關鍵字，就能把四代增強一網打盡：
+      <ul>
+        <li><span class="kw">CL_EXITHANDLER</span> → 第三代 Classic BAdI</li>
+        <li><span class="kw">GET BADI</span> 或 <span class="kw">CALL BADI</span> → 第四代 New BAdI</li>
+        <li><span class="kw">CUSTOMER-FUNCTION</span> → 第二代 Customer Exit</li>
+        <li><span class="kw">USEREXIT</span> → 第一代 User Exit</li>
+      </ul>
+    </li>
+    <li>找到後，看 <span class="kw">exit_name = '...'</span> 的字面值，那就是 BAdI 名稱（講義在 MIGO 找到的是 <span class="kw">MB_MIGO_BADI</span>）。</li>
+    <li>把候選 BAdI 拿到 <span class="tcode">SE18</span> 看它的<b>方法清單與文件</b>，確認哪個方法在你要的時間點被呼叫。</li>
+  </ol>
+
+  <div class="tip">講義 02-07 誠實寫著「再搭配問了 ChatGPT 之後，選定了 <b>MB_DOCUMENT_BADI</b>」。這一步的判斷準則是：<b>MB_MIGO_BADI 偏畫面／逐行互動（適合即時檢查與加欄位）；MB_DOCUMENT_BADI 偏文件層級（適合過帳前的整份檢查）</b>。要做「整張收貨單累加後判斷是否超交」，就該選文件層級的那一個。</div>
+
+  <h4>找法 B：SE11 直接查 BAdI 目錄表（講義 03-04）</h4>
+  <pre><code class="abap">"用 SE16N 或寫一支小程式查「Classic BAdI 定義清單」
+"SXS_ATTR  = BAdI 定義屬性；SXS_ATTRT = BAdI 定義的多語文字
+SELECT a~exit_name,        "BAdI 定義名稱
+       a~multiple_use,     "是否多重使用
+       a~filter_type,      "過濾器型別
+       t~text              "說明文字
+  FROM sxs_attr AS a
+  LEFT OUTER JOIN sxs_attrt AS t
+    ON  t~exit_name = a~exit_name
+    AND t~sprsl     = @sy-langu
+  WHERE t~text LIKE '%Purchase Order%'   "用關鍵字撈
+  INTO TABLE @DATA(lt_badi).
+
+cl_salv_table=&gt;factory( IMPORTING r_salv_table = DATA(lo_alv)
+                        CHANGING  t_table      = lt_badi ).
+lo_alv-&gt;get_functions( )-&gt;set_all( abap_true ).
+lo_alv-&gt;display( ).</code></pre>
+
+  <table>
+    <thead><tr><th>表名</th><th>內容</th></tr></thead>
+    <tbody>
+      <tr><td><b>SXS_ATTR</b></td><td>Classic BAdI <b>定義</b>的屬性（multiple use、filter type、介面名稱）</td></tr>
+      <tr><td><b>SXS_ATTRT</b></td><td>Classic BAdI 定義的<b>文字說明</b>（多語）</td></tr>
+      <tr><td><b>SXC_EXIT</b></td><td>Classic BAdI <b>實作</b>與定義的對應</td></tr>
+      <tr><td><b>SXC_CLASS</b></td><td>實作對應的<b>類別名稱</b></td></tr>
+      <tr><td><b>SXC_ATTR / SXC_ATTRT</b></td><td>實作的屬性與文字（含是否啟動）</td></tr>
+      <tr><td><b>MODSAP / MODACT</b></td><td>第二代 Customer Exit 的定義（SMOD）與專案指派（CMOD）</td></tr>
+      <tr><td><b>ENHSPOTHEADER / ENHSPOTOBJ</b></td><td>第四代 <b>Enhancement Spot</b> 的表頭與內容物件</td></tr>
+      <tr><td><b>ENHHEADER / ENHOBJ</b></td><td>第四代 <b>Enhancement Implementation</b> 的表頭與物件</td></tr>
+      <tr><td><b>ENHLOG</b></td><td>增強的變更／升級調整記錄</td></tr>
+    </tbody>
+  </table>
+
+  <h4>找法 C：SE84 增強樹（講義 02-20 用它反查自己的實作）</h4>
+  <p><span class="tcode">SE84</span>（Repository Information System）→ <b>Enhancements</b> 節點底下：</p>
+  <ul>
+    <li><b>Customer Exits → Enhancements</b>：第二代</li>
+    <li><b>Business Add-Ins → Definitions / Implementations</b>：第三代，可用「Package（套件）」篩選，例如 MM 相關填 <span class="kw">ME*</span>、<span class="kw">MB*</span></li>
+    <li><b>Enhancement Spots / Enhancement Implementations</b>：第四代</li>
+  </ul>
+  <div class="tip"><b>用 Package 找 BAdI 是最高效的招式</b>：先在交易畫面 System → Status 看該程式屬於哪個 <b>Package</b>（例如 MIGO 是 <span class="kw">MB</span>／<span class="kw">MBGD</span>），再到 SE84 用該 Package 列出全部 BAdI 定義，通常十來個，一眼掃過去就找到了。</div>
+
+  <h4>找法 D：Debug 中設中斷點（最可靠，一定找得到「真正會被呼叫」的那一個）</h4>
+  <ol>
+    <li>執行交易 → <b>/h</b> 進入除錯器。</li>
+    <li>選單 <b>Breakpoints → Breakpoint at → Method</b>，輸入類別 <span class="kw">CL_EXITHANDLER</span>、方法 <span class="kw">GET_INSTANCE</span>。</li>
+    <li>按 F8 繼續，每停一次就看變數 <span class="kw">exit_name</span>，把過程中出現的 BAdI 名稱全部抄下來。</li>
+    <li>第四代則設 <b>Breakpoint at Statement</b>，輸入 <span class="kw">GET BADI</span> 或 <span class="kw">CALL BADI</span>。</li>
+  </ol>
+  <div class="note">這個方法的價值在於：它列出的是<b>實際執行路徑上真的會被呼叫</b>的 BAdI，不會像靜態搜尋那樣抓到一堆走不到的分支。缺點是清單很長（一次交易可能觸發數十個 BAdI），要有耐心。</div>
+
+  <h4>找法 E：SAT／SE30 執行追蹤</h4>
+  <p><span class="tcode">SAT</span>（S/4HANA 取代舊的 <span class="tcode">SE30</span>）做一次交易的執行追蹤，在結果的「呼叫階層」裡過濾類別名稱含 <span class="kw">CL_EX_</span> 或 <span class="kw">CL_IM_</span>／<span class="kw">ZCL_IM_</span> 的項目，就能看到整個流程呼叫過哪些 BAdI 介面卡與實作。搭配 <span class="tcode">ST05</span>（SQL Trace）還能同時看到它們讀了哪些表。</p>
+
+  <h3 id="ch03-4-07">7. 實戰一：BADI_MATERIAL_CHECK 檢核物料主檔（MM02）</h3>
+  <p>講義 01-02 到 01-04 的例子：用 <span class="kw">BADI_MATERIAL_CHECK</span>（介面 <span class="kw">IF_EX_BADI_MATERIAL_CHECK</span>）在 <span class="tcode">MM01</span>／<span class="tcode">MM02</span> 存檔前檢查物料主檔資料。這是第三代 BAdI 最經典的入門題：<b>先在 SE24 看介面有哪些方法與參數，再到 SE18 看定義，最後到 SE19 寫實作。</b></p>
+
+  <pre><code class="abap">*&amp;---------------------------------------------------------------------*
+*&amp;  BAdI  : BADI_MATERIAL_CHECK
+*&amp;  Method: CHECK_DATA  （物料主檔存檔前檢查）
+*&amp;---------------------------------------------------------------------*
+METHOD if_ex_badi_material_check~check_data.
+
+  "★ 防護：只對自己的測試帳號生效
+  CHECK sy-uname = 'ERP000'.
+
+  "wmara / wmarc / wmard ... 是標準傳進來的工作區（結構視版本而異，
+  "實際參數請以 SE18 → Interface → SE24 顯示為準）
+  IF wmara-mtart = 'FERT' AND wmara-matkl IS INITIAL.
+    "回傳訊息給 MM02 畫面：塞進標準的訊息表
+    APPEND VALUE #( msgid = 'ZMM'
+                    msgty = 'E'
+                    msgno = '010'
+                    msgv1 = wmara-matnr )
+           TO ch_messages.
+  ENDIF.
+
+ENDMETHOD.</code></pre>
+
+  <div class="note">物料主檔的 BAdI 家族還有 <span class="kw">MATERIAL_ALLOWED_FIELDS</span>（放行欄位）、<span class="kw">BADI_MATERIAL_REF</span>（複製參考物料）、<span class="kw">MG_MASS_NEWSEG</span>（大量維護）。在 <span class="tcode">SE18</span> 用「Package = <span class="kw">MG</span>」列出來看，一次就掌握全貌。<span class="kw">BADI_MATERIAL_CHECK</span> 的確切方法名稱與參數清單各版本略有差異，動手前務必用 SE18 → Interface 對照。</div>
+
+  <div class="warn"><b>不要在物料主檔 BAdI 裡直接發 <span class="kw">MESSAGE ... TYPE 'E'</span>。</b> MM01／MM02 的存檔流程有自己的訊息收集機制，直接發 E 訊息可能造成畫面卡死或無法回到欄位。正確做法是把訊息 <b>APPEND 到標準提供的訊息表參數</b>，讓標準程式決定怎麼顯示。</div>
+
+  <h3 id="ch03-4-08">8. 實戰二：ME_PROCESS_PO_CUST 採購單強制結案</h3>
+  <p>講義第 01 節的主線場景：<b>採購交貨如何強制結案</b>。業務上，PO 已經收了 8 件、訂了 10 件，剩下 2 件供應商不送了，MRP（<span class="tcode">MD04</span>）還一直顯示 2 件在途需求。解法是把 <b>EKPO-ELIKZ（交貨完成指示碼，Delivery Completed）</b> 打勾。</p>
+  <p>要在 <span class="tcode">ME22N</span> 存檔時自動打勾，就用 <span class="kw">ME_PROCESS_PO_CUST</span>（介面 <span class="kw">IF_EX_ME_PROCESS_PO_CUST</span>）。這個 BAdI 的參數不是結構，而是<b>物件參照</b>，要用 <span class="kw">GET_DATA( )</span> ／ <span class="kw">SET_DATA( )</span> 存取，這點跟一般 BAdI 很不一樣。</p>
+
+  <table>
+    <thead><tr><th>方法</th><th>時機</th><th>典型用途</th></tr></thead>
+    <tbody>
+      <tr><td>INITIALIZE</td><td>物件初始化</td><td>清全域變數</td></tr>
+      <tr><td>OPEN</td><td>開始處理一張 PO</td><td>準備快取</td></tr>
+      <tr><td><b>PROCESS_HEADER</b></td><td>抬頭被處理時</td><td>改抬頭欄位（EKKO）</td></tr>
+      <tr><td><b>PROCESS_ITEM</b></td><td>每一個項目被處理時</td><td><b>改項目欄位（EKPO），如 ELIKZ</b></td></tr>
+      <tr><td>PROCESS_SCHEDULE</td><td>交期行</td><td>改 EKET 交期／數量</td></tr>
+      <tr><td>PROCESS_ACCOUNT</td><td>會計指派</td><td>改成本中心／WBS</td></tr>
+      <tr><td><b>CHECK</b></td><td>存檔前總檢查</td><td><b>發錯誤訊息、擋存檔</b>（設 <span class="kw">ch_failed</span>）</td></tr>
+      <tr><td>POST</td><td>過帳時</td><td>寫 Z 表、觸發後續</td></tr>
+      <tr><td>FIELDSELECTION_ITEM</td><td>欄位選擇</td><td>把欄位改成必填／唯讀／隱藏</td></tr>
+      <tr><td>CLOSE</td><td>處理結束</td><td>釋放資源</td></tr>
+    </tbody>
+  </table>
+
+  <pre><code class="abap">*&amp;---------------------------------------------------------------------*
+*&amp;  BAdI  : ME_PROCESS_PO_CUST
+*&amp;  Method: PROCESS_ITEM  （每個 PO 項目都會進來一次）
+*&amp;  目的  : 指定料號在指定條件下，自動打上「交貨完成」旗標 ELIKZ
+*&amp;---------------------------------------------------------------------*
+METHOD if_ex_me_process_po_cust~process_item.
+
+  "★ 防護：只對自己的帳號生效，避免影響其他人的 ME21N/ME22N
+  CHECK sy-uname = 'ERP000'.
+
+  "① 取出目前項目的資料（回傳 MEPOITEM 結構）
+  DATA(ls_item) = im_item-&gt;get_data( ).
+
+  "② 已刪除或已結案的就不用管
+  IF ls_item-loekz IS NOT INITIAL OR ls_item-elikz = abap_true.
+    RETURN.
+  ENDIF.
+
+  "③ 只處理指定料號
+  CHECK ls_item-matnr = 'CHLK1300'.
+
+  "④ 查歷史已收量（EKBE：S 借方加、H 貸方減）
+  SELECT SINGLE
+         SUM( CASE shkzg WHEN 'H' THEN menge * -1 ELSE menge END ) AS wemng
+    FROM ekbe
+    WHERE ebeln = @ls_item-ebeln
+      AND ebelp = @ls_item-ebelp
+      AND vgabe = '1'                    "1 = 收貨（Goods Receipt）
+    INTO @DATA(lv_wemng).
+
+  "⑤ 已收量 &gt;= 訂購量的 90% 就視為可結案（門檻請依實際需求調整）
+  IF lv_wemng &gt;= ls_item-menge * '0.9'.
+    ls_item-elikz = abap_true.           "打上交貨完成指示碼
+    im_item-&gt;set_data( ls_item ).        "★ 一定要寫回去，否則不生效
+  ENDIF.
+
+ENDMETHOD.</code></pre>
+
+  <p>如果要的是「擋下存檔」，就寫在 <span class="kw">CHECK</span> 方法，並用 MM 採購模組專屬的訊息巨集：</p>
+
+  <pre><code class="abap">METHOD if_ex_me_process_po_cust~check.
+
+  CHECK sy-uname = 'ERP000'.
+
+  "im_header 是抬頭物件，get_items( ) 取回所有項目物件
+  DATA(lt_items) = im_header-&gt;get_items( ).
+
+  LOOP AT lt_items INTO DATA(ls_wrap).
+    DATA(ls_item) = ls_wrap-item-&gt;get_data( ).
+
+    IF ls_item-matnr = 'CHLK1300' AND ls_item-menge &gt; 100.
+      "MM 採購專用巨集：把訊息掛到採購單的訊息清單上
+      "參數：訊息類型 訊息類別 訊息號碼 v1 v2 v3 v4
+      mmpur_message_forced 'E' 'ZMM' '020'
+                           ls_item-ebelp '' '' ''.
+      ch_failed = abap_true.        "★ 設了才會真的擋下存檔
+    ENDIF.
+  ENDLOOP.
+
+ENDMETHOD.</code></pre>
+
+  <div class="warn"><b>三個實務坑</b>：<br>
+  ① <span class="kw">get_data( )</span> 拿到的是<b>複本</b>，改了不寫回 <span class="kw">set_data( )</span> 完全沒作用。<br>
+  ② 在 <span class="kw">PROCESS_ITEM</span> 裡發 <span class="kw">MESSAGE ... TYPE 'E'</span> 會讓 ME21N 直接當掉；要擋存檔請一律改用 <span class="kw">CHECK</span> 方法 ＋ <span class="kw">ch_failed = abap_true</span>。<br>
+  ③ 這個 BAdI 是 <b>Multiple Use</b>，你的實作跟其他人（或 SAP Note 帶來的實作）會同時被呼叫，<b>執行順序不保證</b>。如果兩個實作都改同一個欄位，結果會不穩定——這正是老師在專案上遇到「一下抓到 H、一下抓到 E，成本結果不穩定」那類問題的同型 bug：<b>沒有明確排序的多重來源，就會有不穩定的答案</b>。</div>
+
+  <div class="tip"><b>驗證流程（講義 01-06～01-09）</b>：<span class="tcode">ME21N</span> 建 PO → <span class="tcode">MD04</span> 看到需求 → <span class="tcode">ME22N</span> 存檔觸發 BAdI 打上 ELIKZ → 再看一次 <span class="tcode">MD04</span>，在途需求消失。<b>用 MD04 前後對照來證明增強真的生效</b>，比在除錯器裡看變數更有說服力。</div>
+
+  <h3 id="ch03-4-09">9. 第四代：Enhancement Spot 與 New BAdI 架構</h3>
+  <p>第四代把「增強」抽象成兩個容器，觀念上就是「定義端」與「實作端」各有一個資料夾：</p>
+
+  <table>
+    <thead><tr><th>層級</th><th>定義端（SAP 或你建立）</th><th>實作端（你建立）</th></tr></thead>
+    <tbody>
+      <tr><td>容器</td><td><b>Enhancement Spot</b>（增強點）</td><td><b>Enhancement Implementation</b>（增強實作）</td></tr>
+      <tr><td>內容</td><td><b>BAdI Definition</b>（可多個）</td><td><b>BAdI Implementation</b>（可多個）</td></tr>
+      <tr><td>最底層</td><td>Interface（<span class="kw">IF_*</span>，名稱自由，不必 IF_EX_）</td><td>Implementing Class（<span class="kw">ZCL_*</span>）</td></tr>
+      <tr><td>工具</td><td>SE18 / SE80 / ADT</td><td>SE19 / SE80 / ADT</td></tr>
+      <tr><td>另有一種</td><td><b>Composite Enhancement Spot</b>（把多個 Spot 群組起來）</td><td><b>Composite Enhancement Implementation</b></td></tr>
+    </tbody>
+  </table>
+
+  <p>New BAdI 相對第三代多出來的能力，每一個都很實用：</p>
+  <table>
+    <thead><tr><th>能力</th><th>說明</th><th>在哪裡設</th></tr></thead>
+    <tbody>
+      <tr><td><b>Fallback Class</b>（後備類別）</td><td>當<b>沒有任何</b>作用中的實作時，框架自動改叫這個類別。等於「內建的預設行為」</td><td>BAdI 定義的屬性頁</td></tr>
+      <tr><td><b>Default Implementation</b></td><td>實作標成「預設」，只要有其他非預設實作作用中，它就自動退場</td><td>BAdI 實作的屬性</td></tr>
+      <tr><td><b>Implementation Sequence（排序）</b></td><td>多重使用時可指定執行順序，<b>解決第三代「順序不保證」的老問題</b></td><td>BAdI 定義勾「Sortable」，在實作上填順序號</td></tr>
+      <tr><td><b>Filter（過濾器）</b></td><td>可定義<b>多個</b>過濾欄位，支援 <span class="kw">=</span>、<span class="kw">BETWEEN</span>、<span class="kw">CP</span> 等運算子與 AND/OR 組合</td><td>BAdI 定義的 Filter 頁 ＋ 實作上填值</td></tr>
+      <tr><td><b>Instance Creation Mode</b></td><td>Newly（每次新建）／Reusing（重用同一實例）／Context-dependent</td><td>BAdI 定義屬性</td></tr>
+      <tr><td><b>Switch Framework</b></td><td>整個 Enhancement Implementation 可掛在 Switch 上，靠 Business Function 開關</td><td>建立時指定 Switch ID</td></tr>
+      <tr><td><b>Internal / External 呼叫控制</b></td><td>SAP 可宣告某 BAdI 只供內部使用（客戶不得實作）</td><td>BAdI 定義的 Contract</td></tr>
+    </tbody>
+  </table>
+
+  <div class="tip"><b>「重用實例（Reusing）」的重要性</b>：如果你的 BAdI 實作需要跨方法保存狀態（例如在 <span class="kw">OPEN</span> 撈一批資料快取起來，給後面每個 <span class="kw">PROCESS_ITEM</span> 用），就必須把 Instance Creation Mode 設成 <b>Reusing</b>，否則每次呼叫都是新實例，類別屬性永遠是空的。第三代 BAdI 沒有這個選項，只能用 <span class="kw">CLASS-DATA</span>（靜態屬性）勉強達成——而靜態屬性在同一個 session 裡不會自動清空，是很常見的髒資料來源。</div>
+
+  <h3 id="ch03-4-10">10. GET BADI / CALL BADI 語法與例外處理</h3>
+  <p>第四代的呼叫語法變成兩個獨立的 ABAP 指令，不再是呼叫類別方法。這也是為什麼你在標準程式裡搜尋 <span class="kw">CL_EXITHANDLER</span> 找不到東西時，要改搜 <span class="kw">GET BADI</span>。</p>
+
+  <pre><code class="abap">"===== 第四代 New BAdI 的標準呼叫樣式 =====
+"① 宣告：型別直接就是「BAdI 定義名稱」（BAdI 參照型別）
+DATA lo_badi TYPE REF TO zbadi_demo01.
+
+TRY.
+    "② 取得 BAdI handle；有 filter 就在這裡給值
+    GET BADI lo_badi
+      FILTERS
+        bukrs = lv_bukrs
+        werks = lv_werks.
+
+    "③ 呼叫方法；多重使用時，框架會依序呼叫所有符合的實作
+    CALL BADI lo_badi-&gt;print
+      EXPORTING input  = lv_input
+      IMPORTING output = DATA(lv_output).
+
+  CATCH cx_badi_not_implemented.
+    "沒有任何實作、也沒有 fallback class → 走原本的預設邏輯
+    lv_output = lv_input.
+
+  CATCH cx_badi_multiply_implemented.
+    "非多重使用的 BAdI 卻有多個作用中實作 → 設定錯誤
+    MESSAGE |BAdI 設定錯誤：同時有多個作用中實作| TYPE 'E'.
+
+  CATCH cx_badi_filter_error.
+    "過濾值缺漏或型別不符
+    MESSAGE |BAdI 過濾器設定錯誤| TYPE 'E'.
+
+  CATCH cx_badi_initial_reference.
+    "handle 是空的就呼叫 CALL BADI
+    MESSAGE |BAdI handle 尚未取得| TYPE 'E'.
+
+  CATCH cx_root INTO DATA(lo_err).
+    MESSAGE lo_err-&gt;get_text( ) TYPE 'E'.
+ENDTRY.</code></pre>
+
+  <table>
+    <thead><tr><th>指令</th><th>作用</th><th>要點</th></tr></thead>
+    <tbody>
+      <tr><td><span class="kw">GET BADI handle</span></td><td>向框架要一個 BAdI handle</td><td>此時才決定「哪些實作符合過濾條件」；<b>成本較高，不要放在迴圈裡</b></td></tr>
+      <tr><td><span class="kw">GET BADI ... FILTERS f = v</span></td><td>帶過濾值</td><td>定義有幾個 filter 就要給幾個；漏給會 <span class="kw">CX_BADI_FILTER_ERROR</span></td></tr>
+      <tr><td><span class="kw">CALL BADI handle-&gt;meth</span></td><td>呼叫方法</td><td>多重使用時是「一次呼叫、多個實作依序執行」</td></tr>
+      <tr><td><span class="kw">GET BADI ... CONTEXT obj</span></td><td>Context-dependent BAdI</td><td>少見，SAP 內部使用居多</td></tr>
+    </tbody>
+  </table>
+
+  <div class="tip"><b>效能口訣：GET 一次，CALL 多次。</b> <span class="kw">GET BADI</span> 會去查詢有哪些實作、算過濾條件，開銷不小。正確做法是在迴圈<b>外面</b> GET，迴圈<b>裡面</b> CALL：
+  <pre><code class="abap">GET BADI lo_badi FILTERS bukrs = p_bukrs.   "★ 迴圈外，只做一次
+
+LOOP AT lt_items INTO DATA(ls_item).
+  CALL BADI lo_badi-&gt;check_item              "★ 迴圈內，只有呼叫
+    EXPORTING is_item = ls_item
+    CHANGING  ct_msg  = lt_msg.
+ENDLOOP.</code></pre>
+  </div>
+
+  <div class="warn"><b>Fallback Class 讓 <span class="kw">CX_BADI_NOT_IMPLEMENTED</span> 幾乎不會發生。</b> 如果 BAdI 定義掛了 Fallback Class，即使沒有任何客戶實作，框架也會呼叫 fallback，因此呼叫端不必寫「沒實作時的預設邏輯」。你自己設計 BAdI 時，<b>建議一律準備 Fallback Class</b>，把預設行為寫在裡面，呼叫端的程式碼會乾淨很多。</div>
+
+  <h3 id="ch03-4-11">11. 自建第四代增強完整實例：ZBADI_DEMO01</h3>
+  <p>講義第 04 節的完整清單，把四層物件的名稱都列出來了，這正是第四代的四層結構：</p>
+
+  <table>
+    <thead><tr><th>層級</th><th>物件名稱</th><th>建立位置</th></tr></thead>
+    <tbody>
+      <tr><td>Enhancement Spot</td><td><span class="kw">ZBADI_DEMO01</span></td><td>SE18（新式）</td></tr>
+      <tr><td>BAdI Definition（Element definition）</td><td><span class="kw">ZBADI_DEMO01</span></td><td>SE18 Spot 內</td></tr>
+      <tr><td>Interface</td><td><span class="kw">ZBADI_DEMO_ITF01</span></td><td>SE24（由 SE18 帶出）</td></tr>
+      <tr><td>Enhancement Implementation</td><td><span class="kw">ZBADI_DEMO01_IMP</span></td><td>SE19</td></tr>
+      <tr><td>Implementing Class</td><td><span class="kw">ZBADI_DEMO01_CLASS</span></td><td>SE19 自動建立</td></tr>
+    </tbody>
+  </table>
+
+  <p><b>步驟</b>：<span class="src">（依講義步驟整理）</span></p>
+  <ol>
+    <li><span class="tcode">SE18</span> → 輸入 Enhancement Spot 名稱 <span class="kw">ZBADI_DEMO01</span> → Create。指定 Composite Spot（可留空）與 Package。</li>
+    <li>在 Spot 的 <b>Enh. Spot Element Definitions</b> 節點按右鍵 → Create BAdI，輸入定義名稱、勾選 Multiple Use／Limited Filter Use，填入介面名稱 <span class="kw">ZBADI_DEMO_ITF01</span>。</li>
+    <li>雙擊介面名稱進 SE24，新增方法 <span class="kw">PRINT</span>：參數 <span class="kw">INPUT</span>（IMPORTING, STRING）、<span class="kw">OUTPUT</span>（EXPORTING, STRING）。啟動。</li>
+    <li>回 SE18 啟動 Spot；再進 <span class="tcode">SE19</span> → New BAdI → 輸入 Enhancement Spot → 建立 Enhancement Implementation <span class="kw">ZBADI_DEMO01_IMP</span> → 建立 BAdI Implementation 與實作類別 <span class="kw">ZBADI_DEMO01_CLASS</span>。</li>
+    <li>雙擊方法寫程式 → 啟動。<b>三個東西都要 active</b>：Spot、Implementation、Class。</li>
+  </ol>
+
+  <pre><code class="abap">METHOD zbadi_demo_itf01~print.
+  "講義原文用 CONCATENATE，S/4HANA 建議改用字串範本
+  output = |你輸入的是：{ input }|.
+ENDMETHOD.</code></pre>
+
+  <p><b>測試程式</b>。講義原本的 <span class="kw">ZBADITEST</span> 是<b>手動 CREATE OBJECT 實作類別</b>再指派給介面參照——這在教學上可以看清楚「介面參照指向實作物件」的多型概念，但它<b>繞過了 BAdI 框架</b>：不會套用過濾器、不會呼叫多個實作、不會走 fallback。正式程式一定要用 <span class="kw">GET BADI</span> / <span class="kw">CALL BADI</span>。兩種寫法對照如下：</p>
+
+  <pre><code class="abap">REPORT zbaditest.
+
+PARAMETERS: p_str TYPE string DEFAULT 'ABAP',
+            p_mode TYPE c LENGTH 1 DEFAULT '2'.   "1=手動 2=框架
+
+START-OF-SELECTION.
+
+  IF p_mode = '1'.
+*----------------------------------------------------------------------*
+* 寫法 A（講義原文）：直接 new 實作類別 —— 只適合觀念示範，不要用在正式程式
+*----------------------------------------------------------------------*
+    DATA(lo_impl) = NEW zbadi_demo01_class( ).     "取代舊的 CREATE OBJECT
+    DATA lo_itf TYPE REF TO zbadi_demo_itf01.
+    lo_itf = lo_impl.                              "向上轉型（多型）
+
+    lo_itf-&gt;print( EXPORTING input  = p_str
+                   IMPORTING output = DATA(lv_out1) ).
+    WRITE / lv_out1.
+
+  ELSE.
+*----------------------------------------------------------------------*
+* 寫法 B（正確）：走 BAdI 框架
+*----------------------------------------------------------------------*
+    DATA lo_badi TYPE REF TO zbadi_demo01.         "型別 = BAdI 定義名稱
+
+    TRY.
+        GET BADI lo_badi.
+
+        CALL BADI lo_badi-&gt;print
+          EXPORTING input  = p_str
+          IMPORTING output = DATA(lv_out2).
+
+        WRITE / lv_out2.
+
+      CATCH cx_badi_not_implemented.
+        WRITE / |目前沒有作用中的 BAdI 實作，走預設邏輯|.
+        WRITE / p_str.
+    ENDTRY.
+  ENDIF.</code></pre>
+
+  <div class="note"><b>SE18 與 SE19 的分工（講義 04-02）</b>：<span class="tcode">SE19</span> 只看得到 <b>Implementation</b>；要看「這個 BAdI 定義底下總共有幾個實作、分別叫什麼」，要進 <span class="tcode">SE18</span> 打開定義，再點選單 <b>Enhancement Spot → Overview</b>（或工具列的「Implementation」按鈕）。這是老師特別註記的操作細節，很多人找不到。</div>
+
+  <h3 id="ch03-4-12">12. Classic BAdI 被「強制升級」為 New BAdI</h3>
+  <p>講義 02-11「被強迫升級」、02-17「強制轉回 NEW BADI 了」講的就是這件事。SAP 已經把大量 Classic BAdI 定義<b>遷移（migrate）</b>成 New BAdI，並收進 Enhancement Spot 裡。於是會發生這個現象：</p>
+  <ul>
+    <li>你在 <span class="tcode">SE19</span> 選「Classic BAdI」輸入 <span class="kw">MB_DOCUMENT_BADI</span>，系統跳出訊息說這個 BAdI 已經遷移，<b>要求你改用 New BAdI 的方式建立</b>。</li>
+    <li>照做之後，你得到的是一個 <b>Enhancement Implementation</b>（而不是舊的 Classic Implementation），它掛在 Enhancement Spot <span class="kw">MB_GOODSMOVEMENT</span> 底下（講義 02-21）。</li>
+    <li>但<b>介面名稱與方法簽章完全沒變</b>，還是 <span class="kw">IF_EX_MB_DOCUMENT_BADI~MB_DOCUMENT_BEFORE_UPDATE</span>。所以你原本寫好的程式碼可以原封不動貼過去。</li>
+  </ul>
+
+  <div class="tip"><b>怎麼判斷一個 BAdI 是不是已經遷移？</b> 在 <span class="tcode">SE18</span> 輸入名稱按「Display」，如果畫面直接開的是 <b>Enhancement Spot 的樹狀結構</b>，它就是（或已遷移成）New BAdI；如果開的是舊式的 Attributes／Interface 四頁籤畫面，那還是純 Classic。另一個線索：New BAdI 的定義畫面上會有 <b>Fallback Class</b> 與 <b>Filter</b> 這兩個 Classic 沒有的欄位。</div>
+
+  <p><b>MIGO 禁止超交</b>（講義 02-01～02-18）的完整實作。這是全章最有價值的一段程式，我把它改寫成 S/4HANA 的現代寫法並修掉幾個坑：</p>
+
+  <pre><code class="abap">*&amp;---------------------------------------------------------------------*
+*&amp;  BAdI  : MB_DOCUMENT_BADI （已遷移，屬 Enhancement Spot MB_GOODSMOVEMENT）
+*&amp;  Method: MB_DOCUMENT_BEFORE_UPDATE
+*&amp;  目的  : MIGO 收貨時，料號 CHLK1300 且使用者 ERP000 不可超交
+*&amp;---------------------------------------------------------------------*
+METHOD if_ex_mb_document_badi~mb_document_before_update.
+
+  "① 防護：只針對 MIGO ＋ 指定使用者
+  CHECK sy-tcode = 'MIGO' AND sy-uname = 'ERP000'.
+
+  TYPES: BEGIN OF ty_po,
+           ebeln    TYPE ekpo-ebeln,
+           ebelp    TYPE ekpo-ebelp,
+           po_qty   TYPE ekpo-menge,   "訂購量
+           hist_qty TYPE ekpo-menge,   "歷史已收量
+           new_qty  TYPE ekpo-menge,   "本次收貨量
+         END OF ty_po.
+
+  DATA lt_po TYPE SORTED TABLE OF ty_po WITH UNIQUE KEY ebeln ebelp.
+
+  "② 收集本次過帳（XMSEG）內的目標 PO 行；同一 PO 行可能出現多次，要累加
+  LOOP AT xmseg ASSIGNING FIELD-SYMBOL(&lt;ls_mseg&gt;)
+       WHERE bwart = '101'                "採購收貨
+         AND matnr = 'CHLK1300'
+         AND ebeln IS NOT INITIAL.
+
+    READ TABLE lt_po ASSIGNING FIELD-SYMBOL(&lt;ls_po&gt;)
+         WITH TABLE KEY ebeln = &lt;ls_mseg&gt;-ebeln
+                        ebelp = &lt;ls_mseg&gt;-ebelp.
+    IF sy-subrc = 0.
+      &lt;ls_po&gt;-new_qty += &lt;ls_mseg&gt;-menge.
+    ELSE.
+      INSERT VALUE #( ebeln   = &lt;ls_mseg&gt;-ebeln
+                      ebelp   = &lt;ls_mseg&gt;-ebelp
+                      new_qty = &lt;ls_mseg&gt;-menge ) INTO TABLE lt_po.
+    ENDIF.
+  ENDLOOP.
+
+  "③ FOR ALL ENTRIES 空表陷阱：空表會變成「沒有 WHERE 條件」，撈回整張表！
+  IF lt_po IS INITIAL.
+    RETURN.
+  ENDIF.
+
+  "④ 取 PO 訂購量
+  SELECT ebeln, ebelp, menge
+    FROM ekpo
+    FOR ALL ENTRIES IN @lt_po
+    WHERE ebeln = @lt_po-ebeln
+      AND ebelp = @lt_po-ebelp
+      AND loekz = @space                  "排除已刪除的行
+    INTO TABLE @DATA(lt_ekpo).
+
+  "⑤ 從 EKBE 彙總歷史已收量；直接用 CASE 在資料庫端加總，少搬一次資料
+  SELECT ebeln, ebelp,
+         SUM( CASE shkzg WHEN 'H' THEN menge * -1 ELSE menge END ) AS qty
+    FROM ekbe
+    FOR ALL ENTRIES IN @lt_po
+    WHERE ebeln = @lt_po-ebeln
+      AND ebelp = @lt_po-ebelp
+      AND vgabe = '1'                     "1 = 收貨
+      AND bwart IN ( '101', '102', '122', '123' )
+    GROUP BY ebeln, ebelp
+    INTO TABLE @DATA(lt_ekbe).
+
+  "⑥ 回填訂購量與歷史量
+  LOOP AT lt_po ASSIGNING FIELD-SYMBOL(&lt;po&gt;).
+
+    IF line_exists( lt_ekpo[ ebeln = &lt;po&gt;-ebeln ebelp = &lt;po&gt;-ebelp ] ).
+      &lt;po&gt;-po_qty = lt_ekpo[ ebeln = &lt;po&gt;-ebeln ebelp = &lt;po&gt;-ebelp ]-menge.
+    ENDIF.
+
+    IF line_exists( lt_ekbe[ ebeln = &lt;po&gt;-ebeln ebelp = &lt;po&gt;-ebelp ] ).
+      &lt;po&gt;-hist_qty = lt_ekbe[ ebeln = &lt;po&gt;-ebeln ebelp = &lt;po&gt;-ebelp ]-qty.
+    ENDIF.
+  ENDLOOP.
+
+  "⑦ 超交判斷
+  LOOP AT lt_po INTO DATA(ls_chk).
+    IF ls_chk-hist_qty + ls_chk-new_qty &gt; ls_chk-po_qty.
+      "MESSAGE ... WITH 每個變數最多 50 字元，超過會被截斷，所以拆四段
+      MESSAGE e001(zmm) WITH |CHLK1300 不可超交|
+                             |PO { ls_chk-ebeln }-{ ls_chk-ebelp }|
+                             |訂購 { ls_chk-po_qty NUMBER = USER }|
+                             |已收 { ls_chk-hist_qty NUMBER = USER }|.
+    ENDIF.
+  ENDLOOP.
+
+ENDMETHOD.</code></pre>
+
+  <div class="warn"><b>這段程式的五個關鍵坑</b>：<br>
+  ① <b><span class="kw">FOR ALL ENTRIES</span> 空表 = 撈全表</b>。<span class="kw">lt_po</span> 為空時，SAP 會把 WHERE 條件整段拿掉，你會把整張 EKPO 搬進記憶體。必須先 <span class="kw">IF lt_po IS INITIAL. RETURN. ENDIF.</span><br>
+  ② <b>FOR ALL ENTRIES 會自動去重複</b>，且驅動內表的欄位型別必須與 DB 欄位一致，否則會有隱性型別轉換。<br>
+  ③ <b>方法選錯就沒救</b>：<span class="kw">MB_DOCUMENT_BEFORE_UPDATE</span> 在<b>對話工作程序</b>執行，可以發 <span class="kw">MESSAGE E</span> 把使用者擋回畫面；但同一個 BAdI 的 <span class="kw">MB_DOCUMENT_UPDATE</span> 在<b>更新工作（Update Task）</b>執行，那裡發 E 訊息會造成<b>更新中止（Update Terminated）</b>，使用者收到快遞郵件、資料半套，是很嚴重的事故。<br>
+  ④ <b>EKBE 的 SHKZG</b>：'S' 借方（收貨，加）、'H' 貸方（退貨／沖銷，減）。忘了處理 H，退貨過的 PO 會永遠被誤判為超交。<br>
+  ⑤ <b>MESSAGE ... WITH 每個變數上限 50 字元</b>，且最多 4 個。講義原文把兩段長字串用 <span class="kw">&amp;</span> 接成一個變數傳，會被截掉一半。</div>
+
+  <div class="tip"><b>先問「標準能不能做」！</b> 禁止超交其實是採購單的<b>標準設定</b>：<span class="kw">EKPO-UEBTO</span>（超交容差百分比）設 0、<span class="kw">EKPO-UEBTK</span>（無限超交）不勾，SAP 就會自己擋。或用 <span class="tcode">OMCQ</span> 把訊息 M7 系列的超交警告從 W 改成 E。<b>能設定就不要寫 BAdI</b>——這是第 1 節那個口訣的活教材。會寫這支 BAdI 的理由，是需求裡有「只擋特定料號＋特定使用者」這種標準做不到的條件。</div>
+
+  <h3 id="ch03-4-13">13. Enhancement Framework：隱式增強點（Implicit Enhancement Point）</h3>
+  <p>這是第四代最強大也最危險的能力：<b>SAP 在每一支 ABAP 程式的固定位置，都預先埋好了看不見的掛勾點</b>，你不必等 SAP 提供 BAdI，就能在標準程式插入自己的程式碼，而且<b>不算修改（Modification）、不需要 Access Key</b>。</p>
+
+  <table>
+    <thead><tr><th>位置</th><th>可以做什麼</th><th>常見用途</th></tr></thead>
+    <tbody>
+      <tr><td><b>程式／Include 的最開頭與最結尾</b></td><td>宣告全域變數、寫收尾邏輯</td><td>宣告要跨 FORM 使用的變數</td></tr>
+      <tr><td><b>FORM 的第一個可執行語句前、ENDFORM 前</b></td><td>讀／改該 FORM 的區域變數與參數</td><td>最常用的插入點</td></tr>
+      <tr><td><b>METHOD ... ENDMETHOD 的開頭與結尾</b></td><td>同上</td><td>OO 標準程式的插入點</td></tr>
+      <tr><td><b>FUNCTION ... ENDFUNCTION 的開頭與結尾</b></td><td>同上</td><td>改函數的回傳值</td></tr>
+      <tr><td><b>MODULE ... ENDMODULE 的開頭與結尾</b></td><td>PBO/PAI 邏輯</td><td>Dynpro 畫面控制</td></tr>
+      <tr><td><b>函數模組的參數介面末端</b></td><td>新增<b>選擇性</b>參數</td><td>擴充標準 FM 的介面</td></tr>
+      <tr><td><b>類別各 Section（PUBLIC/PROTECTED/PRIVATE）末端</b></td><td>新增屬性與方法</td><td>擴充標準類別</td></tr>
+      <tr><td><b>DDIC 結構的末端</b></td><td>Append Structure（需 Enhancement Category 允許）</td><td>加自訂欄位</td></tr>
+    </tbody>
+  </table>
+
+  <p><b>操作步驟</b>（在 <span class="tcode">SE38</span> 或 <span class="tcode">SE80</span> 開啟標準程式）：<span class="src">（依講義步驟整理）</span></p>
+  <ol>
+    <li>顯示模式開啟程式後，按工具列的 <b>Enhance（螺絲起子＋扳手圖示，或 Shift+F4）</b>，程式碼底色轉為灰／黃，進入增強模式。</li>
+    <li>選單 <b>Edit → Enhancement Operations → Show Implicit Enhancement Options</b>，程式碼中會出現一條條<b>虛線</b>——每一條虛線就是一個隱式增強點。</li>
+    <li>把游標放在要用的虛線上 → 右鍵 <b>Enhancement Implementation → Create</b>。</li>
+    <li>選 <b>Code（Source Code Plug-In）</b>，輸入 Enhancement Implementation 名稱（Z 開頭）與短文字，選 Package 與傳輸請求。</li>
+    <li>系統在該位置產生一組 <span class="kw">ENHANCEMENT ... ENDENHANCEMENT</span> 區塊（底色亮黃），在裡面寫程式。</li>
+    <li>存檔 → <b>啟動（Ctrl+F3）</b>。</li>
+  </ol>
+
+  <pre><code class="abap">*----------------------------------------------------------------------*
+* 隱式增強：插在標準 FORM 的結尾（ENDFORM 之前）
+* Enhancement Implementation: ZENH_MIGO_NO_OVERDELIVERY
+*----------------------------------------------------------------------*
+ENHANCEMENT 1 ZENH_MIGO_NO_OVERDELIVERY.    "active version
+
+  "★ 防護：只對指定帳號、指定交易生效
+  IF sy-uname = 'ERP000' AND sy-tcode = 'MIGO'.
+
+    "此處可直接讀取這個 FORM 的區域變數與全域變數
+    IF gs_goitem-matnr = 'CHLK1300'.
+
+      SELECT SINGLE menge, uebto, uebtk
+        FROM ekpo
+        WHERE ebeln = @gs_goitem-ebeln
+          AND ebelp = @gs_goitem-ebelp
+        INTO @DATA(ls_ekpo).
+
+      IF sy-subrc = 0 AND ls_ekpo-uebtk = abap_false.
+        "已收量 ＋ 本次量 是否超過訂購量
+        SELECT SINGLE
+               SUM( CASE shkzg WHEN 'H' THEN menge * -1 ELSE menge END )
+          FROM ekbe
+          WHERE ebeln = @gs_goitem-ebeln
+            AND ebelp = @gs_goitem-ebelp
+            AND vgabe = '1'
+          INTO @DATA(lv_hist).
+
+        IF lv_hist + gs_goitem-erfmg &gt; ls_ekpo-menge.
+          MESSAGE |料號 CHLK1300 不可超交（訂購 { ls_ekpo-menge NUMBER = USER }）|
+                  TYPE 'E'.
+        ENDIF.
+      ENDIF.
+    ENDIF.
+  ENDIF.
+
+ENDENHANCEMENT.</code></pre>
+
+  <div class="warn"><b>隱式增強的三大風險</b>：<br>
+  ① <b>你在標準程式裡執行任意程式碼，SAP 完全不保證上下文。</b> 你用到的區域變數可能在下個 Support Package 就被改名或刪除，程式會在升級後<b>語法錯誤</b>，而且是在客戶的正式環境爆掉。<br>
+  ② <b>效能</b>：插在迴圈裡的 SELECT 會被執行成千上萬次。要撈資料請先在迴圈外撈成內表。<br>
+  ③ <b>難以追蹤</b>：別人看標準程式時，如果沒開 Enhance 模式就看不到你的程式碼。<b>務必在增強區塊第一行寫清楚：誰、什麼時候、為什麼、對應的需求單號。</b><br>
+  結論：<b>隱式增強是最後手段，能用 BAdI 就不要用它。</b></div>
+
+  <div class="tip"><b>怎麼找出系統裡已經有哪些隱式增強？</b> <span class="tcode">SE84</span> → Enhancements → Enhancement Implementations，或直接查表 <span class="kw">ENHHEADER</span>／<span class="kw">ENHOBJ</span>（<span class="kw">ENHNAME</span> LIKE 'Z%'）。接手一套別人做過的系統時，第一件事就是把這張清單印出來。</div>
+
+  <h3 id="ch03-4-14">14. 顯式增強點：ENHANCEMENT-POINT 與 ENHANCEMENT-SECTION</h3>
+  <p>顯式（Explicit）增強點是 <b>SAP 或你自己</b>在原始碼裡<b>明寫</b>出來的掛勾點，比隱式安全得多，因為位置是被官方承諾的。它有兩種：</p>
+
+  <table>
+    <thead><tr><th>種類</th><th>語法</th><th>行為</th></tr></thead>
+    <tbody>
+      <tr><td><b>ENHANCEMENT-POINT</b></td><td>單一敘述，標出一個位置</td><td>你的程式碼<b>插入</b>在該位置，原始碼照常執行</td></tr>
+      <tr><td><b>ENHANCEMENT-SECTION</b></td><td>一對 <span class="kw">ENHANCEMENT-SECTION</span> … <span class="kw">END-ENHANCEMENT-SECTION</span> 包住一段原始碼</td><td>你的程式碼<b>取代</b>被包住的那段原始碼</td></tr>
+    </tbody>
+  </table>
+
+  <pre><code class="abap">*----------------------------------------------------------------------*
+* 在你自己的程式裡「預留」增強點，讓別的顧問／客戶去實作
+*----------------------------------------------------------------------*
+REPORT zsd_price_check.
+
+"① 先在 SE18 建立一個 Enhancement Spot：ZSPOT_SD_PRICE
+
+"② 靜態增強點：STATIC 表示這裡可以「宣告資料」
+ENHANCEMENT-POINT zep_price_data SPOTS zspot_sd_price STATIC.
+
+DATA: lv_price TYPE netwr,
+      lv_disc  TYPE p LENGTH 8 DECIMALS 2.
+
+START-OF-SELECTION.
+
+  lv_price = 1000.
+
+"③ 一般增強點：這裡可以插入可執行的敘述
+ENHANCEMENT-POINT zep_price_before SPOTS zspot_sd_price.
+
+"④ 增強區段：被包住的預設演算法，可以被整段換掉
+ENHANCEMENT-SECTION zes_price_calc SPOTS zspot_sd_price.
+
+  lv_disc = lv_price * '0.05'.        "預設折扣 5%
+
+END-ENHANCEMENT-SECTION.
+
+  WRITE: / |折扣：{ lv_disc NUMBER = USER }|.</code></pre>
+
+  <p>實作端在 SE38 開啟這支程式、進 Enhance 模式後，游標放在增強點上右鍵建立實作，產生的程式碼是：</p>
+
+  <pre><code class="abap">"針對 ENHANCEMENT-SECTION 建立的實作：整段取代原本的預設演算法
+ENHANCEMENT 1 ZENH_SD_PRICE_VIP.    "active version
+
+  "台灣區 VIP 客戶折扣改成 12%
+  IF sy-uname = 'ERP000'.
+    lv_disc = lv_price * '0.12'.
+  ELSE.
+    lv_disc = lv_price * '0.05'.     "★ 記得補回原本的邏輯，否則會消失！
+  ENDIF.
+
+ENDENHANCEMENT.</code></pre>
+
+  <div class="warn"><b>ENHANCEMENT-SECTION 是「取代」不是「附加」。</b> 一旦你為某個 Section 建立實作，被包住的原始碼<b>就不會執行了</b>。如果你只是想微調，記得把原本的邏輯抄一份進來。這是 Section 最常見的事故：折扣邏輯被整段吃掉，只剩你寫的那一行。</div>
+
+  <div class="note"><b>STATIC 的意義</b>：加了 <span class="kw">STATIC</span> 的 ENHANCEMENT-POINT 才允許在實作裡<b>宣告資料物件</b>（DATA、TYPES、CONSTANTS）。沒加 STATIC 的只能放可執行敘述。另外，增強點若定義在被多支主程式共用的 Include 裡、且希望實作對<b>所有</b>引用該 Include 的程式都生效，定義時要加 <span class="kw">INCLUDE BOUND</span>（依 BC425 原廠教材；舊版此處誤寫為「DDIC 結構增強要用 INCLUDE BOUND」，已更正，詳見 <a href="#ch05-15">5-15 章</a>）。設計自己的程式時，習慣上會在「宣告區」放一個 STATIC 增強點、在「處理前／處理後」各放一個一般增強點，這樣別人要擴充就很方便。</div>
+
+  <h3 id="ch03-4-15">15. Class / Function Module Enhancement：pre-exit、post-exit、overwrite-exit</h3>
+  <p>對<b>類別的方法</b>與<b>函數模組</b>，第四代提供了三種「方法級」的增強，這是 OO 標準程式最乾淨的增強方式。在 <span class="tcode">SE24</span> 開啟類別 → 按 <b>Enhance</b> → 建立 Enhancement Implementation → 在方法上右鍵選要建立哪一種。</p>
+
+  <table>
+    <thead><tr><th>種類</th><th>執行時機</th><th>能改什麼</th><th>典型用途</th></tr></thead>
+    <tbody>
+      <tr><td><b>Pre-Exit</b></td><td>原方法<b>執行前</b></td><td>可改 IMPORTING／CHANGING 參數</td><td>清洗輸入值、補預設值</td></tr>
+      <tr><td><b>Post-Exit</b></td><td>原方法<b>執行後</b></td><td>可改 EXPORTING／CHANGING／RETURNING 結果</td><td>調整回傳結果、追加資料、寫 Log</td></tr>
+      <tr><td><b>Overwrite-Exit</b></td><td><b>完全取代</b>原方法</td><td>整個實作換掉</td><td>標準演算法完全不適用時；<b>風險最高</b></td></tr>
+    </tbody>
+  </table>
+
+  <pre><code class="abap">*----------------------------------------------------------------------*
+* Post-Exit：在標準方法算完之後，調整回傳結果
+* 在 SE24 → Enhance → 方法上右鍵 → Post-Exit 之後，系統產生這個方法框架
+*----------------------------------------------------------------------*
+METHOD zcl_enh_price_calc~get_net_price.
+
+  "① core_object 是「原始物件」的參照，可用來讀取它的公開屬性／方法
+  DATA(lv_currency) = core_object-&gt;mv_currency.
+
+  "② 此時 rv_price（RETURNING 參數）已經是標準算完的結果，可以再調整
+  IF sy-uname = 'ERP000' AND lv_currency = 'TWD'.
+    rv_price = rv_price * '0.95'.       "台幣單再打 95 折
+  ENDIF.
+
+ENDMETHOD.</code></pre>
+
+  <pre><code class="abap">*----------------------------------------------------------------------*
+* Pre-Exit：在標準方法執行「之前」修正輸入參數
+*----------------------------------------------------------------------*
+METHOD zcl_enh_material_read~read_material.
+
+  "把使用者輸入的料號補零成 18 位，避免標準方法查不到
+  IF iv_matnr IS NOT INITIAL AND strlen( iv_matnr ) &lt; 18.
+    iv_matnr = |{ iv_matnr ALPHA = IN }|.
+  ENDIF.
+
+ENDMETHOD.</code></pre>
+
+  <div class="warn"><b>Overwrite-Exit 幾乎等同修改標準。</b> 它會讓 SAP 未來對該方法的所有修正（Support Package、Note）完全失效，而且不會有任何警告。除非是 SAP 支援明確建議，否則不要用。真的用了，一定要在 Enhancement 的文件裡寫下「取代的原始版本是哪一個 SP」。</div>
+
+  <div class="note"><b>Pre/Post-Exit 的存取限制</b>：exit 方法裡看不到原方法的<b>區域變數</b>，只看得到參數與經由 <span class="kw">core_object</span> 取得的物件屬性（且受可視性限制）。要在方法「中間」插程式，只能用隱式增強點。</div>
+
+  <h3 id="ch03-4-16">16. 三、四代增強全圖解與 MM 常用 BAdI</h3>
+  <p>講義 02-22 問「能圖解整個第三四代增強嗎？」。用表格把兩代的對應關係並排，比畫圖更好查：</p>
+
+  <table>
+    <thead><tr><th>面向</th><th>第三代 Classic BAdI</th><th>第四代 New BAdI</th></tr></thead>
+    <tbody>
+      <tr><td>容器</td><td>無（定義即最上層）</td><td><b>Enhancement Spot</b> → BAdI Definition</td></tr>
+      <tr><td>介面命名</td><td>強制 <span class="kw">IF_EX_&lt;定義名&gt;</span></td><td>自由命名</td></tr>
+      <tr><td>介面卡</td><td><span class="kw">CL_EX_&lt;定義名&gt;</span>（自動產生）</td><td>框架內部處理，看不到介面卡</td></tr>
+      <tr><td>取得實例</td><td><span class="kw">CL_EXITHANDLER=&gt;GET_INSTANCE</span></td><td><span class="kw">GET BADI</span></td></tr>
+      <tr><td>呼叫方法</td><td><span class="kw">lo_badi-&gt;method( )</span></td><td><span class="kw">CALL BADI lo_badi-&gt;method</span></td></tr>
+      <tr><td>過濾器</td><td>單一 filter，方法多一個 <span class="kw">FLT_VAL</span></td><td>多個 filter，支援 =／BETWEEN／CP 與 AND/OR</td></tr>
+      <tr><td>無實作時</td><td>回傳空參照（需 <span class="kw">IS BOUND</span> 判斷）</td><td>走 <b>Fallback Class</b>，或丟 <span class="kw">CX_BADI_NOT_IMPLEMENTED</span></td></tr>
+      <tr><td>執行順序</td><td><b>不保證</b></td><td>可設定排序（Sortable）</td></tr>
+      <tr><td>Switch Framework</td><td>不支援</td><td>支援</td></tr>
+      <tr><td>目錄表</td><td>SXS_ATTR / SXC_EXIT</td><td>ENHSPOTHEADER / ENHHEADER / ENHOBJ</td></tr>
+      <tr><td>建立工具</td><td>SE18 / SE19（Classic 模式）</td><td>SE18 / SE19（New 模式）、SE80、<b>ADT（Eclipse）</b></td></tr>
+      <tr><td>ABAP Cloud</td><td><b>不可用</b></td><td>只有 SAP <b>Released</b> 的 BAdI 可用</td></tr>
+    </tbody>
+  </table>
+
+  <p><b>MM 模組最常用的 BAdI</b>（講義 02-23）：</p>
+  <table>
+    <thead><tr><th>BAdI</th><th>觸發交易</th><th>常用方法</th><th>用途</th></tr></thead>
+    <tbody>
+      <tr><td><b>MB_MIGO_BADI</b></td><td>MIGO</td><td>INIT、PBO_DETAIL、PAI_DETAIL、CHECK_ITEM、CHECK_HEADER、POST_DOCUMENT</td><td>MIGO <b>畫面層</b>：加自訂頁籤、逐行檢查、過帳後處理</td></tr>
+      <tr><td><b>MB_DOCUMENT_BADI</b></td><td>MIGO、MB01、MB1A/B/C、BAPI 過帳</td><td>MB_DOCUMENT_BEFORE_UPDATE（對話中，可擋）、MB_DOCUMENT_UPDATE（更新工作，不可發 E）</td><td>物料文件<b>文件層</b>：整份檢查、寫 Z 表</td></tr>
+      <tr><td><b>ME_PROCESS_PO_CUST</b></td><td>ME21N／ME22N／ME23N</td><td>PROCESS_HEADER、PROCESS_ITEM、CHECK、POST</td><td>採購單抬頭／項目的改值與檢查</td></tr>
+      <tr><td>ME_PROCESS_REQ_CUST</td><td>ME51N／ME52N</td><td>同上（請購單版）</td><td>請購單的改值與檢查</td></tr>
+      <tr><td>ME_GUI_PO_CUST</td><td>ME21N 系列</td><td>SUBSCRIBE、MAP_DYNPRO_FIELDS</td><td>在採購單畫面加自訂頁籤／欄位（須與 ME_PROCESS_PO_CUST 搭配）</td></tr>
+      <tr><td>BADI_MATERIAL_CHECK</td><td>MM01／MM02</td><td>CHECK_DATA</td><td>物料主檔存檔前檢查</td></tr>
+      <tr><td>MB_MIGO_ITEM_BADI</td><td>MIGO</td><td>—</td><td>MIGO 行項目層的額外處理</td></tr>
+      <tr><td>MB_CIN_MM07MFB7</td><td>MIGO／MB*</td><td>—</td><td>過帳前對 MSEG 的最後調整</td></tr>
+    </tbody>
+  </table>
+
+  <div class="tip"><b>畫面層還是文件層？</b> 一句話判斷：<b>「要跟使用者互動、要看到欄位、要加頁籤」用 MB_MIGO_BADI；「要在資料真的寫進去之前做整份判斷」用 MB_DOCUMENT_BADI。</b> 前者只在 MIGO 有效，後者連 BAPI（<span class="kw">BAPI_GOODSMVT_CREATE</span>）與背景過帳都會經過——這一點在做介面（EDI／WMS 回傳）時非常關鍵。</div>
+
+  <h3 id="ch03-4-17">17. S/4HANA、Clean Core 與 ABAP Cloud 三層擴充模型</h3>
+  <p>從 S/4HANA（特別是 Cloud 版與 2022 之後的 On-Premise）開始，SAP 主推 <b>Clean Core（乾淨核心）</b>：客戶的擴充不能弄髒標準，升級才能自動化。擴充被分成三層：</p>
+
+  <table>
+    <thead><tr><th>層</th><th>名稱</th><th>誰做</th><th>工具</th><th>典型內容</th></tr></thead>
+    <tbody>
+      <tr><td>①</td><td><b>Key User Extensibility</b>（關鍵使用者擴充）</td><td>顧問／業務端</td><td>Fiori App：Custom Fields and Logic、Custom Business Objects、Custom CDS Views</td><td>加自訂欄位、用受限的 ABAP 語言片段寫 <b>BAdI 邏輯</b>、做自訂報表</td></tr>
+      <tr><td>②</td><td><b>Developer Extensibility</b>（開發者擴充，In-App）</td><td>ABAP 開發者</td><td><b>ADT（Eclipse）</b>，語言版本 <b>ABAP for Cloud Development</b></td><td>寫 RAP 應用、CDS View、Behavior Definition、實作 <b>Released BAdI</b></td></tr>
+      <tr><td>③</td><td><b>Side-by-Side Extensibility</b>（並列擴充）</td><td>開發者</td><td><b>SAP BTP</b>（ABAP Environment／CAP／Node.js／Java）</td><td>獨立跑在 BTP 上，用 OData／SOAP／Events 與 S/4 溝通</td></tr>
+    </tbody>
+  </table>
+
+  <div class="warn"><b>在 ABAP Cloud（語言版本 = ABAP for Cloud Development）裡，以下全部禁止</b>：<br>
+  ・Classic BAdI（<span class="kw">CL_EXITHANDLER</span>）<br>
+  ・User Exit、Customer Exit（SMOD/CMOD）<br>
+  ・<b>隱式增強點</b>與 Source Code Plug-in<br>
+  ・直接 SELECT 未釋出的標準資料表（例如直接讀 MARA、BSEG）<br>
+  ・大部分傳統 UI（Dynpro、SAP List Viewer 的舊 FM、WRITE 清單）<br>
+  唯一被允許的增強方式，是實作 SAP 標記為 <b>Released（C1 契約）</b>的 Enhancement Spot／BAdI，並且只能透過 <b>ADT</b> 建立。</div>
+
+  <div class="note"><b>怎麼知道一個物件有沒有 Released？</b><br>
+  ① 在 ADT 開啟該物件，看 <b>Properties → API State</b>，顯示「Released for Cloud Development / Use System-Internally」。<br>
+  ② 在 SAP 的 <b>API Business Hub</b> 或 <b>Released Object 清單</b>查詢。<br>
+  ③ 系統內可查 CDS View <span class="kw">I_APIRELEASESTATE</span> 之類的釋出狀態視圖（版本相依）。<br>
+  On-Premise 的 S/4HANA 仍可用 ABAP 的<b>標準語言版本</b>（Standard ABAP）寫所有舊寫法，但 SAP 建議<b>新開發一律用 ABAP Cloud 語言版本</b>，只有真的做不到時才降級——這叫 <b>Tiered Extensibility Model（三層優先序）</b>。</div>
+
+  <div class="tip"><b>務實建議（On-Premise S/4HANA 專案）</b>：<br>
+  ・新做的增強，先在 SE18 查該 BAdI 是不是 Released；是的話盡量用 ADT 做，未來搬雲端不必重寫。<br>
+  ・隱式增強點<b>只在沒有 BAdI 且時程緊迫時</b>使用，並在增強文件裡寫下「這是技術債，未來要換成 BAdI」。<br>
+  ・自訂欄位優先用 Key User 的 Custom Fields（會自動延伸到 CDS／OData／Fiori），而不是 Append Structure ＋ 手改畫面。</div>
+
+  <h3 id="ch03-4-18">18. 升級與傳輸：SPAU、SPAU_ENH、SPDD 與傳輸注意事項</h3>
+  <table>
+    <thead><tr><th>交易碼</th><th>處理對象</th><th>什麼時候跑</th></tr></thead>
+    <tbody>
+      <tr><td><span class="tcode">SPDD</span></td><td><b>DDIC 物件</b>的修改（表、資料元素、Domain）</td><td>升級中（Phase：ACT_UPG 期間），<b>不做會掉資料</b></td></tr>
+      <tr><td><span class="tcode">SPAU</span></td><td><b>Repository 物件</b>的修改與修復（程式、FM、類別、畫面）</td><td>升級／SP 之後</td></tr>
+      <tr><td><b><span class="tcode">SPAU_ENH</span></b></td><td><b>Enhancement Framework 的增強</b>（增強點實作、BAdI 實作、Class Exit）</td><td>升級／SP 之後，<b>第四代增強專用</b></td></tr>
+      <tr><td><span class="tcode">SE95</span></td><td>Modification Browser：列出系統中所有修改</td><td>升級前盤點</td></tr>
+    </tbody>
+  </table>
+
+  <p>可以寫一支小程式，在升級前先盤點自己有多少增強要面對：</p>
+
+  <pre><code class="abap">REPORT z_enh_inventory.
+
+"盤點系統中所有 Z/Y 開頭的 Enhancement Implementation（第四代）
+SELECT h~enhname,          "增強實作名稱
+       h~version,          "A=作用中 I=非作用中
+       o~pgmid,
+       o~obj_type,
+       o~obj_name          "被增強的物件
+  FROM enhheader AS h
+  INNER JOIN enhobj AS o
+    ON o~enhname = h~enhname
+  WHERE h~enhname LIKE 'Z%'
+     OR h~enhname LIKE 'Y%'
+  ORDER BY h~enhname
+  INTO TABLE @DATA(lt_enh).
+
+"第三代 Classic BAdI 實作
+SELECT e~imp_name,         "實作名稱
+       e~exit_name,        "BAdI 定義
+       c~class_name        "實作類別
+  FROM sxc_exit AS e
+  INNER JOIN sxc_class AS c
+    ON c~imp_name = e~imp_name
+  WHERE e~imp_name LIKE 'Z%'
+  INTO TABLE @DATA(lt_classic).
+
+cl_salv_table=&gt;factory( IMPORTING r_salv_table = DATA(lo_alv)
+                        CHANGING  t_table      = lt_enh ).
+lo_alv-&gt;get_columns( )-&gt;set_optimize( abap_true ).
+lo_alv-&gt;display( ).</code></pre>
+
+  <div class="warn"><b>傳輸（Transport）的五個坑</b>：<br>
+  ① <b>BAdI 定義與實作是兩個不同的物件</b>，可能落在不同的傳輸單。只傳實作、忘了傳定義（自建 BAdI 時），目標系統會啟動失敗。<br>
+  ② <b>Enhancement Implementation 與它產生的 Class 也是兩個物件</b>；SE19 通常會一起放進同一個請求，但手動改過名稱／Package 之後就不一定。傳輸前用 <span class="tcode">SE09</span> 展開請求內容<b>逐項確認</b>。<br>
+  ③ <b>啟動狀態不會自動帶過去</b>：在開發機是 Active，到品保機若相依物件缺漏就會變成 Inactive，而且<b>不會報錯，只是不生效</b>。傳完一定要在目標系統用 SE19 確認狀態。<br>
+  ④ <b>隱式增強相依於標準程式的版本</b>。開發機是 SP10、正式機是 SP08，同一個隱式增強點可能根本不存在，傳輸會失敗或位置跑掉。<br>
+  ⑤ <b>Classic BAdI 實作在同一個 BAdI 上，非 Multiple Use 時只能有一個作用中</b>。目標系統若已經有別人（或 SAP Note）的實作，你的傳過去會啟動失敗。</div>
+
+  <div class="tip"><b>升級後的 SOP</b>：跑完 SPAU_ENH → 進 SE84 列出所有 Z 開頭的 Enhancement Implementation → 逐一確認 Active → 對重點交易（ME21N、MIGO、VA01）做一次冒煙測試。<b>「升級後沒有語法錯誤」不等於「增強還有生效」</b>，這是最容易被漏掉的一步。</div>
+
+  <h3 id="ch03-4-qa">練習與自我檢核</h3>
+  <ol>
+    <li><b>（講義 01 節）</b> 建立一個 Classic BAdI 實作，在 <span class="tcode">ME22N</span> 存檔時，把料號 <span class="kw">CHLK1300</span> 的採購單項目自動打上交貨完成旗標。<br><i>提示</i>：BAdI = <span class="kw">ME_PROCESS_PO_CUST</span>，方法 <span class="kw">PROCESS_ITEM</span>，用 <span class="kw">im_item-&gt;get_data( )</span> 取值、改 <span class="kw">ELIKZ</span>、<span class="kw">im_item-&gt;set_data( )</span> 寫回。用 <span class="tcode">MD04</span> 前後對照驗證。<b>別忘了 <span class="kw">CHECK sy-uname = 'ERP000'</span>。</b></li>
+
+    <li>為什麼「同一個 interface 底下的所有 method 都要正確，否則會無效」？<br><i>答案要點</i>：實作類別必須實作介面的全部方法才能啟動；任一方法語法錯誤 → 類別無法啟動 → BAdI 實作形同不存在，而且執行時<b>不會報錯</b>，只是靜靜地沒作用。</li>
+
+    <li>你在 <span class="tcode">SE38</span> 開啟 <span class="kw">SAPLMIGO</span>，要找出所有第三代與第四代的增強點，分別搜尋哪些關鍵字？<br><i>答案</i>：第三代搜 <span class="kw">CL_EXITHANDLER</span>；第四代搜 <span class="kw">GET BADI</span> 與 <span class="kw">CALL BADI</span>；順便搜 <span class="kw">CUSTOMER-FUNCTION</span>（第二代）與 <span class="kw">USEREXIT</span>（第一代）。</li>
+
+    <li>在除錯器裡要一次列出「這筆交易到底呼叫了哪些 Classic BAdI」，要怎麼設中斷點？<br><i>答案</i>：Breakpoints → Breakpoint at → Method，類別 <span class="kw">CL_EXITHANDLER</span>、方法 <span class="kw">GET_INSTANCE</span>，每次停下來看變數 <span class="kw">exit_name</span>。</li>
+
+    <li>寫一段 ABAP，從 <span class="kw">SXS_ATTR</span> ＋ <span class="kw">SXS_ATTRT</span> 撈出所有說明文字含「Purchase」的 BAdI 定義，用 <span class="kw">CL_SALV_TABLE</span> 顯示。<br><i>提示</i>：見第 6 節「找法 B」的程式碼；記得用 <span class="kw">@sy-langu</span> 過濾語言，並用 <b>LEFT OUTER JOIN</b>（有些 BAdI 沒有中文說明）。</li>
+
+    <li><b>（講義 02 節）</b> 為什麼講義最後選了 <span class="kw">MB_DOCUMENT_BADI</span> 而不是 <span class="kw">MB_MIGO_BADI</span>？兩者的分工是什麼？<br><i>答案要點</i>：需求是「整張收貨單累加後判斷是否超交」，屬<b>文件層</b>檢查；而且 <span class="kw">MB_DOCUMENT_BADI</span> 連 BAPI 與背景過帳都會經過，<span class="kw">MB_MIGO_BADI</span> 只在 MIGO 畫面生效。</li>
+
+    <li><span class="kw">MB_DOCUMENT_BEFORE_UPDATE</span> 與 <span class="kw">MB_DOCUMENT_UPDATE</span> 有什麼致命差別？<br><i>答案</i>：前者在對話工作程序，可以發 <span class="kw">MESSAGE E</span> 擋下使用者；後者在<b>更新工作</b>，發 E 會造成更新中止、資料不一致，只能寫 Log 或用 <span class="kw">MESSAGE ... TYPE 'E' INTO</span>。</li>
+
+    <li>第 12 節那段超交檢查程式裡，如果把 <span class="kw">IF lt_po IS INITIAL. RETURN. ENDIF.</span> 拿掉會發生什麼事？<br><i>答案</i>：<span class="kw">FOR ALL ENTRIES</span> 遇到空的驅動表，會忽略整個 WHERE 條件，把<b>整張 EKPO／EKBE 撈回來</b>，在正式環境等於系統癱瘓。</li>
+
+    <li>解釋隱式增強點與顯式增強點的差別，並各舉一個 MIGO 情境。<br><i>答案要點</i>：隱式是 SAP 在每支程式的固定位置（程式／FORM／METHOD／FUNCTION 的頭尾）自動提供、看不見、不保證上下文；顯式是 SAP 在原始碼裡明寫 <span class="kw">ENHANCEMENT-POINT</span>／<span class="kw">ENHANCEMENT-SECTION</span>、位置被承諾。<b>優先用顯式與 BAdI，隱式是最後手段。</b></li>
+
+    <li><span class="kw">ENHANCEMENT-POINT</span> 與 <span class="kw">ENHANCEMENT-SECTION</span> 最重要的行為差異是什麼？<br><i>答案</i>：POINT 是<b>插入</b>（原始碼照常執行）；SECTION 是<b>取代</b>（被包住的原始碼不再執行），所以要自己把原邏輯抄一份回來。</li>
+
+    <li>Pre-Exit、Post-Exit、Overwrite-Exit 各在什麼時候用？哪一個最不該用？<br><i>答案</i>：Pre 改輸入、Post 改輸出、Overwrite 整個換掉。Overwrite 會讓 SAP 對該方法的所有後續修正失效，最不該用。</li>
+
+    <li>New BAdI 的 <b>Fallback Class</b> 解決了 Classic BAdI 的什麼痛點？<br><i>答案</i>：Classic BAdI 沒有實作時回傳空參照，呼叫端必須自己寫 <span class="kw">IS BOUND</span> 判斷與預設邏輯；Fallback Class 讓框架在無實作時自動執行預設行為，呼叫端程式碼變乾淨。</li>
+
+    <li>為什麼 <span class="kw">GET BADI</span> 不能放在迴圈裡？<br><i>答案</i>：GET BADI 要查詢實作清單、計算過濾條件，成本高。正確做法是迴圈外 GET 一次、迴圈內 CALL 多次。</li>
+
+    <li>如果你的 BAdI 實作需要在 <span class="kw">OPEN</span> 撈一批資料快取，給後面每次 <span class="kw">PROCESS_ITEM</span> 使用，第四代要怎麼設定？第三代只能怎麼做？<br><i>答案</i>：第四代把 Instance Creation Mode 設成 <b>Reusing</b>；第三代沒這個選項，只能用 <span class="kw">CLASS-DATA</span> 靜態屬性，但要小心跨交易的髒資料，記得在 OPEN 時先清空。</li>
+
+    <li>升級後要跑哪三個交易碼來處理修改與增強？各自負責什麼？<br><i>答案</i>：<span class="tcode">SPDD</span>（DDIC，升級中就要做）、<span class="tcode">SPAU</span>（Repository 修改）、<span class="tcode">SPAU_ENH</span>（Enhancement Framework 增強）。</li>
+
+    <li>在 ABAP Cloud（ABAP for Cloud Development）裡，第 5 節那支 <span class="kw">Z_BUSINESSADDIN</span> 測試程式為什麼一行都跑不動？<br><i>答案要點</i>：<span class="kw">CL_EXITHANDLER</span> 不是 Released API、Classic BAdI 不被允許、<span class="kw">WRITE</span> 清單輸出不被允許。正確做法是實作 SAP Released 的 Enhancement Spot，或用 RAP ＋ Fiori。</li>
+
+    <li><b>綜合題</b>：需求是「MIGO 收貨時，若供應商是黑名單廠商，跳警告但仍可過帳；若料號屬於管制品且數量超過 1000，直接擋下」。請規劃：用哪一代增強、哪個 BAdI、哪個方法、訊息型別怎麼給、黑名單資料放哪裡。<br><i>答案要點</i>：用 <span class="kw">MB_DOCUMENT_BADI~MB_DOCUMENT_BEFORE_UPDATE</span>（對話中可擋）；黑名單與管制品清單<b>不要寫死在程式裡</b>，建 Z 表 ＋ <span class="tcode">SM30</span> 維護視圖；警告用 <span class="kw">MESSAGE ... TYPE 'W'</span>、擋下用 <span class="kw">TYPE 'E'</span>；資料一次撈成內表用 <span class="kw">line_exists( )</span> 判斷，不要在迴圈內 SELECT。</li>
+  </ol>
+</section>

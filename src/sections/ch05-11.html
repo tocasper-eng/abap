@@ -1,0 +1,1044 @@
+<section class="chapter" id="ch05-11" data-title="BC414 資料庫更新程式設計（LUW、SAP 鎖、Update Task）">
+  <h2>第 5-11 章 BC414 資料庫更新程式設計（LUW、SAP 鎖、Update Task）</h2>
+  <p class="lede">BC414 是「寫資料」的課。前面的課程都在讀資料、顯示資料，這一課開始真正改資料庫：ABAP SQL 的 INSERT / UPDATE / MODIFY / DELETE、SAP LUW 與資料庫 LUW 的差別、為什麼資料庫鎖不夠而需要 SAP 邏輯鎖（SE11 鎖物件、ENQUEUE / DEQUEUE、SM12）、怎麼用 <b>Update Task</b>（CALL FUNCTION … IN UPDATE TASK、V1 / V2、SM13）把「使用者對話」和「資料庫更新」拆開，最後是跨程式的 LUW、號碼範圍、變更文件、Object Services 與叢集表。强晟在前言講得最直白：<b>SAP 的業務表關聯極複雜，強烈建議不要直接寫業務表，要盡量透過現有的函數模組、類別或 BAPI 來更新；只有自建的 Z 表，才由我們自己控制一致性</b>——這正是本章所有技術的適用範圍。</p>
+
+  <div class="meta">
+    <div><b>核心 TCODE</b><span class="tcode">SE11</span><span class="tcode">SE37</span><span class="tcode">SE80</span><span class="tcode">SM12</span><span class="tcode">SM13</span><span class="tcode">SM14</span><span class="tcode">SM50</span><span class="tcode">SM58</span><span class="tcode">SNRO</span><span class="tcode">SNUM</span><span class="tcode">SCDO</span><span class="tcode">RZ11</span><span class="tcode">ST22</span><span class="tcode">SHDB</span></div>
+    <div><b>關鍵物件</b>SPFLI、SFLIGHT、SBOOK、ESFLIGHT、ENQUEUE_&lt;鎖物件&gt;、DEQUEUE_&lt;鎖物件&gt;、DEQUEUE_ALL、FLUSH_ENQUEUE、RESET_ENQUEUE、DB_COMMIT、VBLOG、VBHDR、VBMOD、VBDATA、VBERROR、RSM13002、RSM13005、NRIV、NRIVSHADOW、NRIV_DOCU、NUMBER_GET_NEXT、NUMBER_CHECK、NUMBER_GET_INFO、CL_NUMBERRANGE_RUNTIME、CDHDR、CDPOS、PCDHDR、PCDPOS、CDCLS、CHANGEDOCUMENT_*、RSSCD200、CL_OS_SYSTEM、INDX、TPARA、CTU_PARAMS、CX_SY_OPEN_SQL_DB、CL_SYSTEM_TRANSACTION_STATE</div>
+    <div><b>系統欄位</b>sy-subrc、sy-dbcnt、sy-mandt、sy-msgv1（鎖衝突時的鎖定者）、sy-uname、sy-datum、sy-uzeit、sy-tcode</div>
+  </div>
+
+  <h3 id="ch05-11-01">1. 課程定位與教材對照</h3>
+  <p>BC414（Programming Database Updates）接在 <a href="#ch05-1">5-1 章 BC400</a> 之後，是 ABAP 開發者從「會寫報表」跨到「會寫交易」的關鍵課，一般歸為進階概念課（約 300 級）。新版原廠教材在測驗解答中明示，本課內容同時收錄在 TAW11（ABAP Workbench Concepts）集訓課的 Unit 5、Unit 6。本章兩份素材：</p>
+  <ul>
+    <li><b>强晟 2007 自學筆記</b>（121 頁，簡體中文，R/3 4.6～6.20 時代）：六個單元＋附錄；附錄只列了「號碼分配、變更文件、權限檢查、SAP 緩衝、Native SQL、叢集表、SAP 鎖、BAPI 交易模型、COMMIT/ROLLBACK」九個題目，<b>沒有展開</b>。</li>
+    <li><b>SAP 原廠 BC414 Col18</b>（Course Version 18，2022，212 頁，英文）：十個單元，把 2007 版附錄中的號碼範圍、變更文件、Object Services、叢集表都升格成正式單元，並新增樂觀鎖（O / R 模式）與 USING CLIENT 語法。</li>
+  </ul>
+  <table>
+    <thead><tr><th>本章小節</th><th>主題</th><th>强晟筆記（頁）</th><th>原廠 Col18（Unit / Lesson，PDF 頁）</th></tr></thead>
+    <tbody>
+      <tr><td>1</td><td>課程概覽</td><td>第一單元 p4</td><td>Course Overview p7</td></tr>
+      <tr><td>2～4</td><td>ABAP（Open）SQL 更新資料庫</td><td>第二單元 p5–26</td><td>Unit 1 L1 p9–28</td></tr>
+      <tr><td>5</td><td>SAP LUW、DB LUW、主從式架構</td><td>第三單元 p27–34</td><td>Unit 2 L1 p29–40</td></tr>
+      <tr><td>6～7</td><td>SAP 鎖概念、鎖物件與鎖模組</td><td>第四單元 第一、二課 p35–41</td><td>Unit 3 L1 p43–48</td></tr>
+      <tr><td>8</td><td>設定與釋放鎖、鎖參數、鎖容器</td><td>第四單元 第三課 p42–51</td><td>Unit 3 L2 p49–56</td></tr>
+      <tr><td>9</td><td>鎖模式 E / X / S（O / R）、悲觀與樂觀鎖</td><td>p52–56</td><td>Unit 3 L3 p57–66</td></tr>
+      <tr><td>10</td><td>程式內直接更新、PERFORM ON COMMIT</td><td>第五單元 第一課 p57–64</td><td>Unit 4 L1 p77–82</td></tr>
+      <tr><td>11～12</td><td>Update Task 原理、更新模組、更新模式</td><td>第五單元 第二課 p65–79</td><td>Unit 4 L2 p83–96</td></tr>
+      <tr><td>13</td><td>V1 / V2 更新與最佳化</td><td>p80–88</td><td>Unit 4 L3 p97–108</td></tr>
+      <tr><td>14</td><td>跨程式的 LUW 與鎖</td><td>第六單元 第三課 p110–119</td><td>Unit 5 L1 p109–120</td></tr>
+      <tr><td>15</td><td>號碼範圍（Number Range）</td><td>附錄僅列題目 p120</td><td>Unit 6 L1–L2 p121–146</td></tr>
+      <tr><td>16</td><td>變更文件（Change Document）</td><td>附錄僅列題目 p120</td><td>Unit 7 L1 p147–166</td></tr>
+      <tr><td>17</td><td>Object Services（持久化／交易服務）</td><td>—</td><td>Unit 8 L1 p167–180</td></tr>
+      <tr><td>18</td><td>叢集表（EXPORT / IMPORT TO DATABASE）</td><td>附錄僅列題目 p120</td><td>Unit 9 L1 p181–192</td></tr>
+      <tr><td>19</td><td>程式呼叫、ABAP 記憶體與 SAP 記憶體</td><td>第六單元 第一、二課 p89–109</td><td>Unit 10 L1 p193–212</td></tr>
+      <tr><td>20</td><td>S/4HANA 現況與實務總整理</td><td>—</td><td>（本書補充）</td></tr>
+    </tbody>
+  </table>
+  <div class="note"><b>2007 版與 Col18 版的差異重點：</b>① 單元順序調整：2007 版把「程式呼叫與資料傳遞」放在第六單元開頭，新版獨立成最後的 Unit 10；② 新版鎖模式多了 <b>O（Optimistic）</b> 與 <b>R（升級樂觀鎖）</b>，AS ABAP 7.0 EhP2 起提供；③ 新版提到 7.40 SP05 起嚴格模式的 <span class="kw">USING CLIENT</span>；④ 新版補上大量 profile 參數（rdisp/vb_lock_mode、rdisp/vb_v2_start、rdisp/vbdelete、enque/delay_max…）；⑤ 更新模組的介面說明改成「只有 IMPORTING 與（為了相容）TABLES，必須 Pass Value」；⑥ Unit 6～9 是全新單元。本章以新版為骨架、2007 版補充細節。</div>
+  <div class="warn"><b>教材勘誤（本章已修正）：</b>① 强晟筆記 p44 程式碼寫成 <span class="kw">'WUQUEUE_ESFLIGHT'</span>，正確是 <span class="kw">ENQUEUE_ESFLIGHT</span>；② p40 鎖物件圖的鎖參數寫成 CORRID，應為 <b>CARRID</b>；③ p62 那段中英對照的譯文是亂的，原意是「在子程式中用 A 型訊息終止，可以把資料庫回到 SAP LUW 開始前的一致狀態」；④ 原廠 Col18 p100 的 Hint 說「rdisp/vb_lock_mode 設為 hold 時，更新錯誤會刪除鎖」，與 p94 自相矛盾——正確是 <b>hold＝錯誤時保留鎖</b>、預設 <b>release＝錯誤時釋放鎖</b>；⑤ Col18 p116 寫「CALL TRANSACTION … MODE 'S'」覆蓋更新模式，應為 <b>UPDATE 'S'</b>（MODE 是畫面顯示模式）；⑥ Col18 p139 的「NIRV」是 <b>NRIV</b> 之誤。</div>
+
+  <h3 id="ch05-11-02">2. ABAP SQL 更新總覽：Native vs Open、返回碼、權限與用戶端</h3>
+  <p>ABAP 改資料庫有兩條路：</p>
+  <ul>
+    <li><b>Native SQL</b>：直接下資料庫專屬語法，換資料庫就要改程式；只有在 ABAP SQL 做不到時才用。</li>
+    <li><b>Open SQL（7.53 起正名為 ABAP SQL）</b>：資料庫無關，由<b>資料庫介面</b>自動翻成對應 SQL；可以利用應用伺服器上的<b>表格緩衝</b>（在 SE11 技術設定開啟後，讀取自動走緩衝），降低資料庫負載。</li>
+  </ul>
+  <p>四個觀念一次記住：</p>
+  <ol>
+    <li><b>只有 DML、沒有 DDL</b>：ABAP SQL 只做資料操作（SELECT / INSERT / UPDATE / MODIFY / DELETE），建表、改表結構屬於 ABAP 字典（見 <a href="#ch01-2">1-2 章</a>、<a href="#ch05-16">5-16 章 BC430</a>）。</li>
+    <li><b>sy-subrc 與 sy-dbcnt</b>：所有 SQL 都回傳 sy-subrc（0＝成功，其餘＝有問題），sy-dbcnt＝實際受影響筆數。一次處理多筆（集合操作）通常比迴圈單筆快，<b>例外是 MODIFY</b>（大量 MODIFY 要逐筆判斷存在與否）。</li>
+    <li><b>ABAP SQL 不做自動權限檢查</b>：要自己寫 <span class="kw">AUTHORITY-CHECK</span>。</li>
+    <li><b>用戶端（集團）自動處理</b>：不寫任何用戶端附加，資料庫介面會自動加上 <span class="kw">WHERE mandt = sy-mandt</span>。要跨用戶端，舊寫法是 <span class="kw">CLIENT SPECIFIED</span>（並自己在 WHERE 寫 mandt）；新寫法是 <span class="kw">USING CLIENT</span>（教材註明 7.40 SP05 起、嚴格模式）。</li>
+  </ol>
+  <p>LIKE 遮罩：<span class="kw">'_'</span> 代表一個字元、<span class="kw">'%'</span> 代表任意長度字串（SQL 標準）。</p>
+
+  <pre><code class="abap">*&amp;---------------------------------------------------------------*
+*&amp; 更新前的標準動作：權限 → 更新 → 判斷 sy-subrc / sy-dbcnt
+*&amp;---------------------------------------------------------------*
+PARAMETERS p_carrid TYPE s_carr_id OBLIGATORY.
+
+" ① ABAP SQL 不會替你檢查權限，一定要自己做（02＝變更）
+AUTHORITY-CHECK OBJECT 'S_CARRID'
+  ID 'CARRID' FIELD p_carrid
+  ID 'ACTVT'  FIELD '02'.
+IF sy-subrc &lt;&gt; 0.
+  MESSAGE |沒有航空公司 { p_carrid } 的變更權限| TYPE 'E'.
+ENDIF.
+
+" ② 集合更新：同一批資料的相同欄位做相同修改
+UPDATE spfli
+   SET cityto    = 'ROME',
+       countryto = 'IT'
+ WHERE carrid = @p_carrid.
+
+" ③ 0＝至少一筆被改；4＝一筆都沒改到
+IF sy-subrc = 0.
+  MESSAGE |已更新 { sy-dbcnt } 筆航線| TYPE 'S'.
+ELSE.
+  MESSAGE |找不到 { p_carrid } 的航線，沒有任何資料被更新| TYPE 'I'.
+ENDIF.
+
+" ④ 跨用戶端：新語法 USING CLIENT（舊 CLIENT SPECIFIED 已過時）
+SELECT carrid, connid, cityfrom, cityto
+  FROM spfli USING CLIENT '200'
+  WHERE carrid = @p_carrid
+  ORDER BY carrid, connid                       "HANA 沒有預設排序，要自己排
+  INTO TABLE @DATA(lt_spfli_200).</code></pre>
+
+  <div class="warn"><b>CLIENT SPECIFIED 的地雷：</b>寫了 <span class="kw">CLIENT SPECIFIED</span> 卻沒在 WHERE 指定 mandt，就會<b>存取所有用戶端</b>的資料——DELETE 時就是跨集團清表。S/4HANA 新程式一律改用 <span class="kw">USING CLIENT</span>；7.54 起另有 <span class="kw">USING CLIENTS IN</span>／<span class="kw">USING ALL CLIENTS</span>（版本門檻 7.54），需要跨多個用戶端時再用，而且要經過審查。</div>
+
+  <h3 id="ch05-11-03">3. INSERT / UPDATE / MODIFY / DELETE：單筆、多筆與返回碼</h3>
+  <p>四個指令都有「單筆（工作區）」「多筆（內表）」「條件（WHERE）」三種型態。工作區與內表的結構<b>必須與資料庫表相同</b>；工作區中的 mandt 欄位只有在 CLIENT SPECIFIED（或 USING CLIENT）時才會被採用，否則一律用登入用戶端。也可以對 <b>維護狀態為「讀取與變更」、且只含單一表欄位</b>的資料庫 View 做寫入。</p>
+  <table>
+    <thead><tr><th>指令</th><th>型態</th><th>sy-subrc = 0</th><th>sy-subrc = 4</th><th>重點</th></tr></thead>
+    <tbody>
+      <tr><td rowspan="2"><b>INSERT</b></td><td>單筆 <span class="kw">INSERT dbtab FROM @wa</span>／<span class="kw">INSERT INTO dbtab VALUES @wa</span></td><td>已新增</td><td>相同主鍵已存在</td><td>兩種語法等價</td></tr>
+      <tr><td>多筆 <span class="kw">INSERT dbtab FROM TABLE @itab</span></td><td>全部新增</td><td>（僅加 ACCEPTING DUPLICATE KEYS 時）有重複鍵被略過，其餘照寫</td><td><b>沒加 ACCEPTING DUPLICATE KEYS 時，只要一筆重複就執行時期錯誤＋整批回滾</b></td></tr>
+      <tr><td rowspan="3"><b>UPDATE</b></td><td>單筆 <span class="kw">UPDATE dbtab FROM @wa</span></td><td>已變更</td><td>鍵不存在</td><td>以 wa 的主鍵找紀錄，<b>整筆覆蓋</b>（包含你沒想改的欄位）</td></tr>
+      <tr><td>條件 <span class="kw">UPDATE dbtab SET … WHERE …</span></td><td>至少改到一筆</td><td>一筆都沒改</td><td>只改 SET 列出的欄位；可做 f = g、f = f + g、f = f - g</td></tr>
+      <tr><td>多筆 <span class="kw">UPDATE dbtab FROM TABLE @itab</span></td><td>全部變更</td><td>至少一筆不存在（其餘仍被改）</td><td>sy-dbcnt＝實際變更筆數</td></tr>
+      <tr><td><b>MODIFY</b></td><td>單筆／多筆</td><td>全部處理（有就改、沒有就新增）</td><td>至少一筆無法處理（例如新增會違反唯一次索引）</td><td>SAP 特有，等於 UPDATE＋INSERT</td></tr>
+      <tr><td rowspan="3"><b>DELETE</b></td><td>單筆 <span class="kw">DELETE dbtab FROM @wa</span></td><td>已刪除</td><td>不存在</td><td>wa 只需填主鍵</td></tr>
+      <tr><td>條件 <span class="kw">DELETE FROM dbtab WHERE …</span></td><td>至少刪一筆</td><td>一筆都沒刪</td><td>清空整表（本用戶端）：<span class="kw">WHERE &lt;任一欄位&gt; LIKE '%'</span></td></tr>
+      <tr><td>多筆 <span class="kw">DELETE dbtab FROM TABLE @itab</span></td><td>全部刪除</td><td>至少一筆刪不掉（其餘照刪）</td><td>內表只需填主鍵</td></tr>
+    </tbody>
+  </table>
+
+  <pre><code class="abap">*&amp;---------------------------------------------------------------*
+*&amp; BC414 Unit 1 範例改寫：S/4HANA 1809+ ABAP SQL 寫法
+*&amp;---------------------------------------------------------------*
+" ── 單筆新增：VALUE #( ) 直接組工作區，主機變數加 @
+DATA(ls_spfli) = VALUE spfli( carrid    = 'LH'
+                              connid    = '0007'
+                              cityfrom  = 'FRANKFURT'
+                              cityto    = 'SINGAPORE'
+                              countryfr = 'DE'
+                              countryto = 'SG' ).
+INSERT spfli FROM @ls_spfli.
+IF sy-subrc = 4.
+  MESSAGE |航線 { ls_spfli-carrid } { ls_spfli-connid } 已存在| TYPE 'I'.
+ENDIF.
+
+" ── 多筆新增：允許重複鍵（重複的略過、其餘寫入、sy-subrc = 4）
+DATA lt_spfli TYPE STANDARD TABLE OF spfli WITH EMPTY KEY.
+lt_spfli = VALUE #( ( carrid = 'LH' connid = '0007' cityto = 'SINGAPORE' )
+                    ( carrid = 'LH' connid = '0008' cityto = 'BANGKOK' ) ).
+INSERT spfli FROM TABLE @lt_spfli ACCEPTING DUPLICATE KEYS.
+DATA(lv_inserted) = sy-dbcnt.                 "成功寫入的筆數
+
+" ── 單筆「只改部分欄位」：用 SET，不要用 FROM wa 整筆覆蓋
+UPDATE spfli
+   SET cityto    = 'ROME',
+       countryto = 'IT'
+ WHERE carrid = 'LH'
+   AND connid = '0010'.                        "單筆變更要寫滿所有主鍵
+
+" ── 數值欄位在資料庫端運算：不必先讀再寫，避免 lost update
+UPDATE sflight
+   SET seatsocc = seatsocc + 1
+ WHERE carrid = 'LH' AND connid = '0400' AND fldate = '20261001'.
+
+" ── 讀出 → 在內表修改 → 整批回寫
+SELECT * FROM spfli
+  WHERE carrid = 'LH'
+  INTO TABLE @DATA(lt_lh).
+LOOP AT lt_lh ASSIGNING FIELD-SYMBOL(&lt;ls_lh&gt;).
+  &lt;ls_lh&gt;-distance = &lt;ls_lh&gt;-distance * '1.01'.
+ENDLOOP.
+UPDATE spfli FROM TABLE @lt_lh.
+
+" ── MODIFY：有就改、沒有就新增
+MODIFY spfli FROM TABLE @lt_spfli.
+
+" ── 刪除：單筆（寫滿主鍵）、條件、內表
+DELETE FROM spfli WHERE carrid = 'LH' AND connid = '0007'.
+DELETE FROM spfli WHERE carrid = 'AZ'.
+DATA lt_del TYPE STANDARD TABLE OF spfli WITH EMPTY KEY.
+lt_del = VALUE #( ( carrid = 'LH' connid = '0008' ) ).   "內表只需填主鍵
+DELETE spfli FROM TABLE @lt_del.</code></pre>
+
+  <div class="tip"><b>UPDATE … FROM wa 會整筆覆蓋：</b>如果 wa 是自己 VALUE #( ) 組出來的，沒填的欄位會變成初始值寫回資料庫。只想改兩個欄位，請用 <span class="kw">SET … WHERE</span>。而「讀出來 +1 再寫回」在併發時會掉資料（lost update），用 <span class="kw">SET f = f + 1</span> 讓資料庫做運算，或先上 SAP 鎖（第 7～9 節）。</div>
+  <div class="warn"><b>列舉優於區間（Casper 實務經驗 2）：</b>DELETE / UPDATE 的 WHERE 條件用 <span class="kw">BETWEEN</span> 或 <span class="kw">IN @range</span> 時，比的是<b>字典序</b>不是業務語意。號碼段不連續、ALPHA 前導零、編碼規則改過，就會多刪或少改——而且 DML 沒有「預覽」。批次更新前，先用同一個 WHERE 做 SELECT COUNT 核對筆數，能列舉具體鍵值就用多筆 EQ。</div>
+
+  <h3 id="ch05-11-04">4. 回復資料庫狀態：ROLLBACK WORK、A／X 訊息與例外處理</h3>
+  <p>任何更新 SQL 的 sy-subrc 不是 0，都應該讓資料庫回到更新前的狀態，也就是<b>資料庫回滾（DB Rollback）</b>，撤銷目前資料庫 LUW 內的所有變更。兩種做法：</p>
+  <ul>
+    <li><b>送出終止訊息（A 或 X 型）</b>：回滾＋<b>終止程式</b>。E、W、I 型訊息只會出現對話，<b>不會</b>回滾。</li>
+    <li><b>ROLLBACK WORK</b>：回滾但<b>不終止程式</b>。注意：程式上下文（全域變數、函數群組資料、類別屬性）<b>不會被重置</b>，要自己清。</li>
+  </ul>
+  <pre><code class="abap">*&amp;---------------------------------------------------------------*
+*&amp; 一個 LUW 裡寫兩張表：任何一步失敗就整批回滾
+*&amp;---------------------------------------------------------------*
+CLASS lcl_booking DEFINITION FINAL.
+  PUBLIC SECTION.
+    METHODS save
+      IMPORTING is_book    TYPE sbook
+      RETURNING VALUE(rv_ok) TYPE abap_bool.
+ENDCLASS.
+
+CLASS lcl_booking IMPLEMENTATION.
+  METHOD save.
+    TRY.
+        INSERT sbook FROM @is_book.
+        IF sy-subrc &lt;&gt; 0.
+          ROLLBACK WORK.                       "4＝訂位號碼重複
+          RETURN.
+        ENDIF.
+
+        UPDATE sflight
+           SET seatsocc = seatsocc + 1
+         WHERE carrid = @is_book-carrid
+           AND connid = @is_book-connid
+           AND fldate = @is_book-fldate.
+        IF sy-subrc &lt;&gt; 0.
+          ROLLBACK WORK.                       "航班不存在：連訂位一起撤銷
+          RETURN.
+        ENDIF.
+
+        COMMIT WORK.
+        rv_ok = abap_true.
+
+      CATCH cx_sy_open_sql_db INTO DATA(lx_db).  "例如整批 INSERT 重複鍵
+        ROLLBACK WORK.
+        MESSAGE lx_db-&gt;get_text( ) TYPE 'I'.
+    ENDTRY.
+  ENDMETHOD.
+ENDCLASS.</code></pre>
+  <div class="note">原廠的「隱式回滾」清單：① 執行時期錯誤（例如除以零）；② 對話步驟中送出終止訊息，通常是 A / X 型，但某些情況下 I、W、E 也會變成終止訊息（例如在畫面的 PBO 送 E 訊息）。</div>
+
+  <h3 id="ch05-11-05">5. SAP LUW 與資料庫 LUW：隱式 COMMIT 是一切問題的根源</h3>
+  <p><b>SAP LUW</b>（Logical Unit of Work，作業邏輯單元）＝一組邏輯上屬於一體的對話步驟，它們的資料庫變更要<b>全部成功或全部不做</b>（all or nothing）。一個業務流程通常不只一個 SAP LUW——從接單到開發票，會切成好幾段，每段一個 SAP LUW。</p>
+  <p><b>資料庫 LUW</b>＝從上一次 DB Commit 到下一次 DB Commit 之間的所有變更；在 Commit 之前可以 Rollback，Commit 之後就「封存」，不能再撤銷。</p>
+  <p>問題在於 AS ABAP 的<b>三層主從架構</b>（資料庫伺服器／應用伺服器／展示伺服器）：少數工作程序（work process）服務大量使用者；每處理完一個對話步驟，使用者與程式上下文就被 <b>roll out</b>，工作程序交給別人用。這讓系統很有擴充性（比「胖用戶端」架構更好，資料庫連線數遠少於使用者數），代價是：<b>每次釋放工作程序都會觸發一次隱式的 DB Commit</b>。</p>
+  <table>
+    <thead><tr><th>類型</th><th>觸發情境</th></tr></thead>
+    <tbody>
+      <tr><td><b>顯式 DB Commit</b></td><td><span class="kw">COMMIT WORK</span>；呼叫函數 <span class="kw">DB_COMMIT</span></td></tr>
+      <tr><td><b>隱式 DB Commit</b>（等待情境）</td><td>對話步驟結束（送出畫面）；同步或非同步 RFC 呼叫（或被呼叫的函數結束）；<span class="kw">WAIT</span> 中斷工作程序；在 LUW 中間送出 I / W / E 對話訊息；<span class="kw">CALL TRANSACTION</span>、<span class="kw">LEAVE TO TRANSACTION</span>（或被呼叫交易結束）；<span class="kw">SUBMIT</span>（或被呼叫程式結束）</td></tr>
+      <tr><td><b>顯式 DB Rollback</b></td><td><span class="kw">ROLLBACK WORK</span></td></tr>
+      <tr><td><b>隱式 DB Rollback</b></td><td>執行時期錯誤；終止訊息（A / X，特定情境的 I / W / E）</td></tr>
+    </tbody>
+  </table>
+  <p>結論：<b>屬於同一個 SAP LUW 的變更，不能分散在不同的對話步驟裡直接寫進資料庫</b>，因為它們不在同一個 DB LUW。要把跨多個畫面的使用者輸入合成一個 SAP LUW，只有三條路：① 全部集中在最後一個對話步驟寫（第 10 節）；② PERFORM ON COMMIT（第 10 節）；③ Update Task（第 11～13 節）。</p>
+  <pre><code class="abap">*&amp;---------------------------------------------------------------*
+*&amp; 反例：LUW 中間插了一個「會等待」的動作，前半段就被偷偷 commit 了
+*&amp;---------------------------------------------------------------*
+INSERT sbook FROM @ls_book.                    "(1) 寫了訂位
+
+" 在 LUW 中間做同步 RFC —— 觸發隱式 DB Commit，(1) 已經落地！
+CALL FUNCTION 'Z_CHECK_CREDIT' DESTINATION 'CRM_SYSTEM'
+  EXPORTING iv_customer = ls_book-customid
+  EXCEPTIONS communication_failure = 1 system_failure = 2 OTHERS = 3.
+
+IF sy-subrc &lt;&gt; 0.
+  ROLLBACK WORK.                               "只能撤銷 RFC 之後的變更
+ENDIF.                                         "(1) 的訂位已經回不去了
+
+" ── 正解：先做所有檢查（RFC、彈窗），最後才在同一個步驟寫入
+"    或把寫入包進更新模組（CALL FUNCTION ... IN UPDATE TASK），
+"    RFC、畫面切換都不會影響尚未 COMMIT WORK 的更新請求</code></pre>
+  <div class="tip">除錯時開著 Debugger 單步執行也是一種「等待」：在 S/4HANA 的 Debugger 中停留在 SQL 之後，系統在某些情況下也會 commit（Debugger 會跳出提示）。想驗證回滾邏輯，請用 ABAP Unit 或測試資料，不要靠在正式資料上單步跑。</div>
+
+  <h3 id="ch05-11-06">6. SAP 鎖概念：為什麼資料庫鎖不夠</h3>
+  <p>多個使用者競爭同一資源時必須同步存取以保護一致性。教材的例子是航班訂位：查空位、確認座位時，<b>剩餘座位數</b>這種關鍵資料不能在處理中被別人改掉。鎖的原則是：<b>存取關鍵資料前先要鎖，用完盡快放</b>，不要不必要地擋住別人。</p>
+  <p><b>資料庫鎖</b>：DBMS 會實體鎖住「為了更新而讀取」的列（<span class="kw">SELECT … FOR UPDATE</span>），執行 INSERT / UPDATE / MODIFY / DELETE 時也會自動加鎖；但<b>每次 DB Commit 都會釋放該 DB LUW 的所有鎖</b>。在 AS ABAP 裡每換一個畫面就隱式 commit 一次，所以跨多畫面收集資料、又要在整段期間鎖住紀錄時，資料庫鎖完全不夠用。</p>
+  <p><b>SAP 邏輯鎖</b>：AS ABAP 在應用伺服器層級維護一張<b>全系統唯一的鎖表（lock table）</b>，由 <b>Enqueue 工作程序／Enqueue Server（鎖伺服器）</b>管理，所有伺服器的鎖請求都送到這裡。鎖表放在鎖伺服器的記憶體中；原廠建議使用獨立鎖伺服器搭配另一台機器上的<b>鎖複寫伺服器</b>做高可用（S/4HANA 1809 起預設為 Standalone Enqueue Server 2，ENSA2）。邏輯鎖還能鎖<b>資料庫中還不存在</b>的紀錄——新增資料時資料庫鎖幫不上忙，這時就靠它。</p>
+  <pre><code class="abap">*&amp;---------------------------------------------------------------*
+*&amp; 資料庫鎖：SELECT ... FOR UPDATE 只能撐到下一次 DB Commit
+*&amp;---------------------------------------------------------------*
+SELECT SINGLE FOR UPDATE carrid, connid, fldate, seatsmax, seatsocc
+  FROM sflight
+  WHERE carrid = @lv_carrid
+    AND connid = @lv_connid
+    AND fldate = @lv_fldate
+  INTO @DATA(ls_flight).
+
+IF sy-subrc = 0 AND ls_flight-seatsocc &lt; ls_flight-seatsmax.
+  UPDATE sflight SET seatsocc = seatsocc + 1
+    WHERE carrid = @lv_carrid AND connid = @lv_connid AND fldate = @lv_fldate.
+ENDIF.
+COMMIT WORK.        "DB 鎖在這裡（或任何隱式 commit）就消失
+
+" 如果中間要 CALL SCREEN 讓使用者確認，DB 鎖在送出畫面那一刻就沒了
+" → 跨畫面的保護一定要用 SAP 邏輯鎖（ENQUEUE_...）</code></pre>
+  <div class="warn"><b>SAP 鎖是「君子協定」：</b>它只擋得住<b>也呼叫同一組 ENQUEUE 的程式</b>。直接 UPDATE 資料庫的程式完全不理會鎖表。所以原廠一再強調：所有會改這張表的程式都必須遵守同一套鎖物件與「鎖→讀→改→解鎖」順序。</div>
+
+  <h3 id="ch05-11-07">7. 鎖物件與鎖模組：SE11 建立、ENQUEUE_ / DEQUEUE_</h3>
+  <p>鎖物件在 <span class="tcode">SE11</span>（ABAP 字典 → Lock Object）維護，<b>客製鎖物件名稱必須以 EY 或 EZ 開頭</b>（標準的以 E 開頭，例如訓練用的 <b>ESFLIGHT</b>）。建立時指定：</p>
+  <ul>
+    <li><b>主表（Primary / Basis table）</b>：要鎖的表，例如 SFLIGHT。</li>
+    <li><b>次表（Secondary table）</b>：與主表有外鍵關係的表，例如 SBOOK。一個含 SFLIGHT（主）＋SBOOK（次）的鎖物件可以「一次鎖住一個航班及其所有訂位」。</li>
+    <li><b>鎖模式</b>：每張表的預設鎖模式（E / X / S），呼叫時可覆蓋。</li>
+    <li><b>鎖參數（Lock Parameters）</b>：系統依表的主鍵欄位自動建議名稱（可改），就是將來鎖模組的輸入參數。以 ESFLIGHT 為例：MANDT、CARRID、CONNID、FLDATE。</li>
+  </ul>
+  <p>鎖物件<b>啟用成功</b>後，系統自動產生兩個函數模組：<span class="kw">ENQUEUE_&lt;鎖物件名&gt;</span>（設鎖）與 <span class="kw">DEQUEUE_&lt;鎖物件名&gt;</span>（解鎖），可在 SE37 或 SE11 的「Goto → Lock modules」檢視（詳見 <a href="#ch01-2">1-2 章 資料字典</a>）。</p>
+  <pre><code class="abap">*&amp;---------------------------------------------------------------*
+*&amp; 鎖模組的標準呼叫樣板（ESFLIGHT：SFLIGHT 為主表）
+*&amp;---------------------------------------------------------------*
+CALL FUNCTION 'ENQUEUE_ESFLIGHT'
+  EXPORTING
+    mode_sflight   = 'E'                "覆蓋鎖物件定義的預設模式
+    carrid         = lv_carrid
+    connid         = lv_connid
+    fldate         = lv_fldate
+    _scope         = '1'                "1＝程式自己解鎖（直接更新時用）
+    _wait          = abap_false
+  EXCEPTIONS
+    foreign_lock   = 1                  "別人已經鎖住
+    system_failure = 2                  "鎖伺服器問題
+    OTHERS         = 3.
+
+CASE sy-subrc.
+  WHEN 0.
+    " 取得鎖 → 此時才讀資料
+  WHEN 1.
+    " sy-msgv1 帶的是目前持有鎖的使用者
+    MESSAGE |航班 { lv_carrid } { lv_connid } 正由 { sy-msgv1 } 處理中，請稍後再試| TYPE 'E'.
+  WHEN OTHERS.
+    MESSAGE |鎖定失敗（系統錯誤 { sy-subrc }）| TYPE 'E'.
+ENDCASE.
+
+" ... 讀取、修改、寫入 ...
+
+" DEQUEUE 沒有例外；解一個沒鎖的紀錄也不會怎樣
+CALL FUNCTION 'DEQUEUE_ESFLIGHT'
+  EXPORTING
+    mode_sflight = 'E'
+    carrid       = lv_carrid
+    connid       = lv_connid
+    fldate       = lv_fldate
+    _scope       = '1'.</code></pre>
+  <p><b>鎖會在下列情況自動釋放</b>：程式送出 A 或 X 型訊息、執行 <span class="kw">LEAVE PROGRAM</span>、<span class="kw">LEAVE TO TRANSACTION</span>、使用者在命令列輸入 <span class="kw">/n</span>。另外 <span class="kw">DEQUEUE_ALL</span> 會釋放目前程式設定的所有鎖。新版教材補一句：因為鎖會在程式結束時自動釋放、或交給更新程式處理，所以實務上 DEQUEUE 其實「很少用到」——但在直接更新（inline update）的程式裡，自己解鎖仍是好習慣。</p>
+  <div class="tip"><b>SM12</b> 是鎖表監控：可看到使用者、用戶端、鎖物件（表名）、鎖引數、鎖模式、時間。除錯時的經典動作是開兩個視窗（外部階段），第一個鎖住後，到 <span class="tcode">SM12</span> 看鎖引數長什麼樣子；遇到當機遺留的鎖，也是在 SM12 由 Basis 手動刪除（刪之前先確認該使用者真的沒在處理）。</div>
+
+  <h3 id="ch05-11-08">8. 鎖引數與 ENQUEUE 參數：泛型鎖、_SCOPE、_WAIT、_COLLECT、鎖容器</h3>
+  <p><b>鎖引數（Lock Argument）</b>是鎖條目的核心，由所有鎖參數的值組成，決定哪些列被鎖。規則：</p>
+  <ul>
+    <li>鎖參數<b>沒傳或傳初始值</b>＝<b>萬用字元（generic）</b>：鎖住「其他參數條件相符的所有列」。例如只傳 CARRID = 'LH'，整個 LH 的所有航班都被鎖。</li>
+    <li>要鎖「欄位值真的是初始值」的列，改傳 <span class="kw">x_&lt;參數名&gt; = 'X'</span>（例如 x_connid）。</li>
+    <li><b>用戶端參數例外</b>：不傳＝只鎖目前用戶端（sy-mandt）；傳特定用戶端＝鎖該用戶端；<b>傳 SPACE＝鎖所有用戶端</b>。</li>
+  </ul>
+  <table>
+    <thead><tr><th>參數</th><th>意義</th></tr></thead>
+    <tbody>
+      <tr><td><span class="kw">mode_&lt;表名&gt;</span></td><td>覆蓋鎖物件中該表的預設鎖模式（E / X / S / O / R）</td></tr>
+      <tr><td><span class="kw">x_&lt;鎖參數&gt;</span></td><td>把初始值當成「真的初始值」而非萬用字元</td></tr>
+      <tr><td><span class="kw">_scope</span></td><td><b>1</b>＝鎖屬於程式，只能由程式自己刪（直接更新用）；<b>2（預設）</b>＝鎖在 COMMIT WORK 時交給更新程式，由更新結束後自動刪（Update Task 用）；<b>3</b>＝設兩個鎖，一個留程式、一個交給更新程式（對同一筆紀錄做「部分更新」後還要繼續鎖著做下一次部分更新時用）</td></tr>
+      <tr><td><span class="kw">_wait</span></td><td>第一次失敗時是否重試；重試次數／時間由 profile 參數 <b>enque/delay_max</b>（預設 5）決定（2007 筆記寫成參數 delaymax）</td></tr>
+      <tr><td><span class="kw">_collect</span></td><td>= 'X' 時先把鎖請求存進本地<b>鎖容器</b>，稍後一次送出</td></tr>
+    </tbody>
+  </table>
+  <p><b>鎖容器</b>：每次向鎖管理員請求都是一次通訊，鎖很多物件時通訊次數就多。呼叫鎖模組時帶 <span class="kw">_collect = 'X'</span> 先收集，再用 <span class="kw">FLUSH_ENQUEUE</span> 一次送出：全部成功則清空容器；<b>只要一個鎖失敗就觸發 FOREIGN_LOCK，而且容器內的鎖一個都不會設</b>，容器內容保留供下次重試；用 <span class="kw">RESET_ENQUEUE</span> 清空容器。</p>
+  <pre><code class="abap">*&amp;---------------------------------------------------------------*
+*&amp; 鎖容器：多個航班「全有或全無」地一次上鎖
+*&amp;---------------------------------------------------------------*
+" 先排序：所有程式都用相同順序請求鎖，降低互相等待的機率
+SORT lt_flights BY carrid connid fldate.
+
+LOOP AT lt_flights INTO DATA(ls_flt).
+  CALL FUNCTION 'ENQUEUE_ESFLIGHT'
+    EXPORTING
+      mode_sflight = 'E'
+      carrid       = ls_flt-carrid        "三個鍵都給滿 → 精確鎖，不是泛型鎖
+      connid       = ls_flt-connid
+      fldate       = ls_flt-fldate
+      _collect     = abap_true            "只放進本地容器，尚未送出
+    EXCEPTIONS
+      OTHERS       = 1.
+ENDLOOP.
+
+CALL FUNCTION 'FLUSH_ENQUEUE'           "一次送給 Enqueue Server
+  EXCEPTIONS
+    foreign_lock   = 1
+    system_failure = 2
+    OTHERS         = 3.
+IF sy-subrc &lt;&gt; 0.
+  CALL FUNCTION 'RESET_ENQUEUE'.        "放棄這批請求，清空容器
+  MESSAGE |至少一個航班被 { sy-msgv1 } 鎖住，整批未鎖定| TYPE 'E'.
+ENDIF.</code></pre>
+  <div class="warn"><b>泛型鎖＝變相的「區間」：</b>少傳一個鎖參數，就等於鎖住一整段範圍，其他人全部被 FOREIGN_LOCK 擋下，SM12 會看到鎖引數裡的「*」。這和 Casper 經驗 2「列舉優於區間」是同一件事：要鎖什麼就把鍵值列舉清楚，別讓初始值替你決定範圍。</div>
+
+  <h3 id="ch05-11-09">9. 鎖模式 E / X / S / O / R 與悲觀、樂觀鎖模式</h3>
+  <table>
+    <thead><tr><th>模式</th><th>名稱</th><th>用途</th><th>同一鍵可並存</th></tr></thead>
+    <tbody>
+      <tr><td><b>S</b></td><td>Shared（共用鎖）</td><td>只顯示、不打算改，但要確保顯示期間<b>別人不能改</b>（例：報價顯示給客戶考慮期間，價格不能變）</td><td>多個 S（及 O）；不能再加任何排他鎖</td></tr>
+      <tr><td><b>E</b></td><td>Exclusive, cumulative（排他、可累積）</td><td>要改資料（例：訂位時鎖住航班，避免最後一個座位被賣兩次）</td><td>只能一個；同一程式可重複取得（累積）</td></tr>
+      <tr><td><b>X</b></td><td>Exclusive, non-cumulative（排他、不可累積）</td><td>要改資料，而且連自己程式的其他功能也不能再鎖（例：同一航班只能在一個對話中編輯）</td><td>只能一個；自己也不能再鎖</td></tr>
+      <tr><td><b>O</b></td><td>Optimistic（樂觀鎖，7.0 EhP2 起）</td><td>以「變更模式」顯示、可能會改；不阻擋其他人也進入變更模式</td><td>多個 O（及 S）；排他鎖只能由一人升級取得</td></tr>
+      <tr><td><b>R</b></td><td>（升級用）</td><td>把自己的 O 鎖升級為 E 鎖；成功時會刪除別人在同一物件上的 O 鎖</td><td>—</td></tr>
+    </tbody>
+  </table>
+  <p><b>從其他程式看（不同程式實例／不同使用者）</b>：已有 E 或 X → 拒絕任何新鎖；已有 S 或 O → 允許其他 S / O，拒絕排他鎖。强晟在 p53 註記「教材文字說共用鎖會被拒絕，依投影片應是文字錯誤」——他的判斷正確，新版教材也已寫成「S 允許其他 S」。</p>
+  <p><b>從同一程式看（累積）</b>：已有 E → 可再加 E、O、S，拒絕 X；已有 X → 拒絕任何鎖；已有 S 或 O → 自己可再加 S / O，若<b>沒有別人</b>持有 S / O，還可再加 E；只要已有任何鎖，X 一律設不上。</p>
+  <pre><code class="abap">*&amp;---------------------------------------------------------------*
+*&amp; 樂觀鎖模式（AS ABAP 7.0 EhP2+）：顯示用 O，存檔前升級 R
+*&amp;---------------------------------------------------------------*
+" ── 第一階段：以變更模式顯示
+CALL FUNCTION 'ENQUEUE_ESFLIGHT'
+  EXPORTING mode_sflight = 'O'
+            carrid = lv_carrid connid = lv_connid fldate = lv_fldate
+  EXCEPTIONS foreign_lock = 1 OTHERS = 2.   "別人已持有 E 鎖才會失敗
+IF sy-subrc = 0.
+  SELECT SINGLE * FROM sflight
+    WHERE carrid = @lv_carrid AND connid = @lv_connid AND fldate = @lv_fldate
+    INTO @DATA(ls_sflight).
+ENDIF.
+
+" ... 使用者慢慢改畫面上的資料（O 鎖不擋別人進變更模式）...
+
+" ── 第二階段：按下存檔，嘗試把 O 升級成排他鎖
+CALL FUNCTION 'ENQUEUE_ESFLIGHT'
+  EXPORTING mode_sflight = 'R'
+            carrid = lv_carrid connid = lv_connid fldate = lv_fldate
+  EXCEPTIONS foreign_lock = 1 OTHERS = 2.
+IF sy-subrc &lt;&gt; 0.
+  " 別人先升級了（你的 O 鎖已被刪），或有人持有 S 鎖
+  MESSAGE |資料已被 { sy-msgv1 } 修改，請重新讀取後再變更| TYPE 'E'.
+ENDIF.
+UPDATE sflight FROM @ls_sflight.
+COMMIT WORK.
+CALL FUNCTION 'DEQUEUE_ESFLIGHT'
+  EXPORTING mode_sflight = 'E'
+            carrid = lv_carrid connid = lv_connid fldate = lv_fldate.</code></pre>
+  <p><b>傳統悲觀鎖模式</b>四步驟（新舊教材一致）：<b>① 設 E 鎖 → ② 鎖成功才從資料庫讀最新資料 → ③ 修改並寫回資料庫 → ④ 解鎖</b>。這個順序保證變更全程在鎖保護下，也保證讀到的是別的程式「一致存檔後」的資料。樂觀鎖不能防止外部變更，但能<b>偵測</b>變更；兩種模式的程式可以並存，不必一次全部改寫。</p>
+  <div class="warn"><b>錯誤用法：先讀再鎖。</b>如果先 SELECT 再 ENQUEUE，就算鎖成功了，你讀到並顯示給使用者的資料可能已被剛解鎖的別人改過——使用者等於在過期資料上輸入。「鎖→讀→改→解鎖」的順序一步都不能對調。</div>
+
+  <h3 id="ch05-11-10">10. 在應用程式內直接更新與 PERFORM ON COMMIT</h3>
+  <p><b>直接更新（Direct / Inline Update）</b>：在對話程式本身執行 SQL。因為隱式 commit，所有資料庫更新必須<b>集中在單一對話步驟（通常是最後一個）</b>，這是確保 all-or-nothing 的唯一方法；要寫入的資料得一直保存在全域程式資料裡，寫入的是最後一個對話步驟時的內容。鎖則由程式自己設、自己放：<b>E 鎖 → 讀取顯示 → 寫資料庫 → 解鎖（DEQUEUE_&lt;鎖物件&gt; 或 DEQUEUE_ALL）</b>。</p>
+  <p><b>延遲子程式 PERFORM &lt;form&gt; ON COMMIT</b>：只登錄、不執行，等遇到下一個 COMMIT WORK 才依序執行所有登錄的子程式，並觸發 DB Commit。規則：</p>
+  <ul>
+    <li>同一個子程式在一個 SAP LUW 中<b>只執行一次</b>，重複登錄不會出錯、也只跑一次。</li>
+    <li>4.6 起，<b>巢狀的 PERFORM ON COMMIT</b>（在 ON COMMIT 子程式裡再登錄）會執行時期錯誤。</li>
+    <li>子程式<b>不能有介面（參數）</b>，只能用全域資料，而且用的是「執行當下」的值，不是登錄當下的值。</li>
+    <li>出錯時在子程式中送 A 型訊息終止，資料庫會回到 SAP LUW 開始前的一致狀態。</li>
+    <li>ROLLBACK WORK 會丟棄所有已登錄的 ON COMMIT 子程式。</li>
+  </ul>
+  <p>原廠整理的直接更新優缺點：<b>概念簡單、實作快</b>；但使用者必須等更新完成、對話工作程序不會釋放、<b>沒有錯誤日誌</b>、多個對話程序同時打資料庫造成資料庫效能差、LUW 與鎖都得自己在程式裡做、系統功能幫不上忙。所以只適合<b>「輕量」LUW</b>：只更新單筆，或不在乎效能的情境。</p>
+  <pre><code class="abap">*&amp;---------------------------------------------------------------*
+*&amp; 直接更新的標準骨架（Dialog 的最後一個步驟 → 存檔）
+*&amp;---------------------------------------------------------------*
+CLASS lcl_flight_editor DEFINITION FINAL.
+  PUBLIC SECTION.
+    METHODS constructor IMPORTING is_key TYPE sflight.
+    METHODS lock_and_read RAISING cx_abap_invalid_value.
+    METHODS save.
+  PRIVATE SECTION.
+    DATA ms_key    TYPE sflight.
+    DATA ms_flight TYPE sflight.            "跨畫面保存的「全域資料」
+ENDCLASS.
+
+CLASS lcl_flight_editor IMPLEMENTATION.
+  METHOD constructor.
+    ms_key = is_key.
+  ENDMETHOD.
+
+  METHOD lock_and_read.                     "① 鎖  ② 讀
+    CALL FUNCTION 'ENQUEUE_ESFLIGHT'
+      EXPORTING carrid = ms_key-carrid connid = ms_key-connid
+                fldate = ms_key-fldate _scope = '1'
+      EXCEPTIONS foreign_lock = 1 OTHERS = 2.
+    IF sy-subrc &lt;&gt; 0.
+      RAISE EXCEPTION TYPE cx_abap_invalid_value.
+    ENDIF.
+    SELECT SINGLE * FROM sflight
+      WHERE carrid = @ms_key-carrid AND connid = @ms_key-connid
+        AND fldate = @ms_key-fldate
+      INTO @ms_flight.
+  ENDMETHOD.
+
+  METHOD save.                              "③ 在同一個對話步驟內寫完  ④ 解鎖
+    UPDATE sflight FROM @ms_flight.
+    IF sy-subrc = 0.
+      COMMIT WORK.
+    ELSE.
+      ROLLBACK WORK.
+    ENDIF.
+    CALL FUNCTION 'DEQUEUE_ESFLIGHT'
+      EXPORTING carrid = ms_key-carrid connid = ms_key-connid
+                fldate = ms_key-fldate _scope = '1'.
+  ENDMETHOD.
+ENDCLASS.</code></pre>
+  <div class="note"><b>PERFORM ON COMMIT 在現代 ABAP 的地位：</b>它依附在 FORM 子程式上，而 FORM 在類別中不能使用、新程式也不建議再寫（見 <a href="#ap-01">附錄 舊語法對照</a>），所以本書不示範呼叫語法。今天要「延後到 COMMIT 才寫」，標準答案是<b>更新模組（CALL FUNCTION … IN UPDATE TASK）</b>；原廠也說 ON COMMIT「主要用在 SAP 更新概念中」（見第 13 節，在更新模組的函數群組裡延後寫中心表）。若只是要在 COMMIT / ROLLBACK <b>之後</b>收到通知（清快取、重設狀態），物件導向的做法是註冊類別 <span class="kw">CL_SYSTEM_TRANSACTION_STATE</span> 的事件 <span class="kw">TRANSACTION_FINISHED</span>——它在交易結束後才觸發，不能用來寫同一個 LUW 的資料。</div>
+
+  <h3 id="ch05-11-11">11. Update Task（更新技術）：原理、更新模組與 SM13</h3>
+  <p>更新技術把<b>使用者對話</b>和<b>資料庫更新</b>拆到不同程式、通常也在不同工作程序執行：對話程式負責收使用者輸入，最後把變更資料交出去，觸發<b>更新程式</b>寫資料庫；更新程式裡不跑任何對話。五個步驟：</p>
+  <ol>
+    <li><b>寫請求</b>：對話程式以 <span class="kw">CALL FUNCTION … IN UPDATE TASK</span> 呼叫更新模組，函數<b>不立即執行</b>，而是把「函數名＋傳入資料」寫進更新日誌表。可寫多筆，這些請求就是一個 SAP LUW。</li>
+    <li><b>完成請求</b>：遇到 <span class="kw">COMMIT WORK</span> 時，系統為這批請求建立<b>日誌表頭</b>，關閉這個 LUW，並通知 dispatcher 有更新包待處理。</li>
+    <li><b>傳遞資訊</b>：Basis 程式從日誌讀出該 LUW 的資料，交給更新程式。</li>
+    <li><b>執行更新</b>：更新程式依日誌內容執行各個更新模組，全部在<b>同一個 DB LUW</b> 內（all or nothing）。</li>
+    <li><b>刪除請求</b>：成功後 Basis 程式刪除該 LUW 的日誌；失敗則保留並標記錯誤，並寄 express mail 通知觸發者。</li>
+  </ol>
+  <p><b>日誌表</b>：可以是叢集表 <b>VBLOG</b>，或透明表 <b>VBHDR</b>（表頭，COMMIT WORK 時寫入）、<b>VBMOD</b>（更新模組資訊）、<b>VBDATA</b>（傳入資料）、<b>VBERROR</b>（錯誤）。每次 IN UPDATE TASK 呼叫寫一筆 VBMOD＋一筆 VBDATA；同一個 SAP LUW 的所有請求共用一把<b>更新鍵（VB key）</b>，它是全球唯一的 SAP LUW 識別碼。</p>
+  <p><b>更新模組</b>：在 <span class="tcode">SE37</span> 屬性頁把處理類型設為 <b>Update Module</b>，並選擇：Start Immediately（V1，可重啟）、Immediate Start, No Restart（V1，不可重啟）、Start Delayed（V2）、Collective Run（V2 集體執行）。介面規則：</p>
+  <ul>
+    <li>只有 <b>IMPORTING</b> 與（為了相容性保留的）<b>TABLES</b> 參數，必須用字典型別、<b>勾選 Pass Value（傳值）</b>。</li>
+    <li>EXPORTING 與例外在更新情境中<b>都會被忽略</b>（可以定義，但沒有作用）。</li>
+    <li>更新模組只專心做資料庫更新，<b>只在技術性／資料庫錯誤時才終止</b>；「航班超賣」這類業務一致性檢查應放在對話程式，使用者才有機會對錯誤或警告反應。</li>
+    <li>要回滾就送 <b>A 型訊息</b>；<b>更新模組內絕對不能寫 COMMIT WORK 或 ROLLBACK WORK</b>。</li>
+  </ul>
+  <pre><code class="abap">FUNCTION z_bc414_book_create.
+*"----------------------------------------------------------------
+*" 處理類型：Update Module ／ Start Immediately（V1，可重啟）
+*" 介面：只用 IMPORTING，全部勾選 Pass Value
+*"  IMPORTING
+*"     VALUE(IS_BOOK) TYPE  SBOOK
+*"----------------------------------------------------------------
+  " 1) 先 INSERT 新紀錄：新列的 DB 鎖最不會干擾別人
+  INSERT sbook FROM @is_book.
+  IF sy-subrc &lt;&gt; 0.
+    " A 型訊息 → 整個 LUW 回滾、VBLOG 標記錯誤、寄 express mail
+    MESSAGE a001(zbc414) WITH is_book-carrid is_book-connid is_book-bookid.
+  ENDIF.
+
+  " 2) 最後才改「中心表」SFLIGHT：縮短熱門列的 DB 鎖時間
+  UPDATE sflight
+     SET seatsocc = seatsocc + 1
+   WHERE carrid = @is_book-carrid
+     AND connid = @is_book-connid
+     AND fldate = @is_book-fldate.
+  IF sy-subrc &lt;&gt; 0.
+    MESSAGE a002(zbc414) WITH is_book-carrid is_book-connid is_book-fldate.
+  ENDIF.
+
+  " 不寫 COMMIT WORK / ROLLBACK WORK —— 由更新程式統一處理
+ENDFUNCTION.</code></pre>
+  <pre><code class="abap">*&amp;---------------------------------------------------------------*
+*&amp; 對話程式：鎖（_scope = 2）→ 檢查 → 登錄更新請求 → COMMIT WORK
+*&amp;---------------------------------------------------------------*
+CALL FUNCTION 'ENQUEUE_ESFLIGHT'
+  EXPORTING carrid = ls_book-carrid connid = ls_book-connid
+            fldate = ls_book-fldate
+            _scope = '2'                    "預設值：鎖交給更新程式
+  EXCEPTIONS foreign_lock = 1 OTHERS = 2.
+IF sy-subrc &lt;&gt; 0.
+  MESSAGE |航班正由 { sy-msgv1 } 處理中| TYPE 'E'.
+ENDIF.
+
+" 業務檢查放在對話程式：使用者還能改
+SELECT SINGLE seatsmax, seatsocc FROM sflight
+  WHERE carrid = @ls_book-carrid AND connid = @ls_book-connid
+    AND fldate = @ls_book-fldate
+  INTO @DATA(ls_seat).
+IF ls_seat-seatsocc &gt;= ls_seat-seatsmax.
+  MESSAGE '航班已客滿' TYPE 'E'.
+ENDIF.
+
+CALL FUNCTION 'Z_BC414_BOOK_CREATE' IN UPDATE TASK
+  EXPORTING is_book = ls_book.              "只寫進日誌，尚未執行
+
+COMMIT WORK.                                "關閉 LUW，觸發 V1 更新
+" 此後不要自己 DEQUEUE：鎖已交給更新程式，更新結束時自動釋放</code></pre>
+  <p><b>放棄請求</b>分兩個階段：</p>
+  <ul>
+    <li><b>產生階段</b>（還在對話程式中）：<span class="kw">ROLLBACK WORK</span> 或 A / X 訊息 → 刪除本 LUW 所有日誌條目、刪除目前設的鎖、撤銷目前 DB LUW 的變更、丟棄所有 ON COMMIT 子程式。程式上下文<b>不會</b>被重置。</li>
+    <li><b>處理階段</b>（更新模組中）：送 A 型訊息 → DB 回滾、SAP LUW 終止、日誌標記錯誤並記下終止訊息，用 <span class="tcode">SM13</span> 查看。</li>
+  </ul>
+  <table>
+    <thead><tr><th>Profile 參數／程式</th><th>作用</th></tr></thead>
+    <tbody>
+      <tr><td>rdisp/vbmail</td><td>1＝更新錯誤時寄信、0＝不寄</td></tr>
+      <tr><td>rdisp/vb_mail_user_list</td><td>收件者；<b>$ACTUSER</b>＝建立該筆更新的使用者，可用逗號列多人</td></tr>
+      <tr><td>rdisp/vb_delete_after_execution</td><td>預設 1＝成功後自動刪日誌；設 2 可提升效能，但必須定期排程 <b>RSM13002</b> 清除</td></tr>
+      <tr><td>rdisp/vbreorg</td><td>設 1＝更新伺服器啟動時自動重整日誌（預設 0）</td></tr>
+      <tr><td>rdisp/vbdelete</td><td>超過 n 天（預設 50）的更新請求自動刪除</td></tr>
+      <tr><td>rdisp/vb_lock_mode</td><td>預設 <b>release</b>＝更新錯誤時釋放交給更新的鎖；<b>hold</b>＝保留</td></tr>
+      <tr><td>rdisp/vb_v2_start</td><td>預設 1＝V1 完成後自動啟動 V2；設 2＝關閉自動啟動（延後所有 V2）</td></tr>
+    </tbody>
+  </table>
+  <div class="warn"><b>沒有 COMMIT 也沒有 ROLLBACK 的請求會變成孤兒：</b>對話程式結束前既沒 COMMIT WORK 也沒 ROLLBACK WORK，日誌裡就留下沒有表頭的條目——不會執行、也不會因錯誤被清掉。重整方式：SM13 最左側頁籤的按鈕、rdisp/vbreorg、rdisp/vbdelete、定期排 RSM13002。注意：正在處理中的對話程式也會暫時產生「沒有表頭」的條目，別誤刪。</div>
+
+  <h3 id="ch05-11-12">12. 更新模式：非同步、同步、本地，以及更新中的鎖</h3>
+  <table>
+    <thead><tr><th>模式</th><th>語法</th><th>行為</th><th>適用</th></tr></thead>
+    <tbody>
+      <tr><td><b>非同步</b>（預設）</td><td><span class="kw">COMMIT WORK</span></td><td>對話程式寫完日誌、COMMIT 後立刻繼續，不等更新結束；更新在專用的 UPD 工作程序跑，甚至可在另一台應用伺服器</td><td>對話處理的標準技術；使用者「感覺」快比立即知道結果更重要時</td></tr>
+      <tr><td><b>同步</b></td><td><span class="kw">COMMIT WORK AND WAIT</span></td><td>對話程式等更新結束才繼續；等待期間被 roll out，對話工作程序先釋放給別人；結果看 <b>sy-subrc</b></td><td>後續處理或程式結束方式取決於更新結果時（例如下一步要讀剛寫入的資料）</td></tr>
+      <tr><td><b>本地</b></td><td>先 <span class="kw">SET UPDATE TASK LOCAL</span>，再 IN UPDATE TASK，最後 <span class="kw">COMMIT WORK</span></td><td>更新模組在<b>同一個對話工作程序</b>內同步執行；請求放<b>主記憶體</b>、不寫 VBDATA，沒有 I/O 所以最快，但獨占工作程序</td><td><b>只適合批次（背景）模式</b></td></tr>
+    </tbody>
+  </table>
+  <p>本地更新的規則：<span class="kw">SET UPDATE TASK LOCAL</span> 只能在目前 LUW <b>尚未產生任何請求</b>時下，有效到下一個 COMMIT WORK 為止；錯誤時自動 DB 回滾，並以終止訊息結束對話程式。以上更新模式的討論只針對 <b>V1</b> 請求。</p>
+  <pre><code class="abap">*&amp;---------------------------------------------------------------*
+*&amp; 背景程式：本地更新 + 同步確認（大量過帳時最常見的組合）
+*&amp;---------------------------------------------------------------*
+LOOP AT lt_bookings INTO DATA(ls_book).
+  SET UPDATE TASK LOCAL.                    "每個 LUW 開頭都要再下一次
+
+  CALL FUNCTION 'Z_BC414_BOOK_CREATE' IN UPDATE TASK
+    EXPORTING is_book = ls_book.
+
+  COMMIT WORK AND WAIT.                     "本地更新本來就是同步，AND WAIT 讓語意清楚
+  IF sy-subrc &lt;&gt; 0.
+    APPEND VALUE #( bookid = ls_book-bookid
+                    text   = |訂位 { ls_book-bookid } 更新失敗| ) TO lt_log.
+  ENDIF.
+ENDLOOP.
+
+" ── 對話程式需要「確定寫進去了」再往下走：同步更新
+CALL FUNCTION 'Z_BC414_BOOK_CREATE' IN UPDATE TASK
+  EXPORTING is_book = ls_book.
+COMMIT WORK AND WAIT.
+IF sy-subrc = 0.
+  CALL TRANSACTION 'ZBC414_SHOW' WITH AUTHORITY-CHECK.   "此時一定讀得到新資料
+ENDIF.</code></pre>
+  <p><b>更新中的鎖</b>：對話程式以 <span class="kw">_scope = 2</span> 設的鎖，會在 <span class="kw">COMMIT WORK（AND WAIT）</span>時交給 V1 更新任務，之後對話程式就碰不到了；<b>V1 結束時無論成功或 A 訊息失敗都會自動刪除</b>（預設）。所以鎖<b>不能</b>在對話程式裡顯式刪（太早，更新還沒寫），也<b>不需要</b>在更新模組裡刪（多餘）。若更新模組允許重新處理失敗的請求（V1 可重啟），要注意重處理時資料庫狀態可能已不同，而且通常<b>已經沒有鎖</b>了（例如表空間溢位造成寫入失敗，修復後重處理就很合理）。</p>
+  <div class="tip">BAPI 也是同一套機制：多數 BAPI 內部就是 CALL FUNCTION … IN UPDATE TASK，所以呼叫完一定要 <span class="kw">BAPI_TRANSACTION_COMMIT</span>（等於 COMMIT WORK），要立刻讀回結果就傳 <span class="kw">WAIT = 'X'</span>（等於 COMMIT WORK AND WAIT）。詳見 <a href="#ch04-1">4-1 章 RFC / BAPI</a> 與 <a href="#ch05-12">5-12 章 BC415</a>。</div>
+
+  <h3 id="ch05-11-13">13. V1 / V2 更新與資料庫更新的最佳化</h3>
+  <p>V1 / V2 把變更分成<b>高優先</b>與<b>低優先</b>，讓資料庫存取在時間上更分散。同一個 SAP LUW 可以混用：</p>
+  <ul>
+    <li>更新開始時，所有 <b>V1</b> 請求在一個獨立的 DB LUW 中執行（V1 更新工作程序，類型 <b>UPD</b>）；成功後刪除 V1 請求、刪除交給更新任務的鎖、DB Commit，然後觸發 V2。</li>
+    <li><b>V2</b> 請求只有在所有 V1 都成功後才執行，自成另一個 DB LUW（V2 工作程序，類型 <b>UP2</b>；沒設 UP2 時在 UPD 中跑）；V2 <b>一律不帶 SAP 鎖</b>。典型用途：統計資料更新——和主變更相關，但不必在同一個 DB LUW。</li>
+    <li>V1 可設為可重啟／不可重啟；可重啟者在修正應用錯誤後可於 <span class="tcode">SM13</span> 手動重啟。<b>V2 一律可重啟</b>。</li>
+    <li><b>Collective Run（集體執行）</b>是特殊 V2：不在 V1 之後立即執行，要等收集程式 <b>RSM13005</b>（通常排程定期跑）才處理。</li>
+    <li>V1 請求在同步／非同步模式寫進日誌表，本地模式放主記憶體；<b>V2 請求不論何種模式都寫日誌表</b>。</li>
+  </ul>
+  <table>
+    <thead><tr><th>失敗點</th><th>系統動作</th></tr></thead>
+    <tbody>
+      <tr><td>V1 模組送 A 訊息</td><td>刪除交給更新的鎖（預設）、DB 回滾、寄信給建立 LUW 的使用者（預設）、V1 請求在日誌標記錯誤並記下訊息、<b>V2 不會被觸發</b></td></tr>
+      <tr><td>V2 模組送 A 訊息</td><td>DB 回滾，本 SAP LUW 的 V2 變更全部撤銷，V2 請求在 VBLOG 標記錯誤（V1 早已提交，不受影響）</td></tr>
+    </tbody>
+  </table>
+  <p><b>最佳化：讓資料庫鎖越短越好。</b>每筆被更新的紀錄都會被資料庫實體鎖到該 DB LUW 結束，SELECT … FOR UPDATE 也一樣。SAP 系統普遍採用 dirty read（未提交讀取），純讀取通常不受影響，但並行的更新會被擋。撰寫直接更新與更新模組時照這個順序：</p>
+  <ol>
+    <li><b>先 INSERT 新紀錄</b>：新列的 DB 鎖對別人干擾最小。</li>
+    <li><b>再 UPDATE 不影響效能的表</b>：很少人同時存取的表。</li>
+    <li><b>最後才 UPDATE 中心資源表</b>：很多人同時存取的表（例如庫存、座位數、號碼範圍）盡量放在 LUW 最後，讓鎖只擋一下下。</li>
+  </ol>
+  <p><b>更新中的 PERFORM ON COMMIT</b>：想把某張中心表的變更延到整個 DB LUW 最後，可把該表的更新包成更新模組所屬<b>函數群組內的 FORM</b>，再從更新模組中以 ON COMMIT 登錄；它會在該 SAP LUW 最後一個更新模組處理完之後才執行，且只能使用該函數群組的全域資料。這是 PERFORM ON COMMIT 在今日仍然合理的少數用途（標準 SAP 的過帳函數群組大量使用），但它屬於函數群組內部實作，新開發的業務邏輯仍以類別為主。</p>
+  <div class="note">「V3 更新」你可能在 LO 抽取（BW / LIS）聽過，它不是 BC414 的內容；BC414 只講 V1、V2 與 V2 的 Collective Run。</div>
+
+  <h3 id="ch05-11-14">14. 跨多支程式的 LUW：CALL FUNCTION、SUBMIT、CALL TRANSACTION 與鎖</h3>
+  <p>同步呼叫其他程式有兩種：</p>
+  <ul>
+    <li><b>插入式</b>（呼叫端暫停、被呼叫端結束後回來）：<span class="kw">CALL FUNCTION</span>、<span class="kw">CALL METHOD</span>（類別或物件）、<span class="kw">CALL TRANSACTION</span>、<span class="kw">SUBMIT … AND RETURN</span>。</li>
+    <li><b>取代式</b>（呼叫端結束、被呼叫端開始）：<span class="kw">SUBMIT</span>、<span class="kw">LEAVE TO TRANSACTION</span>。</li>
+  </ul>
+  <p>SUBMIT 只能叫<b>可執行程式（類型 1）</b>；CALL / LEAVE TO TRANSACTION 叫交易碼。非同步呼叫則用 <span class="kw">CALL FUNCTION … STARTING NEW TASK &lt;task&gt;</span>，函數必須在屬性中標為 <b>Remote-Enabled Module</b>，結果用 <span class="kw">RECEIVE RESULTS FROM FUNCTION</span> 收回。</p>
+  <table>
+    <thead><tr><th>呼叫方式</th><th>資料（上下文）</th><th>SAP LUW</th><th>適合</th></tr></thead>
+    <tbody>
+      <tr><td>CALL FUNCTION／方法</td><td>獨立</td><td><b>相同</b>（與呼叫端同一個 LUW）</td><td>顯示；在同一 LUW 中修改（例如報表呼叫多個 BAPI，一次 COMMIT WORK 全部提交）</td></tr>
+      <tr><td>SUBMIT AND RETURN／CALL TRANSACTION</td><td>獨立（新的內部階段）</td><td><b>獨立</b>（自己的更新鍵）</td><td>顯示；在不同 LUW 中修改（巢狀 LUW）</td></tr>
+      <tr><td>SUBMIT／LEAVE TO TRANSACTION</td><td>取代</td><td>呼叫端的 LUW <b>結束</b></td><td>流程交棒</td></tr>
+      <tr><td>CALL FUNCTION … STARTING NEW TASK</td><td>獨立（新的主階段）</td><td><b>獨立</b></td><td>平行處理</td></tr>
+    </tbody>
+  </table>
+  <p>重點規則：</p>
+  <ul>
+    <li><b>SUBMIT AND RETURN／CALL TRANSACTION</b>：被呼叫端結束後，呼叫端的 SAP LUW 繼續；兩邊的 LUW 各自獨立，<b>更新請求與 ON COMMIT 子程式都要在各自的 LUW 裡各下一次 COMMIT WORK</b>。巢狀呼叫交易時，每個交易都需要自己的 COMMIT WORK。</li>
+    <li><b>SUBMIT／LEAVE TO TRANSACTION</b>：呼叫端的 LUW 結束。若在呼叫前沒用 COMMIT WORK 結束更新請求，該更新鍵不會產生表頭——<b>這些請求永遠不會被執行</b>；ON COMMIT 子程式同理。</li>
+    <li>SUBMIT、CALL TRANSACTION、LEAVE TO TRANSACTION 都會<b>隱式 DB Commit</b>：呼叫端到此為止的直接更新都自動提交。</li>
+    <li><b>非同步 RFC</b>：在新的階段跑、有自己的 SAP LUW；呼叫端只短暫中斷，已登錄的 IN UPDATE TASK 與 ON COMMIT 都保留，但會觸發隱式 DB Commit（直接更新落地）。</li>
+  </ul>
+  <p><b>CALL TRANSACTION 的呼叫模式</b>：用 <span class="kw">USING &lt;bdc 內表&gt;</span> 帶入批次輸入格式的畫面資料，就能在背景執行交易。MODE：<b>A</b>＝顯示（預設）、<b>N</b>＝不顯示、<b>E</b>＝只在錯誤時顯示、<b>P</b>＝在中斷點顯示除錯器。UPDATE：<b>A</b>＝非同步（預設）、<b>S</b>＝同步（被呼叫交易的更新完成才回來，結果看 sy-subrc）、<b>L</b>＝本地。後續處理依賴這筆交易成功時，就用 UPDATE 'S'（BDC 細節見 <a href="#ch04-4">4-4 章</a>）。</p>
+  <pre><code class="abap">*&amp;---------------------------------------------------------------*
+*&amp; CALL TRANSACTION USING：用 CTU_PARAMS 設定模式，同步更新
+*&amp;---------------------------------------------------------------*
+DATA lt_bdc TYPE STANDARD TABLE OF bdcdata WITH EMPTY KEY.
+DATA lt_msg TYPE STANDARD TABLE OF bdcmsgcoll WITH EMPTY KEY.
+
+lt_bdc = VALUE #(
+  ( program = 'SAPMZBC414' dynpro = '0100' dynbegin = 'X' )
+  ( fnam = 'SBOOK-CARRID' fval = 'LH' )
+  ( fnam = 'SBOOK-CONNID' fval = '0400' )
+  ( fnam = 'BDC_OKCODE'   fval = '=SAVE' ) ).
+
+DATA(ls_opt) = VALUE ctu_params( dismode  = 'N'     "不顯示畫面
+                                 updmode  = 'S'     "同步更新：等更新結束才回來
+                                 racommit = 'X' ).  "被呼叫交易內 COMMIT WORK 後不結束
+
+CALL TRANSACTION 'ZBC414' WITH AUTHORITY-CHECK
+  USING lt_bdc
+  OPTIONS FROM ls_opt
+  MESSAGES INTO lt_msg.
+
+IF sy-subrc &lt;&gt; 0 OR line_exists( lt_msg[ msgtyp = 'E' ] ).
+  " 被呼叫交易有自己的 SAP LUW：它失敗不會回滾呼叫端已 COMMIT 的資料
+  MESSAGE |ZBC414 執行失敗，共 { lines( lt_msg ) } 則訊息| TYPE 'I'.
+ENDIF.</code></pre>
+  <p><b>複雜 LUW 中的鎖</b>：</p>
+  <ul>
+    <li>程式設了 E 鎖後，同一程式或同步呼叫的函數模組／方法中可以再設同一個 E 鎖（<b>累積</b>）。</li>
+    <li>但從 <b>SUBMIT AND RETURN</b> 或 <b>CALL TRANSACTION</b> 叫起來的程式，<b>不能</b>對既有鎖再加鎖——會得到 <b>FOREIGN_LOCK</b>，因為那是新的 LUW。累積只在同一個 LUW 內有效。</li>
+    <li>SUBMIT／LEAVE TO TRANSACTION：呼叫端立即終止、所有鎖自動刪除，因此不會有鎖衝突。</li>
+    <li>同一使用者從<b>不同視窗（主階段）</b>或不同登入發出的鎖請求，被當成<b>不同使用者</b>處理。</li>
+  </ul>
+  <div class="warn"><b>最常見的自我鎖死：</b>程式先 ENQUEUE 了訂單，再 CALL TRANSACTION 標準交易（例如 VA02）去改同一張單——標準交易會回報「已被使用者 XXX（你自己）鎖定」。解法是在 CALL TRANSACTION 之前先 DEQUEUE 自己的鎖，或改用同 LUW 的 BAPI。這也是 Casper 經驗 3「先找標準（BAPI）再想客製（BDC）」的另一個理由。</div>
+  <p>强晟筆記 p119 的非同步技巧：想在另一個視窗（非模態）開一個交易，就寫一支自訂 RFC 函數，用 STARTING NEW TASK 非同步呼叫，在函數裡 CALL TRANSACTION。因為新階段有自己的 SAP 記憶體，資料要透過<b>函數介面</b>傳入，在函數內再 SET PARAMETER（或用 ABAP 記憶體、BDC 內表）交給交易。</p>
+
+  <h3 id="ch05-11-15">15. 號碼範圍：SNRO、NUMBER_GET_NEXT 與緩衝模式</h3>
+  <p>商業物件用唯一鍵識別，鍵的全部或一部分通常是一個號碼。號碼範圍管理負責把物件分配到特定的號碼區間，並<b>保證每個號碼只發一次</b>。</p>
+  <ul>
+    <li><b>號碼範圍物件（Number Range Object）</b>：技術定義；在 <span class="tcode">SNRO</span> 建立，客製物件以 Y / Z 開頭。每個物件下可有多個<b>號碼範圍（以號碼範圍編號識別）</b>，每個範圍一個<b>區間</b>；也可依<b>會計年度</b>各設區間（To-year flag）。</li>
+    <li><b>內部給號</b>：系統自動給；<b>外部給號</b>：外部輸入，系統只檢查是否落在外部區間。內外部要用不同區間，<b>區間不可重疊</b>；外部區間可以是英數字。</li>
+    <li><b>子物件（Subobject）</b>：依某個值分開給號（例如每個公司代碼各自一套、每個工廠各自一套），子物件資料元素長度最多 6 碼，需有值表。</li>
+    <li><b>群組表（Group table）</b>：依分類條件決定號碼範圍（例如物料類型 → 原料、半成品、成品各一段），群組表每筆稱為一個<b>元素</b>，可存一個或兩個（內部＋外部）範圍編號；可與子物件合用。</li>
+  </ul>
+  <table>
+    <thead><tr><th>SNRO 欄位</th><th>說明</th></tr></thead>
+    <tbody>
+      <tr><td>Number Length Domain</td><td>必填；NUMC 或 CHAR 網域，最長 20 碼</td></tr>
+      <tr><td>% Warning</td><td>必填（0.1～99.9）；剩餘號碼低於此比例時，取號函數回傳警告</td></tr>
+      <tr><td>Subobject Data Element</td><td>子物件的資料元素</td></tr>
+      <tr><td>To-year flag</td><td>號碼範圍依會計年度組織</td></tr>
+      <tr><td>No rolling</td><td>勾選＝用到上限時<b>不</b>自動從頭開始</td></tr>
+      <tr><td>Number Range Transaction</td><td>自動產生一個 SNRO 的參數交易，專門維護此物件的區間</td></tr>
+      <tr><td>No. of Numbers in Buffer</td><td>每次補進緩衝的號碼數</td></tr>
+    </tbody>
+  </table>
+  <p>取號函數都在函數群組 <b>SNR3</b>：<span class="kw">NUMBER_GET_INFO</span>（取區間資訊，INTERVAL 參數以透明表 <b>NRIV</b> 定義）、<span class="kw">NUMBER_GET_NEXT</span>（內部給號）、<span class="kw">NUMBER_CHECK</span>（檢查外部號碼；RETURNCODE 空白＝在區間內、'X'＝不在，且<b>不會</b>把號碼標為已用，外部號碼的使用紀錄要由應用程式自己管）。</p>
+  <pre><code class="abap">*&amp;---------------------------------------------------------------*
+*&amp; 內部給號：NUMBER_GET_NEXT（傳統）與 CL_NUMBERRANGE_RUNTIME（類別 API）
+*&amp;---------------------------------------------------------------*
+DATA lv_bookid TYPE s_book_id.
+DATA lv_rc     TYPE inri-returncode.
+
+CALL FUNCTION 'NUMBER_GET_NEXT'
+  EXPORTING
+    nr_range_nr             = '01'
+    object                  = 'ZBC414BK'
+    quantity                = '1'
+  IMPORTING
+    number                  = lv_bookid
+    returncode              = lv_rc
+  EXCEPTIONS
+    interval_not_found      = 1
+    number_range_not_intern = 2
+    object_not_found        = 3
+    quantity_is_0           = 4
+    quantity_is_not_1       = 5
+    interval_overflow       = 6
+    buffer_overflow         = 7
+    OTHERS                  = 8.
+IF sy-subrc &lt;&gt; 0.
+  MESSAGE |號碼範圍 ZBC414BK / 01 取號失敗（{ sy-subrc }）| TYPE 'E'.
+ENDIF.
+" RETURNCODE：空白＝正常；1＝低於警告比例；2＝拿到最後一個號碼；
+"             3＝要求數量超過剩餘，已把剩下的全給你（EXPORT 的 QUANTITY 是實得數量）
+
+" ── S/4HANA 可用的類別 API（例外為 CX_NUMBER_RANGES）
+TRY.
+    cl_numberrange_runtime=&gt;number_get(
+      EXPORTING nr_range_nr = '01'
+                object      = 'ZBC414BK'
+      IMPORTING number      = DATA(lv_number)
+                returncode  = DATA(lv_rc2) ).
+  CATCH cx_number_ranges INTO DATA(lx_nr).
+    MESSAGE lx_nr-&gt;get_text( ) TYPE 'E'.
+ENDTRY.</code></pre>
+  <p>一次要多個號碼時，匯入參數 QUANTITY 給需求量，匯出的 QUANTITY 是實得數量、NUMBER 是<b>最後一個</b>號碼，所以拿到的區段是（NUMBER − 實得數量 + 1）～ NUMBER。</p>
+  <table>
+    <thead><tr><th>緩衝模式（SNRO：Edit → Set up Buffering）</th><th>行為</th><th>優缺點</th></tr></thead>
+    <tbody>
+      <tr><td><b>No buffering</b></td><td>每次取號都直接讀 NRIV，並把該區間<b>用資料庫鎖</b>鎖到下一次 DB Commit（不用 SAP 鎖，否則鎖會跟著 V1 更新拖很久）</td><td>無跳號、保證時間順序；但資料庫鎖造成<b>序列化</b></td></tr>
+      <tr><td><b>Main Memory</b>（預設）</td><td>每台應用伺服器在記憶體中緩衝一包號碼，由號碼範圍伺服器（自己的 LUW）發號；用完自動補下一包；NUMBER_GET_NEXT 可用 IGNORE_BUFFER 略過緩衝</td><td>效能最好；rollback、網路錯誤、系統重啟會<b>跳號</b>，各伺服器之間號碼不按時間順序</td></tr>
+      <tr><td><b>Parallel</b>（Local File and Process ID）</td><td>號碼包存在表 <b>NRIVSHADOW</b> 而非記憶體；ROLLBACK 時號碼寫回緩衝可再用，系統重啟也不遺失（SAP Note 599157）</td><td>不需鎖 NRIV，效能遠優於不緩衝；緩衝數 1 時號碼<b>遞減</b>發放，直到第一次 ROLLBACK 前都無跳號；報表 RSSNR0S1 可列出未確定使用的號碼</td></tr>
+    </tbody>
+  </table>
+  <p>法規要求「連續且遞增」時（例如某些國家的發票號碼），可以用平行緩衝的特殊變體 <b>Italian solution</b>（緩衝數 = 1；ROLLBACK 的號碼不會再發，而是寫進 <b>NRIV_DOCU</b> 留作文件），但它無法在 <span class="tcode">SNUM</span> Customizing 直接啟用，需要在應用中透過 exit 修改（SAP Note 840901）。號碼範圍另有五個函數群組處理維護對話、資料庫存取等，只用標準取號功能時只需要 SNR3。</p>
+  <div class="warn"><b>號碼範圍是典型的「中心資源」：</b>不緩衝的物件在高併發下會讓大家排隊等 NRIV 的資料庫鎖——這就是第 13 節「中心表最後更新」原則的實例：取號放在 LUW 盡量晚的位置，或在法規允許的範圍內開緩衝。設計 Z 單據前先問清楚財會／稽核：到底需不需要「不跳號」？</div>
+
+  <h3 id="ch05-11-16">16. 變更文件：SCDO、CDHDR / CDPOS 與產生的更新模組</h3>
+  <p>要記錄「誰、何時、用哪個交易、把哪個欄位從什麼改成什麼」，就用變更文件。原則是：<b>應用表與變更文件表必須在同一個 LUW 內一起更新</b>，而寫變更文件的是系統<b>產生的更新模組</b>。要傳給它三類資料：<b>變更前的應用資料、變更後的應用資料、管理資料</b>。</p>
+  <table>
+    <thead><tr><th>表</th><th>內容</th><th>主要欄位</th></tr></thead>
+    <tbody>
+      <tr><td><b>CDHDR</b>（計畫變更：PCDHDR）</td><td>變更文件表頭</td><td>鍵：MANDANT、OBJECTCLASS（變更文件物件名）、OBJECTID（應用自訂，常用被改紀錄的鍵串接）、CHANGENR（變更號碼，取自號碼範圍物件 <b>AENDBELEG</b>、範圍 01）；非鍵：USERNAME、UDATE、UTIME、TCODE、CHANGE_IND（U / I / D）</td></tr>
+      <tr><td><b>CDPOS</b>（計畫變更：PCDPOS）</td><td>變更文件項目</td><td>鍵另加 TABNAME、TABKEY、FNAME、CHNGIND（U / I / D，以及逐欄記錄的 J＝新增、E＝刪除）；非鍵：VALUE_NEW、VALUE_OLD</td></tr>
+    </tbody>
+  </table>
+  <p>只有被標為<b>變更文件相關</b>的欄位（其<b>資料元素</b>勾選了「Change document」屬性）有變動時才會產生文件，也只記錄這些欄位。修改既有紀錄時每個相關欄位一個項目；新增或刪除紀錄時可選擇「每欄一個項目」或「整筆一個項目」。</p>
+  <p><b>建立變更文件物件</b>（<span class="tcode">SCDO</span>；選單：Tools → ABAP Workbench → Development → Other Tools → Change Documents）：名稱用 Z_ / Y_ 開頭、填描述；每張相關表填一列；多筆紀錄共用一個表頭時勾 <b>Passed as internal table</b>；刪除／新增時逐欄記錄分別勾 <b>Doc. of individual fields at deletion / insertion</b>；幣別與單位欄位參照其他表時要建參照結構（元件名＝表名＋欄位名，例如 T100WAERS）填入 <b>Name of Ref. tab</b>；不勾內表時可指定 old field string 名稱（空白則預設 *&lt;TABLE&gt;）。</p>
+  <p><b>產生程式物件</b>（SCDO → Utilities → Generate update pgm.）：填 Include、函數群組、結構前綴後存檔，會產生：</p>
+  <ul>
+    <li>函數群組內的更新模組 <b>&lt;物件&gt;_WRITE_DOCUMENT</b>（封裝寫文件的全部程式）。</li>
+    <li>Include <b>F&lt;inc&gt;CDF</b>（與物件定義無關的變數）、<b>F&lt;inc&gt;CDV</b>（與物件定義相關的變數）、<b>F&lt;inc&gt;CDT</b>（含前兩者）、<b>F&lt;inc&gt;CDC</b>（呼叫更新模組的子程式 CD_CALL_&lt;物件&gt;）。</li>
+    <li>勾了「內表傳遞」的表，還會產生字典結構 <b>&lt;前綴&gt;&lt;TABLE&gt;</b>（含該表＋結構 ICDIND）。</li>
+  </ul>
+  <p>傳統用法是 INCLUDE F&lt;inc&gt;CDT 與 F&lt;inc&gt;CDC、設好全域變數（OBJECTID、TCODE、UTIME、UDATE、USERNAME、新舊值、每張表的 UPD_&lt;TABLE&gt; 旗標 I / U / D / 空白）再呼叫子程式。教材也提到 SCDO 提供「ABAP OO generation style」，產生的是 <span class="kw">DATA os_sbook TYPE sbook</span> 這類宣告而非舊式表工作區。<b>現代寫法建議直接呼叫產生的更新模組</b>，不經過 include 與子程式：</p>
+  <pre><code class="abap">*&amp;---------------------------------------------------------------*
+*&amp; 與應用表同一個 LUW：先登錄應用更新，再登錄變更文件，最後 COMMIT
+*&amp; （參數名稱以 SE37 中產生的 ZBC414_BOOK_WRITE_DOCUMENT 介面為準）
+*&amp;---------------------------------------------------------------*
+CALL FUNCTION 'Z_BC414_BOOK_CHANGE' IN UPDATE TASK      "自己的應用更新模組
+  EXPORTING is_book = ls_new.
+
+CALL FUNCTION 'ZBC414_BOOK_WRITE_DOCUMENT' IN UPDATE TASK
+  EXPORTING
+    objectid                = CONV cdobjectv( |{ ls_new-carrid }{ ls_new-connid }{ ls_new-fldate }{ ls_new-bookid }| )
+    tcode                   = sy-tcode
+    utime                   = sy-uzeit
+    udate                   = sy-datum
+    username                = sy-uname
+    object_change_indicator = 'U'
+    n_sbook                 = ls_new               "變更後
+    o_sbook                 = ls_old               "變更前
+    upd_sbook               = 'U'.
+
+COMMIT WORK.
+
+*&amp;---------------------------------------------------------------*
+*&amp; 讀取：S/4HANA 的 CDPOS 已是透明表，可直接 JOIN；一定要排序
+*&amp;---------------------------------------------------------------*
+SELECT h~changenr, h~username, h~udate, h~utime, h~tcode,
+       p~tabname, p~fname, p~chngind, p~value_old, p~value_new
+  FROM cdhdr AS h
+  INNER JOIN cdpos AS p
+    ON  p~objectclas = h~objectclas
+    AND p~objectid   = h~objectid
+    AND p~changenr   = h~changenr
+  WHERE h~objectclas = 'ZBC414_BOOK'
+    AND h~objectid   = @lv_objectid
+  ORDER BY h~udate DESCENDING, h~utime DESCENDING, h~changenr DESCENDING, p~fname
+  INTO TABLE @DATA(lt_changes).</code></pre>
+  <p>處理變更文件的標準函數分在六個函數群組，產生的更新模組會呼叫 SCD0 群組中的前四個：<span class="kw">CHANGEDOCUMENT_OPEN</span>（第一個呼叫）、<span class="kw">CHANGEDOCUMENT_SINGLE_CASE</span>（一張表一個項目）、<span class="kw">CHANGEDOCUMENT_MULTIPLE_CASE</span>（一張表多個項目）、<span class="kw">CHANGEDOCUMENT_CLOSE</span>（最後一個呼叫）。讀取與顯示用 <span class="kw">CHANGEDOCUMENT_READ_HEADERS</span>、<span class="kw">CHANGEDOCUMENT_READ_POSITIONS</span>、<span class="kw">CHANGEDOCUMENT_READ</span>、<span class="kw">CHANGEDOCUMENT_DISPLAY</span>，範例程式 <b>RSSCD200</b>。多筆情境傳給更新模組的新舊值內表<b>必須先依鍵排序</b>。</p>
+  <div class="warn"><b>表的型態已變：</b>教材說項目存在叢集結構 <b>CDCLS</b>（由叢集表 CDPOS、PCDPOS 組成）——這是 ECC 的情況。S/4HANA 已把 CDPOS 轉成<b>透明表</b>，可以直接 SELECT／JOIN（如上例），但它是超大表，WHERE 一定要帶 OBJECTCLAS＋OBJECTID。另外，<b>HANA 沒有預設排序</b>（Casper 經驗 1）：同一秒內多筆變更要「取最後一筆」時，只靠 UDATE / UTIME 可能相同，務必再加 CHANGENR 排序。</div>
+
+  <h3 id="ch05-11-17">17. Object Services：持久化服務與交易服務</h3>
+  <p><b>Persistence Service</b> 是介於 ABAP 程式與資料庫之間的軟體層，讓你透過<b>持久化物件的屬性</b>存取資料庫紀錄。在 Class Builder 建立<b>持久化類別（persistent class）</b>時，會自動產生<b>類別代理（class agent / class actor，命名 CA_…）</b>管理執行期物件；物件不能用 CREATE OBJECT 建立，而是由代理的方法取得，以確保初始狀態正確。「持久化類別」不代表類別本身被存起來，而是它的物件與狀態由 Persistence Service 管理。</p>
+  <ul>
+    <li>物件的狀態在實例化時等於資料庫當時的狀態；屬性的修改<b>在 COMMIT WORK 之前不會寫入資料庫</b>。</li>
+    <li>COMMIT WORK 在此被擴充：Persistence Service 的內部方法會把所有變更打包、交給特殊的更新模組（IN UPDATE TASK），關閉 SAP LUW、觸發更新，並<b>重設所有持久化物件的屬性</b>；要看最新狀態，再呼叫一次代理的 GET_PERSISTENT。</li>
+    <li>所有更新模式都支援。<b>仍然必須自己實作傳統的 SAP 鎖</b>。</li>
+  </ul>
+  <pre><code class="abap">*&amp;---------------------------------------------------------------*
+*&amp; 持久化物件：航班票價調漲 10%（ZCL_FLIGHT_PERS 對應 SFLIGHT）
+*&amp;---------------------------------------------------------------*
+" 鎖還是要自己上
+CALL FUNCTION 'ENQUEUE_ESFLIGHT'
+  EXPORTING carrid = 'LH' connid = '0400' fldate = '20261001'
+  EXCEPTIONS foreign_lock = 1 OTHERS = 2.
+IF sy-subrc &lt;&gt; 0.
+  RETURN.
+ENDIF.
+
+TRY.
+    DATA(lo_flight) = zca_flight_pers=&gt;agent-&gt;get_persistent(
+                        i_carrid = 'LH'
+                        i_connid = '0400'
+                        i_fldate = '20261001' ).
+    lo_flight-&gt;set_price( lo_flight-&gt;get_price( ) * '1.1' ).
+  CATCH cx_os_object_not_found INTO DATA(lx_os).
+    MESSAGE lx_os-&gt;get_text( ) TYPE 'E'.
+ENDTRY.
+
+COMMIT WORK.   "Persistence Service 產生更新請求並觸發更新；物件屬性被重設</code></pre>
+  <p><b>Transaction Service</b>：在傳統交易中使用持久化物件時，交易服務以<b>相容模式</b>隱式運作（自動建立並啟動 top-level 交易，用 COMMIT WORK 或 END( ) 結束）。另一種是<b>物件導向交易模式</b>：不寫 COMMIT WORK（<b>在 OO 交易中禁止使用 COMMIT WORK</b>），改由交易管理員定義交易的開始與結束；第一個建立的交易是 top-level，它結束時自動觸發更新。各元件各自定義子交易、組合在新程式中時，所有變更會被 top-level 交易合併成一個 LUW。</p>
+  <table>
+    <thead><tr><th>用途</th><th>類別／方法</th></tr></thead>
+    <tbody>
+      <tr><td>設定交易模式與更新模式（第一次使用 Object Services 前，只能呼叫一次）</td><td>CL_OS_SYSTEM=&gt;INIT_AND_SET_MODE( )：I_EXTERNAL_COMMIT = OSCON_FALSE 即 OO 模式；I_UPDATE_MODE</td></tr>
+      <tr><td>取交易管理員</td><td>CL_OS_SYSTEM=&gt;GET_TRANSACTION_MANAGER( )</td></tr>
+      <tr><td>建立／取目前／取 top-level 交易</td><td>CREATE_TRANSACTION( )、GET_CURRENT_TRANSACTION( )、GET_TOP_TRANSACTION( )</td></tr>
+      <tr><td>開始／結束</td><td>START( )、END( )（top-level 結束時隱式 COMMIT WORK）</td></tr>
+      <tr><td>結束並串接新交易</td><td>END_AND_CHAIN( )</td></tr>
+      <tr><td>結束並回滾</td><td>UNDO( )（OO 模式的 top-level 會隱式 ROLLBACK）</td></tr>
+      <tr><td>變更更新模式</td><td>交易代理的 SET_MODE_UPDATE( )；常數 OSCON_DMODE_DEFAULT / OSCON_DMODE_UPDATE_TASK（非同步）、OSCON_DMODE_UPDATE_TASK_SYNC（同步）、OSCON_DMODE_LOCAL（本地）、OSCON_DMODE_DIRECT（直接）</td></tr>
+    </tbody>
+  </table>
+  <pre><code class="abap">*&amp;---------------------------------------------------------------*
+*&amp; 交易服務（OO 交易模式）：不寫 COMMIT WORK
+*&amp;---------------------------------------------------------------*
+LOAD-OF-PROGRAM.
+  " 只能呼叫一次，所以放在 LOAD-OF-PROGRAM
+  cl_os_system=&gt;init_and_set_mode(
+    i_external_commit = oscon_false               "物件導向交易模式
+    i_update_mode     = oscon_dmode_update_task ).
+
+START-OF-SELECTION.
+  DATA(lo_tm) = cl_os_system=&gt;get_transaction_manager( ).
+  DATA(lo_tx) = lo_tm-&gt;create_transaction( ).     "第一個＝top-level
+  lo_tx-&gt;start( ).
+
+  " 呼叫的元件若自己建立交易，都成為 top-level 的子交易
+  NEW lcl_fare_adjuster( )-&gt;raise_prices( iv_carrid = 'LH' iv_pct = 10 ).
+
+  lo_tx-&gt;end( ).     "top-level 結束 → Object Services 建立更新請求並 COMMIT</code></pre>
+  <div class="warn"><b>S/4HANA 現況：</b>Object Services（持久化類別、交易服務）仍可在 S/4HANA 執行，但已不是 SAP 的發展方向，新專案很少採用；它在 ABAP Cloud 不可用。今天的「物件化＋交易化」答案是 <b>RAP（ABAP RESTful Application Programming Model）</b>：Behavior Definition 宣告 lock master、etag（樂觀鎖）、late numbering，框架負責 interaction phase / save sequence，等於把本章的鎖、Update Task、號碼範圍全部標準化了。學 BC414 的意義在於看懂 RAP 背後在做什麼。</div>
+
+  <h3 id="ch05-11-18">18. 叢集表：EXPORT / IMPORT TO DATABASE</h3>
+  <p><b>資料叢集（data cluster）</b>是一組資料物件（欄位、結構、內表、複雜結構）的組合，用 <span class="kw">EXPORT</span>、<span class="kw">IMPORT</span>、<span class="kw">DELETE</span> 處理，可存在<b>叢集資料庫表</b>中。叢集資料庫表依<b>應用區域（2 碼，自訂）</b>分區，區域內以<b>叢集 ID</b> 識別。</p>
+  <ul>
+    <li>叢集資料庫表必須在 ABAP 字典建成<b>透明表</b>，且有標準結構：MANDT（可省略、自動填）、RELID（區域）、叢集 ID 欄位（自取名）、SRTF2、使用者自訂欄位、CLUSTR、CLUSTD。RELID、SRTF2、CLUSTR、CLUSTD 與叢集 ID 在 EXPORT 時自動填，自訂欄位要在 EXPORT 前自己填，IMPORT 後可讀出。叢集資料長度＝結構總長減掉前六個欄位。</li>
+    <li>通用的叢集表是 <b>INDX</b>：鍵長 31 bytes（用戶端、區域、叢集 ID〔預設 22 bytes〕、續行號）；資料大時系統自動續寫多列。INDX 還有 AEDAT、USERA、PGMID 等管理欄位，可用 SELECT 讀鍵與管理欄位。</li>
+    <li>EXPORT <b>沒有寫入保護</b>：同 ID 再 EXPORT 一次就覆蓋；資料以<b>壓縮</b>形式儲存。</li>
+    <li>IMPORT 可以只取部分物件、順序不限；名稱必須與匯出時相同（可用 TO 對應不同變數名），結構必須相符，否則執行時期錯誤。sy-subrc 針對的是<b>整個叢集</b>是否存在，不是個別物件。</li>
+    <li>DELETE 只能刪<b>整個叢集</b>，不能刪其中單一物件。</li>
+  </ul>
+  <pre><code class="abap">*&amp;---------------------------------------------------------------*
+*&amp; 叢集表：把一份計算結果快照存進 INDX（區域 'ZB'）
+*&amp;---------------------------------------------------------------*
+DATA(lv_id) = CONV indx-srtfd( |BC414_{ sy-datum }| ).
+
+" 管理欄位用 FROM wa 帶入（舊教材寫 TABLES + MOVE 到 INDX 表工作區）
+DATA(ls_admin) = VALUE indx( aedat = sy-datum
+                             usera = sy-uname
+                             pgmid = sy-repid ).
+
+EXPORT flights  = lt_flights
+       run_date = sy-datum
+  TO DATABASE indx(zb) FROM ls_admin ID lv_id.     "同 ID 會被覆蓋
+
+" 讀回：只取需要的物件；名稱要和匯出時一致
+DATA lt_back TYPE STANDARD TABLE OF sflight WITH EMPTY KEY.
+IMPORT flights = lt_back
+  FROM DATABASE indx(zb) ID lv_id.
+IF sy-subrc &lt;&gt; 0.
+  MESSAGE |找不到叢集 { lv_id }| TYPE 'I'.
+ENDIF.
+
+" 刪除整個叢集
+DELETE FROM DATABASE indx(zb) ID lv_id.</code></pre>
+  <p><b>叢集表 vs 透明表</b>：叢集表用很少的 I/O 就能讀大量資料，但一次只能讀一個叢集 ID、必須知道區域與 ID、無法跨叢集關聯；透明表可以用任意邏輯條件查詢、用 JOIN（ABAP SQL 自 R/3 3.1 起支援）把多表資料連起來。</p>
+  <div class="warn"><b>別把兩種「叢集」搞混：</b>本節是 <b>EXPORT/IMPORT 用的叢集資料庫表</b>（INDX 類），在 S/4HANA 仍完全有效。另一種是 ABAP 字典的 <b>Pool / Cluster Table</b>（例如 ECC 的 BSEG、CDPOS、KONV），S/4HANA 已全部轉成透明表（BSEG 另外被 ACDOCA 取代、KONV 由 PRCD_ELEMENTS 取代）。另外，INDX 類資料對 SQL 是黑盒子、無法查詢，只適合存快照與暫存，不要拿來存需要報表分析的業務資料。</div>
+
+  <h3 id="ch05-11-19">19. 程式呼叫的記憶體模型：ABAP 記憶體、SAP 記憶體與 SUBMIT WITH</h3>
+  <p><b>邏輯記憶體層級</b>：一個使用者登入（user / terminal session）可開多個<b>主階段（main session，外部階段，約等於一個 SAP GUI 視窗）</b>；每個主階段最多 <b>20 個內部階段</b>，每支程式在一個內部階段執行，程式資料只在程式內可見。</p>
+  <ul>
+    <li><b>SAP 記憶體</b>：每個登入一份，所有主階段共用，整個登入期間保留；存放<b>參數 ID</b> 的值（表 <b>TPARA</b>，ID 最長 20 字元），常用來當畫面欄位預設值。因為所有階段都看得到，只「有條件地」適合在內部階段之間傳資料。</li>
+    <li><b>ABAP 記憶體</b>：每個主階段一份，只能由 ABAP 程式存取；用來在同一主階段的內部階段之間傳遞變數（欄位、結構、內表、複雜物件）；主階段結束時自動釋放。</li>
+  </ul>
+  <table>
+    <thead><tr><th>呼叫</th><th>記憶體行為</th></tr></thead>
+    <tbody>
+      <tr><td>CALL FUNCTION（同步）</td><td>函數群組載入<b>目前內部階段</b>，其全域資料保留到呼叫端程式結束；再呼叫同群組的其他函數時<b>不會重新載入、全域資料不會初始化</b></td></tr>
+      <tr><td>CALL TRANSACTION／SUBMIT AND RETURN</td><td>開新的內部階段（新程式上下文），兩個內部階段共用同一份 ABAP 記憶體；結束後刪除新階段，回到呼叫端；被呼叫端可用 LEAVE PROGRAM 提早結束</td></tr>
+      <tr><td>SUBMIT</td><td>呼叫端被移出目前內部階段，載入被呼叫程式；<b>ABAP 記憶體不會初始化</b>，仍可用來傳資料</td></tr>
+      <tr><td>LEAVE TO TRANSACTION</td><td>移除目前主階段的<b>所有</b>內部階段、開新的內部階段；<b>ABAP 記憶體被初始化</b>，不能用它傳資料給被呼叫交易</td></tr>
+      <tr><td>STARTING NEW TASK（非同步）</td><td>同一台應用伺服器上開新的階段平行處理；<b>ABAP 記憶體與 SAP 記憶體都無法共用</b>，只能透過函數介面</td></tr>
+    </tbody>
+  </table>
+  <p>程式之間傳資料的五種管道：<b>被呼叫端的介面</b>（方法、函數、子程式、對話模組、報表的標準選擇畫面）、<b>ABAP 記憶體</b>、<b>SAP 記憶體</b>、<b>資料庫表</b>（含 EXPORT/IMPORT 與共用緩衝）、<b>展示伺服器或應用伺服器上的檔案</b>（GUI_UPLOAD / GUI_DOWNLOAD；OPEN DATASET、TRANSFER、READ DATASET，見 <a href="#ch04-4">4-4 章</a>）。</p>
+  <pre><code class="abap">*&amp;---------------------------------------------------------------*
+*&amp; ① SUBMIT ... WITH：把值塞進被呼叫報表的選擇畫面
+*&amp;---------------------------------------------------------------*
+DATA lr_fldate TYPE RANGE OF sflight-fldate.     "取代舊的 RANGES 敘述
+lr_fldate = VALUE #( ( sign = 'I' option = 'EQ' low = '20261001' )
+                     ( sign = 'I' option = 'EQ' low = '20261008' ) ).  "列舉優於 BT
+
+SUBMIT zbc414_flight_list
+  WITH p_carrid = lv_carrid
+  WITH p_connid = lv_connid
+  WITH s_fldate IN lr_fldate
+  AND RETURN.                     "不加 VIA SELECTION-SCREEN → 不顯示選擇畫面直接執行
+" 也可用 USING SELECTION-SET 'VAR01' 帶入變式
+
+*&amp;---------------------------------------------------------------*
+*&amp; ② ABAP 記憶體：同一主階段內傳內表（ID 最長 32 字元）
+*&amp;---------------------------------------------------------------*
+EXPORT carrid = lv_carrid
+       spfli  = lt_spfli
+  TO MEMORY ID 'ZBC414_SPFLI'.    "同 ID 再 EXPORT 會覆蓋
+
+" --- 被呼叫的程式中 ---
+IMPORT spfli = lt_spfli_in        "可以只取部分物件；型別必須相容
+  FROM MEMORY ID 'ZBC414_SPFLI'.
+FREE MEMORY ID 'ZBC414_SPFLI'.    "用完就清；FREE MEMORY 不帶 ID 會清掉整個 ABAP 記憶體
+
+*&amp;---------------------------------------------------------------*
+*&amp; ③ SAP 記憶體：用參數 ID 預填交易的初始畫面
+*&amp;---------------------------------------------------------------*
+SET PARAMETER ID 'CAR' FIELD lv_carrid.
+CALL TRANSACTION 'TABC' WITH AUTHORITY-CHECK AND SKIP FIRST SCREEN.</code></pre>
+  <p>畫面欄位與 SAP 記憶體的互動（Dynpro 細節見 <a href="#ch05-9">5-9 章 BC410</a>、<a href="#ch04-2">4-2 章</a>）：欄位要以<b>連到該參數 ID 的資料元素</b>定義；勾 <b>SET</b> 時，使用者輸入會寫入 SAP 記憶體；勾 <b>GET</b>，且程式只給了<b>初始值</b>時，欄位會顯示 SAP 記憶體中的值當建議值。查欄位的參數 ID：在畫面上按 F1 → Technical Information。在 ABAP 編輯器用「Pattern」插入 SUBMIT 時，系統會自動用 WITH 列出被呼叫程式選擇畫面的所有元素。</p>
+  <div class="warn"><b>現代版本注意：</b>① <span class="kw">CALL TRANSACTION</span> 在 7.40 之後應明確寫 <span class="kw">WITH AUTHORITY-CHECK</span>（或有理由時 WITHOUT），否則延伸檢查會警告，因為它不會自動檢查 S_TCODE 以外的權限；② ABAP 記憶體（EXPORT/IMPORT MEMORY）與 SAP 記憶體（SET/GET PARAMETER）在 <b>ABAP Cloud</b> 不可用；物件導向程式裡跨類別傳資料，優先用方法參數或類別屬性，需要跨階段共用時用 Shared Objects（見 <a href="#ch05-3">5-3 章 BC402</a>）。</div>
+
+  <h3 id="ch05-11-20">20. S/4HANA 現況與實務總整理</h3>
+  <table>
+    <thead><tr><th>BC414 技術（教材寫法）</th><th>S/4HANA 1809+ 的做法</th><th>說明</th></tr></thead>
+    <tbody>
+      <tr><td>Open SQL，無 @ 的主機變數、SET 以空白分隔</td><td>ABAP SQL 嚴格模式：主機變數加 @、SET 以逗號分隔、內嵌宣告 @DATA( )</td><td>7.53 起正名 ABAP SQL；語法細節見 <a href="#ch02-2">2-2 章</a></td></tr>
+      <tr><td>CLIENT SPECIFIED</td><td>USING CLIENT；7.54 起 USING CLIENTS IN / USING ALL CLIENTS</td><td>跨用戶端操作要審查</td></tr>
+      <tr><td>直接 UPDATE 標準業務表</td><td><b>禁止</b>；用 BAPI、標準類別 API、RAP 的 EML</td><td>Casper 經驗 3：先標準、再客製</td></tr>
+      <tr><td>ENQUEUE_／DEQUEUE_</td><td>Z 表照用；標準物件由 BAPI / RAP 自動上鎖；ABAP Cloud 用 CL_ABAP_LOCK_OBJECT_FACTORY 取得鎖物件</td><td>SM12、ENSA2</td></tr>
+      <tr><td>CALL FUNCTION … IN UPDATE TASK</td><td><b>仍是 S/4HANA 標準交易的核心</b>（VA01、MIGO 背後都是）；自建 Z 交易照用</td><td>SM13 監控方式不變</td></tr>
+      <tr><td>PERFORM … ON COMMIT</td><td>新程式改用更新模組；僅在函數群組內部延後寫中心表時保留</td><td>類別中不能用 FORM</td></tr>
+      <tr><td>Object Services</td><td>RAP（lock master、etag、late numbering、save sequence）</td><td>較新版本另有受控 SAP LUW（CL_ABAP_TX，7.58 / S/4HANA 2023）與背景處理框架 bgPF，屬 ABAP Cloud 範疇</td></tr>
+      <tr><td>NUMBER_GET_NEXT</td><td>照用，或 CL_NUMBERRANGE_RUNTIME</td><td>SNRO / SNUM 不變</td></tr>
+      <tr><td>變更文件 include + FORM</td><td>直接呼叫產生的 _WRITE_DOCUMENT 更新模組；CDPOS 已是透明表</td><td>SCDO 不變</td></tr>
+      <tr><td>RANGES、TABLES 表工作區</td><td>TYPE RANGE OF、內嵌宣告的工作區</td><td>見 <a href="#ap-01">附錄</a></td></tr>
+      <tr><td>Native SQL（EXEC SQL 區塊）</td><td>ADBC（CL_SQL_STATEMENT）或 AMDP</td><td>HANA 專屬功能才需要</td></tr>
+    </tbody>
+  </table>
+  <p><b>Casper 三條實務經驗在本課的對應：</b></p>
+  <ol>
+    <li><b>HANA 沒有預設排序</b>：<span class="kw">SELECT SINGLE … FOR UPDATE</span> 或「取第一筆再更新」若條件不是完整主鍵，每次抓到的可能是不同筆——更新了錯的那筆，而且不會報錯。任何「取第一筆」都要完整主鍵或明確 ORDER BY；批次上鎖時也先依鍵排序，所有程式用相同順序請求鎖，才能避免互相等待（死結）。</li>
+    <li><b>列舉優於區間</b>：UPDATE / DELETE 的 WHERE、ENQUEUE 的鎖參數、SUBMIT WITH 的範圍，都優先列舉明確鍵值；區間與泛型鎖的範圍常常比你以為的大。</li>
+    <li><b>先找標準，再想客製</b>：BC414 前言第一句就說「不要直接寫業務表」。順序是：標準交易／設定 → BAPI 或標準 API（同一 LUW、最後 BAPI_TRANSACTION_COMMIT）→ BAdI / Enhancement（<a href="#ch03-4">3-4 章</a>、<a href="#ch05-14">5-14 章</a>）→ 最後才是自建 Z 表＋本章的鎖與 Update Task。</li>
+  </ol>
+  <pre><code class="abap">*&amp;---------------------------------------------------------------*
+*&amp; 本章總結樣板：Z 交易的「存檔」方法（鎖 → 讀 → 檢查 → 取號 → 登錄 → COMMIT）
+*&amp;---------------------------------------------------------------*
+METHOD save_booking.
+  " ① 鎖（_scope 2：交給更新程式釋放）
+  CALL FUNCTION 'ENQUEUE_ESFLIGHT'
+    EXPORTING carrid = is_req-carrid connid = is_req-connid fldate = is_req-fldate
+    EXCEPTIONS foreign_lock = 1 OTHERS = 2.
+  IF sy-subrc &lt;&gt; 0.
+    RAISE EXCEPTION TYPE zcx_bc414_locked EXPORTING locked_by = sy-msgv1.
+  ENDIF.
+
+  " ② 鎖成功才讀最新資料（完整主鍵，結果唯一）
+  SELECT SINGLE seatsmax, seatsocc FROM sflight
+    WHERE carrid = @is_req-carrid AND connid = @is_req-connid AND fldate = @is_req-fldate
+    INTO @DATA(ls_seat).
+
+  " ③ 業務檢查在對話端做，使用者能反應
+  IF ls_seat-seatsocc &gt;= ls_seat-seatsmax.
+    RAISE EXCEPTION TYPE zcx_bc414_full.
+  ENDIF.
+
+  " ④ 取號（中心資源，盡量晚）
+  cl_numberrange_runtime=&gt;number_get( EXPORTING nr_range_nr = '01' object = 'ZBC414BK'
+                                      IMPORTING number = DATA(lv_no) ).
+
+  " ⑤ 登錄更新請求（應用資料＋變更文件，同一個 SAP LUW）
+  DATA(ls_book) = CORRESPONDING sbook( is_req ).
+  ls_book-bookid = CONV #( lv_no ).
+  CALL FUNCTION 'Z_BC414_BOOK_CREATE' IN UPDATE TASK
+    EXPORTING is_book = ls_book.
+
+  " ⑥ 關閉 LUW；需要馬上讀回結果時用 AND WAIT
+  COMMIT WORK AND WAIT.
+  IF sy-subrc &lt;&gt; 0.
+    RAISE EXCEPTION TYPE zcx_bc414_update_failed.   "詳情請看 SM13
+  ENDIF.
+  rv_bookid = ls_book-bookid.
+ENDMETHOD.</code></pre>
+  <div class="tip"><b>上線前檢查清單：</b>① 所有改同一張 Z 表的程式都用同一個鎖物件；② 鎖→讀→改→解鎖順序正確；③ 更新模組沒有 COMMIT WORK / ROLLBACK WORK、沒有 POPUP、沒有 E 訊息（要回滾用 A）；④ 更新模組參數全部 Pass Value；⑤ 對話程式在 LUW 中間沒有 RFC、CALL TRANSACTION、SUBMIT、WAIT；⑥ SM13 有人監控、rdisp/vbmail 通知對象已設定；⑦ 背景大量處理考慮 SET UPDATE TASK LOCAL；⑧ 效能問題（大量 UPDATE、鎖等待）用 ST05 / SAT 量測，見 <a href="#ch05-21">5-21 章 BC490</a>。</div>
+
+  <h3 id="ch05-11-qa">練習與自我檢核</h3>
+  <p>原廠教材的練習以航班模型（SPFLI / SFLIGHT / SBOOK）為主軸，逐步把一支直接更新的訂位程式改造成鎖＋更新模組的版本。以下題目依本章順序整理，附參考答案要點。</p>
+  <ol>
+    <li><b>是非題</b>：Open SQL 同時包含 DML 與 DDL。<br><i>答：錯。只有 DML；DDL 由 ABAP 字典負責。</i></li>
+    <li><b>INSERT spfli FROM TABLE @lt 時有一筆主鍵重複，會發生什麼？怎麼讓其他筆照樣寫入？</b><br><i>答：執行時期錯誤、整批回滾（可用 CX_SY_OPEN_SQL_DB 捕捉）。加 ACCEPTING DUPLICATE KEYS：重複的略過，sy-subrc = 4，sy-dbcnt 為實際寫入筆數。</i></li>
+    <li><b>只想改兩個欄位，為什麼不建議 UPDATE dbtab FROM @wa？</b><br><i>答：它以 wa 的主鍵整筆覆蓋；wa 中未填的欄位會被寫成初始值。應用 UPDATE … SET f1 = …, f2 = … WHERE 完整主鍵。</i></li>
+    <li><b>哪兩種方法會觸發資料庫回滾？差別是什麼？</b><br><i>答：A／X 終止訊息（回滾並終止程式）與 ROLLBACK WORK（回滾但不終止，且程式上下文不重置）。</i></li>
+    <li><b>列出至少五種隱式 DB Commit 的情境。</b><br><i>答：送出畫面（對話步驟結束）、同步／非同步 RFC、WAIT、LUW 中送 I/W/E 訊息、CALL TRANSACTION、LEAVE TO TRANSACTION、SUBMIT（及被呼叫端結束）。</i></li>
+    <li><b>為什麼跨多個畫面的交易不能只靠 SELECT … FOR UPDATE？</b><br><i>答：資料庫鎖在每次 DB Commit 時釋放，而每換一次畫面就隱式 commit。</i></li>
+    <li><b>建立 Z 表 ZBC414_BOOK 的鎖物件，名稱規則？啟用後得到什麼？</b><br><i>答：EZ 或 EY 開頭（如 EZBC414_BOOK）；自動產生 ENQUEUE_EZBC414_BOOK 與 DEQUEUE_EZBC414_BOOK。</i></li>
+    <li><b>呼叫 ENQUEUE_ESFLIGHT 只傳 CARRID = 'LH'，鎖住了什麼？若 mandt 傳 SPACE 呢？</b><br><i>答：LH 的所有航班（其餘參數為萬用字元）；mandt 傳 SPACE 則鎖所有用戶端。要鎖「真的是初始值」的欄位用 x_ 參數。</i></li>
+    <li><b>_SCOPE 的 1、2、3 各用在什麼情境？</b><br><i>答：1＝直接更新，程式自己解鎖；2（預設）＝交給更新程式，更新結束自動釋放；3＝一個留程式、一個交給更新（部分更新後仍要持續鎖住整筆）。</i></li>
+    <li><b>鎖容器怎麼用？FLUSH_ENQUEUE 失敗時容器裡的鎖狀態如何？</b><br><i>答：呼叫鎖模組帶 _collect = 'X'，再 FLUSH_ENQUEUE 一次送出；失敗時觸發 FOREIGN_LOCK，容器內的鎖一個都沒設、內容保留，可再試或用 RESET_ENQUEUE 清掉。</i></li>
+    <li><b>同一程式已有 E 鎖，再要求 E、S、X 各會如何？其他使用者要求 S 呢？</b><br><i>答：同一程式：E 與 S（及 O）接受、X 拒絕。其他使用者：任何模式都被拒絕。</i></li>
+    <li><b>寫出悲觀鎖模式的四個步驟，並說明先讀後鎖的風險。</b><br><i>答：鎖 E → 讀 → 改並寫入 → 解鎖。先讀後鎖會讓使用者在過期資料上作業。</i></li>
+    <li><b>樂觀鎖的兩個階段？O 升級失敗代表什麼？</b><br><i>答：第一階段設 O 鎖並讀取；第二階段用 R 升級成排他鎖再存檔、解鎖。升級失敗代表別人已先升級（你的 O 被刪）或有人持有 S 鎖，須重新讀取。</i></li>
+    <li><b>更新模組的介面有哪些限制？可以在裡面 COMMIT WORK 嗎？</b><br><i>答：只能有 IMPORTING 與 TABLES，字典型別、Pass Value；EXPORTING 與例外被忽略；不可 COMMIT WORK／ROLLBACK WORK，要回滾送 A 訊息。</i></li>
+    <li><b>寫出 Update Task 的五個步驟，以及日誌相關的四張透明表。</b><br><i>答：寫請求 → 完成請求（COMMIT WORK 建表頭）→ 傳給更新程式 → 執行更新 → 刪除請求。VBHDR、VBMOD、VBDATA、VBERROR（或叢集表 VBLOG）。</i></li>
+    <li><b>非同步、同步、本地三種更新模式的語法與適用情境？</b><br><i>答：COMMIT WORK（對話標準）；COMMIT WORK AND WAIT（後續依賴結果，看 sy-subrc）；SET UPDATE TASK LOCAL＋COMMIT WORK（主記憶體、最快、獨占工作程序，只適合批次）。</i></li>
+    <li><b>V1 失敗時 V2 會執行嗎？V2 有鎖嗎？Collective Run 何時執行？</b><br><i>答：V1 失敗則 V2 不觸發；V2 一律不帶 SAP 鎖；Collective Run 要等 RSM13005 執行。</i></li>
+    <li><b>在一個更新模組中同時要 INSERT 訂位、UPDATE 航班座位數、UPDATE 客戶統計，順序怎麼排？</b><br><i>答：先 INSERT 新紀錄 → 再改少人存取的表（客戶統計，或乾脆放 V2）→ 最後改中心表（SFLIGHT 座位數）。</i></li>
+    <li><b>程式 A 登錄了 IN UPDATE TASK 後，沒有 COMMIT WORK 就 LEAVE TO TRANSACTION，結果如何？換成 CALL TRANSACTION 呢？</b><br><i>答：LEAVE TO TRANSACTION 結束 A 的 LUW，更新鍵沒有表頭，請求永遠不執行。CALL TRANSACTION 則 A 的 LUW 在回來後繼續，請求仍保留，A 之後的 COMMIT WORK 會提交；但被呼叫交易有自己的 LUW，自己要 COMMIT。</i></li>
+    <li><b>程式設了 E 鎖，再 CALL TRANSACTION 一支也要鎖同一筆的交易，結果？</b><br><i>答：FOREIGN_LOCK。CALL TRANSACTION 是新的 LUW，無法累積鎖。須先解鎖或改用同 LUW 的函數／BAPI。</i></li>
+    <li><b>號碼範圍三種緩衝模式各自的優缺點？法規要求不跳號時怎麼辦？</b><br><i>答：不緩衝＝無跳號、依時序，但 NRIV 資料庫鎖造成序列化；記憶體緩衝＝最快但會跳號、跨伺服器無時序；平行緩衝＝存 NRIVSHADOW，rollback 號碼可回收。法規需求可評估 Italian solution（Note 840901）或不緩衝。</i></li>
+    <li><b>變更文件的表頭與項目存在哪裡？欄位要怎樣才會被記錄？</b><br><i>答：CDHDR 與 CDPOS（計畫變更 PCDHDR / PCDPOS；ECC 時代項目在叢集 CDCLS，S/4HANA 已是透明表）；欄位的資料元素要勾「Change document」。變更號碼取自號碼範圍物件 AENDBELEG。</i></li>
+    <li><b>持久化物件修改屬性後何時寫入資料庫？需要自己上鎖嗎？</b><br><i>答：COMMIT WORK（或 OO 模式下 top-level 交易 END( )）時才產生更新請求；仍要自己實作 SAP 鎖。</i></li>
+    <li><b>EXPORT 到 INDX 同一個 ID 兩次會怎樣？DELETE 能只刪其中一個物件嗎？</b><br><i>答：第二次覆蓋第一次（沒有寫入保護）；DELETE 只能刪整個叢集。</i></li>
+    <li><b>LEAVE TO TRANSACTION 能用 ABAP 記憶體傳資料嗎？SUBMIT 呢？非同步 RFC 呢？</b><br><i>答：LEAVE TO TRANSACTION 不行（ABAP 記憶體被初始化）；SUBMIT 可以（不初始化）；非同步 RFC 兩種記憶體都不行，只能用函數介面。</i></li>
+    <li><b>實作題</b>：建立 Z 表 ZBC414_BOOK（含 BOOKID 以號碼範圍 ZBC414BK 給號）、鎖物件 EZBC414_BOOK、V1 更新模組 Z_BC414_BOOK_CREATE、變更文件物件 ZBC414_BOOK，寫一支對話程式完成訂位；故意在更新模組裡讓第二筆 SQL 失敗，到 SM13 看錯誤、到 SM12 確認鎖已被釋放、確認 CDHDR 沒有留下半套紀錄。<br><i>答要點：鎖用 _scope 2、COMMIT WORK 後不 DEQUEUE；更新模組用 A 訊息；應用更新與 _WRITE_DOCUMENT 在同一 LUW，因此失敗時兩者一起回滾。</i></li>
+  </ol>
+</section>

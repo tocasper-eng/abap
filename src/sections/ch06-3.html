@@ -1,0 +1,712 @@
+<section class="chapter" id="ch06-3" data-title="除錯的絕招（三）：資料追蹤與效能調優實戰">
+  <h2>第 6-3 章 除錯的絕招（三）：資料追蹤與效能調優實戰</h2>
+  <p class="lede">使用者打電話來，通常只有三種說法：「程式當掉了」「程式好慢」「報表數字不對」。這一章不重講每個工具的全部功能（那是 <a href="#ch05-21">5-21 章 BC490</a> 與 <a href="#ch05-4">5-4 章 BC403</a> 的事），而是給你一套<b>「接到問題之後按什麼順序查」</b>的實戰流程：先分流，再用 ST22／SM21／SLG1 做事後分析，用 STAD 判斷時間花在哪一層，用 ST05／SAT／ST12 錄下現場，用 SQLM 看正式機的長期全貌；最後附上 SQL 與內表的改寫檢查清單、平行處理，以及 HANA 沒有預設排序造成「資料對不上」的真實案例。</p>
+  <div class="meta">
+    <div><b>核心 TCODE</b><span class="tcode">ST22</span><span class="tcode">SM21</span><span class="tcode">SLG1</span><span class="tcode">SLG0</span><span class="tcode">SM13</span><span class="tcode">STAD</span><span class="tcode">ST03N</span><span class="tcode">SM50</span><span class="tcode">SM66</span><span class="tcode">ST02</span><span class="tcode">ST04</span><span class="tcode">ST06</span><span class="tcode">ST05</span><span class="tcode">SAT</span><span class="tcode">SE30</span><span class="tcode">ST12</span><span class="tcode">SQLM</span><span class="tcode">SQLMD</span><span class="tcode">SWLT</span><span class="tcode">ST01</span><span class="tcode">STAUTHTRACE</span><span class="tcode">RZ12</span><span class="tcode">SE37</span></div>
+    <div><b>關鍵物件</b>SET RUN TIME ANALYZER、BAL_LOG_CREATE、BAL_LOG_MSG_ADD、BAL_DB_SAVE、BALHDR、SPBT_INITIALIZE、STARTING NEW TASK、DESTINATION IN GROUP、CDHDR、CDPOS、VBAK、VBAP、KEKO、Secondary Key、FOR ALL ENTRIES、Subquery</div>
+  </div>
+
+  <h3 id="ch06-3-01">1. 素材清單與本章定位</h3>
+  <p>本章取材自 <span class="tcode">L35_SAP调试技术\技术文档\</span> 的兩份培訓簡報。兩份都是實施公司的內訓教材（不是 SAP 原廠課程），文字量少、大量依賴截圖與圖形，所以本章的操作細節多數是依截圖整理，並用 SAP 標準功能補齊。</p>
+  <table>
+    <thead><tr><th>檔名</th><th>語言</th><th>性質</th><th>規模</th><th>本章採用的內容</th></tr></thead>
+    <tbody>
+      <tr><td>ITL-DEV-TRA 12.数据追踪&amp;ABAP DEBUG.pptx</td><td>簡中（第 5 張截圖註解為繁中）</td><td>開發者培訓（海通安恆 ITL 內訓第 12 講）</td><td>33 張投影片、文字約 1.8 KB、約 31 張截圖</td><td>ST05 四種追蹤與顯示條件、ST05 清單欄位解說、「為何程式如此慢」問題地圖、事後／執行時分析工具分類、Debugger 的 Trace 視窗、Save Parameters as Test Data、彈出視窗啟動 <code>/h</code> 的捷徑檔</td></tr>
+      <tr><td>SAP-ABAP程序性能调优介绍.pptx</td><td>簡中</td><td>開發者培訓（效能調優專題）</td><td>63 張投影片、文字約 22.8 KB、3 張表格，其餘為向量圖（由 PDF 轉檔，截圖已無法抽出）</td><td>使用者請求的 8 步處理流程、回應時間組成與參考值表、效能分析路線圖、ST03N/SM50/SM66/ST02/ST04/ST06、SAT 三種錄製方式與變式、ST05、內表型別與二級鍵、LOOP WHERE、內表 Join、FOR ALL ENTRIES、SQL Explain、子查詢、Hints、多工作處理程序平行處理</td></tr>
+    </tbody>
+  </table>
+  <p>第六部三章的分工：</p>
+  <table>
+    <thead><tr><th>章</th><th>主角</th><th>回答的問題</th></tr></thead>
+    <tbody>
+      <tr><td><a href="#ch05-4">5-4 章 BC403</a></td><td>原廠 Debugger 功能全貌</td><td>Debugger 有哪些工具、每個按鈕做什麼</td></tr>
+      <tr><td><a href="#ch05-21">5-21 章 BC490</a></td><td>原廠效能課程的理論與工具</td><td>ST05、SAT、SQLM、索引、緩衝、內表成本的完整原理</td></tr>
+      <tr><td><a href="#ch06-1">6-1 章</a></td><td>開發者除錯實戰</td><td>中斷點、Watchpoint、Script 在真實情境的用法</td></tr>
+      <tr><td><a href="#ch06-2">6-2 章</a></td><td>顧問除錯術</td><td>不會寫程式的人如何定位訊息、看懂邏輯</td></tr>
+      <tr><td><b>6-3 章（本章）</b></td><td>追蹤與效能調優實戰</td><td>程式「當掉／很慢／資料對不上」時，<b>按什麼順序查、查到什麼要怎麼改</b></td></tr>
+    </tbody>
+  </table>
+  <div class="note">本章凡是工具原理、參數預設值等已在 5-21 章寫過的內容，只放連結不重寫。讀本章時建議另開一個分頁停在 5-21 章對照。</div>
+
+  <h3 id="ch06-3-02">2. 問題分流：先確定是「錯」、「慢」還是「對不上」</h3>
+  <p>ITL 講義第 6 張投影片把開發者最常被問的問題畫成一張圖：<b>碰到執行時錯誤怎麼辦？提示訊息從何而來？為何程式執行如此慢？程式邏輯是怎樣？標準功能如何實現？</b>第 7 張則把工具分成兩大類 <span class="src">（依截圖整理）</span>：</p>
+  <table>
+    <thead><tr><th>類別</th><th>面向</th><th>工具</th></tr></thead>
+    <tbody>
+      <tr><td rowspan="2">事後分析（程式已經結束或中止）</td><td>執行時錯誤</td><td>Dump 分析 <span class="tcode">ST22</span></td></tr>
+      <tr><td>系統層事件</td><td>系統日誌 <span class="tcode">SM21</span></td></tr>
+      <tr><td rowspan="3">執行時分析（重跑一次並觀察）</td><td>效能</td><td>ABAP 執行時間分析器 <span class="tcode">SAT</span>（舊 <span class="tcode">SE30</span>）、SQL 追蹤 <span class="tcode">ST05</span>、記憶體分析器</td></tr>
+      <tr><td>程式流程</td><td>Debugger（跨在效能與流程之間）</td></tr>
+      <tr><td>Dynpro 處理</td><td>Dynpro 追蹤（講義標為 <span class="tcode">ST20</span>）</td></tr>
+    </tbody>
+  </table>
+  <p>把使用者的描述翻成技術問題，第一步用哪個工具就很清楚：</p>
+  <table>
+    <thead><tr><th>使用者怎麼說</th><th>技術上是什麼</th><th>第一站</th><th>第二站</th><th>本章小節</th></tr></thead>
+    <tbody>
+      <tr><td>「跳出一個紅色畫面就回到主選單」</td><td>Runtime Error（Short Dump）</td><td><span class="tcode">ST22</span></td><td>Debugger 從 Dump 直接進入</td><td>第 3 節</td></tr>
+      <tr><td>「存檔後單據號碼有了，但資料不見了」</td><td>更新中止（Update Termination）</td><td><span class="tcode">SM13</span></td><td><span class="tcode">ST22</span>、<span class="tcode">SM21</span></td><td>第 4 節</td></tr>
+      <tr><td>「介面／背景作業說失敗，但沒有畫面」</td><td>應用日誌或作業日誌</td><td><span class="tcode">SLG1</span>、<span class="tcode">SM37</span> 作業日誌</td><td><span class="tcode">SM21</span></td><td>第 4 節</td></tr>
+      <tr><td>「以前很快，今天突然很慢」</td><td>系統層或資料量問題</td><td><span class="tcode">STAD</span></td><td><span class="tcode">SM66</span>、<span class="tcode">ST04</span></td><td>第 5、6 節</td></tr>
+      <tr><td>「這支報表一直都很慢」</td><td>程式本身的 SQL 或內表問題</td><td><span class="tcode">STAD</span> 判斷 DB 或 CPU</td><td><span class="tcode">ST05</span>／<span class="tcode">SAT</span>／<span class="tcode">ST12</span></td><td>第 7～12 節</td></tr>
+      <tr><td>「這個欄位是從哪張表來的？存檔寫到哪裡？」</td><td>資料追蹤</td><td><span class="tcode">ST05</span></td><td>Debugger、變更文件</td><td>第 9 節</td></tr>
+      <tr><td>「同樣條件跑兩次數字不一樣」</td><td>不穩定的結果（排序、區間、時間點）</td><td>Debugger 比對兩次執行</td><td><span class="tcode">ST05</span> 看實際 SQL</td><td>第 16 節</td></tr>
+      <tr><td>「我沒有權限？」</td><td>授權檢查失敗</td><td><span class="tcode">SU53</span></td><td><span class="tcode">STAUTHTRACE</span>（或 <span class="tcode">ST01</span>）</td><td>第 4 節</td></tr>
+    </tbody>
+  </table>
+  <div class="tip">分流的第一句話永遠是：<b>「能重現嗎？在哪個系統、哪個使用者、哪個時間點？」</b>可重現的問題用執行時分析（ST05／SAT／Debugger）；不可重現或只在正式機發生的，先用事後分析（ST22／SM21／STAD／SQLM）把證據撈出來，不要一開始就想在正式機開 Debugger。</div>
+
+  <h3 id="ch06-3-03">3. 事後分析第一站：ST22 讀 Dump 的順序</h3>
+  <p><b>情境：</b>ITL 講義第 6 張的截圖是一個經典 Dump——<code>SYSTEM_NO_ROLL</code>：「Unable to fulfil request for 6708 bytes of memory space」，上方還有一行「Short dump has not been completely stored (too big)」。這代表程式把記憶體用光了（通常是巨大內表），連 Dump 本身都大到存不完整。</p>
+  <p><b>操作步驟：</b></p>
+  <ol>
+    <li><span class="tcode">ST22</span> → 依日期、使用者、程式名過濾（預設只列今天與昨天）。</li>
+    <li>先看 <b>Short Text</b> 與 Runtime Error 名稱（例如 <code>SYSTEM_NO_ROLL</code>、<code>TSV_TNEW_PAGE_ALLOC_FAILED</code>、<code>DBSQL_SQL_ERROR</code>、<code>ITAB_DUPLICATE_KEY</code>、<code>CONVT_NO_NUMBER</code>、<code>MESSAGE_TYPE_X</code>）。</li>
+    <li><b>What happened?</b> → <b>Error analysis</b>：例外類別名稱（<code>CX_SY_…</code>）就在這裡；若是 <code>MESSAGE_TYPE_X</code>，這裡會寫出訊息類別與編號。</li>
+    <li><b>Information on where terminated</b>：程式、Include、行號，以及是否在 Update Task。</li>
+    <li><b>Source Code Extract</b>：標記 <code>&gt;&gt;&gt;&gt;&gt;</code> 的就是出事那一行。</li>
+    <li><b>Active Calls/Events</b>（呼叫堆疊）與 <b>Chosen Variables</b>（當時的變數值）——這兩段才是真正定位原因的地方。</li>
+    <li>要保留證據：按「Keep／保留」，避免被系統定期清除（清除由 Basis 排程的重整作業處理，保留天數依系統設定）。</li>
+    <li>可重現時，直接在 ST22 按「ABAP Debugger」進入斷點位置重現（詳細操作見 <a href="#ch05-4-12">5-4 章第 12 節</a>）。</li>
+  </ol>
+  <p><b>為什麼這樣做：</b>大多數人只看 Short Text 就去改程式，但真正的原因常常在呼叫堆疊的上一層——例如除以零的那一行沒錯，錯在呼叫者傳進來的數量是 0。</p>
+  <table>
+    <thead><tr><th>常見 Dump</th><th>第一個懷疑</th><th>實務改法</th></tr></thead>
+    <tbody>
+      <tr><td><code>TSV_TNEW_PAGE_ALLOC_FAILED</code>、<code>SYSTEM_NO_ROLL</code></td><td>內表太大（SELECT 沒 WHERE、空的 FOR ALL ENTRIES 驅動表）</td><td>分批（<code>PACKAGE SIZE</code>）、只選需要欄位、用 <span class="tcode">ST02</span> 看記憶體</td></tr>
+      <tr><td><code>DBSQL_SQL_ERROR</code></td><td>SQL 太長（巨大 RANGES）、欄位型別不合、HANA 記憶體不足</td><td>RANGES 改為子查詢或 JOIN；看 Error analysis 裡的 DB 錯誤碼</td></tr>
+      <tr><td><code>ITAB_DUPLICATE_KEY</code></td><td>UNIQUE KEY 內表插入重複鍵</td><td>先檢查 <code>line_exists( )</code> 或改用 <code>INSERT … INTO TABLE</code> 看 <code>sy-subrc</code></td></tr>
+      <tr><td><code>MESSAGE_TYPE_X</code></td><td>標準程式刻意中止（通常是資料不一致）</td><td>依 Error analysis 的訊息號碼搜 SAP Note，<b>不要</b>先想客製</td></tr>
+      <tr><td><code>TIME_OUT</code></td><td>對話工作處理程序超過 <code>rdisp/max_wprun_time</code></td><td>回到第 5 節分析效能，或改背景執行</td></tr>
+    </tbody>
+  </table>
+  <p>新程式應該用 class-based exception 把「可預期」的錯誤接住並記錄，不要讓使用者看到 Dump：</p>
+  <pre><code class="abap">*&amp;---------------------------------------------------------------*
+*&amp; 可預期錯誤要接住並留下證據，不要讓使用者看到 Dump
+*&amp;---------------------------------------------------------------*
+TRY.
+    DATA(lv_unit_cost) = ls_cost-amount / ls_cost-quantity.
+    DATA(ls_mat)       = lt_material[ matnr = ls_cost-matnr ].
+  CATCH cx_sy_zerodivide INTO DATA(lx_div).
+    " 數量為 0：記錄到應用日誌（見第 4 節），不是直接 Dump
+    MESSAGE |物料 { ls_cost-matnr } 數量為 0，已略過| TYPE 'S' DISPLAY LIKE 'W'.
+  CATCH cx_sy_itab_line_not_found.
+    MESSAGE |物料 { ls_cost-matnr } 不在主檔清單中| TYPE 'S' DISPLAY LIKE 'W'.
+ENDTRY.
+
+" 真的不可能發生、一發生就代表資料錯亂的情況，才用 ASSERT
+" 配合 ASSERT ID + SAAB，可以在正式機設定成「只記錄、不中止」
+ASSERT ID zcost_check CONDITION ls_cost-quantity &gt;= 0.</code></pre>
+  <div class="warn"><code>ASSERT</code> 沒有 <code>ID</code> 時永遠啟用，條件不成立就產生 <code>ASSERTION_FAILED</code> Dump。正式機上建議一律用 <code>ASSERT ID</code>，並在 <span class="tcode">SAAB</span> 設定 Checkpoint Group 的行為（Inactive／Log／Abort），這樣可以不改程式就收集證據。</div>
+
+  <h3 id="ch06-3-04">4. SM21 系統日誌、SM13 更新中止與 SLG1 應用日誌</h3>
+  <p><b>情境：</b>沒有 Dump、使用者也說不清楚，但「某個時間點之後就怪怪的」。這時要看的是系統與應用留下的日誌。</p>
+  <table>
+    <thead><tr><th>工具</th><th>記錄什麼</th><th>實戰用法</th></tr></thead>
+    <tbody>
+      <tr><td><span class="tcode">SM21</span> 系統日誌</td><td>系統層事件：工作處理程序重啟、DB 連線錯誤、更新中止、Dump 發生、Debugger 中改變數值等</td><td>用時間區間＋使用者過濾，找「使用者說出事的那一分鐘」前後發生了什麼；看到 Dump 或更新中止就轉到 ST22／SM13</td></tr>
+      <tr><td><span class="tcode">SM13</span> 更新記錄</td><td>Update Task 的 V1／V2 更新模組，狀態 ERR 表示中止</td><td>「單據號碼有了但資料沒寫進去」幾乎都是這裡；雙擊可看中止的更新模組與 Dump（原理見 <a href="#ch05-11-11">5-11 章第 11 節</a>）</td></tr>
+      <tr><td><span class="tcode">SLG1</span> 應用日誌</td><td>程式用 BAL（Business Application Log）主動寫下的訊息；物件／子物件在 <span class="tcode">SLG0</span> 定義，表頭存在 <code>BALHDR</code></td><td>介面、背景作業、BAPI 批次處理的首選證據來源；依 Object、Subobject、External ID（例如單據號碼）查</td></tr>
+      <tr><td><span class="tcode">SM37</span> 作業日誌</td><td>背景作業的 Job Log 與 Spool</td><td>背景作業中 <code>MESSAGE</code> 輸出都在 Job Log</td></tr>
+      <tr><td><span class="tcode">SU53</span>／<span class="tcode">STAUTHTRACE</span>（舊 <span class="tcode">ST01</span>）</td><td>最後一次授權檢查失敗／授權追蹤</td><td>「沒權限」類問題；STAUTHTRACE 可跨工作處理程序追一段時間內所有授權檢查</td></tr>
+    </tbody>
+  </table>
+  <p>自己寫的介面或批次程式，應該主動寫應用日誌——這是日後「資料對不上」時最有力的證據。以下用 S/4HANA 1809 就有的 BAL 函數（物件 <code>ZINTF</code> 需先在 <span class="tcode">SLG0</span> 建立）：</p>
+  <pre><code class="abap">*&amp;---------------------------------------------------------------*
+*&amp; 寫入應用日誌（SLG1 可查）：External ID 放業務鍵，日後才找得到
+*&amp;---------------------------------------------------------------*
+DATA lv_log_handle TYPE balloghndl.
+
+DATA(ls_log) = VALUE bal_s_log( object    = 'ZINTF'
+                                subobject = 'COST'
+                                extnumber = |{ lv_matnr ALPHA = OUT }/{ sy-datum }|
+                                aluser    = sy-uname
+                                alprog    = sy-repid ).
+
+CALL FUNCTION 'BAL_LOG_CREATE'
+  EXPORTING  i_s_log      = ls_log
+  IMPORTING  e_log_handle = lv_log_handle
+  EXCEPTIONS OTHERS       = 1.
+
+" 把 BAPI 回傳的 BAPIRET2 逐筆寫進日誌
+LOOP AT lt_return ASSIGNING FIELD-SYMBOL(&lt;ls_ret&gt;).
+  CALL FUNCTION 'BAL_LOG_MSG_ADD'
+    EXPORTING
+      i_log_handle = lv_log_handle
+      i_s_msg      = VALUE bal_s_msg( msgty = &lt;ls_ret&gt;-type
+                                      msgid = &lt;ls_ret&gt;-id
+                                      msgno = &lt;ls_ret&gt;-number
+                                      msgv1 = &lt;ls_ret&gt;-message_v1
+                                      msgv2 = &lt;ls_ret&gt;-message_v2
+                                      msgv3 = &lt;ls_ret&gt;-message_v3
+                                      msgv4 = &lt;ls_ret&gt;-message_v4 )
+    EXCEPTIONS OTHERS = 1.
+ENDLOOP.
+
+CALL FUNCTION 'BAL_DB_SAVE'
+  EXPORTING  i_t_log_handle = VALUE bal_t_logh( ( lv_log_handle ) )
+  EXCEPTIONS OTHERS         = 1.</code></pre>
+  <div class="note">ABAP Cloud／較新版本（S/4HANA 2021 以後）另有物件導向的 <code>CL_BALI_LOG</code> 系列 API；1809 環境請用上面的 BAL 函數。應用日誌需要定期刪除（報表 <code>SBAL_DELETE</code>，或 <span class="tcode">SLG2</span>），寫入時可用 <code>aldate_del</code> 指定到期日。</div>
+
+  <h3 id="ch06-3-05">5. STAD：先判斷時間花在哪一層，再決定開哪個追蹤</h3>
+  <p><b>情境：</b>「這支報表很慢」。在開 ST05 或 SAT 之前，先用 <span class="tcode">STAD</span> 看使用者剛剛那一次執行的統計記錄。它不用事先開關、正式機也有，而且能告訴你<b>該用哪個追蹤工具</b>。</p>
+  <p>效能講義第 3～5 張把一次使用者請求拆成 8 步：① 請求進入 Dispatcher 佇列 → ② 佇列分派 → ③ 交給工作處理程序 → ④ 與使用者內容（Roll 區）交換 → ⑤ 讀表緩衝與程式緩衝 → ⑥ 交給資料庫處理程序 → ⑦ 讀資料庫快取 → ⑧ 資料庫快取與磁碟交換。回應時間就是這些階段的加總（詳細公式見 <a href="#ch05-21-05">5-21 章第 5 節</a>）。講義第 6 張附了一張參考值表：</p>
+  <table>
+    <thead><tr><th>時間項</th><th>參考值（講義第 6 張）</th><th>偏高時代表</th></tr></thead>
+    <tbody>
+      <tr><td>Wait time</td><td>&lt; 回應時間的 10%</td><td>工作處理程序被佔滿（看 SM50／SM66）</td></tr>
+      <tr><td>Main menu（選擇交易）</td><td>&lt; 100 ms</td><td>系統整體問題</td></tr>
+      <tr><td>Average roll-in time</td><td>&lt; 20 ms</td><td>使用者內容太大、記憶體設定</td></tr>
+      <tr><td>Average roll wait time</td><td>&lt; 200 ms</td><td>與 GUI 或外部系統的通訊（同步 RFC、GUI Control）</td></tr>
+      <tr><td>Average load (and generation) time</td><td>回應時間的 10%（&lt; 50 ms）</td><td>程式／CUA／畫面緩衝太小，或剛傳輸過</td></tr>
+      <tr><td>Average database request time</td><td>（回應時間 − 等待時間）的 40%</td><td>昂貴 SQL、缺索引、鎖、統計資訊 → <b>ST05</b></td></tr>
+      <tr><td>Average CPU time</td><td>（回應時間 − 等待時間）的 40%，且不應比處理時間小太多</td><td>大內表、低效率邏輯 → <b>SAT</b></td></tr>
+      <tr><td>Average response time</td><td>依客戶需求，沒有通則</td><td>—</td></tr>
+    </tbody>
+  </table>
+  <p>講義第 7 張的分析路線圖：先問「是所有交易都慢嗎？」——<b>是</b>就看全系統工作量（ST03N、ST06、ST04），是 Basis 的戰場；<b>否</b>就針對單一交易分析症狀：</p>
+  <table>
+    <thead><tr><th>症狀</th><th>可能原因（講義第 7 張）</th></tr></thead>
+    <tbody>
+      <tr><td>Roll-wait 時間大</td><td>與 GUI 或外部系統的通訊問題</td></tr>
+      <tr><td>Load 時間大</td><td>Program／CUA／Screen buffer 太小</td></tr>
+      <tr><td>DB request 時間大</td><td>DB 伺服器 CPU／記憶體瓶頸、網路、昂貴 SQL、資料庫鎖、缺索引、缺統計資訊、緩衝太小</td></tr>
+      <tr><td>CPU 時間大</td><td>昂貴的 ABAP 處理，例如處理大內表、頻繁存取 SAP 緩衝</td></tr>
+      <tr><td>處理時間遠大於 CPU 時間</td><td>CPU 瓶頸、網路或通訊問題</td></tr>
+    </tbody>
+  </table>
+  <p><b>操作步驟：</b><span class="tcode">STAD</span> → 輸入使用者、時間區間（抓寬一點，前後 10 分鐘）、交易或程式 → 找到那一筆 → 雙擊看 Time 與 DB 分頁。DB 分頁若 Requests 與 Database rows 幾乎相同，程式多半是在迴圈裡 <code>SELECT SINGLE</code>。</p>
+  <div class="tip">實戰判斷口訣：<b>DB 時間大開 ST05，CPU 時間大開 SAT，兩個都大或分不清就開 ST12。</b>但若同一時段每步平均 DB 時間都異常高（例如所有交易都慢），先請 Basis 檢查 DB，這時 SQL 追蹤的數字不可信。</div>
+
+  <h3 id="ch06-3-06">6. 系統層快速排除：SM50／SM66、ST02、ST03N、ST04、ST06</h3>
+  <p>效能講義第 8～14 張列出五個系統監控工具。開發者不需要成為 Basis，但要能在五分鐘內排除「不是我程式的問題」：</p>
+  <table>
+    <thead><tr><th>TCODE</th><th>監控對象</th><th>講義重點</th><th>開發者要看什麼</th></tr></thead>
+    <tbody>
+      <tr><td><span class="tcode">ST03N</span>（舊 ST03）</td><td>Workload Monitor</td><td>詳細分析 → 最後的載入，分析最新交易效能；可按日、週、月看歷史</td><td>你的 Z 程式在交易排行中佔總回應時間多少；是 DB 大還是 CPU 大</td></tr>
+      <tr><td><span class="tcode">SM50</span>／<span class="tcode">SM66</span></td><td>工作處理程序（本機／全系統）</td><td>看處理中程序的表存取與 SQL；<b>可中斷程序進入除錯</b></td><td>連續按幾次重新整理，仍卡在同一支程式、同一張表的就是嫌疑犯；「動作」欄顯示循序讀取、直接讀取、插入等</td></tr>
+      <tr><td><span class="tcode">ST02</span></td><td>SAP 記憶體與緩衝</td><td>Extended Memory、CurUse 與 In Mem、Heap Memory、個人記憶體佔用（雙擊 Extended Memory → 模式）</td><td>某個使用者的模式佔用暴增 → 你的程式讀了巨大內表</td></tr>
+      <tr><td><span class="tcode">ST04</span>（新版 DBACOCKPIT）</td><td>資料庫</td><td>Data Buffer Quality &gt; 99.5%；Session Monitor 看目前 DB Session；按 Explain 分析 SQL；Space → Segments → Top Size／Top Growth 找最大的表</td><td>正在跑的 SQL 與執行計畫；你查的表有多大</td></tr>
+      <tr><td><span class="tcode">ST06</span>（新版 OS07N）</td><td>作業系統</td><td>CPU、記憶體使用率；避免用盡實體記憶體、避免使用虛擬記憶體與 SWAP</td><td>整台主機都滿了就不是你的問題</td></tr>
+    </tbody>
+  </table>
+  <p><b>SM50 進入除錯的操作：</b><span class="tcode">SM50</span> → 選取執行中的那一行 → 選單 Program／Session → Program → Debugging。Debugger 會停在當下正在執行的語句，按 F7 幾次就知道它卡在哪個迴圈。</p>
+  <div class="warn">在正式機從 SM50 附掛 Debugger 會<b>暫停</b>那個工作處理程序，使用者畫面會凍結；若該程序正在更新資料，停太久可能造成鎖等待或逾時。需要 <code>S_DEVELOP</code>（OBJTYPE = DEBUG，ACTVT = 03）權限，動作會留在 <span class="tcode">SM21</span>。正規做法是：先用 SM50 的「詳細資訊」看目前的表與 SQL、用 ST05／SAT 的 In Parallel Session 追蹤（第 10 節），只有在必要且取得同意時才附掛 Debugger，而且只看不改。</div>
+
+  <h3 id="ch06-3-07">7. ST05 實戰（一）：四種追蹤與錄製步驟</h3>
+  <p>ITL 講義第 3、4 張是 ST05 的主畫面與顯示條件 <span class="src">（依截圖整理）</span>。主畫面（Performance Analysis）：</p>
+  <ul>
+    <li><b>Select Trace</b>：SQL Trace、Enqueue Trace、RFC Trace、Table Buffer Trace（新版另有 HTTP Trace、Stack Trace 選項）。</li>
+    <li><b>Select Trace Function</b>：Activate Trace、Activate Trace with Filter、Deactivate Trace、Display Trace、Enter SQL Statement（手動輸入 SQL 看 Explain）。</li>
+    <li><b>Trace Status</b>：例如「All Traces are Switched Off」。</li>
+  </ul>
+  <p>四種追蹤各自回答不同的問題：</p>
+  <table>
+    <thead><tr><th>追蹤</th><th>回答的問題</th><th>實戰情境</th></tr></thead>
+    <tbody>
+      <tr><td>SQL Trace</td><td>程式對資料庫發了哪些 SQL、各花多久、回幾筆</td><td>效能分析；反查交易讀寫哪些表（第 9 節）</td></tr>
+      <tr><td>Enqueue Trace</td><td>程式設了哪些 SAP 鎖（鎖物件、鎖引數、模式）、何時釋放</td><td>「使用者 A 開著單據，B 就不能改」的原因；找出交易用哪個鎖物件（進而知道主表）</td></tr>
+      <tr><td>RFC Trace</td><td>呼叫了哪些遠端函數、目的地、傳送／接收位元組</td><td>介面慢、跨系統呼叫次數太多</td></tr>
+      <tr><td>Table Buffer Trace</td><td>哪些存取由 SAP 表緩衝滿足、哪些繞過緩衝</td><td>設定表明明有緩衝卻一直打 DB（例如用了 <code>BYPASSING BUFFER</code>、聚合函數、<code>ORDER BY</code> 非主鍵）</td></tr>
+    </tbody>
+  </table>
+  <p><b>錄製步驟（實戰版）：</b></p>
+  <ol>
+    <li><b>預跑一次</b>目標交易，讓程式緩衝、表緩衝載入完成（否則追蹤裡會混一堆載入 SQL）。</li>
+    <li><span class="tcode">ST05</span> 勾選需要的追蹤 → <b>Activate Trace with Filter</b>，填使用者（<b>一定要填</b>，否則會錄到同伺服器上所有人）、必要時填交易或程式。</li>
+    <li>另開一個模式執行目標交易，<b>只做要分析的那一步</b>。</li>
+    <li>回 ST05 → <b>Deactivate Trace</b>（越快越好，追蹤檔是循環覆寫的）。</li>
+    <li><b>Display Trace</b>，設定顯示條件（下表）。</li>
+  </ol>
+  <p>顯示條件對話框（Set Restrictions for Displaying Trace）的欄位 <span class="src">（依截圖整理，舊版 ST05 畫面）</span>：</p>
+  <table>
+    <thead><tr><th>區塊／欄位</th><th>說明</th></tr></thead>
+    <tbody>
+      <tr><td>Display Trace</td><td>勾選要顯示的追蹤種類；清單格式三選一：Trace List（彙整清單）、Detailed Trace List（明細）、Trace List Sorted by Time（依時間排序）</td></tr>
+      <tr><td>Trace Period</td><td>Start Day／Start Time、End Day／End Time——預設帶入最近一次錄製的區間</td></tr>
+      <tr><td>User</td><td>使用者（截圖中為 IBMXH）</td></tr>
+      <tr><td>Objects</td><td>表名，可用萬用字元或排除（截圖中為 <code>D010*</code>，表示排除 D010 系列的程式載入表；紅色按鈕表示「排除」）</td></tr>
+      <tr><td>Duration</td><td>只顯示超過某持續時間的語句</td></tr>
+      <tr><td>Operations</td><td>只顯示某些操作（例如只看 INSERT、UPDATE、DELETE）</td></tr>
+      <tr><td>DB Connection</td><td>次要資料庫連線（DBCO）</td></tr>
+      <tr><td>TransGUID</td><td>交易 GUID，用來鎖定同一個 LUW</td></tr>
+      <tr><td>No. of Trace Recs</td><td>最多顯示筆數（截圖為 5,000）</td></tr>
+    </tbody>
+  </table>
+  <div class="tip">ITL 講義第 29 張另外示範了 <b>在 Debugger 中開關追蹤</b>：新 Debugger 的 Trace 視窗（Trace Management）列出 ABAP Trace（SE30）、Performance Trace（SE30）、SQL Trace（ST05）、DB Buffer Trace、RFC Trace、Enqueue Trace，每一列都有 On/Off 開關 <span class="src">（依截圖整理）</span>。實戰用法：先在可疑段落前設中斷點 → 停下來後在 Trace 視窗打開 SQL Trace → F8 跑到下一個中斷點 → 關閉。這樣錄到的只有「那一段」，比整支交易錄下來乾淨得多。</div>
+  <p>新版 ST05 的畫面與參數（多檔循環、Stack Trace、HTTP Trace、Structure-Identical 彙總）見 <a href="#ch05-21-09">5-21 章第 9 節</a>。</p>
+
+  <h3 id="ch06-3-08">8. ST05 實戰（二）：看懂追蹤清單的每一欄</h3>
+  <p>ITL 講義第 5 張是一份 Oracle 時代的明細清單：交易 YPP0103x、工作處理程序 2、類型 DIA、用戶端 070，依序對 <code>VBAK</code>、<code>VBPA</code>、<code>PA0001</code>、<code>KNA1</code> 執行 PREPARE → OPEN → FETCH <span class="src">（依截圖整理）</span>。欄位解說（講義原註＋修正）：</p>
+  <table>
+    <thead><tr><th>欄位</th><th>意義</th><th>實戰判讀</th></tr></thead>
+    <tbody>
+      <tr><td>hh:mm:ss.ms</td><td>送出資料庫請求的開始時間（時：分：秒：毫秒）</td><td>兩行之間的空白時間＝ABAP 在處理，不是 DB</td></tr>
+      <tr><td>Duration</td><td>資料庫操作的持續時間</td><td><b>單位是微秒（µs）</b>。講義寫「以毫秒計」是錯的——截圖中 VBAK 的 FETCH 為 71,507，若是毫秒就是 71 秒，實際是 71.5 ms</td></tr>
+      <tr><td>Program</td><td>發出 SQL 的程式名</td><td>雙擊（或按 Display ABAP Source）直接跳到原始碼行</td></tr>
+      <tr><td>Obj. name</td><td>SQL 中的表或 View 名</td><td>反查資料來源的關鍵欄</td></tr>
+      <tr><td>Op.</td><td>資料庫操作：PREPARE、OPEN、FETCH、REOPEN、EXEC、CLOSE…</td><td>新版 ST05 已把 PREPARE／OPEN／FETCH 合併成一行顯示</td></tr>
+      <tr><td>Curs</td><td>資料庫游標編號</td><td>同一游標的 OPEN 與 FETCH 屬於同一條 SQL</td></tr>
+      <tr><td>Array</td><td>每次 FETCH 最多傳回的筆數（陣列大小）</td><td>講義寫成「資料封包大小」不夠精確；截圖中 VBAK 為 221，SELECT SINGLE 類為 1</td></tr>
+      <tr><td>Recs.</td><td>這次操作實際傳回的筆數</td><td>Recs 很大但程式只用幾筆 → WHERE 沒下好</td></tr>
+      <tr><td>RC</td><td>資料庫回傳碼</td><td>依資料庫而異；截圖中的 1403 是 Oracle 的「已無資料」，屬正常結束，不是錯誤</td></tr>
+      <tr><td>Conn</td><td>資料庫連線（R/3＝主要連線）</td><td>非 R/3 表示走 DBCO 次要連線</td></tr>
+      <tr><td>Statement</td><td>SQL 文字（變數以 :A0、:A1 表示）</td><td>可看到 DBIF 自動加上的 <code>"MANDT" = :A0</code></td></tr>
+    </tbody>
+  </table>
+  <p><b>看清單的順序（實戰檢查清單）：</b></p>
+  <ol>
+    <li>切到 <b>Structure-Identical Statements</b>（依結構彙總）→ 依 Duration 總和排序，前五條通常佔八成時間。</li>
+    <li>看 Executions：同一條 SQL 執行上千次、每次 1 筆 → 迴圈內 SELECT，改成一次陣列讀取或 JOIN。</li>
+    <li>看 Identical（值相同的重複 SQL）百分比：同樣的參數查了好幾次 → 用內表暫存結果。</li>
+    <li>對最貴的那條按 <b>Explain</b>：有沒有用到索引、用了哪個索引、命中幾個欄位（效能講義第 44、45 張）。</li>
+    <li>按 <b>Display ABAP Source</b> 回到程式，對照 WHERE 條件是不是真的是業務需要。</li>
+  </ol>
+  <div class="note">效能講義第 45 張說「一般來說，顆粒度大的欄位放在索引前面更有意義」——意思是<b>區分度高（選擇性好）</b>的欄位放前面。但實務上還要考慮 WHERE 條件用的是等號還是範圍：用 <code>=</code> 的欄位要排在用 <code>BETWEEN</code>／<code>&gt;</code> 的欄位前面，否則範圍條件之後的索引欄位都用不上。在 HANA 欄式儲存上，二級索引的需求大幅減少，建索引前先與 Basis 確認（詳見 <a href="#ch05-21-10">5-21 章第 10 節</a>）。</div>
+
+  <h3 id="ch06-3-09">9. 用追蹤反查「這個交易寫了哪些表」</h3>
+  <p><b>情境：</b>顧問問「VA01 存檔時到底寫了哪些表？」「畫面上這個欄位是存在哪裡？」F1 → 技術資訊常常只顯示畫面結構（例如 <code>RV45A</code>、<code>KOMV</code>），不是資料庫表。這時最可靠的方法是：<b>讓系統自己告訴你</b>。</p>
+  <p><b>操作步驟：</b></p>
+  <ol>
+    <li>在測試機準備好要執行的交易，先把所有欄位填好、停在「存檔」前一刻。</li>
+    <li>另開模式 <span class="tcode">ST05</span> → 勾 <b>SQL Trace</b> 與 <b>Enqueue Trace</b> → Activate Trace with Filter，<b>只填使用者，不要限制工作處理程序或交易</b>。</li>
+    <li>回原模式按存檔，等狀態列出現「已儲存」訊息，再多等幾秒（讓 Update Task 跑完）。</li>
+    <li>ST05 → Deactivate → Display Trace。顯示條件的 Operations 只留 <code>INSERT</code>、<code>UPDATE</code>、<code>DELETE</code>（新版可在清單上依 Operation 欄過濾，或切到 Table Access 彙總看每張表的操作次數）。</li>
+    <li>把 Obj. name 欄列成清單，就是這筆交易寫入的所有表；Enqueue Trace 的鎖物件（例如銷售單的 <code>EVVBAKE</code>）則告訴你「主表」是誰。</li>
+    <li>若要知道畫面某欄位來自哪張表，改成在<b>顯示</b>交易（例如 VA03）進入該分頁時錄 SELECT，再對照欄位值。</li>
+  </ol>
+  <p><b>為什麼要「只填使用者」：</b>S/4HANA 的單據存檔大多透過 Update Task（<code>CALL FUNCTION … IN UPDATE TASK</code> 再 <code>COMMIT WORK</code>），真正的 INSERT 是在<b>更新工作處理程序（UPD）</b>裡以同一個使用者名稱執行的。如果你在 Filter 中限制了對話工作處理程序或交易碼，更新模組寫的表就全部漏掉——這是新手最常得出「VA01 只寫了 NRIV」這種錯誤結論的原因。</p>
+  <table>
+    <thead><tr><th>反查手法</th><th>優點</th><th>盲點</th></tr></thead>
+    <tbody>
+      <tr><td>ST05 SQL Trace（本節）</td><td>最完整、看得到實際寫入的每一張表</td><td>非同步的後續處理（輸出控制、bgRFC、工作流程、背景作業）不在同一時段，要延長錄製或另外追</td></tr>
+      <tr><td>ST05 Enqueue Trace</td><td>一眼看出主表（鎖物件以主表命名）</td><td>只看到有上鎖的表</td></tr>
+      <tr><td>SAT（勾選 DB 存取事件）</td><td>能看到是哪個函數／方法寫的</td><td>更新任務要另外勾選「量測 RFC 與更新任務」</td></tr>
+      <tr><td>變更文件 CDHDR／CDPOS</td><td>事後也查得到「哪個欄位從什麼值改成什麼值」</td><td>只有該物件有定義變更文件、且欄位有勾 Change Document 才有</td></tr>
+      <tr><td>SQLM 依 Entry Point（例如 VA01）過濾</td><td>正式機的真實存取、含次數</td><td>需事先啟用；看不到欄位值</td></tr>
+    </tbody>
+  </table>
+  <p>找到表之後，寫一段驗證用的 SELECT 確認「剛剛那筆」真的在裡面，順便建立自己的資料對照表：</p>
+  <pre><code class="abap">*&amp;---------------------------------------------------------------*
+*&amp; 驗證：剛才 VA01 建立的銷售單寫入了哪些資料
+*&amp; （S/4HANA 已無 VBUK/VBUP，狀態欄位併入 VBAK/VBAP）
+*&amp;---------------------------------------------------------------*
+PARAMETERS p_vbeln TYPE vbak-vbeln OBLIGATORY.
+
+SELECT SINGLE vbeln, erdat, erzet, ernam, auart, vkorg, gbstk
+  FROM vbak
+  WHERE vbeln = @p_vbeln
+  INTO @DATA(ls_head).
+
+SELECT vbeln, posnr, matnr, kwmeng, gbsta
+  FROM vbap
+  WHERE vbeln = @p_vbeln
+  ORDER BY posnr                         " HANA 無預設排序，要明確排序
+  INTO TABLE @DATA(lt_item).
+
+" 變更文件：同一張單據後續被誰改過哪些欄位
+SELECT h~changenr, h~username, h~udate, h~utime, p~tabname, p~fname,
+       p~value_old, p~value_new
+  FROM cdhdr AS h
+  INNER JOIN cdpos AS p ON  p~objectclas = h~objectclas
+                        AND p~objectid   = h~objectid
+                        AND p~changenr   = h~changenr
+  WHERE h~objectclas = 'VERKBELEG'
+    AND h~objectid   = @p_vbeln
+  ORDER BY h~udate, h~utime, h~changenr
+  INTO TABLE @DATA(lt_changes).
+
+cl_demo_output=&gt;new( )-&gt;write( ls_head )-&gt;write( lt_item )-&gt;write( lt_changes )-&gt;display( ).</code></pre>
+  <div class="warn">不要在正式機用這個手法「做一筆測試單據」來追蹤——那會產生真實的業務資料與號碼。請在測試機或沙盒做，並注意 <span class="tcode">ST05</span> 追蹤檔可能包含敏感資料（SQL 的變數值），分析完即可刪除或讓它循環覆寫。</div>
+
+  <h3 id="ch06-3-10">10. 資料從哪裡來：Debugger 追資料與「參數存成測試資料」</h3>
+  <p><b>情境：</b>報表上某個金額不對，你需要知道它在程式裡是在哪一步被算錯的。ST05 告訴你讀了哪些表，但計算邏輯要靠 Debugger。</p>
+  <ol>
+    <li><b>從值反推：</b>在 Debugger 對結果內表設 Watchpoint，條件寫成「欄位 = 那個錯的值」，F8 跑下去，停下來的位置就是寫入那個值的語句（Watchpoint 用法見 <a href="#ch05-4-07">5-4 章第 7 節</a>）。</li>
+    <li><b>從表正推：</b>在 Debugger 的 Break at → Statement 輸入 <code>SELECT</code>（ITL 講義第 17 張「ABAP 命令中斷點」），每個 SELECT 都會停下；搭配 F6 看回傳筆數。講義第 18～22 張另外示範了 Method、Function、Form、Source code、Message 五種動態中斷點。</li>
+    <li><b>保存現場：</b>ITL 講義第 31 張示範在函數模組除錯時，於變數視窗的 Services（服務）選單選 <b>Save Parameters as Test Data (SE37)</b> <span class="src">（依截圖整理：截圖中停在 <code>SE16N_INTERFACE</code>，Variable Fast Display Services → Tool-Specific → Save Parameters as Test Data (SE37)）</span>。這會把當下的輸入參數存成 <span class="tcode">SE37</span> 的測試資料，之後可以在 SE37 反覆重跑同一組參數，不必每次都從交易重新操作。</li>
+    <li><b>彈出視窗也要能進 Debugger：</b>彈出的對話框沒有指令欄，打不了 <code>/h</code>。ITL 講義第 32 張的做法是準備一個文字檔，拖放到彈出視窗上：</li>
+  </ol>
+  <pre><code class="text">[FUNCTION]
+Command=/H
+Title=Debugger
+Type=SystemCommand</code></pre>
+  <p>存成例如 <code>debug.txt</code>（有人存成 <code>.sap</code> 也可以），出現彈出視窗時從檔案總管拖到該視窗上，SAP GUI 就會執行 <code>/H</code> 開啟除錯模式，按下視窗上的按鈕即進入 Debugger。同理 <code>Command=/HS</code> 可開啟系統除錯（除錯標準系統程式）。講義第 15 張列出的三個指令：<code>/H</code> 啟動 Debugger、<code>/HS</code> 啟動系統除錯、<code>/HA</code> 跳過畫面處理直接除錯。</p>
+  <div class="warn">在 Debugger 中改變數值來「驗證假設」只能在開發／測試機做。正式機改值需要 <code>S_DEVELOP</code> 的 DEBUG 物件、ACTVT = 02 權限，每次改值都會寫入 <span class="tcode">SM21</span> 系統日誌，屬於稽核重點；繞過檢查寫進資料庫的資料可能與 SAP 標準邏輯不一致。正規替代：用 Save Parameters as Test Data 把現場帶回測試機重現，或用應用日誌（第 4 節）與 SQLM 收集證據。</div>
+
+  <h3 id="ch06-3-11">11. SAT 實戰：CPU 時間大的時候</h3>
+  <p>效能講義第 15～22 張介紹 SAT。SAT 的完整功能（彙總方式、事件類型、Hit List 與 Call Hierarchy）見 <a href="#ch05-21-20">5-21 章第 20 節</a>，這裡只整理實戰要點：</p>
+  <table>
+    <thead><tr><th>錄製方式</th><th>講義說明</th><th>什麼時候用</th></tr></thead>
+    <tbody>
+      <tr><td>In Dialog</td><td>最常用；直接追蹤交易、程式與函數</td><td>自己可以重現的報表或交易</td></tr>
+      <tr><td>In Parallel Session</td><td>直接追蹤某個 Session（目前的工作處理程序）</td><td>已經在跑、跑很久的程式——從 SAT 選中它開始錄一段就停，不用重跑</td></tr>
+      <tr><td>For User/Service</td><td>在背景追蹤某個使用者或程式</td><td>背景作業、RFC 呼叫進來的程式、Fiori／HTTP 請求</td></tr>
+    </tbody>
+  </table>
+  <ul>
+    <li><b>測量精確性</b>（講義第 16 張）：高＝對特定區域高精度量測，錯誤機會低但量測時間會變短；低＝量測時間與範圍較大，但誤差可能較高。</li>
+    <li><b>變式</b>（講義第 17 張）：建立自己的變式；適當加大 Size Limits 與 Maximum Execution Time（講義註明上限 4,293 秒）；需要時才打開內表追蹤選項（會讓追蹤檔暴增）。</li>
+    <li><b>評估</b>（講義第 21 張）：顯示 Net% 最高的語句，雙擊跳到原始碼。</li>
+    <li><b>Tips &amp; Tricks</b>（講義第 22 張）：SAT 內建的對照範例，特別是 SQL 與內表的寫法比較，可直接執行量測。</li>
+  </ul>
+  <p>當程式很長、你只想量其中一段時，用「顯式開關」只錄那一段（變式中需選擇「顯式開關」）：</p>
+  <pre><code class="abap">*&amp;---------------------------------------------------------------*
+*&amp; 只量測可疑的區段：SAT 變式勾選 Explicit Switching On/Off
+*&amp;---------------------------------------------------------------*
+SELECT matnr, werks, lgort, labst
+  FROM mard                              " S/4HANA 中 MARD 已重導向到相容性 View
+  WHERE werks IN @s_werks
+  INTO TABLE @DATA(lt_stock).
+
+SET RUN TIME ANALYZER ON.                 " 開始量測
+LOOP AT lt_stock ASSIGNING FIELD-SYMBOL(&lt;ls_stock&gt;).
+  " 可疑的處理邏輯
+  DATA(lv_text) = VALUE maktx( lt_makt[ matnr = &lt;ls_stock&gt;-matnr ]-maktx OPTIONAL ).
+ENDLOOP.
+SET RUN TIME ANALYZER OFF.                " 結束量測
+
+" 更輕量的做法：在開發機用 GET RUN TIME 做粗估（微秒）
+GET RUN TIME FIELD DATA(lv_t0).
+SORT lt_stock BY matnr werks.
+GET RUN TIME FIELD DATA(lv_t1).
+cl_demo_output=&gt;display( |SORT 花了 { lv_t1 - lv_t0 } µs| ).</code></pre>
+  <div class="note">上面讀 <code>lt_makt</code> 若是 STANDARD 表，每一圈都是線性搜尋，SAT 的 Hit List 會把它排在第一名。改法見第 14 節（HASHED 表或二級鍵）。另外，S/4HANA 的 <code>MARD</code> 庫存欄位已改由 Proxy Object 從 <code>MATDOC</code> 即時彙總，大量讀取時要特別留意效能；新程式建議直接讀 <code>MATDOC</code> 彙總或使用發佈的 CDS View（例如 <code>I_MaterialStock</code>），以版本與系統實際發佈狀態為準。</div>
+
+  <h3 id="ch06-3-12">12. ST12 與 SQLM：一次錄兩種、在正式機看長期</h3>
+  <p><b>ST12（Single Transaction Analysis）</b>把 SAT 的 ABAP Trace 與 ST05 的 SQL Trace 一次錄製、一個畫面分析，是 SAP 支援工程師的標準工具（需 ST-A/PI 附加元件；工具說明見 <a href="#ch05-21-20">5-21 章第 20 節</a>）。實戰步驟：</p>
+  <ol>
+    <li><span class="tcode">ST12</span> → 選 <b>User／Tasks</b>（追某使用者）、<b>Current mode</b>（在本模式執行交易或程式）或 <b>Workprocess</b>（追執行中的工作處理程序）。</li>
+    <li>勾選 ABAP Trace 與 Performance Traces（SQL、Enqueue、RFC），填上說明文字（之後才認得出是哪一次）。</li>
+    <li>Start Trace → 執行 → 結束後 <b>Collect Traces</b>（很重要：沒有收集，追蹤會被覆寫）。</li>
+    <li>在同一個分析畫面切換 ABAP Hit List 與 SQL Summary，SQL 可直接帶出 Explain 與呼叫位置。</li>
+  </ol>
+  <p><b>SQLM（SQL Monitor）</b>用在「正式機某些時候很慢、但測試機重現不了」的情境：在正式機低開銷地長期記錄所有 SQL 與其進入點（交易、報表、RFC、URL）。啟用、背景作業、四種分析觀點都寫在 <a href="#ch05-21-08">5-21 章第 8 節</a>。實戰只要記三件事：</p>
+  <ul>
+    <li>先開一到兩週，用 <span class="tcode">SQLMD</span> 依 Source Position 過濾 Z*／Y* 套件、依 Total Time 排序，得到「客製程式最貴的 SQL 前十名」。</li>
+    <li>Executions 很高、每次筆數很少＝巢狀 SELECT；max 筆數等於整表筆數＝空的 FOR ALL ENTRIES 驅動表或沒有 WHERE。</li>
+    <li>改善後重新量一輪，用數字證明改善有效；再用 <span class="tcode">SWLT</span> 把 SQLM 數據與 ATC 靜態檢查結果合併，排定下一批要改的程式。</li>
+  </ul>
+  <table>
+    <thead><tr><th>工具</th><th>正式機可用？</th><th>開銷</th><th>看得到</th><th>看不到</th></tr></thead>
+    <tbody>
+      <tr><td><span class="tcode">STAD</span></td><td>可，常駐</td><td>極低</td><td>每個對話步驟的時間組成、DB 讀寫筆數</td><td>SQL 文字、程式行</td></tr>
+      <tr><td><span class="tcode">ST05</span></td><td>可，短時間、限使用者</td><td>低</td><td>每條 SQL、變數值、Explain</td><td>ABAP 計算時間</td></tr>
+      <tr><td><span class="tcode">SAT</span></td><td>可，但被測程式明顯變慢</td><td>中～高</td><td>每個處理區塊與語句的時間</td><td>SQL 執行計畫</td></tr>
+      <tr><td><span class="tcode">ST12</span></td><td>可（需 ST-A/PI）</td><td>中～高</td><td>ABAP＋SQL 同一畫面</td><td>長期趨勢</td></tr>
+      <tr><td><span class="tcode">SQLM</span></td><td>可，長期</td><td>低（約 3% 以內）</td><td>一段期間所有 SQL 的次數、時間、筆數與進入點</td><td>單次執行的細節、變數值</td></tr>
+    </tbody>
+  </table>
+
+  <h3 id="ch06-3-13">13. SQL 層改寫檢查清單：FOR ALL ENTRIES、JOIN、子查詢、Explain、Hints</h3>
+  <p>ST05／SQLM 找到慢的 SQL 之後，依效能講義第 43～58 張整理成檢查清單（原理與完整規則見 <a href="#ch05-21-11">5-21 章第 11～14 節</a>、<a href="#ch02-2-17">2-2 章第 17 節</a>）：</p>
+  <table>
+    <thead><tr><th>檢查項</th><th>講義說法</th><th>本書修正／補充</th></tr></thead>
+    <tbody>
+      <tr><td>FOR ALL ENTRIES 的拆批</td><td>預設每 5 筆 itab 執行一次再合併、刪除重複</td><td>「每 5 筆」是舊版 Oracle 的預設值，實際由 DBSL 與參數（例如 <code>rsdb/max_blocking_factor</code>）決定，HANA 上另有 Fast Data Access 等機制，不要背數字</td></tr>
+      <tr><td>FAE 會刪除重複行</td><td>要保留重複就把足夠的鍵欄位選進來</td><td>正確；而且結果<b>沒有順序</b>，後續要 BINARY SEARCH 必須先 SORT</td></tr>
+      <tr><td>FAE 驅動表為空</td><td>（講義未提）</td><td><b>最致命的坑</b>：驅動表空的時候 WHERE 條件整段被忽略，等於讀全表。一定要先檢查 <code>IS NOT INITIAL</code></td></tr>
+      <tr><td>FAE 不能用 ORDER BY／HAVING、除 COUNT(*) 以外的聚合函數</td><td>如講義</td><td>這是傳統限制，新版逐步放寬（例如 <code>ORDER BY PRIMARY KEY</code>），以系統 F1 文件為準；需要聚合時改用 JOIN 或子查詢</td></tr>
+      <tr><td>LEFT OUTER JOIN 右表欄位不能放 WHERE</td><td>講義第 49 張</td><td>這個限制在 ABAP 7.40 SP05 已解除；但語意上放 WHERE 會把外連結變回內連結的效果，要想清楚</td></tr>
+      <tr><td>用子查詢取代 FAE</td><td>FAE 在大量資料時佔用大量記憶體，建議改 JOIN 或子查詢；BSEG 這種叢集表無法用子查詢</td><td>S/4HANA 中 BSEG 已是透明表，限制不再存在；而且 FI 分錄應優先讀 <code>ACDOCA</code></td></tr>
+      <tr><td>Explain</td><td>看執行順序、使用的索引與命中欄位數，避免全表掃描與用錯索引</td><td>HANA 上看的是 HANA 的計畫運算子，深入可用 PlanViz</td></tr>
+      <tr><td>Hints</td><td>講義列出各資料庫的 Note（129385 通用、130480 Oracle、133381 MS SQL、150037 DB6、152913 Informix、162034 DB2/390、485420 iSeries、652096 MaxDB）</td><td>HANA 上請查 SAP Note 2142945（SAP HANA Hints FAQ）；Hint 是<b>最後手段</b>，先改寫 WHERE、補條件</td></tr>
+    </tbody>
+  </table>
+  <p>講義第 44 張的反例（<code>SELECT *</code>、<code>INTO CORRESPONDING FIELDS</code>、語言寫死 <code>'1'</code>）用現代寫法改寫，並附上用子查詢取代 FAE 的寫法：</p>
+  <pre><code class="abap">*&amp;---------------------------------------------------------------*
+*&amp; 講義第 44 張：MSEG × MKPF × MAKT 三表 JOIN 的現代寫法
+*&amp; （S/4HANA 物料憑證實際存在 MATDOC，MSEG/MKPF 為相容 View）
+*&amp;---------------------------------------------------------------*
+SELECT m~mblnr, m~mjahr, m~zeile, m~matnr, m~werks, m~menge, m~meins,
+       k~budat, t~maktx
+  FROM mseg AS m
+  INNER JOIN mkpf AS k ON  k~mblnr = m~mblnr
+                       AND k~mjahr = m~mjahr
+  LEFT OUTER JOIN makt AS t ON  t~matnr = m~matnr
+                            AND t~spras = @sy-langu   " 不要寫死 '1'
+  WHERE k~budat IN @s_budat
+    AND m~werks IN @s_werks
+  INTO TABLE @DATA(lt_doc).
+
+*&amp;---------------------------------------------------------------*
+*&amp; FOR ALL ENTRIES 的正確姿勢 vs 子查詢
+*&amp;---------------------------------------------------------------*
+" (A) FAE：一定先檢查驅動表不為空，結果無順序
+IF lt_po IS NOT INITIAL.
+  SELECT ebeln, ebelp, matnr, menge
+    FROM ekpo
+    FOR ALL ENTRIES IN @lt_po
+    WHERE ebeln = @lt_po-ebeln
+    INTO TABLE @DATA(lt_item_fae).
+  SORT lt_item_fae BY ebeln ebelp.
+ENDIF.
+
+" (B) 子查詢：驅動條件本身就在 DB，就不必先搬到內表
+SELECT ebeln, ebelp, matnr, menge
+  FROM ekpo
+  WHERE ebeln IN ( SELECT ebeln FROM ekko
+                     WHERE ernam = @sy-uname
+                       AND bedat IN @s_bedat )
+  ORDER BY ebeln, ebelp
+  INTO TABLE @DATA(lt_item_sub).</code></pre>
+  <p>ST05 的 <b>Enter SQL Statement</b> 可以貼上改寫後的原生 SQL 直接按 Explain，比較改寫前後的成本（以下為概念示意，實際語法依資料庫）：</p>
+  <pre><code class="sql">SELECT "EBELN", "EBELP", "MATNR", "MENGE"
+  FROM "EKPO"
+ WHERE "MANDT" = '100'
+   AND "EBELN" IN ( SELECT "EBELN" FROM "EKKO"
+                     WHERE "MANDT" = '100'
+                       AND "ERNAM" = 'CASPER' )</code></pre>
+
+  <h3 id="ch06-3-14">14. 內表層改寫檢查清單：型別、二級鍵、LOOP WHERE 與 Parallel Cursor</h3>
+  <p>SAT 顯示時間花在內表操作時，依效能講義第 24～42 張檢查（完整成本分析見 <a href="#ch05-21-18">5-21 章第 18、19 節</a>）：</p>
+  <table>
+    <thead><tr><th></th><th>標準表 STANDARD</th><th>排序表 SORTED</th><th>雜湊表 HASHED</th></tr></thead>
+    <tbody>
+      <tr><td>索引存取</td><td>允許</td><td>允許</td><td>不允許</td></tr>
+      <tr><td>鍵存取</td><td>允許</td><td>允許</td><td>允許</td></tr>
+      <tr><td>主鍵唯一性</td><td><b>只能 NON-UNIQUE</b></td><td>UNIQUE 或 NON-UNIQUE</td><td>只能 UNIQUE</td></tr>
+      <tr><td>以鍵讀取的成本</td><td>O(n) 線性（先 SORT 再 BINARY SEARCH 可到 O(log n)）</td><td>O(log n) 二分</td><td>O(1)</td></tr>
+      <tr><td>推薦存取方式</td><td>主要以索引</td><td>主要以鍵</td><td>只能以鍵</td></tr>
+      <tr><td>講義選型建議</td><td>無唯一主鍵、需要依不同欄位多次排序或倒序</td><td>無唯一主鍵、不需頻繁寫入</td><td>有唯一主鍵、不需用行號讀寫</td></tr>
+    </tbody>
+  </table>
+  <p><b>講義錯誤修正：</b></p>
+  <ul>
+    <li>第 30 張表格寫 Standard key「unique keys：允許」——錯。STANDARD 表的主鍵只能是 NON-UNIQUE（講義第 25 張本身也寫「只能指定為 NON-UNIQUE」，前後矛盾）。</li>
+    <li>第 37 張對 SORTED 表寫 <code>READ TABLE … WITH KEY … BINARY SEARCH</code>——SORTED 表用 <code>WITH TABLE KEY</code> 或鍵的左側前綴時系統本來就用二分搜尋，不需要也不應該加 <code>BINARY SEARCH</code>；現代寫法用表達式 <code>itab[ KEY … ]</code>。</li>
+    <li>第 42 張說函數的 <code>TABLES</code> 參數「只能傳值，不能傳參考」——相反，<code>TABLES</code> 參數一律是<b>傳參考</b>。講義的結論（改用表型別的 <code>IMPORTING</code>／<code>EXPORTING</code>／<code>CHANGING</code>，可自行決定傳值或傳參考）是對的，<code>TABLES</code> 參數確實已過時。</li>
+  </ul>
+  <p><b>二級鍵（Secondary Key）的使用注意</b>（講義第 36 張）：適用於大資料量內表；更新頻繁的內表不建議用（每次異動都要維護鍵）；HASHED 二級鍵比 SORTED 二級鍵維護成本高，鍵欄位數要節制；一個內表最多 15 個二級鍵。</p>
+  <pre><code class="abap">*&amp;---------------------------------------------------------------*
+*&amp; 講義第 33 張的二級鍵 + 第 40、41 張「LOOP WHERE / 內表 Join」的現代寫法
+*&amp;---------------------------------------------------------------*
+TYPES: BEGIN OF ty_vbap,
+         vbeln TYPE vbap-vbeln,
+         posnr TYPE vbap-posnr,
+         matnr TYPE vbap-matnr,
+         arktx TYPE vbap-arktx,
+         netpr TYPE vbap-netpr,
+         werks TYPE vbap-werks,
+       END OF ty_vbap,
+       tt_vbap TYPE STANDARD TABLE OF ty_vbap
+         WITH NON-UNIQUE KEY vbeln posnr
+         WITH NON-UNIQUE SORTED KEY matnr_werks COMPONENTS matnr werks.
+
+DATA lt_vbap TYPE tt_vbap.
+SELECT vbeln, posnr, matnr, arktx, netpr, werks
+  FROM vbap
+  WHERE vbeln IN @s_vbeln
+  INTO TABLE @lt_vbap.
+
+" (1) 巢狀迴圈中的 LOOP WHERE：指定二級鍵，內層就不是全表掃描
+LOOP AT lt_mat ASSIGNING FIELD-SYMBOL(&lt;ls_mat&gt;).
+  LOOP AT lt_vbap ASSIGNING FIELD-SYMBOL(&lt;ls_vbap&gt;)
+       USING KEY matnr_werks
+       WHERE matnr = &lt;ls_mat&gt;-matnr AND werks = &lt;ls_mat&gt;-werks.
+    " …處理…
+  ENDLOOP.
+ENDLOOP.
+
+" (2) 單筆讀取：HASHED 表 O(1)
+DATA lt_makt TYPE HASHED TABLE OF makt WITH UNIQUE KEY matnr spras.
+DATA(lv_maktx) = VALUE maktx( lt_makt[ matnr = lv_matnr spras = sy-langu ]-maktx OPTIONAL ).
+
+" (3) Parallel Cursor（講義第 40、41 張的「內表 Join」）：兩表都依鍵排序，
+"     內層從上次位置往下讀，遇到鍵變化就跳出
+SORT lt_head BY vbeln.
+SORT lt_item BY vbeln posnr.
+DATA(lv_idx) = 1.
+LOOP AT lt_head ASSIGNING FIELD-SYMBOL(&lt;ls_head&gt;).
+  LOOP AT lt_item ASSIGNING FIELD-SYMBOL(&lt;ls_item&gt;) FROM lv_idx.
+    IF &lt;ls_item&gt;-vbeln &lt;&gt; &lt;ls_head&gt;-vbeln.
+      lv_idx = sy-tabix.               " 記住位置，下一張表頭從這裡開始
+      EXIT.
+    ENDIF.
+    " …表頭與明細配對處理…
+  ENDLOOP.
+ENDLOOP.</code></pre>
+  <div class="tip">Parallel Cursor 有個前提：兩張表都依關聯鍵排序，且表頭中每個鍵在明細中的出現順序一致。現在更推薦的做法是把明細宣告為 SORTED 表（鍵 <code>vbeln posnr</code>），直接 <code>LOOP AT … WHERE vbeln = …</code>——系統會對鍵前綴自動做二分定位，效果相同、程式更好讀。另外講義第 41 張原始碼用 <code>ADD 1 TO I</code>，屬已淘汰語法，請用 <code>i += 1</code>（7.54 以上）或 <code>i = i + 1</code>。</div>
+
+  <h3 id="ch06-3-15">15. 平行處理：aRFC 分派到伺服器群組</h3>
+  <p><b>情境：</b>SQL 與內表都已最佳化，但資料量就是很大（例如全廠物料的成本重算），單一工作處理程序要跑好幾小時。效能講義第 59～62 張的做法：用非同步 RFC 把資料拆塊，分派到伺服器群組平行處理。</p>
+  <ol>
+    <li>Basis 在 <span class="tcode">RZ12</span> 定義 RFC 伺服器群組（例如 <code>parallel_generators</code> 或自訂群組），並設定配額。</li>
+    <li>用 <code>SPBT_INITIALIZE</code> 讀取群組目前可用的空閒工作處理程序數（講義第 60 張）。</li>
+    <li>把資料拆塊，每塊以 <code>CALL FUNCTION … STARTING NEW TASK … DESTINATION IN GROUP …</code> 發出（第 61 張）。</li>
+    <li>各任務完成時以回呼收集結果；在資源充足時彼此不影響，完成順序不固定——講義第 62 張的截圖就是 TASK7 比 TASK6 先完成、TASK6 比 TASK5 先完成。</li>
+  </ol>
+  <pre><code class="abap">*&amp;---------------------------------------------------------------*
+*&amp; aRFC 平行處理骨架（被呼叫的 Z 函數必須是 Remote-Enabled）
+*&amp;---------------------------------------------------------------*
+CLASS lcl_parallel DEFINITION.
+  PUBLIC SECTION.
+    DATA mv_running TYPE i.
+    DATA mt_result  TYPE ztt_cost_result.
+    METHODS run IMPORTING it_chunks TYPE ztt_matnr_chunks.
+    METHODS on_end IMPORTING p_task TYPE clike.
+ENDCLASS.
+
+CLASS lcl_parallel IMPLEMENTATION.
+  METHOD run.
+    DATA lv_max  TYPE i.
+    DATA lv_free TYPE i.
+    CALL FUNCTION 'SPBT_INITIALIZE'
+      EXPORTING  group_name     = 'ZPARALLEL'
+      IMPORTING  max_pbt_wps    = lv_max
+                 free_pbt_wps   = lv_free
+      EXCEPTIONS OTHERS         = 1.
+    IF sy-subrc &lt;&gt; 0 OR lv_free = 0.
+      RETURN.                              " 沒有資源就改走序列處理（略）
+    ENDIF.
+    DATA(lv_limit) = nmax( val1 = 1 val2 = lv_free - 2 ).  " 留一點給線上使用者
+
+    LOOP AT it_chunks INTO DATA(ls_chunk).
+      WAIT UNTIL mv_running &lt; lv_limit.    " 控制同時執行的任務數
+      DATA(lv_task) = |T{ sy-tabix WIDTH = 4 ALIGN = RIGHT PAD = '0' }|.
+      CALL FUNCTION 'Z_COST_CALC_CHUNK'
+        STARTING NEW TASK lv_task
+        DESTINATION IN GROUP 'ZPARALLEL'
+        CALLING on_end ON END OF TASK
+        EXPORTING  it_matnr = ls_chunk-matnr
+        EXCEPTIONS system_failure        = 1
+                   communication_failure = 2
+                   resource_failure      = 3
+                   OTHERS                = 4.
+      IF sy-subrc = 0.
+        mv_running = mv_running + 1.       " 7.54 以上可寫 mv_running += 1
+      ENDIF.
+    ENDLOOP.
+    WAIT UNTIL mv_running = 0.             " 等所有任務回來
+  ENDMETHOD.
+
+  METHOD on_end.
+    DATA lt_part TYPE ztt_cost_result.
+    RECEIVE RESULTS FROM FUNCTION 'Z_COST_CALC_CHUNK'
+      IMPORTING  et_result = lt_part
+      EXCEPTIONS OTHERS    = 1.
+    mv_running = mv_running - 1.
+    APPEND LINES OF lt_part TO mt_result.
+  ENDMETHOD.
+ENDCLASS.</code></pre>
+  <div class="warn">
+    <ul>
+      <li>講義原寫法 <code>PERFORMING &lt;subroutine&gt; ON END OF TASK</code> 依賴 FORM，新程式請用 <code>CALLING meth ON END OF TASK</code>。</li>
+      <li>多工作處理程序<b>不是越多越好</b>（講義原話）：它會吃掉對話工作處理程序，白天在正式機大量平行會讓線上使用者排隊。務必與 Basis 協調群組與配額，並在 SM66 監控。</li>
+      <li>各任務回傳順序不固定，彙總後的 <code>mt_result</code> 也沒有順序——任何依賴順序的後續處理都要先 SORT。這和下一節「HANA 沒有預設排序」是同一個道理。</li>
+      <li>每個任務是獨立的 LUW，一個失敗不會讓其他任務回滾；要自己設計重跑與錯誤記錄（寫入應用日誌，見第 4 節）。</li>
+    </ul>
+  </div>
+
+  <h3 id="ch06-3-16">16. 資料對不上：HANA 沒有預設排序（成本評價 H／E 案例）</h3>
+  <p><b>情境：</b>這是 Casper 在專案上真的踩過的坑。一支成本報表，<b>同一個物料、同樣的選擇條件，今天跑和明天跑的單位成本不一樣</b>；在開發機、測試機都重現不了，只在正式機偶爾出現。</p>
+  <p><b>追查過程（照本章的流程走一次）：</b></p>
+  <ol>
+    <li><b>分流</b>（第 2 節）：沒有 Dump、沒有權限問題、也不慢——是「資料對不上」。</li>
+    <li><b>ST05 看實際 SQL</b>（第 7、8 節）：同一條 SELECT 兩次錄製的 WHERE 與變數值完全相同，Recs 也相同——代表 DB 回的資料<b>集合</b>一樣，差別只能在<b>順序</b>。</li>
+    <li><b>Debugger 比對兩次執行</b>（第 10 節）：在「取第一筆」的地方停下，發現內表第一筆一次是成本估算的 item category <b>H</b> 角度，一次是 cost component <b>E</b> 角度。兩種角度的成本構成欄位數量不同，程式取到哪一筆就用哪一筆算，結果自然不同。</li>
+    <li><b>根因：</b>程式用了沒有完整主鍵的 <code>SELECT SINGLE</code>／沒有 <code>ORDER BY</code> 的 <code>UP TO 1 ROWS</code>，再加上 <code>READ TABLE … INDEX 1</code>。舊資料庫依索引讀取時「剛好」有順序，HANA 欄式儲存、平行執行、分割區，<b>不保證任何順序</b>。</li>
+    <li><b>結論：</b>業務上確認應固定抓 <b>H</b>，把條件寫死在 WHERE，並加上明確排序。</li>
+  </ol>
+  <pre><code class="abap">*&amp;---------------------------------------------------------------*
+*&amp; 成本評價 H/E 案例：先固定角度，再明確排序（Z 表與欄位名為示意）
+*&amp;---------------------------------------------------------------*
+" ✗ 出事的寫法：沒有 ORDER BY，HANA 每次回哪一筆不保證
+SELECT kalnr, src_type, cost_elem, cost_value
+  FROM zco_cost_source
+  WHERE matnr = @lv_matnr
+    AND werks = @lv_werks
+  INTO TABLE @DATA(lt_bad)
+  UP TO 1 ROWS.
+
+" ✓ 修正後：業務確認固定取 H，並依估算日期與編號明確排序
+SELECT kalnr, kadky, cost_elem, cost_value
+  FROM zco_cost_source
+  WHERE matnr    = @lv_matnr
+    AND werks    = @lv_werks
+    AND src_type = 'H'                          " 不讓 H / E 混在一起
+  ORDER BY kadky DESCENDING, kalnr DESCENDING, cost_elem
+  INTO TABLE @DATA(lt_cost).
+
+" ✓ 內表後續要 READ … BINARY SEARCH、DELETE ADJACENT DUPLICATES、
+"   AT NEW / AT END OF、INDEX 1 → 一律先 SORT（FAE 與平行處理的結果更要）
+SORT lt_cost BY kalnr cost_elem.
+DELETE ADJACENT DUPLICATES FROM lt_cost COMPARING kalnr cost_elem.</code></pre>
+  <p><b>為什麼開發機重現不了：</b>資料量小、沒有分割、單執行緒時 HANA 回傳順序常常「看起來穩定」；正式機資料量大、平行執行，順序才會變。所以<b>「測試機跑幾次都一樣」不能證明程式沒問題</b>。</p>
+  <div class="warn">HANA 遷移專案務必用 ATC／SCI 的 HANA 遷移檢查變式，找出「依賴隱含順序」的語句（SELECT 後直接 BINARY SEARCH、沒有 ORDER BY 的 SELECT SINGLE／UP TO 1 ROWS、DELETE ADJACENT DUPLICATES、控制層處理），逐條修正，不是加虛擬註解了事。詳見 <a href="#ch05-21-24">5-21 章第 24 節</a>、<a href="#ch02-2-18">2-2 章第 18 節</a>。</div>
+  <p><b>另外兩種「資料對不上」的常見根因</b>，也是 Casper 的實務經驗：</p>
+  <ul>
+    <li><b>區間比的是字典序，不是業務語意。</b>選擇條件用 <code>BT</code>（例如物料 <code>A100</code> 到 <code>A999</code>）時，遇到號碼段不連續、ALPHA 前導零、編碼規則改過，就會漏抓或多抓。能列舉就列舉（多筆 <code>EQ</code>），既準確又能用上索引。</li>
+    <li><b>先找標準，再想客製。</b>追查後若發現是標準程式的行為，先搜 SAP Note、看標準設定與 BAdI／Enhancement Spot，最後才考慮 Enhancement Point 或修改標準——每往右一步，升級成本高一個量級。</li>
+  </ul>
+  <pre><code class="abap">*&amp;---------------------------------------------------------------*
+*&amp; 列舉優於區間：把「區間」轉成「實際存在的值」再查
+*&amp;---------------------------------------------------------------*
+" ✗ 區間：'A100' ~ 'A999' 是字典序，'A1000'、'A10' 也會被包含
+DATA(lr_bad) = VALUE rsdsselopt_t( ( sign = 'I' option = 'BT' low = 'A100' high = 'A999' ) ).
+
+" ✓ 列舉：從主檔取出業務上真正要的物料，組成多筆 EQ
+SELECT matnr FROM mara
+  WHERE mtart = 'FERT'
+    AND matkl = @p_matkl
+  ORDER BY matnr
+  INTO TABLE @DATA(lt_matnr).
+
+DATA(lr_matnr) = VALUE rsdsselopt_t( FOR ls IN lt_matnr
+                                     ( sign = 'I' option = 'EQ' low = ls-matnr ) ).
+" 列舉筆數很多（上千筆）時，改用 JOIN 或子查詢，避免 SQL 過長造成 DBSQL_SQL_ERROR</code></pre>
+
+  <h3 id="ch06-3-17">17. 總檢查清單：當掉、很慢、對不上</h3>
+  <p>把本章流程濃縮成三張可以貼在螢幕旁的清單。</p>
+  <table>
+    <thead><tr><th>#</th><th>程式當掉（Dump／中止）</th><th>檢查工具</th></tr></thead>
+    <tbody>
+      <tr><td>1</td><td>記下 Runtime Error 名稱與例外類別</td><td><span class="tcode">ST22</span></td></tr>
+      <tr><td>2</td><td>看呼叫堆疊與 Chosen Variables，往上一層找原因</td><td><span class="tcode">ST22</span></td></tr>
+      <tr><td>3</td><td>同一時間點系統有沒有其他事件（DB 錯誤、更新中止）</td><td><span class="tcode">SM21</span>、<span class="tcode">SM13</span></td></tr>
+      <tr><td>4</td><td>是標準程式嗎？先搜 SAP Note</td><td>SAP for Me／Note 搜尋</td></tr>
+      <tr><td>5</td><td>可重現就從 Dump 進 Debugger；不可重現就加應用日誌與 <code>ASSERT ID</code> 收集證據</td><td><span class="tcode">SLG1</span>、<span class="tcode">SAAB</span></td></tr>
+    </tbody>
+  </table>
+  <table>
+    <thead><tr><th>#</th><th>程式很慢</th><th>檢查工具</th></tr></thead>
+    <tbody>
+      <tr><td>1</td><td>所有交易都慢？是 → 交給 Basis（ST03N、ST06、ST04）</td><td><span class="tcode">ST03N</span>、<span class="tcode">SM66</span></td></tr>
+      <tr><td>2</td><td>看單次執行的時間組成：DB 大還是 CPU 大</td><td><span class="tcode">STAD</span></td></tr>
+      <tr><td>3</td><td>DB 大：錄 SQL，依結構彙總，找前五名、找重複、找迴圈內 SELECT</td><td><span class="tcode">ST05</span></td></tr>
+      <tr><td>4</td><td>對最貴的 SQL 按 Explain，看索引與命中欄位</td><td><span class="tcode">ST05</span>、<span class="tcode">ST04</span></td></tr>
+      <tr><td>5</td><td>CPU 大：錄 ABAP，看 Net% 前幾名，多半是內表線性搜尋或巢狀迴圈</td><td><span class="tcode">SAT</span></td></tr>
+      <tr><td>6</td><td>分不清或兩者都大：一次錄兩種</td><td><span class="tcode">ST12</span></td></tr>
+      <tr><td>7</td><td>只在正式機慢：長期記錄 SQL 與進入點</td><td><span class="tcode">SQLM</span>、<span class="tcode">SWLT</span></td></tr>
+      <tr><td>8</td><td>改寫後重量一次、比較前後數字；確認結果筆數與順序沒有變</td><td><span class="tcode">SAT</span> 追蹤比較、<span class="tcode">ST05</span></td></tr>
+    </tbody>
+  </table>
+  <table>
+    <thead><tr><th>#</th><th>資料對不上</th><th>檢查工具</th></tr></thead>
+    <tbody>
+      <tr><td>1</td><td>同條件跑兩次結果一樣嗎？不一樣 → 先懷疑排序（HANA 無預設排序）與平行處理的回傳順序</td><td>Debugger、<span class="tcode">ST05</span></td></tr>
+      <tr><td>2</td><td>選擇條件用了區間 BT 嗎？檢查字典序、前導零、號碼段是否連續</td><td>Debugger 看 RANGES 內容</td></tr>
+      <tr><td>3</td><td>資料從哪張表來？錄 SQL 看實際讀取的表與變數值</td><td><span class="tcode">ST05</span></td></tr>
+      <tr><td>4</td><td>值在哪一步被算錯？Watchpoint 從值反推</td><td>Debugger</td></tr>
+      <tr><td>5</td><td>資料被誰、何時改過？</td><td><code>CDHDR</code>／<code>CDPOS</code>、<span class="tcode">SLG1</span></td></tr>
+      <tr><td>6</td><td>把現場帶回測試機重現</td><td>Save Parameters as Test Data（<span class="tcode">SE37</span>）</td></tr>
+      <tr><td>7</td><td>FOR ALL ENTRIES：驅動表是否可能為空？結果是否被去重？</td><td>程式碼審查、<span class="tcode">SQLM</span> 的 max 筆數</td></tr>
+    </tbody>
+  </table>
+
+  <h3 id="ch06-3-qa">練習與自我檢核</h3>
+  <ol>
+    <li><b>使用者說「報表很慢」，你打開 STAD 看到 DB 時間佔 85%、CPU 時間佔 10%。下一步開哪個工具？看什麼？</b><br>參考答案要點：開 <span class="tcode">ST05</span> SQL Trace（限定該使用者），切到結構相同語句彙總，依總時間找前五名，看 Executions 與每次筆數判斷是否迴圈內 SELECT，對最貴的語句按 Explain 看索引。</li>
+    <li><b>ITL 講義說 ST05 的 Duration「以毫秒計」，截圖中某 FETCH 為 71,507。這是多少時間？</b><br>參考答案要點：Duration 單位是微秒，71,507 µs ≈ 71.5 ms，不是 71 秒。</li>
+    <li><b>用 ST05 反查 VA01 存檔寫了哪些表，結果只看到 NRIV 與幾張讀取的表。最可能的原因是什麼？</b><br>參考答案要點：Filter 限制了交易或工作處理程序，錄不到更新工作處理程序（Update Task）執行的 INSERT；應只以使用者過濾，並在存檔後多等幾秒再關閉追蹤。</li>
+    <li><b>一支長時間執行中的背景程式，你想知道它現在卡在哪，但不能讓它停下來。用什麼？</b><br>參考答案要點：<span class="tcode">SM50</span>／<span class="tcode">SM66</span> 看目前動作與表；<span class="tcode">SAT</span> 的 In Parallel Session 或 <span class="tcode">ST12</span> 的 Workprocess 模式錄一段；避免直接附掛 Debugger（會暫停程序、留下 SM21 記錄）。</li>
+    <li><b>彈出視窗沒有指令欄，要怎麼進入 Debugger？</b><br>參考答案要點：準備內容為 <code>[FUNCTION]</code>／<code>Command=/H</code>／<code>Title=Debugger</code>／<code>Type=SystemCommand</code> 的文字檔，拖放到彈出視窗上，再按視窗按鈕。</li>
+    <li><b>指出效能講義關於內表的兩處錯誤。</b><br>參考答案要點：① STANDARD 表主鍵不能是 UNIQUE（第 30 張寫「允許」）；② 函數的 TABLES 參數是傳參考不是傳值（第 42 張）；另外 SORTED 表以鍵讀取不需加 BINARY SEARCH。</li>
+    <li><b>FOR ALL ENTRIES 最致命的陷阱是什麼？講義漏了哪一點？</b><br>參考答案要點：驅動內表為空時 WHERE 條件被忽略、讀全表；一定要先檢查 <code>IS NOT INITIAL</code>。另外結果會去重、沒有順序。</li>
+    <li><b>同一物料的成本報表每次跑結果不同，ST05 顯示兩次 SQL 與回傳筆數完全相同。你會懷疑什麼？怎麼修？</b><br>參考答案要點：HANA 沒有預設排序，程式「取第一筆」時一次取到 H、一次取到 E；修正為業務上固定條件（抓 H）並加 <code>ORDER BY</code>，內表後續處理前先 SORT。</li>
+    <li><b>為什麼選擇條件「列舉優於區間」？</b><br>參考答案要點：區間比的是字典序，遇到號碼不連續、ALPHA 前導零、編碼規則改變會漏抓或多抓；列舉語意明確且能用索引。筆數很多時改用 JOIN／子查詢。</li>
+    <li><b>平行處理完成後，結果內表直接用 BINARY SEARCH 讀取，偶爾讀不到資料。原因？</b><br>參考答案要點：各任務完成順序不固定，<code>APPEND LINES OF</code> 後的結果沒有排序；BINARY SEARCH 前必須先 SORT（或改用 SORTED／HASHED 表接收）。</li>
+    <li><b>SQLM 與 ST05 各適合什麼情境？</b><br>參考答案要點：ST05 追單次、可重現的流程，看得到變數值與 Explain；SQLM 在正式機長期、低開銷地記錄所有 SQL 與進入點，適合找「最貴的客製 SQL」與只在正式機出現的問題，但看不到單次細節。</li>
+    <li><b>介面程式偶爾失敗、但事後沒人知道失敗原因。你會在程式中加上什麼？事後用哪個 TCODE 查？</b><br>參考答案要點：用 BAL 函數（BAL_LOG_CREATE／BAL_LOG_MSG_ADD／BAL_DB_SAVE）把 BAPIRET2 等訊息寫入應用日誌，External ID 放業務鍵；事後用 <span class="tcode">SLG1</span> 依物件／External ID 查詢。</li>
+  </ol>
+</section>

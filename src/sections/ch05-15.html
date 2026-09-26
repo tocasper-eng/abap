@@ -1,0 +1,732 @@
+<section class="chapter" id="ch05-15" data-title="BC427 Enhancement Framework（隱式／顯式增強、New BAdI、Switch Framework）">
+  <h2>第 5-15 章 BC427 Enhancement Framework（隱式／顯式增強、New BAdI、Switch Framework）</h2>
+  <p class="lede">BC427 是 SAP NetWeaver 7.0 推出 Enhancement Framework 時的專題課：它把「在標準程式任何程式區塊的開頭與結尾插入自己的程式碼」、「替換 SAP 預留的程式段」、「以核心層實作的 New BAdI」與「用開關（Switch）統一啟用／停用增強」整合成一套管理架構。這一章依强晟筆記的五個單元順序，補上 BC425 新版（Col18）Unit 7～12 的細節，並把每段範例程式改寫成 S/4HANA 1809+ 可直接用的寫法。和 <a href="#ch03-4">3-4 章 BAdI 與 Enhancement Framework</a>（實戰導向）、<a href="#ch05-14">5-14 章 BC425 增強與修改</a>（全景導向）互補：這章專攻「框架本身的規則與限制」。</p>
+
+  <div class="meta">
+    <div><b>核心 TCODE</b><span class="tcode">SE18</span><span class="tcode">SE19</span><span class="tcode">SE20</span><span class="tcode">SE11</span><span class="tcode">SE24</span><span class="tcode">SE37</span><span class="tcode">SE38</span><span class="tcode">SE80</span><span class="tcode">SE81</span><span class="tcode">SE84</span><span class="tcode">SPAU_ENH</span><span class="tcode">SPAU</span><span class="tcode">SFW1</span><span class="tcode">SFW2</span><span class="tcode">SFW5</span></div>
+    <div><b>關鍵物件</b>ENHANCEMENT-POINT、ENHANCEMENT-SECTION／END-ENHANCEMENT-SECTION、ENHANCEMENT … ENDENHANCEMENT、GET BADI、CALL BADI、CL_EXITHANDLER=&gt;GET_INSTANCE、CL_BADI_BASE、CL_BADI_QUERY、CL_BADI_REPORT_CONTEXT、IF_BADI_INTERFACE、IF_BADI_CONTEXT、CL_ENH_BADI_RUNTIME_FUNCTIONS、CX_BADI_NOT_IMPLEMENTED、CX_BADI_INITIAL_REFERENCE、CX_BADI_MULTIPLY_IMPLEMENTED、CX_BADI_FILTER_ERROR、CORE_OBJECT、IPR_／IPO_／IOW_ 介面、ENHHEADER、ENHOBJ、ENH_SAPRUPGM、ES_&lt;程式名&gt;</div>
+  </div>
+
+  <h3 id="ch05-15-01">1. 課程定位與教材對照</h3>
+  <p>BC427 在 SAP 舊課程體系中屬於 ABAP 開發（BC4xx）的<b>進階專題課（約 300 級）</b>，前提是已上過 <a href="#ch05-2">BC401</a> 與 <a href="#ch05-14">BC425</a>。强晟在前言就說明：BC425 最後只「簡要提到」NetWeaver 7.0 新增的 Enhancement Framework，BC427 則專門展開。<b>新版課程已把 BC427 整併進 BC425</b>（Col18 版的 Unit 7～12），認證範圍屬 TAW12 進階；所以本章以强晟筆記為骨架，BC425 Col18 為補充與校正來源。</p>
+
+  <table>
+    <thead><tr><th>BC427 單元（强晟 2008）</th><th>强晟筆記頁碼</th><th>對應 BC425 Col18（Unit／Lesson，頁碼）</th><th>本章小節</th></tr></thead>
+    <tbody>
+      <tr><td>前言／課程概覽</td><td>p2～p4</td><td>Course Overview p7</td><td>1</td></tr>
+      <tr><td>第一單元：概覽（傳統增強技術、增強點／選項／段）</td><td>p5～p11</td><td>Unit 1 L2 Classic Enhancement Types p17；Unit 8 L1 Describing the Enhancement Framework p211～p215</td><td>2、3</td></tr>
+      <tr><td>第二單元：ABAP 字典中的增強（Extension Index、Fixed Value Append）</td><td>p12～p14</td><td>Unit 3 L4 Enhancing Other ABAP Dictionary Objects p63～p67</td><td>4</td></tr>
+      <tr><td>第三單元：增強點／選項和增強段</td><td>p15～p28</td><td>Unit 8 L2 Using Explicit Enhancements p217～p223；Unit 9 Implicit Enhancements L1～L5 p231～p247</td><td>5～8</td></tr>
+      <tr><td>第四單元：Business Add-Ins（傳統與新 BAdI、選單出口、畫面出口）</td><td>p29～p48</td><td>Unit 6 Classic BAdIs p131～；Unit 7 New BAdIs L1～L5 p175～p203</td><td>9～13</td></tr>
+      <tr><td>第五單元：切換架構（Switch Framework）</td><td>p49～p53</td><td>Unit 12 The Switch Framework L1～L2 p309～p318</td><td>14、15</td></tr>
+      <tr><td>（强晟筆記無）增強實作的升級調整、Classic BAdI 遷移</td><td>—</td><td>Unit 11 Adjusting Enhancement Implementations p293～p303</td><td>16</td></tr>
+      <tr><td>後記</td><td>p54</td><td>—</td><td>17（S/4HANA 現況）</td></tr>
+    </tbody>
+  </table>
+
+  <table>
+    <thead><tr><th>比較項目</th><th>BC427（2007/2008，NW 7.0）</th><th>BC425 Col18（2023）與 S/4HANA 現況</th></tr></thead>
+    <tbody>
+      <tr><td>課程形態</td><td>獨立專題課，54 頁筆記「內容極少、理解容易」</td><td>併入 BC425，增加 Composite Enhancement、Instance Creation Mode、Context BAdI、衝突開關、SPAU_ENH 調整、BAdI 遷移</td></tr>
+      <tr><td>隱式增強在既有增強實作內</td><td>未提</td><td><b>NW 7.02 起</b>，既有增強實作的開頭與結尾也有隱式增強點</td></tr>
+      <tr><td>開發工具</td><td>SAP GUI：SE18／SE19／SE24／SE37</td><td>仍可用 SAP GUI；ADT（Eclipse）也支援 BAdI 實作與原始碼增強（見 <a href="#ch05-5">5-5 章</a>）</td></tr>
+      <tr><td>擴充策略</td><td>「能增強就不要修改」</td><td>Clean Core：優先 Key User Extensibility 與 <b>Released（C0/C1）</b> 的 BAdI；ABAP Cloud 中<b>不能</b>使用隱式／顯式原始碼增強（見第 17 節）</td></tr>
+    </tbody>
+  </table>
+  <div class="note">强晟筆記大多是原廠投影片的直譯，程式語法多以截圖呈現，文字版有幾處筆誤（例如 <span class="kw">cx_badi_initial_regerence</span>、<span class="kw">END TRY</span>、Switch Framework「啟用」與「停用」寫反），本章在相關小節逐一校正並註明。</div>
+
+  <h3 id="ch05-15-02">2. 第一單元：增強的基本概念與傳統增強技術</h3>
+  <p><b>增強（Enhancement）</b>的定義：SAP 在標準程式中預留（或系統自動提供）一個「跳到客戶程式碼」的位置，讓客戶補充或替代功能，而<b>不需要修改（Modification）SAP 物件</b>。强晟筆記把傳統（NW 7.0 以前）技術分成三類出口：</p>
+  <table>
+    <thead><tr><th>出口類型</th><th>作用</th><th>可用技術</th><th>可否多重使用</th></tr></thead>
+    <tbody>
+      <tr><td><b>程式出口（Program Exit）</b></td><td>從 SAP 程式跳到客戶原始碼，補充或替代功能</td><td>副程式（User Exit，USEREXIT_* FORM）、函數模組（Customer Exit，EXIT_&lt;程式&gt;_nnn）、函數模組（BTE，Business Transaction Events）、方法（BAdI）</td><td>BTE、BAdI 可定義為多重使用</td></tr>
+      <tr><td><b>選單出口（Menu Exit）</b></td><td>在 SAP 畫面加一個執行客戶功能的選單項目</td><td>Customer Exit、BAdI</td><td><b>只能使用一次</b></td></tr>
+      <tr><td><b>畫面出口（Screen Exit）</b></td><td>在 SAP 畫面加客戶欄位（SAP 欄位與客戶追加欄位皆可顯示）</td><td>Customer Exit、BAdI</td><td><b>只能使用一次</b></td></tr>
+    </tbody>
+  </table>
+  <p><b>為什麼會有這麼多種技術？</b>（p8）這是 SAP 增強方法不斷演進的結果：</p>
+  <ul>
+    <li><b>User Exit → Customer Exit</b>：為了模組化，並加入新的增強型態（選單出口、畫面出口）。</li>
+    <li><b>BTE</b>：用於財務（FI），實現程式出口的<b>多重使用</b>（交易碼 <span class="tcode">FIBF</span>）。</li>
+    <li><b>BAdI</b>：物件導向的模組化，綜合前面各種技術的優點。</li>
+  </ul>
+  <p>多重使用的出口在執行時可能有<b>多個啟用中的實作，依序（輪流）被處理</b>——而且順序不保證，這一點到了 Enhancement Point 也一樣（第 5 節）。</p>
+  <div class="tip">User Exit、Customer Exit（<span class="tcode">SMOD</span>／<span class="tcode">CMOD</span>）、BTE 的操作細節請看 <a href="#ch03-3">3-3 章 User Exit 與 Customer Exit</a>；本章聚焦 NW 7.0 之後的新框架。選技術時請記得 Casper 的第三條實務經驗：<b>先找標準設定 → 再找 BAdI／Enhancement Spot → 再考慮 Enhancement Point → 最後才是修改標準</b>，每往右一步，升級成本高一個量級。</div>
+
+  <h3 id="ch05-15-03">3. Enhancement Framework 全貌：點、選項、段與 Enhancement Spot</h3>
+  <p>NW 7.0 的 Enhancement Framework 把下列五種東西放在同一個管理架構下（p9）：</p>
+  <table>
+    <thead><tr><th>增強元素</th><th>顯式／隱式</th><th>誰提供</th><th>用途</th></tr></thead>
+    <tbody>
+      <tr><td><b>隱式增強點（Implicit Enhancement Point）</b></td><td>隱式</td><td>系統自動存在，SAP 開發者不必預設</td><td>在程式、函數、方法、副程式、Include 的特定位置（多半是開頭／結尾）插入原始碼</td></tr>
+      <tr><td><b>隱式增強選項（Implicit Enhancement Option）</b></td><td><b>永遠是隱式</b></td><td>系統自動存在</td><td>替函數模組與方法加可選參數、替類別加屬性與方法、pre/post/overwrite 方法</td></tr>
+      <tr><td><b>顯式增強點（Explicit Enhancement Point）</b></td><td>顯式</td><td>SAP 開發者以 <span class="kw">ENHANCEMENT-POINT</span> 預留</td><td>在指定位置<b>補充</b>程式碼</td></tr>
+      <tr><td><b>顯式增強段（Explicit Enhancement Section）</b></td><td><b>永遠是顯式</b></td><td>SAP 開發者以 <span class="kw">ENHANCEMENT-SECTION … END-ENHANCEMENT-SECTION</span> 標出</td><td>整段<b>替換</b> SAP 原始碼</td></tr>
+      <tr><td><b>New BAdI</b></td><td>顯式</td><td>SAP 開發者在 Enhancement Spot 中定義</td><td>物件導向的程式／選單／畫面出口</td></tr>
+      <tr><td>Classic BAdI</td><td>顯式</td><td>SE18 舊定義</td><td>由框架「一起管理」，但<b>不屬於任何 Enhancement Spot</b></td></tr>
+    </tbody>
+  </table>
+  <p><b>Enhancement Spot（增強場所）</b>是 Repository 物件，把顯式增強點、顯式增強段與 New BAdI 收在一起管理；<b>Composite Enhancement Spot（集合增強場所）</b>則由簡單 Spot 和／或其他集合 Spot 組成，提供語意上的綁定，方便全域搜尋。實作端也對稱：</p>
+  <ul>
+    <li><b>Enhancement Implementation（增強實作）</b>：客戶要用任何增強元素（顯式點、段、New BAdI、隱式增強）都必須先建立它。通常同一個 Spot 的所有點與段放在同一個增強實作裡，系統會自動編號（<span class="kw">ENHANCEMENT 1</span>、<span class="kw">ENHANCEMENT 2</span>…）。</li>
+    <li><b>Composite Enhancement Implementation</b>：把多個簡單增強實作語意分組。<b>不需要</b>因為 Spot 屬於集合 Spot 就建立集合實作；反過來，不屬於任何集合 Spot 的實作也可以被放進集合實作。</li>
+    <li>Spot 與實作是 <b>m:n</b>：一個 Spot 的點可以被多個增強實作實作；一個增強實作也可以涵蓋一個或多個 Spot 的點。</li>
+  </ul>
+  <div class="note">BC425 的例子：集合 Spot <span class="kw">ESC_CK_ECP</span> 由 6 個簡單 Spot 組成。實務上，一支程式所有顯式增強所屬的 Spot 常命名為 <span class="kw">ES_&lt;SAP 程式名&gt;</span>，例如 <span class="kw">ES_SAPMV45A</span>。<b>顯式增強點與段無法全域搜尋</b>，只能搜尋它們所屬的 Spot：<span class="tcode">SE84</span> → Enhancements → Enhancement Spots，或用 Enhancement Browser <span class="tcode">SPAU_ENH</span>。</div>
+  <p>集合增強實作的典型用法（BC425 p247）：你用隱式增強替某個標準 FM 加了參數並補了程式碼，又在呼叫這支 FM 的標準程式裡，用顯式增強段替換呼叫方式——兩個增強實作在語意上是一組，就用一個 Composite Enhancement Implementation 綁在一起，日後找得到、傳輸也不會漏。</p>
+
+  <h3 id="ch05-15-04">4. 第二單元：ABAP 字典的增強——Extension Index 與 Fixed Value Append</h3>
+  <p>NW 7.0 之前，下面兩件事即使用客戶命名空間也<b>算修改</b>；NW 7.0 起變成免修改的增強，升級時自動帶過、不需要修改調整（SPDD）。</p>
+  <table>
+    <thead><tr><th>項目</th><th>Extension Index（擴充索引）</th><th>Fixed Value Append（固定值追加）</th></tr></thead>
+    <tbody>
+      <tr><td>解決什麼</td><td>替 SAP 標準表建立次要索引，加快讀取</td><td>替 SAP 標準 Domain 追加固定值，讓 F4 多出選項</td></tr>
+      <tr><td>操作</td><td><span class="tcode">SE11</span> 顯示表 → 應用工具列 <b>Indexes</b> → ALV 工具列「建立」→ 選 <b>Create Extension Index</b> → 定義欄位 → 啟用</td><td><span class="tcode">SE11</span> 顯示 Domain → <b>Goto → Fixed Value Append</b> → 輸入追加名稱（客戶命名空間）→ 短文 → Value Range 頁籤輸入值（可按 Show Domain Values 看原值）→ 存檔啟用</td></tr>
+      <tr><td>限制</td><td>仍要評估寫入成本</td><td>一個 Append 只能掛在<b>一個</b> Domain；一個 Domain 可以有<b>多個</b> Append</td></tr>
+      <tr><td>傳輸</td><td>獨立物件</td><td>在 Domain 原始系統以外的系統建立，屬於<b>獨立的傳輸物件</b>；在 Repository 資訊系統搜 Domain 時會和一般 Domain 一起出現</td></tr>
+    </tbody>
+  </table>
+  <div class="warn"><b>別把 Fixed Value Append 和 Append Structure 搞混</b>：前者加「值」到 Domain，後者加「欄位」到表或結構（見 <a href="#ch01-2">1-2 章</a>、<a href="#ch05-16">5-16 章 BC430</a>）。<br/>S/4HANA 的 HANA 是記憶體欄式資料庫，大多數查詢<b>不需要</b>次要索引，SAP 甚至在 S/4 轉換時刪掉了許多舊索引。要建 Extension Index 前，先用 <span class="tcode">ST05</span>／SQL Monitor 證明瓶頸真的在索引（見 <a href="#ch05-21">5-21 章 BC490</a>）。</div>
+  <p>程式裡讀取 Domain 固定值時，<b>追加的值會和原固定值一起回傳</b>。下列寫法用 RTTS 讀出資料元素 KOART（科目類型）所屬 Domain 的所有固定值，適合做自訂下拉選單或檢核：</p>
+  <pre><code class="abap">*&amp;-------------------------------------------------------------*
+*&amp; 讀 Domain 固定值（含 Fixed Value Append）——RTTS 寫法
+*&amp;-------------------------------------------------------------*
+DATA(lo_elem) = CAST cl_abap_elemdescr(
+                  cl_abap_typedescr=&gt;describe_by_name( 'KOART' ) ).
+
+lo_elem-&gt;get_ddic_fixed_values(
+  EXPORTING  p_langu        = sy-langu
+  RECEIVING  p_fixed_values = DATA(lt_fixval)
+  EXCEPTIONS not_found      = 1
+             no_ddic_type   = 2
+             OTHERS         = 3 ).
+IF sy-subrc &lt;&gt; 0.
+  MESSAGE |資料元素 KOART 沒有固定值（subrc={ sy-subrc }）| TYPE 'I'.
+  RETURN.
+ENDIF.
+
+" 檢核使用者輸入是否為合法值：用 line_exists，不要自己寫迴圈
+DATA(lv_input) = CONV koart( 'K' ).
+IF NOT line_exists( lt_fixval[ low = lv_input ] ).
+  MESSAGE |科目類型 { lv_input } 不在固定值清單內| TYPE 'E'.
+ENDIF.
+
+" 組成「值 - 說明」清單（HANA 沒有預設排序，要自己排）
+SORT lt_fixval BY low.
+DATA(lt_text) = VALUE string_table(
+                  FOR ls_fv IN lt_fixval ( |{ ls_fv-low } - { ls_fv-ddtext }| ) ).
+cl_demo_output=&gt;display( lt_text ).</code></pre>
+  <div class="note">固定值本身存在 <b>DD07L</b>（值）與 <b>DD07T</b>（多語說明）；用 RTTS 讀取比直接 SELECT 這兩張表安全，因為它會處理啟用版本與語言回退。</div>
+
+  <h3 id="ch05-15-05">5. 第三單元（一）：顯式增強點與增強段</h3>
+  <p><b>顯式增強點</b>用 <span class="kw">ENHANCEMENT-POINT</span> 標記，讓客戶在該處<b>補充</b>程式碼；<b>顯式增強段</b>用 <span class="kw">ENHANCEMENT-SECTION … END-ENHANCEMENT-SECTION</span> 包住一段 SAP 程式碼，讓客戶整段<b>替換</b>。兩者都<b>一定</b>嵌在 Enhancement Spot 裡，可用在動態（可執行）程式碼，也可用在靜態宣告。</p>
+  <table>
+    <thead><tr><th>附加語法</th><th>意義</th></tr></thead>
+    <tbody>
+      <tr><td><span class="kw">SPOTS spot1 spot2 …</span></td><td>指定所屬的 Enhancement Spot（必填）</td></tr>
+      <tr><td><span class="kw">STATIC</span></td><td>用於增強<b>資料宣告</b>（DATA、TYPES、CONSTANTS…）；不加就是增強<b>可執行程式碼</b>（dynamic）</td></tr>
+      <tr><td><span class="kw">INCLUDE BOUND</span></td><td>增強定義在一支會被<b>多個主程式</b>引用的 Include 中，而且希望實作<b>對所有引用它的程式都生效</b>時使用。不加的話，原始碼增強只歸屬一個編譯單元（compilation unit），要在 Enhancement Builder 指定是哪一支主程式</td></tr>
+    </tbody>
+  </table>
+  <ul>
+    <li>一支 Include <b>不能同時</b>有 include-bound 與非 include-bound 的增強（它再引用其他 Include 時也一樣）。</li>
+    <li>一支 Include 若在同一主程式中被引用<b>多次</b>，只允許 include-bound 的原始碼增強。</li>
+    <li>夥伴或客戶想替自己的程式提供顯式增強，要在修改模式下用<b>編輯器的專用選單</b>建立，<b>不要手打</b> ENHANCEMENT-POINT 敘述（手打的不會登記到 Spot）。</li>
+  </ul>
+  <p>下面是一支「預留了增強的框架程式」長什麼樣子。這是 Z 程式示範，實際上由選單產生這些敘述：</p>
+  <pre><code class="abap">*&amp;-------------------------------------------------------------*
+*&amp; ZBC427_EXPLICIT_DEMO：示範顯式增強點與增強段的定義位置
+*&amp; （ENHANCEMENT-POINT / SECTION 請用編輯器選單建立，勿手打）
+*&amp;-------------------------------------------------------------*
+REPORT zbc427_explicit_demo.
+
+" ① 宣告區：STATIC 增強點，讓別人可以補宣告
+ENHANCEMENT-POINT ep_decl SPOTS zes_bc427_demo STATIC.
+
+PARAMETERS p_werks TYPE werks_d OBLIGATORY.
+
+START-OF-SELECTION.
+  SELECT matnr, werks, lgort, labst
+    FROM mard
+    WHERE werks = @p_werks
+    ORDER BY matnr, lgort                "HANA 沒有預設排序，一定要寫
+    INTO TABLE @DATA(lt_stock)
+    UP TO 500 ROWS.
+
+  " ② 動態增強點：讀完資料後，讓別人追加處理（過濾、補欄位）
+  ENHANCEMENT-POINT ep_after_select SPOTS zes_bc427_demo.
+
+  " ③ 增強段：預設的輸出邏輯，可被整段替換
+  ENHANCEMENT-SECTION es_output SPOTS zes_bc427_demo.
+    TRY.
+        cl_salv_table=&gt;factory( IMPORTING r_salv_table = DATA(lo_alv)
+                                CHANGING  t_table      = lt_stock ).
+        lo_alv-&gt;get_functions( )-&gt;set_all( abap_true ).
+        lo_alv-&gt;display( ).
+      CATCH cx_salv_msg INTO DATA(lx_salv).
+        MESSAGE lx_salv TYPE 'I' DISPLAY LIKE 'E'.
+    ENDTRY.
+  END-ENHANCEMENT-SECTION.</code></pre>
+  <p>客戶實作後，程式中會多出（在獨立的軟體層，不改原程式）下列 <span class="kw">ENHANCEMENT … ENDENHANCEMENT</span> 區塊：</p>
+  <pre><code class="abap">" 實作 ep_decl（STATIC，可宣告）
+ENHANCEMENT 1 zei_bc427_demo.    "active version
+  DATA gv_zz_deleted TYPE i.
+ENDENHANCEMENT.
+
+" 實作 ep_after_select（動態，只能放可執行敘述）
+ENHANCEMENT 2 zei_bc427_demo.    "active version
+  " 業務規則：零庫存不顯示。條件寫明確值，不要寫區間
+  DATA(lv_before) = lines( lt_stock ).
+  DELETE lt_stock WHERE labst = 0.
+  gv_zz_deleted = lv_before - lines( lt_stock ).
+ENDENHANCEMENT.
+
+" 替換 es_output：整段取代原本的 SALV 輸出
+ENHANCEMENT 3 zei_bc427_demo.    "active version
+  TRY.
+      cl_salv_table=&gt;factory( IMPORTING r_salv_table = DATA(lo_alv_z)
+                              CHANGING  t_table      = lt_stock ).
+      lo_alv_z-&gt;get_display_settings( )-&gt;set_list_header(
+        |工廠 { p_werks } 庫存（已排除 { gv_zz_deleted } 筆零庫存）| ).
+      lo_alv_z-&gt;display( ).
+    CATCH cx_salv_msg INTO DATA(lx_salv_z).
+      MESSAGE lx_salv_z TYPE 'I' DISPLAY LIKE 'E'.
+  ENDTRY.
+ENDENHANCEMENT.</code></pre>
+  <p><b>建立顯式增強實作的步驟</b>（强晟 p18、BC425 p221）：</p>
+  <ol>
+    <li>顯示 SAP 物件（程式、函數模組、方法）。</li>
+    <li>用「編輯 → 搜尋／取代」找 <span class="kw">ENHANCEMENT-POINT</span> 或 <span class="kw">ENHANCEMENT-SECTION</span>。</li>
+    <li>按應用工具列的<b>增強（Enhance，螺旋圖示）</b>按鈕進入增強模式。</li>
+    <li>游標放在增強點／段上，右鍵選 <b>Create Enhancement Implementation</b>。</li>
+    <li>輸入增強實作名稱（客戶命名空間 <b>Y*／Z*</b>）與套件、傳輸請求。</li>
+    <li>在 <span class="kw">ENHANCEMENT … ENDENHANCEMENT</span> 之間輸入程式碼。</li>
+    <li>按 <b>Activate Enhancements</b>（不是一般的啟用按鈕）。</li>
+  </ol>
+  <div class="warn"><b>多重實作的風險（BC425 p221～p223）</b>：
+    <br/>① <b>增強點</b>可以有多個啟用中的實作，但<b>執行順序不保證</b>。因此不同實作之間不能有相依，更不能同時改同一個變數——這和 Casper 提醒的「HANA 沒有預設排序」是同一類陷阱：只要依賴「剛好先執行到誰」，結果就會不穩定。
+    <br/>② <b>增強段</b>在執行時<b>只會執行一個</b>實作；若有多個啟用實作，系統<b>不會 Dump，只給語法警告</b>，而你無法確定會跑哪一個。要控制就得用 Switch Framework 的<b>衝突開關</b>（第 15 節）。</div>
+  <div class="tip">除錯時看不到增強實作的程式碼，因為它放在獨立的軟體層（和修改助理 Modification Assistant 一樣）。Debugger 停在增強點或增強段時，按 <b>F5（單步）</b>才會進入增強實作。其他除錯技巧見 <a href="#ch05-4">5-4 章 BC403</a>。</div>
+
+  <h3 id="ch05-15-06">6. 第三單元（二）：函數模組的隱式增強</h3>
+  <p>隱式增強不需要 SAP 開發者預先準備，<b>NW 7.0 以前建立的 SAP 物件也有</b>。函數模組提供兩種：</p>
+  <table>
+    <thead><tr><th>種類</th><th>內容</th><th>限制</th></tr></thead>
+    <tbody>
+      <tr><td>隱式增強<b>選項</b>：增強介面</td><td>新增 IMPORTING／EXPORTING／CHANGING／TABLES 參數</td><td>新增參數<b>一律為可選（optional）</b>；<b>不能新增 EXCEPTIONS</b></td></tr>
+      <tr><td>隱式增強<b>點</b>：增強原始碼</td><td>在函數原始碼的<b>開頭與結尾</b>插入程式</td><td>只有開頭與結尾兩處，中間要插只能靠 SAP 預留的顯式點</td></tr>
+    </tbody>
+  </table>
+  <p><b>增強介面步驟</b>（p20）：<span class="tcode">SE37</span> 顯示函數 → 選單 <b>Function Module → Enhance Interface</b> → 指定（或建立）增強實作 → 在對應頁籤加入新參數與型別 → <b>Activate Enhancements</b>。啟用後，每個新參數旁都會顯示增強實作名稱，一眼分得出哪些是標準參數。</p>
+  <p><b>增強原始碼步驟</b>（p21）：顯示原始碼 → 按增強按鈕 → <b>Edit → Enhancement Operations → Show Implicit Enhancement Options</b>（編輯器中會出現一排雙引號 <span class="kw">""""""</span> 標示位置）→ 在該行右鍵 Create Enhancement Implementation → 輸入程式 → Activate Enhancements。</p>
+  <pre><code class="abap">*&amp;-------------------------------------------------------------*
+*&amp; 示意：標準函數 Z_SAP_STD_PRICE_GET（假設名稱）
+*&amp; 已用「增強介面」加了可選參數 IV_ZZ_ROUND（屬於增強實作 ZEI_PRICE）
+*&amp; 以下是在函數「結尾」隱式增強點寫入的程式
+*&amp;-------------------------------------------------------------*
+FUNCTION z_sap_std_price_get.
+  " ...（SAP 原有程式碼，不可更動）...
+
+"""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""
+ENHANCEMENT 1 zei_price.    "active version
+  " 新參數是 optional，一定先判斷呼叫端有沒有傳
+  IF iv_zz_round IS SUPPLIED AND iv_zz_round = abap_true.
+    ev_price = round( val = ev_price dec = 0 mode = cl_abap_math=&gt;round_half_up ).
+  ENDIF.
+ENDENHANCEMENT.
+ENDFUNCTION.
+
+" 呼叫端：新參數照一般參數傳即可
+CALL FUNCTION 'Z_SAP_STD_PRICE_GET'
+  EXPORTING
+    iv_matnr    = lv_matnr
+    iv_zz_round = abap_true
+  IMPORTING
+    ev_price    = DATA(lv_price).</code></pre>
+  <div class="note">用編輯器的 <b>Pattern（樣板）</b>插入被增強過的函數呼叫時，新增的參數也會出現在樣板中，但因為一定是可選參數，所以會被註解掉。RFC 函數的 <b>RFC-enabled 屬性</b>若在升級後改變，增強實作也需要調整（第 16 節）。</div>
+
+  <h3 id="ch05-15-07">7. 第三單元（三）：全域類別的隱式增強與 pre／post／overwrite 方法</h3>
+  <p>全域類別（<span class="tcode">SE24</span>）可以做的隱式增強：</p>
+  <ul>
+    <li><b>增強選項</b>：替方法加可選參數（IMPORTING、EXPORTING、CHANGING，<b>不能加 RETURNING 與例外</b>）；新增 public／protected／private 屬性與方法；替某個 SAP 方法定義 pre-method、post-method，或以 overwrite-method 取代。</li>
+    <li><b>增強點</b>：在方法開頭與結尾加入程式（可使用上面新增的參數、屬性、方法）；實作新增的方法。</li>
+  </ul>
+  <p><b>增加屬性／方法／參數</b>（p22）：SE24 顯示類別 → 選單 <b>Class → Enhance</b> 建立增強實作 → 加入新屬性、方法、參數 → 雙擊新方法名稱進入方法編輯器寫程式 → Activate Enhancements。</p>
+  <p><b>定義 pre／post／overwrite 方法</b>（p23～p24）：SE24 顯示類別 → Class → Enhance → 游標標記 SAP 方法 → <b>Edit → Enhancement Operations</b> → 選 <b>Insert Pre-Method／Insert Post-Method／Add Overwrite Method</b> → 在「Pre-／Post-／Overwrite-Exit」欄按新建按鈕實作 → 存檔 → Activate Enhancements。</p>
+  <table>
+    <thead><tr><th>規則</th><th>說明</th></tr></thead>
+    <tbody>
+      <tr><td>數量</td><td>每個 SAP 方法可以有<b>一個 pre + 一個 post</b>，<b>或</b>一個 overwrite；有 overwrite 時不能再有 pre／post</td></tr>
+      <tr><td>生成物</td><td>系統自動產生本地類別 <b>LCL_&lt;增強名&gt;</b>，附在原類別本地類別實作區的最後；它實作介面 <b>IPR_&lt;增強名&gt;</b>（pre）、<b>IPO_&lt;增強名&gt;</b>（post）、<b>IOW_&lt;增強名&gt;</b>（overwrite）</td></tr>
+      <tr><td>存取原物件</td><td>透過實例屬性 <b>CORE_OBJECT</b>（在本地建構子中填入），它指向應用程式中目前正在使用的那個 SAP 類別實例</td></tr>
+      <tr><td>參數差異</td><td>pre-method <b>沒有 EXPORTING</b>；post-method 也沒有 EXPORTING，原方法的 EXPORTING 在 post 中變成 <b>CHANGING</b>；功能方法的 RETURNING 也變成 CHANGING</td></tr>
+      <tr><td>中斷鏈</td><td>pre-method 丟出例外 → 原方法與 post 都不執行；原方法丟出例外 → post 不執行</td></tr>
+    </tbody>
+  </table>
+  <pre><code class="abap">*&amp;-------------------------------------------------------------*
+*&amp; 系統為增強 ZEI_ORDER_CHK 產生的本地類別骨架（示意）
+*&amp; 原類別：CL_XYZ_ORDER（假設名稱），被增強方法：CHECK_ORDER
+*&amp;   原方法簽章：IMPORTING is_head TYPE ...  EXPORTING et_msg TYPE bapiret2_t
+*&amp;-------------------------------------------------------------*
+CLASS lcl_zei_order_chk DEFINITION.
+  PUBLIC SECTION.
+    CLASS-DATA obj TYPE REF TO lcl_zei_order_chk.
+    DATA core_object TYPE REF TO cl_xyz_order.
+    INTERFACES ipr_zei_order_chk.     "pre-method
+    INTERFACES ipo_zei_order_chk.     "post-method
+    METHODS constructor
+      IMPORTING core_object TYPE REF TO cl_xyz_order OPTIONAL.
+ENDCLASS.
+
+CLASS lcl_zei_order_chk IMPLEMENTATION.
+  METHOD constructor.
+    me-&gt;core_object = core_object.
+  ENDMETHOD.
+
+  METHOD ipr_zei_order_chk~check_order.
+    " pre：只有 IMPORTING，拿來做前置檢核；丟例外就能擋掉原方法
+    IF is_head-zz_channel IS INITIAL.
+      RAISE EXCEPTION NEW zcx_bc427_check( textid = zcx_bc427_check=&gt;channel_missing ).
+    ENDIF.
+  ENDMETHOD.
+
+  METHOD ipo_zei_order_chk~check_order.
+    " post：原方法的 EXPORTING et_msg 在這裡變成 CHANGING
+    IF NOT line_exists( et_msg[ type = 'E' ] ).
+      APPEND VALUE #( type = 'W' id = 'ZBC427' number = '001'
+                      message = |通路 { is_head-zz_channel } 需二次覆核| ) TO et_msg.
+    ENDIF.
+  ENDMETHOD.
+ENDCLASS.</code></pre>
+  <div class="tip"><b>pre／post 方法 vs. 方法開頭／結尾的隱式原始碼增強</b>（BC425 p239）：pre／post 有獨立的位址空間、抽象層級較高；升級時只有參數變更才需要調整，調整成本較低；所有 pre／post 方法都放在同一個本地增強類別中，可用它自己的屬性在方法之間交換資料。能用 pre／post 就不要直接在方法結尾塞原始碼。3-4 章有一個以 core_object 讀取原物件屬性的完整例子，見 <a href="#ch03-4-15">3-4 章第 15 節</a>。</div>
+
+  <h3 id="ch05-15-08">8. 第三單元（四）：本地類別、結構宣告、副程式與 Include 的隱式增強</h3>
+  <table>
+    <thead><tr><th>位置</th><th>隱式增強點／選項</th></tr></thead>
+    <tbody>
+      <tr><td>本地類別（Local Class）</td><td>選項：方法加可選參數（不能加 RETURNING 與例外）、新增屬性與方法；點：方法開頭與結尾、<b>IMPLEMENTATION 區塊結尾</b>（用來實作新增的方法）</td></tr>
+      <tr><td>結構（型別）宣告</td><td>在 <span class="kw">END OF …</span> 之前，可追加欄位</td></tr>
+      <tr><td>副程式（FORM）</td><td>開頭與結尾</td></tr>
+      <tr><td>Include 程式</td><td>結尾（用來實作額外的功能與副程式）</td></tr>
+      <tr><td>既有的增強實作</td><td><b>NW 7.02 起</b>，在既有增強實作的開頭與結尾也提供隱式增強點</td></tr>
+    </tbody>
+  </table>
+  <p>操作步驟都相同（p26～p27）：顯示原始碼 → 增強按鈕 → <b>Edit → Enhancement Operations → Show Implicit Enhancement Options</b> → 在該位置右鍵建立增強實作 → 輸入程式 → Activate Enhancements。本地類別的隱式選項<b>要把編輯器捲到右邊</b>才看得到；替 PUBLIC SECTION 建增強時選對位置，<b>實作中不要再寫 PUBLIC SECTION</b>；增強方法介面時也<b>不要寫 IMPORTING／EXPORTING／CHANGING 這些引導字</b>，即使原宣告沒有它們。</p>
+  <pre><code class="abap">*&amp;-------------------------------------------------------------*
+*&amp; 結構宣告的隱式增強：END OF 之前追加欄位
+*&amp;-------------------------------------------------------------*
+DATA: BEGIN OF gs_item,
+        matnr TYPE matnr,
+        werks TYPE werks_d,
+        menge TYPE menge_d,
+"""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""
+ENHANCEMENT 1 zei_item_ext.    "active version
+  DATA: zz_bwart TYPE bwart,
+        zz_charg TYPE charg_d.
+ENDENHANCEMENT.
+      END OF gs_item.
+
+" 下列寫法在這個位置會造成語法錯誤（講義明確禁止）：
+"   zz_bwart TYPE bwart,              ← 少了 DATA 與句點
+"   DATA zz_bwart LIKE mseg-bwart.    ← 不能用 LIKE 參照表欄位
+"   INCLUDE STRUCTURE zsitem_ext.     ← 不能用 INCLUDE STRUCTURE</code></pre>
+  <div class="warn"><b>兩條硬規則</b>（p28）：
+    <br/>① 在結構宣告 END OF 之前做增強，<b>必須</b>寫成 <span class="kw">DATA: 欄位1 TYPE 型別1, 欄位2 TYPE 型別2.</span>——要有 DATA 與結尾句點，且只能用 TYPE；不能用 <span class="kw">LIKE &lt;dbtab-field&gt;</span> 或 <span class="kw">INCLUDE STRUCTURE</span>。
+    <br/>② 隱式增強點<b>不適用於 SAP Basis 核心物件</b>。强晟的解讀是「D 開頭的字典表與視圖、S 開頭的交易碼與程式等處理底層的元素」——這是他的推測，原廠只寫「SAP Basis objects」，實際判斷以系統是否顯示隱式增強選項為準。另外强晟寫「隱式增強點和<b>段</b>」，但依定義增強段永遠是顯式的，這裡應理解為「隱式增強點與選項」。</div>
+  <p>升級時（SAP 重新交付被增強的程式），增強實作雖然免修改，但仍要把它們「放回」程式中，也就是增強調整（第 16 節）。</p>
+
+  <h3 id="ch05-15-09">9. 第四單元（一）：Classic BAdI 架構與呼叫語法</h3>
+  <p>在 <span class="tcode">SE18</span> 定義 Classic BAdI 並指定 BAdI 介面時，系統自動產生<b>適配器類別（Adapter Class，CL_EX_&lt;BAdI 名&gt;）</b>與對應的<b>橋接方法（Bridge Method）</b>。SAP 應用程式呼叫橋接方法，而橋接方法唯一的任務，就是依序呼叫<b>行業解決方案（IS）、合作夥伴、客戶</b>已啟用的實作——順序<b>無法指定</b>。</p>
+  <p>呼叫語法：宣告一個<b>型別為 BAdI 介面</b>的參照變數，以 <span class="kw">CL_EXITHANDLER=&gt;GET_INSTANCE</span> 建立適配器類別實例（BAdI 實例），再呼叫橋接方法：</p>
+  <pre><code class="abap">*&amp;-------------------------------------------------------------*
+*&amp; Classic BAdI 呼叫（讀懂舊標準程式用；新程式請定義 New BAdI）
+*&amp; 參照變數型別是「BAdI 介面」，不是 BAdI 名稱
+*&amp;-------------------------------------------------------------*
+DATA lo_exit TYPE REF TO zif_ex_bc427_classic.     "IF_EX_&lt;BAdI&gt; 介面
+
+CALL METHOD cl_exithandler=&gt;get_instance
+  EXPORTING
+    exit_name              = 'ZBC427_CLASSIC'
+    null_instance_accepted = abap_true      "沒有實作時回傳 INITIAL
+  CHANGING
+    instance               = lo_exit
+  EXCEPTIONS
+    OTHERS                 = 1.
+
+IF sy-subrc = 0 AND lo_exit IS BOUND.
+  " 呼叫橋接方法 → 依序執行 IS／夥伴／客戶的啟用實作
+  lo_exit-&gt;check_item( EXPORTING is_item = ls_item
+                       CHANGING  ct_msg  = lt_msg ).
+ENDIF.</code></pre>
+  <p><b>找 Classic BAdI 的方法</b>（p34）：自由搜尋用 <span class="tcode">SE84</span>；依應用元件用 <span class="tcode">SE81</span> → <span class="tcode">SE84</span>；依程式：① 在程式中全域搜尋 <span class="kw">GET_INSTANCE</span>；② 雙擊參照變數找到宣告；③ 雙擊 BAdI 介面；④ 在類別 <span class="kw">CL_EX_&lt;BAdI 名&gt;</span> 用「使用處清單（Where-Used List）」；⑤ 在 SE18 讀 BAdI 文件。</p>
+  <p><b>實作 Classic BAdI</b>（p35）：顯示 BAdI 定義 → Implementation → Create（或直接用 <span class="tcode">SE19</span>）→ 指定實作名稱 → 雙擊實作類別的方法寫程式 → 啟用方法與實作類別 → <b>啟用 BAdI 實作</b>。完整操作與實戰（BADI_MATERIAL_CHECK、ME_PROCESS_PO_CUST）見 <a href="#ch03-4">3-4 章</a>。</p>
+  <div class="warn">Classic BAdI 是 R/3 4.6 的技術，SAP 從 NW 7.0 起<b>只會用 New BAdI 提供新增強</b>；系統裡仍有大量 Classic BAdI 出口，所以要看得懂，但<b>自己不要再定義新的 Classic BAdI</b>。已存在的自訂 Classic BAdI 可在 SE18 遷移成 New BAdI（第 16 節）。另外，Classic BAdI 本身<b>不可被 Switch Framework 切換</b>（第 15 節有變通方法）。</div>
+
+  <h3 id="ch05-15-10">10. 第四單元（二）：New BAdI——GET BADI／CALL BADI、例外與實作</h3>
+  <p><b>為什麼要 New BAdI</b>（p30、BC425 p176～p178）：① 提升效能；② 附加功能——增強的過濾器概念、可從範例實作類別繼承（只重新定義需要的方法）、Context 等；③ 整合進 Enhancement Framework，<b>New BAdI 一定屬於某個 Enhancement Spot</b> 並由它管理，而且可被切換（switchable）。</p>
+  <p>架構差異：New BAdI <b>不再產生適配器類別</b>，應用程式不必實例化它；執行時由<b>核心（kernel）</b>產生 <b>BAdI 句柄（BAdI Handle）</b>，功能等同適配器類別，但呼叫實作方法時更有效率。語法上，參照變數的型別是 <b>BAdI 名稱本身</b>，而不是 BAdI 介面。</p>
+  <pre><code class="abap">*&amp;-------------------------------------------------------------*
+*&amp; New BAdI 標準呼叫樣式（S/4HANA 可直接用）
+*&amp; ZBADI_BC427_PRICE：在 Spot ZES_BC427 中定義的 BAdI（單一使用＋過濾器）
+*&amp;-------------------------------------------------------------*
+DATA lo_badi TYPE REF TO zbadi_bc427_price.     "型別是 BAdI 名稱
+
+TRY.
+    GET BADI lo_badi
+      FILTERS land1 = ls_head-land1
+              vkorg = ls_head-vkorg.
+  CATCH cx_badi_not_implemented.      "單一使用 BAdI：無實作也無 fallback
+    RETURN.
+  CATCH cx_badi_multiply_implemented. "單一使用 BAdI：卻有多個符合的實作
+    MESSAGE |BAdI ZBADI_BC427_PRICE 有多個啟用實作，請檢查 SE19| TYPE 'E'.
+  CATCH cx_badi_filter_error.         "過濾值型別不符等
+    MESSAGE |過濾值錯誤：{ ls_head-land1 }/{ ls_head-vkorg }| TYPE 'E'.
+ENDTRY.
+
+TRY.
+    CALL BADI lo_badi-&gt;adjust_price
+      EXPORTING is_item  = ls_item
+      CHANGING  cv_price = lv_price.
+  CATCH cx_badi_initial_reference.    "句柄是 INITIAL（GET BADI 失敗）
+    RETURN.
+ENDTRY.
+
+" 需要時可查詢有幾個實作
+DATA(lv_impl_cnt) = cl_badi_query=&gt;number_of_implementations( lo_badi ).</code></pre>
+  <div class="warn"><b>强晟筆記的語法筆誤</b>（p37、p41）：
+    <br/>① 例外類別是 <span class="kw">cx_badi_initial_reference</span>，筆記寫成 <span class="kw">cx_badi_initial_regerence</span>；
+    <br/>② <span class="kw">ENDTRY</span> 是一個字，筆記寫成 <span class="kw">END TRY</span>；
+    <br/>③ 過濾器範例寫成 <span class="kw">GET BADI r_exit. FILTERS COUNTRY = …</span>，第一行多了句點，正確是 <span class="kw">GET BADI r_exit FILTERS country = … .</span> 同一敘述。
+    <br/><b>補充</b>：只有<b>單一使用（single-use）</b>的 BAdI 在找不到實作（且無 fallback）時 GET BADI 才會丟 <span class="kw">cx_badi_not_implemented</span>；<b>多重使用</b>的 BAdI 沒有實作時不丟例外，句柄照樣產生，CALL BADI 只是什麼都不做。</div>
+  <p><b>找 New BAdI 的方法</b>（p39、BC425 p181～p182）：<span class="tcode">SE84</span> 自由搜尋 BAdI 或 Spot；<span class="tcode">SE81</span> → <span class="tcode">SE84</span> 依應用元件；依程式：① 全域搜尋 <span class="kw">GET BADI</span>（或 CALL BADI）；② 雙擊參照變數找宣告；③ 雙擊 BAdI 名稱跳到所屬 Enhancement Spot。標準程式呼叫的 FM 與方法內也可能有，必要時一併搜尋；也可以在 Debugger 對 <b>GET BADI 敘述</b>設中斷點（Breakpoint at Statement）直接攔。</p>
+  <p><b>實作 New BAdI</b>（p40、BC425 p183）：</p>
+  <ol>
+    <li>顯示對應的 Enhancement Spot（<span class="tcode">SE18</span>）。</li>
+    <li>選 <b>Implement Enhancement Spot（F6）</b>，建立增強實作（<span class="tcode">SE19</span> 也可以）。</li>
+    <li>指定增強實作名稱、<b>BAdI 實作名稱</b>與<b>實作類別名稱</b>；若 BAdI 有 Sample Class，可選擇繼承或複製。</li>
+    <li>維護 BAdI 實作屬性（過濾值、是否為 Default Implementation）。</li>
+    <li>在該 BAdI 的導覽區選「Implementing Class」，雙擊方法實作或調整。</li>
+    <li>啟用方法與所有相關物件，<b>包含增強實作本身</b>。</li>
+  </ol>
+  <table>
+    <thead><tr><th>BAdI 的預設行為</th><th>設定位置</th><th>執行時規則</th></tr></thead>
+    <tbody>
+      <tr><td>一般實作（non-default）</td><td>BAdI 實作</td><td><b>所有</b>符合條件的一般實作都執行</td></tr>
+      <tr><td>Default Implementation</td><td>BAdI 實作勾選為預設</td><td>只有在<b>沒有任何其他實作被執行</b>時才呼叫</td></tr>
+      <tr><td>Fallback Class</td><td>BAdI <b>定義</b>上連結</td><td>什麼都沒執行（沒有符合過濾條件的實作、也沒有預設實作）時才用</td></tr>
+    </tbody>
+  </table>
+
+  <h3 id="ch05-15-11">11. 自己定義 New BAdI：Spot、介面、實作類別與呼叫點</h3>
+  <p>BC425 Unit 7 L5 補充了強晟筆記沒有的「定義端」步驟：<span class="tcode">SE18</span>（Tools → ABAP Workbench → Utilities → Business Add-Ins → Definition）→ <b>先建 Enhancement Spot</b> → 在 Spot 內建 BAdI 定義 → 左側雙擊 <b>Interface</b>，輸入介面名稱後按 Change 進 Class Builder 定義方法簽章 → 啟用介面 → 回 BAdI Builder 啟用 Spot → 最後在應用程式寫「跳躍點」（GET BADI／CALL BADI）。</p>
+  <table>
+    <thead><tr><th>BAdI 子物件／屬性</th><th>規則</th></tr></thead>
+    <tbody>
+      <tr><td>Filter</td><td>由過濾器名稱與資料型別（如整數 i 或字串）構成；New BAdI 支援<b>數值過濾器</b>與<b>多個過濾器</b></td></tr>
+      <tr><td>提供選單出口的 BAdI</td><td><b>不能有過濾器</b>、<b>不能多重使用</b>、<b>不能指派給 Switch</b>；可含與選單無關的方法</td></tr>
+      <tr><td>提供畫面出口的 BAdI</td><td>Instance Creation Mode 必須是 <b>Reusing Instantiation</b>，<b>不能多重使用</b>；可含填入／讀取子畫面欄位的方法</td></tr>
+      <tr><td>Fallback Class</td><td>可選；沒有符合過濾條件的實作、也沒有預設實作時使用</td></tr>
+    </tbody>
+  </table>
+  <pre><code class="abap">*&amp;-------------------------------------------------------------*
+*&amp; (1) BAdI 介面：在 SE18 由 BAdI 定義跳到 Class Builder 建立
+*&amp;     系統會自動加上 IF_BADI_INTERFACE 標記介面
+*&amp;-------------------------------------------------------------*
+INTERFACE zif_bc427_price PUBLIC.
+  INTERFACES if_badi_interface.
+  METHODS adjust_price
+    IMPORTING is_item  TYPE zsbc427_item
+    CHANGING  cv_price TYPE netpr.
+ENDINTERFACE.
+
+*&amp;-------------------------------------------------------------*
+*&amp; (2) Fallback Class：沒有任何實作被執行時的標準行為
+*&amp;-------------------------------------------------------------*
+CLASS zcl_bc427_price_fallback DEFINITION PUBLIC FINAL CREATE PUBLIC.
+  PUBLIC SECTION.
+    INTERFACES zif_bc427_price.
+ENDCLASS.
+
+CLASS zcl_bc427_price_fallback IMPLEMENTATION.
+  METHOD zif_bc427_price~adjust_price.
+    RETURN.                                "標準行為：價格不變
+  ENDMETHOD.
+ENDCLASS.
+
+*&amp;-------------------------------------------------------------*
+*&amp; (3) 客戶實作類別：過濾值 LAND1 = 'TW'
+*&amp;     折扣規則用「列舉」而非區間：客群代碼逐一列出
+*&amp;-------------------------------------------------------------*
+CLASS zcl_bc427_price_tw DEFINITION PUBLIC FINAL CREATE PUBLIC.
+  PUBLIC SECTION.
+    INTERFACES zif_bc427_price.
+ENDCLASS.
+
+CLASS zcl_bc427_price_tw IMPLEMENTATION.
+  METHOD zif_bc427_price~adjust_price.
+    cv_price = SWITCH #( is_item-kdgrp
+                 WHEN '01' OR '02' THEN cv_price * '0.95'
+                 WHEN '09'         THEN cv_price * '0.90'
+                 ELSE cv_price ).
+  ENDMETHOD.
+ENDCLASS.</code></pre>
+  <div class="tip">折扣客群寫成 <span class="kw">WHEN '01' OR '02'</span> 而不是 <span class="kw">BETWEEN '01' AND '05'</span>，就是 Casper 的第二條經驗：<b>條件用列舉比用區間安全</b>——區間比的是字典序而不是業務語意，客群代碼哪天多出一個 '03'，區間就會悄悄把它算進去。</div>
+
+  <h3 id="ch05-15-12">12. 過濾器、Instance Creation Mode 與 Context BAdI</h3>
+  <p><b>依賴過濾器的 BAdI</b>（p41）：概念和 Classic BAdI 相同，但功能加強了——一個 BAdI 可以定義<b>多個過濾器</b>；實作的過濾條件不只是單值，還能用 <span class="kw">&lt;&gt;</span>、<span class="kw">&gt;</span>、<span class="kw">&lt;</span>、<span class="kw">&gt;=</span>、<span class="kw">&lt;=</span>、<span class="kw">CP</span>、<span class="kw">NP</span> 運算子；也支援數值過濾器。講義的圖例：同一個 BAdI 分別為 'DE'、'GB'、'CN' 實作方法 ABC，執行時依 <span class="kw">GET BADI … FILTERS country = &lt;目前國家&gt;</span> 決定叫哪一個。</p>
+  <p><b>Instance Creation Mode（實例建立模式）</b>控制 GET BADI 時如何產生實作類別的物件（object plug-in），選對了對效能影響很大：</p>
+  <table>
+    <thead><tr><th>模式</th><th>行為</th><th>適用</th></tr></thead>
+    <tbody>
+      <tr><td>Newly Creating Instantiation</td><td>每一個 BAdI 句柄都產生新的實作類別實例</td><td>實作類別不需保留狀態</td></tr>
+      <tr><td>Reusing Instantiation</td><td>同一個 internal session 內重複使用既有實例</td><td>畫面出口 BAdI 必須用此模式；需要跨呼叫保留狀態</td></tr>
+      <tr><td>Context-Specific Instantiation</td><td>對同一個 Context 物件，永遠使用同一個實作類別實例（對「實作類別＋Context」而言是 singleton）</td><td>同一程式多處呼叫 BAdI、需依編譯單元區分狀態</td></tr>
+    </tbody>
+  </table>
+  <pre><code class="abap">*&amp;-------------------------------------------------------------*
+*&amp; Context-dependent BAdI：GET BADI … CONTEXT
+*&amp; Context 類別必須實作 IF_BADI_CONTEXT；
+*&amp; CL_BADI_REPORT_CONTEXT 是通用的 Context 產生器（依程式區分）
+*&amp;-------------------------------------------------------------*
+DATA lo_ctx_badi TYPE REF TO zbadi_bc427_ctx.
+
+DATA(lo_ctx) = cl_badi_report_context=&gt;get_instance( repid = sy-repid ).
+
+TRY.
+    GET BADI lo_ctx_badi CONTEXT lo_ctx.
+    CALL BADI lo_ctx_badi-&gt;collect
+      EXPORTING iv_matnr = lv_matnr.
+  CATCH cx_badi_not_implemented cx_badi_initial_reference INTO DATA(lx_badi).
+    MESSAGE lx_badi TYPE 'S' DISPLAY LIKE 'W'.
+ENDTRY.
+
+*&amp;-------------------------------------------------------------*
+*&amp; 動態 BAdI：名稱在執行時才決定（工具程式、框架程式才需要）
+*&amp;-------------------------------------------------------------*
+DATA lo_any TYPE REF TO cl_badi_base.
+DATA(lv_badi_name) = CONV string( 'ZBADI_BC427_PRICE' ).
+TRY.
+    GET BADI lo_any TYPE (lv_badi_name)
+      FILTERS land1 = 'TW' vkorg = '1710'.
+  CATCH cx_badi INTO DATA(lx_dyn).
+    MESSAGE lx_dyn TYPE 'I'.
+ENDTRY.</code></pre>
+  <div class="warn">BC425 p202 的範例寫成 <span class="kw">ctx = cl_badi_report=&gt;get_instance( … )</span>，但前一行宣告的是 <span class="kw">cl_badi_report_context</span>，下一段文字也說「類別 cl_badi_report_context」——類別名稱應為 <b>CL_BADI_REPORT_CONTEXT</b>，已在上面改正。同一 internal session 中，相同 Context 的 GET BADI 會重複使用同一組 object plug-in；不同程式的 Context 則對應不同實例。</div>
+
+  <h3 id="ch05-15-13">13. BAdI 選單出口（Menu Exit）</h3>
+  <p><b>原理</b>（p42、BC425 p186～p189）：SAP 畫面開發者在 GUI Status 中預先放一個<b>看不見的選單項目</b>，功能碼<b>一律以「+」開頭</b>；在該畫面的 PAI 中，用 BAdI 程式出口攔截這個功能碼。客戶實作這類 BAdI 時，除了<b>指定選單文字</b>，還要實作程式出口（按下選單後要跑的邏輯）；實作啟用後選單項目才會出現。選單出口<b>只能有一個啟用中的實作</b>。</p>
+  <pre><code class="abap">*&amp;-------------------------------------------------------------*
+*&amp; SAP 端（示意）：在 PAI 處理 '+' 開頭的功能碼
+*&amp; 呼叫語法與程式出口完全相同，只是放在 PAI 的 CASE 裡
+*&amp;-------------------------------------------------------------*
+DATA go_menu_badi TYPE REF TO zbadi_bc427_menu.
+
+MODULE init_badi OUTPUT.
+  IF go_menu_badi IS NOT BOUND.
+    TRY.
+        GET BADI go_menu_badi.
+      CATCH cx_badi_not_implemented.
+        CLEAR go_menu_badi.       "沒有實作：+ZM1 選單維持隱藏
+    ENDTRY.
+  ENDIF.
+ENDMODULE.
+
+MODULE user_command_0100 INPUT.
+  DATA(lv_ucomm) = gv_okcode.
+  CLEAR gv_okcode.
+  CASE lv_ucomm.
+    WHEN 'DISP'.
+      go_app-&gt;display( ).
+    WHEN 'EDIT'.
+      go_app-&gt;edit( ).
+    WHEN '+ZM1'.                  "選單出口的功能碼
+      TRY.
+          CALL BADI go_menu_badi-&gt;execute_menu
+            EXPORTING is_head = go_app-&gt;get_head( ).
+        CATCH cx_badi_initial_reference.
+          MESSAGE '此功能未啟用' TYPE 'S' DISPLAY LIKE 'W'.
+      ENDTRY.
+  ENDCASE.
+ENDMODULE.</code></pre>
+  <p><b>找與用</b>（p44）：① 在畫面的 GUI Status 找「+」開頭的功能碼；② 在 PAI 模組搜尋該功能碼；③ 在 CALL BADI 處雙擊參照變數找宣告；④ 雙擊 BAdI 型別找到所屬 Enhancement Spot；⑤ 讀 BAdI 文件，建立 Spot 的增強實作與 BAdI 實作；⑥ 實作程式出口；⑦ <b>雙擊 Menu Exit，輸入選單文字</b>；⑧ 啟用所有物件。Dialog 程式的 PBO／PAI 架構見 <a href="#ch04-2">4-2 章</a>、<a href="#ch05-9">5-9 章 BC410</a>。</p>
+
+  <h3 id="ch05-15-14">14. BAdI 畫面出口（Screen Exit）</h3>
+  <p><b>原理</b>（p45～p47、BC425 p192～p195）：SAP 畫面開發者保留一個<b>子畫面區域（Subscreen Area）</b>；客戶的子畫面必須定義在<b>客戶自己的函數群組</b>中，放要顯示的追加欄位（典型是 Append Structure 的 ZZ 欄位）。BAdI 實作中指定「函數群組主程式 + 子畫面號碼」，SAP 在 PBO 取得並嵌入。畫面出口也<b>只能有一個啟用實作</b>。</p>
+  <ul>
+    <li><b>程式 → 畫面</b>：SAP 在 PBO 呼叫橋接方法，把資料交給客戶實作的 <b>PUT（放置）方法</b>；PUT 方法再呼叫客戶函數群組的 FM，把資料寫進函數群組的全域資料，子畫面欄位才有值。</li>
+    <li><b>畫面 → 程式</b>：若子畫面欄位可輸入，還要實作 <b>GET（取得）方法</b>；SAP 在 PAI 呼叫它，它再呼叫函數群組的另一支 FM，把子畫面的資料帶回給 SAP 程式。</li>
+  </ul>
+  <pre><code class="abap">*&amp;-------------------------------------------------------------*
+*&amp; (A) 客戶函數群組 ZFG_BC427_SCR 的 TOP Include
+*&amp;     講義寫「TABLES 結構」；現代寫法用全域 DATA 結構，
+*&amp;     子畫面欄位在 Screen Painter 以 Get from Program 綁 GS_ZZHEAD-xxx
+*&amp;-------------------------------------------------------------*
+FUNCTION-POOL zfg_bc427_scr.
+DATA gs_zzhead TYPE zsbc427_head_ext.     "含 ZZ 追加欄位的結構
+
+*&amp;-------------------------------------------------------------*
+*&amp; (B) 資料交換 FM（PUT / GET 方法會呼叫）
+*&amp;-------------------------------------------------------------*
+FUNCTION z_bc427_scr_put.
+*"  IMPORTING VALUE(IS_HEAD) TYPE ZSBC427_HEAD_EXT
+  gs_zzhead = is_head.
+ENDFUNCTION.
+
+FUNCTION z_bc427_scr_get.
+*"  EXPORTING VALUE(ES_HEAD) TYPE ZSBC427_HEAD_EXT
+  es_head = gs_zzhead.
+ENDFUNCTION.
+
+*&amp;-------------------------------------------------------------*
+*&amp; (C) BAdI 實作類別：PUT / GET 程式出口
+*&amp;-------------------------------------------------------------*
+CLASS zcl_bc427_scr_impl IMPLEMENTATION.
+  METHOD zif_bc427_scr~put_data.
+    CALL FUNCTION 'Z_BC427_SCR_PUT'
+      EXPORTING is_head = is_head.
+  ENDMETHOD.
+  METHOD zif_bc427_scr~get_data.
+    CALL FUNCTION 'Z_BC427_SCR_GET'
+      IMPORTING es_head = es_head.
+  ENDMETHOD.
+ENDCLASS.
+
+*&amp;-------------------------------------------------------------*
+*&amp; (D) SAP 端（示意）：PBO 取得子畫面並嵌入，PAI 取回資料
+*&amp;     參數名稱請以 SE24 顯示 CL_ENH_BADI_RUNTIME_FUNCTIONS 為準
+*&amp;-------------------------------------------------------------*
+MODULE badi_subscreen OUTPUT.
+  TRY.
+      GET BADI go_scr_badi.
+      cl_enh_badi_runtime_functions=&gt;get_prog_and_dynp_for_subscr(
+        EXPORTING badi            = go_scr_badi
+                  calling_dynpro  = '0100'
+                  calling_program = sy-repid
+                  subscreen_area  = 'SUB_ZZ'
+        IMPORTING called_program  = gv_sub_prog
+                  called_dynpro   = gv_sub_dynnr ).
+      CALL BADI go_scr_badi-&gt;put_data EXPORTING is_head = gs_head.
+    CATCH cx_root.
+      gv_sub_prog  = 'SAPLZFG_EMPTY'.   "沒有實作時放空白子畫面
+      gv_sub_dynnr = '0100'.
+  ENDTRY.
+ENDMODULE.
+" 畫面流程邏輯（Flow Logic）：
+"   PROCESS BEFORE OUTPUT.
+"     MODULE badi_subscreen.
+"     CALL SUBSCREEN sub_zz INCLUDING gv_sub_prog gv_sub_dynnr.
+"   PROCESS AFTER INPUT.
+"     CALL SUBSCREEN sub_zz.
+"     MODULE badi_get_data.   " → CALL BADI go_scr_badi-&gt;get_data …</code></pre>
+  <p><b>找與用</b>（p48、BC425 p194～p195）：① 在畫面上找子畫面區域（預先搜尋，可選）；② 在程式中找 <span class="kw">GET BADI</span>——看到 <span class="kw">CL_ENH_BADI_RUNTIME_FUNCTIONS=&gt;GET_PROG_AND_DYNP_FOR_SUBSCR</span> 就代表有 BAdI 畫面出口；③ 雙擊參照變數找宣告；④ 雙擊 BAdI 找所屬 Spot；⑤ 讀 BAdI 文件；⑥ 建立含子畫面、資料交換結構（TOP Include）與 FM 的函數群組；⑦ 建立 Spot 實作與 BAdI 實作；⑧ 實作 PUT、GET 程式出口；⑨ 雙擊畫面出口，指定子畫面號碼與主程式——<b>主程式名稱是函數群組名加前綴 SAPL</b>（例如 SAPLZFG_BC427_SCR）；⑩ 啟用所有物件。</p>
+  <div class="warn">筆記 p48 寫「查找 GET-BADI 命令」，中間多了連字號，正確關鍵字是 <span class="kw">GET BADI</span>。另外講義要求在 TOP Include 用 <span class="kw">TABLES</span> 宣告交換結構，這是舊寫法：畫面欄位可以直接綁定全域 DATA 結構，不需要 TABLES 工作區（見 <a href="#ap-01">附錄 舊語法對照</a>）。S/4HANA 的很多標準交易（例如 Fiori 取代的 GUI 畫面）已不再是擴充重點，客製欄位優先考慮 Key User 的 Custom Fields（<span class="kw">Custom Fields and Logic</span> App）。</div>
+
+  <h3 id="ch05-15-15">15. 第五單元：Switch Framework——SFW1／SFW2／SFW5</h3>
+  <p><b>觀念</b>（p50～p51、BC425 p310）：客戶拿到的是一個包含<b>所有行業解決方案</b>的完整系統，只啟用自己需要的部分，其他雖然存在但不被使用。Switch Framework 用<b>開關（Switch）</b>從外部控制 Repository 物件或其元件的可見性；SAP 也決定往後以<b>增強套件（Enhancement Package，EhP）</b>交付新功能，由客戶決定要開哪些。</p>
+  <table>
+    <thead><tr><th>層級</th><th>內容</th><th>TCODE</th></tr></thead>
+    <tbody>
+      <tr><td>Business Function Set（業務功能集）</td><td>一個行業解決方案；一個系統<b>只能啟用一個</b></td><td><span class="tcode">SFW5</span></td></tr>
+      <tr><td>Business Function（業務功能）</td><td>把多個 Switch 分組；可啟用／停用</td><td><span class="tcode">SFW2</span> 定義，<span class="tcode">SFW5</span> 啟用</td></tr>
+      <tr><td>Switch（開關）</td><td>指派<b>套件（Package）</b>、畫面元素、選單項目</td><td><span class="tcode">SFW1</span></td></tr>
+      <tr><td>Package → 增強實作</td><td>開關控制的是整個套件，<b>不能把單一增強實作指派給開關</b></td><td><span class="tcode">SE80</span></td></tr>
+    </tbody>
+  </table>
+  <p><b>客戶自訂開關的步驟</b>（p53、BC425 p312～p315）：</p>
+  <ol>
+    <li><span class="tcode">SFW1</span>：輸入開關名稱 → 建立 → 短文 → 在 Package 欄填入放增強實作的套件 → <b>Activate</b>（注意：這只是啟用「開關物件」本身，不代表套件裡的增強已被開啟）。</li>
+    <li><span class="tcode">SFW2</span>：建立業務功能；不含行業解決方案元件時，類型用 <b>G（Enterprise Business Function）</b>。</li>
+    <li>把開關指派給業務功能，並選<b>指派類型</b>：<b>Activation</b>（套件與開關的所有物件都生效；控制增強實作時選這個）或 <b>Standby</b>（强晟譯為「使能但備用」：只啟用宣告性的增強，例如 DDIC 的表 Append 與靜態程式增強）。</li>
+    <li>Properties 頁籤勾選 <b>Reversible（可逆）</b>，才能在啟用後再關掉。</li>
+    <li>啟用業務功能物件。</li>
+    <li><span class="tcode">SFW5</span>：啟用或停用業務功能（同一時間<b>只能有一個使用者</b>在 SFW5 的修改模式）。</li>
+  </ol>
+  <div class="warn"><b>强晟筆記 p52 寫反了</b>：「對於<b>啟用</b>，有一些先決條件，首先業務功能要定義為可逆的，並且包中不包含任何字典物件」。原廠寫的是 <b>停用（deactivation）</b>的先決條件——業務功能必須是 Reversible，且不含 ABAP Dictionary 物件。所有業務功能都可以開，只有可逆的才能關。行業解決方案與 EhP 啟用時會產生程式並建立 DDIC 物件，所以它們<b>都是不可逆</b>的；在正式機上 SFW5 啟用 SAP 業務功能前一定要評估，開了就關不掉。</div>
+  <p>停用業務功能時，其開關所屬套件中的所有增強實作都<b>失效</b>，但仍存在系統中。增強實作一旦啟用，在原始碼中永遠顯示為「active」，看不出會不會執行；要雙擊程式中的增強實作名稱，到 <b>Properties</b> 頁籤看它有沒有指派開關、開關狀態為何。</p>
+  <div class="tip"><b>讓非 Enhancement Framework 的增強也能被開關控制</b>（BC425 p315）：只有 Enhancement Framework 的增強實作可切換；Customer Exit、Classic BAdI、User Exit、BTE 都不受影響。變通做法：例如 Classic BAdI，照常在 <span class="tcode">SE19</span> 實作並建立實作類別，但寫方法時<b>從修改模式切到顯示模式</b>，改用方法開頭或結尾的<b>隱式增強</b>寫程式——這段隱式增強就能掛在開關的套件下。其他舊技術同理。講義也提醒不要每次都這樣做，只在確實需要納入開關時使用。</div>
+
+  <h3 id="ch05-15-16">16. 衝突開關、增強調整（SPAU_ENH）與 Classic BAdI 遷移</h3>
+  <p><b>衝突與衝突開關</b>（BC425 Unit 12 L2）：兩個以上的開關，各自包含同一個<b>增強段</b>或<b>單一使用 BAdI</b> 的實作，而這些開關同時開啟時就產生衝突（這兩種增強只允許一個啟用實作）。解法是<b>衝突開關（Conflict Switch）</b>：</p>
+  <ul>
+    <li>一個衝突開關可指派多個一般開關；<b>所有</b>指派的開關都開時它才是 ON，只要有一個關就是 OFF。</li>
+    <li>指派了衝突開關（而不是一般開關）的增強實作稱為<b>衝突解決增強實作</b>，它要反映所有可能同時開啟的實作的共同語意，並<b>優先於</b>其他已開啟的實作；多個衝突解決實作時，解決最多衝突的那個優先。</li>
+    <li>每一種可能同時開啟而衝突的組合，都需要一個衝突開關與一個衝突解決實作。</li>
+  </ul>
+  <p><b>增強調整</b>：升級、匯入 Support Package 或用 Note Assistant 匯入修正時，被增強的 SAP 物件可能改變，增強實作需要調整。工具是 <b>Enhancement Browser（Enhancement Information System）</b>，交易碼 <span class="tcode">SPAU_ENH</span>，也可從 <span class="tcode">SE80</span> 開啟（若沒顯示，Utilities → Settings → Workbench (General) → 勾 Enhancement Info System）。</p>
+  <table>
+    <thead><tr><th>需要調整的典型情況</th><th>說明</th></tr></thead>
+    <tbody>
+      <tr><td>原始碼</td><td>含增強選項的物件或程序被刪除；ENHANCEMENT-POINT／SECTION 定義被刪；<b>增強段內的 SAP 原始碼改變</b>；增強選項之前的程式碼改變；FM 搬到別的函數群組；程序搬到別的 Include；增強段的外掛衝突；program-bound ↔ include-bound 互換；static ↔ dynamic 互換</td></tr>
+      <tr><td>函數模組</td><td>SAP 新增了與增強參數<b>同名</b>的 IMPORTING 參數；被增強的 FM 被刪除或搬移；<b>RFC-enabled 屬性改變</b></td></tr>
+      <tr><td>類別／介面</td><td>方法名、參數名、事件名、型別名與匯入的物件衝突；被增強的類別、介面、方法、事件被刪除</td></tr>
+      <tr><td>BAdI</td><td>BAdI 介面改變、過濾器被刪除；Classic BAdI 被遷移成 New BAdI</td></tr>
+    </tbody>
+  </table>
+  <p>調整步驟：<span class="tcode">SPAU_ENH</span> → <b>Enhancements (Upgrade View)</b> → 選一個增強 → <b>Adjustment</b> 頁籤看衝突清單（按 Long Text 看衝突原因與解法）→ 依技術調整原始碼外掛、類別／介面／函數群組、BAdI 實作 → 按 <b>Adjust Enhancement Implementation</b>（綠燈的衝突會自動解決）→ 啟用。<b>Adjustment Preparation</b> 會執行程式 <span class="kw">ENH_SAPRUPGM</span>，把表 <b>ENHOBJ</b> 的旗標轉成表 <b>ENHHEADER</b> 的旗標並計算調整狀態（BC425 p301 把程式名印成 ENH_SARUPGM，應為同一支 ENH_SAPRUPGM）。狀態種類：自動調整、工具輔助調整、手動調整、已調整、語意變更、被增強物件已刪除、空的增強實作、未知（問號）。</p>
+  <p><b>Classic BAdI 遷移</b>（BC425 p301～p303）：因為 New BAdI 呼叫快得多，建議<b>只定義 New BAdI</b>，並把<b>自己的</b> Classic BAdI 遷移過去：</p>
+  <ul>
+    <li>用 <span class="tcode">SE18</span> 的選單執行，幾分鐘就能完成；但因兩者差異，無法全自動，建議<b>半自動</b>：自動產生 Spot 與 New BAdI → 刪掉 Classic BAdI 定義 → 把程式中的 <span class="kw">CL_EXITHANDLER=&gt;GET_INSTANCE</span> 與方法呼叫改成 GET BADI／CALL BADI。</li>
+    <li>不改呼叫程式也能動（橋接方法內已改成 GET BADI／CALL BADI），但要享受效能提升，尤其同一程式多次呼叫時，就要把呼叫端改掉。</li>
+    <li><b>只能在原始系統遷移</b>；後續系統靠傳輸遷移後的 BAdI 觸發實作遷移。遷移後、Classic BAdI 還沒刪之前，不可修改產生的 New BAdI。</li>
+    <li><b>絕不要遷移 SAP 交付的 BAdI</b>。若 SAP 已遷移其 Classic BAdI，客戶的實作用 <span class="tcode">SPAU</span> 初始畫面的 <b>Migrated Objects</b> 手動遷移。</li>
+  </ul>
+  <pre><code class="abap">*&amp;-------------------------------------------------------------*
+*&amp; 遷移前後的呼叫端對照（遷移「自己的」Classic BAdI ZBC427_CLASSIC）
+*&amp;-------------------------------------------------------------*
+" 遷移前（Classic）：參照型別是介面，經適配器類別
+" DATA lo_exit TYPE REF TO zif_ex_bc427_classic.
+" CALL METHOD cl_exithandler=&gt;get_instance
+"   EXPORTING exit_name = 'ZBC427_CLASSIC' null_instance_accepted = abap_true
+"   CHANGING  instance  = lo_exit.
+
+" 遷移後（New）：參照型別是 BAdI 名稱，由核心產生句柄
+DATA lo_new TYPE REF TO zbc427_classic.     "SE18 遷移時產生的 New BAdI
+
+TRY.
+    GET BADI lo_new.
+    CALL BADI lo_new-&gt;check_item
+      EXPORTING is_item = ls_item
+      CHANGING  ct_msg  = lt_msg.
+  CATCH cx_badi_not_implemented cx_badi_initial_reference.
+    " 多重使用的 BAdI 不會進來；單一使用且無實作時才會
+ENDTRY.
+
+" 回傳訊息排序後再判斷第一筆，不要依賴實作執行順序
+SORT lt_msg BY type number.
+DATA(lv_has_error) = xsdbool( line_exists( lt_msg[ type = 'E' ] ) ).</code></pre>
+  <div class="note">更多升級調整（SPDD、SPAU 與修改助理）的操作見 <a href="#ch05-14">5-14 章 BC425</a> 與 <a href="#ch03-4-18">3-4 章第 18 節</a>。<b>校正</b>：3-4 章第 14 節提到「對 DDIC 結構做增強時要用 INCLUDE BOUND」，依 BC425 p220，<span class="kw">INCLUDE BOUND</span> 的用途是「增強定義在被多支主程式引用的 Include 中、且實作要對所有主程式生效」，和 DDIC 結構無關，請以本章第 5 節為準。</div>
+
+  <h3 id="ch05-15-17">17. S/4HANA 現況：Enhancement Framework 在 Clean Core 時代的位置</h3>
+  <p>强晟在後記說：「技術總是越來越簡單，難的是用現有技術實現千變萬化的業務需求。」這句話到了 S/4HANA 依然成立，但「該用哪一種技術」的答案變了：</p>
+  <table>
+    <thead><tr><th>擴充方式</th><th>S/4HANA On-Premise／Private Cloud（Classic ABAP）</th><th>ABAP Cloud（Public Cloud、BTP ABAP、Tier 1 開發）</th></tr></thead>
+    <tbody>
+      <tr><td>New BAdI</td><td>可用；優先選 SAP 標為 Released 的 BAdI</td><td>只能實作 <b>Released（C0 contract）</b>的 BAdI（Cloud BAdI）</td></tr>
+      <tr><td>Classic BAdI、Customer Exit、User Exit、BTE</td><td>可用，但屬 Tier 3 經典擴充</td><td>不可用</td></tr>
+      <tr><td>隱式／顯式原始碼增強、pre/post/overwrite</td><td>可用，但對 Clean Core 最不友善，升級要 SPAU_ENH 調整</td><td><b>不可用</b></td></tr>
+      <tr><td>Extension Index、Fixed Value Append</td><td>可用；索引要先評估 HANA 是否需要</td><td>改用 Key User 擴充與 CDS 擴充</td></tr>
+      <tr><td>Switch Framework</td><td>SAP 仍用它交付 Business Function；客戶自訂開關已少見</td><td>—（改用 Feature Toggle 等機制）</td></tr>
+    </tbody>
+  </table>
+  <div class="warn"><b>選型順序請背起來</b>（Casper 第三條經驗，也是 Clean Core 的精神）：<b>標準設定（Customizing）→ Key User 擴充／Released BAdI → 其他 BAdI 與 Enhancement Spot → 隱式／顯式增強點 → 修改標準</b>。本章教的隱式增強非常強大（幾乎任何 FM、方法、FORM 的頭尾都能插），正因如此最容易被濫用：一個專案累積上百個隱式增強，每次升級 SPAU_ENH 都是一場災難。能在 BAdI 解決就不要用增強點，能用 pre/post 方法就不要直接在方法結尾塞程式。</div>
+  <div class="tip">專案文件建議：每個增強實作都記錄「所屬 Spot／被增強物件、目的、負責人、傳輸請求、是否掛開關」。在 S/4 轉換（Brownfield）時，用 <span class="kw">ABAP Test Cockpit</span> 的 Custom Code Migration 檢查，加上 SPAU_ENH 的 Complete View（輸入 *），可以一次盤點系統中所有增強（見 <a href="#ch03-4-17">3-4 章第 17 節</a> Clean Core 三層擴充模型）。</div>
+
+  <h3 id="ch05-15-qa">練習與自我檢核</h3>
+  <ol>
+    <li><b>顯式增強點與增強段有什麼差別？各有什麼多重實作風險？</b><br/>答案要點：點用 ENHANCEMENT-POINT「補充」程式碼，段用 ENHANCEMENT-SECTION … END-ENHANCEMENT-SECTION「替換」程式碼；兩者都屬 Enhancement Spot。點可多個實作但執行順序不保證，實作間不可相依；段只會執行一個實作，多個啟用時只出語法警告不 Dump，需衝突開關控制。</li>
+    <li><b>STATIC 與 INCLUDE BOUND 兩個附加語法的用途？</b><br/>答案要點：STATIC 用於增強資料宣告，不加則是增強可執行程式碼；INCLUDE BOUND 用於定義在多支主程式共用的 Include 中、且實作要對所有主程式生效的增強；同一 Include 不能混用兩種。</li>
+    <li><b>替標準 FM 用隱式增強加參數，有哪些限制？</b><br/>答案要點：新增參數一律 optional；可加 IMPORTING／EXPORTING／CHANGING／TABLES，不能加 EXCEPTIONS；原始碼只能在開頭與結尾插入；程式中應先用 IS SUPPLIED 判斷。</li>
+    <li><b>寫出 pre-method、post-method 與原方法的參數差異，以及例外如何中斷執行鏈。</b><br/>答案要點：pre 沒有 EXPORTING；post 沒有 EXPORTING，原 EXPORTING 與 RETURNING 變成 CHANGING；有 overwrite 就不能有 pre/post；pre 丟例外則原方法與 post 都不跑，原方法丟例外則 post 不跑；以 CORE_OBJECT 存取原實例；生成 LCL_&lt;增強名&gt;、介面 IPR_／IPO_／IOW_。</li>
+    <li><b>在結構宣告 END OF 之前做隱式增強，以下哪個寫法正確？(a) zz_f TYPE c, (b) DATA zz_f LIKE mara-matnr. (c) DATA: zz_f TYPE matnr. (d) INCLUDE STRUCTURE zs.</b><br/>答案要點：(c)。必須用 DATA、TYPE 與句點；不可用 LIKE 表欄位與 INCLUDE STRUCTURE。</li>
+    <li><b>Classic BAdI 與 New BAdI 的呼叫方式、參照變數型別、執行架構有何不同？</b><br/>答案要點：Classic 用 CL_EXITHANDLER=&gt;GET_INSTANCE，參照型別是 BAdI 介面，經 SE18 產生的適配器類別 CL_EX_&lt;名&gt; 與橋接方法；New 用 GET BADI／CALL BADI，參照型別是 BAdI 名稱，由核心產生 BAdI 句柄，較快，屬於 Enhancement Spot，可被開關切換。</li>
+    <li><b>GET BADI 在什麼情況丟 cx_badi_not_implemented？CALL BADI 何時丟 cx_badi_initial_reference？</b><br/>答案要點：單一使用 BAdI 找不到符合的實作且無 fallback 時丟前者（多重使用不丟）；句柄參照為 INITIAL（例如 GET BADI 失敗）時 CALL BADI 丟後者。强晟筆記拼成 regerence 是筆誤。</li>
+    <li><b>一般實作、Default Implementation、Fallback Class 的執行優先順序？</b><br/>答案要點：所有符合條件的一般實作都執行；沒有任何一般實作執行時才用 Default；連 Default 也沒有時才用定義上的 Fallback Class。</li>
+    <li><b>提供選單出口與畫面出口的 New BAdI 各有什麼定義限制？</b><br/>答案要點：選單出口 BAdI 不能有過濾器、不能多重使用、不能指派開關；畫面出口 BAdI 必須是 Reusing Instantiation、不能多重使用；兩者都只能有一個啟用實作；選單功能碼以「+」開頭；畫面出口主程式是 SAPL＋函數群組名。</li>
+    <li><b>說明 Instance Creation Mode 三種模式，以及 Context BAdI 的寫法。</b><br/>答案要點：Newly Creating（每個句柄新實例）、Reusing（同 internal session 共用）、Context-Specific（同一 Context 物件共用同一實例）；Context 類別實作 IF_BADI_CONTEXT，<span class="kw">GET BADI … CONTEXT ctx</span>；CL_BADI_REPORT_CONTEXT=&gt;GET_INSTANCE 是通用的 Context 產生器。</li>
+    <li><b>用 Switch Framework 控制自己的增強實作，要走哪些 TCODE？停用的前提是什麼？</b><br/>答案要點：SFW1 建開關並指派套件（不能指派單一增強實作）→ SFW2 建業務功能（類型 G）、指派開關（Activation／Standby）、勾 Reversible → SFW5 啟用／停用。停用前提：業務功能為可逆，且不含 DDIC 物件（强晟筆記誤寫成「啟用」的前提）。行業解決方案與 EhP 不可逆。</li>
+    <li><b>你想讓一個 Classic BAdI 實作能被開關控制，怎麼做？</b><br/>答案要點：照常在 SE19 實作並建立實作類別，寫方法時切到顯示模式，改在方法開頭或結尾用隱式增強寫程式，把這個隱式增強實作放在開關所控制的套件裡。</li>
+    <li><b>升級後哪些情況要用 SPAU_ENH 調整增強實作？自己的 Classic BAdI 要怎麼遷移？</b><br/>答案要點：增強段內原始碼改變、增強點定義被刪、FM 新增同名參數或 RFC 屬性改變、被增強方法刪除、BAdI 介面改變等；用 Upgrade View → Adjustment 頁籤 → Adjust Enhancement Implementation。遷移在 SE18、只在原始系統、只遷移自己的 BAdI，之後刪除 Classic 定義並把 CL_EXITHANDLER 呼叫改成 GET BADI／CALL BADI；SAP 遷移過的 BAdI，客戶實作用 SPAU 的 Migrated Objects 處理。</li>
+    <li><b>實作題</b>：建立 Spot ZES_BC427_&lt;學號&gt;，內含單一使用、過濾器 LAND1 的 BAdI；寫 Fallback Class 與 LAND1 = 'TW' 的實作；在 Z 報表中以 GET BADI … FILTERS 呼叫，並處理三種 GET BADI 例外。<br/>答案要點：參考第 10、11 節程式；過濾條件用列舉值，讀資料時 ORDER BY 明確排序，不要依賴 HANA 回傳順序。</li>
+  </ol>
+</section>

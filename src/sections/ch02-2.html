@@ -1,0 +1,1952 @@
+<section class="chapter" id="ch02-2" data-title="內表 / 工作區 / ABAP SQL 與 7.40+ 新語法">
+  <h2 id="ch02-2">第 2-2 章 內表 / 工作區 / ABAP SQL 與 7.40+ 新語法</h2>
+  <p class="lede">這是整本教材最核心的一章。ABAP 的世界只有兩件事：<b>把資料從資料庫撈進記憶體</b>（ABAP SQL），以及<b>在記憶體裡把資料整理成報表要的樣子</b>（內表）。這一章把內表的三種型別與 KEY 設計、增刪改查排序去重加總十大技巧、ABAP SQL 完整 SELECT 語法（JOIN／子查詢／聚合／CTE／視窗函數）、FOR ALL ENTRIES 的陷阱、S/4HANA 的 code pushdown 效能觀念，以及 7.40～7.55 的現代語法（VALUE / FOR / REDUCE / CORRESPONDING / COND / SWITCH / 表達式讀取）一次講完。學完之後，你寫出來的 SELECT 與 LOOP 應該可以直接上 S/4HANA 1809 以後的正式系統。</p>
+
+  <div class="meta">
+    <div><b>核心 TCODE</b><span class="tcode">SE38</span><span class="tcode">SE11</span><span class="tcode">SE16N</span><span class="tcode">SE16H</span><span class="tcode">SE80</span><span class="tcode">ST05</span><span class="tcode">SAT</span><span class="tcode">SE30</span><span class="tcode">SDBE</span><span class="tcode">SQLM</span><span class="tcode">SWLT</span><span class="tcode">DBACOCKPIT</span><span class="tcode">ST12</span><span class="tcode">SCI</span><span class="tcode">ABAPDOCU</span><span class="tcode">SE37</span><span class="tcode">VA03</span><span class="tcode">ME23N</span><span class="tcode">CO03</span><span class="tcode">FB03</span></div>
+    <div><b>關鍵物件</b>MARA、MAKT、MARC、MARD、MBEW、MATDOC、ACDOCA、BKPF、BSEG、EKKO、EKPO、EKBE、EKES、EINA、LFA1、VBAK、VBAP、KNA1、T001、T458B、SPFLI、SFLIGHT、SBOOK、SCARR、SCUSTOM、USR21、STXH／STXL、CL_SQL_STATEMENT、CL_SQL_CONNECTION、CL_SALV_TABLE、RMMATH1_VARIANCE_DEVIATION、READ_TEXT／SAVE_TEXT</div>
+  </div>
+
+  <h3 id="ch02-2-01">1. 內表是什麼：記憶體中的臨時表</h3>
+  <p>內表（internal table）是程式執行期間在<b>記憶體</b>中建立的一張臨時表。你可以對它做插入、修改、刪除、查詢，程式跑完它就自動被釋放，不必像 T-SQL 的 <span class="kw">#table</span> 還要記得 DROP（雖然 T-SQL 現在也有 <span class="kw">DECLARE @table</span> 了）。</p>
+  <p>老師的第一句話：<b>掌握內表是成為 ABAPer 的關鍵一步</b>。除了寫程式之外，小到 SELECT-OPTIONS、大到 Function Module 的 TABLES 參數、ALV 的資料來源，到處都是 internal table 的影子。</p>
+
+  <div class="tip">口訣：內表要掌握<b>十大技巧</b> —— 種類、建立、附加、合併、更改、刪除、查詢、去重、排序、加總。這十個動作學會了，ABAP 的資料處理就過關了。</div>
+
+  <h4>內表、表格列（table line）與工作區（work area）</h4>
+  <ul>
+    <li><b>內表</b>：多筆資料的集合（相當於 SQL 的 table）。</li>
+    <li><b>table line</b>：內表中的<b>一筆</b>記錄，很容易跟工作區搞混。</li>
+    <li><b>工作區 work area</b>：內表是「按行存取」的，必須有一塊區域當作與內表互相傳輸的<b>介面</b>。從內表讀資料時，被定址的那一行內容會<b>覆蓋</b>工作區；要寫資料進內表時，必須先把資料填進工作區。</li>
+  </ul>
+  <p>換句話說：<b>工作區＝一列的結構，內表＝很多列</b>。在現代 ABAP 中，工作區往往不需要事先宣告，直接用 <span class="kw">INTO DATA(ls_x)</span> 或 <span class="kw">ASSIGNING FIELD-SYMBOL(&lt;ls_x&gt;)</span> 在迴圈裡就地產生。</p>
+
+  <div class="note">DESCRIBE TABLE itab LINES n. 就等於 SQL 的 <span class="kw">SELECT COUNT(*) FROM table</span>。7.02 之後更建議直接用內建函數 <span class="kw">lines( itab )</span>，可以寫在運算式裡。</div>
+
+  <h3 id="ch02-2-02">2. 三種內表型別與 KEY 設計（STANDARD / SORTED / HASHED）</h3>
+  <p>內表共三種類型，差別在「怎麼找到那一列」：</p>
+
+  <table>
+    <thead><tr><th>型別</th><th>關鍵字</th><th>索引</th><th>主鍵</th><th>存取複雜度</th><th>適用時機</th></tr></thead>
+    <tbody>
+      <tr><td>標準表</td><td>STANDARD TABLE</td><td>有主表索引（可用 INDEX / sy-tabix）</td><td>Non-unique</td><td>循序 O(n)；有排序＋BINARY SEARCH 才 O(log n)</td><td>一般報表、資料量小（＜1 萬筆）。簡單環境用它就夠了</td></tr>
+      <tr><td>排序表</td><td>SORTED TABLE</td><td>有邏輯索引，依主鍵<b>昇冪</b>自動排序後存放</td><td>UNIQUE 或 NON-UNIQUE</td><td>O(log n)（二分搜尋，系統自動做）</td><td>邊新增邊排序、需要頻繁 READ 的中量資料（＞1 萬筆）</td></tr>
+      <tr><td>雜湊表</td><td>HASHED TABLE</td><td><b>沒有主表索引</b>，只能用鍵值存取</td><td>必須 UNIQUE</td><td>O(1)，定址時間與筆數無關</td><td>巨量資料（＞10 萬筆）的鍵值查表、對照檔</td></tr>
+    </tbody>
+  </table>
+
+  <p>SAP 官方對 hashed table 的定義：資料列依 hash 演算法存放、以唯一 hash key 存取；<b>沒有主表索引</b>，但可以另外掛 secondary table index（透過 secondary key）。</p>
+
+  <div class="tip">老師的實測結論（用 SE30／SAT 量）：<b>小資料量時排序表比較快；資料量很大時雜湊表勝出</b>。不過有了 HANA 之後，大多數效能問題在 DB 層就解掉了，HASH 表用到的時機相對變少——但知道有這個工具，遇到極端狀況才有牌可打。</div>
+
+  <h4>主鍵、次鍵與 USING KEY</h4>
+  <ul>
+    <li><b>Primary key</b>：<span class="kw">WITH [UNIQUE|NON-UNIQUE] KEY f1 f2</span>。若用 <span class="kw">TYPE TABLE OF struct</span> 而不指定 KEY，預設是「所有非數值欄位（c／n／d／t／string）當 non-unique 標準鍵」——這通常不是你要的，也會拖慢比對。</li>
+    <li><b>WITH EMPTY KEY</b>：7.40 起可宣告空鍵，明確表示「我不靠 key 找資料，只用 index」，比預設標準鍵乾淨。</li>
+    <li><b>Secondary key</b>：一張內表可以同時掛多組次鍵（SORTED 或 HASHED），讓同一份資料有多種查法。存取時用 <span class="kw">USING KEY &lt;key_name&gt;</span> 指定要走哪一把鍵。</li>
+    <li><b>DEFAULT KEY</b>：舊式寫法，等同標準鍵，效能差，新程式不建議。</li>
+  </ul>
+
+<pre><code class="abap">REPORT zdemo_itab_types.
+
+TYPES: BEGIN OF ty_result,
+         vbeln  TYPE vbak-vbeln,
+         posnr  TYPE vbap-posnr,
+         kunnr  TYPE vbak-kunnr,
+         matnr  TYPE vbap-matnr,
+         kwmeng TYPE vbap-kwmeng,
+         netwr  TYPE vbap-netwr,
+         waerk  TYPE vbap-waerk,
+       END OF ty_result.
+
+" 1) 標準表：明確宣告空鍵，只靠 index 存取（最乾淨）
+DATA lt_std TYPE STANDARD TABLE OF ty_result WITH EMPTY KEY.
+
+" 2) 排序表：主鍵唯一，插入時自動維持排序
+DATA lt_sorted TYPE SORTED TABLE OF ty_result
+                    WITH UNIQUE KEY vbeln posnr.
+
+" 3) 雜湊表：主鍵一定要 UNIQUE，沒有主表索引
+DATA lt_hash TYPE HASHED TABLE OF ty_result
+                  WITH UNIQUE KEY vbeln posnr.
+
+" 4) 一張標準表掛兩把次鍵：一把查客戶、一把查料號
+DATA lt_multi TYPE STANDARD TABLE OF ty_result
+                   WITH EMPTY KEY
+                   WITH NON-UNIQUE SORTED KEY by_kunnr COMPONENTS kunnr
+                   WITH NON-UNIQUE SORTED KEY by_matnr COMPONENTS matnr.
+
+" 用次鍵讀取／迴圈，速度會比全表掃描快非常多
+READ TABLE lt_multi WITH KEY by_kunnr COMPONENTS kunnr = '0000100001'
+                    INTO DATA(ls_one).
+
+LOOP AT lt_multi USING KEY by_matnr INTO DATA(ls_line)
+     WHERE matnr = 'DXTR1000'.
+  " ... 處理
+ENDLOOP.</code></pre>
+
+  <div class="warn">HASHED TABLE 不能用 <span class="kw">READ TABLE ... INDEX n</span>、不能 <span class="kw">SORT</span>、不能 <span class="kw">APPEND</span>（只能 INSERT）。SORTED TABLE 也不能 APPEND（除非附加的值剛好維持排序，否則會 dump），也不能 SORT。<b>APPEND 與 SORT 只適用於 STANDARD TABLE</b>。</div>
+
+  <h3 id="ch02-2-03">3. 內表的宣告：從舊語法到現代寫法</h3>
+  <p>講義列了很多 3.0 時代的宣告方式，這裡整理成「看得懂舊的、寫得出新的」對照。</p>
+
+  <table>
+    <thead><tr><th>舊寫法（講義原文，僅供讀懂舊程式）</th><th>現代寫法（S/4HANA 請用這個）</th></tr></thead>
+    <tbody>
+      <tr><td>DATA: BEGIN OF itab OCCURS 0, ... END OF itab.</td><td>TYPES 定義結構 ＋ DATA itab TYPE STANDARD TABLE OF ty WITH EMPTY KEY.</td></tr>
+      <tr><td>DATA itab LIKE spfli OCCURS 0 WITH HEADER LINE.</td><td>DATA itab TYPE STANDARD TABLE OF spfli WITH EMPTY KEY.（不要 header line）</td></tr>
+      <tr><td>TYPES itabt TYPE line OCCURS 10.</td><td>TYPES itabt TYPE STANDARD TABLE OF line WITH EMPTY KEY.</td></tr>
+      <tr><td>INCLUDE STRUCTURE spfli.</td><td>TYPES: BEGIN OF ty. INCLUDE TYPE spfli. TYPES: name TYPE char20, END OF ty.（仍可用，但盡量改成明列欄位）</td></tr>
+      <tr><td>DATA wa LIKE LINE OF itab.</td><td>仍然正確、常用；或直接 <b>LOOP AT itab INTO DATA(wa)</b> 就地宣告</td></tr>
+      <tr><td>DESCRIBE TABLE itab LINES n.</td><td>n = lines( itab ).</td></tr>
+      <tr><td>DESCRIBE TABLE itab KIND k. / OCCURS n.</td><td>用 RTTI：cl_abap_tabledescr=&gt;describe_by_data( itab )</td></tr>
+    </tbody>
+  </table>
+
+  <p><span class="src">（講義第 12 個練習：內表的定義，程式 Z202202_12，示範 OCCURS 0 宣告與 BREAK-POINT 進入除錯）</span>這裡把它整支改寫成現代版：</p>
+
+<pre><code class="abap">*&amp;---------------------------------------------------------------------*
+*&amp; Report ZDEMO_02_12  內表的定義（原講義 Z202202_12 現代化改寫）
+*&amp;---------------------------------------------------------------------*
+REPORT zdemo_02_12.
+
+" 定義列結構
+TYPES: BEGIN OF ty_person,
+         name TYPE char10,
+         age  TYPE int2,
+       END OF ty_person.
+
+" 定義表型別（可重複使用，也可放進 SE11 的 Table Type）
+TYPES ty_t_person TYPE STANDARD TABLE OF ty_person WITH EMPTY KEY.
+
+DATA: lt_person1 TYPE ty_t_person,          " 由表型別宣告
+      ls_person  TYPE ty_person,            " 工作區
+      lt_person2 LIKE lt_person1.           " 參照已宣告好的內表
+
+" 參照 DDIC 透明表 / 結構
+DATA lt_sflight  TYPE STANDARD TABLE OF sflight WITH EMPTY KEY.
+DATA lt_sorted   TYPE SORTED TABLE  OF sflight WITH UNIQUE KEY carrid connid fldate.
+DATA lt_hashed   TYPE HASHED TABLE  OF sflight WITH UNIQUE KEY carrid connid fldate.
+
+" 取筆數：內嵌宣告＋內建函數，取代 DESCRIBE
+SELECT carrid, connid, fldate, seatsmax, seatsocc
+  FROM sflight
+  INTO TABLE @DATA(lt_flight).
+
+DATA(lv_cnt) = lines( lt_flight ).
+WRITE: / |sflight 共 { lv_cnt } 筆|.
+
+" BREAK-POINT 會與程式共存、每次執行都停；除外部程式請用 SE38 的 External Breakpoint
+BREAK-POINT.</code></pre>
+
+  <div class="note">除錯快捷鍵複習：<b>F5</b> 單步、<b>F6</b> 單步但不進入副程式、<b>F7</b> 回到上層、<b>F8</b> 執行到下一個中斷點或結束。點變數可觀察內容；若工作區與內表同名（header line），要看內表內容記得加 <span class="kw">[]</span>。BREAK-POINT 與 External Breakpoint 的共同點是：程式關閉就消失。</div>
+
+  <h3 id="ch02-2-04">4. WITH HEADER LINE：為什麼不要再用</h3>
+  <p>WITH HEADER LINE 是讓工作區與內表<b>同名</b>的舊機制。<span class="kw">itab-field1 = 1. APPEND itab.</span> 看起來很省事，但它是 ABAP 3.0 時代的產物。</p>
+  <p>講義引用的英文說明重點：header line 就是一個隱含的介面（interface），沒有它就必須自己宣告工作區；<b>但在新版 SAP 上，header line 已經是 obsolete，而且物件導向 ABAP（class / method）根本不支援</b>。</p>
+
+  <table>
+    <thead><tr><th>指令</th><th>對「無 header line」的內表</th><th>對「有 header line」的內表</th></tr></thead>
+    <tbody>
+      <tr><td>CLEAR it.</td><td>清空<b>內表</b></td><td>只清空<b>工作區</b>（陷阱！）</td></tr>
+      <tr><td>CLEAR it[].</td><td>清空內表</td><td>清空<b>內表</b></td></tr>
+      <tr><td>REFRESH it.</td><td>清空內表</td><td>清空內表，<b>不會</b>清工作區</td></tr>
+      <tr><td>FREE it.</td><td>清空內表並釋放記憶體</td><td>同左</td></tr>
+    </tbody>
+  </table>
+
+<pre><code class="abap">*&amp;---------------------------------------------------------------------*
+*&amp; Report ZDEMO_HEADERLINE  header line 的陷阱示範（僅供理解舊程式）
+*&amp;---------------------------------------------------------------------*
+REPORT zdemo_headerline.
+
+" ==== 反例：舊寫法，自己的程式請勿模仿 ====
+" DATA it_marah TYPE TABLE OF mara WITH HEADER LINE.
+" it_marah-matnr = 'A'.
+" APPEND it_marah.            " 把工作區附加進內表
+" CLEAR  it_marah.            " 只清工作區，內表還在！
+
+" ==== 正解：工作區與內表分開，語意清楚 ====
+DATA lt_mara TYPE STANDARD TABLE OF mara WITH EMPTY KEY.
+DATA ls_mara TYPE mara.
+
+ls_mara-matnr = 'A'.
+APPEND ls_mara TO lt_mara.
+
+CLEAR ls_mara.                " 清工作區
+CLEAR lt_mara.                " 清內表（無 header line 時 CLEAR 就是清整張表）
+
+" ==== 更好：連工作區都不用宣告 ====
+DATA lt_mat TYPE STANDARD TABLE OF mara WITH EMPTY KEY.
+APPEND VALUE #( matnr = 'A' mtart = 'FERT' ) TO lt_mat.
+
+LOOP AT lt_mat INTO DATA(ls_line).
+  WRITE: / ls_line-matnr, ls_line-mtart.
+ENDLOOP.</code></pre>
+
+  <div class="warn">遇到舊程式看不出某個名稱是內表還是工作區時，<b>先 debug</b>：在 Debugger 裡打 <span class="kw">itab</span> 看到的是工作區，打 <span class="kw">itab[]</span> 看到的才是內表。另外 <span class="kw">OCCURS 0</span> 的宣告形同 WITH HEADER LINE。</div>
+
+  <h3 id="ch02-2-05">5. 內表的新增：APPEND / INSERT / COLLECT / VALUE</h3>
+  <p>講義的口訣：內表新增有五個方法 —— <b>INSERT、COLLECT（累加數值）、APPEND、MOVE、＝（賦值）</b>，再加上 <b>SELECT ... INTO TABLE</b>。使用時機：</p>
+  <ul>
+    <li><b>只要存資料、要速度</b> → APPEND（附加到最後，只能用在 STANDARD TABLE）。</li>
+    <li><b>要數字欄位自動加總、或要保證沒有重複條目</b> → COLLECT（等同 GROUP BY 的效果）。</li>
+    <li><b>要插到既有列的前面、或依 key 插入 SORTED／HASHED</b> → INSERT。</li>
+    <li><b>整張表複製覆蓋</b> → <span class="kw">lt_a = lt_b.</span>（MOVE 已過時，直接用等號）。</li>
+  </ul>
+
+  <p>COLLECT 的行為要記牢：<b>比對所有非數值欄位</b>，找到相同的那一列就把數值欄位<b>累加</b>上去；找不到就新增一列。非常適合做小計、合計、總計。</p>
+
+<pre><code class="abap">*&amp;---------------------------------------------------------------------*
+*&amp; Report ZDEMO_02_13  內表的新增（原講義第 13 個練習 Z202202_13 改寫）
+*&amp;---------------------------------------------------------------------*
+REPORT zdemo_02_13.
+
+TYPES: BEGIN OF ty_student,
+         name TYPE char10,
+         age  TYPE int2,
+       END OF ty_student.
+
+DATA: lt_stu TYPE STANDARD TABLE OF ty_student WITH EMPTY KEY,
+      lt_tot TYPE STANDARD TABLE OF ty_student WITH EMPTY KEY.
+
+" 1) APPEND：附加到表尾（最快）
+DO 2 TIMES.
+  APPEND VALUE #( name = 'CASPER' age = sy-index ) TO lt_stu.
+ENDDO.
+
+" 2) INSERT ... INDEX：插到指定位置之前
+INSERT VALUE #( name = 'NCU' age = 3 ) INTO lt_stu INDEX 1.
+
+" 3) INSERT INITIAL LINE：插一列空白列
+"    常用在 SELECT-OPTIONS 要先塞一列空行進 range 表時
+INSERT INITIAL LINE INTO lt_stu INDEX 1 ASSIGNING FIELD-SYMBOL(&lt;ls_blank&gt;).
+&lt;ls_blank&gt;-name = 'BLANK'.
+
+" 4) COLLECT：非數值欄位相同就累加數值欄位
+DATA ls_stu TYPE ty_student.
+ls_stu = VALUE #( name = 'NCU' age = 3 ).
+COLLECT ls_stu INTO lt_stu.        " NCU 已存在 → age 變成 6
+
+" 5) 多筆附加／插入
+APPEND LINES OF lt_stu TO lt_tot.
+APPEND LINES OF lt_stu FROM 2 TO 3 TO lt_tot.   " 注意：是第 2~3 列，不是 1~2
+INSERT LINES OF lt_stu INTO lt_tot INDEX 1.
+
+" 6) 整表覆蓋（MOVE 已過時，用等號）
+DATA(lt_copy) = lt_stu.
+
+" 7) 一次建整張表：VALUE 建構式（7.40+，最現代）
+DATA(lt_new) = VALUE ty_t_dummy( ( name = 'A' age = 1 )
+                                 ( name = 'B' age = 2 )
+                                 ( name = 'C' age = 3 ) ).
+
+LOOP AT lt_stu INTO DATA(ls_out).
+  WRITE: / ls_out-name, ls_out-age.
+ENDLOOP.</code></pre>
+
+  <div class="tip">效能口訣：<b>用 <span class="kw">APPEND LINES OF it_a TO it_b</span> 取代 <span class="kw">LOOP AT it_a ... APPEND ... ENDLOOP</span></b>。一行指令在核心層搬資料，比迴圈逐列搬快好幾個數量級。</div>
+
+  <p>把資料庫資料直接灌進內表，才是最常用的「新增」：</p>
+
+<pre><code class="abap">" 一次讀進內表（現代寫法：明列欄位 ＋ 內嵌宣告 ＋ 逸出字元 @）
+SELECT bname AS name,
+       persnumber AS telnum,
+       addrnumber AS addr
+  FROM usr21
+  INTO TABLE @DATA(lt_emp)
+  UP TO 10 ROWS.
+
+" 追加到已存在的內表（不清空原內容）
+SELECT bname AS name,
+       persnumber AS telnum,
+       addrnumber AS addr
+  FROM usr21
+  APPENDING TABLE @lt_emp
+  WHERE bname LIKE 'Z%'.</code></pre>
+
+  <div class="note">欄位名稱不同名時，用 <span class="kw">AS</span> 重新命名，就不必再靠 <span class="kw">INTO CORRESPONDING FIELDS OF</span> 硬湊。CORRESPONDING 的比對是執行期做的，欄位一多就會慢，而且欄位名打錯不會報錯、只會靜靜地漏資料。</div>
+
+  <h3 id="ch02-2-06">6. 內表的修改：MODIFY ... TRANSPORTING ... WHERE</h3>
+  <p>語法骨架：</p>
+<pre><code class="abap">MODIFY itab FROM wa [INDEX idx] [TRANSPORTING f1 f2 ...] [WHERE cond].</code></pre>
+  <ul>
+    <li>只給 <b>INDEX</b>：改指定那一列（在 LOOP 裡常搭配 <span class="kw">sy-tabix</span>）。</li>
+    <li>加 <b>TRANSPORTING</b>：只更新列出的欄位，其他欄位保持原值。</li>
+    <li>加 <b>WHERE</b>：整批更新（此時一定要有 TRANSPORTING）。</li>
+  </ul>
+
+<pre><code class="abap">*&amp;---------------------------------------------------------------------*
+*&amp; Report ZDEMO_02_14  內表的更改（原講義第 14 個練習 Z202202_14 改寫）
+*&amp;---------------------------------------------------------------------*
+REPORT zdemo_02_14.
+
+TYPES: BEGIN OF ty_student,
+         name TYPE char10,
+         age  TYPE int2,
+       END OF ty_student.
+
+DATA lt_stu TYPE STANDARD TABLE OF ty_student WITH EMPTY KEY.
+
+DO 2 TIMES.
+  APPEND VALUE #( name = 'CASPER' age = sy-index ) TO lt_stu.
+ENDDO.
+
+DATA(ls_stu) = VALUE ty_student( name = 'NCU' age = 3 ).
+
+" 1) 依 index 整列覆蓋
+MODIFY lt_stu FROM ls_stu INDEX 2.
+
+" 2) 依 index 只更新 NAME 欄位
+ls_stu = VALUE #( name = 'NCUBA' age = 1 ).
+MODIFY lt_stu FROM ls_stu INDEX 1 TRANSPORTING name.
+
+" 3) 整批更新：所有 name = 'NCUBA' 的列，把 age 改成 99
+ls_stu-age = 99.
+MODIFY lt_stu FROM ls_stu TRANSPORTING age WHERE name = 'NCUBA'.
+
+" 4) 最現代的做法：用 field-symbol 就地改，不需要 MODIFY 回寫
+LOOP AT lt_stu ASSIGNING FIELD-SYMBOL(&lt;ls_stu&gt;) WHERE name = 'CASPER'.
+  &lt;ls_stu&gt;-age = &lt;ls_stu&gt;-age + 1.
+ENDLOOP.
+
+LOOP AT lt_stu INTO DATA(ls_out).
+  WRITE: / ls_out-name, ls_out-age.
+ENDLOOP.</code></pre>
+
+  <div class="tip">批次改內表，用 <b>MODIFY ... TRANSPORTING ... WHERE</b> 或 <b>LOOP AT ... ASSIGNING</b>，不要寫「LOOP → 改工作區 → MODIFY FROM wa INDEX sy-tabix」的三段式，那是最慢的寫法。</div>
+
+  <div class="warn">在 <b>SORTED / HASHED</b> 內表上，<b>不可以修改主鍵欄位</b>，執行期會拋出例外。要改鍵值只能 DELETE 再 INSERT。</div>
+
+  <h3 id="ch02-2-07">7. 內表的刪除與去重：DELETE / ADJACENT DUPLICATES</h3>
+<pre><code class="abap">DELETE TABLE itab WITH TABLE KEY k1 = v1 k2 = v2.  " 依主鍵刪除
+DELETE TABLE itab FROM wa.                          " 依工作區的鍵值刪除
+DELETE itab INDEX idx.                              " 依索引刪除
+DELETE itab FROM idx1 TO idx2.                      " 依索引區間刪除
+DELETE itab WHERE cond.                             " 依條件刪除（最常用）
+DELETE ADJACENT DUPLICATES FROM itab COMPARING f1 f2.
+DELETE ADJACENT DUPLICATES FROM itab COMPARING ALL FIELDS.</code></pre>
+
+  <div class="warn"><b>DELETE ADJACENT DUPLICATES 只刪「相鄰」的重複列</b>。所以執行前<b>一定要先 SORT</b>，而且 SORT 的欄位必須涵蓋 COMPARING 的欄位；用 COMPARING ALL FIELDS 就要對所有欄位排序。沒排序就去重，是新手最常見的 bug —— 資料看起來少了一些、又沒少乾淨。</div>
+
+<pre><code class="abap">*&amp;---------------------------------------------------------------------*
+*&amp; Report ZDEMO_02_15  內表的刪除與去重（原講義第 15 個練習 Z202202_15 改寫）
+*&amp;---------------------------------------------------------------------*
+REPORT zdemo_02_15.
+
+TYPES: BEGIN OF ty_emp,
+         name TYPE usr21-bname,
+       END OF ty_emp.
+
+DATA lt_emp TYPE STANDARD TABLE OF ty_emp WITH EMPTY KEY.
+
+lt_emp = VALUE #( ( name = 'JERY' ) ( name = 'TOM' ) ( name = 'TOM' ) ).
+
+DELETE lt_emp INDEX 1.                 " 刪第一筆
+
+" 去重的正確順序：先排序，再去重
+SORT lt_emp BY name DESCENDING.
+DELETE ADJACENT DUPLICATES FROM lt_emp COMPARING name.
+
+" 依條件刪除
+DELETE lt_emp WHERE name IS INITIAL.
+
+LOOP AT lt_emp INTO DATA(ls_emp).
+  WRITE: / ls_emp-name.
+ENDLOOP.</code></pre>
+
+  <h4>實務案例：在 LOOP 中刪除自己 —— USING KEY loop_key</h4>
+  <p>講義收錄了一段工作上遇到的真實案例：把系統資料與 Excel 對照，Excel 裡沒有的就把系統那一列刪掉。<b>在 LOOP 內刪除正在迴圈的那張表</b>是很危險的動作（索引會位移），所以必須加 <span class="kw">USING KEY loop_key</span>，讓系統知道刪除要走「目前迴圈用的那把鍵」，避免跳列。</p>
+
+<pre><code class="abap">" 原講義寫法（FORM clear_data）的現代化版本
+METHOD clear_data.
+
+  CHECK it_ekes_xls IS NOT INITIAL.        " 對照表是空的就不要動作
+
+  LOOP AT it_zmmb0021 ASSIGNING FIELD-SYMBOL(&lt;ls_zmm&gt;).
+
+    " 用 line_exists 取代 READ TABLE + sy-subrc 判斷
+    IF NOT line_exists( it_ekes_xls[ ebeln = &lt;ls_zmm&gt;-ebeln
+                                     ebelp = &lt;ls_zmm&gt;-ebelp
+                                     etens = &lt;ls_zmm&gt;-ekes_etens ] ).
+      " 迴圈中刪除自己，一定要指定 loop_key，避免索引錯位
+      DELETE it_zmmb0021 USING KEY loop_key.
+    ENDIF.
+
+  ENDLOOP.
+
+ENDMETHOD.</code></pre>
+
+  <div class="tip">更安全的替代寫法：不要在迴圈裡刪，改成「先蒐集要刪的 key → 迴圈結束後一次 DELETE」，或直接用 <span class="kw">DELETE lt_a WHERE ...</span>。若對照表可以做成 HASHED / SORTED KEY，判斷成本是 O(1)／O(log n)，比 READ TABLE 全掃快很多。</div>
+
+  <h3 id="ch02-2-08">8. 內表的讀取：READ TABLE、表達式讀取與 line_exists</h3>
+<pre><code class="abap">READ TABLE itab INTO wa INDEX i.
+READ TABLE itab INTO wa WITH KEY f1 = v1 f2 = v2.        " 自訂鍵，只能用 =
+READ TABLE itab INTO wa WITH TABLE KEY k1 = v1.          " 走宣告的主鍵
+READ TABLE itab INTO wa WITH KEY f1 = v1 BINARY SEARCH.  " 需先 SORT！
+READ TABLE itab TRANSPORTING NO FIELDS WITH KEY ...      " 只想知道有沒有</code></pre>
+  <ul>
+    <li><b>WITH TABLE KEY</b>：使用內表宣告時定義的鍵；<b>WITH KEY</b>：自訂欄位，但條件只能用等號。</li>
+    <li><b>BINARY SEARCH</b> 可以大幅加速，但<b>使用前必須依相同欄位順序排序</b>，否則會讀不到（sy-subrc = 4）卻不報錯。</li>
+    <li>讀完永遠要判斷 <span class="kw">sy-subrc = 0</span>。READ TABLE 就是內表版的 SELECT。</li>
+  </ul>
+
+  <p>7.40 之後有更漂亮的寫法。講義 04-8 用左右對照的方式列出新舊語法，整理如下：</p>
+
+  <table>
+    <thead><tr><th>需求</th><th>舊寫法</th><th>7.40+ 新寫法</th></tr></thead>
+    <tbody>
+      <tr><td>有條件讀出一列並取欄位</td><td>READ TABLE it WITH KEY field1 = '台中' INTO wa. IF sy-subrc = 0. WRITE wa-fielda. ENDIF.</td><td>IF line_exists( it[ field1 = '台中' ] ). WRITE it[ field1 = '台中' ]-fielda. ENDIF.</td></tr>
+      <tr><td>多條件讀出並指派 field-symbol</td><td>READ TABLE it WITH KEY field1 = '台幣' fielda = '台灣' ASSIGNING &lt;fs&gt;.</td><td>ASSIGN it[ field1 = '台幣' fielda = '台灣' ] TO &lt;fs&gt;.</td></tr>
+      <tr><td>讀第 n 列</td><td>READ TABLE it INDEX 99 INTO wa. IF sy-subrc = 0. ...</td><td>TRY. WRITE it[ 99 ]-field1. CATCH cx_sy_itab_line_not_found. ENDTRY.</td></tr>
+      <tr><td>讀不到給預設值</td><td>READ ... IF sy-subrc &lt;&gt; 0. wa = ... ENDIF.</td><td>DATA(ls) = VALUE #( it[ key = x ] OPTIONAL ).<br/>DATA(lv) = VALUE #( it[ key = x ]-amount DEFAULT 0 ).</td></tr>
+    </tbody>
+  </table>
+
+<pre><code class="abap">*&amp;---------------------------------------------------------------------*
+*&amp; Report ZDEMO_02_16  內表的讀取（原講義第 16 個練習 Z202202_16 改寫）
+*&amp;---------------------------------------------------------------------*
+REPORT zdemo_02_16.
+
+TYPES: BEGIN OF ty_emp,
+         name TYPE usr21-bname,
+       END OF ty_emp.
+
+DATA lt_emp TYPE STANDARD TABLE OF ty_emp WITH EMPTY KEY.
+
+lt_emp = VALUE #( ( name = 'CASPER' ) ( name = 'RICKY' )
+                  ( name = 'EDDIE'  ) ( name = 'JAMIE' ) ).
+
+" 1) 讀第一筆
+READ TABLE lt_emp INTO DATA(ls_emp) INDEX 1.
+IF sy-subrc = 0.
+  WRITE: / ls_emp-name.
+ENDIF.
+
+" 2) 讀符合條件的第一筆（表達式寫法，讀不到會拋例外）
+TRY.
+    WRITE: / lt_emp[ name = 'EDDIE' ]-name.
+  CATCH cx_sy_itab_line_not_found.
+    WRITE: / 'EDDIE MISSING'.
+ENDTRY.
+
+" 3) 只想判斷存不存在
+IF line_exists( lt_emp[ name = 'HAZEL' ] ).
+  WRITE: / 'HAZEL FOUND'.
+ELSE.
+  WRITE: / 'MISSING'.
+ENDIF.
+
+" 4) 讀不到就給預設值，完全不必 TRY
+DATA(ls_opt) = VALUE ty_emp( lt_emp[ name = 'HAZEL' ] OPTIONAL ).
+
+" 5) 取得列號（相當於 READ ... TRANSPORTING NO FIELDS 後看 sy-tabix）
+DATA(lv_idx) = line_index( lt_emp[ name = 'JAMIE' ] ).
+WRITE: / |JAMIE 在第 { lv_idx } 列|.
+
+" 6) 大量資料就地存取，不複製資料 → 最快
+ASSIGN lt_emp[ name = 'RICKY' ] TO FIELD-SYMBOL(&lt;ls_emp&gt;).
+IF sy-subrc = 0.
+  &lt;ls_emp&gt;-name = 'RICKY2'.
+ENDIF.</code></pre>
+
+  <div class="warn">表達式 <span class="kw">it[ ... ]</span> 讀不到會直接丟 <span class="kw">CX_SY_ITAB_LINE_NOT_FOUND</span> 讓程式 dump。所以：確定一定有 → 直接用；不確定 → 用 <span class="kw">line_exists( )</span> 先問、或 <span class="kw">VALUE #( ... OPTIONAL )</span>、或包 TRY ... CATCH。</div>
+
+  <h3 id="ch02-2-09">9. LOOP 的完整用法：WHERE、FROM/TO、GROUP BY、AT NEW / AT END OF / SUM</h3>
+<pre><code class="abap">LOOP AT itab INTO wa [FROM n1] [TO n2] [WHERE cond] [USING KEY key].
+LOOP AT itab ASSIGNING FIELD-SYMBOL(&lt;fs&gt;).      " 就地存取，可直接改
+LOOP AT itab REFERENCE INTO DATA(lr).           " 取得參考，適合大量資料
+LOOP AT itab INTO wa GROUP BY ( k = wa-key ).   " 7.40 內表分組</code></pre>
+
+  <p>控制中斷（control break）四兄弟：<b>AT FIRST / AT NEW f / AT END OF f / AT LAST</b>，中間可用 <b>SUM</b> 做小計。</p>
+
+  <div class="warn">AT NEW / AT END OF 的三大陷阱，講義特別強調：
+  <br/>① <b>必須先依該欄位排序</b>，否則群組會被切得亂七八糟。
+  <br/>② <b>比對的是「該欄位以及它左邊的所有欄位」</b>，所以結構中的<b>欄位順序</b>會影響結果 —— 想用哪些欄位分組，就把它們排在結構最前面。
+  <br/>③ 在 AT ... ENDAT 區塊內，<b>該欄位右邊的所有欄位會被填成 *（字元型）或 0（數值型）</b>，不要在區塊內引用它們。<b>AT 區塊不能用 field-symbol 版的 LOOP</b>（LOOP ... ASSIGNING 不支援 AT）。</div>
+
+<pre><code class="abap">*&amp;---------------------------------------------------------------------*
+*&amp; Report ZDEMO_AT_EVENTS  AT FIRST / AT NEW / SUM / AT END OF / AT LAST
+*&amp;---------------------------------------------------------------------*
+REPORT zdemo_at_events.
+
+TYPES: BEGIN OF ty_t001,
+         land1 TYPE t001-land1,      " 分組欄位放最左邊
+         waers TYPE t001-waers,
+         bukrs TYPE t001-bukrs,
+         cnt   TYPE i,
+       END OF ty_t001.
+
+DATA lt_t001 TYPE STANDARD TABLE OF ty_t001 WITH EMPTY KEY.
+
+SELECT land1, waers, bukrs
+  FROM t001
+  INTO CORRESPONDING FIELDS OF TABLE @lt_t001
+  UP TO 9 ROWS.
+
+" 每一列先給 1，方便示範 SUM
+LOOP AT lt_t001 ASSIGNING FIELD-SYMBOL(&lt;ls&gt;).
+  &lt;ls&gt;-cnt = 1.
+ENDLOOP.
+
+" 關鍵：AT 事件之前一定要排序
+SORT lt_t001 BY land1 waers bukrs.
+
+LOOP AT lt_t001 INTO DATA(ls_t001).
+
+  AT FIRST.
+    WRITE: / '===== 報表開始 ====='.
+  ENDAT.
+
+  AT NEW land1.
+    WRITE: / |國家：{ ls_t001-land1 }|.
+  ENDAT.
+
+  WRITE: / ls_t001-waers, ls_t001-bukrs.
+
+  AT END OF land1.
+    SUM.                                   " 把數值欄位加總填回工作區
+    WRITE: / |小計筆數：{ ls_t001-cnt }|.
+    ULINE.
+  ENDAT.
+
+  AT LAST.
+    SUM.
+    WRITE: / |總計筆數：{ ls_t001-cnt }|.
+  ENDAT.
+
+ENDLOOP.
+
+IF sy-subrc &lt;&gt; 0.
+  WRITE: / '沒有資料'.
+ENDIF.</code></pre>
+
+  <h4>7.40 的 LOOP AT ... GROUP BY：取代 AT NEW 的現代寫法</h4>
+<pre><code class="abap">" 依採購單號分組，一組一組處理，且不必事先排序、不受欄位順序影響
+LOOP AT lt_ekpo INTO DATA(ls_ekpo)
+     GROUP BY ( ebeln = ls_ekpo-ebeln
+                size  = GROUP SIZE
+                idx   = GROUP INDEX )
+     ASCENDING
+     INTO DATA(ls_group).
+
+  WRITE: / |採購單 { ls_group-ebeln }，共 { ls_group-size } 項|.
+
+  " 走訪該組的成員
+  LOOP AT GROUP ls_group INTO DATA(ls_member).
+    WRITE: / '   ', ls_member-ebelp, ls_member-matnr, ls_member-netwr.
+  ENDLOOP.
+
+  " 或直接用 REDUCE 把該組加總，一行搞定
+  DATA(lv_sum) = REDUCE ekpo-netwr(
+                   INIT s = 0
+                   FOR ls IN GROUP ls_group
+                   NEXT s = s + ls-netwr ).
+  WRITE: / |   小計：{ lv_sum CURRENCY = 'TWD' }|.
+
+ENDLOOP.</code></pre>
+
+  <div class="note">講義 07-2 有一段舊程式寫 <span class="kw">LOOP AT it WHERE ... GROUP BY it-matnr</span> 並在迴圈裡下 UPDATE。這種「迴圈中打 DB」的寫法在 S/4HANA 上是效能殺手，正確做法是：先在內表算完，再用 <span class="kw">UPDATE dbtab FROM TABLE @lt_x</span> 一次寫回。</div>
+
+  <h3 id="ch02-2-10">10. 排序、去重、計數、清空與動態 SORT</h3>
+<pre><code class="abap">SORT itab [BY f1 [ASCENDING|DESCENDING] f2 ...] [AS TEXT] [STABLE].</code></pre>
+  <ul>
+    <li>不寫 BY 就依「標準鍵」排序，通常不是你要的，<b>請一律明寫 BY</b>。</li>
+    <li><b>AS TEXT</b>：依語言的字典順序排（處理中文／重音字元時用）。</li>
+    <li><b>STABLE</b>：保持相同鍵值列的原有相對順序（做多層排序時很重要）。</li>
+    <li>SORT 只能用在 STANDARD TABLE；SORTED 本來就有序、HASHED 沒有順序。</li>
+  </ul>
+
+  <div class="warn">老師在 ZKEPH 成本報表踩過的真實坑：<b>沒有排序的內表，抓到哪一筆是「不保證」的</b>。成本評價之後會有兩種角度（item category <b>H</b> 與 cost component <b>E</b>），兩者的成本欄位數量不同，程式若沒排序就 READ，有時抓到 H、有時抓到 E，成本結果就不穩定。<b>結論：只要「只取一筆」，就必須先確定排序或明確過濾條件（例如固定取 H）</b>。同樣的道理也適用於 SELECT 沒有 ORDER BY 的情況。</div>
+
+<pre><code class="abap">*&amp;---------------------------------------------------------------------*
+*&amp; Report ZDEMO_SORT  動態排序欄位（原講義 ZSORT 改寫）
+*&amp;---------------------------------------------------------------------*
+REPORT zdemo_sort.
+
+DATA lt_makt TYPE STANDARD TABLE OF makt WITH EMPTY KEY.
+
+PARAMETERS p_sort TYPE char20 DEFAULT 'SORT:MAKTX'.
+
+START-OF-SELECTION.
+
+  " VALUE 建構式：MATNR 只寫一次，後面括號的列共用
+  lt_makt = VALUE #(
+      matnr = 'APPLE' ( spras = 'M' maktx = 'APPLE-M' )
+                      ( spras = 'E' maktx = 'APPLE-E' )
+      matnr = 'GOOGL' ( spras = 'M' maktx = 'GOOGL-M' )
+                      ( spras = 'E' maktx = 'GOOGL-E' ) ).
+
+  " 動態排序：括號裡放「欄位名稱的變數」
+  " p_sort+5 表示取 p_sort 從第 6 個字元起的內容（offset 從 0 算）
+  DATA(lv_field) = CONV fieldname( p_sort+5 ).
+  SORT lt_makt BY (lv_field).
+
+  LOOP AT lt_makt ASSIGNING FIELD-SYMBOL(&lt;ls_makt&gt;).
+    WRITE: /1 &lt;ls_makt&gt;-matnr, &lt;ls_makt&gt;-spras, &lt;ls_makt&gt;-maktx.
+  ENDLOOP.</code></pre>
+
+  <p>清空與計數的四個指令要分清楚：</p>
+  <table>
+    <thead><tr><th>指令</th><th>作用</th><th>T-SQL 類比</th></tr></thead>
+    <tbody>
+      <tr><td>CLEAR itab.</td><td>清空內表（無 header line 時）</td><td>TRUNCATE TABLE</td></tr>
+      <tr><td>REFRESH itab.</td><td>清空內表，保留已配置的記憶體</td><td>TRUNCATE TABLE</td></tr>
+      <tr><td>FREE itab.</td><td>清空內表<b>並釋放記憶體</b></td><td>DROP TABLE</td></tr>
+      <tr><td>lines( itab ) / DESCRIBE TABLE itab LINES n.</td><td>取筆數</td><td>SELECT COUNT(*)</td></tr>
+    </tbody>
+  </table>
+
+  <h3 id="ch02-2-11">11. 工作區 vs Field-Symbol vs 參考：Call by value / by reference</h3>
+  <p>LOOP 有三種取值方式，差別在「有沒有複製資料」：</p>
+  <table>
+    <thead><tr><th>寫法</th><th>語意</th><th>能否直接改內表</th><th>效能</th></tr></thead>
+    <tbody>
+      <tr><td>LOOP AT it INTO wa.</td><td>call by value，把整列<b>複製</b>到工作區</td><td>不行，要 MODIFY 回寫</td><td>最慢（每列一次複製）</td></tr>
+      <tr><td>LOOP AT it ASSIGNING FIELD-SYMBOL(&lt;fs&gt;).</td><td>call by reference，&lt;fs&gt; 就是那一列</td><td>可以，改了就生效</td><td>快</td></tr>
+      <tr><td>LOOP AT it REFERENCE INTO DATA(lr).</td><td>取得資料參考（物件導向友善）</td><td>可以，用 lr-&gt;field</td><td>快，適合傳給方法</td></tr>
+    </tbody>
+  </table>
+
+<pre><code class="abap">*&amp;---------------------------------------------------------------------*
+*&amp; Report ZDEMO_BYREF  call by value vs call by reference
+*&amp;---------------------------------------------------------------------*
+REPORT zdemo_byref.
+
+SELECT bukrs, butxt, ort01, land1, waers
+  FROM t001
+  INTO TABLE @DATA(lt_t001)
+  UP TO 9 ROWS.
+
+" (A) call by value：改工作區後必須 MODIFY 回內表
+LOOP AT lt_t001 INTO DATA(ls_t001).
+  ls_t001-bukrs = 'VAL'.
+  MODIFY lt_t001 FROM ls_t001 INDEX sy-tabix.
+ENDLOOP.
+
+" (B) call by reference：直接改，不必 MODIFY，效能較佳
+LOOP AT lt_t001 ASSIGNING FIELD-SYMBOL(&lt;ls_t001&gt;).
+  &lt;ls_t001&gt;-bukrs = 'REF'.
+ENDLOOP.
+
+" (C) REFERENCE INTO：拿到資料參考，適合大結構或要傳給方法
+LOOP AT lt_t001 REFERENCE INTO DATA(lr_t001).
+  lr_t001-&gt;bukrs = 'PTR'.
+ENDLOOP.
+
+LOOP AT lt_t001 INTO DATA(ls_out).
+  WRITE: / ls_out-bukrs, ls_out-butxt.
+ENDLOOP.</code></pre>
+
+  <div class="warn">用 ASSIGNING 時，<b>不要在迴圈內對同一張表做 APPEND / INSERT / DELETE</b>。內表重新配置記憶體後，field-symbol 會指向無效位址，輕則資料錯亂，重則 dump（<span class="kw">CX_SY_ITAB_...</span>）。</div>
+
+  <h3 id="ch02-2-12">12. 雙迴圈（巢狀 LOOP）的寫法與優化</h3>
+  <p>講義 04-4 用 ZLOOP 示範巢狀 LOOP：外圈 <span class="kw">FROM 2 TO 9</span>、內圈整表跑，並提醒 <b>sy-tabix 在內外圈會互相覆蓋</b>，所以外圈的列號一進迴圈就要先存起來。</p>
+
+<pre><code class="abap">*&amp;---------------------------------------------------------------------*
+*&amp; Report ZDEMO_NESTED_LOOP  雙迴圈的注意事項與優化
+*&amp;---------------------------------------------------------------------*
+REPORT zdemo_nested_loop.
+
+SELECT bukrs, butxt, land1
+  FROM t001
+  INTO TABLE @DATA(lt_t001)
+  UP TO 9 ROWS.
+
+" ---- 反例：O(n × m)，資料一多就爆 ----
+LOOP AT lt_t001 ASSIGNING FIELD-SYMBOL(&lt;ls_out&gt;) FROM 2 TO 9.
+  DATA(lv_tabix_out) = sy-tabix.            " sy-tabix 會被內圈覆蓋，先存起來
+
+  LOOP AT lt_t001 ASSIGNING FIELD-SYMBOL(&lt;ls_in&gt;).
+    DATA(lv_tabix_in) = sy-tabix.
+    WRITE: / lv_tabix_out, lv_tabix_in.
+  ENDLOOP.
+
+ENDLOOP.
+
+" ---- 正解 1：把內圈的表改成 SORTED / HASHED，用 key 直接命中 ----
+DATA lt_ekpo TYPE SORTED TABLE OF ekpo WITH NON-UNIQUE KEY ebeln.
+
+SELECT ebeln, ebelp, matnr, menge, netwr
+  FROM ekpo
+  WHERE ebeln IN @s_ebeln
+  INTO CORRESPONDING FIELDS OF TABLE @lt_ekpo.
+
+LOOP AT lt_ekko INTO DATA(ls_ekko).
+  " 排序表上的 WHERE 會走二分搜尋，不是全表掃描
+  LOOP AT lt_ekpo INTO DATA(ls_ekpo) WHERE ebeln = ls_ekko-ebeln.
+    " ...
+  ENDLOOP.
+ENDLOOP.
+
+" ---- 正解 2：能在 DB 做的就在 DB 做（JOIN），根本不要雙迴圈 ----
+SELECT k~ebeln, k~lifnr, p~ebelp, p~matnr, p~netwr
+  FROM ekko AS k
+  INNER JOIN ekpo AS p ON p~ebeln = k~ebeln
+  WHERE k~bukrs = @lv_bukrs
+  INTO TABLE @DATA(lt_join).</code></pre>
+
+  <div class="tip">三個效能口訣：<b>① 儘量少用多重迴圈</b>；<b>② 要 READ 就先 SORT 再 BINARY SEARCH（或直接改用 SORTED／HASHED 表）</b>；<b>③ 批次修改用 MODIFY ... TRANSPORTING ... WHERE，不要迴圈逐列改</b>。</div>
+
+  <h3 id="ch02-2-13">13. ABAP SQL 概論：Native SQL、Open SQL 與 ABAP SQL</h3>
+  <table>
+    <thead><tr><th>種類</th><th>特性</th><th>風險 / 限制</th></tr></thead>
+    <tbody>
+      <tr><td><b>Native SQL</b></td><td>直接下該資料庫的 SQL，能做 Open SQL 做不到的事（預儲程序、游標、DB 專屬函數）</td><td>綁死資料庫、不做 client 處理、不走表緩衝、繞過 SAP 授權與一致性檢查，<b>有安全與資料一致性風險</b></td></tr>
+      <tr><td><b>Open SQL</b></td><td>SAP 定義的資料庫無關標準，執行期由 DB Interface 轉成該平台的 Native SQL</td><td>寫程式時不必考慮資料庫差異；功能是各家 DB 的交集</td></tr>
+      <tr><td><b>ABAP SQL</b>（7.53 起的新名稱）</td><td>Open SQL 改名而來。名稱改變反映了「某些語法只在 SAP HANA 上支援」，不再完全平台獨立</td><td>必須用逸出字元 <span class="kw">@</span>、欄位間要逗號、嚴格語法檢查</td></tr>
+    </tbody>
+  </table>
+  <p>主要指令：<b>SELECT / INSERT / UPDATE / MODIFY / DELETE</b>，執行結果一律看系統變數：<span class="kw">SY-SUBRC = 0</span> 表示成功，<span class="kw">SY-DBCNT</span> 是實際處理的筆數。</p>
+
+  <h4>三個世代的寫法對照（講義 ZOPENSQL）</h4>
+<pre><code class="abap">*&amp;---------------------------------------------------------------------*
+*&amp; Report ZDEMO_OPENSQL_GEN  三個世代的 ABAP SQL 寫法
+*&amp;---------------------------------------------------------------------*
+REPORT zdemo_opensql_gen.
+
+SELECT-OPTIONS s_matnr FOR (mara-matnr) NO INTERVALS.  " 說明用；實務見第 3-1 章
+
+" (1) 舊 Open SQL：欄位不加逗號、主機變數不加 @  → S/4HANA 已不建議
+" SELECT matnr matkl INTO CORRESPONDING FIELDS OF TABLE gt_mara
+"   UP TO 100 ROWS FROM mara WHERE matnr IN s_matnr.
+
+" (2) 新 Open SQL（7.40 SP08+）：欄位加逗號、主機變數加 @
+SELECT matnr, matkl
+  FROM mara
+  WHERE matnr IN @s_matnr
+  INTO TABLE @DATA(lt_mara)
+  UP TO 100 ROWS.
+
+" (3) 未來建議寫法：FROM 先寫、FIELDS 列欄位（語法順序最接近 HANA SQL）
+SELECT FROM mara
+  FIELDS matnr, matkl, mtart, meins
+  WHERE matnr IN @s_matnr
+  ORDER BY matnr
+  INTO TABLE @DATA(lt_mara2)
+  UP TO 100 ROWS.
+
+LOOP AT lt_mara2 INTO DATA(ls_mara).
+  WRITE: / ls_mara-matnr, ls_mara-matkl, ls_mara-mtart.
+ENDLOOP.</code></pre>
+
+  <div class="warn">S/4HANA 的嚴格語法檢查會逼你：<b>欄位之間要有逗號、所有 ABAP 變數前要加 @、INTO 子句放最後</b>。若程式沒加 @ 還能通過，是因為程式仍在舊版語法模式（Unicode / non-strict）下；新寫的程式一律加 @。</div>
+
+  <h3 id="ch02-2-14">14. 完整的 SELECT 語法骨架</h3>
+  <p>講義抄錄了 ABAP 官方文件的完整語法。這裡整理成可讀的骨架，寫 SQL 時當檢查清單用：</p>
+<pre><code class="abap">SELECT [SINGLE [FOR UPDATE]] [DISTINCT]
+       FROM data_source [AS alias]
+            [ [INNER] JOIN | LEFT|RIGHT [OUTER [MANY TO ONE]] JOIN | CROSS JOIN
+              data_source [AS alias] ON join_cond ]
+            [ USING CLIENT @lv_mandt | CLIENT SPECIFIED | USING ALL CLIENTS ]
+       FIELDS col1, col2, sql_expression AS alias, ...
+       [ FOR ALL ENTRIES IN @itab ] WHERE sql_cond
+       [ GROUP BY col1, col2 | GROUPING SETS ( ... ) ]
+       [ HAVING sql_cond ]
+       [ UNION [ALL|DISTINCT] SELECT ... ]
+       [ ORDER BY PRIMARY KEY | col1 [ASCENDING|DESCENDING], ... ]
+       INTO   { @DATA(wa) | TABLE @DATA(itab) | ( @a, @b, @c )
+              | CORRESPONDING FIELDS OF TABLE @itab
+              | TABLE @itab PACKAGE SIZE n }
+       [ APPENDING TABLE @itab ]
+       [ UP TO n ROWS ] [ OFFSET o ]
+       [ BYPASSING BUFFER ]
+       [ CONNECTION con ].</code></pre>
+
+  <p>常用子句速查：</p>
+  <table>
+    <thead><tr><th>子句</th><th>意義</th><th>備註</th></tr></thead>
+    <tbody>
+      <tr><td>SELECT SINGLE</td><td>只取一列</td><td>必須給齊主鍵才保證唯一；不可與 GROUP BY、FOR ALL ENTRIES 併用</td></tr>
+      <tr><td>DISTINCT</td><td>去除重複列</td><td>不可與 SELECT SINGLE、也不建議與大量欄位併用</td></tr>
+      <tr><td>UP TO n ROWS / OFFSET o</td><td>取前 n 列 / 跳過 o 列</td><td>OFFSET 必須搭配 ORDER BY 才有意義（7.50+）</td></tr>
+      <tr><td>PACKAGE SIZE n</td><td>分批讀進內表</td><td>搭配 SELECT ... ENDSELECT，處理巨量資料避免記憶體爆掉</td></tr>
+      <tr><td>BYPASSING BUFFER</td><td>略過表緩衝，直接讀 DB</td><td>需要絕對最新資料時用</td></tr>
+      <tr><td>FOR UPDATE</td><td>讀取時加 DB 鎖</td><td>SAP 建議改用 ENQUEUE 鎖物件，見資料字典章</td></tr>
+      <tr><td>CLIENT SPECIFIED</td><td>自行控制 MANDT</td><td>7.55 起建議改用 USING CLIENT / USING ALL CLIENTS</td></tr>
+    </tbody>
+  </table>
+
+  <h3 id="ch02-2-15">15. JOIN 與子查詢</h3>
+  <p>多表查詢有兩條路：<b>在 SE11 建 View（可重複使用）</b>，或<b>在程式裡 JOIN（一次性）</b>。老師的思考題：「你的程式到底要用 SQL 關聯多表？還是建成一個 View 方便日後重複使用？」判斷標準：</p>
+  <ul>
+    <li>邏輯會被<b>多支程式重複使用</b>、或要給 Fiori／OData 消費 → 建 <b>CDS View</b>（S/4HANA 首選，取代自建 DB View）。</li>
+    <li>只有這支程式用、關聯條件會隨選擇畫面變動 → 程式裡 JOIN。</li>
+  </ul>
+  <p>JOIN 三要素：<b>連接哪些表、連接條件（ON）、連接哪些欄位</b>。型態：</p>
+  <ul>
+    <li><b>INNER JOIN</b>：兩表都有對應的資料才出現。</li>
+    <li><b>LEFT OUTER JOIN</b>：保證<b>左邊的主資料表全部秀出</b>，右表沒對到就是 NULL（在 ABAP 會轉成型別初始值）。</li>
+    <li><b>RIGHT OUTER JOIN / CROSS JOIN</b>：較少用；CROSS JOIN 是笛卡兒積，非常危險。</li>
+  </ul>
+
+<pre><code class="abap">*&amp;---------------------------------------------------------------------*
+*&amp; Report ZDEMO_JOIN  INNER JOIN / LEFT OUTER JOIN（講義 08-06、08-07 改寫）
+*&amp;---------------------------------------------------------------------*
+REPORT zdemo_join.
+
+SELECT-OPTIONS s_gstrp FOR (afko-gstrp).
+
+" INNER JOIN：製令主檔 AFKO ＋ 製令項目 AFPO
+SELECT a~aufnr,        " 製令編號
+       a~gstrp,        " 開始日期
+       a~gltrp,        " 完工日期
+       a~ftrms,        " 發放日期
+       a~gamng,        " 工單數量
+       a~gmein,        " 單位
+       a~plnbez,       " 成品件號
+       b~plnum,        " 計畫工單
+       b~pwerk,        " 計畫工廠
+       b~dauat,        " 製令類別
+       b~berid         " MRP Area
+  FROM afko AS a
+  INNER JOIN afpo AS b ON b~aufnr = a~aufnr
+  WHERE a~gstrp IN @s_gstrp
+  ORDER BY a~aufnr
+  INTO TABLE @DATA(lt_inner).
+
+" LEFT OUTER JOIN：以 AFPO 為主表，保證項目全出，AFKO 沒對到就填初始值
+SELECT b~aufnr, b~plnum, b~pwerk, b~dauat, b~berid,
+       a~gstrp, a~gltrp, a~gamng, a~plnbez
+  FROM afpo AS b
+  LEFT OUTER JOIN afko AS a ON a~aufnr = b~aufnr
+  WHERE b~pwerk = @lv_werks
+  INTO TABLE @DATA(lt_left).
+
+LOOP AT lt_inner INTO DATA(ls).
+  WRITE: / ls-aufnr, ls-plnbez, ls-gamng, ls-gmein, ls-pwerk, ls-berid.
+ENDLOOP.</code></pre>
+
+  <div class="warn">在 LEFT OUTER JOIN 的 <b>WHERE</b> 裡對右表欄位下條件，會把 outer join 「退化成」inner join（因為 NULL 不符合條件）。要對右表限制條件，請寫在 <b>ON</b> 子句裡，不要寫在 WHERE。</div>
+
+  <p>子查詢（subquery）：<b>IN</b>、<b>EXISTS</b>、以及純量子查詢。講義 08-13、08-14 的範例現代化如下：</p>
+
+<pre><code class="abap">*&amp;---------------------------------------------------------------------*
+*&amp; Report ZDEMO_SUBQUERY  IN / EXISTS / 純量子查詢
+*&amp;---------------------------------------------------------------------*
+REPORT zdemo_subquery.
+
+" (1) IN 子查詢：料號存在於 MARC 中的才取
+SELECT matnr, werks, lgort, labst
+  FROM mard
+  WHERE matnr IN ( SELECT matnr FROM marc WHERE beskz = 'F' )
+  ORDER BY matnr, werks, lgort
+  INTO TABLE @DATA(lt_in)
+  UP TO 100 ROWS.
+
+" (2) EXISTS 相關子查詢：外層每一列去問「內層有沒有對應」
+"     通常比 IN 快，因為找到一筆就停
+SELECT a~matnr, a~werks, a~lgort, a~labst
+  FROM mard AS a
+  WHERE EXISTS ( SELECT mandt FROM marc AS b
+                  WHERE b~matnr = a~matnr
+                    AND b~werks = a~werks
+                    AND b~dispo &lt;&gt; @space )
+  ORDER BY a~matnr
+  INTO TABLE @DATA(lt_exists)
+  UP TO 100 ROWS.
+
+" (3) 純量子查詢：把單一值當成欄位用
+SELECT matnr, werks,
+       ( SELECT SUM( labst ) FROM mard AS d
+          WHERE d~matnr = c~matnr AND d~werks = c~werks ) AS total_stock
+  FROM marc AS c
+  WHERE werks = @lv_werks
+  INTO TABLE @DATA(lt_scalar)
+  UP TO 100 ROWS.</code></pre>
+
+  <h3 id="ch02-2-16">16. 聚合、GROUP BY、HAVING、ORDER BY 與 SQL 運算式</h3>
+  <p>ABAP SQL 標準聚合函數：<b>COUNT( * ) / COUNT( DISTINCT f ) / SUM( ) / AVG( ) / MAX( ) / MIN( )</b>。</p>
+  <p>講義提到還有 <b>MEDIAN、PRODUCT、STDDEV、VAR、CORR、CORR_SPEARMAN、GROUPING( )、STRING_AGG、ALLOW_PRECISION_LOSS</b>。<span class="src">（依講義註記整理）</span>其中：</p>
+  <ul>
+    <li><b>STRING_AGG( col, ',' )</b>：把多列串成一個字串，非常好用（作業 5 就是考它）。在 ABAP SQL 中可用於 HANA；跨平台程式請確認版本支援。</li>
+    <li><b>ALLOW_PRECISION_LOSS</b>：允許十進位運算做精度捨棄以換取效能。</li>
+    <li><b>MEDIAN / STDDEV / VAR / CORR</b> 等統計函數屬 HANA 專屬，在純 ABAP SQL 中通常要靠 <b>CDS View（含 table function）</b>或 <b>AMDP</b> 才能用；ABAP 端則可呼叫 <span class="kw">RMMATH1_*</span> 系列函數（例如 <b>RMMATH1_VARIANCE_DEVIATION</b> 回傳變異數、標準差、平均值）。</li>
+  </ul>
+
+<pre><code class="abap">*&amp;---------------------------------------------------------------------*
+*&amp; Report ZDEMO_AGG  GROUP BY / HAVING / ORDER BY 綜合（講義 03-05 改寫）
+*&amp;---------------------------------------------------------------------*
+REPORT zdemo_agg.
+
+" (1) 本期採購單，依建檔人員統計張數，張數多的排前面
+SELECT ernam,
+       COUNT( * ) AS cnt
+  FROM ekko
+  WHERE aedat &gt;= @lv_from_date
+  GROUP BY ernam
+  ORDER BY cnt DESCENDING
+  INTO TABLE @DATA(lt_cnt).
+
+" (2) 再加 HAVING：只留張數大於 7 的人
+SELECT ernam,
+       COUNT( * )      AS cnt,
+       MIN( aedat )    AS first_date,
+       MAX( aedat )    AS last_date
+  FROM ekko
+  WHERE aedat &gt;= @lv_from_date
+  GROUP BY ernam
+  HAVING COUNT( * ) &gt; 7
+  ORDER BY cnt DESCENDING
+  INTO TABLE @DATA(lt_having).
+
+LOOP AT lt_having INTO DATA(ls).
+  WRITE: / |用戶：{ ls-ernam } 採購單數：{ ls-cnt } 期間：{ ls-first_date DATE = USER } ~ { ls-last_date DATE = USER }|.
+ENDLOOP.
+
+" (3) ACDOCA 依科目 + 成本中心加總（講義 Z202202_66 改寫）
+SELECT racct,                      " 會計科目
+       rcntr,                      " 成本中心
+       SUM( tsl ) AS tsl           " 交易幣別金額
+  FROM acdoca
+  WHERE rldnr = '0L'               " 分類帳，一定要帶
+    AND rbukrs = @lv_bukrs         " 公司代碼，一定要帶
+    AND gjahr  = @lv_gjahr         " 年度，一定要帶
+  GROUP BY racct, rcntr
+  ORDER BY racct, rcntr
+  INTO TABLE @DATA(lt_acdoca).
+
+WRITE: / '會計科目', 20 '成本中心', 40 '科目餘額'.
+LOOP AT lt_acdoca INTO DATA(ls_acdoca).
+  WRITE: / ls_acdoca-racct, 20 ls_acdoca-rcntr, 40 ls_acdoca-tsl.
+ENDLOOP.</code></pre>
+
+  <div class="warn">聚合的三個坑：<b>①</b> GROUP BY 之後，SELECT 清單裡只能出現「分組欄位」或「聚合函數」。<b>②</b> <span class="kw">SUM( )</span> 的結果型別可能溢位——目標欄位請用足夠大的型別（例如 <span class="kw">TYPE p LENGTH 15 DECIMALS 2</span> 或 <span class="kw">DEC23_2</span>），不要直接沿用 CURR 欄位。<b>③</b> COUNT / SUM 對 NULL 的處理與 T-SQL 相同：<span class="kw">COUNT( * )</span> 算所有列，<span class="kw">COUNT( col )</span> 不算 NULL。</div>
+
+  <h4>SQL 運算式：CASE、字串函數、數值函數、CAST</h4>
+<pre><code class="abap">SELECT p~ebeln,
+       p~ebelp,
+       p~matnr,
+
+       " CASE 運算式（簡單型與搜尋型）
+       CASE p~werks
+         WHEN '1000' THEN '台北廠'
+         WHEN '2000' THEN '台中廠'
+         ELSE '其他'
+       END AS plant_text,
+
+       CASE WHEN p~netwr &gt;= 1000000 THEN 'A'
+            WHEN p~netwr &gt;=  100000 THEN 'B'
+            ELSE 'C'
+       END AS abc_class,
+
+       " 數值函數
+       DIV( p~menge, 12 )              AS per_month,
+       DIVISION( p~netwr, p~menge, 2 ) AS unit_price,
+       ABS( p~netwr )                  AS abs_amt,
+       ROUND( p~netwr, 0 )             AS round_amt,
+       CEIL( p~menge )                 AS ceil_qty,
+       FLOOR( p~menge )                AS floor_qty,
+       MOD( p~ebelp, 10 )              AS mod_item,
+
+       " 字串函數
+       CONCAT( p~ebeln, p~ebelp )      AS po_key,
+       CONCAT_WITH_SPACE( p~ebeln, p~matnr, 1 ) AS po_mat,
+       SUBSTRING( p~matnr, 1, 4 )      AS mat_prefix,
+       LENGTH( p~matnr )               AS mat_len,
+       LTRIM( p~matnr, '0' )           AS mat_notrail,
+       REPLACE( p~matnr, 'X', 'Y' )    AS mat_repl,
+       UPPER( p~txz01 )                AS txt_upper,
+       LOWER( p~txz01 )                AS txt_lower,
+
+       " 型別轉換與空值處理
+       CAST( p~menge AS DEC( 15, 3 ) ) AS menge_dec,
+       COALESCE( k~lifnr, '__NONE__' ) AS lifnr_or_none,
+
+       " 貨幣／單位換算（S/4 常用）
+       CURRENCY_CONVERSION( amount             = p~netwr,
+                            source_currency    = k~waers,
+                            target_currency    = 'TWD',
+                            exchange_rate_date = k~bedat ) AS netwr_twd
+
+  FROM ekpo AS p
+  LEFT OUTER JOIN ekko AS k ON k~ebeln = p~ebeln
+  WHERE p~ebeln IN @s_ebeln
+  INTO TABLE @DATA(lt_expr).</code></pre>
+
+  <h4>UNION 與 CTE（WITH）</h4>
+<pre><code class="abap">" UNION：把兩段結果疊起來（欄位數量與型別要相容）
+SELECT FROM ekko FIELDS ebeln, lifnr, 'PO' AS doc_type
+  WHERE bukrs = @lv_bukrs
+UNION DISTINCT
+SELECT FROM ekko FIELDS ebeln, lifnr, 'SA' AS doc_type
+  WHERE bstyp = 'L'
+  INTO TABLE @DATA(lt_union).
+
+" CTE（Common Table Expression，7.51+）：把中間結果命名，讓 SQL 好讀
+WITH
+  +po_head AS (
+    SELECT FROM ekko
+      FIELDS ebeln, lifnr, bedat, waers
+      WHERE bukrs = @lv_bukrs
+        AND bedat BETWEEN @lv_from AND @lv_to ),
+
+  +po_sum AS (
+    SELECT FROM ekpo
+      FIELDS ebeln, SUM( netwr ) AS total_netwr, COUNT( * ) AS item_cnt
+      GROUP BY ebeln )
+
+  SELECT FROM +po_head AS h
+    INNER JOIN +po_sum AS s ON s~ebeln = h~ebeln
+    LEFT OUTER JOIN lfa1 AS v ON v~lifnr = h~lifnr
+    FIELDS h~ebeln, h~lifnr, v~name1, h~bedat,
+           s~item_cnt, s~total_netwr
+    ORDER BY s~total_netwr DESCENDING
+    INTO TABLE @DATA(lt_cte)
+    UP TO 50 ROWS.</code></pre>
+
+  <div class="note">CTE 只能用在 <b>單一 SELECT</b> 中（<span class="kw">WITH ... SELECT ... .</span> 是一整句），不能像 T-SQL 那樣定義後給多句用。CTE 名稱一律以 <span class="kw">+</span> 開頭。</div>
+
+  <h4>視窗函數 OVER( )（7.51+）</h4>
+<pre><code class="abap">" 每個廠商的採購金額，以及該廠商累計、排名 —— 一次 SELECT 搞定
+SELECT p~ebeln,
+       p~ebelp,
+       k~lifnr,
+       p~netwr,
+       SUM( p~netwr ) OVER( PARTITION BY k~lifnr )            AS lifnr_total,
+       AVG( p~netwr ) OVER( PARTITION BY k~lifnr )            AS lifnr_avg,
+       MAX( p~netwr ) OVER( PARTITION BY k~lifnr )            AS lifnr_max,
+       COUNT( * )     OVER( PARTITION BY k~lifnr )            AS lifnr_cnt,
+       RANK( )        OVER( PARTITION BY k~lifnr
+                            ORDER BY p~netwr DESCENDING )     AS rank_in_lifnr,
+       DENSE_RANK( )  OVER( PARTITION BY k~lifnr
+                            ORDER BY p~netwr DESCENDING )     AS drank,
+       ROW_NUMBER( )  OVER( PARTITION BY k~lifnr
+                            ORDER BY p~netwr DESCENDING )     AS rn
+  FROM ekpo AS p
+  INNER JOIN ekko AS k ON k~ebeln = p~ebeln
+  WHERE k~bukrs = @lv_bukrs
+    AND k~bedat BETWEEN @lv_from AND @lv_to
+  INTO TABLE @DATA(lt_window).
+
+" 取「每個廠商金額最高的那一筆」：把上面結果再過濾 rn = 1
+DELETE lt_window WHERE rn &lt;&gt; 1.</code></pre>
+
+  <div class="tip">視窗函數是 <b>code pushdown</b> 的利器：以前要「撈回來 → 排序 → LOOP 累加 → AT NEW 判斷」的邏輯，現在一句 SQL 在 HANA 裡就算完了，資料量大時差距是數量級的。</div>
+
+  <h3 id="ch02-2-17">17. FOR ALL ENTRIES：四大陷阱與替代方案</h3>
+  <p>FOR ALL ENTRIES（FAE）的用途：<b>先建一張驅動內表，再用它限制第二段 SELECT</b>。經典例子是先從 EKKO 撈出採購單號，再用它去 EKPO 撈明細。</p>
+
+<pre><code class="abap">*&amp;---------------------------------------------------------------------*
+*&amp; Report ZDEMO_FAE  FOR ALL ENTRIES 正確用法與陷阱
+*&amp;---------------------------------------------------------------------*
+REPORT zdemo_fae.
+
+" 驅動表：只取需要的鍵欄位
+SELECT ebeln, bukrs, lifnr, bedat
+  FROM ekko
+  WHERE bukrs = @lv_bukrs
+  INTO TABLE @DATA(lt_ekko)
+  UP TO 10 ROWS.
+
+" ★ 陷阱一：驅動內表若為空，FAE 會回傳「整張表」，而且 WHERE 的其他條件也被忽略
+"    所以一定要先判斷 IS NOT INITIAL
+IF lt_ekko IS NOT INITIAL.
+
+  " ★ 陷阱二：驅動表要先去重，否則同一個 key 會被送好幾次，白白浪費 DB 往返
+  DATA(lt_key) = lt_ekko.
+  SORT lt_key BY ebeln.
+  DELETE ADJACENT DUPLICATES FROM lt_key COMPARING ebeln.
+
+  SELECT ebeln, ebelp, matnr, werks, menge, netwr
+    FROM ekpo
+    FOR ALL ENTRIES IN @lt_key
+    WHERE ebeln = @lt_key-ebeln
+      AND loekz = @space
+    INTO TABLE @DATA(lt_ekpo).
+
+ENDIF.</code></pre>
+
+  <div class="warn"><b>FOR ALL ENTRIES 四大陷阱</b>
+  <br/>① <b>空表災難</b>：驅動內表是空的時候，FAE 條件<b>整段被忽略</b>，連同 WHERE 中其他條件也一併失效，結果是「把整張表撈回來」。講義用 EKPO 實測過三種情況（無 FAE／有 FAE／FAE 表為空），第三種筆數會暴增。<b>解法：一律先寫 <span class="kw">IF lt_x IS NOT INITIAL.</span></b>
+  <br/>② <b>自動 DISTINCT</b>：FAE 的結果會自動去除完全重複的列。如果 SELECT 清單沒有包含目標表的完整主鍵，會「莫名其妙少資料」。<b>解法：SELECT 清單一定要含齊主鍵欄位。</b>
+  <br/>③ <b>被拆成多次 DB 呼叫</b>：系統會依 profile 參數 <span class="kw">rsdb/max_blocking_factor</span> 把驅動表切成很多段，逐段丟給 DB。驅動表沒去重、或筆數上萬，往返次數就爆掉。
+  <br/>④ <b>型別必須相符</b>：驅動內表欄位的型別與長度要和 DB 欄位一致，否則轉型時可能靜默地對不到。另外 FAE <b>不可與 SELECT SINGLE、也不建議與 GROUP BY 併用</b>，而且 FAE 的驅動表不能是 header line。</div>
+
+  <p><b>S/4HANA 的替代方案（優先順序由上而下）：</b></p>
+  <ol>
+    <li><b>JOIN</b>：兩張表本來就有關聯，直接 JOIN，一次往返。</li>
+    <li><b>子查詢 IN / EXISTS</b>：邏輯是「存在性判斷」時最乾淨。</li>
+    <li><b>CTE（WITH）</b>：中間結果多、邏輯分層時可讀性最好。</li>
+    <li><b>SELECT ... FROM @itab</b>（7.52+）：把已在記憶體的內表當成資料來源，直接下 SQL。</li>
+    <li><b>CDS View / AMDP</b>：邏輯複雜、會被重複使用時的正解。</li>
+  </ol>
+
+<pre><code class="abap">*&amp;---------------------------------------------------------------------*
+*&amp; Report ZDEMO_ITAB_AS_SOURCE  用內表當 SELECT 資料來源（講義第 65 個練習改寫）
+*&amp;---------------------------------------------------------------------*
+REPORT zdemo_itab_as_source.
+
+" 第一段：撈出公司代碼 1710 的採購單
+SELECT ebeln, bukrs, lifnr, ernam, bedat, waers
+  FROM ekko
+  WHERE bukrs = '1710'
+  INTO TABLE @DATA(lt_ekko).
+
+" 第二段：直接把內表當 FROM 的來源再篩一次（7.52+）
+"          可完全取代「再跑一次 SELECT」或「LOOP + DELETE」
+SELECT ebeln, bukrs, lifnr, ernam
+  FROM @lt_ekko AS k2
+  WHERE ernam = 'S4H_MM'
+  ORDER BY ebeln
+  INTO TABLE @DATA(lt_result).
+
+LOOP AT lt_result INTO DATA(ls).
+  WRITE: / |{ ls-ebeln } { ls-bukrs } { ls-lifnr } { ls-ernam }|.
+ENDLOOP.</code></pre>
+
+  <h3 id="ch02-2-18">18. SELECT SINGLE vs UP TO 1 ROWS（HANA 沒有排序保證）</h3>
+  <p>講義 08-00 特別開一節講這個差異，重點是<b>主鍵</b>：</p>
+  <table>
+    <thead><tr><th></th><th>SELECT SINGLE</th><th>SELECT ... UP TO 1 ROWS</th></tr></thead>
+    <tbody>
+      <tr><td>條件要求</td><td>必須指定<b>全部主鍵</b>才保證取到唯一那筆；缺任何一個主鍵就不該用</td><td>任意條件、甚至不給條件都可以</td></tr>
+      <tr><td>可否 ORDER BY</td><td><b>不可以</b></td><td><b>可以</b>，因此可以「取最新／最大的那一筆」</td></tr>
+      <tr><td>回傳</td><td>一個工作區</td><td>可 INTO 工作區或內表</td></tr>
+      <tr><td>沒給齊主鍵時</td><td>回傳「任意一筆」，<b>結果不保證穩定</b></td><td>加 ORDER BY 就穩定</td></tr>
+    </tbody>
+  </table>
+
+  <div class="warn"><b>HANA 沒有排序保證</b>：資料在欄式儲存中沒有固定的實體順序，同一段沒有 ORDER BY 的 SQL，今天跟明天、單機與多節點，回傳順序可能不同。所以「取最新一筆」<b>絕不能</b>靠 SELECT SINGLE 或不加 ORDER BY 的 UP TO 1 ROWS。<br/>這正是老師 ZKEPH 成本抓錯的同一類問題：<b>沒有排序，就沒有「第一筆」可言</b>。</div>
+
+<pre><code class="abap">*&amp;---------------------------------------------------------------------*
+*&amp; Report ZDEMO_SINGLE_VS_TOP1
+*&amp;---------------------------------------------------------------------*
+REPORT zdemo_single_vs_top1.
+
+PARAMETERS: p_matnr TYPE mara-matnr OBLIGATORY,
+            p_werks TYPE marc-werks OBLIGATORY.
+
+" (1) 主鍵給齊 → SELECT SINGLE 是正確且最快的
+SELECT SINGLE matnr, werks, dispo, beskz, ekgrp
+  FROM marc
+  WHERE matnr = @p_matnr
+    AND werks = @p_werks
+  INTO @DATA(ls_marc).
+
+IF sy-subrc = 0.
+  WRITE: / ls_marc-matnr, ls_marc-werks, ls_marc-dispo.
+ENDIF.
+
+" (2) 主鍵沒給齊、又要「最新的一筆」→ 必須 UP TO 1 ROWS + ORDER BY
+SELECT ebeln, ebelp, matnr, werks, menge, netwr
+  FROM ekpo
+  WHERE matnr = @p_matnr
+    AND werks = @p_werks
+  ORDER BY ebeln DESCENDING, ebelp DESCENDING   " 排序寫清楚，結果才穩定
+  INTO @DATA(ls_last)
+  UP TO 1 ROWS.
+ENDSELECT.
+
+" (3) 更好的做法：用 MAX( ) 讓 DB 直接算，不必排序整張表
+SELECT MAX( ebeln ) AS max_ebeln
+  FROM ekpo
+  WHERE matnr = @p_matnr
+    AND werks = @p_werks
+  INTO @DATA(lv_max_ebeln).
+
+" (4) 反例：SELECT ... ENDSELECT 單筆迴圈（效能差，除非搭配 PACKAGE SIZE）
+"     除示範外，實務請改成 INTO TABLE 一次取回
+" SELECT * FROM marc INTO CORRESPONDING FIELDS OF @ls_marc
+"   WHERE matnr = @p_matnr.
+"   WRITE ls_marc-matnr.
+" ENDSELECT.</code></pre>
+
+  <div class="note">關於「區間 vs 列舉」的實務提醒：用 <b>SELECT-OPTIONS 的區間（BT / BETWEEN）</b>與用<b>列舉（一串 EQ）</b>，在字元型欄位（例如 HKONT、MATNR、BELNR）上結果可能不同——因為區間比較走的是<b>字典序</b>，會受前置零、ALPHA 轉換、空白補齊影響。老師的結論：<b>不確定時用列舉（逐一列出）比較安全</b>。要用區間，就先把值做好 ALPHA conversion（<span class="kw">CONVERSION_EXIT_ALPHA_INPUT</span>）再放進 range。</div>
+
+  <h3 id="ch02-2-19">19. 資料異動：UPDATE / INSERT / MODIFY / DELETE 與 COMMIT WORK</h3>
+<pre><code class="abap">" ---- UPDATE ----
+UPDATE dbtab SET f1 = @v1, f2 = @v2 WHERE cond.
+UPDATE dbtab FROM @wa.                    " 依主鍵整列更新
+UPDATE dbtab FROM TABLE @itab.            " 批次更新
+
+" ---- INSERT ----
+INSERT dbtab FROM @wa.
+INSERT dbtab FROM TABLE @itab [ACCEPTING DUPLICATE KEYS].
+INSERT INTO dbtab VALUES @wa.             " 舊式，仍可用
+
+" ---- MODIFY（有就改、沒有就新增，等同 T-SQL 的 MERGE / UPSERT）----
+MODIFY dbtab FROM @wa.
+MODIFY dbtab FROM TABLE @itab.
+
+" ---- DELETE ----
+DELETE FROM dbtab WHERE cond.
+DELETE dbtab FROM @wa.                    " 依主鍵刪一列
+DELETE dbtab FROM TABLE @itab.            " 依內表的鍵值批次刪</code></pre>
+
+<pre><code class="abap">*&amp;---------------------------------------------------------------------*
+*&amp; Report ZDEMO_DML  資料異動與 LUW（講義 08-15 ~ 08-19 整併改寫）
+*&amp;---------------------------------------------------------------------*
+REPORT zdemo_dml.
+
+DATA lt_scarr TYPE STANDARD TABLE OF scarr WITH EMPTY KEY.
+
+lt_scarr = VALUE #( ( carrid   = '000'
+                      carrname = 'CASPER'
+                      currcode = 'TWD'
+                      url      = 'www.cerps.com.tw' ) ).
+
+" 1) 批次新增；重複鍵不要 dump 就加 ACCEPTING DUPLICATE KEYS
+INSERT scarr FROM TABLE @lt_scarr ACCEPTING DUPLICATE KEYS.
+DATA(lv_ins) = sy-dbcnt.
+
+" 2) 局部更新（一定要寫 WHERE，否則整張表被改掉）
+UPDATE scarr SET url = 'www.cerps.com.tw'
+             WHERE carrid = '000'.
+
+" 3) MODIFY = INSERT + UPDATE（T-SQL 的 MERGE）。效率較低，資料量大時分開寫
+MODIFY scarr FROM TABLE @lt_scarr.
+
+" 4) 刪除
+DELETE FROM scarr WHERE carrid = '000'.
+
+" 5) 一律確認結果再決定 COMMIT 或 ROLLBACK
+IF sy-subrc = 0.
+  COMMIT WORK AND WAIT.        " AND WAIT：等更新任務完成才往下（報表要立刻讀回時必用）
+  MESSAGE '異動成功' TYPE 'S'.
+ELSE.
+  ROLLBACK WORK.
+  MESSAGE '異動失敗，已回復' TYPE 'E'.
+ENDIF.</code></pre>
+
+  <div class="warn"><b>正式系統的鐵律</b>：
+  <br/>① <b>不要直接對 SAP 標準表下 INSERT / UPDATE / DELETE</b>。標準表背後有一致性檢查、狀態欄位、變更文件、後續帳務，必須走 <b>BAPI / BDC / 標準交易</b>。自建的 Z 表才可以直接寫。
+  <br/>② <b>UPDATE 一定要寫 WHERE</b>，講義原文就標「這是危險的做法」。
+  <br/>③ 呼叫 BAPI 之後要自己下 <span class="kw">BAPI_TRANSACTION_COMMIT</span>；在 update task 或 BAdI 裡<b>不可以</b>亂下 COMMIT WORK，會把別人的 LUW 一起提交掉。
+  <br/>④ <span class="kw">COMMIT WORK AND WAIT</span> 與 <span class="kw">COMMIT WORK</span> 的差別：前者等非同步更新完成，後者不等。報表寫完馬上要讀回來時，用 AND WAIT。</div>
+
+  <h3 id="ch02-2-20">20. 動態 SQL：動態表名、動態欄位、動態 WHERE</h3>
+  <p>ABAP SQL 支援把「表名／欄位清單／WHERE 條件」放進括號，用變數或內表帶入。講義 08-02、08-03、08-05、08-08、08-09、02-10 都在講這件事。</p>
+
+<pre><code class="abap">*&amp;---------------------------------------------------------------------*
+*&amp; Report ZDEMO_DYNSQL  動態表名 / 動態欄位 / 動態條件
+*&amp;---------------------------------------------------------------------*
+REPORT zdemo_dynsql.
+
+PARAMETERS: p_tname TYPE tabname DEFAULT 'MARC'.
+
+FIELD-SYMBOLS: &lt;lt_any&gt; TYPE STANDARD TABLE,
+               &lt;ls_any&gt; TYPE any.
+
+" (1) 動態表名：資料物件也要動態建立
+CREATE DATA DATA(lr_tab) TYPE STANDARD TABLE OF (p_tname).
+ASSIGN lr_tab-&gt;* TO &lt;lt_any&gt;.
+
+SELECT * FROM (p_tname)
+  INTO TABLE @&lt;lt_any&gt;
+  UP TO 100 ROWS.
+
+" (2) 動態欄位清單：單一字串
+DATA(lv_cols) = `MATNR, WERKS`.
+SELECT DISTINCT (lv_cols)
+  FROM marc
+  INTO CORRESPONDING FIELDS OF TABLE @DATA(lt_marc1)
+  UP TO 100 ROWS.
+
+" (3) 動態欄位清單：用內表帶（欄位多時比較好維護）
+DATA lt_cols TYPE TABLE OF string.
+APPEND `MATNR, WERKS` TO lt_cols.
+APPEND `, EISBE, PSTAT` TO lt_cols.
+
+SELECT DISTINCT (lt_cols)
+  FROM marc
+  INTO CORRESPONDING FIELDS OF TABLE @DATA(lt_marc2)
+  UP TO 100 ROWS.
+
+" (4) 動態 WHERE：用字串範本組條件，避免 CONCATENATE
+DATA(lv_matnr) = CONV mara-matnr( 'DXTR1000' ).
+DATA(lv_werks) = CONV marc-werks( 'MI00' ).
+
+DATA lt_where TYPE TABLE OF string.
+APPEND |MATNR = '{ lv_matnr }'| TO lt_where.
+APPEND |AND WERKS = '{ lv_werks }'| TO lt_where.
+
+SELECT SINGLE lgort
+  FROM mard
+  WHERE (lt_where)
+  INTO @DATA(lv_lgort).
+
+" (5) 動態 JOIN：整段 FROM 用字串組出來
+DATA(lv_from) =
+  `spfli AS p ` &amp;&amp;
+  `INNER JOIN sflight AS f ON p~carrid = f~carrid AND p~connid = f~connid ` &amp;&amp;
+  `INNER JOIN sbook   AS b ON b~carrid = f~carrid AND b~connid = f~connid ` &amp;&amp;
+  `                       AND b~fldate = f~fldate`.
+
+SELECT p~carrid, p~connid, f~fldate, b~bookid
+  FROM (lv_from)
+  WHERE p~cityfrom = 'FRANKFURT'
+    AND p~cityto   = 'NEW YORK'
+    AND f~seatsmax &gt; f~seatsocc
+  ORDER BY p~carrid, p~connid, f~fldate, b~bookid
+  INTO TABLE @DATA(lt_dyn).</code></pre>
+
+  <div class="warn"><b>動態 SQL 有 SQL Injection 風險</b>。凡是把使用者輸入串進 WHERE 或欄位清單，都必須先驗證（白名單、<span class="kw">cl_abap_dyn_prg=&gt;check_table_name_str( )</span>、<span class="kw">quote( )</span> 逸出）。SCI／ATC 的安全檢查會抓這一項。</div>
+
+  <h3 id="ch02-2-21">21. Native SQL、ADBC、AMDP 與 CDS 的定位</h3>
+  <p>當 ABAP SQL 做不到（要用 HANA 專屬函數、要呼叫預儲程序、要跑游標）時，才往下走。</p>
+
+  <h4>EXEC SQL（已過時，只為讀懂舊程式）</h4>
+  <p>講義 02-09 用 <span class="kw">EXEC SQL ... ENDEXEC</span> 示範查詢、建立 Oracle 函數與游標。三個語法規則要記得：<b>語句結尾不加句點、區塊內不可有註解（星號與雙引號都不行）、參數用冒號 <span class="kw">:var</span> 而不是問號</b>；欄位與條件都用逗號分開。</p>
+
+  <div class="warn"><b>EXEC SQL 在 S/4HANA 已被宣告為 obsolete</b>，新程式一律改用 <b>ADBC</b>（ABAP Database Connectivity，<span class="kw">CL_SQL_STATEMENT</span> / <span class="kw">CL_SQL_CONNECTION</span> / <span class="kw">CL_SQL_RESULT_SET</span>），因為 ADBC 支援參數綁定、例外處理與連線管理。Native SQL <b>不做 client（MANDT）處理、不走表緩衝、不檢查 SAP 授權</b>，用之前務必三思。</div>
+
+<pre><code class="abap">*&amp;---------------------------------------------------------------------*
+*&amp; Report ZDEMO_ADBC  ADBC 取代 EXEC SQL（講義 08-20 CL_SQL_STATEMENT 現代化）
+*&amp;---------------------------------------------------------------------*
+REPORT zdemo_adbc.
+
+PARAMETERS p_carr TYPE spfli-carrid DEFAULT 'LH'.
+
+TYPES: BEGIN OF ty_row,
+         connid   TYPE spfli-connid,
+         cityfrom TYPE spfli-cityfrom,
+         cityto   TYPE spfli-cityto,
+       END OF ty_row.
+
+DATA lt_row TYPE STANDARD TABLE OF ty_row WITH EMPTY KEY.
+
+TRY.
+    " 取得標準連線（要連別的 DB 就傳 DBCON 的連線名稱）
+    DATA(lo_con) = cl_sql_connection=&gt;get_connection( ).
+    DATA(lo_stmt) = lo_con-&gt;create_statement( ).
+
+    " 用參數綁定，不要把變數串進 SQL 字串（防 injection）
+    DATA(lo_params) = NEW cl_sql_statement( ).
+    DATA(lv_sql) = |SELECT connid, cityfrom, cityto FROM spfli WHERE carrid = ?|.
+
+    DATA(lo_result) = lo_stmt-&gt;execute_query(
+                        statement = lv_sql
+                        parameters = VALUE #( ( REF #( p_carr ) ) ) ).
+
+    " 把結果集直接倒進內表
+    DATA(lr_tab) = REF #( lt_row ).
+    lo_result-&gt;set_param_table( lr_tab ).
+    DATA(lv_cnt) = lo_result-&gt;next_package( ).
+    lo_result-&gt;close( ).
+    lo_con-&gt;close( ).
+
+  CATCH cx_sql_exception INTO DATA(lx_sql).
+    MESSAGE lx_sql-&gt;get_text( ) TYPE 'E'.
+ENDTRY.
+
+LOOP AT lt_row INTO DATA(ls_row).
+  WRITE: / ls_row-connid, ls_row-cityfrom, ls_row-cityto.
+ENDLOOP.
+
+" 若只要執行 DDL / DML（相當於講義 ZOPENSQL20 的 EXECUTE_UPDATE）
+" DATA(lv_rows) = lo_stmt-&gt;execute_update( |UPDATE ztab SET flag = 'X'| ).</code></pre>
+
+  <h4>AMDP 與 CDS：真正的 code pushdown</h4>
+  <ul>
+    <li><b>CDS View</b>（ABAP Core Data Services）：在 ADT／Eclipse 用 DDL 定義的視圖，取代 SE11 的 DB View。支援 association、annotation、參數、聚合、CASE、視窗函數，可直接被 ABAP SQL、OData、Fiori、Analytics 消費。<b>S/4HANA 的第一選擇</b>。</li>
+    <li><b>AMDP</b>（ABAP Managed Database Procedure）：把 SQLScript 寫在 ABAP class 的 method 裡，由 ABAP Server 管理生命週期，適合「CDS 表達不出來的程序式邏輯」——迴圈、暫存表、複雜統計函數（MEDIAN、STDDEV、CORR）。</li>
+    <li>選擇順序：<b>ABAP SQL → CDS View → AMDP → Native SQL/ADBC</b>。越往後越強、也越難維護與升級。</li>
+  </ul>
+
+<pre><code class="abap">" AMDP 骨架（放在 ADT / Eclipse 建立的 class 中）
+CLASS zcl_amdp_demo DEFINITION PUBLIC.
+  PUBLIC SECTION.
+    INTERFACES if_amdp_marker_hdb.        " 標記為 AMDP class
+    CLASS-METHODS get_stddev
+      IMPORTING VALUE(iv_bukrs) TYPE bukrs
+                VALUE(iv_gjahr) TYPE gjahr
+                VALUE(iv_racct) TYPE racct
+      EXPORTING VALUE(et_out)   TYPE ztt_acct_stat.
+ENDCLASS.
+
+CLASS zcl_amdp_demo IMPLEMENTATION.
+  METHOD get_stddev BY DATABASE PROCEDURE FOR HDB
+                    LANGUAGE SQLSCRIPT
+                    OPTIONS READ-ONLY
+                    USING acdoca.
+    " SQLScript：可用 ABAP SQL 沒有的 STDDEV / MEDIAN / VAR
+    et_out = SELECT racct,
+                    COUNT(*)      AS cnt,
+                    AVG( hsl )    AS avg_amt,
+                    STDDEV( hsl ) AS std_amt,
+                    MEDIAN( hsl ) AS med_amt
+               FROM acdoca
+              WHERE rbukrs = :iv_bukrs
+                AND gjahr  = :iv_gjahr
+                AND racct  = :iv_racct
+                AND rldnr  = '0L'
+              GROUP BY racct;
+  ENDMETHOD.
+ENDCLASS.</code></pre>
+
+  <h3 id="ch02-2-22">22. 效能觀念：Code Pushdown 與 S/4HANA 的巨表</h3>
+  <p>講義 02-11 整理的 Open SQL 注意事項，是 ABAP 效能的基本功。這裡逐條保留並補上 S/4HANA 的現況：</p>
+
+  <table>
+    <thead><tr><th>講義守則</th><th>S/4HANA 的補充</th></tr></thead>
+    <tbody>
+      <tr><td>避免在迴圈中寫 SELECT，改用 FOR ALL ENTRIES 一次抽進內表</td><td>更好的做法是 JOIN／子查詢／CDS View；FAE 只是次佳解</td></tr>
+      <tr><td>JOIN 不要關聯太多表，順序小表→大表</td><td>HANA 的 optimizer 會自行決定順序；但表數量多仍會讓執行計畫變複雜，建議拆成 CTE</td></tr>
+      <tr><td>只查自己需要的欄位，少用 SELECT *</td><td><b>在欄式資料庫上這條更重要</b>：HANA 只讀被指定的欄位，少一欄就少一份 I/O</td></tr>
+      <tr><td>WHERE 多用索引、主鍵</td><td>HANA 主要靠欄式掃描，但 <b>驅動欄位（如 MANDT、BUKRS、GJAHR、WERKS）仍要帶</b>；SE11 可建 secondary index，S/4 也常用 CDS 的 index-like 設計</td></tr>
+      <tr><td>不要用 SELECT ... ENDSELECT</td><td>正確；要處理巨量資料請用 <b>PACKAGE SIZE</b> 分批，或 <b>OFFSET / UP TO</b> 分頁</td></tr>
+      <tr><td>不要用 <span class="kw">&lt;&gt;</span>（不走索引），改用 &gt; 或 &lt;</td><td>HANA 上影響已較小，但仍建議把條件寫成正向（IN / BETWEEN）比較好被最佳化</td></tr>
+      <tr><td>不要用 ORDER BY，撈回來再在內表排</td><td><b>這一條在 HANA 上要反過來</b>：HANA 排序很快，且沒有 ORDER BY 就沒有順序保證。<b>需要順序就在 SQL 排</b></td></tr>
+      <tr><td>內表求和：能在 SQL 做就在 SQL 做；否則用 AT END OF；COLLECT 在大量資料時較慢</td><td>正確。<b>優先用 GROUP BY 讓 DB 加總</b>，其次視窗函數，最後才回到內表</td></tr>
+      <tr><td>用 <span class="kw">APPEND LINES OF</span> 取代 LOOP＋APPEND</td><td>正確，永遠成立</td></tr>
+    </tbody>
+  </table>
+
+  <div class="tip"><b>Code Pushdown 一句話</b>：能讓資料庫算的，就不要搬回 ABAP 算。搬 100 萬列回應用伺服器再 LOOP 加總，和一句 <span class="kw">GROUP BY</span> 的差距，是分鐘與秒的差距。</div>
+
+  <h4>S/4HANA 的兩張巨表：ACDOCA 與 MATDOC</h4>
+  <ul>
+    <li><b>ACDOCA（Universal Journal）</b>：S/4 把 BKPF/BSEG、FAGLFLEXA、COEP、ANEP、MLIT 等總帳／管理會計／獲利分析明細通通合併到這一張表，欄位數超過 300、資料量以億計。<b>查詢時 RLDNR（分類帳）、RBUKRS（公司代碼）、GJAHR（年度）幾乎是必帶條件</b>，再加期間 POPER 或傳票號 BELNR。BSEG／BKPF 在 S/4 仍存在，但報表請改讀 ACDOCA 或其 CDS View（I_JournalEntryItem 等）。</li>
+    <li><b>MATDOC</b>：S/4 把 MKPF＋MSEG 合併成 MATDOC，<b>所有物料文件內容都存在這張表</b>。MKPF／MSEG 變成相容性 CDS View（讀得到、但效能不好）。庫存數量表 MARD-LABST、MBEW 等在 S/4 也已改成由 MATDOC 聚合而來的相容視圖，<b>不要對它們做大量迴圈式查詢</b>，改用 NSDM 系列 CDS View 或標準 FM。</li>
+    <li>物料主檔仍是 <b>MARA</b>（一般）／<b>MAKT</b>（描述）／<b>MARC</b>（工廠）／<b>MARD</b>（儲位）；MARA-MATNR 在 S/4 長度為 40（原 18），寫程式不要再寫死 18 碼。</li>
+  </ul>
+
+  <h4>效能檢查工具</h4>
+  <table>
+    <thead><tr><th>TCODE</th><th>用途</th></tr></thead>
+    <tbody>
+      <tr><td>ST05</td><td>SQL Trace：看程式實際下了哪些 SQL、跑幾次、花多久（最常用）</td></tr>
+      <tr><td>SAT</td><td>ABAP Runtime Analysis，取代舊的 SE30；看哪一行 ABAP 最花時間</td></tr>
+      <tr><td>SDBE</td><td>Display Explain：把一段 SQL 的<b>執行計畫</b>叫出來看，判斷有沒有走索引<span class="src">（講義此處僅有標題，依 SAP 標準補述）</span></td></tr>
+      <tr><td>SQLM / SWLT</td><td>SQL Monitor 與 SQL Performance Tuning Worklist：在正式機收集實際 SQL 負載，配合 ATC 找出待優化程式（S/4 遷移必用）</td></tr>
+      <tr><td>ST12 / STAD</td><td>單一交易的整合追蹤／單筆交易統計</td></tr>
+      <tr><td>DBACOCKPIT</td><td>資料庫層的整體監控、表大小、索引</td></tr>
+      <tr><td>SE11 &gt; Indexes</td><td>建立／檢視次要索引</td></tr>
+      <tr><td>SCI / ATC</td><td>靜態程式碼檢查，含效能與安全規則</td></tr>
+    </tbody>
+  </table>
+
+  <h3 id="ch02-2-23">23. 7.40 ～ 7.55 新語法總覽</h3>
+  <p>講義 06-2 逐條列出了新語法。這裡整理成一張速查表與一支可以直接跑的示範程式。</p>
+
+  <table>
+    <thead><tr><th>語法</th><th>作用</th><th>取代了什麼</th></tr></thead>
+    <tbody>
+      <tr><td>DATA( )</td><td>內嵌宣告，SQL 與應用層都支援</td><td>先 TYPES、再 DATA、再 SELECT 的三段式</td></tr>
+      <tr><td>@ 逸出字元</td><td>標示主機變數</td><td>新版 ABAP SQL 強制</td></tr>
+      <tr><td>VALUE #( )</td><td>建構結構／內表的值</td><td>逐欄指派 ＋ APPEND</td></tr>
+      <tr><td>FOR ... IN ... </td><td>在建構式裡跑迴圈</td><td>LOOP ... APPEND ... ENDLOOP</td></tr>
+      <tr><td>REDUCE</td><td>把內表歸納成單一值（加總、計數、找最大）</td><td>LOOP 累加</td></tr>
+      <tr><td>CORRESPONDING #( )</td><td>依名稱搬欄位，可 MAPPING／EXCEPT，7.50 起支援動態映射</td><td>MOVE-CORRESPONDING</td></tr>
+      <tr><td>COND #( )</td><td>條件運算式</td><td>IF ... ELSE ... ENDIF 只為了給一個值</td></tr>
+      <tr><td>SWITCH #( )</td><td>多值分支運算式</td><td>CASE ... ENDCASE 只為了給一個值</td></tr>
+      <tr><td>NEW #( )</td><td>建立匿名資料物件或類別實例</td><td>CREATE DATA / CREATE OBJECT</td></tr>
+      <tr><td>REF #( )</td><td>取得資料參考</td><td>GET REFERENCE OF</td></tr>
+      <tr><td>CONV #( )</td><td>明確型別轉換</td><td>宣告中間變數再指派</td></tr>
+      <tr><td>CAST</td><td>向下轉型（物件參考）</td><td>?=（仍可用）</td></tr>
+      <tr><td>EXACT #( )</td><td>轉換時不允許失真，失真就丟例外</td><td>手動檢查</td></tr>
+      <tr><td>FILTER #( )</td><td>依條件過濾出新內表</td><td>LOOP ... WHERE ... APPEND</td></tr>
+      <tr><td>LET ... IN</td><td>在建構式中定義區域變數</td><td>額外宣告輔助變數</td></tr>
+      <tr><td>BASE</td><td>在 VALUE／CORRESPONDING 中保留原內容再疊加</td><td>先複製再修改</td></tr>
+      <tr><td>line_exists( ) / line_index( )</td><td>判斷列是否存在 / 取得列號</td><td>READ TABLE ＋ sy-subrc / sy-tabix</td></tr>
+      <tr><td>itab[ ... ]</td><td>表達式讀取（table expression）</td><td>READ TABLE ... INTO</td></tr>
+      <tr><td>| ... { } ... |</td><td>字串範本，可帶格式選項</td><td>CONCATENATE ／ WRITE TO</td></tr>
+      <tr><td>&amp;&amp;</td><td>字串串接運算子</td><td>CONCATENATE</td></tr>
+      <tr><td>ALPHA = IN / OUT</td><td>在字串範本中做前置零轉換</td><td>CONVERSION_EXIT_ALPHA_INPUT/OUTPUT</td></tr>
+      <tr><td>LOOP AT ... GROUP BY</td><td>內表分組</td><td>SORT ＋ AT NEW ／ AT END OF</td></tr>
+      <tr><td>MOVE-CORRESPONDING ... EXPANDING/KEEPING NESTED TABLES</td><td>深層結構（含內表欄位）的搬移</td><td>逐層手工搬</td></tr>
+      <tr><td>SELECT ... FROM @itab</td><td>把內表當 SQL 資料來源（7.52+）</td><td>再 SELECT 一次 DB</td></tr>
+      <tr><td>WITH（CTE）／UNION／OVER( )</td><td>CTE、聯集、視窗函數（7.51+）</td><td>多段 SELECT ＋ 內表加工</td></tr>
+      <tr><td>日期時間 SQL 函數</td><td>TIMS_IS_VALID、TSTMP_IS_VALID、TSTMP_CURRENT_UTCTIMESTAMP、TSTMP_SECONDS_BETWEEN、TSTMP_ADD_SECONDS、TSTMP_TO_DATS／TO_TIMS／TO_DST、ABAP_USER_TIMEZONE</td><td>ABAP 端逐一計算（用了會啟動 7.53 嚴格語法檢查）</td></tr>
+    </tbody>
+  </table>
+
+<pre><code class="abap">*&amp;---------------------------------------------------------------------*
+*&amp; Report ZDEMO_740_SYNTAX  7.40 ~ 7.55 新語法總覽（可直接執行）
+*&amp;---------------------------------------------------------------------*
+REPORT zdemo_740_syntax.
+
+TYPES: BEGIN OF ty_item,
+         ebeln TYPE ekpo-ebeln,
+         ebelp TYPE ekpo-ebelp,
+         matnr TYPE ekpo-matnr,
+         menge TYPE ekpo-menge,
+         netwr TYPE ekpo-netwr,
+       END OF ty_item,
+       ty_t_item TYPE STANDARD TABLE OF ty_item WITH EMPTY KEY.
+
+" ---- 1) VALUE：一次建好整張內表 ----
+DATA(lt_item) = VALUE ty_t_item(
+  ( ebeln = '4500000001' ebelp = '00010' matnr = 'M001' menge = 10 netwr = 1000 )
+  ( ebeln = '4500000001' ebelp = '00020' matnr = 'M002' menge =  5 netwr =  800 )
+  ( ebeln = '4500000002' ebelp = '00010' matnr = 'M001' menge = 20 netwr = 2100 ) ).
+
+" ---- 2) FOR：用迴圈產生內表（含 LET 定義區域變數）----
+DATA(lt_double) = VALUE ty_t_item(
+  FOR ls IN lt_item
+  LET lv_rate = CONV f( 1.05 ) IN
+  ( ebeln = ls-ebeln
+    ebelp = ls-ebelp
+    matnr = ls-matnr
+    menge = ls-menge
+    netwr = ls-netwr * lv_rate ) ).
+
+" ---- 3) FOR ... WHERE：只挑符合條件的 ----
+DATA(lt_m001) = VALUE ty_t_item(
+  FOR ls2 IN lt_item WHERE ( matnr = 'M001' ) ( ls2 ) ).
+
+" ---- 4) FILTER：更簡潔的過濾（來源表需有對應 key）----
+DATA lt_src TYPE SORTED TABLE OF ty_item WITH NON-UNIQUE KEY matnr.
+lt_src = lt_item.
+DATA(lt_filtered) = FILTER #( lt_src WHERE matnr = 'M001' ).
+
+" ---- 5) REDUCE：把內表歸納成單一值 ----
+DATA(lv_total) = REDUCE ekpo-netwr(
+                   INIT s = CONV ekpo-netwr( 0 )
+                   FOR ls3 IN lt_item
+                   NEXT s = s + ls3-netwr ).
+
+DATA(lv_cnt_m001) = REDUCE i(
+                      INIT c = 0
+                      FOR ls4 IN lt_item WHERE ( matnr = 'M001' )
+                      NEXT c = c + 1 ).
+
+" ---- 6) BASE：保留原內容再疊加 ----
+DATA(lt_more) = VALUE ty_t_item(
+  BASE lt_item
+  ( ebeln = '4500000003' ebelp = '00010' matnr = 'M003' menge = 1 netwr = 99 ) ).
+
+" ---- 7) CORRESPONDING：欄位對應搬移，可改名、可排除 ----
+TYPES: BEGIN OF ty_out,
+         po_no  TYPE ekpo-ebeln,
+         item   TYPE ekpo-ebelp,
+         matnr  TYPE ekpo-matnr,
+         amount TYPE ekpo-netwr,
+       END OF ty_out.
+DATA lt_out TYPE STANDARD TABLE OF ty_out WITH EMPTY KEY.
+
+lt_out = CORRESPONDING #( lt_item
+                          MAPPING po_no  = ebeln
+                                  item   = ebelp
+                                  amount = netwr ).
+
+" 深層結構（含內表欄位）搬移
+" MOVE-CORRESPONDING ls_deep_src TO ls_deep_dst EXPANDING NESTED TABLES.
+" MOVE-CORRESPONDING ls_deep_src TO ls_deep_dst KEEPING TARGET LINES.
+
+" ---- 8) COND / SWITCH：條件運算式 ----
+DATA(lv_period) = COND char10( WHEN sy-timlo &lt; '120000' THEN 'AM'
+                               WHEN sy-timlo &lt; '180000' THEN 'PM'
+                               ELSE 'NIGHT' ).
+
+DATA(lv_grade) = SWITCH char1( lv_total
+                               WHEN 0 THEN 'Z'
+                               ELSE COND #( WHEN lv_total &gt; 3000 THEN 'A' ELSE 'B' ) ).
+
+" ---- 9) NEW / REF / CONV / CAST ----
+DATA(lr_item) = NEW ty_item( ebeln = '4500000009' menge = 1 ).
+DATA(lr_ref)  = REF #( lt_item ).
+DATA(lv_f)    = CONV f( '3.14159' ).
+DATA(lo_salv) = CAST cl_salv_table( lo_any_object ).
+
+" ---- 10) 字串範本：取代 CONCATENATE，並帶格式選項 ----
+DATA(lv_msg) = |採購單 { lt_item[ 1 ]-ebeln ALPHA = OUT } 共 { lines( lt_item ) } 項，| &amp;&amp;
+               |總金額 { lv_total CURRENCY = 'TWD' }，| &amp;&amp;
+               |日期 { sy-datum DATE = USER }，時間 { sy-uzeit TIME = USER }|.
+
+" 補零 / 去零：ALPHA = IN 補零、ALPHA = OUT 去零
+DATA(lv_matnr_in)  = |{ 'M001' ALPHA = IN }|.
+DATA(lv_matnr_out) = |{ '000000000000M001' ALPHA = OUT }|.
+
+" ---- 11) 表達式讀取 ----
+IF line_exists( lt_item[ matnr = 'M002' ] ).
+  WRITE: / lt_item[ matnr = 'M002' ]-netwr.
+ENDIF.
+
+WRITE: / lv_msg,
+       / |合計 { lv_total }，M001 共 { lv_cnt_m001 } 筆，時段 { lv_period }|.</code></pre>
+
+  <div class="note">講義提到「例 1／例 2 舊語法 vs 新語法」處原文只有截圖。<span class="src">（依講義結構整理）</span>老師的總結值得抄下來：以前要先建工作區、建內表、再 SELECT；有了 DATA( ) 之後，<b>對照欄位寫 SELECT 就好，不必再構建各式各樣的內表與表型別</b>，這非常符合敏捷開發的思路。</div>
+
+  <h3 id="ch02-2-24">24. 綜合練習一：歐幾里德距離（Euclidean distance）與 Z-score</h3>
+  <p>這是講義的期中題 <b>Z00_MIDTERM</b>：從自建表 <b>ZEUCLIDEAN</b>（欄位 ID、HEIGHT、HOBBY、AGE）讀出所有人，先把三個欄位標準化成 Z-score，再算每個人與「使用者輸入的那個 ID」之間的歐幾里德距離，最後標出最適伙伴（自己標 O、最近的人標 X）。</p>
+  <p>公式：<b>z = ( x − 平均 ) / 標準差</b>；<b>距離 = √( Σ ( z_i − z_target,i )² )</b>。標準差可以呼叫標準函數 <b>RMMATH1_VARIANCE_DEVIATION</b>（回傳 E_VARIANCE、E_DEVIATION、E_AVERAGE），或自己算。</p>
+
+<pre><code class="abap">*&amp;---------------------------------------------------------------------*
+*&amp; Report ZDEMO_EUCLIDEAN  歐幾里德距離＋Z-score（原 Z00_MIDTERM 現代化改寫）
+*&amp;---------------------------------------------------------------------*
+REPORT zdemo_euclidean.
+
+TYPES: BEGIN OF ty_zeuc,
+         id            TYPE zeuclidean-id,
+         height        TYPE zeuclidean-height,
+         hobby         TYPE zeuclidean-hobby,
+         age           TYPE zeuclidean-age,
+         z_height      TYPE p LENGTH 8 DECIMALS 4,
+         z_hobby       TYPE p LENGTH 8 DECIMALS 4,
+         z_age         TYPE p LENGTH 8 DECIMALS 4,
+         distance      TYPE p LENGTH 8 DECIMALS 4,
+         best_fit      TYPE char1,
+       END OF ty_zeuc.
+
+PARAMETERS p_id TYPE zeuclidean-id OBLIGATORY.
+
+" 1) 一次讀進內表
+SELECT id, height, hobby, age
+  FROM zeuclidean
+  ORDER BY id                                  " 一定要排序，結果才穩定
+  INTO CORRESPONDING FIELDS OF TABLE @DATA(lt_zeuc).
+
+IF lt_zeuc IS INITIAL.
+  MESSAGE '沒有資料' TYPE 'E'.
+ENDIF.
+
+DATA(lv_n) = lines( lt_zeuc ).
+
+" 2) 用 REDUCE 算平均，不必寫迴圈
+DATA(lv_avg_h) = REDUCE f( INIT s = 0 FOR ls IN lt_zeuc NEXT s = s + ls-height ) / lv_n.
+DATA(lv_avg_o) = REDUCE f( INIT s = 0 FOR ls IN lt_zeuc NEXT s = s + ls-hobby  ) / lv_n.
+DATA(lv_avg_a) = REDUCE f( INIT s = 0 FOR ls IN lt_zeuc NEXT s = s + ls-age    ) / lv_n.
+
+" 3) 母體標準差 = sqrt( Σ(x-平均)² / n )
+DATA(lv_std_h) = sqrt( REDUCE f( INIT s = 0 FOR ls IN lt_zeuc
+                                 NEXT s = s + ( ls-height - lv_avg_h ) ** 2 ) / lv_n ).
+DATA(lv_std_o) = sqrt( REDUCE f( INIT s = 0 FOR ls IN lt_zeuc
+                                 NEXT s = s + ( ls-hobby  - lv_avg_o ) ** 2 ) / lv_n ).
+DATA(lv_std_a) = sqrt( REDUCE f( INIT s = 0 FOR ls IN lt_zeuc
+                                 NEXT s = s + ( ls-age    - lv_avg_a ) ** 2 ) / lv_n ).
+
+" 4) 算 Z-score：用 field-symbol 就地寫回，不必 MODIFY
+LOOP AT lt_zeuc ASSIGNING FIELD-SYMBOL(&lt;ls&gt;).
+  &lt;ls&gt;-z_height = COND #( WHEN lv_std_h &gt; 0 THEN ( &lt;ls&gt;-height - lv_avg_h ) / lv_std_h ELSE 0 ).
+  &lt;ls&gt;-z_hobby  = COND #( WHEN lv_std_o &gt; 0 THEN ( &lt;ls&gt;-hobby  - lv_avg_o ) / lv_std_o ELSE 0 ).
+  &lt;ls&gt;-z_age    = COND #( WHEN lv_std_a &gt; 0 THEN ( &lt;ls&gt;-age    - lv_avg_a ) / lv_std_a ELSE 0 ).
+ENDLOOP.
+
+" 5) 定位使用者輸入的那一筆
+IF NOT line_exists( lt_zeuc[ id = p_id ] ).
+  MESSAGE |查無 ID { p_id }| TYPE 'E'.
+ENDIF.
+DATA(ls_target) = lt_zeuc[ id = p_id ].
+
+" 6) 算每一筆與 target 的歐幾里德距離
+LOOP AT lt_zeuc ASSIGNING FIELD-SYMBOL(&lt;ls2&gt;).
+  &lt;ls2&gt;-distance = sqrt( ( &lt;ls2&gt;-z_height - ls_target-z_height ) ** 2
+                       + ( &lt;ls2&gt;-z_hobby  - ls_target-z_hobby  ) ** 2
+                       + ( &lt;ls2&gt;-z_age    - ls_target-z_age    ) ** 2 ).
+ENDLOOP.
+
+" 7) 找最小距離（排除自己：distance = 0）
+DATA(lv_min) = REDUCE f( INIT m = CONV f( '9999' )
+                         FOR ls IN lt_zeuc WHERE ( distance &gt; 0 )
+                         NEXT m = COND #( WHEN ls-distance &lt; m THEN ls-distance ELSE m ) ).
+
+" 8) 標記：自己 O、最適伙伴 X
+LOOP AT lt_zeuc ASSIGNING FIELD-SYMBOL(&lt;ls3&gt;).
+  &lt;ls3&gt;-best_fit = COND #( WHEN &lt;ls3&gt;-id = ls_target-id  THEN 'O'
+                           WHEN &lt;ls3&gt;-distance = lv_min  THEN 'X'
+                           ELSE space ).
+ENDLOOP.
+
+" 9) 用 CL_SALV_TABLE 輸出，取代一堆 WRITE
+TRY.
+    cl_salv_table=&gt;factory( IMPORTING r_salv_table = DATA(lo_salv)
+                            CHANGING  t_table      = lt_zeuc ).
+    lo_salv-&gt;get_functions( )-&gt;set_all( abap_true ).
+    lo_salv-&gt;get_columns( )-&gt;set_optimize( abap_true ).
+    lo_salv-&gt;display( ).
+  CATCH cx_salv_msg INTO DATA(lx_salv).
+    MESSAGE lx_salv-&gt;get_text( ) TYPE 'E'.
+ENDTRY.</code></pre>
+
+  <div class="note">母體標準差（除以 n）與樣本標準差（除以 n−1）不同。講義的 ZSTDDEV_DEMO 用的是 <b>除以 n</b>（母體）；<span class="kw">RMMATH1_VARIANCE_DEVIATION</span> 的回傳值請自行以測試資料比對確認，再決定要不要調整。</div>
+
+  <h3 id="ch02-2-25">25. 綜合練習二：標準差與 Z-score 找異常值</h3>
+  <p>講義 10-3 的 ZSTDDEV_DEMO 用一組固定數值示範 sum / count / mean / stddev，接著加上 Z-score 的六行程式。進階挑戰是：<b>把這個概念套到 ACDOCA 的會計科目 740300，找出借方金額的異常值</b>。</p>
+
+<pre><code class="abap">*&amp;---------------------------------------------------------------------*
+*&amp; Report ZDEMO_STDDEV  標準差 / Z-score 找異常值（原 ZSTDDEV_DEMO 進階版）
+*&amp;---------------------------------------------------------------------*
+REPORT zdemo_stddev.
+
+PARAMETERS: p_bukrs TYPE acdoca-rbukrs OBLIGATORY,
+            p_gjahr TYPE acdoca-gjahr  OBLIGATORY,
+            p_racct TYPE acdoca-racct  DEFAULT '0000740300',
+            p_z     TYPE p LENGTH 3 DECIMALS 1 DEFAULT '2.0'.  " |z| 超過就算異常
+
+TYPES: BEGIN OF ty_line,
+         belnr  TYPE acdoca-belnr,
+         docln  TYPE acdoca-docln,
+         budat  TYPE acdoca-budat,
+         hsl    TYPE acdoca-hsl,
+         zscore TYPE p LENGTH 8 DECIMALS 4,
+         flag   TYPE char1,
+       END OF ty_line.
+
+" 1) 讓 DB 先做過濾與加總（code pushdown）
+SELECT belnr, docln, budat, hsl
+  FROM acdoca
+  WHERE rldnr  = '0L'
+    AND rbukrs = @p_bukrs
+    AND gjahr  = @p_gjahr
+    AND racct  = @p_racct
+    AND drcrk  = 'S'                  " 借方
+  ORDER BY belnr, docln
+  INTO CORRESPONDING FIELDS OF TABLE @DATA(lt_data).
+
+IF lt_data IS INITIAL.
+  MESSAGE '查無資料' TYPE 'S' DISPLAY LIKE 'E'.
+  RETURN.
+ENDIF.
+
+" 2) 平均與母體標準差
+DATA(lv_n)    = lines( lt_data ).
+DATA(lv_sum)  = REDUCE f( INIT s = 0 FOR ls IN lt_data NEXT s = s + ls-hsl ).
+DATA(lv_mean) = lv_sum / lv_n.
+DATA(lv_std)  = sqrt( REDUCE f( INIT s = 0 FOR ls IN lt_data
+                                NEXT s = s + ( ls-hsl - lv_mean ) ** 2 ) / lv_n ).
+
+" 3) 算 Z-score 並標記異常
+LOOP AT lt_data ASSIGNING FIELD-SYMBOL(&lt;ls&gt;).
+  &lt;ls&gt;-zscore = COND #( WHEN lv_std &gt; 0 THEN ( &lt;ls&gt;-hsl - lv_mean ) / lv_std ELSE 0 ).
+  &lt;ls&gt;-flag   = COND #( WHEN abs( &lt;ls&gt;-zscore ) &gt;= p_z THEN 'X' ELSE space ).
+ENDLOOP.
+
+WRITE: / |筆數 { lv_n }，加總 { lv_sum }，平均 { lv_mean }，標準差 { lv_std }|.
+ULINE.
+WRITE: / '傳票號', 25 '行號', 35 '過帳日', 50 '金額', 70 'Z-score', 85 '異常'.
+LOOP AT lt_data INTO DATA(ls_out).
+  WRITE: /  ls_out-belnr,
+         25 ls_out-docln,
+         35 ls_out-budat,
+         50 ls_out-hsl,
+         70 ls_out-zscore,
+         85 ls_out-flag.
+ENDLOOP.</code></pre>
+
+  <div class="tip">若系統是 HANA，同樣的統計可以用 <b>AMDP 的 STDDEV( )／MEDIAN( )</b> 一次算完（見第 21 節），資料量大時差距非常明顯。這就是「先用 ABAP 想清楚邏輯，再 pushdown 到 DB」的標準流程。</div>
+
+  <h3 id="ch02-2-26">26. 長文本（Long Text）與內表</h3>
+  <p>SAP 的長文本（訂單抬頭備註、料件長描述等）不存在一般欄位，而是存在 <b>STXH（表頭）／STXL（內容，壓縮）</b>，並且用四個鍵定位：<b>TDOBJECT（物件）、TDID（文字 ID）、TDSPRAS（語言）、TDNAME（物件鍵）</b>。內容以 <span class="kw">TLINE</span> 結構的<b>內表</b>傳遞，所以它其實是內表章的延伸應用。</p>
+
+<pre><code class="abap">*&amp;---------------------------------------------------------------------*
+*&amp; Report ZDEMO_LONGTEXT  READ_TEXT / SAVE_TEXT
+*&amp;---------------------------------------------------------------------*
+REPORT zdemo_longtext.
+
+DATA: lt_line TYPE STANDARD TABLE OF tline WITH EMPTY KEY,
+      ls_head TYPE thead.
+
+" ---- 讀長文 ----
+CALL FUNCTION 'READ_TEXT'
+  EXPORTING
+    id                      = '0002'          " 文字 ID
+    language                = sy-langu
+    name                    = '1110599005'    " 物件鍵（例如銷售訂單號）
+    object                  = 'VBBK'          " 物件（VBBK = 銷售文件抬頭）
+  TABLES
+    lines                   = lt_line
+  EXCEPTIONS
+    id                      = 1
+    language                = 2
+    name                    = 3
+    not_found               = 4
+    object                  = 5
+    reference_check         = 6
+    wrong_access_to_archive = 7
+    OTHERS                  = 8.
+
+IF sy-subrc = 0.
+  LOOP AT lt_line INTO DATA(ls_line).
+    WRITE: / ls_line-tdline.
+  ENDLOOP.
+ENDIF.
+
+" ---- 寫長文 ----
+CLEAR lt_line.
+APPEND VALUE #( tdformat = '*' tdline = 'TEST WRITE A TEXT' ) TO lt_line.
+
+ls_head = VALUE #( tdobject = 'VBBK'
+                   tdid     = '0002'
+                   tdspras  = sy-langu
+                   tdname   = '1110599005' ).
+
+CALL FUNCTION 'SAVE_TEXT'
+  EXPORTING
+    header          = ls_head
+    savemode_direct = abap_true
+  TABLES
+    lines           = lt_line
+  EXCEPTIONS
+    id              = 1
+    language        = 2
+    name            = 3
+    object          = 4
+    OTHERS          = 5.
+
+IF sy-subrc = 0.
+  COMMIT WORK AND WAIT.        " SAVE_TEXT 之後一定要 COMMIT
+  MESSAGE '長文已儲存' TYPE 'S'.
+ENDIF.</code></pre>
+
+  <div class="warn">STXL 的內容是<b>壓縮</b>存放的，<b>不可以</b>直接 SELECT STXL 來讀文字，一定要透過 READ_TEXT（或 CDS 的 text association）。想知道某段文字的 OBJECT／ID／NAME 是什麼，在該欄位上按「移至 → 標頭」或用 SE37 的 <span class="kw">READ_TEXT</span> 加除錯即可查出。</div>
+
+  <h3 id="ch02-2-27">27. 內表操作總表（隨時複習用）</h3>
+  <p>講義 01-09「內表操作的總結」列了 28 條，這裡整理成表並補上現代寫法：</p>
+  <table>
+    <thead><tr><th>#</th><th>動作</th><th>講義寫法</th><th>現代寫法／備註</th></tr></thead>
+    <tbody>
+      <tr><td>01</td><td>清空</td><td>CLEAR itab.</td><td>無 header line 時即清整表</td></tr>
+      <tr><td>02</td><td>清空</td><td>REFRESH itab.</td><td>不釋放記憶體；FREE 才釋放</td></tr>
+      <tr><td>03</td><td>單筆新增</td><td>INSERT wa INTO itab INDEX idx.</td><td>INSERT VALUE #( ... ) INTO itab INDEX idx.</td></tr>
+      <tr><td>04</td><td>單筆新增</td><td>INSERT wa INTO TABLE itab.</td><td>SORTED／HASHED 用這個</td></tr>
+      <tr><td>05</td><td>附加</td><td>APPEND wa TO itab.</td><td>APPEND VALUE #( ... ) TO itab.（僅 STANDARD）</td></tr>
+      <tr><td>06</td><td>累加</td><td>COLLECT wa INTO itab.</td><td>大量資料改用 SQL GROUP BY 或 LOOP GROUP BY</td></tr>
+      <tr><td>07</td><td>多筆新增</td><td>INSERT LINES OF it1 FROM 1 TO 9 INTO it2 INDEX idx.</td><td>—</td></tr>
+      <tr><td>08</td><td>多筆附加</td><td>APPEND LINES OF it1 FROM 1 TO 9 TO it2.</td><td>比 LOOP＋APPEND 快很多</td></tr>
+      <tr><td>09</td><td>覆蓋</td><td>MOVE it1 TO it2.</td><td>已過時 → it2 = it1.</td></tr>
+      <tr><td>10</td><td>覆蓋</td><td>it2 = it1.</td><td>推薦</td></tr>
+      <tr><td>11</td><td>SQL 灌入</td><td>SELECT ... INTO TABLE itab.</td><td>SELECT ... INTO TABLE @DATA(itab).</td></tr>
+      <tr><td>12</td><td>SQL 追加</td><td>SELECT ... APPENDING TABLE itab.</td><td>APPENDING TABLE @itab.</td></tr>
+      <tr><td>13</td><td>單筆修改</td><td>MODIFY itab FROM wa INDEX idx.</td><td>或 LOOP ... ASSIGNING 就地改</td></tr>
+      <tr><td>14</td><td>單筆部分修改</td><td>MODIFY itab FROM wa INDEX idx TRANSPORTING f1.</td><td>—</td></tr>
+      <tr><td>15</td><td>多筆修改</td><td>MODIFY itab FROM wa TRANSPORTING f2 WHERE f1 = '0000'.</td><td>批次改的首選</td></tr>
+      <tr><td>16</td><td>刪一筆</td><td>DELETE TABLE itab FROM wa.</td><td>依主鍵</td></tr>
+      <tr><td>17</td><td>刪一筆</td><td>DELETE itab INDEX idx.</td><td>—</td></tr>
+      <tr><td>18</td><td>刪多筆</td><td>DELETE itab WHERE ...</td><td>最常用</td></tr>
+      <tr><td>19</td><td>刪區間</td><td>DELETE itab FROM idx1 TO idx2.</td><td>—</td></tr>
+      <tr><td>20</td><td>去重</td><td>DELETE ADJACENT DUPLICATES FROM itab.</td><td><b>務必先 SORT</b></td></tr>
+      <tr><td>21</td><td>讀取</td><td>READ TABLE itab INTO wa INDEX i.</td><td>itab[ i ]</td></tr>
+      <tr><td>22</td><td>讀取</td><td>READ TABLE itab INTO wa WITH KEY k1 = v1.</td><td>itab[ k1 = v1 ]</td></tr>
+      <tr><td>23</td><td>讀取</td><td>READ ... WITH KEY ... BINARY SEARCH.</td><td>需先 SORT；或直接用 SORTED TABLE</td></tr>
+      <tr><td>24</td><td>排序</td><td>SORT itab BY f1 ASCENDING / DESCENDING.</td><td>一律明寫 BY</td></tr>
+      <tr><td>25</td><td>計數</td><td>DESCRIBE TABLE itab LINES lv_cnt.</td><td>lv_cnt = lines( itab ).</td></tr>
+      <tr><td>26</td><td>判斷（內表）</td><td>IF sy-subrc = 0.</td><td>或 IF itab IS NOT INITIAL / line_exists( )</td></tr>
+      <tr><td>27</td><td>判斷（DB）</td><td>IF sy-dbcnt = 0.</td><td>SQL 實際處理筆數</td></tr>
+      <tr><td>28</td><td>判斷</td><td>CHECK sy-subrc = 0.</td><td>條件不成立就跳過本次迴圈剩下的敘述</td></tr>
+    </tbody>
+  </table>
+
+  <h4>SAP vs MSSQL 對照（講義 03-04）</h4>
+  <table>
+    <thead><tr><th>動作</th><th>MSSQL T-SQL</th><th>ABAP SQL</th><th>ABAP 內表</th></tr></thead>
+    <tbody>
+      <tr><td>新增</td><td>INSERT</td><td>INSERT</td><td>INSERT / COLLECT / APPEND / it_a = it_b</td></tr>
+      <tr><td>修改</td><td>UPDATE</td><td>UPDATE</td><td>MODIFY</td></tr>
+      <tr><td>刪除</td><td>DELETE</td><td>DELETE</td><td>DELETE</td></tr>
+      <tr><td>查詢</td><td>SELECT</td><td>SELECT</td><td>READ TABLE / LOOP AT / itab[ ]</td></tr>
+      <tr><td>增改（Upsert）</td><td>MERGE</td><td>MODIFY</td><td>COLLECT（數字累加）</td></tr>
+      <tr><td>清空</td><td>TRUNCATE TABLE</td><td>DELETE FROM dbtab.</td><td>CLEAR / CLEAR it[] / REFRESH / FREE</td></tr>
+      <tr><td>筆數</td><td>SELECT COUNT(*)</td><td>SELECT COUNT( * )</td><td>lines( itab ) / DESCRIBE</td></tr>
+      <tr><td>判斷</td><td>IF ... ELSE</td><td>IF / CHECK</td><td>IF / CHECK / line_exists( )</td></tr>
+      <tr><td>指令回傳</td><td>@@ERROR</td><td>SY-SUBRC</td><td>SY-SUBRC</td></tr>
+      <tr><td>當前筆數 / 列號</td><td>@@ROWCOUNT</td><td>SY-DBCNT</td><td>SY-TABIX</td></tr>
+    </tbody>
+  </table>
+
+  <h3 id="ch02-2-28">28. 講義練習索引</h3>
+  <p>方便回頭對照原始講義：</p>
+  <table>
+    <thead><tr><th>編號</th><th>原程式名</th><th>主題</th><th>本章對應節次</th></tr></thead>
+    <tbody>
+      <tr><td>第 12 個練習</td><td>Z202202_12</td><td>內表的定義（OCCURS 0、BREAK-POINT）</td><td>第 3 節</td></tr>
+      <tr><td>第 13 個練習</td><td>Z202202_13</td><td>內表的新增（INSERT / COLLECT / APPEND）</td><td>第 5 節</td></tr>
+      <tr><td>第 14 個練習</td><td>Z202202_14</td><td>內表的更改（MODIFY ... TRANSPORTING ... WHERE）</td><td>第 6 節</td></tr>
+      <tr><td>第 15 個練習</td><td>Z202202_15</td><td>內表的刪除與去重（DELETE ADJACENT DUPLICATES、USING KEY loop_key）</td><td>第 7 節</td></tr>
+      <tr><td>第 16 個練習</td><td>Z202202_16</td><td>內表的讀取 READ</td><td>第 8 節</td></tr>
+      <tr><td>第 17 個練習</td><td>Z202202_17</td><td>內表精簡操作、WITH HEADER LINE 與 CLEAR 的陷阱</td><td>第 4 節</td></tr>
+      <tr><td>第 18～23 個練習</td><td>Z202202_18 ~ _23</td><td>SELECT SINGLE／彙總函數／JOIN／UPDATE／INSERT+DELETE／MODIFY</td><td>第 13～19 節</td></tr>
+      <tr><td>第 64 個練習</td><td>Z202202_64</td><td>Native SQL EXEC SQL PERFORMING</td><td>第 21 節</td></tr>
+      <tr><td>第 65 個練習</td><td>Z202202_65</td><td>DATA(@it)：新版 740 內表精簡寫法、內表當資料來源</td><td>第 17 節</td></tr>
+      <tr><td>第 66 個練習</td><td>Z202202_66</td><td>ACDOCA GROUP BY 加總</td><td>第 16 節</td></tr>
+      <tr><td>期中題</td><td>Z00_MIDTERM</td><td>歐幾里德距離＋Z-score＋最適伙伴</td><td>第 24 節</td></tr>
+      <tr><td>效能測試</td><td>Z00_03</td><td>HASHED vs SORTED 讀取效能（用 SE30／SAT 測）</td><td>第 2 節</td></tr>
+      <tr><td>OPEN SQL 20 題</td><td>ZOPENSQL01 ~ ZOPENSQL20</td><td>UP TO ROWS、DISTINCT、PACKAGE SIZE、動態表名、INNER/LEFT JOIN、動態 WHERE、FOR ALL ENTRIES、GROUP BY、ORDER BY、IN、EXISTS、INSERT、UPDATE、DELETE、MODIFY、CL_SQL_STATEMENT</td><td>第 14～21 節</td></tr>
+      <tr><td>標準差</td><td>ZSTDDEV_DEMO</td><td>sum / mean / stddev / z-score，進階套用到 ACDOCA 740300</td><td>第 25 節</td></tr>
+      <tr><td>動態排序</td><td>ZSORT</td><td>SORT BY (欄位變數)、VALUE 建表、p_sort+5 偏移</td><td>第 10 節</td></tr>
+      <tr><td>雙迴圈</td><td>ZLOOP</td><td>巢狀 LOOP、AT 事件、call by value/reference、header line</td><td>第 9～12 節</td></tr>
+    </tbody>
+  </table>
+
+  <h4>SQL 終極大考驗：採購全鏈欄位（講義 09-1）</h4>
+  <p>老師列了 26 個欄位當作綜合考題，要用一段 SQL 把採購從抬頭到收貨串起來：</p>
+  <table>
+    <thead><tr><th>#</th><th>欄位</th><th>說明</th><th>#</th><th>欄位</th><th>說明</th></tr></thead>
+    <tbody>
+      <tr><td>01</td><td>EKKO-EBELN</td><td>採購單號</td><td>14</td><td>MARA-MTART</td><td>物料類型</td></tr>
+      <tr><td>02</td><td>EKKO-BUKRS</td><td>公司代碼</td><td>15</td><td>MAKT-MAKTX</td><td>物料名稱</td></tr>
+      <tr><td>03</td><td>EKKO-BSTYP</td><td>採購類別</td><td>16</td><td>EKPO-INFNR</td><td>價格條件（採購資訊記錄）</td></tr>
+      <tr><td>04</td><td>EKKO-BSART</td><td>採購單別</td><td>17</td><td>EINA-ERDAT</td><td>條件日期</td></tr>
+      <tr><td>05</td><td>EKKO-LIFNR</td><td>採購廠商</td><td>18</td><td>EKPO-WERKS</td><td>工廠代碼</td></tr>
+      <tr><td>06</td><td>LFA1-NAME1</td><td>廠商名稱</td><td>19</td><td>EKPO-LGORT</td><td>儲存位置</td></tr>
+      <tr><td>07</td><td>EKKO-AEDAT</td><td>建檔日期</td><td>20</td><td>EKPO-MATKL</td><td>物料群組</td></tr>
+      <tr><td>08</td><td>EKKO-ERNAM</td><td>建檔人員</td><td>21</td><td>EKPO-MENGE</td><td>採購數量</td></tr>
+      <tr><td>09</td><td>EKKO-EKORG</td><td>採購組織</td><td>22</td><td>EKPO-NETPR</td><td>採購單價</td></tr>
+      <tr><td>10</td><td>EKKO-EKGRP</td><td>採購群組</td><td>23</td><td>EKPO-NETWR</td><td>採購金額</td></tr>
+      <tr><td>11</td><td>EKKO-WAERS</td><td>採購幣別</td><td>24</td><td>EKBE-GJAHR</td><td>物料年度</td></tr>
+      <tr><td>12</td><td>EKPO-EBELP</td><td>採購項次</td><td>25</td><td>EKBE-BELNR</td><td>物料憑證號</td></tr>
+      <tr><td>13</td><td>EKPO-MATNR</td><td>物料編號</td><td>26</td><td>EKBE-BWART</td><td>移動類型</td></tr>
+    </tbody>
+  </table>
+
+<pre><code class="abap">*&amp;---------------------------------------------------------------------*
+*&amp; Report ZDEMO_PO_ALL  SQL 終極大考驗：採購全鏈 26 欄
+*&amp;---------------------------------------------------------------------*
+REPORT zdemo_po_all.
+
+SELECT-OPTIONS: s_ebeln FOR (ekko-ebeln),
+                s_aedat FOR (ekko-aedat).
+
+SELECT k~ebeln, k~bukrs, k~bstyp, k~bsart, k~lifnr,
+       v~name1,
+       k~aedat, k~ernam, k~ekorg, k~ekgrp, k~waers,
+       p~ebelp, p~matnr,
+       m~mtart,
+       t~maktx,
+       p~infnr,
+       a~erdat,
+       p~werks, p~lgort, p~matkl, p~menge, p~netpr, p~netwr,
+       h~gjahr, h~belnr, h~bwart
+  FROM ekko AS k
+  INNER JOIN ekpo AS p ON p~ebeln = k~ebeln
+  LEFT OUTER JOIN lfa1 AS v ON v~lifnr = k~lifnr
+  LEFT OUTER JOIN mara AS m ON m~matnr = p~matnr
+  LEFT OUTER JOIN makt AS t ON t~matnr = p~matnr
+                           AND t~spras = @sy-langu
+  LEFT OUTER JOIN eina AS a ON a~infnr = p~infnr
+  LEFT OUTER JOIN ekbe AS h ON h~ebeln = p~ebeln
+                           AND h~ebelp = p~ebelp
+                           AND h~vgabe = '1'          " 1 = 收貨
+  WHERE k~ebeln IN @s_ebeln
+    AND k~aedat IN @s_aedat
+    AND p~loekz = @space
+  ORDER BY k~ebeln, p~ebelp, h~gjahr, h~belnr
+  INTO TABLE @DATA(lt_po)
+  UP TO 5000 ROWS.
+
+TRY.
+    cl_salv_table=&gt;factory( IMPORTING r_salv_table = DATA(lo_salv)
+                            CHANGING  t_table      = lt_po ).
+    lo_salv-&gt;get_functions( )-&gt;set_all( abap_true ).
+    lo_salv-&gt;get_columns( )-&gt;set_optimize( abap_true ).
+    lo_salv-&gt;display( ).
+  CATCH cx_salv_msg INTO DATA(lx).
+    MESSAGE lx-&gt;get_text( ) TYPE 'E'.
+ENDTRY.</code></pre>
+
+  <h4>傳票雙檔常用欄位（講義 09-2）</h4>
+  <p>講義的範例是 BSEG（檔身）INNER JOIN BKPF（檔頭），常用欄位：BUKRS、BELNR、GJAHR、VBELN、VORGN、BUDAT、VALUT、KOSTL、HKONT、WERKS、PAOBJNR、LIFNR、MATNR、MENGE、ERFME、PSWSL、DMBTR、EBELN、EBELP、PRCTR。</p>
+
+  <div class="warn">講義在 <span class="kw">a~budat</span> 與 <span class="kw">b~valut</span> 旁註記「檔身的生效日期，是錯的」——<b>過帳日期 BUDAT 在檔頭 BKPF，不在檔身</b>；BSEG-VALUT 是「起息日」，不等於生效日。<br/>更重要的是：<b>在 S/4HANA 上，這類報表請改讀 ACDOCA</b>（一張表就有檔頭＋檔身欄位，不必 JOIN，而且欄位齊全、效能好得多）。BSEG／BKPF 仍在，但 JOIN 大量資料會很慢。</div>
+
+  <h3 id="ch02-2-qa">練習與自我檢核</h3>
+  <ol>
+    <li><b>（作業 1・內表）</b>針對 20190101～20191231 的接單資料做 Group by 分析：輸出「客戶編號、下單金額」。<i>提示：用 COLLECT 練一次，再用 SQL <span class="kw">GROUP BY kunnr</span> 寫一次，比較兩者效能與程式長度。</i></li>
+    <li><b>（作業 2・內表）</b>同期間做 <b>RFM 分析</b>：輸出「客戶編號、累計下單金額、累計下單筆數、最近下單日、首次下單日」。<i>提示：一句 SQL 即可 —— <span class="kw">SELECT kunnr, SUM( netwr ), COUNT( * ), MAX( audat ), MIN( audat ) ... GROUP BY kunnr</span>。</i></li>
+    <li><b>（作業 3・內表）</b>建立 Euclidean distance 的計算結果：輸出「客戶編號、累計下單金額、累計下單筆數、金額距離、筆數距離」。<i>提示：LOOP ＋ MODIFY，或用 field-symbol 就地寫回；先做 Z-score 標準化，否則金額會壓過筆數。</i></li>
+    <li><b>（作業 4・內表）</b>請證明「READ TABLE 只讀符合條件的第一筆」。<i>提示：造一張有三筆相同 key 的內表，READ 後印出 sy-tabix；再用 LOOP ... WHERE 對照筆數。當做要教別人，把程式改得讓人一看就信。</i></li>
+    <li><b>（作業 5・ABAP SQL）</b>用 <b>GROUP BY、ORDER BY 及 STRING_AGG</b>，把 VBAP 的 MATNR 依訂單彙整並列出前十筆。<i>提示：<span class="kw">SELECT vbeln, STRING_AGG( matnr, ',' ) AS mat_list, COUNT( * ) AS cnt FROM vbap GROUP BY vbeln ORDER BY cnt DESCENDING INTO TABLE @DATA(lt) UP TO 10 ROWS.</span></i></li>
+    <li>三種內表型別各自的 Big O 是多少？為什麼 HASHED TABLE 不能用 <span class="kw">READ TABLE ... INDEX</span>？<i>答：O(n)／O(log n)／O(1)；HASHED 沒有主表索引。</i></li>
+    <li><span class="kw">DELETE ADJACENT DUPLICATES FROM itab COMPARING f1 f2.</span> 執行前一定要先做什麼？不做會怎樣？<i>答：先 SORT BY f1 f2；不做只會刪掉「剛好相鄰」的重複列，資料看起來少了一些又沒去乾淨。</i></li>
+    <li>FOR ALL ENTRIES 的驅動內表如果是空的，會發生什麼事？正確的防呆寫法是什麼？<i>答：整段 WHERE（含其他條件）被忽略，把整張表撈回來；一律先 <span class="kw">IF lt_x IS NOT INITIAL.</span></i></li>
+    <li>SELECT SINGLE 與 SELECT ... UP TO 1 ROWS 差在哪？要「取最新一筆」該用哪一個、為什麼？<i>答：SINGLE 要主鍵給齊、不能 ORDER BY；取最新一筆必須用 UP TO 1 ROWS ＋ ORDER BY，因為 HANA 沒有排序保證。</i></li>
+    <li>AT NEW / AT END OF 有哪三個前提或副作用？<i>答：必須先排序；比對該欄位「及其左邊所有欄位」，所以結構欄位順序有影響；區塊內右側欄位會被填成 * 或 0。</i></li>
+    <li>把下面這段舊程式改成 7.40+ 寫法：<span class="kw">READ TABLE it WITH KEY field1 = 'X' INTO wa. IF sy-subrc = 0. WRITE wa-fielda. ENDIF.</span><i>答：<span class="kw">IF line_exists( it[ field1 = 'X' ] ). WRITE it[ field1 = 'X' ]-fielda. ENDIF.</span></i></li>
+    <li>什麼情況該建 CDS View、什麼情況直接在程式裡 JOIN？<i>答：邏輯會被多支程式重複使用、要給 Fiori／OData 用 → CDS；一次性、條件隨選擇畫面變動 → 程式內 JOIN。</i></li>
+    <li>S/4HANA 上查 ACDOCA 必帶哪些條件？為什麼不該再用 BSEG＋BKPF 做大報表？<i>答：RLDNR、RBUKRS、GJAHR（再加期間或傳票號）；ACDOCA 是 Universal Journal，一張表就有全部明細，不必 JOIN。</i></li>
+    <li>EXEC SQL 為什麼不該再用？替代方案是什麼？<i>答：已 obsolete，且不做 client 處理、不走表緩衝、不檢查授權；改用 ADBC（CL_SQL_STATEMENT）、AMDP 或 CDS。</i></li>
+    <li>把「LOOP 內對每一列下 SELECT」的程式改寫成三種更快的版本，並說明各自適用時機。<i>答：JOIN（關聯明確）／子查詢 EXISTS（存在性判斷）／先撈進內表再用 SORTED KEY 對照（資料要重複使用）。</i></li>
+    <li>ZKEPH 成本抓錯的根因是什麼？從中該學到的通則是什麼？<i>答：成本評價後有 item category H 與 cost component E 兩種角度、欄位數量不同，程式沒排序就 READ，忽 H 忽 E 導致結果不穩定；通則是<b>「只取一筆」之前必須先確定排序或明確過濾條件</b>。</i></li>
+  </ol>
+</section>

@@ -1,0 +1,88 @@
+<section class="chapter" id="ap-01" data-title="附錄 A：舊語法 → S/4HANA 現代寫法速查">
+  <h2>附錄 A：舊語法 → S/4HANA 現代寫法速查</h2>
+  <p class="lede">看舊程式時最常遇到的寫法，以及在 S/4HANA 1809 之後應該改成什麼。左欄不要再寫，右欄照抄即可。</p>
+
+  <h3 id="ap-01-01">A-1 宣告與指派</h3>
+  <table>
+    <thead><tr><th>舊寫法（不要再寫）</th><th>現代寫法</th><th>說明</th></tr></thead>
+    <tbody>
+      <tr><td><code>DATA lv_x TYPE i. lv_x = 1.</code></td><td><code>DATA(lv_x) = 1.</code></td><td>內嵌宣告，7.40 起</td></tr>
+      <tr><td><code>MOVE a TO b.</code></td><td><code>b = a.</code></td><td>MOVE 已過時</td></tr>
+      <tr><td><code>ADD 1 TO n.</code></td><td><code>n += 1.</code></td><td>複合指派 7.54 起；1809 可寫 <code>n = n + 1</code></td></tr>
+      <tr><td><code>CLEAR wa. wa-a = 1. wa-b = 2.</code></td><td><code>DATA(wa) = VALUE ty_s( a = 1 b = 2 ).</code></td><td>VALUE 建構式</td></tr>
+      <tr><td><code>MOVE-CORRESPONDING s TO t.</code></td><td><code>t = CORRESPONDING #( s ).</code></td><td>可加 <code>MAPPING</code> / <code>EXCEPT</code> / <code>BASE</code></td></tr>
+      <tr><td><code>CREATE OBJECT lo_x.</code></td><td><code>DATA(lo_x) = NEW zcl_x( ).</code></td><td>NEW 運算子</td></tr>
+      <tr><td><code>CONCATENATE a b INTO c.</code></td><td><code>c = |{ a }{ b }|.</code></td><td>字串範本，可直接格式化</td></tr>
+      <tr><td><code>IF a = 1. r = 'X'. ELSE. r = ''. ENDIF.</code></td><td><code>r = COND #( WHEN a = 1 THEN 'X' ELSE space ).</code></td><td>COND / SWITCH</td></tr>
+    </tbody>
+  </table>
+
+  <h3 id="ap-01-02">A-2 內表</h3>
+  <table>
+    <thead><tr><th>舊寫法</th><th>現代寫法</th><th>說明</th></tr></thead>
+    <tbody>
+      <tr><td><code>DATA it TYPE TABLE OF ty OCCURS 0 WITH HEADER LINE.</code></td><td><code>DATA it TYPE STANDARD TABLE OF ty WITH EMPTY KEY.</code></td><td>表頭列在 OO 與 ABAP Cloud 禁用</td></tr>
+      <tr><td><code>LOOP AT it INTO wa.</code></td><td><code>LOOP AT it INTO DATA(wa).</code> 或 <code>ASSIGNING FIELD-SYMBOL(&lt;wa&gt;)</code></td><td>大量資料用 field-symbol 免搬移</td></tr>
+      <tr><td><code>READ TABLE it INTO wa WITH KEY k = v.<br>IF sy-subrc = 0.</code></td><td><code>IF line_exists( it[ k = v ] ).<br>DATA(wa) = it[ k = v ].</code></td><td>表格運算式；找不到會丟 <code>CX_SY_ITAB_LINE_NOT_FOUND</code></td></tr>
+      <tr><td>迴圈逐筆 APPEND</td><td><code>DATA(it2) = VALUE ty_t( FOR ls IN it WHERE ( x = 1 ) ( CORRESPONDING #( ls ) ) ).</code></td><td>FOR 迭代</td></tr>
+      <tr><td>迴圈累加</td><td><code>DATA(total) = REDUCE d( INIT s = 0 FOR ls IN it NEXT s = s + ls-amt ).</code></td><td>REDUCE</td></tr>
+      <tr><td>排序後 AT NEW 手動分組</td><td><code>LOOP AT it INTO DATA(ls) GROUP BY ( k = ls-k ) INTO DATA(grp).</code></td><td>內表 GROUP BY，7.40 起</td></tr>
+      <tr><td><code>DELETE ADJACENT DUPLICATES FROM it.</code></td><td>先 <code>SORT it BY 欄位</code> 再 <code>DELETE ADJACENT DUPLICATES FROM it COMPARING 欄位.</code></td><td>沒排序等於沒去重</td></tr>
+    </tbody>
+  </table>
+  <div class="warn"><code>it[ ... ]</code> 找不到資料會直接丟例外中斷程式，務必搭配 <code>line_exists( )</code> 或包在 <code>TRY ... CATCH cx_sy_itab_line_not_found</code>。</div>
+
+  <h3 id="ap-01-03">A-3 ABAP SQL</h3>
+  <table>
+    <thead><tr><th>舊寫法</th><th>現代寫法</th><th>說明</th></tr></thead>
+    <tbody>
+      <tr><td><code>SELECT * FROM mara INTO TABLE it WHERE matnr = lv_matnr.</code></td><td><code>SELECT matnr, mtart, meins FROM mara WHERE matnr = @lv_matnr INTO TABLE @DATA(lt_mara).</code></td><td>明列欄位 + <code>@</code> 逸出；欄位間要逗號</td></tr>
+      <tr><td><code>SELECT ... ENDSELECT.</code></td><td>一次 <code>INTO TABLE</code>，或 <code>SELECT ... INTO ... UP TO n ROWS</code></td><td>逐筆迴圈會拖垮效能</td></tr>
+      <tr><td><code>SELECT SINGLE * ...</code></td><td><code>SELECT SINGLE 欄位 ... WHERE 完整主鍵</code></td><td>主鍵不完整時 HANA 不保證取到同一筆</td></tr>
+      <tr><td>迴圈內 <code>SELECT SINGLE</code></td><td>先整批撈進內表，再用 <code>it[ key = ... ]</code> 或 JOIN</td><td>N+1 查詢是最常見的效能地雷</td></tr>
+      <tr><td>撈回內表後 LOOP 累加</td><td><code>SELECT ... SUM( x ) ... GROUP BY ...</code></td><td>Code pushdown：算給資料庫做</td></tr>
+      <tr><td><code>FOR ALL ENTRIES IN it</code></td><td>先 <code>IF it IS NOT INITIAL</code>，或改用 JOIN / CDS / <code>WITH</code> CTE</td><td>驅動表為空會撈全表；重複值會被自動去重</td></tr>
+      <tr><td><code>EXEC SQL ... ENDEXEC.</code></td><td><code>cl_sql_statement</code>（ADBC）或 AMDP</td><td>EXEC SQL 已過時</td></tr>
+    </tbody>
+  </table>
+
+  <h3 id="ap-01-04">A-4 報表輸出</h3>
+  <table>
+    <thead><tr><th>舊寫法</th><th>現代寫法</th><th>說明</th></tr></thead>
+    <tbody>
+      <tr><td><code>WRITE / ULINE / SKIP</code> 清單</td><td><code>CL_SALV_TABLE</code></td><td>WRITE 只留給極簡的除錯輸出</td></tr>
+      <tr><td><code>REUSE_ALV_GRID_DISPLAY</code></td><td><code>CL_SALV_TABLE=&gt;factory( )</code></td><td>不需編輯時最省事</td></tr>
+      <tr><td><code>REUSE_ALV_GRID_DISPLAY_LVC</code></td><td><code>CL_GUI_ALV_GRID</code> + Custom Container</td><td>需要可編輯、事件、細控時</td></tr>
+      <tr><td>手刻 fieldcat 每欄</td><td><code>lo_alv-&gt;get_columns( )-&gt;get_column( 'X' )-&gt;set_short_text( )</code></td><td>或用 DDIC 結構自動帶出</td></tr>
+    </tbody>
+  </table>
+
+  <h3 id="ap-01-05">A-5 其他常見過時語法</h3>
+  <table>
+    <thead><tr><th>過時</th><th>改成</th></tr></thead>
+    <tbody>
+      <tr><td><code>TABLES: mara.</code>（宣告表工作區）</td><td><code>DATA ls_mara TYPE mara.</code>；<code>TABLES</code> 只在 dialog 程式與選擇畫面必要時使用</td></tr>
+      <tr><td><code>PERFORM ... USING ...</code>（FORM）</td><td>本地類別的方法或全域類別（ABAP Cloud 禁用 FORM）</td></tr>
+      <tr><td><code>DEFINE ... END-OF-DEFINITION</code>（Macro）</td><td>方法；Macro 無法除錯</td></tr>
+      <tr><td>classic exception（<code>EXCEPTIONS</code> + <code>sy-subrc</code>）</td><td><code>TRY ... CATCH cx_...</code></td></tr>
+      <tr><td><code>CALL FUNCTION 'POPUP_TO_CONFIRM'</code> 之外的舊 popup FM</td><td>仍可用，但新程式建議包成 Z 類別統一管理</td></tr>
+      <tr><td><code>DESCRIBE TABLE it LINES n.</code></td><td><code>DATA(n) = lines( it ).</code></td></tr>
+      <tr><td><code>DESCRIBE FIELD ... TYPE ...</code></td><td>RTTS：<code>cl_abap_typedescr=&gt;describe_by_data( )</code></td></tr>
+      <tr><td>直接 <code>UPDATE</code> / <code>INSERT</code> 標準表</td><td>一律走 BAPI 或標準 API；直接改標準表會破壞一致性且不受支援</td></tr>
+    </tbody>
+  </table>
+
+  <h3 id="ap-01-06">A-6 版本門檻速查</h3>
+  <table>
+    <thead><tr><th>語法</th><th>最低版本</th></tr></thead>
+    <tbody>
+      <tr><td>內嵌宣告 <code>DATA( )</code>、<code>@DATA( )</code>、<code>VALUE</code>、<code>FOR</code>、<code>REDUCE</code>、<code>COND</code>、<code>SWITCH</code>、<code>CORRESPONDING</code>、<code>NEW</code>、字串範本、表格運算式、內表 <code>GROUP BY</code></td><td>7.40 SP08</td></tr>
+      <tr><td>ABAP SQL 的 <code>UNION</code>、SQL 運算式增強、<code>CDS DEFINE VIEW</code>（含 sqlViewName）</td><td>7.50 / 7.51</td></tr>
+      <tr><td><code>WITH</code>（CTE）、視窗函數 <code>OVER( )</code>、<code>SELECT ... , @DATA(...)</code> 混合</td><td>7.51 / 7.52（S/4HANA 1809 為 7.53，皆可用）</td></tr>
+      <tr><td>複合指派 <code>+=</code> <code>-=</code>、<code>VALUE ... BASE</code> 延伸、Virtual sorting</td><td>7.54</td></tr>
+      <tr><td><code>DEFINE VIEW ENTITY</code>（免 sqlViewName 的 CDS）、RAP Managed Scenario</td><td>7.55 / S/4HANA 2020</td></tr>
+      <tr><td>PCRE 正規表示式（<code>PCRE</code> 附加）</td><td>7.55</td></tr>
+    </tbody>
+  </table>
+  <div class="tip">不確定手上的系統支援到哪，執行 <span class="tcode">SE38</span> 的 <code>RSABAPVERSION</code>，或直接看 系統 → 狀態 → 元件資訊 中的 SAP_BASIS 版本：7.52 = S/4HANA 1709，7.53 = 1809，7.54 = 1909，7.55 = 2020，7.56 = 2021，7.57 = 2022，7.58 = 2023。（舊版此處對應錯位一格，已更正）</div>
+</section>

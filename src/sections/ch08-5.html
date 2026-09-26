@@ -1,0 +1,993 @@
+<section class="chapter" id="ch08-5" data-title="實戰源碼庫（五）：FI 報表——客戶科目明細、毛利、應收帳齡與郵遞區號對照">
+  <h2>第 8-5 章 實戰源碼庫（五）：FI 報表——客戶科目明細、毛利、應收帳齡與郵遞區號對照</h2>
+  <p class="lede">這一章拆解某醫療器材公司實際上線的四支 FICO 客製程式：客戶科目明細表（期初／本期／期末滾算）、以 CO-PA 為主的毛利報表、複製自 SAP 標準中國在地化程式的應收帳款帳齡表，以及一支「郵遞區號 → 業務轄區」的對照表維護程式。四支都在 S/4HANA 上跑，卻仍大量使用 BSID/BSAD、COLLECT、SELECT…ENDSELECT、迴圈內 SELECT SINGLE 等舊寫法。我們會先整理一張 FICO 常用資料表速查（標出 S/4HANA 的變化），再逐支說明怎麼改成讀 ACDOCA 的現代寫法，並指出帳齡分段、毛利資料來源、排序與區間條件這幾個實務上最容易出錯的地方。</p>
+  <div class="meta">
+    <div><b>核心 TCODE</b><span class="tcode">FBL5N</span><span class="tcode">FBL5H</span><span class="tcode">FD10N</span><span class="tcode">FB03</span><span class="tcode">FAGLL03H</span><span class="tcode">KE24</span><span class="tcode">KE30</span><span class="tcode">KEA0</span><span class="tcode">CKM3N</span><span class="tcode">S_ALR_87012178</span><span class="tcode">SM30</span><span class="tcode">SE11</span><span class="tcode">SMW0</span><span class="tcode">SM59</span><span class="tcode">STRUST</span><span class="tcode">SE16H</span></div>
+    <div><b>關鍵物件</b>ACDOCA、BKPF、BSEG、BSID/BSAD（S/4 為相容性視圖）、KNA1、SKAT、CE11000、CKMLHD、CKMLCR、VBRK/VBRP、LIPS、VBFA、A017/KONP、DETERMINE_DUE_DATE、RFIDCN_AR_AGING、CL_FINS_ACDOC_FACTORY、CL_SALV_TABLE、CL_FDT_XL_SPREADSHEET、CL_HTTP_CLIENT、VIEW_MAINTENANCE_CALL</div>
+  </div>
+
+  <h3 id="ch08-5-01">1. 案例索引</h3>
+  <p>本章負責的四個案例如下。四支程式都來自同一套「36 套源碼」，程式表頭記載的開發時間是 2020 年底，之後陸續由多位顧問追加修改（修改註記一路寫到 2023 年）。從程式裡用到 <span class="kw">ACDOCA</span>、<span class="kw">CL_FINS_ACDOC_FACTORY</span>、<span class="kw">UKM_*</span>（FSCM 信用管理）這些物件看得出來，<b>系統本身已經是 S/4HANA</b>，但寫法還停在 ECC 時代。</p>
+  <table>
+    <thead><tr><th>程式</th><th>功能</th><th>模組</th><th>原始檔構成</th><th>規模</th><th>截圖／範本</th><th>本章小節</th></tr></thead>
+    <tbody>
+      <tr><td><b>ZFIR012</b></td><td>客戶科目明細表：依期間列出每個客戶的期初餘額、本期每筆借貸、滾動餘額、期末餘額，可點選穿透到 <span class="tcode">FB03</span></td><td>FI-AR（表頭誤寫成 WM）</td><td>單一主程式（宣告＋選擇畫面＋FORM），另有約 300 行已註解掉的「供應商版」分支</td><td>約 1,080 行</td><td>選擇畫面、ALV 結果、EXPORT.xlsx</td><td>3～6 節</td></tr>
+      <tr><td><b>ZFIU014N</b></td><td>毛利報表（Gross Margin Report）：以 CO-PA 明細為主，補上實際成本、運費分攤、移轉價格、物料帳結算差異，計算毛利與毛利率</td><td>CO-PA／FI</td><td>主程式＋ <span class="kw">ZFIU014N_TOP</span>／<span class="kw">_S01</span>／<span class="kw">_FORM</span></td><td>約 1,700 行</td><td>選擇畫面、結果、SE11：CE11000（146 欄）、ZCE11000、ZSDT004，EXPORT.xlsx</td><td>7～10 節</td></tr>
+      <tr><td><b>ZFIU040</b></td><td>應收帳款帳齡表：複製 SAP 標準中國在地化程式 <span class="kw">RFIDCN_AR_AGING</span>，另加「匯出並以 FTP 上傳」功能</td><td>FI-AR</td><td>主程式＋ 7 個 Include（TOP、SCREEN*、CL1、PBO、PAI、SUBROUTINE、EVENT_EXE*；* 為 Z 版本），外掛標準 <span class="kw">FINS_AGING_INCLUDE</span>；使用邏輯資料庫 DDF</td><td>約 6,000 行</td><td>選擇畫面、ALV 結果、EXPORT.xlsx</td><td>11～14 節</td></tr>
+      <tr><td><b>ZFIU011</b></td><td>ZIP to Territory Mapping：維護「郵遞區號＋產品組 → 業務代表 1～3」對照表，可 <span class="tcode">SM30</span> 維護或 Excel 批次匯入</td><td>FICO（實為 SD 業務轄區）</td><td>主程式＋ <span class="kw">_TOP</span>／<span class="kw">_S01</span>／<span class="kw">_F01</span>／<span class="kw">_F02</span></td><td>約 400 行</td><td>選擇畫面、SM30 畫面、SE11：ZFI_EXP_SALES、ZALSMEX_TABLINE；SMW0 範本</td><td>15 節</td></tr>
+    </tbody>
+  </table>
+  <p>第 2 節是另外整理的「FICO 常用資料表速查」，取材自素材根目錄的一張 FICO 資料表關聯圖，作為閱讀這四支程式的背景知識。相關章節：ALV 見 <a href="#ch02-3">2-3 章</a>、ABAP SQL 與新語法見 <a href="#ch02-2">2-2 章</a>、FTP 與檔案見 <a href="#ch04-4">4-4 章</a>、會計憑證列印見 <a href="#ch08-4">8-4 章</a>、MM／SD 報表見 <a href="#ch08-6">8-6 章</a>、外部介面見 <a href="#ch08-8">8-8 章</a>。</p>
+  <div class="warn">素材裡的截圖與 Excel 匯出檔含有真實的客戶名稱、客戶編號、公司名稱與總帳科目編號，程式註解裡也有開發者姓名。本章一律改用佔位符（例如 <span class="kw">C000001</span>、「某醫療器材公司」），總帳科目只寫科目性質（例如「6001 開頭的主營業務收入科目」），不寫完整編號。</div>
+
+  <h3 id="ch08-5-02">2. FICO 常用資料表速查（S/4HANA 版）</h3>
+  <p>素材附了一張流傳很廣的「SAP FICO Table Mapping」圖，把主資料（虛線框）與交易資料（實線框）依模組畫在一起。以下依圖整理，並加上 <b>S/4HANA 的現況</b>。一句話先講結論：<b>在 S/4HANA，財務與成本的交易明細都集中在 ACDOCA（Universal Journal）</b>，舊的索引表、彙總表大多改成「同名的相容性視圖」，<b>還能讀，但不能寫，而且效能不一定好</b>。</p>
+  <h4>2.1 客戶主資料（Accounts Receivable – Customer Master）</h4>
+  <table>
+    <thead><tr><th>資料表</th><th>內容</th><th>主要鍵值</th><th>S/4HANA 變化</th></tr></thead>
+    <tbody>
+      <tr><td>KNA1</td><td>客戶一般資料</td><td>KUNNR</td><td>仍存在，但<b>必須透過 BP（<span class="tcode">BP</span>）維護</b>，<span class="tcode">XD01</span>／<span class="tcode">FD01</span> 停用；BP 主表為 BUT000、地址 BUT020／ADRC；由 CVI（Customer/Vendor Integration）同步到 KNA1</td></tr>
+      <tr><td>KNB1</td><td>客戶公司代碼資料（統馭科目 AKONT、付款條件）</td><td>KUNNR、BUKRS</td><td>仍存在，由 BP 角色 FLCU00 維護</td></tr>
+      <tr><td>KNB5</td><td>客戶催收資料</td><td>KUNNR、BUKRS、MABER</td><td>仍存在</td></tr>
+      <tr><td>KNVV</td><td>客戶銷售範圍資料</td><td>KUNNR、VKORG、VTWEG、SPART</td><td>仍存在，由 BP 角色 FLCU01 維護</td></tr>
+      <tr><td>KNVP</td><td>客戶夥伴功能</td><td>KUNNR、VKORG、VTWEG、SPART、PARVW、PARZA</td><td>仍存在</td></tr>
+      <tr><td>KNVD</td><td>客戶銷售單據輸出類型</td><td>KUNNR、VKORG、VTWEG、SPART、KSCHL、SPRAS</td><td>輸出管理改用 BRF+ 輸出控制時就不再使用</td></tr>
+      <tr><td>KNC1／KNC3</td><td>客戶交易彙總（每期借貸合計）</td><td>KUNNR、BUKRS、GJAHR</td><td><b>改為相容性視圖</b>，資料由 ACDOCA 即時彙總，不再實體寫入</td></tr>
+      <tr><td>KNKK</td><td>（圖上沒有）客戶信用限額</td><td>KUNNR、KKBER</td><td><b>SD 信用管理在 S/4 已被 FSCM 信用管理取代</b>：UKMBP_CMS_SGM 等，ZFIU040 的信用額度欄位就是走 UKM 介面</td></tr>
+    </tbody>
+  </table>
+  <h4>2.2 供應商主資料（Accounts Payable – Vendor Master）</h4>
+  <table>
+    <thead><tr><th>資料表</th><th>內容</th><th>主要鍵值</th><th>S/4HANA 變化</th></tr></thead>
+    <tbody>
+      <tr><td>LFA1</td><td>供應商一般資料</td><td>LIFNR</td><td>仍存在，<span class="tcode">XK01</span>／<span class="tcode">FK01</span>／<span class="tcode">MK01</span> 停用，改用 <span class="tcode">BP</span></td></tr>
+      <tr><td>LFB1／LFB5</td><td>公司代碼資料／催收資料</td><td>LIFNR、BUKRS（LFB5 另加 MABER）</td><td>仍存在，BP 角色 FLVN00 維護</td></tr>
+      <tr><td>LFM1／LFM2</td><td>採購組織資料／採購組織子範圍</td><td>LIFNR、EKORG（LFM2 另加 LTSNR、WERKS）</td><td>仍存在，BP 角色 FLVN01 維護</td></tr>
+      <tr><td>LFBK</td><td>供應商銀行資料</td><td>LIFNR、BANKS、BANKL、BANKN</td><td>主檔改在 BP 銀行資料 BUT0BK，再同步到 LFBK</td></tr>
+      <tr><td>LFC1</td><td>供應商交易彙總</td><td>LIFNR、BUKRS、GJAHR</td><td><b>相容性視圖</b></td></tr>
+    </tbody>
+  </table>
+  <h4>2.3 會計憑證與未清項索引（Financial Accounting）</h4>
+  <table>
+    <thead><tr><th>資料表</th><th>內容</th><th>主要鍵值</th><th>S/4HANA 變化</th></tr></thead>
+    <tbody>
+      <tr><td>BKPF</td><td>會計憑證表頭</td><td>BUKRS、BELNR、GJAHR</td><td>仍存在；新增 XREVERSING／XREVERSED 等沖銷欄位</td></tr>
+      <tr><td>BSEG</td><td>會計憑證行項目（Entry View）</td><td>BUKRS、BELNR、GJAHR、BUZEI</td><td>仍存在，但<b>報表請改讀 ACDOCA</b>；BSEG 是 cluster table 的歷史已結束，在 HANA 上是透明表</td></tr>
+      <tr><td><b>ACDOCA</b></td><td>（圖上沒有）Universal Journal 行項目：FI、CO、AA、ML、CO-PA（account-based）全部在一張表</td><td>RCLNT、RLDNR、RBUKRS、GJAHR、BELNR、DOCLN</td><td><b>S/4HANA 的唯一事實來源</b>；金額欄位已帶正負號（貸方為負），不再需要 SHKZG 判斷</td></tr>
+      <tr><td>BSID／BSAD</td><td>客戶未清項／已清項索引</td><td>BUKRS、KUNNR、UMSKS、UMSKZ、AUGDT、AUGBL、ZUONR、GJAHR、BELNR、BUZEI</td><td><b>相容性視圖</b>（讀 BSEG），同名 SELECT 還能用</td></tr>
+      <tr><td>BSIK／BSAK</td><td>供應商未清項／已清項索引</td><td>同上，KUNNR 換成 LIFNR</td><td><b>相容性視圖</b></td></tr>
+      <tr><td>BSIS／BSAS</td><td>總帳未清項／已清項索引</td><td>BUKRS、HKONT、AUGDT、AUGBL、ZUONR、GJAHR、BELNR、BUZEI</td><td><b>相容性視圖</b></td></tr>
+      <tr><td>BSIP</td><td>重複發票檢查索引</td><td>BUKRS、LIFNR、WAERS、BLDAT、XBLNR、WRBTR、BELNR、GJAHR、BUZEI</td><td>仍存在</td></tr>
+      <tr><td>BSET</td><td>稅務明細</td><td>BUKRS、BELNR、GJAHR、BUZEI</td><td>仍存在</td></tr>
+      <tr><td>BSEC</td><td>一次性客戶／供應商資料</td><td>BUKRS、BELNR、GJAHR、BUZEI</td><td>仍存在</td></tr>
+      <tr><td>BVOR</td><td>跨公司過帳對照</td><td>BVORG、BUKRS、GJAHR、BELNR</td><td>仍存在</td></tr>
+      <tr><td>PAYR</td><td>付款媒介／支票登記</td><td>ZBUKR、HBKID、HKTID、RZAWE、CHECT</td><td>仍存在</td></tr>
+    </tbody>
+  </table>
+  <h4>2.4 總帳科目、成本要素與分類帳</h4>
+  <table>
+    <thead><tr><th>資料表</th><th>內容</th><th>主要鍵值</th><th>S/4HANA 變化</th></tr></thead>
+    <tbody>
+      <tr><td>SKA1／SKAT</td><td>科目表層級科目／科目描述</td><td>KTOPL、SAKNR（SKAT 另加 SPRAS）</td><td>仍存在；新增「G/L 科目類型」（資產負債、損益、<b>主要成本</b>、<b>次要成本</b>）</td></tr>
+      <tr><td>SKB1</td><td>公司代碼層級科目</td><td>BUKRS、SAKNR</td><td>仍存在</td></tr>
+      <tr><td>CSKA／CSKB／CSKU</td><td>成本要素（科目表層級／控制範圍層級／描述）</td><td>KTOPL、KSTAR（CSKB 另加 KOKRS、DATBI）</td><td><b>成本要素併入總帳科目</b>：<span class="tcode">KA01</span>／<span class="tcode">KA06</span> 停用，一律在 <span class="tcode">FS00</span> 以科目類型維護；CSKB 成為相容性視圖</td></tr>
+      <tr><td>GLT0</td><td>（圖中 Special Purpose Ledger 一區）總帳彙總</td><td>RLDNR、RRCTY、RVERS、BUKRS、RYEAR、RACCT…</td><td>相容性視圖，資料來自 ACDOCA</td></tr>
+      <tr><td>COFIT／COFIO1／COFIO2</td><td>統馭分類帳（CO 與 FI 跨組織對帳）</td><td>RLDNR、RRCTY、RVERS、RYEAR、OBJNR…</td><td><b>已無意義</b>：Universal Journal 讓 CO 與 FI 同一筆記錄，不再需要統馭分類帳</td></tr>
+    </tbody>
+  </table>
+  <h4>2.5 成本中心、利潤中心、CO 明細</h4>
+  <table>
+    <thead><tr><th>資料表</th><th>內容</th><th>主要鍵值</th><th>S/4HANA 變化</th></tr></thead>
+    <tbody>
+      <tr><td>CSKS／CSKT</td><td>成本中心主檔／描述</td><td>KOKRS、KOSTL、DATBI</td><td>仍存在</td></tr>
+      <tr><td>CEPC／CEPCT</td><td>利潤中心主檔／描述</td><td>PRCTR、DATBI、KOKRS</td><td>仍存在</td></tr>
+      <tr><td>COBK</td><td>CO 憑證表頭</td><td>KOKRS、BELNR</td><td>仍存在</td></tr>
+      <tr><td>COEP</td><td>CO 期間相關行項目</td><td>KOKRS、BELNR、BUZEI</td><td>實際值改寫入 ACDOCA，COEP 成為相容性視圖（V_COEP 系列）</td></tr>
+      <tr><td>COSP／COSS</td><td>CO 外部／內部過帳彙總</td><td>LEDNR、OBJNR、GJAHR、WRTTP、VERSN、KSTAR、HRKFT、VRGNG…</td><td>實際值部分成為相容性視圖；計畫值在 1610 之後改寫入 ACDOCP</td></tr>
+      <tr><td>GLPCT／GLPCA／GLPCO／GLPCC</td><td>傳統利潤中心會計（EC-PCA）彙總／明細／物件／交易屬性</td><td>RLDNR、RRCTY、RVERS、RYEAR、OBJNR…</td><td><b>傳統 EC-PCA 在 S/4 不再使用</b>，利潤中心直接是 ACDOCA 的 PRCTR 欄位</td></tr>
+    </tbody>
+  </table>
+  <h4>2.6 本章程式會碰到的其他表</h4>
+  <table>
+    <thead><tr><th>資料表</th><th>用途</th><th>S/4HANA 注意</th></tr></thead>
+    <tbody>
+      <tr><td>CE1xxxx（本案為 CE11000）</td><td>成本型（costing-based）CO-PA 實際明細，xxxx 為經營範圍</td><td>仍可用；SAP 建議改用<b>帳目型（account-based）CO-PA，也就是 Margin Analysis</b>，特性欄位直接在 ACDOCA（WW* 擴充欄位）</td></tr>
+      <tr><td>CKMLHD／CKMLCR</td><td>物料帳表頭／各期間各幣別價格（PVPRS 期間單價、STPRS 標準價）</td><td>S/4 物料帳（ML）強制啟用；CKMLCR 仍可讀，<b>但要指定 CURTP 幣別類型</b></td></tr>
+      <tr><td>MLHD／MLIT</td><td>物料帳憑證</td><td>改成 MLDOC／MLDOCCCS</td></tr>
+      <tr><td>VBRK／VBRP、LIPS、VBFA</td><td>發票、交貨、單據流</td><td>VBUK／VBUP 狀態欄位已併入各表頭／行項目；VBFA 結構在 1909 之後有調整</td></tr>
+      <tr><td>A017／KONP</td><td>採購資訊記錄條件（供應商／物料／採購組織／工廠）</td><td>條件技術沿用；S/4 價格條件另有 PRCD_ELEMENTS 取代 KONV（銷售單據）</td></tr>
+    </tbody>
+  </table>
+  <div class="tip">查不到欄位在哪張表時，先用 <span class="tcode">SE16H</span> 或 ACDOCA 試著篩選；如果 ACDOCA 找得到，就不要再繞去 BSEG、COEP、GLPCA。找表名的方法另見 <a href="#ch06-2">6-2 章</a>。</div>
+  <pre><code class="abap">"ACDOCA 最常用的欄位與篩選骨架（S/4HANA 1809+）
+SELECT rbukrs, gjahr, belnr, docln,       "鍵值：公司、年度、憑證、行號（6 碼）
+       rldnr,                             "分類帳：0L 為主要分類帳
+       budat, bldat, poper,               "過帳日、憑證日、期間
+       racct, koart,                      "總帳科目、科目類型（D 客戶／K 供應商／S 總帳）
+       kunnr, lifnr, matnr, werks,        "客戶、供應商、物料、工廠
+       prctr, segment, rcntr,             "利潤中心、區段、成本中心
+       hsl, rhcur,                        "公司代碼幣別金額（已帶正負號）
+       wsl, rwcur,                        "交易（憑證）幣別金額
+       ksl, rkcur,                        "集團幣別金額
+       augdt, augbl, umskz, drcrk         "清帳日、清帳憑證、特別總帳、借貸碼
+  FROM acdoca
+  WHERE rldnr  = '0L'                     "一定要指定分類帳，否則多分類帳時金額會重複
+    AND rbukrs IN @s_bukrs
+    AND gjahr  = @p_gjahr
+  ORDER BY rbukrs, gjahr, belnr, docln    "HANA 沒有預設排序，要穩定就明寫
+  INTO TABLE @DATA(lt_acdoca)
+  UP TO 1000 ROWS.</code></pre>
+  <div class="warn">讀 ACDOCA 有兩個最常見的錯：<b>① 沒有指定 RLDNR</b>。只要系統有非主要分類帳（例如 IFRS 平行分類帳），同一筆交易會出現兩次，加總就變兩倍。本章 ZFIU014N 就犯了這個錯。<b>② 把 HSL 當成沒有正負號的 DMBTR</b>，又用 SHKZG 再乘一次 -1，結果貸方變成正數。</div>
+
+  <h3 id="ch08-5-03">3. ZFIR012 客戶科目明細表：業務情境、選擇畫面與輸出</h3>
+  <p><b>業務情境</b>：財務每月要給業務或客戶對帳，需要「某客戶在某個期間的往來明細」，格式跟國內會計習慣的「明細帳」一樣：第一行是期初餘額，接著是本期每一筆借方、貸方與滾動餘額，最後一行是期末餘額。SAP 標準的 <span class="tcode">FBL5N</span> 只列行項目，<span class="tcode">FD10N</span> 只給每期合計，都不是這種三段式格式，所以才開發這支程式。</p>
+  <h4>選擇畫面（依截圖）</h4>
+  <table>
+    <thead><tr><th>畫面欄位</th><th>程式變數</th><th>參照</th><th>說明</th></tr></thead>
+    <tbody>
+      <tr><td>公司代碼</td><td>S_BUKRS</td><td>BSIK-BUKRS</td><td>範圍</td></tr>
+      <tr><td>客戶</td><td>S_KUNNR</td><td>BSID-KUNNR</td><td>MODIF ID 002（原本搭配客戶／供應商切換，後來供應商分支被註解掉）</td></tr>
+      <tr><td>貨幣</td><td>S_WAERS</td><td>BSIK-WAERS</td><td>憑證幣別</td></tr>
+      <tr><td>查詢期間</td><td>S_BUDAT</td><td>ISELLIST-MONTH（YYYYMM）</td><td>必填；F4 呼叫 <span class="kw">POPUP_TO_SELECT_MONTH</span> 跳出月份選擇；截圖預設 202306</td></tr>
+      <tr><td>使用者名稱</td><td>S_USNAM</td><td>BKPF-USNAM</td><td>建立憑證的使用者</td></tr>
+      <tr><td>特別總帳標誌</td><td>S_UMSKZ</td><td>BSEG-UMSKZ</td><td>例如預收款 A</td></tr>
+      <tr><td>普通項目（預設勾選）／特別總帳項目</td><td>C_1／C_2</td><td>核取方塊</td><td>決定要不要包含一般項目與特別總帳項目</td></tr>
+    </tbody>
+  </table>
+  <h4>輸出欄位（依截圖與 EXPORT.xlsx）</h4>
+  <p>過帳日期、憑證號、行項目、科目編碼、科目編碼名稱、客戶、客戶名稱、摘要、貨幣、借方本位幣金額、貸方本位幣金額、借方原幣金額、貸方原幣金額、方向（借／貸／平）、餘額原幣、餘額本幣、清帳日期、清帳憑證號、憑證日期。期初、期末行的「摘要」欄固定填「期初餘額」「期末餘額」，日期與憑證號空白。截圖可以看到同一客戶掛在不同的應收科目（關聯方、非關聯方、國內、國外），幣別有 USD 也有 CNY。</p>
+  <p>ALV 的雙擊事件 <span class="kw">&amp;IC1</span>：點「清帳憑證號」欄就帶 AUGBL 與清帳年度進 <span class="tcode">FB03</span>，點其他欄就帶 BELNR；點到期初、期末行會提示「期初／期末資料不能穿透」。</p>
+
+  <h3 id="ch08-5-04">4. ZFIR012 程式架構拆解：期初、本期、期末怎麼算</h3>
+  <table>
+    <thead><tr><th>步驟</th><th>原程式做法</th><th>用到的物件</th></tr></thead>
+    <tbody>
+      <tr><td>① 算日期</td><td>期初日＝起始月的 1 號；「期末日」其實是<b>結束月的下個月 1 號</b>（用字串拼接處理跨年、補前導零）</td><td>字串運算</td></tr>
+      <tr><td>② 讀未清項</td><td><span class="kw">SELECT … ENDSELECT</span> 讀 BSID JOIN BKPF，條件 BUDAT &lt; 下月 1 號，排除 XREVERSING／XREVERSED</td><td>BSID、BKPF</td></tr>
+      <tr><td>③ 讀已清項</td><td>同樣讀 BSAD JOIN BKPF；若該憑證被沖銷（STBLG 有值），且沖銷憑證跟原憑證在<b>同年同期</b>就跳過</td><td>BSAD、BKPF</td></tr>
+      <tr><td>④ 彙總期初／期末</td><td>每筆依 SHKZG 決定正負，全部加到「期末」，BUDAT 早於期初日的再加到「期初」，用 <span class="kw">COLLECT</span> 依客戶＋科目＋幣別彙總</td><td>COLLECT</td></tr>
+      <tr><td>⑤ 本期明細</td><td>BUDAT ≥ 期初日的放進 GT_DATA</td><td>內表</td></tr>
+      <tr><td>⑥ 合併科目</td><td>同一客戶＋幣別有多個科目時，把科目與科目名稱用 <span class="kw">&amp;</span> 串起來（例如「科目A&amp;科目B」），金額相加</td><td>SKAT</td></tr>
+      <tr><td>⑦ 組輸出</td><td>每個客戶：期初行 → 本期逐筆（滾動餘額）→ 期末行；方向以<b>原幣</b>餘額正負判斷</td><td>KNA1</td></tr>
+      <tr><td>⑧ 顯示</td><td><span class="kw">REUSE_ALV_GRID_DISPLAY_LVC</span>＋巨集 <span class="kw">INIT_FIELDCAT</span></td><td>ALV</td></tr>
+    </tbody>
+  </table>
+  <p>核心觀念其實很簡單：<b>期末餘額＝所有 BUDAT &lt; 期間結束隔天的行項目金額總和（不論是否已清）</b>；<b>期初餘額＝所有 BUDAT &lt; 期間起始日的行項目總和</b>。已清項也要算進去，因為清帳是一借一貸兩筆，兩筆都算才會互相抵銷。原程式讀 BSID＋BSAD，就是為了拿到「全部行項目」。在 S/4HANA，這件事直接讀 ACDOCA 就好。</p>
+  <p>日期部分先用現代寫法重寫。原程式用 YEAR、MONTH 字串拼接、判斷 12 月跨年、自己補前導零，共 20 幾行；改成日期運算只要幾行：</p>
+  <pre><code class="abap">"S_BUDAT 是 YYYYMM 的 SELECT-OPTIONS（參照 ISELLIST-MONTH）
+DATA(lv_from_month) = s_budat[ 1 ]-low.
+DATA(lv_to_month)   = COND #( WHEN s_budat[ 1 ]-high IS INITIAL
+                              THEN s_budat[ 1 ]-low
+                              ELSE s_budat[ 1 ]-high ).
+
+DATA(lv_first) = CONV d( |{ lv_from_month }01| ).     "期初日：起始月 1 號
+DATA(lv_last)  = CONV d( |{ lv_to_month }01| ).
+
+CALL FUNCTION 'RP_LAST_DAY_OF_MONTHS'                  "結束月的最後一天
+  EXPORTING
+    day_in            = lv_last
+  IMPORTING
+    last_day_of_month = lv_last
+  EXCEPTIONS
+    day_in_no_date    = 1
+    OTHERS            = 2.
+IF sy-subrc &lt;&gt; 0.
+  MESSAGE |查詢期間 { lv_to_month } 不是有效月份| TYPE 'E'.
+ENDIF.
+"之後一律用「BUDAT &lt;= lv_last」，比「&lt; 下月 1 號」更直覺，也不用處理跨年</code></pre>
+
+  <h3 id="ch08-5-05">5. ZFIR012 現代改寫：ACDOCA 一次算出期初、期末與明細</h3>
+  <p>改寫重點有三個：① 金額直接用 ACDOCA 已帶正負號的 HSL（本位幣）、WSL（原幣），不必再看 SHKZG；② 期初、期末用<b>一條 SQL 加條件式聚合</b>在資料庫算完，不用把幾十萬筆拉回應用伺服器再 COLLECT；③ 普通項目／特別總帳的選擇，改成<b>列舉式 range</b>。</p>
+  <pre><code class="abap">"③ 把「普通項目／特別總帳」兩個勾選框轉成列舉式 range（不用 BT）
+DATA lr_umskz TYPE RANGE OF umskz.
+IF c_1 = abap_true.                                    "普通項目：UMSKZ 空白
+  lr_umskz = VALUE #( BASE lr_umskz ( sign = 'I' option = 'EQ' low = space ) ).
+ENDIF.
+IF c_2 = abap_true.                                    "特別總帳
+  IF s_umskz[] IS INITIAL.
+    lr_umskz = VALUE #( BASE lr_umskz ( sign = 'I' option = 'NE' low = space ) ).
+  ELSE.
+    lr_umskz = VALUE #( BASE lr_umskz ( LINES OF s_umskz ) ).
+  ENDIF.
+ENDIF.
+IF lr_umskz IS INITIAL.
+  MESSAGE '請至少勾選「普通項目」或「特別總帳項目」' TYPE 'E'.
+ENDIF.
+
+"① ② 期初、期末一次算完：依客戶＋科目＋原幣彙總
+SELECT kunnr, racct, rwcur, rhcur,
+       SUM( CASE WHEN budat &lt; @lv_first THEN hsl END ) AS open_hsl,   "期初本位幣
+       SUM( CASE WHEN budat &lt; @lv_first THEN wsl END ) AS open_wsl,   "期初原幣
+       SUM( hsl ) AS close_hsl,                                       "期末本位幣
+       SUM( wsl ) AS close_wsl                                        "期末原幣
+  FROM acdoca
+  WHERE rldnr   = '0L'
+    AND rbukrs IN @s_bukrs
+    AND koart   = 'D'                   "只要客戶行項目
+    AND kunnr  IN @s_kunnr
+    AND rwcur  IN @s_waers
+    AND usnam  IN @s_usnam
+    AND umskz  IN @lr_umskz
+    AND budat  &lt;= @lv_last
+    AND bstat  &lt;&gt; 'C'                  "排除餘額結轉列，避免跨年重複計算
+  GROUP BY kunnr, racct, rwcur, rhcur
+  ORDER BY kunnr, racct, rwcur
+  INTO TABLE @DATA(lt_balance).
+
+"本期明細：明確排序，滾動餘額才會穩定
+SELECT kunnr, racct, rwcur, budat, bldat, belnr, docln, gjahr, rbukrs,
+       sgtxt, hsl, wsl, augdt, augbl
+  FROM acdoca
+  WHERE rldnr   = '0L'
+    AND rbukrs IN @s_bukrs
+    AND koart   = 'D'
+    AND kunnr  IN @s_kunnr
+    AND rwcur  IN @s_waers
+    AND usnam  IN @s_usnam
+    AND umskz  IN @lr_umskz
+    AND budat BETWEEN @lv_first AND @lv_last
+  ORDER BY kunnr, racct, rwcur, budat, belnr, docln
+  INTO TABLE @DATA(lt_items).</code></pre>
+  <div class="warn">ACDOCA 的 BSTAT = 'C' 是餘額結轉（balance carryforward）列。跨年度加總「全部歷史」時，要排除這些列，否則上年度餘額會被算兩次。反過來，如果你的做法是「只讀當年度（含期間 000 的結轉列）」，就<b>不能</b>排除。兩種做法擇一，上線前務必跟 <span class="tcode">FD10N</span>、<span class="tcode">FBL5H</span> 的餘額逐客戶核對。另外，CASE 沒有 ELSE 時，不符合的列是 NULL，SUM 會略過 NULL；如果某客戶期初完全沒有資料，結果欄位會是初始值 0。</div>
+  <p>接著把期初行、本期逐筆、期末行組成輸出，滾動餘額在 ABAP 端算：</p>
+  <pre><code class="abap">TYPES: BEGIN OF ty_out,
+         budat   TYPE budat,
+         belnr   TYPE belnr_d,
+         docln   TYPE docln6,
+         racct   TYPE racct,
+         kunnr   TYPE kunnr,
+         name1   TYPE name1_gp,
+         sgtxt   TYPE sgtxt,
+         rwcur   TYPE waers,
+         debit_h TYPE fins_vhcur12,  "借方本位幣
+         credit_h TYPE fins_vhcur12, "貸方本位幣
+         debit_w TYPE fins_vwcur12,  "借方原幣
+         credit_w TYPE fins_vwcur12, "貸方原幣
+         dir     TYPE c LENGTH 2,    "借／貸／平
+         bal_w   TYPE fins_vwcur12,  "餘額原幣
+         bal_h   TYPE fins_vhcur12,  "餘額本位幣
+         augdt   TYPE augdt,
+         augbl   TYPE augbl,
+         bldat   TYPE bldat,
+         rbukrs  TYPE bukrs,
+         gjahr   TYPE gjahr,
+       END OF ty_out,
+       tt_out TYPE STANDARD TABLE OF ty_out WITH EMPTY KEY.
+
+DATA gt_out TYPE tt_out.
+
+"客戶名稱一次讀完（S/4 仍可讀 KNA1；BP 名稱在 BUT000）
+IF lt_balance IS NOT INITIAL.
+  SELECT kunnr, name1 FROM kna1
+    FOR ALL ENTRIES IN @lt_balance
+    WHERE kunnr = @lt_balance-kunnr
+    INTO TABLE @DATA(lt_kna1).
+  SORT lt_kna1 BY kunnr.
+ENDIF.
+
+LOOP AT lt_balance INTO DATA(ls_bal).
+  DATA(lv_name) = VALUE #( lt_kna1[ kunnr = ls_bal-kunnr ]-name1 OPTIONAL ).
+  DATA(lv_bal_w) = ls_bal-open_wsl.
+  DATA(lv_bal_h) = ls_bal-open_hsl.
+
+  APPEND VALUE #( kunnr = ls_bal-kunnr racct = ls_bal-racct rwcur = ls_bal-rwcur
+                  name1 = lv_name sgtxt = '期初餘額'
+                  bal_w = lv_bal_w bal_h = lv_bal_h
+                  dir   = COND #( WHEN lv_bal_w &gt; 0 THEN '借'
+                                  WHEN lv_bal_w &lt; 0 THEN '貸' ELSE '平' ) ) TO gt_out.
+
+  LOOP AT lt_items INTO DATA(ls_it) WHERE kunnr = ls_bal-kunnr
+                                      AND racct = ls_bal-racct
+                                      AND rwcur = ls_bal-rwcur.
+    lv_bal_w = lv_bal_w + ls_it-wsl.
+    lv_bal_h = lv_bal_h + ls_it-hsl.
+    APPEND VALUE #( BASE CORRESPONDING ty_out( ls_it )
+                    name1    = lv_name
+                    debit_h  = COND #( WHEN ls_it-hsl &gt; 0 THEN ls_it-hsl )
+                    credit_h = COND #( WHEN ls_it-hsl &lt; 0 THEN abs( ls_it-hsl ) )
+                    debit_w  = COND #( WHEN ls_it-wsl &gt; 0 THEN ls_it-wsl )
+                    credit_w = COND #( WHEN ls_it-wsl &lt; 0 THEN abs( ls_it-wsl ) )
+                    bal_w    = lv_bal_w
+                    bal_h    = lv_bal_h
+                    dir      = COND #( WHEN lv_bal_w &gt; 0 THEN '借'
+                                       WHEN lv_bal_w &lt; 0 THEN '貸' ELSE '平' ) ) TO gt_out.
+  ENDLOOP.
+
+  APPEND VALUE #( kunnr = ls_bal-kunnr racct = ls_bal-racct rwcur = ls_bal-rwcur
+                  name1 = lv_name sgtxt = '期末餘額'
+                  bal_w = ls_bal-close_wsl bal_h = ls_bal-close_hsl
+                  dir   = COND #( WHEN ls_bal-close_wsl &gt; 0 THEN '借'
+                                  WHEN ls_bal-close_wsl &lt; 0 THEN '貸' ELSE '平' ) ) TO gt_out.
+ENDLOOP.</code></pre>
+  <div class="tip">期末行用 SQL 算出的 CLOSE_* 值，而不是迴圈跑完的滾動餘額，兩者<b>應該相等</b>。上線測試時可以加一個斷言：兩者不相等時寫 log，這通常代表「本期明細」與「彙總」的篩選條件不一致（例如一邊有排除沖銷、一邊沒有）。原程式就有這種不一致，見下一節。</div>
+  <p>ALV 改用 <span class="kw">CL_SALV_TABLE</span>，雙擊穿透改成 <span class="kw">DOUBLE_CLICK</span> 事件（完整寫法見 <a href="#ch02-3">2-3 章</a>）：</p>
+  <pre><code class="abap">CLASS lcl_handler DEFINITION.
+  PUBLIC SECTION.
+    CLASS-METHODS on_double_click FOR EVENT double_click OF cl_salv_events_table
+      IMPORTING row column.
+ENDCLASS.
+
+CLASS lcl_handler IMPLEMENTATION.
+  METHOD on_double_click.
+    ASSIGN gt_out[ row ] TO FIELD-SYMBOL(&lt;ls_out&gt;).
+    IF sy-subrc &lt;&gt; 0 OR &lt;ls_out&gt;-belnr IS INITIAL.
+      MESSAGE '期初／期末資料不能穿透' TYPE 'S' DISPLAY LIKE 'E'.
+      RETURN.
+    ENDIF.
+    DATA(lv_belnr) = COND belnr_d( WHEN column = 'AUGBL' THEN &lt;ls_out&gt;-augbl ELSE &lt;ls_out&gt;-belnr ).
+    DATA(lv_gjahr) = COND gjahr( WHEN column = 'AUGBL' THEN &lt;ls_out&gt;-augdt(4) ELSE &lt;ls_out&gt;-gjahr ).
+    SET PARAMETER ID 'BLN' FIELD lv_belnr.
+    SET PARAMETER ID 'BUK' FIELD &lt;ls_out&gt;-rbukrs.
+    SET PARAMETER ID 'GJR' FIELD lv_gjahr.
+    CALL TRANSACTION 'FB03' WITH AUTHORITY-CHECK AND SKIP FIRST SCREEN.
+  ENDMETHOD.
+ENDCLASS.
+
+START-OF-SELECTION.
+  TRY.
+      cl_salv_table=&gt;factory( IMPORTING r_salv_table = DATA(lo_alv)
+                              CHANGING  t_table      = gt_out ).
+      lo_alv-&gt;get_functions( )-&gt;set_all( abap_true ).
+      lo_alv-&gt;get_columns( )-&gt;set_optimize( abap_true ).
+      SET HANDLER lcl_handler=&gt;on_double_click FOR lo_alv-&gt;get_event( ).
+      lo_alv-&gt;display( ).
+    CATCH cx_salv_msg INTO DATA(lx_salv).
+      MESSAGE lx_salv TYPE 'E'.
+  ENDTRY.</code></pre>
+
+  <h3 id="ch08-5-06">6. ZFIR012 原程式的問題、改進與上線注意事項</h3>
+  <table>
+    <thead><tr><th>問題</th><th>說明</th><th>改進</th></tr></thead>
+    <tbody>
+      <tr><td><b>假的進度條</b></td><td>程式一開始 <span class="kw">DO 100 TIMES</span> 裡再 <span class="kw">DO 300 TIMES GET TIME</span>，然後呼叫 <span class="kw">SAPGUI_PROGRESS_INDICATOR</span> 從 1% 跑到 100%——<b>完全沒在做事，只是讓使用者等</b>，而且在資料讀取之前就跑完</td><td>刪掉。需要進度提示就用 <span class="kw">CL_PROGRESS_INDICATOR=&gt;PROGRESS_INDICATE</span>，並放在真正耗時的迴圈裡</td></tr>
+      <tr><td>SELECT … ENDSELECT ＋ TABLES</td><td>逐筆從資料庫抓回，每筆再做 COLLECT；BSAD 迴圈裡還對沖銷憑證做 <span class="kw">SELECT SINGLE</span></td><td>改成上一節的聚合 SQL</td></tr>
+      <tr><td><b>沖銷條件兩邊不一致</b></td><td>BSID 那段排除 XREVERSING／XREVERSED，BSAD 那段把這兩個條件註解掉，改用「沖銷憑證同年同期才跳過」</td><td>統一規則。建議做法：沖銷與被沖銷憑證都保留（兩筆會自然抵銷），期初、期末才能跟 <span class="tcode">FD10N</span> 對得上；若業務要求隱藏同期沖銷，兩段都要用同一個條件</td></tr>
+      <tr><td>SHKZG 手動轉正負</td><td>BSID-DMBTR 沒有正負號，程式到處寫 <span class="kw">* -1</span></td><td>ACDOCA 的 HSL／WSL 已帶正負號</td></tr>
+      <tr><td><b>科目用「&amp;」串接</b></td><td>同客戶多科目時，科目欄變成「科目A&amp;科目B」。串接的先後取決於 COLLECT 內表的順序，而內表順序又取決於 SELECT 回傳順序——<b>HANA 沒有預設排序</b>，同一份資料不同次執行可能得到不同字串</td><td>改成依「客戶＋科目＋幣別」分列；如果一定要合併，先明確 <span class="kw">SORT</span> 再串接</td></tr>
+      <tr><td>方向判斷</td><td>用原幣餘額判斷借貸（本位幣那段被註解掉）；同一列若原幣為 0 但匯差造成本位幣不為 0，會顯示「平」但本位幣有餘額</td><td>跟財務確認以哪個幣別為準，並在欄位名稱標明</td></tr>
+      <tr><td>權限檢查被註解掉</td><td>原本有 <span class="kw">AUTHORITY-CHECK OBJECT 'F_BKPF_BUK'</span>，被整段註解</td><td>一定要打開。財務報表沒有公司代碼權限檢查，是稽核必抓的缺失</td></tr>
+      <tr><td>供應商分支殘骸</td><td>約 300 行的供應商版被註解保留；而且註解的版本裡，期末行的原幣、本位幣欄位<b>寫反了</b>（ZYE_BWB = 原幣、ZYE_YB = 本位幣）</td><td>刪除死碼，交給版本管理保存歷史；供應商版另寫一支，或把 KOART 當參數</td></tr>
+      <tr><td>表頭資訊錯誤</td><td>Module Name 寫 WM、Program ID 寫 ABP_IMWM_***，顯然是從別的程式複製過來</td><td>表頭要據實填寫，否則日後找負責模組會找錯人</td></tr>
+      <tr><td>S_BUDAT[ 1 ] 直接取第一行</td><td>如果使用者在多重選擇輸入多列，或用了排除（E），程式只看第一行，而且沒有檢查</td><td>在 <span class="kw">AT SELECTION-SCREEN</span> 限制只能輸入一列 I/EQ 或 I/BT，或改用兩個 PARAMETERS</td></tr>
+    </tbody>
+  </table>
+  <div class="note"><b>上線注意</b>：① 先用 <span class="tcode">FD10N</span> 抽 5～10 個客戶核對期初、期末；② 外幣客戶要同時核對原幣與本位幣，月底有重估（<span class="tcode">FAGL_FCV</span>）的公司要確認重估憑證是否要列入；③ 資料量大的公司代碼，務必先在 <span class="tcode">ST05</span>／<span class="tcode">SAT</span> 看執行計畫。</div>
+
+  <h3 id="ch08-5-07">7. ZFIU014N 毛利報表：業務情境、選擇畫面與輸出</h3>
+  <p><b>業務情境</b>：美國子公司要看「每張發票、每個產品」的毛利：收入扣掉折扣，再扣掉銷貨成本（標準成本與實際成本），並要看到運費收入、運費支出、移轉價格（向集團採購的價格）、GPO（團購組織）、IDN（整合醫療網路）等醫療器材業特有的分析維度。這支程式以<b>成本型 CO-PA 明細表 CE11000</b>（經營範圍 1100）為主體，再從 SD、物料帳、ACDOCA、採購條件補欄位。</p>
+  <h4>選擇畫面（依截圖）</h4>
+  <table>
+    <thead><tr><th>畫面欄位</th><th>程式變數</th><th>參照</th></tr></thead>
+    <tbody>
+      <tr><td>Company Code</td><td>S_BUKRS</td><td>CE11000-BUKRS</td></tr>
+      <tr><td>Period/Year</td><td>S_PERIO</td><td>CE11000-PERIO（YYYYPPP，7 碼）</td></tr>
+      <tr><td>Invoice date</td><td>S_FADAT</td><td>CE11000-FADAT</td></tr>
+      <tr><td>Sales Order</td><td>S_KAUFN</td><td>CE11000-KAUFN</td></tr>
+      <tr><td>Sales Document Type</td><td>S_AUART</td><td>VBAK-AUART</td></tr>
+      <tr><td>Distribution Channel</td><td>S_VTWEG</td><td>CE11000-VTWEG</td></tr>
+      <tr><td>Customer</td><td>S_KNDNR</td><td>CE11000-KNDNR</td></tr>
+      <tr><td>Country／Region</td><td>S_LAND1／S_REGIO</td><td>KNA1-LAND1／REGIO</td></tr>
+      <tr><td>Product</td><td>S_ARTNR</td><td>CE11000-ARTNR（40 碼物料號）</td></tr>
+      <tr><td>Record Type</td><td>S_VRGAR</td><td>CE11000-VRGAR，預設 <b>F</b>（發票過帳）</td></tr>
+      <tr><td>Billing Number</td><td>S_RBELN</td><td>CE11000-RBELN，搜尋說明 SHVF_F</td></tr>
+    </tbody>
+  </table>
+  <h4>輸出欄位（依截圖、欄位目錄與 EXPORT.xlsx）</h4>
+  <p>共 60 多欄，依用途分組：</p>
+  <ul>
+    <li><b>組織與單據</b>：Company Code、Currency Type（PALEDGER）、Record Type／名稱、Sales Order、Sales Type（AUART）／描述、Sales order item、Billing Number／Item、Bill Type／名稱、Invoice Date、Posting Date、Transaction Year／Month、Goods Issue（WADAT）、Create On／By。</li>
+    <li><b>客戶維度</b>：Customer ID、Customer Name（NAME1＋NAME2）、Country、Bill To Region（KNA1-REGIO）、Ship To Region（出貨方地址 ADRC-REGION）、GPO（VBAK-KVGR2 → TVV2T）、IDN（KNVV 客製欄位 ZZGID）、Company Type（VBKD-KDGRP → T151T）、Sales Employee、Sales Group、Sales Org、Channel／名稱、Division／名稱、Profit Center。</li>
+    <li><b>產品維度</b>：Product、Product Description、Product Hierarchy、Material Group、Production Family（MARA-EXTWG → TWEWT）、Units/Box（MARA 客製欄位 ZUNIT）、LOT NUMBER（VBRP-CHARG）、Vendor／Vendor Name（批次主檔 MCHA-LIFNR）。</li>
+    <li><b>金額</b>：Sales Quantity、Base Unit、Transfer Price、Revenue、Revenue Account、Sales Discount、Rebate、Shipping Rev1／Rev2、Shipping Expense、Gross Weight、Standard COGS、Actual COGS、COGS Account、Currency。</li>
+    <li><b>計算欄</b>：Average Sales Price、Sales%、Gross Margin、Gross Margin%。</li>
+  </ul>
+  <p>截圖中的樣本是一張「評估訂單」（免費試用品），收入與成本都是 0，只有數量 1——這類訂單在毛利報表中會拉低平均售價，是業務常問「為什麼平均單價怪怪的」的原因之一。</p>
+
+  <h3 id="ch08-5-08">8. 毛利計算的資料來源：CO-PA 值欄位、物料帳與 ACDOCA</h3>
+  <p>毛利報表最難的不是程式，而是<b>搞清楚每個數字從哪裡來</b>。這支程式同時用了四種來源，彼此的口徑不同：</p>
+  <table>
+    <thead><tr><th>數字</th><th>來源</th><th>欄位</th><th>說明</th></tr></thead>
+    <tbody>
+      <tr><td>收入</td><td>CE11000</td><td>ERLOS＋VVARV</td><td>SD 發票過帳時依 <span class="tcode">KE4I</span> 的條件類型 → 值欄位對照寫入；VVARV 是後來加的另一個收入值欄位，程式把兩者相加</td></tr>
+      <tr><td>折扣／回饋</td><td>CE11000</td><td>VVSD1、VVSD2</td><td>銷售折扣、年度回饋（Rebate）</td></tr>
+      <tr><td>運費收入／支出</td><td>CE11000＋自建表 ZSDT004</td><td>VVSP1～VVSP3</td><td>運費支出在 CO-PA 是整張交貨單一筆，程式再依交貨單各行項目毛重比例分攤（見下節）</td></tr>
+      <tr><td>標準成本</td><td>CE11000</td><td>VVACS</td><td>發票過帳時依物料標準價（或 <span class="tcode">KE4U</span> 成本估算）寫入</td></tr>
+      <tr><td>實際成本</td><td>① CE11000 VVACT ② 物料帳 CKMLCR-PVPRS × 交貨量 ③ ACDOCA 物料帳結算</td><td>VVACT</td><td>月結 <span class="tcode">CKMLCP</span> 之後才有實際價格；程式依交貨單子行項目（UEPOS，例如成套品的組件）重算</td></tr>
+      <tr><td>物料帳結算差異</td><td>ACDOCA</td><td>TSL（BLART = ML）</td><td>直接從 ACDOCA 讀銷貨成本科目、憑證類型 ML 的金額，以 Record Type「M」自造一列</td></tr>
+      <tr><td>移轉價格</td><td>A017／KONP（PB00）或 EINA／EINE</td><td>KBETR、NETPR/PEINH</td><td>依批次供應商、工廠找採購資訊記錄價格</td></tr>
+    </tbody>
+  </table>
+  <p>程式中的毛利公式：</p>
+  <ul>
+    <li>淨收入＝ERLOS＋VVARV－VVSD1</li>
+    <li>毛利（ZRPML）＝ERLOS－VVSD1－<b>VVACS－VVACT</b></li>
+    <li>毛利率（ZRPMLL）＝毛利 × 100 ／ 淨收入</li>
+    <li>平均售價（ZRPJJ）＝同產品淨收入合計 ／ 同產品數量合計</li>
+    <li>銷售比（ZRPXS）＝單筆淨收入 × 100 ／ 全部淨收入合計</li>
+  </ul>
+  <div class="warn"><b>毛利公式同時減掉標準成本 VVACS 和實際成本 VVACT，要特別小心。</b>只有當 VVACT 代表「實際與標準的差異」時這樣寫才對；如果 VVACT 是完整的實際成本，就等於成本被扣兩次。程式裡還有一段「Record Type B 時令 VVACT = VVACS」，以及「VVACS = 0 時令 VVACT = 0」、「Record Type M 時 VVACT = 0」這些補丁，看得出來是一路調數字調出來的。改寫前一定要跟 CO 顧問在 <span class="tcode">KEA0</span> 確認每個值欄位的定義，並用 <span class="tcode">KE30</span> 標準報表對數。</div>
+  <p>成本型 CO-PA 還有一個結構性問題：<b>它跟財務帳不是同一本帳</b>。CE1xxxx 的收入、成本是依值欄位對照寫入，與總帳科目之間要靠對帳。S/4HANA 的<b>帳目型 CO-PA（Margin Analysis）</b>直接把獲利分析特性寫在 ACDOCA 行項目上，收入、銷貨成本、差異都是真正的總帳金額，這支程式費盡力氣拼湊的東西，大部分可以用一條 ACDOCA 查詢完成。而且在 S/4 啟用 Margin Analysis 後，銷貨成本可以依成本組成拆分（COGS split），實際成本差異也會在 <span class="tcode">CKMLCP</span> 結算時分配到獲利區段。</p>
+
+  <h3 id="ch08-5-09">9. ZFIU014N 程式架構拆解與現代改寫</h3>
+  <table>
+    <thead><tr><th>FORM</th><th>做的事</th><th>主要問題</th></tr></thead>
+    <tbody>
+      <tr><td>FRM_AUTH_DATA</td><td>AT SELECTION-SCREEN 依公司代碼檢查 F_BKPF_BUK</td><td>用 WITH HEADER LINE、SELECT *</td></tr>
+      <tr><td>FRM_GET_DATA</td><td>CE11000 LEFT JOIN VBAK、KNA1，排除 COPA_AWTYP = MLHD／MKPF；把 COPA_BWZPT = '1'（實際成本評價點）的列另存一份</td><td>WHERE 條件用了 LEFT JOIN 右表的欄位（KNA1-LAND1），等於變成 INNER JOIN</td></tr>
+      <tr><td>FRM_DEAL_DATA</td><td>補描述、客戶、物料、GPO、IDN、出貨方地區、實際成本、運費分攤、批次供應商、移轉價格；再從 ACDOCA 補兩類物料帳結算列</td><td>整份 MARA、TWEWT 全表讀入；迴圈內大量 SELECT SINGLE；ACDOCA 沒指定分類帳</td></tr>
+      <tr><td>FRM_SPLIT</td><td>運費依交貨單毛重比例分攤，最後一行吃尾差</td><td>毛重為 0 時整筆運費算給行項目 10，其他行為 0</td></tr>
+      <tr><td>FRM_DEAL_DATA2</td><td>退貨（RE）、貸項（S2）找原發票的成本，按數量比例帶負號</td><td>迴圈內 SELECT SINGLE CE11000，沒有排序依據</td></tr>
+      <tr><td>FRM_PRE_FIELDCAT／FRM_GET_TABNAME</td><td>用 <span class="kw">READ REPORT</span> 讀自己的原始碼，再以 <span class="kw">ABAP_SCAN_DATA_DESCRIPTION</span> 解析欄位參照，自動補 REF_TABLE</td><td>過度設計，且依賴未公開函數</td></tr>
+      <tr><td>FRM_SHOW_ALV 等</td><td>REUSE_ALV_GRID_DISPLAY_LVC＋CALLER_EXIT 註冊編輯事件</td><td>報表根本不可編輯，編輯事件是範本殘留</td></tr>
+    </tbody>
+  </table>
+  <p>第一步：把「迴圈內逐筆 SELECT SINGLE 取描述」全部改成 JOIN，一次取回。注意描述表要在 ON 條件指定語言，WHERE 不要引用 LEFT JOIN 右表的欄位：</p>
+  <pre><code class="abap">CONSTANTS lc_paledger TYPE ledbo VALUE '02'.   "經營範圍幣別類型（依系統設定）
+
+SELECT c~bukrs, c~perio, c~vrgar, c~paledger, c~versi, c~paobjnr, c~pasubnr,
+       c~belnr, c~posnr, c~kaufn, c~kdpos, c~kndnr, c~artnr,
+       c~rbeln, c~rposn, c~fkart, c~fadat, c~budat, c~wadat,
+       c~absmg, c~absmg_me, c~frwae,
+       c~erlos, c~vvarv, c~vvsd1, c~vvsd2, c~vvsp1, c~vvsp2, c~vvsp3,
+       c~vvacs, c~vvact, c~copa_bwzpt,
+       c~vkorg, c~vtweg, c~spart, c~werks, c~prctr,
+       v~auart, v~kvgr2,
+       at~bezei  AS auart_txt,
+       vt~vrgarx AS vrgar_txt,
+       ct~vtext  AS vtweg_txt,
+       st~vtext  AS spart_txt,
+       ft~vtext  AS fkart_txt,
+       k~name1, k~name2, k~land1, k~regio,
+       m~maktx
+  FROM ce11000 AS c
+  LEFT OUTER JOIN vbak  AS v  ON v~vbeln  = c~kaufn
+  LEFT OUTER JOIN tvakt AS at ON at~auart = v~auart AND at~spras = @sy-langu
+  LEFT OUTER JOIN tvgat AS vt ON vt~vrgar = c~vrgar AND vt~spras = @sy-langu
+  LEFT OUTER JOIN tvtwt AS ct ON ct~vtweg = c~vtweg AND ct~spras = @sy-langu
+  LEFT OUTER JOIN tspat AS st ON st~spart = c~spart AND st~spras = @sy-langu
+  LEFT OUTER JOIN tvfkt AS ft ON ft~fkart = c~fkart AND ft~spras = @sy-langu
+  INNER JOIN      kna1  AS k  ON k~kunnr  = c~kndnr        "原程式 WHERE 用了 KNA1 欄位，實質就是 INNER
+  LEFT OUTER JOIN makt  AS m  ON m~matnr  = c~artnr AND m~spras = @sy-langu
+  WHERE c~bukrs    IN @s_bukrs
+    AND c~perio    IN @s_perio
+    AND c~fadat    IN @s_fadat
+    AND c~kaufn    IN @s_kaufn
+    AND c~kndnr    IN @s_kndnr
+    AND c~rbeln    IN @s_rbeln
+    AND c~vtweg    IN @s_vtweg
+    AND c~artnr    IN @s_artnr
+    AND c~vrgar    IN @s_vrgar
+    AND c~paledger  = @lc_paledger
+    AND c~copa_awtyp NOT IN ( 'MLHD', 'MKPF' )           "排除物料帳與物料憑證來源
+    AND k~land1    IN @s_land1
+    AND k~regio    IN @s_regio
+  ORDER BY c~artnr, c~rbeln, c~rposn
+  INTO TABLE @DATA(lt_copa).
+
+"訂單類型：原程式是在迴圈內 DELETE；空白 AUART（無訂單參照的列）只有在 S_AUART 為空時保留
+DELETE lt_copa WHERE auart NOT IN s_auart.</code></pre>
+  <p>第二步：毛利、平均售價、銷售比用 <span class="kw">REDUCE</span> 與 <span class="kw">LOOP AT … GROUP BY</span> 計算，不用三次迴圈加 COLLECT。除以零要防呆：</p>
+  <pre><code class="abap">TYPES: BEGIN OF ty_gm,
+         artnr    TYPE artnr,
+         absmg    TYPE rke2_absmg,
+         net_rev  TYPE rke2_erlos,     "淨收入
+         cogs_std TYPE rke2_vvacs,
+         cogs_act TYPE rke2_vvact,
+         margin   TYPE rke2_erlos,
+         margin_p TYPE p LENGTH 8 DECIMALS 2,
+         avg_prc  TYPE p LENGTH 12 DECIMALS 2,
+         share_p  TYPE p LENGTH 8 DECIMALS 2,
+       END OF ty_gm.
+DATA lt_gm TYPE STANDARD TABLE OF ty_gm WITH EMPTY KEY.
+
+lt_gm = VALUE #( FOR c IN lt_copa WHERE ( copa_bwzpt &lt;&gt; '1' )
+                 ( artnr    = c-artnr
+                   absmg    = c-absmg
+                   net_rev  = c-erlos + c-vvarv - c-vvsd1
+                   cogs_std = c-vvacs
+                   cogs_act = c-vvact ) ).
+
+LOOP AT lt_gm ASSIGNING FIELD-SYMBOL(&lt;g&gt;).
+  "公式依 KEA0 值欄位定義決定；此處假設 VVACT 為「實際與標準的差異」
+  &lt;g&gt;-margin   = &lt;g&gt;-net_rev - &lt;g&gt;-cogs_std - &lt;g&gt;-cogs_act.
+  &lt;g&gt;-margin_p = COND #( WHEN &lt;g&gt;-net_rev &lt;&gt; 0 THEN &lt;g&gt;-margin * 100 / &lt;g&gt;-net_rev ).
+ENDLOOP.
+
+"全體淨收入 → 銷售比
+DATA(lv_total_rev) = REDUCE rke2_erlos( INIT s = 0 FOR g IN lt_gm NEXT s = s + g-net_rev ).
+
+"同產品平均售價：GROUP BY 一次算完，再回寫
+LOOP AT lt_gm INTO DATA(ls_grp) GROUP BY ls_grp-artnr INTO DATA(lo_prod).
+  DATA(lv_rev) = REDUCE rke2_erlos( INIT r = 0 FOR m IN GROUP lo_prod NEXT r = r + m-net_rev ).
+  DATA(lv_qty) = REDUCE rke2_absmg( INIT q = 0 FOR m IN GROUP lo_prod NEXT q = q + m-absmg ).
+  LOOP AT GROUP lo_prod ASSIGNING FIELD-SYMBOL(&lt;m&gt;).
+    &lt;m&gt;-avg_prc = COND #( WHEN lv_qty &lt;&gt; 0 THEN lv_rev / lv_qty ).
+    &lt;m&gt;-share_p = COND #( WHEN lv_total_rev &lt;&gt; 0 THEN &lt;m&gt;-net_rev * 100 / lv_total_rev ).
+  ENDLOOP.
+ENDLOOP.</code></pre>
+  <div class="note">原程式把收入欄位的型別從 CE11000-ERLOS 改成 <span class="kw">/SCF/QUAN_2_DECIMALS</span>（一個與 CO-PA 毫無關係的數量型別），用意是讓 ALV 不要依幣別處理小數位。正確做法是保留 CURR 型別並在欄位目錄指定幣別欄位（CFIELDNAME = 'FRWAE'），這樣日圓、台幣等小數位不同的幣別才會正確顯示。</div>
+
+  <h3 id="ch08-5-10">10. ZFIU014N 實際成本、物料帳與 ACDOCA：排序與分類帳的坑</h3>
+  <p>程式取「實際成本」的做法是：從 VBRP 找回交貨單 LIPS，再找它的子行項目（UEPOS = 上層行號，例如成套品的組件），到物料帳 CKMLHD＋CKMLCR 找<b>過帳期間之前最近一期</b>的期間單價 PVPRS，乘以交貨數量。這段邏輯有三個 bug，而且每一個都跟本館一再強調的「排序」有關：</p>
+  <ol>
+    <li><b>沒有篩選 CURTP（幣別類型）</b>。CKMLCR 每個期間會有多列：10＝公司代碼幣別、30＝集團幣別、31＝集團估價……。不指定 CURTP，同一期間就有好幾個價格，程式「讀第一筆」拿到哪一個幣別，取決於資料庫回傳順序。這跟 Casper 在成本評價專案遇到的 H／E 問題是同一類：<b>資料裡同時存在兩種角度的值，程式沒有明確指定、也沒有排序，結果就不穩定。</b></li>
+      <li><b>沒有處理價格單位 PEINH</b>。PVPRS 是「每 PEINH 單位」的價格，價格單位是 100 的物料，成本會放大 100 倍。</li>
+    <li>在 <span class="kw">FRM_DEAL_DATA2</span> 用 <span class="kw">SORT … DESCENDING</span> 再 <span class="kw">DELETE ADJACENT DUPLICATES</span> 取「最新一期」，卻沒有限制「不晚於過帳期間」，於是補跑舊月份報表時會拿到未來月份的價格。</li>
+  </ol>
+  <pre><code class="abap">"取物料帳期間實際價：指定幣別類型、處理價格單位、明確排序後取「過帳期間之前最近一期」
+"前提：lt_lips_comp 為交貨單子行項目（MATNR、WERKS、LFIMG），ls_comp 為其中一列，
+"      lv_bdatj／lv_poper 為該筆 CO-PA 過帳日所屬的年度與期間
+TYPES: BEGIN OF ty_ml_key,
+         matnr TYPE matnr,
+         bwkey TYPE bwkey,
+       END OF ty_ml_key.
+DATA lt_ml_key TYPE SORTED TABLE OF ty_ml_key WITH UNIQUE KEY matnr bwkey.
+
+lt_ml_key = CORRESPONDING #( lt_lips_comp DISCARDING DUPLICATES MAPPING bwkey = werks ).
+
+IF lt_ml_key IS NOT INITIAL.
+  SELECT h~matnr, h~bwkey, c~bdatj, c~poper, c~pvprs, c~peinh
+    FROM ckmlhd AS h
+    INNER JOIN ckmlcr AS c ON c~kalnr = h~kalnr
+    FOR ALL ENTRIES IN @lt_ml_key
+    WHERE h~matnr  = @lt_ml_key-matnr
+      AND h~bwkey  = @lt_ml_key-bwkey
+      AND c~curtp  = '10'                "公司代碼幣別；依報表幣別決定
+      AND c~untper = '000'               "主期間，不取特殊期間
+      AND c~vprsv  = 'V'
+    INTO TABLE @DATA(lt_ml_price).
+ENDIF.
+"FOR ALL ENTRIES 不能下 ORDER BY 欄位，所以在 ABAP 端明確排序
+SORT lt_ml_price BY matnr bwkey bdatj DESCENDING poper DESCENDING.
+
+"給定物料、工廠、過帳年度期間，取不晚於該期的最近一期單價
+DATA(lv_unit_cost) = VALUE ck_pvprs_1( ).
+LOOP AT lt_ml_price INTO DATA(ls_p)
+     WHERE matnr = ls_comp-matnr AND bwkey = ls_comp-werks
+       AND ( bdatj &lt; lv_bdatj OR ( bdatj = lv_bdatj AND poper &lt;= lv_poper ) ).
+  lv_unit_cost = COND #( WHEN ls_p-peinh &lt;&gt; 0 THEN ls_p-pvprs / ls_p-peinh ).
+  EXIT.                                  "已依期間遞減排序，第一筆就是最近一期
+ENDLOOP.
+DATA(lv_actual_cogs) = ls_comp-lfimg * lv_unit_cost.</code></pre>
+  <p>第二個坑在 ACDOCA。程式兩次讀 ACDOCA 補「物料帳結算」列，科目直接寫死在程式裡，而且：</p>
+  <ul>
+    <li><b>沒有 RLDNR = '0L'</b>，有平行分類帳就重複；</li>
+    <li>第一次篩 BLART = 'ML'，第二次（另一個費用科目）沒篩，兩列口徑不同；</li>
+    <li>用 <span class="kw">COLLECT</span> 彙總，但彙總鍵包含 BUDAT（因為它是字元型欄位），所以其實是「每天一列」，不是每期一列；</li>
+    <li>把 GJAHR BETWEEN 起訖年度、BUDAT BETWEEN 起訖日期兩個條件同時下，跨年時邏輯重疊。</li>
+  </ul>
+  <pre><code class="abap">"科目不要寫死：放 STVARV（TVARVC）以「多筆 EQ」列舉，財務可自行維護
+DATA lr_cogs_acct TYPE RANGE OF racct.
+SELECT sign, opti AS option, low, high
+  FROM tvarvc
+  WHERE name = 'ZFI_GM_ML_SETTLE_ACCT'
+    AND type = 'S'
+  INTO CORRESPONDING FIELDS OF TABLE @lr_cogs_acct.
+IF lr_cogs_acct IS INITIAL.
+  MESSAGE 'STVARV 變數 ZFI_GM_ML_SETTLE_ACCT 未維護' TYPE 'E'.
+ENDIF.
+
+"物料帳結算差異：在資料庫彙總到「物料＋工廠＋期間＋科目」
+SELECT rbukrs, matnr, werks, gjahr, poper, racct, rhcur,
+       SUM( hsl ) AS hsl
+  FROM acdoca
+  WHERE rldnr   = '0L'                  "只取主要分類帳
+    AND rbukrs IN @s_bukrs
+    AND budat BETWEEN @lv_from AND @lv_to
+    AND racct  IN @lr_cogs_acct
+    AND blart   = 'ML'                  "兩類科目都用同一個口徑
+  GROUP BY rbukrs, matnr, werks, gjahr, poper, racct, rhcur
+  ORDER BY rbukrs, matnr, werks, gjahr, poper
+  INTO TABLE @DATA(lt_ml_settle).</code></pre>
+  <div class="tip">為什麼 STVARV 裡的科目要一筆一筆 EQ，不要用 BT？因為科目區間比的是<b>字典序</b>。「6401000000～6401999999」看起來很安全，但只要哪天財務新開一個同字首、用途完全不同的科目（例如內部往來的成本科目），它就會被自動算進毛利。列舉式條件讓每一個被納入的科目都經過人確認；新增科目時報表不會自己變，這正是我們要的。</div>
+
+  <h3 id="ch08-5-11">11. ZFIU014N 其他問題、移轉價格與上線注意事項</h3>
+  <table>
+    <thead><tr><th>問題</th><th>說明</th><th>改進</th></tr></thead>
+    <tbody>
+      <tr><td><b>工作區與欄位符號混用</b></td><td>取移轉價格那段，前兩個分支寫進 <span class="kw">&lt;GS_OUT&gt;-TPRICE</span>，第三個分支（用 EINA／EINE）卻讀寫 <span class="kw">GS_OUT-ARTNR</span>、<span class="kw">GS_OUT-TPRICE</span>——GS_OUT 是之前迴圈留下的舊值，結果完全錯誤；後面補 ZCE11000 那段也用 <span class="kw">IF GS_OUT-AUART IS INITIAL</span> 判斷 &lt;GS_OUT&gt;</td><td>迴圈內一律用內嵌宣告的欄位符號，不要保留全域工作區；開啟擴充程式檢查（<span class="tcode">SLIN</span>）與 ATC 會抓到部分這類問題</td></tr>
+      <tr><td><b>MAX( KNUMH ) 當成「最新有效價格」</b></td><td>A017 取 <span class="kw">MAX( KNUMH ) … DATBI &gt;= 月底</span>：條件記錄號大，不代表有效期間涵蓋查詢日；也沒有指定 KAPPL、採購組織 EKORG、資訊記錄類型 ESOKZ</td><td>用 <span class="kw">DATAB &lt;= 日期 AND DATBI &gt;= 日期</span> 找有效記錄，並補齊鍵值；若可能多筆，要明確 ORDER BY DATAB DESCENDING 後取第一筆</td></tr>
+      <tr><td>MAX( INFNR ) 取資訊記錄</td><td>同樣的問題：號碼最大 ≠ 應該用的那一筆</td><td>依供應商＋物料＋採購組織＋工廠精確讀取</td></tr>
+      <tr><td>S_PERIO-HIGH 讀表頭行</td><td>SELECT-OPTIONS 的表頭行只是最後一次讀到的那列，程式卻拿來算日期；使用者輸入多列時結果不可預期；又把 PERIO（YYYYPPP）的第 6～7 碼當月份，特殊期間 013～016 會出錯</td><td>明確讀 <span class="kw">s_perio[ 1 ]</span> 並檢查，或改成兩個 PARAMETERS；期間轉日期用 <span class="kw">FIRST_DAY_IN_PERIOD_GET</span>／<span class="kw">LAST_DAY_IN_PERIOD_GET</span></td></tr>
+      <tr><td>整表讀取</td><td><span class="kw">SELECT … FROM mara</span> 沒有 WHERE，整個物料主檔讀進記憶體</td><td>JOIN 或 FOR ALL ENTRIES</td></tr>
+      <tr><td>寫死科目與 ALV 欄位</td><td>收入科目、成本科目直接寫在程式裡，程式註解還留著「某年某月由某科目改成另一科目」的紀錄</td><td>放 STVARV 或自建設定表</td></tr>
+      <tr><td>運費分攤尾差</td><td>最後一行吃尾差的寫法是對的，但先迴圈內再套一層迴圈算已分配金額（O(n²)）</td><td>先累計已分配金額，最後一行用總額相減</td></tr>
+      <tr><td>語言寫死 'E'</td><td>TVV2T、T151T 描述固定讀英文</td><td>用 SY-LANGU，找不到再退回英文</td></tr>
+    </tbody>
+  </table>
+  <div class="note"><b>上線注意</b>：① 毛利報表一定要跟 <span class="tcode">KE30</span>（成本型）或 <span class="tcode">KE30</span>＋Margin Analysis Fiori App（帳目型）同口徑對數，差異要能逐項解釋；② 月結 <span class="tcode">CKMLCP</span> 之前跑的報表，實際成本欄一定不準，最好在畫面標示「本期物料帳尚未結算」；③ 如果公司已經或準備轉帳目型 CO-PA，這支程式應該整支重寫成以 ACDOCA 為主，而不是繼續修補。</div>
+
+  <h3 id="ch08-5-12">12. ZFIU040 應收帳款帳齡表：業務情境與原程式來歷</h3>
+  <p><b>業務情境</b>：財務需要依「關鍵日」看每個客戶的未清應收，按逾期天數分段（未到期、10 天內、11～20、21～30、31～60、61～90、91～180、181～360、361～720、721 天以上），每段金額與百分比，外加信用額度與剩餘額度。另一個需求是<b>每月把帳齡資料匯出成文字檔，自動上傳到外部系統</b>。</p>
+  <p><b>原程式來歷</b>：ZFIU040 不是從零寫的，而是整支<b>複製 SAP 標準中國在地化程式 <span class="kw">RFIDCN_AR_AGING</span></b>（應收帳款帳齡報表（中國）），只把「選擇畫面」與「事件處理」兩個 Include 改成 Z 版本，在最後加上匯出與 FTP 上傳。標準程式本身使用<b>邏輯資料庫 DDF</b>（<span class="kw">GET KNA1</span>／<span class="kw">GET KNB1</span>／<span class="kw">GET BSID</span>），用 <span class="kw">DETERMINE_DUE_DATE</span> 算淨到期日，並已經套過許多 SAP Note（程式註解可以看到 1758888、1842750、2077579、2621988、2761822、2805460 等）；在 S/4 版本中，利潤中心／區段篩選已經改由 <span class="kw">CL_FINS_ACDOC_FACTORY=&gt;CREATE_FOR_SELECT</span> 讀 ACDOCA，信用額度走 FSCM 信用管理（UKM）。</p>
+  <div class="warn"><b>複製標準程式是「最貴」的客製方式之一。</b>Z 複本不會再收到 SAP Note 的修正，升級後標準程式改了、Z 版沒改，兩邊結果就會分岔。依本館「先找標準，再想客製」的順序：帳齡分析在 S/4 已有標準報表 <span class="tcode">S_ALR_87012178</span>（依逾期分析客戶未清項）、<span class="tcode">FBL5H</span>，以及 Fiori 的應收帳齡分析 App；「匯出並傳給外部系統」這個需求，其實只要寫一支小程式<b>呼叫標準報表取得結果</b>（<span class="kw">SUBMIT … EXPORTING LIST TO MEMORY</span> 或 <span class="kw">CL_SALV_BS_RUNTIME_INFO</span> 攔截 ALV 資料），不需要複製 6,000 行。</div>
+  <h4>選擇畫面（依截圖）</h4>
+  <table>
+    <thead><tr><th>區塊</th><th>欄位</th><th>說明</th></tr></thead>
+    <tbody>
+      <tr><td>客戶選擇</td><td>客戶帳戶、公司代碼</td><td>來自邏輯資料庫 DDF 的標準選擇</td></tr>
+      <tr><td>交易數字選擇</td><td>利潤中心 R_PRCTR、細分（區段）R_SEGMT</td><td>有輸入時才讀 ACDOCA 過濾；會檢查 New GL 是否啟用（FAGL_ACTIVEC）</td></tr>
+      <tr><td>行項目選擇</td><td>關鍵日期中的未清項 S_KDATE（預設今天）、包括已清項 HISTORY</td><td>關鍵日早於今天時，要把「關鍵日之後才清帳」的項目也算成未清</td></tr>
+      <tr><td>更多選擇</td><td>對帳科目 S_RCLACC、特別總帳標識 S_SPCACC、普通項目 P_N_INFO、特別總帳業務 P_S_INFO、將基準日期用作淨到期日 P_FBLDT</td><td>P_FBLDT 勾選時，以基準日 ZFBDT 而非淨到期日計算天數</td></tr>
+      <tr><td>銷售和分銷資料過濾器</td><td>銷售組織、分銷通路、部門、銷售地區、銷售憑證</td><td>透過 VBFA 找訂單對應的發票</td></tr>
+      <tr><td>輸出控制</td><td>8 個到期日分段 P_DATE_1～8（預設 10、20、30、60、90、180、360、720）＋單位 P_UNIT1～8（天／月／年，下拉選單）；以交易貨幣計的金額 P_CURR_T；使用歷史匯率 P_H_RT、關鍵日期換算 P_HDATE、匯率類型 P_RT_TY（預設 M）</td><td>新舊兩組分段參數並存，依 Customizing 開關 GV_FB4_ACTIVE 決定顯示哪一組</td></tr>
+      <tr><td>（Z 新增）</td><td>P_RPT 顯示報表／P_EXP 匯出；RFC 目的地 P_DEST（預設 SAPFTP）、被動模式 P_PASV</td><td>截圖中兩個單選鈕沒有維護選擇文字，直接顯示變數名 P_RPT、P_EXP——上線前應補文字元素</td></tr>
+    </tbody>
+  </table>
+  <h4>輸出（依截圖與 EXPORT.xlsx）</h4>
+  <p>標題「應收帳款帳齡報表（中國）」＋關鍵日期；分割畫面上半部為表頭，下半部為 ALV。欄位：公司代碼、段、利潤中心、客戶、客戶名稱、總帳科目、總帳科目文本、未清項目總計、本幣、未到期與 %、&lt;11 D 與 %、11～20 D、21～30 D、31～60 D、61～90 D、91～180 D、181～360 D、361～720 D、721D+（各附 %）、信貸限額、剩餘信貸。ALV 依公司、段、利潤中心、客戶排序並有小計。截圖可見某客戶在 91～180 天段為正、181～360 天段為等額負數——這是<b>未清的貸項（例如預收或退貨貸項）沒有跟發票清帳</b>，帳齡表如實呈現，財務應去清帳，而不是改程式把它抵掉。</p>
+
+  <h3 id="ch08-5-13">13. 帳齡區間計算：到期日、天數與分段</h3>
+  <p>帳齡計算分三步，原程式分散在 <span class="kw">FICN_DUE_CALCULATION</span>、<span class="kw">FICN_GET_FAEDE</span>、<span class="kw">FICN_PUT_AGING</span>：</p>
+  <ol>
+    <li><b>決定到期日</b>：把行項目的基準日 ZFBDT、付款條件天數 ZBD1T／ZBD2T／ZBD3T、借貸別放進結構 FAEDE，呼叫 <span class="kw">DETERMINE_DUE_DATE</span> 得到淨到期日 NETDT。貸項若有參照發票（REBZG），要沿用<b>原發票</b>的付款條件（Note 1758888、2761822 修的就是這件事）。</li>
+    <li><b>算逾期天數</b>：天數＝關鍵日－淨到期日（勾選 P_FBLDT 時改用基準日）。負數表示還沒到期。</li>
+    <li><b>分段</b>：舊版用一長串 <span class="kw">IF … ELSEIF</span> 比較 8 個邊界，還要處理「某個邊界沒填」的各種組合；新版把邊界放進內表 GT_PDATES_NEW，再用<b>動態組欄位名</b> <span class="kw">'GS_OUTPUT-SEGMENT' &amp;&amp; lv_index</span> 加 <span class="kw">ASSIGN (lv_varname)</span> 寫入。Note 2805460 修的是負天數（未到期）也被分進某一段的錯誤。</li>
+  </ol>
+  <p>下面是現代寫法。重點是把分段<b>定義成一張資料表</b>，而且在建立時就檢查「連續、不重疊、沒有缺口」；分段邏輯只寫一次，不管有幾段都一樣：</p>
+  <pre><code class="abap">TYPES: BEGIN OF ty_bucket,
+         idx      TYPE i,
+         from_day TYPE i,
+         to_day   TYPE i,
+         label    TYPE string,
+       END OF ty_bucket,
+       tt_bucket TYPE STANDARD TABLE OF ty_bucket WITH EMPTY KEY.
+
+CLASS lcl_aging DEFINITION.
+  PUBLIC SECTION.
+    METHODS constructor IMPORTING it_bounds TYPE int4_table      "例如 10,20,30,60,90,180,360,720
+                        RAISING   cx_parameter_invalid_range.
+    METHODS bucket_of   IMPORTING iv_days   TYPE i
+                        RETURNING VALUE(rv) TYPE i.
+    DATA mt_bucket TYPE tt_bucket READ-ONLY.
+ENDCLASS.
+
+CLASS lcl_aging IMPLEMENTATION.
+  METHOD constructor.
+    "邊界必須嚴格遞增，否則分段會重疊或出現缺口
+    LOOP AT it_bounds INTO DATA(lv_b) FROM 2.
+      IF lv_b &lt;= it_bounds[ sy-tabix - 1 ].
+        RAISE EXCEPTION TYPE cx_parameter_invalid_range
+          EXPORTING parameter = 'IT_BOUNDS' value = CONV #( lv_b ).
+      ENDIF.
+    ENDLOOP.
+
+    "第 0 段固定為「未到期」：天數 &lt; 0
+    mt_bucket = VALUE #( ( idx = 0 from_day = cl_abap_math=&gt;min_int4 to_day = -1 label = `未到期` ) ).
+    DATA(lv_from) = 0.
+    LOOP AT it_bounds INTO lv_b.
+      APPEND VALUE #( idx = sy-tabix from_day = lv_from to_day = lv_b
+                      label = |{ lv_from }–{ lv_b } 天| ) TO mt_bucket.
+      lv_from = lv_b + 1.
+    ENDLOOP.
+    APPEND VALUE #( idx = lines( it_bounds ) + 1 from_day = lv_from
+                    to_day = cl_abap_math=&gt;max_int4 label = |{ lv_from } 天以上| ) TO mt_bucket.
+  ENDMETHOD.
+
+  METHOD bucket_of.
+    "分段表已依 idx 排好，且連續不重疊，所以恰好命中一段
+    LOOP AT mt_bucket INTO DATA(ls_b) WHERE from_day &lt;= iv_days AND to_day &gt;= iv_days.
+      rv = ls_b-idx.
+      RETURN.
+    ENDLOOP.
+  ENDMETHOD.
+ENDCLASS.</code></pre>
+  <p>有了分段物件，逐筆計算就很單純。輸出結構用「一列一段」的長表（客戶、段號、金額），要顯示成橫向十欄時再轉置，比動態 ASSIGN 欄位名安全得多：</p>
+  <pre><code class="abap">"lt_open：關鍵日當下的未清項（取法見下一節），已含 NETDT、HSL
+DATA(lo_aging) = NEW lcl_aging( VALUE #( ( 10 ) ( 20 ) ( 30 ) ( 60 ) ( 90 ) ( 180 ) ( 360 ) ( 720 ) ) ).
+
+TYPES: BEGIN OF ty_aging_line,
+         rbukrs TYPE bukrs,
+         kunnr  TYPE kunnr,
+         racct  TYPE racct,
+         bucket TYPE i,
+         hsl    TYPE fins_vhcur12,
+       END OF ty_aging_line.
+DATA lt_aging TYPE SORTED TABLE OF ty_aging_line
+              WITH UNIQUE KEY rbukrs kunnr racct bucket.
+
+LOOP AT lt_open INTO DATA(ls_open).
+  DATA(lv_ref_date) = COND d( WHEN p_fbldt = abap_true THEN ls_open-zfbdt ELSE ls_open-netdt ).
+  DATA(lv_days)     = CONV i( p_kdate - lv_ref_date ).       "負數＝未到期
+  DATA(lv_bucket)   = lo_aging-&gt;bucket_of( lv_days ).
+
+  READ TABLE lt_aging ASSIGNING FIELD-SYMBOL(&lt;a&gt;)
+       WITH TABLE KEY rbukrs = ls_open-rbukrs kunnr = ls_open-kunnr
+                      racct  = ls_open-racct  bucket = lv_bucket.
+  IF sy-subrc = 0.
+    &lt;a&gt;-hsl = &lt;a&gt;-hsl + ls_open-hsl.
+  ELSE.
+    INSERT VALUE #( rbukrs = ls_open-rbukrs kunnr = ls_open-kunnr racct = ls_open-racct
+                    bucket = lv_bucket hsl = ls_open-hsl ) INTO TABLE lt_aging.
+  ENDIF.
+ENDLOOP.</code></pre>
+  <div class="tip"><b>帳齡分段與「列舉優於區間」的關係</b>：逾期天數是真正的數值，用區間分段沒有問題，重點是分段要連續、不重疊，而且只在一個地方定義。真正危險的區間在選擇畫面：<b>對帳科目 S_RCLACC、特別總帳標識 S_SPCACC 如果用 BT 輸入</b>（例如應收科目「1122000000～1122999999」），比的是字典序，將來新開一個同字首、但不屬於應收帳齡範圍的科目（例如其他應收、關聯方往來），就會被自動算進來。建議在選擇畫面預設值或 STVARV 變數中，以<b>多筆 EQ 列舉</b>要納入的統馭科目與特別總帳標識。</div>
+  <div class="warn">分段邊界還有一個小陷阱：原程式選擇畫面第一段文字是「&lt; 11 D」，參數值卻是 10，實際判斷是「0 ≤ 天數 ≤ 10」。0 天（今天到期）算不算逾期、第 10 天算哪一段，財務與業務的認知常常不同。改寫時請讓標籤由分段表自動產生（如上例的 <span class="kw">|{ lv_from }–{ lv_b } 天|</span>），不要再手打一份。</div>
+
+  <h3 id="ch08-5-14">14. ZFIU040 取數現代化與 S/4HANA 差異</h3>
+  <p>邏輯資料庫在新程式中已不建議使用（S/4 不再擴充，也無法在 ABAP Cloud 使用）。「關鍵日的未清項」可以直接由 ACDOCA 取得：<b>過帳日 ≤ 關鍵日，且（尚未清帳，或清帳日 &gt; 關鍵日）</b>。這一條件同時涵蓋了原程式的「包括已清項（HISTORY）」邏輯。</p>
+  <pre><code class="abap">"關鍵日 p_kdate 當下的客戶未清項
+"lr_recon_acct：統馭科目，以多筆 EQ 列舉（STVARV 維護）
+SELECT a~rbukrs, a~kunnr, a~racct, a~gjahr, a~belnr, a~docln, a~buzei,
+       a~budat, a~umskz, a~hsl, a~rhcur, a~wsl, a~rwcur,
+       a~prctr, a~segment, a~augdt,
+       b~zfbdt, b~zbd1t, b~zbd2t, b~zbd3t, b~zterm, b~rebzg, b~rebzj, b~rebzz, b~rebzt,
+       b~netdt
+  FROM acdoca AS a
+  INNER JOIN bseg AS b
+          ON b~bukrs = a~rbukrs AND b~gjahr = a~gjahr
+         AND b~belnr = a~belnr  AND b~buzei = a~buzei
+  WHERE a~rldnr   = '0L'
+    AND a~rbukrs IN @s_bukrs
+    AND a~koart   = 'D'
+    AND a~kunnr  IN @s_kunnr
+    AND a~racct  IN @lr_recon_acct
+    AND a~umskz  IN @lr_umskz
+    AND a~prctr  IN @r_prctr
+    AND a~segment IN @r_segmt
+    AND a~budat  &lt;= @p_kdate
+    AND ( a~augdt = '00000000' OR a~augdt &gt; @p_kdate )
+  ORDER BY a~rbukrs, a~kunnr, a~racct, a~budat, a~belnr, a~docln
+  INTO TABLE @DATA(lt_open).</code></pre>
+  <div class="warn">BSEG-NETDT（淨到期日）是 S/4HANA 才有的持久化欄位，<b>請先在你的系統 <span class="tcode">SE11</span> 確認存在且已有值</b>（舊資料可能是遷移時補算）。如果沒有，就沿用 <span class="kw">DETERMINE_DUE_DATE</span>；對參照發票的貸項（REBZG 有值、REBZT ≠ 'V'），要先讀原發票的 ZFBDT 與付款條件再計算，這是標準程式套了好幾個 Note 才修正的邏輯，改寫時不要漏掉。另一個選項是 SAP 已發布的 CDS 視圖 <span class="kw">I_OperationalAcctgDocItem</span>，其中已帶淨到期日等欄位；欄位名稱請在 ADT 中確認。</div>
+  <table>
+    <thead><tr><th>項目</th><th>原程式（ECC 思維）</th><th>S/4HANA 建議</th></tr></thead>
+    <tbody>
+      <tr><td>取未清項</td><td>邏輯資料庫 DDF：GET KNA1／KNB1／KNC3／BSID</td><td>ACDOCA（＋BSEG 付款條件欄位）或 CDS；BSID 在 S/4 是相容性視圖</td></tr>
+      <tr><td>利潤中心／區段</td><td>另讀 ACDOCA 取鍵值，再逐筆 BINARY SEARCH 比對（而且每次 GET BSID 都重新 SORT 整張表）</td><td>直接當 ACDOCA 的 WHERE 條件</td></tr>
+      <tr><td>客戶總額 KNC3</td><td>GET KNC3 並 CHECK 年度</td><td>相容性視圖，不需要讀</td></tr>
+      <tr><td>信用額度</td><td>KNKK → 透過 UKM 介面取得</td><td>FSCM 信用管理 UKM_*，BP 角色 UKM000</td></tr>
+      <tr><td>外幣換算</td><td>迴圈內逐筆 <span class="kw">CONVERT_TO_LOCAL_CURRENCY</span>，找不到匯率就 LEAVE LIST-PROCESSING 中止整份報表</td><td>先以幣別＋日期彙總再換算；找不到匯率時標示該列，不要整份中止</td></tr>
+      <tr><td>顯示</td><td>Dynpro 分割畫面＋<span class="kw">CL_GUI_ALV_GRID</span>＋<span class="kw">CL_DD_DOCUMENT</span> 表頭</td><td>SALV 的 TOP_OF_LIST，或直接使用標準 Fiori App</td></tr>
+    </tbody>
+  </table>
+
+  <h3 id="ch08-5-15">15. ZFIU040 匯出與 FTP 上傳：密碼處理的資安問題</h3>
+  <p>Z 版本在 <span class="kw">END-OF-SELECTION</span> 最後加了一個分支：選「匯出」時，把帳齡結果轉成 Tab 分隔文字，用 FTP 上傳到外部伺服器。流程如下：</p>
+  <ol>
+    <li>從自建表 <b>ZFIT007</b> 以程式名（SY-CPROG）讀出 FTP 主機、使用者、<b>密碼</b>、目的路徑。</li>
+    <li>用 <span class="kw">HTTP_SCRAMBLE</span> 搭配一個<b>寫死在程式裡的整數 key</b>，把密碼轉成 <span class="kw">FTP_CONNECT</span> 接受的格式。</li>
+    <li><span class="kw">FTP_CONNECT</span>（經由 RFC 目的地 SAPFTP）→ 視需要 <span class="kw">FTP_COMMAND</span> 'set passive on' → <span class="kw">FTP_R3_TO_SERVER</span> 以字元模式上傳 → <span class="kw">FTP_DISCONNECT</span> → <span class="kw">RFC_CONNECTION_CLOSE</span>。</li>
+  </ol>
+  <div class="warn"><b>這段設計有嚴重的資安問題，不可照抄：</b>
+    <br>① <b>密碼以明文存在自建表</b>：任何有 <span class="tcode">SE16</span>／<span class="tcode">SE16N</span> 權限的人都看得到；表的內容還會跟著用戶端複製、系統複製進入測試機。
+    <br>② <b>HTTP_SCRAMBLE 不是加密</b>：它只是把明文轉成 FTP 函數要的格式，key 又寫死在原始碼裡，任何能看程式的人都能還原。
+    <br>③ <b>FTP 本身是明文協定</b>：帳號、密碼與應收資料（客戶名稱、金額、信用額度）都以明文在網路上傳送。
+    <br>④ 錯誤處理不完整：<span class="kw">FTP_CONNECT</span> 失敗時沒有檢查 SY-SUBRC 就繼續上傳；<span class="kw">RAISING invalid_output_file</span> 寫在 FORM 裡，執行時會變成執行期錯誤。
+  </div>
+  <p>正確的做法依優先順序：</p>
+  <ol>
+    <li><b>不要在 ABAP 裡處理外部系統帳密。</b>改由整合平台（SAP Integration Suite／PI/PO 等）或作業系統層的排程以 SFTP（金鑰驗證）取檔，ABAP 只負責把檔案寫到應用伺服器目錄（邏輯檔名 <span class="tcode">FILE</span>，寫檔方式見 <a href="#ch04-4">4-4 章</a>）。</li>
+    <li>如果外部系統提供 HTTPS API，就在 <span class="tcode">SM59</span> 建 <b>Type G／H 目的地</b>，帳密或用戶端憑證放在目的地設定（存在 SAP 安全儲存區，不會出現在 SE16），憑證信任鏈在 <span class="tcode">STRUST</span> 維護。程式只知道目的地名稱。</li>
+    <li>真的只能用 FTP 時，至少把帳密從自建表移除，並限制 RFC 目的地與程式的執行權限；同時把這個風險寫進上線文件，讓資安單位簽核。</li>
+  </ol>
+  <pre><code class="abap">"以 SM59 目的地傳送帳齡資料：程式中沒有任何主機、帳號、密碼
+CONSTANTS lc_dest TYPE rfcdest VALUE 'Z_AR_AGING_EXPORT'.   "Type G，指向 https://api.example.com/ar-aging
+
+"1. 組 Tab 分隔內容（原程式用 '09' 字元當分隔符號，見下方說明）
+DATA(lv_tab) = cl_abap_char_utilities=&gt;horizontal_tab.
+DATA(lv_crlf) = cl_abap_char_utilities=&gt;cr_lf.
+DATA(lv_payload) = REDUCE string(
+  INIT s = |Company Code{ lv_tab }Customer{ lv_tab }G/L Account{ lv_tab }Bucket{ lv_tab }Amount{ lv_crlf }|
+  FOR a IN lt_aging
+  NEXT s = s &amp;&amp; |{ a-rbukrs }{ lv_tab }{ a-kunnr ALPHA = OUT }{ lv_tab }{ a-racct ALPHA = OUT }| &amp;&amp;
+               |{ lv_tab }{ a-bucket }{ lv_tab }{ a-hsl DECIMALS = 2 }{ lv_crlf }| ).
+
+"2. 以目的地建立 HTTP 用戶端；帳密／憑證都在 SM59 與 STRUST
+cl_http_client=&gt;create_by_destination(
+  EXPORTING  destination              = lc_dest
+  IMPORTING  client                   = DATA(lo_http)
+  EXCEPTIONS argument_not_found       = 1
+             destination_not_found    = 2
+             destination_no_authority = 3
+             plugin_not_active        = 4
+             internal_error           = 5
+             OTHERS                   = 6 ).
+IF sy-subrc &lt;&gt; 0.
+  MESSAGE |RFC 目的地 { lc_dest } 無法使用（rc={ sy-subrc }）| TYPE 'E'.
+ENDIF.
+
+lo_http-&gt;request-&gt;set_method( if_http_request=&gt;co_request_method_post ).
+lo_http-&gt;request-&gt;set_content_type( 'text/tab-separated-values; charset=utf-8' ).
+lo_http-&gt;request-&gt;set_cdata( lv_payload ).
+
+lo_http-&gt;send( EXCEPTIONS OTHERS = 1 ).
+IF sy-subrc = 0.
+  lo_http-&gt;receive( EXCEPTIONS OTHERS = 1 ).
+ENDIF.
+IF sy-subrc &lt;&gt; 0.
+  lo_http-&gt;get_last_error( IMPORTING message = DATA(lv_err) ).
+  lo_http-&gt;close( ).
+  MESSAGE |傳送失敗：{ lv_err }| TYPE 'E'.
+ENDIF.
+
+lo_http-&gt;response-&gt;get_status( IMPORTING code = DATA(lv_code) ).
+lo_http-&gt;close( ).
+IF lv_code &lt;&gt; 200.
+  MESSAGE |外部系統回應 HTTP { lv_code }| TYPE 'E'.
+ENDIF.
+MESSAGE |帳齡資料已傳送，共 { lines( lt_aging ) } 列| TYPE 'S'.</code></pre>
+  <div class="note">原程式的 <span class="kw">PREPARE_EXPORT_DATA</span> 在每個分隔欄位填入 <span class="kw">'09'</span>，註解寫「for adding tab」。如果這些 DELIM 欄位是 C 類型（程式碼看不到結構定義 ZFI_IDCN_S_AR_AGING_HEADER，無法確認），填進去的是字元「0」或「09」，不是 Tab；要放 Tab 必須用 <span class="kw">CL_ABAP_CHAR_UTILITIES=&gt;HORIZONTAL_TAB</span>，或把欄位宣告成 X 類型再給 <span class="kw">'09'</span> 這個十六進位值。另外表頭列把「Name」「Amount」等字串塞進金額、日期型欄位，也只有在全部欄位都是字元型時才行得通。</div>
+  <div class="note"><b>上線注意</b>：① 帳齡的關鍵日、匯率類型、分段邊界要跟財務書面確認，並與 <span class="tcode">S_ALR_87012178</span> 或 <span class="tcode">FBL5H</span> 核對幾個客戶；② 背景排程時沒有 SAP GUI，分割畫面與 Dynpro 不能用，原程式的 <span class="kw">FM_CREATE_ALV_BATCH</span> 就是為此另寫的一支，改寫成 SALV 後可以省掉；③ 外傳資料含客戶與信用資訊，屬個資與營業秘密，要走資安審查。</div>
+
+  <h3 id="ch08-5-16">16. ZFIU011 ZIP to Territory Mapping：對照表維護與 Excel 匯入</h3>
+  <p><b>業務情境</b>：美國業務團隊依郵遞區號（ZIP）劃分轄區，每個「ZIP＋產品組（Division）」對應 1～3 位業務代表（可能是自家業務，也可能是代理商）。這張對照表給佣金計算、業務報表、甚至銷售訂單的業務員決定使用。財務希望能在 SAP 維護，也能一次用 Excel 覆蓋整批資料。</p>
+  <h4>選擇畫面與畫面流程（依截圖）</h4>
+  <ul>
+    <li>標題「ZIP to Territory Mapping Maintenance」（原畫面拼成 Maintence）；工具列有自訂按鈕「Template Download」（<span class="kw">SELECTION-SCREEN FUNCTION KEY 1</span>，功能碼 FC01）。</li>
+    <li>Operation selection：<b>Maintain</b>（預設）／<b>File Import</b>。選 File Import 時才顯示檔案路徑 P_FILE 與「覆蓋歷史資料」勾選框 CB_DEL（MODIF ID M1）。</li>
+    <li>Maintain：呼叫 <span class="kw">VIEW_MAINTENANCE_CALL</span>（ACTION = 'S'）開啟 <span class="tcode">SM30</span> 表格維護畫面「ZIP to Territory mapping-Upload」。</li>
+    <li>Template Download：從 <span class="tcode">SMW0</span>（WWWDATA，RELID = 'MI'，物件名＝程式名）下載 Excel 範本。</li>
+    <li>File Import：<span class="kw">TEXT_CONVERT_XLS_TO_SAP</span> 讀 Excel → 補建立日期／時間／使用者 → 若勾選覆蓋先 <span class="kw">DELETE FROM zfi_exp_sales</span> → <span class="kw">MODIFY … FROM TABLE</span> → 跳出成功筆數。</li>
+  </ul>
+  <h4>自建表 ZFI_EXP_SALES（依 SE11 截圖）</h4>
+  <table>
+    <thead><tr><th>欄位</th><th>鍵值</th><th>資料元素</th><th>型別／長度</th><th>說明</th></tr></thead>
+    <tbody>
+      <tr><td>MANDT</td><td>是</td><td>MANDT</td><td>CLNT 3</td><td>用戶端</td></tr>
+      <tr><td>Z_ZIP</td><td>是</td><td>Z_ZIP</td><td>CHAR 10</td><td>ZIP CODE</td></tr>
+      <tr><td>SPART</td><td>是</td><td>SPART</td><td>CHAR 2</td><td>產品組 Division</td></tr>
+      <tr><td>Z_REP1</td><td></td><td>Z_REP</td><td>CHAR 10</td><td>SAP REP ID1</td></tr>
+      <tr><td>Z_NAME1</td><td></td><td>Z_NAME1</td><td>CHAR 40</td><td>Rep Assigned 1</td></tr>
+      <tr><td>Z_REP2</td><td></td><td>Z_REP2</td><td>CHAR 20</td><td>SAP REP ID2</td></tr>
+      <tr><td>Z_NAME2</td><td></td><td>ZENAME2</td><td>CHAR 20</td><td>Rep Assigned 2</td></tr>
+      <tr><td>Z_REP3</td><td></td><td>Z_REP3</td><td>CHAR 10</td><td>SAP REP ID3</td></tr>
+      <tr><td>Z_NAME3</td><td></td><td>Z_NAME3</td><td>CHAR 10</td><td>Rep Assigned 3</td></tr>
+      <tr><td>Z_REGION</td><td></td><td>Z_REGION</td><td>CHAR 10</td><td>Region</td></tr>
+      <tr><td>Z_STATE</td><td></td><td>Z_STATE</td><td>CHAR 2</td><td>State</td></tr>
+      <tr><td>Z_CITY</td><td></td><td>Z_CITY</td><td>CHAR 30</td><td>City</td></tr>
+      <tr><td>Z_COUNTY</td><td></td><td>Z_COUNTY</td><td>CHAR 30</td><td>County</td></tr>
+      <tr><td>CRDAT／CRTIM／CRNAM</td><td></td><td>CRDAT／C_TIME／CRNAM</td><td>DATS 8／TIMS 6／CHAR 12</td><td>建立日期、時間、建立者</td></tr>
+    </tbody>
+  </table>
+  <p>另外截圖附了結構 <b>ZALSMEX_TABLINE</b>（ROW：KCD_EX_ROW_N NUMC 4、COL：KCD_EX_COL_N NUMC 4、VALUE：CHAR 1024），這是標準 <span class="kw">ALSMEX_TABLINE</span> 的複製版，用來放 <span class="kw">ALSM_EXCEL_TO_INTERNAL_TABLE</span> 的結果；程式有宣告但實際改用了 <span class="kw">TEXT_CONVERT_XLS_TO_SAP</span>，這個結構成了沒有用的殘留物件。</p>
+  <div class="warn"><b>資料字典設計的問題</b>：三組「業務代表 ID／姓名」長度各不相同（REP1 為 10、REP2 為 20；NAME1 為 40、NAME2 為 20、<b>NAME3 只有 10</b>），第三位業務的姓名幾乎一定會被截斷；而且 REP ID 用 CHAR 自由輸入，沒有檢查表（外鍵）連到業務員主檔（BP／人員編號），打錯也不會被擋。重複的「1、2、3」欄位也是反正規化設計，應改成「ZIP＋產品組＋序號 → 業務代表」一列一位。</div>
+  <p>現代寫法的 Excel 匯入：用 <span class="kw">CL_FDT_XL_SPREADSHEET</span> 解析 .xlsx，<b>補回 ZIP 前導零</b>、逐列檢核、鎖表後再寫入，任何一列有錯就整批不寫：</p>
+  <pre><code class="abap">"1. 讀檔（前台檔案；背景作業請改讀應用伺服器檔）
+DATA lt_bin TYPE solix_tab.
+cl_gui_frontend_services=&gt;gui_upload(
+  EXPORTING  filename   = CONV string( p_file )
+             filetype   = 'BIN'
+  IMPORTING  filelength = DATA(lv_len)
+  CHANGING   data_tab   = lt_bin
+  EXCEPTIONS OTHERS     = 1 ).
+IF sy-subrc &lt;&gt; 0.
+  MESSAGE |檔案 { p_file } 無法讀取| TYPE 'E'.
+ENDIF.
+DATA(lv_xlsx) = cl_bcs_convert=&gt;solix_to_xstring( it_solix = lt_bin iv_size = lv_len ).
+
+"2. 解析第一個工作表；欄位名稱為 A、B、C…
+DATA lt_new TYPE STANDARD TABLE OF zfi_exp_sales WITH EMPTY KEY.
+DATA lt_err TYPE string_table.
+TRY.
+    DATA(lo_xl) = NEW cl_fdt_xl_spreadsheet( document_name = CONV #( p_file )
+                                             xdocument     = lv_xlsx ).
+    lo_xl-&gt;if_fdt_doc_spreadsheet~get_worksheet_names(
+      IMPORTING worksheet_names = DATA(lt_ws) ).
+    DATA(lr_sheet) = lo_xl-&gt;if_fdt_doc_spreadsheet~get_itab_from_worksheet( lt_ws[ 1 ] ).
+  CATCH cx_fdt_excel_core INTO DATA(lx_xl).
+    MESSAGE lx_xl TYPE 'E'.
+ENDTRY.
+FIELD-SYMBOLS &lt;lt_sheet&gt; TYPE STANDARD TABLE.
+ASSIGN lr_sheet-&gt;* TO &lt;lt_sheet&gt;.
+
+LOOP AT &lt;lt_sheet&gt; ASSIGNING FIELD-SYMBOL(&lt;row&gt;) FROM 2.        "第 1 列是表頭
+  DATA(lv_line) = sy-tabix.
+  ASSIGN COMPONENT 'A' OF STRUCTURE &lt;row&gt; TO FIELD-SYMBOL(&lt;zip&gt;).
+  ASSIGN COMPONENT 'B' OF STRUCTURE &lt;row&gt; TO FIELD-SYMBOL(&lt;spart&gt;).
+  ASSIGN COMPONENT 'C' OF STRUCTURE &lt;row&gt; TO FIELD-SYMBOL(&lt;rep1&gt;).
+  ASSIGN COMPONENT 'D' OF STRUCTURE &lt;row&gt; TO FIELD-SYMBOL(&lt;name1&gt;).
+
+  "Excel 會把 00501 變成數字 501：美國 ZIP 固定 5 碼，要補回前導零
+  DATA(lv_zip) = condense( CONV string( &lt;zip&gt; ) ).
+  IF lv_zip CO '0123456789' AND strlen( lv_zip ) &lt; 5.
+    lv_zip = |{ lv_zip WIDTH = 5 ALIGN = RIGHT PAD = '0' }|.
+  ENDIF.
+  IF lv_zip IS INITIAL OR strlen( lv_zip ) &gt; 10.
+    APPEND |第 { lv_line } 列：ZIP「{ lv_zip }」不合法| TO lt_err.
+    CONTINUE.
+  ENDIF.
+
+  DATA(lv_spart) = CONV spart( condense( CONV string( &lt;spart&gt; ) ) ).
+  lv_spart = |{ lv_spart ALPHA = IN }|.                         "01、02… 也可能被 Excel 吃掉前導零
+  SELECT SINGLE @abap_true FROM tspa WHERE spart = @lv_spart INTO @DATA(lv_ok).
+  IF lv_ok = abap_false.
+    APPEND |第 { lv_line } 列：產品組 { lv_spart } 不存在| TO lt_err.
+    CONTINUE.
+  ENDIF.
+  CLEAR lv_ok.
+
+  APPEND VALUE #( z_zip   = lv_zip
+                  spart   = lv_spart
+                  z_rep1  = condense( CONV string( &lt;rep1&gt; ) )
+                  z_name1 = condense( CONV string( &lt;name1&gt; ) )
+                  crdat   = sy-datum
+                  crtim   = sy-uzeit
+                  crnam   = sy-uname ) TO lt_new.
+ENDLOOP.
+
+"3. 重複鍵也是錯誤：同一個 ZIP＋產品組出現兩次，後面的會默默蓋掉前面的
+SORT lt_new BY z_zip spart.
+DATA(lv_before) = lines( lt_new ).
+DELETE ADJACENT DUPLICATES FROM lt_new COMPARING z_zip spart.
+IF lines( lt_new ) &lt;&gt; lv_before.
+  APPEND |檔案中有 { lv_before - lines( lt_new ) } 筆 ZIP＋產品組重複| TO lt_err.
+ENDIF.
+
+IF lt_err IS NOT INITIAL.
+  cl_demo_output=&gt;display( lt_err ).                          "正式程式請改寫入 BAL 應用日誌
+  RETURN.
+ENDIF.</code></pre>
+  <p>寫入前先檢查權限並鎖表，避免有人同時在 <span class="tcode">SM30</span> 維護：</p>
+  <pre><code class="abap">"4. 權限：與 SM30 相同的表格維護權限
+AUTHORITY-CHECK OBJECT 'S_TABU_NAM'
+  ID 'ACTVT'     FIELD '02'
+  ID 'TABLE'     FIELD 'ZFI_EXP_SALES'.
+IF sy-subrc &lt;&gt; 0.
+  MESSAGE '沒有維護 ZFI_EXP_SALES 的權限' TYPE 'E'.
+ENDIF.
+
+"5. 鎖整張表（與 SM30 的鎖相容）
+CALL FUNCTION 'ENQUEUE_E_TABLE'
+  EXPORTING
+    mode_rstable   = 'E'
+    tabname        = 'ZFI_EXP_SALES'
+  EXCEPTIONS
+    foreign_lock   = 1
+    system_failure = 2
+    OTHERS         = 3.
+IF sy-subrc &lt;&gt; 0.
+  MESSAGE |資料表正由 { sy-msgv1 } 維護中，請稍後再試| TYPE 'E'.
+ENDIF.
+
+"6. 覆蓋或合併；DELETE 與 MODIFY 在同一個 LUW，失敗就整批回復
+IF cb_del = abap_true.
+  DELETE FROM zfi_exp_sales.
+ENDIF.
+MODIFY zfi_exp_sales FROM TABLE @lt_new.
+IF sy-subrc = 0.
+  COMMIT WORK.
+  MESSAGE |匯入 { lines( lt_new ) } 筆，更新成功| TYPE 'S'.
+ELSE.
+  ROLLBACK WORK.
+  MESSAGE '匯入失敗，資料已回復' TYPE 'S' DISPLAY LIKE 'E'.
+ENDIF.
+
+CALL FUNCTION 'DEQUEUE_E_TABLE'
+  EXPORTING
+    mode_rstable = 'E'
+    tabname      = 'ZFI_EXP_SALES'.</code></pre>
+  <h4>原程式的問題與改進</h4>
+  <table>
+    <thead><tr><th>問題</th><th>說明</th></tr></thead>
+    <tbody>
+      <tr><td><b>ROLLBACK 永遠不會執行</b></td><td>失敗分支先 <span class="kw">LEAVE LIST-PROCESSING</span> 才 <span class="kw">ROLLBACK WORK</span>，後者是死碼；若覆蓋模式已經 <span class="kw">DELETE FROM</span> 全表，這時會發生什麼取決於後續是否有隱含 COMMIT——這正是整張對照表被清空的經典事故</td></tr>
+      <tr><td>POPUP_TO_CONFIRM 參數錯置</td><td>第二個按鈕的文字「NO」被傳給了 <span class="kw">ICON_BUTTON_1</span>（圖示參數），應該是 <span class="kw">TEXT_BUTTON_2</span></td></tr>
+      <tr><td>沒有任何資料檢核</td><td>ZIP 前導零、產品組是否存在、重複鍵、欄位超長全部沒檢查；<span class="kw">TEXT_CONVERT_XLS_TO_SAP</span> 依欄位位置對應，Excel 多一欄或少一欄就整批錯位</td></tr>
+      <tr><td>沒有權限檢查與鎖</td><td>任何能執行程式的人都能清空整張表，與 SM30 同時操作也不會被擋</td></tr>
+      <tr><td>AT SELECTION-SCREEN 用 STOP</td><td>檔案路徑空白時 <span class="kw">MESSAGE … TYPE 'S'</span> 後 STOP，在選擇畫面事件中不恰當；應直接用 TYPE 'E' 讓使用者修正</td></tr>
+      <tr><td>訊息與註解複製殘留</td><td>範本下載的訊息寫「註冊材料批導模板」，註解寫 ZMMU005——從 MM 程式複製過來沒改</td></tr>
+      <tr><td>Maintain 功能其實不需要程式</td><td>建一個參數交易碼（<span class="tcode">SE93</span>，以 SM30 為基礎、預設表名並跳過首畫面）即可，還能掛在使用者選單</td></tr>
+    </tbody>
+  </table>
+  <div class="tip"><b>先找標準</b>：ZIP 到業務轄區的對應，在 SAP 標準中有幾種做法可評估：客戶主檔的銷售地區（KNVV-BZIRK）搭配業務員夥伴功能、SD 夥伴決定程序，或 S/4HANA 的轄區管理（Territory Management，多見於 SAP Sales Cloud／CRM 整合情境）。自建表可以，但請確定它真的是「標準做不到」才建，並讓它有外鍵與檢查表，不要成為沒人管的平行主資料。</div>
+  <div class="note"><b>上線注意</b>：① 自建表要設定「交付類別 C（客戶資料）」與表格維護產生器的授權群組；② 對照表是跨用戶端還是用戶端相依要想清楚（本表有 MANDT，是用戶端相依）；③ 第一次上線用覆蓋模式匯入前，<b>先把現有資料下載備份</b>。</div>
+
+  <h3 id="ch08-5-qa">練習與自我檢核</h3>
+  <ol>
+    <li><b>ZFIR012 的期初餘額為什麼要同時讀 BSID 與 BSAD？在 S/4HANA 用 ACDOCA 改寫時，只要一個條件就能取代這個做法，是哪個條件？</b><br>參考答案要點：已清項的借貸兩筆會互相抵銷，只讀未清項 BSID 會漏掉「期初之後才清帳」的項目；期初餘額是「所有 BUDAT &lt; 期初日的行項目總和，不論是否已清」。ACDOCA 的條件就是 <span class="kw">budat &lt; 期初日</span>（加上 RLDNR = '0L'、KOART = 'D'，並依做法決定是否排除 BSTAT = 'C' 的結轉列）。</li>
+    <li><b>ACDOCA 的 HSL 與 BSID 的 DMBTR 在正負號上有什麼差別？原程式的哪些寫法因此可以刪除？</b><br>參考答案要點：HSL 已帶正負號（貸方為負），DMBTR 永遠為正，要看 SHKZG。所有 <span class="kw">IF shkzg = 'H' … * -1</span> 的轉換都可以刪除，借方欄＝HSL &gt; 0、貸方欄＝|HSL| 且 HSL &lt; 0。</li>
+    <li><b>ZFIR012 把同客戶多個科目用「&amp;」串成一個字串。為什麼這在 HANA 上會造成結果不穩定？</b><br>參考答案要點：串接順序取決於內表順序，而內表順序來自 SELECT 回傳順序；HANA 沒有預設排序，同樣資料每次執行順序可能不同。一定要先明確 ORDER BY／SORT 再串接，或乾脆依科目分列。</li>
+    <li><b>ZFIU014N 讀 CKMLCR 取實際價格時漏了哪兩個條件或欄位？各會造成什麼錯？</b><br>參考答案要點：① 沒篩 CURTP（幣別類型），同一期間多種幣別的價格混在一起，讀到哪一筆看資料庫順序（與 H／E 成本角度混用是同一類問題）；② 沒除以 PEINH（價格單位），價格單位不為 1 的物料成本會被放大。另外 FRM_DEAL_DATA2 取「最新一期」沒有限制不晚於過帳期間。</li>
+    <li><b>ZFIU014N 讀 ACDOCA 時沒有指定 RLDNR，可能發生什麼事？</b><br>參考答案要點：系統若有平行分類帳（例如 IFRS、稅務帳），同一筆交易會在每個分類帳各出現一次，SUM 後金額會變兩倍或更多。報表一律指定 RLDNR = '0L'（或參數化）。</li>
+    <li><b>毛利公式「收入－折扣－VVACS－VVACT」在什麼前提下才是對的？要怎麼確認？</b><br>參考答案要點：只有 VVACT 代表「實際與標準的差異」時才成立；若 VVACT 是完整實際成本，就重複扣成本。要在 <span class="tcode">KEA0</span> 查值欄位定義、<span class="tcode">KE4I</span> 查條件類型對照、<span class="tcode">KE30</span> 對數，並與 CO 顧問書面確認。</li>
+    <li><b>為什麼毛利報表的科目條件要用 STVARV 多筆 EQ，而不是 BT 區間？</b><br>參考答案要點：區間比的是字典序，新開同字首、用途不同的科目會被自動納入；列舉讓每個科目都經過人確認，新增科目時報表不會悄悄改變口徑。這是 Casper「列舉優於區間」的直接應用。</li>
+    <li><b>請寫出帳齡「逾期天數」的計算方式，並說明勾選「將基準日期用作淨到期日」時有何不同。參照發票的貸項要注意什麼？</b><br>參考答案要點：天數＝關鍵日－淨到期日（DETERMINE_DUE_DATE 或 BSEG-NETDT），負數為未到期；勾選時改用基準日 ZFBDT。參照發票（REBZG 有值、REBZT ≠ 'V'）的貸項要沿用原發票的基準日與付款條件。</li>
+    <li><b>帳齡分段用一張「分段表」定義有什麼好處？建立分段表時要檢查什麼？</b><br>參考答案要點：分段邏輯只寫一次、段數可變、標籤由邊界自動產生不會與判斷不一致；建立時檢查邊界嚴格遞增，確保連續、不重疊、無缺口，並固定一段「未到期」處理負天數。</li>
+    <li><b>ZFIU040 的 FTP 上傳有哪些資安問題？請提出兩種較安全的替代方案。</b><br>參考答案要點：密碼明文存在自建表、HTTP_SCRAMBLE 搭配寫死 key 只是混淆不是加密、FTP 明文傳輸、錯誤處理缺失。替代：① ABAP 只寫檔到應用伺服器，由整合平台或 OS 排程以 SFTP 金鑰取檔；② 對方提供 HTTPS API 時，用 SM59 Type G 目的地（帳密／憑證存在安全儲存區、STRUST 管理憑證）加 CL_HTTP_CLIENT=&gt;CREATE_BY_DESTINATION，程式中不出現任何帳密。</li>
+    <li><b>為什麼說複製標準程式 RFIDCN_AR_AGING 是昂貴的客製？如果需求只是「把標準帳齡結果匯出給外部系統」，你會怎麼做？</b><br>參考答案要點：Z 複本收不到 SAP Note 修正，升級後會與標準分岔，還要自己維護 6,000 行。可以用標準報表（S_ALR_87012178、FBL5H、Fiori 帳齡 App），再寫小程式以 SUBMIT 或 CL_SALV_BS_RUNTIME_INFO 取得結果後匯出。</li>
+    <li><b>ZFIU011 匯入 Excel 時，ZIP「00501」可能變成什麼？程式要怎麼處理？這跟哪一條實務經驗有關？</b><br>參考答案要點：Excel 會把它當數字存成 501。程式要判斷是純數字且不足 5 碼時補回前導零（<span class="kw">|{ lv_zip WIDTH = 5 ALIGN = RIGHT PAD = '0' }|</span>）；產品組也要 ALPHA 轉換。前導零會讓字串比較與區間條件出錯，正是「列舉優於區間」提醒的 ALPHA 前導零問題。</li>
+    <li><b>ZFIU011 原程式在匯入失敗時的 ROLLBACK 有什麼問題？正確的寫入順序應該是什麼？</b><br>參考答案要點：ROLLBACK 寫在 LEAVE LIST-PROCESSING 之後，永遠不會執行。正確順序：全部檢核通過 → 權限檢查 → ENQUEUE 鎖表 → DELETE（若覆蓋）＋MODIFY 同一 LUW → 成功 COMMIT、失敗 ROLLBACK → DEQUEUE。</li>
+    <li><b>請列出三張在 S/4HANA 已成為相容性視圖的 FI 表，以及兩項已不再使用的 CO 功能。</b><br>參考答案要點：BSID／BSAD／BSIK／BSAK／BSIS／BSAS、KNC1、LFC1、GLT0（任三）；已不使用：統馭分類帳 COFIT、傳統利潤中心會計 GLPCT／GLPCA、獨立成本要素主檔（KA01，改在 FS00 維護）。</li>
+  </ol>
+</section>

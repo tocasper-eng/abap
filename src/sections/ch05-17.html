@@ -1,0 +1,1047 @@
+<section class="chapter" id="ch05-17" data-title="BC440 網際網路應用元件（ITS、WebTransaction、WebRFC）與現代替代">
+  <h2>第 5-17 章 BC440 網際網路應用元件（ITS、WebTransaction、WebRFC）與現代替代</h2>
+  <p class="lede">BC440〈Developing Internet Application Components〉是 SAP 在網際網路剛興起時，讓 R/3 走上瀏覽器的第一代技術：用<b>網際網路交易伺服器（ITS）</b>把 Dynpro 畫面轉成 HTML（WebTransaction），或讓函數模組直接吐出 HTML／MIME（WebRFC）。這些技術今天大多已走入歷史：ITS 從 NetWeaver 2004 起整合進 Kernel，成為 <b>Integrated ITS／SAP GUI for HTML</b>，WebRFC 已停止支援。本章照原課程九個單元整理觀念（HTTP 無狀態、同步、服務檔、隱式登入、MIME 物件，這些觀念今天仍然成立），並用大量篇幅對照 S/4HANA 的替代方案：<b>ICF（SICF）HTTP handler、REST／JSON、OData（SEGW、RAP）、Fiori</b>。</p>
+
+  <div class="meta">
+    <div><b>核心 TCODE</b><span class="tcode">SICF</span><span class="tcode">SMICM</span><span class="tcode">SMW0</span><span class="tcode">SE80</span><span class="tcode">SIAC1</span><span class="tcode">SU05</span><span class="tcode">SM59</span><span class="tcode">STRUST</span><span class="tcode">SEGW</span><span class="tcode">/IWFND/MAINT_SERVICE</span><span class="tcode">/IWFND/GW_CLIENT</span><span class="tcode">/IWFND/ERROR_LOG</span><span class="tcode">/IWBEP/ERROR_LOG</span><span class="tcode">SE37</span><span class="tcode">SM04</span></div>
+    <div><b>關鍵物件</b>ITS（WGate／AGate）、Global.srvc、HTMLBusiness、SAP@Web Studio、ITS_PING、ITS_GET_SYNC_INFO、SITSSYNC、AVWRTCXM、BAPIUSW01、SCUSTOMER、函數群組 SURL、WWW_DISPATCH_REQUEST、W3QUERY／W3HTML／W3MIME／W3PARAM、WWW_HTML_ECHO、WWW_GET_MIME_OBJECT、WWW_HTML_MERGER、WWWDATA、WWWPARAMS、IF_HTTP_EXTENSION、IF_HTTP_SERVER、CL_HTTP_CLIENT、/UI2/CL_JSON、CL_ABAP_FORMAT、/IWBEP/CL_MGW_DATA_UTIL</div>
+  </div>
+
+  <h3 id="ch05-17-01">1. 課程定位與教材對照</h3>
+  <p>本章素材只有<b>强晟〈SAP BC440 課程中文自學筆記〉v1.0</b>（2008-06-18 完稿，共 159 頁，依原廠 BC440 逐單元整理）；BC440 原廠英文教材未收錄在素材中，原廠早已下架此課，也沒有新版。下表是單元與筆記頁碼、本章小節的對照：</p>
+  <table>
+    <thead><tr><th>原課程單元</th><th>主題</th><th>强晟筆記頁碼</th><th>本章小節</th></tr></thead>
+    <tbody>
+      <tr><td>Unit 1 課程概覽</td><td>課程目標、情境（線上旅行社）、術語</td><td>p4–p7</td><td>本節</td></tr>
+      <tr><td>Unit 2 介紹</td><td>R/3 與 Web 的連接、ITS、GUI 策略、mySAP.com</td><td>p8–p17</td><td>第 2 節</td></tr>
+      <tr><td>Unit 3 網際網路、內部網路與全球資訊網</td><td>TCP/IP、DNS、URL、HTTP、Cookie、安全、防火牆、Proxy</td><td>p18–p34</td><td>第 3 節</td></tr>
+      <tr><td>Unit 4 HTML</td><td>基本與進階標籤、表格、分框、CGI、表單、GET/POST、無狀態解法</td><td>p35–p55</td><td>第 4 節</td></tr>
+      <tr><td>Unit 5 網際網路交易伺服器</td><td>五層架構、WGate/AGate、服務檔、登入、網際網路使用者</td><td>p56–p69</td><td>第 5、6、7 節</td></tr>
+      <tr><td>Unit 6 WebTransaction</td><td>程式設計模型、服務與範本、Web 除錯器、同步、網際網路使用者、傳輸、主題與語言、步進迴圈、HTMLBusiness、MIME、上下文巨集、分框交易</td><td>p70–p118</td><td>第 8 ~ 13 節</td></tr>
+      <tr><td>Unit 7 WebRFC</td><td>WebRFC 函數模組、介面、發佈、MIME、除錯、範本合併</td><td>p119–p139</td><td>第 14、15 節</td></tr>
+      <tr><td>Unit 8 管理</td><td>可擴充性、安全、安裝、系統範本、日誌、管理工具</td><td>p140–p155</td><td>第 16 節</td></tr>
+      <tr><td>Unit 9 摘要與展望</td><td>ITS 與 mySAP.com Workplace</td><td>p156–p159</td><td>第 17 ~ 20 節（改寫為「現代替代」）</td></tr>
+    </tbody>
+  </table>
+  <p><b>課程目標</b>（p4）：用 ITS 在全球資訊網上使用 R/3、開發網際網路應用元件（IAC, Internet Application Components）；學完要能描述 Web 交易的前提條件、描述 ITS 架構、設計並實作 WebTransaction、開發支援 WebRFC 的函數模組。<b>業務情境</b>（p5）：學員要做一個「線上旅行社」──首頁帶旅遊目的地與合作夥伴連結、以照片介紹目的地，並連到 R/3 顯示航班連線、預訂與取消航班（沿用 SFLIGHT 航班模型）。</p>
+  <p><b>課程等級與版本</b>：筆記未標示課程等級；依內容屬 BC4xx 系列的 Web 開發選修課，前置知識是 BC400、BC410（Dynpro）、BC415（RFC）、BC417（BAPI）。筆記的 ITS 版本是 <b>ITS 2.0／4.6 世代的獨立安裝版（Standalone ITS，WGate＋AGate 分開裝在 Windows 伺服器上）</b>。强晟自己在後記（p159）就說：「如果你已經使用 ECC5 或 ECC6，很遺憾告訴你，本課程白學了」──NetWeaver 平台之後已改用 Web Dynpro 等新技術。</p>
+  <table>
+    <thead><tr><th>比較項目</th><th>BC440（2007 筆記，R/3 4.6 時代）</th><th>今天（S/4HANA 1809+）</th></tr></thead>
+    <tbody>
+      <tr><td>Web 伺服器</td><td>外部 IIS／Netscape＋ITS（WGate／AGate）</td><td>ABAP 內建 ICM（Internet Communication Manager）＋ICF，<span class="tcode">SMICM</span>／<span class="tcode">SICF</span></td></tr>
+      <tr><td>把 Dynpro 搬上瀏覽器</td><td>WebTransaction＋HTMLBusiness 範本</td><td>Integrated ITS 的 <b>SAP GUI for HTML（WEBGUI）</b>，Fiori Launchpad 可直接開 GUI 交易</td></tr>
+      <tr><td>函數輸出網頁／資料</td><td>WebRFC（WWW_DISPATCH_REQUEST）</td><td>ICF HTTP handler（IF_HTTP_EXTENSION）、REST、OData</td></tr>
+      <tr><td>正式 UI 技術</td><td>HTML 3.2／4.0 範本</td><td>SAPUI5／Fiori Elements＋OData（SEGW 或 RAP）</td></tr>
+      <tr><td>開發工具</td><td>SAP@Web Studio（Windows 桌面程式）</td><td>ADT／Eclipse（見 <a href="#ch05-5">5-5 章</a>）、SAP Business Application Studio</td></tr>
+    </tbody>
+  </table>
+  <div class="note">後繼課程可參考：Web Dynpro ABAP（NET310，見 <a href="#ch05-23">5-23 章</a>）、SAP Gateway OData（GW100）、CDS（S4D430）、RAP（S4D437）、Fiori（UX400 系列）。課程代號與版本以 SAP Learning 網站公告為準。</div>
+
+  <h3 id="ch05-17-02">2. 單元二：R/3 與 Web 的連接、ITS 與 SAP 的 GUI 策略</h3>
+  <p><b>為什麼需要 ITS</b>（p9–p10）：R/3 是三層主從式架構（SAP GUI → 應用伺服器 → 資料庫）。課程用兩個問答切入：</p>
+  <ul>
+    <li>使用者沒裝 SAP GUI 又要用 R/3，最簡單的方法？<b>用瀏覽器</b>，作業系統都內建。</li>
+    <li>瀏覽器要怎麼拿到 R/3 的資料？<b>加一台轉換伺服器</b>，把 R/3 資料轉成 HTML，或把 HTML 輸入轉回 R/3 看得懂的格式。</li>
+  </ul>
+  <p>接著要處理兩件事：① R/3 與 Web 的連接（資料怎麼出去、怎麼進來）；② 業務邏輯仍留在 R/3 處理。又因為當年網頁的互動能力遠弱於 SAP GUI，必須設計新的處理模式──<b>商業物件與 BAPI</b>（見 <a href="#ch04-1">4-1 章</a>、<a href="#ch05-12">5-12 章</a>）。</p>
+  <p><b>ITS 擴充三層架構</b>（p11–p12）：ITS 把 R/3 延伸到網際網路上，可視為一個「特殊的 SAP GUI」，能與傳統 GUI 同時運作。瀏覽器只要支援 HTML 3.2 以上即可，不需要 Java Applet 或 ActiveX；但互動式 Web 報表當年必須用 IE 4.0 以上。構成元件：</p>
+  <ul>
+    <li><b>Web 伺服器</b>：如微軟 IIS，須提供應用程式介面與 ITS 連接（IIS 為 <b>ISAPI</b>）。</li>
+    <li><b>ITS</b>：一般裝在 Windows 伺服器，負責把 R/3 資料轉成 HTML。</li>
+    <li><b>R/3 應用伺服器</b>：3.0G 以上，安裝 IAC。</li>
+  </ul>
+  <p><b>IAC 與 SAP 的 HTML GUI</b>（p13–p15）：SAP 的 GUI 分三類──Windows GUI、Java GUI、HTML 瀏覽器。瀏覽器的用法又分三種：</p>
+  <table>
+    <thead><tr><th>方式</th><th>組成</th><th>特性</th></tr></thead>
+    <tbody>
+      <tr><td>直接轉成 HTML 的功能</td><td>標準交易自動轉換</td><td>與 GUI 功能最一致，但因 Web 原則與 GUI 不同，當年這類功能會越來越少（今天的 SAP GUI for HTML 反而是主流）</td></tr>
+      <tr><td><b>WebTransaction</b>（IAC）</td><td>標準 R/3 交易＋服務檔＋HTMLBusiness 範本；<b>每個畫面對應一個範本</b></td><td>部分實現 R/3 標準功能；交易須依規範特別開發</td></tr>
+      <tr><td><b>WebRFC</b>（IAC）</td><td>支援 RFC 的函數模組＋WebRFC 範本（都在應用伺服器）＋WebRFC 閘道（在 ITS）</td><td>ITS 把參數表傳給函數模組，收回已產生好的 HTML 頁或 MIME 物件（文字、圖片、PDF…）</td></tr>
+    </tbody>
+  </table>
+  <p><b>ITS 與 mySAP.com</b>（p16–p17）：mySAP.com 是入口網站（Portal）概念普及之前 SAP 的企業入口品牌，分內部的 <b>Workplace</b>（給員工）與外部的 <b>Marketplace</b>（給客戶；SAP 至今仍把 service.sap.com 稱為 Service Marketplace）。Workplace 架構是：瀏覽器 → HTTP 伺服器 → Workplace 伺服器（單一登入 SSO）→ ITS → 後端 R/3。除了瀏覽器，也可用 Java GUI、Windows 終端服務、Windows GUI 存取。</p>
+  <div class="warn"><b>S/4HANA 現況</b>：Workplace → SAP Enterprise Portal → 今天的 <b>SAP Fiori Launchpad</b>（on-premise）或 SAP Build Work Zone（雲端）。Service Marketplace 已併入 SAP for Me／SAP Support Portal。ITS 從 NetWeaver 2004（6.40）起整合進 ABAP Kernel（Integrated ITS），不再需要另外安裝 WGate／AGate；Fiori Launchpad 可用「Transaction」類磁磚透過 SAP GUI for HTML 開啟傳統交易。</div>
+
+  <h3 id="ch05-17-03">3. 單元三：網際網路、HTTP 與安全基礎（附 ICF 對照）</h3>
+  <p>這個單元是純網路觀念，今天寫 REST／OData 一樣用得到。重點整理：</p>
+  <ul>
+    <li><b>網際網路</b>（p19）：由政府、研究機構、公司等共同營運的網路之網路。IETF 制訂通訊協定，標準以 <b>RFC（Requests for Comments）</b>發布──注意，<b>這個 RFC 不是 SAP 的 Remote Function Call</b>。</li>
+    <li><b>TCP/IP</b>（p20）：TCP（RFC 793）負責分段、封包、可靠傳輸、連線與斷線；IP（RFC 791）負責定址與路由。强晟的比喻：IP 是都市計畫、IP 位址是門牌，TCP 是公車系統。</li>
+    <li><b>路由器與 DNS</b>（p21）：路由器連接兩個獨立的 IP 網路（像十字路口）；DNS 把好記的網域名稱轉成 IP 位址。</li>
+    <li><b>服務與埠</b>（p22–p23）：郵件（RFC 821）、新聞（RFC 977）、WWW（RFC 2068）、FTP（RFC 959）、Telnet（RFC 854）；標準埠號當年定義在 RFC 1060。一個 IP＋TCP 埠到另一個 IP＋TCP 埠的連線稱為 <b>Socket</b>。</li>
+    <li><b>URL</b>（p24）：<span class="kw">protocol://host:port/pathname</span>，四部分為協定、主機、埠（預設可省略）、路徑。</li>
+    <li><b>HTTP</b>（p26–p27）：WWW 的應用協定，基於 TCP/IP，<b>無狀態（stateless）</b>──一次請求／回應結束，伺服器就釋放用戶端資訊。方法：GET（取資料）、POST（送表單）、PUT（送物件）、DELETE（刪物件）、HEAD（只要標頭）。狀態碼：1xx 資訊、2xx 成功、3xx 重導、4xx 用戶端錯誤、5xx 伺服器錯誤。</li>
+    <li><b>快取</b>（p28）：伺服器端快取／Proxy 可多層；快取會向伺服器驗證狀態，瀏覽器緩衝區則不驗證伺服器檔案是否已變。</li>
+    <li><b>Cookie</b>（p29）：伺服器附在回應中、最大 4KB、瀏覽器下次請求會帶回；長度不夠就用 <b>Session ID</b> 當鍵值，把狀態存在伺服器端。</li>
+    <li><b>安全要點</b>（p30）：存取控制、機密性、認證、完整性、收發雙方核對；防火墙是一種依 IP／埠／服務／內容過濾的特殊路由器。</li>
+    <li><b>加密</b>（p31–p32）：對稱加密（DES 56-bit，快、金鑰須安全傳遞）、非對稱加密（RSA，慢，可做機密性、認證、完整性）；SSL 介於應用協定與 TCP/IP 之間，HTTPS＝HTTP over SSL，埠 443。</li>
+    <li><b>內部網路與 Proxy</b>（p33–p34）：Intranet 與 Internet 技術完全相同，私有位址段如 192.168.x.x；Proxy 維護內外埠的對應表，通常也帶 HTTP 快取。</li>
+  </ul>
+  <div class="warn"><b>教材需要更正的地方</b>：
+    <ul>
+      <li>p31 寫「非對稱加密：私鑰用於加密，公鑰用於解密」只對<b>數位簽章</b>成立；若目的是<b>機密性</b>，是用對方的<b>公鑰加密、私鑰解密</b>。</li>
+      <li>DES 56-bit 早已不安全，今天用 AES；SSL 各版本也已全數淘汰，現在一律是 <b>TLS 1.2／1.3</b>（習慣上仍叫 SSL）。SAP 端的憑證在 <span class="tcode">STRUST</span> 維護。</li>
+      <li>HTTP/1.1 的 RFC 2068 已被 RFC 2616、RFC 7230~7235、再被現行的 <b>RFC 9110／9112</b> 取代；埠號登錄也改由 IANA 維護，不再是 RFC 1060。</li>
+    </ul>
+  </div>
+  <p>在 S/4HANA 裡，HTTP 請求由 <b>ICM</b> 接收，交給 <b>ICF（Internet Communication Framework）</b>依 URL 路徑找到 <span class="tcode">SICF</span> 中的服務節點，再呼叫該節點的 <b>HTTP handler 類別</b>（實作 <span class="kw">IF_HTTP_EXTENSION</span>）。上面所有的 HTTP 觀念──方法、標頭、狀態碼、Cookie、無狀態／有狀態──都能在 handler 裡直接操作：</p>
+  <pre><code class="abap">*&amp;-------------------------------------------------------------*
+*&amp; ICF handler：把單元三的 HTTP 觀念對應到 ABAP 物件
+*&amp;  SICF 建節點 /sap/bc/zbc440/echo，Handler List 填本類別
+*&amp;-------------------------------------------------------------*
+CLASS zcl_bc440_http_echo DEFINITION PUBLIC FINAL CREATE PUBLIC.
+  PUBLIC SECTION.
+    INTERFACES if_http_extension.
+ENDCLASS.
+
+CLASS zcl_bc440_http_echo IMPLEMENTATION.
+  METHOD if_http_extension~handle_request.
+    " 1. HTTP 方法（GET/POST/PUT/DELETE/HEAD）放在偽標頭 ~request_method
+    DATA(lv_method) = server-&gt;request-&gt;get_header_field(
+                        if_http_header_fields_sap=&gt;request_method ).
+    " 2. 一般標頭與 URL 路徑
+    DATA(lv_agent) = server-&gt;request-&gt;get_header_field( 'user-agent' ).
+    DATA(lv_path)  = server-&gt;request-&gt;get_header_field(
+                        if_http_header_fields_sap=&gt;path_info ).
+    " 3. Cookie：讀取與設定（對應 p29 的 Session ID 觀念）
+    server-&gt;request-&gt;get_cookie( EXPORTING name  = 'ZBC440_VISIT'
+                                 IMPORTING value = DATA(lv_visit) ).
+    DATA(lv_count) = COND i( WHEN lv_visit CO '0123456789 ' AND lv_visit IS NOT INITIAL
+                             THEN CONV i( lv_visit ) + 1
+                             ELSE 1 ).
+    server-&gt;response-&gt;set_cookie( name  = 'ZBC440_VISIT'
+                                  value = |{ lv_count }|
+                                  path  = '/sap/bc/zbc440' ).
+    " 4. HTTP 預設無狀態；非必要不要改成 stateful（會占住 session 記憶體）
+    " server-&gt;set_session_stateful( stateful = if_http_server=&gt;co_enabled ).
+
+    " 5. 回應：狀態碼 + Content-Type + 本文
+    CASE lv_method.
+      WHEN 'GET' OR 'HEAD'.
+        server-&gt;response-&gt;set_status( code = 200 reason = 'OK' ).
+        server-&gt;response-&gt;set_content_type( 'text/plain; charset=utf-8' ).
+        IF lv_method = 'GET'.
+          server-&gt;response-&gt;set_cdata(
+            |method={ lv_method }\npath={ lv_path }\nagent={ lv_agent }\nvisit={ lv_count }| ).
+        ENDIF.
+      WHEN OTHERS.
+        server-&gt;response-&gt;set_status( code = 405 reason = 'Method Not Allowed' ).
+        server-&gt;response-&gt;set_header_field( name = 'Allow' value = 'GET, HEAD' ).
+    ENDCASE.
+  ENDMETHOD.
+ENDCLASS.</code></pre>
+  <div class="tip">ICF 服務建好後一定要在 <span class="tcode">SICF</span> 按右鍵 <b>Activate Service</b>，否則會回 403／404。「服務沒啟用」是 Fiori、OData、WEBGUI 上線第一天最常見的錯誤，傳輸到 QAS／PRD 後也要再確認一次（ICF 節點的啟用狀態不一定隨傳輸帶過去）。</div>
+
+  <h3 id="ch05-17-04">4. 單元四：HTML、表單與 CGI（附 ABAP 產生安全 HTML）</h3>
+  <p>原課程用一整個單元教 HTML（p35–p55），重點如下：</p>
+  <ul>
+    <li><b>HTML 特性</b>：描述頁面的邏輯結構而非外觀、平台無關、是 SGML 的一種實作、1990 年起用於 WWW；標準由 W3C 與 IETF 制訂。當時最新是 HTML 3.2（1997/2）與 HTML 4.0（1998/4）。</li>
+    <li><b>標籤規則</b>：成對的 <span class="kw">&lt;tag&gt;…&lt;/tag&gt;</span>、可帶參數、瀏覽器忽略看不懂的標籤、大小寫無關；連續空白視為一個、換行被忽略；註解 <span class="kw">&lt;!-- --&gt;</span>。<span class="kw">&lt;head&gt;</span> 放 title／meta／base，<span class="kw">&lt;body&gt;</span> 放顯示內容。</li>
+    <li><b>CSS</b>（p41）：「層疊」的意思是同一樣式可在外部檔、文件內、標籤上多處定義，最接近元素者優先。</li>
+    <li><b>圖片</b>（p42–p43）：src、alt、width、height；縮小顯示並不會減少下載量；<b>一個含 n 張圖的頁面會產生 n＋1 個 HTTP 請求</b>。</li>
+    <li><b>超連結</b>（p44）：可能變成「死連結」；錨點用 <span class="kw">&lt;a href="page.html#pos"&gt;</span>。</li>
+    <li><b>表格</b>（p45）：table／tr／th／td，border、width、align、valign、colspan。</li>
+    <li><b>分框</b>（p46–p47）：frameset 的 rows／cols（百分比、像素、相對比例 *）；連結的 target 可為 _top、_parent、_self（預設）、_blank 或框架名稱。</li>
+    <li><b>CGI</b>（p48）：NCSA 定義（1.1 版），HTTP 伺服器與 CGI 程式必須在同一台機器（靠環境變數傳參數）；廠商另有更有效率的 <b>ISAPI</b>（IIS）與 <b>NSAPI</b>（Netscape）。</li>
+    <li><b>表單</b>（p49–p53）：<span class="kw">&lt;form action method target&gt;</span>；元素必須有 name 才會被送出；表單不能巢狀。文字框的 maxlength（一個中文字算 1）、password（<b>只是顯示成 *，傳輸時是明文</b>）、hidden、submit（一個表單可有多個送出鈕，程式靠按鈕名稱區分動作）、image、radio（以 name 分組）、select、checkbox（<b>沒勾就完全不送</b>，所以要搭一個同名 hidden 欄位）。</li>
+    <li><b>GET 與 POST</b>（p54）：GET 把資料附在 URL 後、是預設方法、直接點連結一定是 GET；POST 把資料放在請求本文，不會被快取。</li>
+    <li><b>HTTP 無狀態的三種解法</b>（p55）：隱藏欄位、把狀態附在 URL（<span class="kw">$PATH_INFO</span>）、Cookie（<span class="kw">$HTTP_COOKIE</span>）。</li>
+  </ul>
+  <div class="warn"><b>筆記中的 HTML 錯字與過時寫法</b>：圖片標籤是 <span class="kw">&lt;img&gt;</span> 不是 <span class="kw">&lt;image&gt;</span>；下拉選項是 <span class="kw">&lt;option&gt;</span> 不是 <span class="kw">&lt;options&gt;</span>；<span class="kw">&lt;intpu&gt;</span> 應為 <span class="kw">&lt;input&gt;</span>；<span class="kw">scr="main.html"</span> 應為 <span class="kw">src</span>、<span class="kw">&lt;/framset&gt;</span> 應為 <span class="kw">&lt;/frameset&gt;</span>；<span class="kw">$HTTTP_COOKIE</span> 多了一個 T。另外 <span class="kw">&lt;font&gt;</span>、<span class="kw">&lt;frameset&gt;</span> 在 HTML5 已廢止；「GET 最多 4KB」是當年瀏覽器／伺服器的實作限制，並非 HTTP 規範。</div>
+  <p>今天在 ABAP 裡產生 HTML（例如 ICF handler 回一個簡單的查詢頁、或寄 HTML 郵件，見 <a href="#ch04-4">4-4 章</a>），重點只有一個：<b>所有使用者輸入都要經過 HTML escape</b>，否則就是 XSS 漏洞。下面把 p49–p55 的表單、GET/POST、hidden 欄位觀念用現代 ABAP 實作：</p>
+  <pre><code class="abap">*&amp;-------------------------------------------------------------*
+*&amp; ICF handler：一個「查航線」的 HTML 表單頁（GET 顯示、POST 查詢）
+*&amp;-------------------------------------------------------------*
+METHOD if_http_extension~handle_request.
+  DATA(lv_method) = server-&gt;request-&gt;get_header_field(
+                      if_http_header_fields_sap=&gt;request_method ).
+  " 表單欄位：GET 從 query string、POST 從本文，get_form_field 兩者都讀得到
+  DATA(lv_carrid) = to_upper( condense( server-&gt;request-&gt;get_form_field( 'carrid' ) ) ).
+
+  DATA(lv_rows) = ``.
+  IF lv_method = 'POST' AND lv_carrid IS NOT INITIAL.
+    SELECT carrid, connid, cityfrom, cityto, deptime
+      FROM spfli
+      WHERE carrid = @lv_carrid
+      ORDER BY carrid, connid                 "HANA 沒有預設排序，一定要寫
+      INTO TABLE @DATA(lt_conn).
+    lv_rows = REDUCE string( INIT h = ``
+                FOR ls IN lt_conn
+                NEXT h = h &amp;&amp; |&lt;tr&gt;&lt;td&gt;{ ls-carrid }&lt;/td&gt;&lt;td&gt;{ ls-connid }&lt;/td&gt;|
+                           &amp;&amp; |&lt;td&gt;{ escape( val = ls-cityfrom format = cl_abap_format=&gt;e_html_text ) }&lt;/td&gt;|
+                           &amp;&amp; |&lt;td&gt;{ escape( val = ls-cityto   format = cl_abap_format=&gt;e_html_text ) }&lt;/td&gt;|
+                           &amp;&amp; |&lt;td&gt;{ ls-deptime TIME = ISO }&lt;/td&gt;&lt;/tr&gt;| ).
+  ENDIF.
+
+  " 使用者輸入一律 escape 後才放回頁面（屬性值用 e_html_attr）
+  DATA(lv_safe) = escape( val = lv_carrid format = cl_abap_format=&gt;e_html_attr ).
+  DATA(lv_html) =
+       |&lt;!DOCTYPE html&gt;&lt;html&gt;&lt;head&gt;&lt;meta charset="utf-8"&gt;&lt;title&gt;BC440 航線查詢&lt;/title&gt;&lt;/head&gt;&lt;body&gt;|
+    &amp;&amp; |&lt;form method="post"&gt;|
+    &amp;&amp; |航空公司：&lt;input type="text" name="carrid" maxlength="3" value="{ lv_safe }"&gt;|
+    &amp;&amp; |&lt;input type="hidden" name="step" value="2"&gt;|           "p51 的 hidden 欄位
+    &amp;&amp; |&lt;input type="submit" value="查詢"&gt;&lt;/form&gt;|
+    &amp;&amp; |&lt;table border="1"&gt;&lt;tr&gt;&lt;th&gt;CARRID&lt;/th&gt;&lt;th&gt;CONNID&lt;/th&gt;&lt;th&gt;FROM&lt;/th&gt;&lt;th&gt;TO&lt;/th&gt;&lt;th&gt;DEPTIME&lt;/th&gt;&lt;/tr&gt;|
+    &amp;&amp; lv_rows &amp;&amp; |&lt;/table&gt;&lt;/body&gt;&lt;/html&gt;|.
+
+  server-&gt;response-&gt;set_content_type( 'text/html; charset=utf-8' ).
+  server-&gt;response-&gt;set_cdata( lv_html ).
+ENDMETHOD.</code></pre>
+  <div class="note">這種「ABAP 直接拼 HTML」只適合內部小工具或郵件內容。正式的使用者畫面請用 Fiori／SAPUI5＋OData，UI 與資料分離，權限、多語、行動裝置都由框架處理（第 19、20 節）。</div>
+
+  <h3 id="ch05-17-05">5. 單元五（一）：ITS 架構──五層、WGate／AGate 與安裝方式</h3>
+  <p><b>五層主從式架構</b>（p57）：Web 瀏覽器 → HTTP 伺服器 → ITS → R/3 應用伺服器 → R/3 資料庫伺服器。對 R/3 而言，HTTP 伺服器＋ITS 構成了應用層與展示層之間的介面；一個 ITS 可連多個 HTTP 伺服器與多個 R/3 應用伺服器。ITS 的工作：<b>使用者登入管理、把 R/3 畫面資料轉成 HTML、狀態管理、與 R/3 同步</b>。</p>
+  <table>
+    <thead><tr><th>元件</th><th>負責</th><th>連線協定</th></tr></thead>
+    <tbody>
+      <tr><td><b>WGate</b>（W＝Web）</td><td>與 HTTP 伺服器溝通</td><td>CGI、ISAPI（IIS）或 NSAPI（Netscape），依 HTTP 伺服器種類選擇</td></tr>
+      <tr><td><b>AGate</b>（A＝Application）</td><td>與 R/3 應用伺服器溝通；存放服務檔、範本</td><td><b>DIAG</b>（Dynamic Information and Action Gateway，SAP GUI 專用協定，WebTransaction 用）或 <b>RFC</b>（WebRFC 用）</td></tr>
+      <tr><td>WGate ↔ AGate</td><td>兩者可裝在不同主機</td><td>HTTP（可再加 SNC 加密）</td></tr>
+    </tbody>
+  </table>
+  <p>應用伺服器可呼叫函數模組 <span class="kw">ITS_PING</span> 判斷請求來自 SAP GUI 還是 ITS（第 12 節會用到）。</p>
+  <p><b>安裝方式</b>（p59）：</p>
+  <ul>
+    <li><b>單主機</b>：ITS 與 HTTP 伺服器裝在同一台 Windows，安全性較差，多用於測試。</li>
+    <li><b>雙主機</b>：AGate 一台 Windows；WGate＋HTTP 伺服器另一台 Windows 或 UNIX（AIX），是常規做法。</li>
+    <li><b>單一虛擬 ITS 對多 HTTP 伺服器</b>：一台 Windows 裝多個 ITS 實例，分別對應多台 HTTP 伺服器，節省 ITS 主機。</li>
+    <li><b>虛擬單主機</b>：一台伺服器裝多套單主機實例。</li>
+  </ul>
+  <div class="warn"><b>S/4HANA 現況：Integrated ITS</b>。從 NetWeaver 2004（SAP_BASIS 6.40）起，ITS 被整合進 ABAP Kernel，<b>WGate／AGate、IIS、獨立 Windows 伺服器全部不需要了</b>：HTTP 由 ICM 接收，ITS 在應用伺服器的工作處理程序中直接把 Dynpro 轉成 HTML。常用 ICF 服務：
+    <ul>
+      <li><span class="kw">/sap/bc/gui/sap/its/webgui</span>：SAP GUI for HTML（WEBGUI），任何交易都能在瀏覽器執行，URL 可加 <span class="kw">?~transaction=VA03</span>。</li>
+      <li>Internet Service 物件在 <span class="tcode">SE80</span>（或 <span class="tcode">SIAC1</span>）維護；啟用 ITS 相關服務後，需執行程式 <span class="kw">SIAC_PUBLISH_ALL_INTERNAL</span> 把 ITS 標準範本與 MIME 發佈到內部 ITS。</li>
+    </ul>
+    獨立安裝的 ITS 6.20 已結束維護。舊系統若還有獨立 ITS，升級 S/4HANA 時必須改用 Integrated ITS 或改寫為 Fiori／Web Dynpro。</div>
+
+  <h3 id="ch05-17-06">6. 單元五（二）：服務檔（.srvc）與登入方式</h3>
+  <p><b>服務（Service）</b>（p60）：ITS 以 URL 定位服務，格式為 <span class="kw">http://&lt;server&gt;/&lt;path&gt;/wgate/&lt;service&gt;/!</span> 或 <span class="kw">…/wgate?~service=&lt;service&gt;</span>；<b>客製服務以 Z 開頭</b>。服務負責：登入 R/3、執行交易碼／函數模組／報表、把畫面或清單轉成 HTML。服務啟動時在應用伺服器建立 SAP GUI 或 RFC 會話，ITS 負責把 HTTP 請求對應到正確的會話；服務結束（登出或逾時）會話就結束。</p>
+  <p><b>SAP@Web Studio</b>（p61–p62）：維護 WebTransaction 元件（服務檔、HTMLBusiness 範本、MIME 物件、語言相關的預留位置檔）的 Windows 工具，以「專案」組織，有精靈；物件可經 Workbench Organizer 與傳輸系統在系統間傳遞。<b>站台定義精靈</b>步驟：命名 → 指定 WGate 主機 → 指定 AGate 主機 → 虛擬 ITS 名稱 → HTTP 伺服器 URL 與埠。<b>發佈（Publish）</b>＝把 MIME 物件複製到 HTTP 伺服器、把服務／範本／文字檔匯入 ITS。</p>
+  <p><b>服務檔</b>（p63）：放在 AGate 主機上的純文字檔，每行「參數 空白或 Tab 值」。啟動服務 &lt;service&gt; 時<b>先讀 Global.srvc，再讀 &lt;service&gt;.srvc，重複的參數由後者覆蓋</b>。參數分四類：</p>
+  <pre><code class="text"># ---- ZBC440.srvc（Standalone ITS 時代的服務檔範例，僅供理解） ----
+# 1) 系統選擇：直接指定應用伺服器
+~appServer          d03
+~systemNumber       01
+#    或透過 Message Server 負載平衡
+# ~messageServer    m01
+# ~systemName       DEV
+# ~loginGroup       SPACE
+#    或經 SAProuter
+# ~routeString      /H/gateway/S/3299/H/s03/S/3200
+
+# 2) 系統登入：四個都填 = 隱式登入；有缺 = 顯式登入（ITS 產生登入頁）
+~client             100
+~language           ZF
+# ~login            WEBUSER
+# ~password         ********        &lt;- 明碼存在檔案裡，正是它被淘汰的原因之一
+
+# 3) 服務類型
+~xGateway           sapdiag         # WebTransaction（DIAG）
+~transaction        ZBC440          # 要執行的交易碼
+# ~xGateway         sapxgwfc        # WebRFC（RFC），函數名稱放在 URL
+
+# 4) 內部參數
+~theme              99              # 範本主題
+~URLmime            /sap/its/mimes  # MIME 物件的 URL 路徑
+~exitURL            /BC440/home.html
+~runTimeMode        pm              # 系統範本：dm 開發模式 / pm 生產模式
+~cookies            1               # 1=在 AGate 保留登入資訊（預設）
+~timeOut            20              # 會話最長執行時間
+~userTimeOut        10              # 兩次會話之間的最長分鐘數（~cookies=1 才有效）
+~hostunsecure       s34
+~portunsecure       1080
+~hostsecure         s34
+~portsecure         443</code></pre>
+  <table>
+    <thead><tr><th>登入方式</th><th>條件</th><th>適用</th><th>今天在 SICF 的對應</th></tr></thead>
+    <tbody>
+      <tr><td><b>隱式登入</b></td><td>~client、~login、~password、~language 全部指定</td><td>多人共用同一個 R/3 帳號</td><td>服務節點「Logon Data」填固定使用者＝匿名服務（Anonymous Logon）；帳號須為 Service 型（SU01 使用者類型 S）且權限最小化</td></tr>
+      <tr><td><b>顯式登入</b></td><td>上述參數有缺</td><td>每個使用者都有 R/3 帳號</td><td>標準登入程序（Basic、SAML2、X.509 憑證、Kerberos SPNEGO、Logon Ticket），由 <span class="kw">SICF_SESSIONS</span> 等系統登入設定控制</td></tr>
+    </tbody>
+  </table>
+  <div class="note">注意 <span class="kw">~cookies</span> 只是借用名稱：登入資料保存在 <b>AGate</b>，並不是瀏覽器的 HTTP Cookie（p66）。<span class="kw">~cookies=0</span> 表示每次送出都要重新登入。</div>
+  <div class="warn">服務精靈產生的系統與使用者設定<b>不會</b>在傳輸時自動換成 QAS／PRD 的值（p75），當年必須開發完手動改好再傳。今天 ICF 的對應坑是：<b>SICF 節點的匿名登入帳號、SM59 目的地、STRUST 憑證都是系統相依設定</b>，要列在上線檢核表，傳輸後逐一確認。</div>
+
+  <h3 id="ch05-17-07">7. 單元五（三）：網際網路使用者（Internet User）</h3>
+  <p><b>概念</b>（p69、p92）：WebTransaction 的網際網路使用者（例如 B2C 的客戶）<b>不需要 R/3 帳號</b>；ITS 先用一個共用帳號（隱式登入）登入，再用另一頁確認網際網路使用者的身分。</p>
+  <ul>
+    <li>以 SFLIGHT 模型為例：客戶主資料在 <b>SCUSTOMER</b>，網際網路使用者的登入資料在 <b>BAPIUSW01</b>。</li>
+    <li>客戶、供應商等不同商業物件各有主檔，但登入資料都對應到 <b>BAPIUSW01</b>。</li>
+    <li><b>建立網際網路使用者時不會檢查他是否存在於主檔中</b>；執行時只檢查：① 是否存在於 BAPIUSW01；② 密碼是否正確。</li>
+    <li>檢查密碼的標準 BAPI 命名規則：<span class="kw">BAPI_&lt;Business Object&gt;_CHECKPASSWORD</span>。</li>
+    <li>可用專用交易碼（<span class="tcode">SU05</span> 維護網際網路使用者）新增、刪除、改名、鎖定／解鎖、初始化密碼、修改密碼。</li>
+  </ul>
+  <table>
+    <thead><tr><th>當年</th><th>S/4HANA 做法</th></tr></thead>
+    <tbody>
+      <tr><td>BAPIUSW01＋共用 R/3 帳號</td><td>外部系統整合：SU01 的 <b>Communication 使用者（類型 B）</b>或 Service 使用者，搭配最小權限角色；雲端版用 Communication Arrangement／Communication User</td></tr>
+      <tr><td>B2C 客戶自助</td><td>SAP Commerce Cloud、SAP Build Apps 等前台＋SAP Cloud Identity Services（IAS）做身分驗證，後端透過 OData／API 存取 S/4HANA，而不是讓外部使用者直接登入 ERP</td></tr>
+      <tr><td>密碼 BAPI 自行驗證</td><td>交給身分提供者（IdP）做 SAML／OAuth；ABAP 只看已驗證的使用者與角色</td></tr>
+    </tbody>
+  </table>
+  <div class="warn">共用帳號的隱式登入等於「誰都用同一個人登入 ERP」，稽核軌跡（建立者、修改者）全部變成同一個帳號。現代專案若真要做匿名服務，請把邏輯限縮在唯讀查詢，寫入動作一律要求具名驗證。</div>
+
+  <h3 id="ch05-17-08">8. 單元六（一）：WebTransaction 程式設計模型與 BAPI</h3>
+  <p><b>交易屬性</b>（p72）：WebTransaction 讓完全未受 SAP 訓練的網路使用者也能使用部分 R/3 功能，可用多媒體輔助理解。至少包含 <b>R/3 交易、服務檔、HTMLBusiness 範本</b>。其中 R/3 交易的限制：</p>
+  <ul>
+    <li>只能用「<b>簡單畫面</b>」：只含標準 SAP 元素、<b>不含 EnjoySAP 控制項</b>（ALV Grid、Tree、TextEdit 等 Control Framework 元件，見 <a href="#ch05-10">5-10 章</a>），才能轉成 HTML。</li>
+    <li>必須允許透過 ITS 同步（第 11 節）。</li>
+    <li>輸入說明（F4）必須用特殊技術提供（第 12 節的上下文巨集）。</li>
+    <li>業務邏輯用 <b>BAPI</b> 快速組成。</li>
+  </ul>
+  <p><b>BAPI 的三個要點</b>（p73，詳見 BC417／<a href="#ch05-12">5-12 章</a>）：① BAPI 就是允許 RFC 的函數模組，用 CALL FUNCTION 呼叫；② 因為非 SAP 系統也能呼叫，<b>不能用 ABAP 例外機制，改用 RETURN 參數回傳訊息</b>；③ BAPI 一般同步呼叫，透過更新任務改資料庫，<b>BAPI 內部不可有 COMMIT WORK</b>，由呼叫端決定提交。</p>
+  <p><b>設計流程</b>（p74）：① 需求：業務是否真的要上網 → ② 任務流程 → ③ 搜尋 BAPI（<span class="tcode">BAPI</span> 交易）→ ④ 建 R/3 交易（程式＋TCODE，<b>只呼叫 BAPI</b>）→ ⑤ 在 SAP@Web Studio 建 HTMLBusiness 範本、美化、多語。</p>
+  <div class="tip">「UI 只負責畫面、業務邏輯全部走 BAPI」這個分層原則在今天完全沒變，只是 BAPI 換成了 RAP 的 Behavior（或仍用 BAPI 包在 OData 後面）。這正是 Casper 的第三條經驗──<b>先找標準</b>：訂單、預訂、主資料的建立幾乎都有標準 BAPI 或標準 API（SAP Business Accelerator Hub），不要自己寫 INSERT。</div>
+  <p>課程情境「預訂航班」的業務邏輯，用現代寫法包成一個可被 Web handler、OData 或 Dynpro 共用的類別：</p>
+  <pre><code class="abap">*&amp;-------------------------------------------------------------*
+*&amp; 預訂航班：UI 無關的業務邏輯層，只呼叫 BAPI
+*&amp;  （BAPI_FLBOOKING_CREATEFROMDATA 為 SFLIGHT 教學模型的標準 BAPI，
+*&amp;    實際參數請以 SE37 為準）
+*&amp;-------------------------------------------------------------*
+CLASS zcl_bc440_booking DEFINITION PUBLIC FINAL CREATE PUBLIC.
+  PUBLIC SECTION.
+    TYPES: BEGIN OF ty_result,
+             bookid   TYPE s_book_id,
+             messages TYPE bapiret2_t,
+           END OF ty_result.
+    METHODS create
+      IMPORTING iv_carrid     TYPE s_carr_id
+                iv_connid     TYPE s_conn_id
+                iv_fldate     TYPE s_date
+                iv_customid   TYPE s_customer
+                iv_class      TYPE s_class
+      RETURNING VALUE(rs_res) TYPE ty_result.
+ENDCLASS.
+
+CLASS zcl_bc440_booking IMPLEMENTATION.
+  METHOD create.
+    DATA lt_return TYPE STANDARD TABLE OF bapiret2 WITH EMPTY KEY.
+
+    DATA(ls_booking) = VALUE bapisbonew( customerid = iv_customid
+                                         class      = iv_class ).  "其他欄位依需求補
+    CALL FUNCTION 'BAPI_FLBOOKING_CREATEFROMDATA'
+      EXPORTING
+        airlineid     = iv_carrid
+        connectionid  = iv_connid
+        flightdate    = iv_fldate
+        booking_data  = ls_booking
+      IMPORTING
+        bookingnumber = rs_res-bookid
+      TABLES
+        return        = lt_return.
+
+    rs_res-messages = lt_return.
+    " BAPI 不拋例外，只看 RETURN 裡有沒有 E / A
+    IF line_exists( lt_return[ type = 'E' ] ) OR line_exists( lt_return[ type = 'A' ] ).
+      CALL FUNCTION 'BAPI_TRANSACTION_ROLLBACK'.
+    ELSE.
+      " BAPI 內部不 COMMIT，由呼叫端提交；WAIT 確保更新任務完成才回來
+      CALL FUNCTION 'BAPI_TRANSACTION_COMMIT'
+        EXPORTING wait = abap_true.
+    ENDIF.
+  ENDMETHOD.
+ENDCLASS.</code></pre>
+
+  <h3 id="ch05-17-09">9. 單元六（二）：服務與範本──HTMLBusiness 語法</h3>
+  <p><b>服務描述</b>（p75）：服務檔裡的屬性條目又稱服務描述；服務精靈只需建立 Global.srvc 裡沒有的屬性；發佈時把服務檔複製到 AGate。</p>
+  <p><b>HTMLBusiness</b>（p76–p77）：語法類似 C，嵌在標準 HTML 中（很像 ASP），用<b>反引號 `</b>（鍵盤 Esc 下方那一個）包起來，因為它在 HTML 中沒有特殊意義；SAP@Web Studio 以藍色顯示。最簡單的用法就是在範本中寫與畫面欄位同名的變數；可用的<b>畫面欄位屬性</b>：</p>
+  <table>
+    <thead><tr><th>屬性</th><th>意義</th><th>屬性</th><th>意義</th></tr></thead>
+    <tbody>
+      <tr><td>.name</td><td>欄位名稱與索引</td><td>.disabled</td><td>能否輸入</td></tr>
+      <tr><td>.value</td><td>欄位值</td><td>.type</td><td>欄位型別</td></tr>
+      <tr><td>.label</td><td>欄位標籤</td><td>.maxSize</td><td>最多可輸入字元數</td></tr>
+      <tr><td>.max</td><td>多行欄位的行數</td><td>.visSize</td><td>可見寬度</td></tr>
+      <tr><td>.exists</td><td>欄位顯示或被停用</td><td></td><td></td></tr>
+    </tbody>
+  </table>
+  <ul>
+    <li><b>範本命名</b>（p78）：<span class="kw">&lt;program name&gt;_&lt;screen no&gt;.html</span>，R/3 交易的<b>每個畫面</b>各一個。畫面流程邏輯在 R/3，ITS 不知道畫面順序，只負責轉換。</li>
+    <li><b>範本精靈</b>（p79）：依 R/3 畫面自動產生範本，自動建立 form 並把輸入／輸出欄位與標籤轉成 input；依 ~theme 與 ~language 管理；範本在 R/3 產生，所以 SAP@Web Studio 需要 RFC 連線到 R/3。</li>
+    <li><b>檔案階層</b>（p80）：AGate 下 GLOBAL.srvc、BC440.srvc（BC440_100.html、BC440_200.html）、ZWTEST.srvc（ZWTEST_101.html…）。</li>
+    <li><b>發佈、建置、執行</b>（p81）：Publish＝複製檔案；Build＝語法檢查＋存檔＋複製；Go＝Build 後在瀏覽器啟動服務（强晟註：Build／Go 是借用 Turbo C 的詞彙）。</li>
+    <li><b>表單輸入</b>（p82）：技術上 <b>ITS 就是一個接收 HTML 輸入的 CGI 程式</b>，把查詢字串的值填入同名畫面欄位；form 的 action 用 <span class="kw">wgateURL()</span> 產生；服務參數 <span class="kw">~submitChecking=1</span> 時找不到同名欄位會報錯。</li>
+    <li><b>功能碼</b>（p84–p85）：送出鈕的 name 寫 <span class="kw">~OkCode=DISP</span>；結束服務用 <span class="kw">~OkCode=/NEX</span>（等同交易碼 /NEX），然後送出 ~exitURL 的頁面；<b>跳過初始畫面</b>＝填好所有必填欄位並一起傳 OkCode。</li>
+  </ul>
+  <pre><code class="text">&lt;!-- SAPBC440_100.html：HTMLBusiness 範本（僅供理解舊系統，勿再新開發） --&gt;
+&lt;form action="`wgateURL()`" method="post"&gt;
+  `SCARR-CARRID.label`:
+  &lt;input type="text" name="`SCARR-CARRID.name`" value="`SCARR-CARRID.value`"
+         maxlength="`SCARR-CARRID.maxSize`" size="`SCARR-CARRID.visSize`"&gt;
+  `assert(SCARR-CARRID)`                              &lt;!-- 顯示此欄位的錯誤訊息 --&gt;
+
+  &lt;!-- 單選鈕：以 .group 分組 --&gt;
+  &lt;input type="radio" name="`RB_01.group`" value="`RB_01.name`"&gt; 經濟艙
+  &lt;input type="radio" name="`RB_02.group`" value="`RB_02.name`" `RB_02.selected`&gt; 商務艙
+
+  &lt;!-- 核取方塊：先放同名 hidden，沒勾時才送得出空白 --&gt;
+  &lt;input type="hidden"   name="`NONSTOP.name`" value=" "&gt;
+  &lt;input type="checkbox" name="`NONSTOP.name`" value="X"&gt; 直飛
+
+  &lt;!-- 表格控制項：只輸出目前可見的列 --&gt;
+  &lt;table&gt;&lt;tr&gt;&lt;td&gt;&lt;/td&gt;
+  `repeat with j from 1 to MY_TC.columncount`&lt;td&gt;`MY_TC-column[j].title`&lt;/td&gt;`end`
+  &lt;/tr&gt;
+  `repeat with j from MY_TC.firstvisible to MY_TC.lastvisible`
+    &lt;tr&gt;&lt;td&gt;&lt;input type="radio" name="`MY_TC.name`" value="`MY_TC-rowselect[j]`"
+              `if (MY_TC-rowselect[j].selected)` checked `end`&gt;&lt;/td&gt;
+        &lt;td&gt;`SDYN_CONN-CARRID[j].value`&lt;/td&gt;&lt;/tr&gt;
+  `end`
+  &lt;/table&gt;
+
+  &lt;input type="submit" name="~OkCode=DISP" value="`#display`"&gt;  &lt;!-- # 開頭＝語言預留位置 --&gt;
+  &lt;input type="submit" name="~OkCode=/NEX" value="exit"&gt;
+&lt;/form&gt;
+`~messageLine`                                        &lt;!-- R/3 交易產生的狀態列訊息 --&gt;</code></pre>
+  <p><b>表格控制項輸出要點</b>（p86–p87）：欄頭用 <span class="kw">&lt;tc&gt;-column[&lt;index&gt;].title</span>；只有 <span class="kw">&lt;tc&gt;.firstvisible</span> 到 <span class="kw">&lt;tc&gt;.lastvisible</span> 的列可見（不同於一般 HTML 表格）；列選取單選用 radio、複選用 <span class="kw">&lt;input type="checkbox" name="`&lt;tc&gt;-rowselect[j]`" value="X"&gt;</span>。</p>
+  <p><b>HTMLBusiness 函數與運算子</b>（p103–p106）：</p>
+  <ul>
+    <li>多個命令可用分號串接：<span class="kw">`repeat with i from 1 to 5; i; end`</span>。</li>
+    <li>輸出：<span class="kw">write()</span> 標準編碼、<span class="kw">writeEnc()</span> URL 編碼（New York → New%20York）；<span class="kw">wgateURL()</span> 產生送出 URL；<span class="kw">mimeURL()</span> 取得 MIME 物件 URL。</li>
+    <li>字串函數：strCat、strCmp、striCmp、strCopy、strLen、strLwr、strnCmp、strniCmp、strStr、strSub、strUpr。</li>
+    <li>訊息：<span class="kw">assert()</span>（放在輸入欄位後顯示該欄錯誤）、<span class="kw">~errorMarker</span>、<span class="kw">~messageLine</span>。</li>
+    <li>運算子與 C 相同：= 指定；&amp;、+、++、*、-、--、/、%、&amp;&amp;；比較 ==、!=、&gt;、&lt;、&gt;=、&lt;=。</li>
+    <li>條件 if … elseif … else … end（大小寫敏感）；函數 <span class="kw">`function fname(para) … return(value); end`</span>；引入外部檔 <span class="kw">include(~service=, ~theme=, ~language=, ~name=)</span>。</li>
+  </ul>
+  <div class="warn"><b>筆記更正</b>：p104 把 <span class="kw">striCmp</span>／<span class="kw">strniCmp</span> 註成「大小寫敏感」，剛好寫反了──名稱中的 <b>i 代表 ignore case，是不分大小寫</b>的版本，strCmp／strnCmp 才分大小寫（與 C 的 stricmp 慣例一致）。</div>
+
+  <h3 id="ch05-17-10">10. 單元六（三）：傳輸、主題與語言、步進迴圈、MIME 物件</h3>
+  <p><b>與 Workbench Organizer 的連接</b>（p93–p94）：標準三系統 DEV（開發）→ QAS（整合測試）→ PRD（生產），每個系統各有自己的 ITS。R/3 與 ITS 之間的傳輸一律經由 SAP@Web Studio，有四種動作：</p>
+  <table>
+    <thead><tr><th>動作</th><th>說明</th></tr></thead>
+    <tbody>
+      <tr><td>增加（Add）</td><td>在 R/3 建立物件（每個物件只做一次）</td></tr>
+      <tr><td>取得（Get）</td><td>從 R/3 讀取物件，不修改</td></tr>
+      <tr><td>簽出（Check out）</td><td>鎖定並讀取 R/3 中的物件</td></tr>
+      <tr><td>簽入（Check in）</td><td>把修改寫回 R/3 並解鎖</td></tr>
+    </tbody>
+  </table>
+  <p>專案物件和相關 ABAP 程式一起傳輸；到了 QAS／PRD 再用「發佈」把物件載入 WGate 與 AGate。今天 Internet Service、ICF 節點、MIME Repository 物件都是一般的 Repository 物件，走標準傳輸請求即可（見 <a href="#ch01-1">1-1 章</a>）。</p>
+  <p><b>主題（Theme）</b>（p95–p96）：同一套業務邏輯的不同版面（就像 BC425 的畫面變式與 GuiXT，見 <a href="#ch05-14">5-14 章</a>）；由範本決定、服務啟動時載入、執行中不可更換。<span class="kw">~theme</span> 的選擇順序：<b>URL → &lt;service&gt;.srvc → Global.srvc</b>，都沒有就不用主題；URL 指定 <span class="kw">~theme=""</span> 表示強制不用主題。</p>
+  <p><b>語言相依</b>（p97–p100）：</p>
+  <ul>
+    <li>參照資料字典的物件自動以登入語言顯示，不需額外設定；<span class="kw">~windowTitle</span>（等同 SET TITLEBAR）、<span class="kw">~messageLine</span> 也跟登入語言。</li>
+    <li>非字典文字用<b>語言預留位置檔</b> <span class="kw">&lt;service&gt;_&lt;langu&gt;.htrc</span>，範本中以 <span class="kw">`#&lt;PlaceHolder&gt;`</span> 引用；或直接做語言專屬範本 <span class="kw">&lt;service&gt;_&lt;dynnr&gt;_&lt;langu&gt;.html</span>；也可用 <span class="kw">`#&lt;filename&gt;`</span> 引入語言相依文字檔（不能與預留位置同時用）。</li>
+    <li>登入語言 <span class="kw">~language</span> 與範本語言 <span class="kw">~templateLanguage</span> 可以不同；選擇順序同樣是 URL → 服務檔 → 全域檔；~templateLanguage 空白則用登入語言。</li>
+  </ul>
+  <p><b>步進迴圈（Step Loop）</b>（p101–p102）：R/3 畫面上的表格在 PBO 逐行輸出、PAI 逐行回寫。HTMLBusiness 有兩種迴圈：<span class="kw">`repeat &lt;expr&gt; times` … `end`</span> 與 <span class="kw">`for(&lt;init&gt;;&lt;cond&gt;;&lt;modify&gt;)` … `end`</span>。因為效能考量，<b>對話程式的最大資料包是 30KB</b>，而且 ITS 只能存取畫面上可見的欄位──內表列數多於可見列時，網路使用者就看不到其他列，必須用捲動按鈕；做範本時可用 Shift+F9／Shift+F11 把畫面撐到顯示全部列，再靠瀏覽器捲軸。</p>
+  <p><b>MIME 物件</b>（p107–p108）：圖片、音訊、視訊，存在 HTTP 伺服器上；可在範本中靜態指定、用函數動態指定（依主題、語言），或由 R/3 動態產生。靜態的放在主題目錄下、與範本並列；動態的在主題下依語言分資料夾。<span class="kw">mimeURL(~theme="", ~language="EN", ~name="plane.gif")</span> 會轉成 <span class="kw">/MIMES/BC440/EN/plane.gif</span>，隨專案一起發佈。</p>
+  <div class="note">原筆記 p108 範例寫成 <span class="kw">language="EN"</span>，少了波浪號，正確應為 <span class="kw">~language</span>。</div>
+  <div class="warn"><b>現代對應</b>：主題 → Fiori 的佈景主題（SAP Horizon、Quartz，<span class="kw">sap-theme</span> URL 參數）與 UI Theme Designer；語言預留位置 → SAPUI5 的 <span class="kw">i18n.properties</span> 或 ABAP 端的 Text Symbol／OTR／資料元素文字；MIME → <span class="tcode">SE80</span> 的 MIME Repository 或 BSP／UI5 應用的資源檔。「多語系一律用字典與翻譯工具（<span class="tcode">SE63</span>），不要把中文寫死在範本裡」這條原則一樣適用。</div>
+
+  <h3 id="ch05-17-11">11. 單元六（四）：瀏覽器與 R/3 的同步（上一頁問題）</h3>
+  <p><b>問題</b>（p89）：只要使用者只透過連結與表單操作，瀏覽器與 R/3 會保持同步。但使用者一按瀏覽器的<b>「上一頁」</b>，瀏覽器沒有與伺服器互動，R/3 仍停在新畫面；此時再送出表單，送出的畫面資料不是 R/3 期待的，資料與功能碼會被忽略，ITS 只好被動地對 R/3 送來的畫面產生新頁。</p>
+  <p><b>解法</b>（p90）：ITS 在每個 HTML 頁面藏一個<b>狀態編號</b>（細節如畫面號碼存在 ITS），用它檢查每個請求是否同步。發現不同步時依服務參數 <span class="kw">~SyncBehaviour</span>：</p>
+  <ul>
+    <li><b>NoResync（簡單方案）</b>：產生一頁告訴使用者不允許用「上一頁」，R/3 交易完全不知情。</li>
+    <li><b>Resync（舒適方案）</b>：ITS 送功能碼 <span class="kw">AWSY&lt;prog&gt;&lt;screen_no&gt;</span> 給 R/3，由交易自行回捲到瀏覽器所在的畫面再同步──必須寫進 R/3 交易裡。</li>
+  </ul>
+  <p><b>同步表</b>（p91、p118）：結構 <b>SITSSYNC</b> 有 SUBSC、REPID、DYNNR 三個欄位；內表必須有一行 <span class="kw">SUBSC = 'MAIN'</span>（ITS 請求的主畫面），有子畫面／分框時再加其他行；呼叫 <span class="kw">ITS_GET_SYNC_INFO</span> 取得同步資訊。分框交易的功能碼以 <b>AWSS</b> 或 <b>AWSY</b> 開頭。原教材是 WITH HEADER LINE 的舊寫法，以下改寫成現代語法（仍是 Dynpro 的 PAI 模組）：</p>
+  <pre><code class="abap">*&amp;-------------------------------------------------------------*
+*&amp; PAI：處理 ITS 的重新同步功能碼 AWSY / AWSS（Integrated ITS 仍適用）
+*&amp;-------------------------------------------------------------*
+MODULE user_command_0100 INPUT.
+  DATA(lv_ok) = gv_ok_code.
+  CLEAR gv_ok_code.
+
+  CASE lv_ok(4).
+    WHEN 'AWSY' OR 'AWSS'.                 "原筆記 p118 誤寫成 WHEN 'AWSY' OF 'AWSS'
+      DATA lt_sync TYPE STANDARD TABLE OF sitssync WITH EMPTY KEY.
+      CALL FUNCTION 'ITS_GET_SYNC_INFO'
+        TABLES
+          sync_info         = lt_sync
+        EXCEPTIONS
+          its_not_available = 1
+          OTHERS            = 2.
+      IF sy-subrc &lt;&gt; 0.
+        RETURN.                              "不是從 ITS 來的，忽略
+      ENDIF.
+
+      LOOP AT lt_sync INTO DATA(ls_sync).
+        CASE ls_sync-subsc.
+          WHEN 'MAIN'.
+            go_app-&gt;rollback_to( ls_sync-dynnr ).   "內部回捲：清掉之後畫面產生的暫存資料
+            SET SCREEN ls_sync-dynnr.
+          WHEN 'F1'.
+            gv_dynpro_f1 = ls_sync-dynnr.          "分框 F1 的子畫面
+          WHEN 'F2'.
+            gv_dynpro_f2 = ls_sync-dynnr.
+        ENDCASE.
+      ENDLOOP.
+      LEAVE SCREEN.
+
+    WHEN 'DISP'.
+      go_app-&gt;display( ).
+  ENDCASE.
+ENDMODULE.</code></pre>
+  <div class="tip">「上一頁」問題在今天換了個樣子：REST／OData 本質上是<b>無狀態</b>的，每次請求自帶完整資訊，就不存在「伺服器停在哪一頁」的同步問題；取而代之的是「資料在我看完之後被別人改了」，這由 OData 的 <b>ETag（If-Match 標頭）樂觀鎖</b>處理，RAP 以 <span class="kw">etag master</span> 宣告。資料庫鎖與 LUW 的觀念見 <a href="#ch05-11">5-11 章</a>。</div>
+
+  <h3 id="ch05-17-12">12. 單元六（五）：上下文巨集（Context Macros）與 F4 替代</h3>
+  <p><b>動機</b>（p109）：SAP GUI 按 F4 會列出可選值，HTML 最接近的是 <span class="kw">&lt;select&gt;</span>，所以 ITS 常用下拉清單模擬 F4。資料除了跟著畫面傳，也可以<b>透過 RFC 傳給 ITS</b>，這就是上下文巨集：欄位、內表、MIME 物件在 PBO 傳給 ITS；ITS 的上下文欄位在 PAI 讀回。</p>
+  <table>
+    <thead><tr><th>巨集（定義在 Include <b>AVWRTCXM</b>）</th><th>參數</th><th>說明</th></tr></thead>
+    <tbody>
+      <tr><td><b>field-set</b></td><td>name（欄位名）、index（從 1 起）、value</td><td>只把值加進待傳清單，<b>不立即觸發 RFC</b></td></tr>
+      <tr><td><b>field-transport</b></td><td>無</td><td>把清單一次用 RFC 傳給 ITS──大量資料時比在 LOOP 裡逐次傳快得多</td></tr>
+      <tr><td><b>field-get</b></td><td>name、index、itab（接收內表）、length（回傳長度）</td><td><b>立即執行</b>；一行太長會被拆到內表多行</td></tr>
+    </tbody>
+  </table>
+  <p>p115 的例子：下拉清單 CREW 第 2 行值為 123456789，接收內表的行型別是 4 字元，執行 <span class="kw">field-get 'CREW' '2' crewtab crewlength</span> 後 crewtab 有 3 行（1234、5678、9），crewlength = 3。</p>
+  <p><b>同時適用 ITS 與 SAP GUI</b>（p114）：呼叫 <span class="kw">ITS_PING</span>（內部以 CALL 'C 程式' 判斷），sy-subrc = 0 表示從 ITS 來，才做 field-set／field-transport。原教材為 LOOP AT itab（header line）＋ ADD 1 TO counter，改寫如下：</p>
+  <pre><code class="abap">*&amp;-------------------------------------------------------------*
+*&amp; PBO：把航空公司清單傳給 ITS，供 HTMLBusiness 的 &lt;select&gt; 使用
+*&amp;-------------------------------------------------------------*
+INCLUDE avwrtcxm.                          "field-set / field-transport / field-get
+
+MODULE fill_carrier_list OUTPUT.
+  CALL FUNCTION 'ITS_PING'
+    EXCEPTIONS
+      its_not_available = 1
+      OTHERS            = 2.
+  IF sy-subrc &lt;&gt; 0.
+    RETURN.                                "SAP GUI：用一般的 F4 / 搜尋說明即可
+  ENDIF.
+
+  SELECT carrid, carrname
+    FROM scarr
+    ORDER BY carrid                        "下拉清單順序要穩定：HANA 不保證預設順序
+    INTO TABLE @DATA(lt_scarr).
+
+  DATA(lv_idx) = 1.
+  LOOP AT lt_scarr INTO DATA(ls_scarr).
+    field-set 'CARRID'   lv_idx ls_scarr-carrid.
+    field-set 'CARRNAME' lv_idx ls_scarr-carrname.
+    lv_idx = lv_idx + 1.                   "7.54+ 可寫 lv_idx += 1
+  ENDLOOP.
+  field-transport.                         "一次傳送，不要放在 LOOP 裡
+ENDMODULE.
+
+*&amp; PAI：讀回 ITS 上下文欄位 CREW 的第 2 行
+MODULE read_crew INPUT.
+  TYPES ty_line TYPE c LENGTH 4.
+  DATA lt_crew TYPE STANDARD TABLE OF ty_line WITH EMPTY KEY.
+  DATA lv_crew_len TYPE i.
+  field-get 'CREW' '2' lt_crew lv_crew_len.
+ENDMODULE.</code></pre>
+  <p>對應的範本（無論用 RFC 還是步進迴圈，範本寫法相同）：</p>
+  <pre><code class="text">&lt;select name="`SCARR-CARRID.name`"&gt;
+`repeat with i from 1 to CARRID.max`
+  &lt;option value="`CARRID[i].value`"
+     `if (CARRID[i].value == SCARR-CARRID.value)` selected `end`&gt;`CARRNAME[i].value`&lt;/option&gt;
+`end`
+&lt;/select&gt;</code></pre>
+  <div class="warn"><b>現代對應</b>：Integrated ITS 下，SAP GUI for HTML 會直接呈現標準的 F4／搜尋說明，一般不需要再寫上下文巨集。判斷目前是否在 Web GUI 執行，常見做法是呼叫函數 <span class="kw">GUI_IS_ITS</span>（回傳 X 表示 ITS），請先在 <span class="tcode">SE37</span> 確認系統中的介面。Fiori 則用 CDS 的 <span class="kw">@Consumption.valueHelpDefinition</span> 宣告值說明，前端自動產生下拉／值說明對話框，完全不需要寫 UI 程式碼。</div>
+
+  <h3 id="ch05-17-13">13. 單元六（六）：分框交易與 Web 除錯器</h3>
+  <p><b>子畫面回顧</b>（p116）：子畫面是主畫面中的矩形區域，在 PBO 用 <span class="kw">CALL SUBSCREEN &lt;area&gt; INCLUDING &lt;prg&gt; &lt;dynnr&gt;</span> 顯示；<b>子畫面的 PBO 在主畫面 PBO 之後執行、PAI 在主畫面 PAI 之前執行</b>；子畫面的功能碼只能在主畫面處理（詳見 <a href="#ch05-9">5-9 章</a>）。</p>
+  <p><b>分框處理子畫面</b>（p117）：主畫面對應 HTML 的 <span class="kw">&lt;frameset&gt;</span>，每個子畫面各一個範本（命名同樣是 <span class="kw">&lt;prg&gt;_&lt;dynnr&gt;.html</span>）；主範本中 <span class="kw">&lt;frame name="F1" src="`wgateURL(~FrameName="F1")`"&gt;</span>；由連結觸發事件：<span class="kw">&lt;a href="`wgateURL(~target="F2",~okCode="DISPLAY")`"&gt;`#display`&lt;/a&gt;</span>。分框同步用 AWSS／AWSY 功能碼（第 11 節程式）。</p>
+  <p><b>Web 除錯器</b>（p88）：要用 SAP GUI 除錯 WebTransaction，須把登錄機碼 <span class="kw">HKEY_LOCAL_MACHINE\SOFTWARE\SAP\ITS\2.0\&lt;virtual ITS&gt;\Programs\AGate</span> 的 <b>AdminEnabled</b> 從 0 改為 1；並使用<b>被動模式</b>：先用瀏覽器開服務，收到 ITS 初始頁時用 SAP GUI 連到 AGate，之後應用伺服器送給 AGate 的畫面都會同時顯示在 SAP GUI；若在 SAP GUI 輸入資料，結果只會回到 SAP GUI，不再送到瀏覽器。</p>
+  <p>今天除錯 Web GUI、ICF handler、OData 的方式完全不同：</p>
+  <table>
+    <thead><tr><th>對象</th><th>做法</th></tr></thead>
+    <tbody>
+      <tr><td>ICF handler／WEBGUI／OData</td><td>在 ADT 或 <span class="tcode">SE80</span> 設<b>外部中斷點（External／User Breakpoint）</b>，指定「HTTP 請求的登入使用者」；或 <span class="tcode">SICF</span> → Edit → Debugging → Activate Debugging，指定使用者（見 <a href="#ch05-4">5-4 章</a>）</td></tr>
+      <tr><td>重現 HTTP 請求</td><td><span class="tcode">SICF</span> → Edit → Recorder → Activate Recording，錄下請求／回應再播放；OData 用 <span class="tcode">/IWFND/GW_CLIENT</span></td></tr>
+      <tr><td>HTTP 層問題</td><td><span class="tcode">SMICM</span> → Goto → Trace File／HTTP Log；<span class="tcode">SM21</span>、<span class="tcode">ST22</span></td></tr>
+      <tr><td>OData 錯誤</td><td><span class="tcode">/IWFND/ERROR_LOG</span>（Gateway Hub 端）、<span class="tcode">/IWBEP/ERROR_LOG</span>（後端）</td></tr>
+      <tr><td>權限</td><td><span class="tcode">SU53</span>（Web 請求要以該使用者身分查）、<span class="tcode">STAUTHTRACE</span></td></tr>
+    </tbody>
+  </table>
+
+  <h3 id="ch05-17-14">14. 單元七（一）：WebRFC──函數模組直接輸出 HTML</h3>
+  <p><b>WebRFC 是什麼</b>（p120–p121）：基於 ITS 與 R/3 之間的 RFC 連線，ITS 把參數表傳給 R/3 上特殊的 RFC 函數模組，並從回應接收 HTML 頁或 MIME 物件表。支援 WebRFC 的函數模組可以：產生 HTML 或 MIME、讀寫資料庫表、把商業物件當交易使用、在多次連續 WebRFC 呼叫中使用交易、在 R/3 中提供簡單的範本概念。</p>
+  <p><b>啟動 URL</b>（p122）：<span class="kw">…/wgate/WebRFC/!?_function=&lt;function module&gt;[&amp;&lt;name&gt;=&lt;value&gt;]</span>。參數 <span class="kw">_function</span> 由 <b>WWW_DISPATCH_REQUEST</b> 解讀；其他參數被它忽略，直接傳給目標函數。</p>
+  <p><b>WebRFC 服務參數</b>（p123–p125）：全部設定先從 global.srvc 複製，再由 WebRFC 服務檔覆蓋；第五單元的系統、使用者、密碼參數同樣適用；<span class="kw">~XGateway</span> 決定 AGate 用 RFC 還是 DIAG。WebRFC 專用參數（<b>不能</b>用在 WebTransaction 服務檔）：</p>
+  <table>
+    <thead><tr><th>參數</th><th>意義</th></tr></thead>
+    <tbody>
+      <tr><td>~XGateway = sapxgwfc</td><td>RFC 型閘道</td></tr>
+      <tr><td>~RFCGatewayHost</td><td>閘道（路由器）主機名</td></tr>
+      <tr><td>~RFCGatewayService</td><td>R/3 閘道服務，例如 sapgw00</td></tr>
+      <tr><td>~RFCSystemType</td><td>SAP 系統類型</td></tr>
+      <tr><td>~RFCTimeOut</td><td>RFC 逾時分鐘數</td></tr>
+      <tr><td>~RFCDebuggingOn</td><td>啟用除錯</td></tr>
+      <tr><td>~RFCDetailedError</td><td>錯誤訊息更詳細</td></tr>
+    </tbody>
+  </table>
+  <p><b>WWW_DISPATCH_REQUEST</b>（p126）：AGate 把 URL 中所有參數的名稱與值放進表 <b>QUERY_STRING</b>（筆記誤植為 QUEST_STRING），傳給 WWW_DISPATCH_REQUEST。回應中 AGate 收到：HTML 表中的完整頁面或 MIME 表中的二進位物件、MIME 類型、以及連線狀態回傳碼 <span class="kw">RETURN_CODE</span>：0＝關閉、1＝保持開啟、3＝關閉並結束 ITS 會話。</p>
+  <p><b>函數介面</b>（p127）：函數群組 <b>SURL</b> 收錄 SAP 所有支援 WebRFC 的函數模組。</p>
+  <table>
+    <thead><tr><th>結構</th><th>欄位</th><th>介面參數</th></tr></thead>
+    <tbody>
+      <tr><td>W3QUERY</td><td>NAME CHAR 30、VALUE CHAR 250</td><td>TABLES QUERY_STRING</td></tr>
+      <tr><td>W3HTML</td><td>LINE CHAR 255</td><td>TABLES HTML</td></tr>
+      <tr><td>W3MIME</td><td>LINE RAW 255</td><td>TABLES MIME</td></tr>
+      <tr><td>W3PARAM</td><td>CONT_TYPE CHAR 128、CONT_LEN INT4、RET_CODE INT4</td><td>CHANGING CONTENT_TYPE、CONTENT_LENGTH、RETURN_CODE</td></tr>
+    </tbody>
+  </table>
+  <p><b>WWW_HTML_ECHO</b>（p128–p129）是 SAP 附的範例，把 QUERY_STRING 各行做成一張 HTML 表。AGate 為了效能只是把 HTML 表的每一行直接接起來，行沒填滿會留下大量空白，可用 <span class="kw">WWW_PACK_TABLE</span> 移除。原範例是 REFRESH／CONCATENATE／header line 寫法，下面是介面相容的現代改寫（維護舊 WebRFC 函數時參考；新開發請看下一段 ICF 版）：</p>
+  <pre><code class="abap">FUNCTION z_www_html_echo.
+*"--------------------------------------------------------------
+*"  TABLES   QUERY_STRING STRUCTURE W3QUERY
+*"           HTML         STRUCTURE W3HTML
+*"           MIME         STRUCTURE W3MIME
+*"  CHANGING VALUE(CONTENT_TYPE)   LIKE W3PARAM-CONT_TYPE
+*"           VALUE(CONTENT_LENGTH) LIKE W3PARAM-CONT_LEN
+*"           VALUE(RETURN_CODE)    LIKE W3PARAM-RET_CODE
+*"--------------------------------------------------------------
+  CLEAR html[].
+  content_type = 'text/html'.
+
+  APPEND VALUE w3html( line = '&lt;html&gt;&lt;body&gt;&lt;hr&gt;&lt;table border="4"&gt;' ) TO html.
+  APPEND VALUE w3html( line = '&lt;tr&gt;&lt;td&gt;Parameter Name&lt;/td&gt;&lt;td&gt;Value&lt;/td&gt;&lt;/tr&gt;' ) TO html.
+
+  LOOP AT query_string INTO DATA(ls_q).
+    " 每行最多 255 字元，超過會被截斷；值要 escape 以免 XSS
+    APPEND VALUE w3html(
+      line = |&lt;tr&gt;&lt;td&gt;{ escape( val = ls_q-name  format = cl_abap_format=&gt;e_html_text ) }|
+          &amp;&amp; |&lt;/td&gt;&lt;td&gt;{ escape( val = ls_q-value format = cl_abap_format=&gt;e_html_text ) }&lt;/td&gt;&lt;/tr&gt;| )
+      TO html.
+  ENDLOOP.
+
+  APPEND VALUE w3html( line = '&lt;/table&gt;&lt;/body&gt;&lt;/html&gt;' ) TO html.
+  return_code = 0.                          "0 = 回應後關閉連線
+ENDFUNCTION.</code></pre>
+  <p>同樣的「回顯請求參數」在 S/4HANA 用 ICF handler 實作，不需要 ITS、不受 255 字元行寬限制，還能直接回 JSON：</p>
+  <pre><code class="abap">METHOD if_http_extension~handle_request.
+  " 等同 WWW_DISPATCH_REQUEST 交給函數的 QUERY_STRING
+  DATA lt_fields TYPE tihttpnvp.
+  server-&gt;request-&gt;get_form_fields( CHANGING fields = lt_fields ).
+
+  " 依 Accept 標頭決定回 JSON 或 HTML
+  IF server-&gt;request-&gt;get_header_field( 'accept' ) CS 'application/json'.
+    server-&gt;response-&gt;set_content_type( 'application/json; charset=utf-8' ).
+    server-&gt;response-&gt;set_cdata( /ui2/cl_json=&gt;serialize(
+                                   data        = lt_fields
+                                   pretty_name = /ui2/cl_json=&gt;pretty_mode-low_case ) ).
+  ELSE.
+    DATA(lv_html) = REDUCE string(
+      INIT h = |&lt;html&gt;&lt;body&gt;&lt;table border="1"&gt;&lt;tr&gt;&lt;th&gt;Name&lt;/th&gt;&lt;th&gt;Value&lt;/th&gt;&lt;/tr&gt;|
+      FOR f IN lt_fields
+      NEXT h = h &amp;&amp; |&lt;tr&gt;&lt;td&gt;{ escape( val = f-name  format = cl_abap_format=&gt;e_html_text ) }&lt;/td&gt;|
+                 &amp;&amp; |&lt;td&gt;{ escape( val = f-value format = cl_abap_format=&gt;e_html_text ) }&lt;/td&gt;&lt;/tr&gt;| ).
+    server-&gt;response-&gt;set_content_type( 'text/html; charset=utf-8' ).
+    server-&gt;response-&gt;set_cdata( lv_html &amp;&amp; |&lt;/table&gt;&lt;/body&gt;&lt;/html&gt;| ).
+  ENDIF.
+  server-&gt;response-&gt;set_status( code = 200 reason = 'OK' ).
+ENDMETHOD.</code></pre>
+
+  <h3 id="ch05-17-15">15. 單元七（二）：發佈、Web Repository（WWWDATA）、MIME 與範本合併</h3>
+  <p><b>發佈函數模組</b>（p130）：所有被 WebRFC 使用的函數模組都必須<b>明確發佈（Internet Release）</b>：在 SAP Web Repository 中「管理 → 網際網路發佈 → 設定／取消發佈 → 選函數模組 → 存檔」。</p>
+  <div class="warn"><b>筆記更正</b>：强晟在 p130 對工具的交易碼打了問號「SWO1?」。SWO1 是 BOR 商業物件建構器，與此無關；SAP Web Repository 的交易碼是 <span class="tcode">SMW0</span>。</div>
+  <p><b>回傳 MIME 物件</b>（p131–p132）：與填 HTML 表類似，改填 MIME 表（W3MIME），AGate 收到物件本身、MIME 類型、位元組長度、連線回傳碼。SAP 範例 <span class="kw">WWW_GET_MIME_OBJECT</span> 以 URL 參數 <span class="kw">_OBJECT_ID</span> 為鍵，從 <b>WWWDATA</b>（IMPORT FROM DATABASE wwwdata(MI)）讀出物件，再從 <b>WWWPARAMS</b> 讀 mimetype 與 filesize。</p>
+  <p><b>SAP Web Repository</b>（p133）：維護 MIME 類型、指派 MIME 編輯器；WebRFC 使用的所有 MIME 物件都存在資料庫表 <b>WWWDATA</b>，可建立、修改、刪除、匯入匯出、維護說明；要存入的物件必須有對應的 MIME 類型（以副檔名指定，匯入時自動存）。</p>
+  <p><b>SURL 函數群組的其他函數</b>（p134）：</p>
+  <table>
+    <thead><tr><th>函數</th><th>用途</th></tr></thead>
+    <tbody>
+      <tr><td>WWW_MODEL_MODULE</td><td>給開發者複製用的空白樣板</td></tr>
+      <tr><td>WWW_ITAB_TO_HTML</td><td>內表轉 HTML 表格</td></tr>
+      <tr><td>WWW_ERROR_MESSAGE</td><td>ABAP 訊息轉 HTML</td></tr>
+      <tr><td>WWW_URL_PREFIX</td><td>動態產生呼叫其他 WebRFC 的 URL</td></tr>
+      <tr><td>WWW_PACK_TABLE</td><td>移除 HTML 表中多餘空白</td></tr>
+      <tr><td>WWW_HTML_MERGER</td><td>用 WWWDATA 裡的範本填 HTML 表並替換預留位置</td></tr>
+    </tbody>
+  </table>
+  <p><b>WebRFC 範本</b>（p137–p139）：與 WebTransaction 不同，WebRFC 範本存在 R/3 的 <b>WWWDATA</b>，不在 AGate 檔案系統。範本中任何字串都能當預留位置（例如 <span class="kw">&lt;!title!&gt;</span>、<span class="kw">&lt;!line!&gt;</span>）；<span class="kw">WWW_HTML_MERGER</span> 依 MERGE_TABLE 替換，替換模式：空白＝整行（標準）、B＝替換預留位置前的內容、A＝替換之後的內容、R＝只替換預留位置；也能以 <span class="kw">&lt;text-xxx&gt;</span> 形式替換成程式的文字符號。<b>SAP 範本不要直接改，要複製到 Z 命名空間</b>。（筆記 p138 又寫成 HTML_TEMPLATE_MERGER，前後不一；函數名稱是 WWW_HTML_MERGER。）</p>
+  <p><b>WebRFC 除錯</b>（p135–p136）：只有瀏覽器與 AGate 在同一台電腦時才能除錯；AGate 平常以 Windows 服務執行不顯示 SAP GUI，須先停 ITS 服務、手動以 <span class="kw">agate.exe /v&lt;virtual ITS&gt;</span> 啟動，並在服務檔設 <span class="kw">~RFCDebuggingOn = 1</span>，在 AGate 主機上用瀏覽器開服務，除錯用的 SAP GUI 會自動開啟。</p>
+  <div class="tip"><span class="tcode">SMW0</span> 和 WWWDATA 在 S/4HANA <b>仍然存在而且很常用</b>：實務上最常拿它存 Excel／Word 範本、公司 Logo，讓報表下載時套用。下面的 ICF handler 把 SMW0 的二進位物件直接當網址提供（等同 WWW_GET_MIME_OBJECT 的現代版）；若只是要在 SAP GUI 下載，可用 <span class="kw">DOWNLOAD_WEB_OBJECT</span>。</div>
+  <pre><code class="abap">*&amp;-------------------------------------------------------------*
+*&amp; GET /sap/bc/zbc440/mime?id=ZBC440_LOGO  → 回傳 SMW0 的二進位物件
+*&amp;-------------------------------------------------------------*
+METHOD if_http_extension~handle_request.
+  DATA lt_mime TYPE STANDARD TABLE OF w3mime WITH EMPTY KEY.
+
+  DATA(ls_key) = VALUE wwwdatatab(
+                   relid = 'MI'
+                   objid = to_upper( server-&gt;request-&gt;get_form_field( 'id' ) ) ).
+
+  " 白名單：只允許 ZBC440_ 開頭，避免任意讀取 WWWDATA 其他物件
+  IF ls_key-objid NP 'ZBC440_*'.
+    server-&gt;response-&gt;set_status( code = 403 reason = 'Forbidden' ).
+    RETURN.
+  ENDIF.
+
+  " 讀 WWWPARAMS 的 mimetype / filesize（一次讀兩筆，用列舉 IN 而非區間）
+  SELECT name, value
+    FROM wwwparams
+    WHERE relid = @ls_key-relid
+      AND objid = @ls_key-objid
+      AND name  IN ( 'mimetype', 'filesize' )
+    INTO TABLE @DATA(lt_param).
+  IF sy-subrc &lt;&gt; 0.
+    server-&gt;response-&gt;set_status( code = 404 reason = 'Not Found' ).
+    RETURN.
+  ENDIF.
+
+  CALL FUNCTION 'WWWDATA_IMPORT'
+    EXPORTING
+      key               = ls_key
+    TABLES
+      mime              = lt_mime
+    EXCEPTIONS
+      wrong_object_type = 1
+      import_error      = 2
+      OTHERS            = 3.
+  IF sy-subrc &lt;&gt; 0.
+    server-&gt;response-&gt;set_status( code = 500 reason = 'Import Error' ).
+    RETURN.
+  ENDIF.
+
+  DATA(lv_size) = 0.
+  DATA(lv_type) = `application/octet-stream`.
+  LOOP AT lt_param INTO DATA(ls_param).
+    CASE ls_param-name.
+      WHEN 'filesize'. lv_size = condense( ls_param-value ).
+      WHEN 'mimetype'. lv_type = to_lower( condense( ls_param-value ) ).
+    ENDCASE.
+  ENDLOOP.
+
+  DATA lv_xstr TYPE xstring.
+  CALL FUNCTION 'SCMS_BINARY_TO_XSTRING'
+    EXPORTING
+      input_length = lv_size
+    IMPORTING
+      buffer       = lv_xstr
+    TABLES
+      binary_tab   = lt_mime.
+
+  server-&gt;response-&gt;set_content_type( lv_type ).
+  server-&gt;response-&gt;set_header_field( name  = 'Cache-Control'
+                                      value = 'max-age=86400' ).   "單元三的快取觀念
+  server-&gt;response-&gt;set_data( lv_xstr ).
+ENDMETHOD.</code></pre>
+  <div class="warn"><b>WebRFC 的 S/4HANA 現況</b>：WebRFC 依賴獨立 ITS 的 RFC 閘道（sapxgwfc），Integrated ITS 不再提供此功能，<b>WebRFC 已停用</b>；SURL 裡的函數在新系統中可能仍存在（向下相容），但不應再用於新開發。替代方案依需求選擇：直接回檔案或簡單頁面 → ICF handler；給程式呼叫的資料介面 → REST（ICF）或 OData；給人用的畫面 → Fiori。</div>
+
+  <h3 id="ch05-17-16">16. 單元八：ITS 管理──可擴充性、安全、安裝、日誌與管理工具</h3>
+  <p><b>可擴充性</b>（p142–p143）：外部看，多瀏覽器可用多台 HTTP 伺服器；每個 WGate 只對應一台 HTTP 伺服器與一個 AGate；一個 AGate 可被多個 WGate 使用並連多台 R/3 應用伺服器。內部看，WGate 啟動服務時會啟動 AGate 上的<b>對映管理器（Mapping Manager）</b>，之後會話步驟與 AGate 實例溝通；AGate 也有分派器、工作執行緒、會話記憶體等與 R/3 類似的結構，可調整登錄機碼 <span class="kw">…\ITS\2.0\&lt;virtual ITS&gt;\Programs\AGate</span> 下的 <b>MaxWorkThreads</b>、<b>MaxSessions</b>。</p>
+  <p><b>安全</b>（p144–p147）：</p>
+  <ul>
+    <li>HTTP 伺服器主機只接受 HTTP 的 TCP/IP 請求；瀏覽器與 HTTP 伺服器之間用 <b>HTTPS</b>；HTTP 伺服器以標準防火牆保護，只放行 HTTPS。</li>
+    <li>AGate 上的服務檔含 R/3 系統資訊，<b>不可讓未授權者讀寫</b>；HTMLBusiness 範本不可被竄改。</li>
+    <li>SAP 建議只經 <b>SAProuter</b> 存取 R/3；WGate 與 AGate 之間可加防火牆，傳輸可用 <b>SNC</b> 加密。</li>
+    <li>AGate 檔案以 NTFS 權限保護，安裝時可選三種等級：Everyone（不限制）、ITS Administrator and ITS User（管理員全部、使用者群組可存取服務檔與範本）、ITS Administrator Only。</li>
+  </ul>
+  <p><b>安裝</b>（p148）：先實體安裝管理檔，再虛擬安裝各 ITS 實例；用 Windows 管理主控台（MMC）的 ITS Manager 啟停實例；安裝者自動成為管理員；以「控制台 → 新增／移除程式」卸載。預設路徑：AGate <span class="kw">C:\Program Files\SAP\ITS\2.0</span>、WGate <span class="kw">C:\Inetpub\wwwroot</span>。</p>
+  <p><b>系統範本</b>（p149–p150）：服務「system」含每種錯誤情況的範本、head.html、tail.html，以及主題 <b>dm（開發模式）</b>與 <b>pm（生產模式）</b>。開發模式的範本會顯示詳細錯誤給開發者，<b>生產環境要改掉</b>；全域修改在 dm 改 head／tail 再複製到 pm；特定修改則把範本複製到各服務。若要用 SAP@Web Studio 從 AGate 匯入服務 system，服務目錄中必須有 system.srvc，沒有就手動建一個（內容不重要，執行時不讀）。</p>
+  <p><b>日誌</b>（p151–p152）：access.log（每個請求：日期、時間、瀏覽器 IP、服務名）、loadstat.log（AGate 實例負載，對映管理器每幾分鐘收集一次）、performance.log（實例效能）、diagnostics.log（已由管理工具取代，僅為相容保留）。每個日誌可設 Caching（1＝緩衝於記憶體／0＝直寫磁碟）、CacheSize、FileSize（-1 不限）、TimeToLive（歸檔後幾天刪除）、BurialCmd（到期時改名或搬移而非刪除）。</p>
+  <p><b>ITS 管理工具</b>（p153–p155）：由服務 admin.srvc、HTML 範本、DLL sapxgadm 組成；功能有總覽（命中數、命中／秒、回應時間、會話、工作執行緒）、各虛擬 ITS 的控制／效能／設定／安全／公用程式／瀏覽範本與日誌、系統總覽、管理工具使用者（每個虛擬 ITS 可設不可見／唯讀／完全存取）；限制唯讀用 <span class="kw">allow_change = 0</span>。<b>初始帳號 itsadmin、密碼 init，安裝後必改</b>。</p>
+  <div class="note">筆記 p153 把帳號寫成「tsadmin」，p155 又寫「itsadmin」，前後不一；管理工具的預設管理員是 <b>itsadmin</b>。</div>
+  <table>
+    <thead><tr><th>ITS 管理項目</th><th>S/4HANA（ICM／ICF）對應</th></tr></thead>
+    <tbody>
+      <tr><td>MaxWorkThreads／MaxSessions</td><td>ICM 參數 <span class="kw">icm/max_conn</span>、<span class="kw">icm/max_threads</span>、<span class="kw">rdisp/wp_no_dia</span>，在 <span class="tcode">RZ10</span>／<span class="tcode">RZ11</span> 維護，<span class="tcode">SMICM</span> 監控</td></tr>
+      <tr><td>HTTPS／SNC／憑證</td><td><span class="tcode">STRUST</span>（SSL Server／Client PSE）、<span class="tcode">SNCWIZARD</span>；對外建議放 SAP Web Dispatcher 當反向代理</td></tr>
+      <tr><td>access.log</td><td>ICM HTTP Log（<span class="kw">icm/HTTP/logging_0</span>）、Web Dispatcher 日誌</td></tr>
+      <tr><td>會話監控</td><td><span class="tcode">SM04</span>、<span class="tcode">SM05</span>（HTTP 安全會話）、<span class="tcode">SICF_SESSIONS</span></td></tr>
+      <tr><td>系統範本 dm／pm（錯誤頁）</td><td>SICF 節點的 Error Pages 設定、系統登入頁客製</td></tr>
+      <tr><td>SAProuter 保護</td><td>SAP Web Dispatcher＋防火牆；雲端整合用 SAP Cloud Connector</td></tr>
+    </tbody>
+  </table>
+
+  <h3 id="ch05-17-17">17. 單元九延伸（一）：從 ITS 到 S/4HANA──技術演進與選型對照</h3>
+  <p>原課程第九單元的「展望」只有一句「ITS 和 mySAP.com 工作空間」。二十年後回頭看，BC440 每個元件都有對應的後繼者：</p>
+  <table>
+    <thead><tr><th>BC440 元件</th><th>後繼技術</th><th>狀態／何時用</th></tr></thead>
+    <tbody>
+      <tr><td>Standalone ITS（WGate／AGate）</td><td>Integrated ITS（Kernel 內建）</td><td>獨立 ITS 已結束維護；Integrated ITS 在 S/4HANA 仍在，是 WEBGUI 的基礎</td></tr>
+      <tr><td>WebTransaction＋HTMLBusiness</td><td>SAP GUI for HTML（自動轉換，免寫範本）</td><td>讓沒裝 GUI 的使用者、Fiori Launchpad 開傳統交易；不再需要手寫範本</td></tr>
+      <tr><td>WebRFC</td><td>ICF HTTP handler、REST</td><td>WebRFC 已停用；簡單的端點、檔案下載、Webhook 用 ICF</td></tr>
+      <tr><td>—（當年沒有）</td><td>BSP（Business Server Pages，6.10）</td><td>ABAP 版 JSP／ASP；今天主要當 SAPUI5 應用的部署容器（<span class="kw">/UI5/UI5_REPOSITORY_LOAD</span>）</td></tr>
+      <tr><td>—</td><td>Web Dynpro ABAP（見 <a href="#ch05-23">5-23 章</a>）</td><td>仍支援，多用於後台設定畫面與 FPM；新 UI 不建議</td></tr>
+      <tr><td>—</td><td>SAP Gateway＋OData V2（<span class="tcode">SEGW</span>）</td><td>S/4HANA 1809 的主力 OData 開發方式</td></tr>
+      <tr><td>—</td><td>RAP（ABAP RESTful Application Programming Model）＋OData V2/V4</td><td>S/4HANA 1909 起逐步提供、2020 起完整；新開發首選，也是 ABAP Cloud 唯一的 UI／API 模型</td></tr>
+      <tr><td>HTML 範本 UI</td><td>SAPUI5／Fiori Elements</td><td>標準 UI；Fiori Elements 用 CDS 註記產生畫面，幾乎不寫前端程式</td></tr>
+      <tr><td>mySAP.com Workplace</td><td>SAP Fiori Launchpad／SAP Build Work Zone</td><td>統一入口，角色（PFCG）決定使用者看到的磁磚</td></tr>
+    </tbody>
+  </table>
+  <p><b>選型口訣</b>：</p>
+  <ul>
+    <li><b>人要操作的畫面</b> → 先找標準 Fiori App（Fiori Apps Reference Library）→ 沒有才用 RAP＋Fiori Elements 客製 → 只是讓沒裝 GUI 的人用舊交易 → WEBGUI。</li>
+    <li><b>系統對系統</b> → 先找標準 API（SAP Business Accelerator Hub）→ 標準 OData／SOAP → 自建 RAP 服務 → 最後才寫自訂 ICF REST handler。RFC／BAPI／IDoc 的選擇見 <a href="#ch04-1">4-1 章</a>、<a href="#ch05-22">5-22 章</a>。</li>
+    <li><b>非常單純的 HTTP 端點</b>（Webhook 接收、檔案下載、健康檢查）→ ICF handler 最快。</li>
+  </ul>
+  <div class="tip">這就是 Casper 的第三條經驗在介面／UI 領域的版本：<b>標準 App／標準 API → 擴充（Key User Extensibility、BAdI、Custom Fields）→ 自建 RAP → 自寫 ICF handler</b>，每往右一步，升級與維護成本高一個量級。</div>
+
+  <h3 id="ch05-17-18">18. 單元九延伸（二）：用 ICF 寫 REST API（JSON 進出）</h3>
+  <p>把課程情境「顯示航班連線、預訂航班」做成 REST API：GET 查詢、POST 建立預訂。步驟 <span class="src">（依 SAP 標準步驟整理）</span>：</p>
+  <ol>
+    <li><span class="tcode">SE24</span>／ADT 建類別，實作 <span class="kw">IF_HTTP_EXTENSION</span>。</li>
+    <li><span class="tcode">SICF</span> 在 <span class="kw">default_host/sap/bc/</span> 下建子節點（例如 zbc440_api），Handler List 填類別名；Logon Data 視需求設定；存檔後 <b>Activate Service</b>。</li>
+    <li>權限：Handler 內自行做 <span class="kw">AUTHORITY-CHECK</span>；服務節點可設 S_ICF 權限值。</li>
+    <li>用瀏覽器或 Postman 測試 <span class="kw">https://&lt;host&gt;:&lt;port&gt;/sap/bc/zbc440_api?carrid=LH</span>。</li>
+  </ol>
+  <pre><code class="abap">*&amp;-------------------------------------------------------------*
+*&amp; REST 風格的 ICF handler：GET 查航線、POST 建預訂（JSON）
+*&amp;-------------------------------------------------------------*
+CLASS zcl_bc440_rest DEFINITION PUBLIC FINAL CREATE PUBLIC.
+  PUBLIC SECTION.
+    INTERFACES if_http_extension.
+  PRIVATE SECTION.
+    TYPES: BEGIN OF ty_req,
+             carrid   TYPE s_carr_id,
+             connid   TYPE s_conn_id,
+             fldate   TYPE s_date,
+             customid TYPE s_customer,
+             class    TYPE s_class,
+           END OF ty_req.
+    METHODS send_json
+      IMPORTING io_server TYPE REF TO if_http_server
+                iv_code   TYPE i
+                ig_data   TYPE any.
+ENDCLASS.
+
+CLASS zcl_bc440_rest IMPLEMENTATION.
+  METHOD if_http_extension~handle_request.
+    DATA(lv_method) = server-&gt;request-&gt;get_header_field(
+                        if_http_header_fields_sap=&gt;request_method ).
+    CASE lv_method.
+      WHEN 'GET'.
+        " 多值條件用列舉：?carrid=LH,AA,UA → 轉成 EQ 列舉的 RANGE，而不是 BT 區間
+        SPLIT to_upper( server-&gt;request-&gt;get_form_field( 'carrid' ) ) AT ',' INTO TABLE DATA(lt_ids).
+        DATA(lt_r_carrid) = VALUE rsdsselopt_t( FOR id IN lt_ids WHERE ( table_line IS NOT INITIAL )
+                                                ( sign = 'I' option = 'EQ' low = id ) ).
+        SELECT carrid, connid, cityfrom, cityto, deptime, arrtime
+          FROM spfli
+          WHERE carrid IN @lt_r_carrid
+          ORDER BY carrid, connid          "分頁 / 取第一筆前必排序：HANA 不保證順序
+          INTO TABLE @DATA(lt_conn)
+          UP TO 500 ROWS.
+        send_json( io_server = server iv_code = 200 ig_data = lt_conn ).
+
+      WHEN 'POST'.
+        DATA ls_req TYPE ty_req.
+        /ui2/cl_json=&gt;deserialize(
+          EXPORTING json        = server-&gt;request-&gt;get_cdata( )
+                    pretty_name = /ui2/cl_json=&gt;pretty_mode-camel_case
+          CHANGING  data        = ls_req ).
+
+        AUTHORITY-CHECK OBJECT 'S_CARRID'
+          ID 'CARRID' FIELD ls_req-carrid
+          ID 'ACTVT'  FIELD '01'.
+        IF sy-subrc &lt;&gt; 0.
+          send_json( io_server = server iv_code = 403
+                     ig_data   = VALUE bapiret2( type = 'E' message = |No authority for { ls_req-carrid }| ) ).
+          RETURN.
+        ENDIF.
+
+        " 業務邏輯沿用第 8 節的 BAPI 包裝類別
+        DATA(ls_res) = NEW zcl_bc440_booking( )-&gt;create(
+                         iv_carrid   = ls_req-carrid
+                         iv_connid   = ls_req-connid
+                         iv_fldate   = ls_req-fldate
+                         iv_customid = ls_req-customid
+                         iv_class    = ls_req-class ).
+        send_json( io_server = server
+                   iv_code   = COND #( WHEN ls_res-bookid IS INITIAL THEN 422 ELSE 201 )
+                   ig_data   = ls_res ).
+
+      WHEN OTHERS.
+        server-&gt;response-&gt;set_header_field( name = 'Allow' value = 'GET, POST' ).
+        send_json( io_server = server iv_code = 405
+                   ig_data   = VALUE bapiret2( type = 'E' message = |{ lv_method } not allowed| ) ).
+    ENDCASE.
+  ENDMETHOD.
+
+  METHOD send_json.
+    io_server-&gt;response-&gt;set_status( code = iv_code reason = || ).
+    io_server-&gt;response-&gt;set_content_type( 'application/json; charset=utf-8' ).
+    io_server-&gt;response-&gt;set_cdata( /ui2/cl_json=&gt;serialize(
+                                      data        = ig_data
+                                      compress    = abap_true
+                                      pretty_name = /ui2/cl_json=&gt;pretty_mode-camel_case ) ).
+  ENDMETHOD.
+ENDCLASS.</code></pre>
+  <div class="warn"><b>自寫 REST handler 的坑</b>：
+    <ul>
+      <li>ICF 對 POST／PUT／DELETE <b>不會</b>自動做 CSRF 防護（OData 服務會）；若給瀏覽器呼叫，要自行實作 X-CSRF-Token 或只開放給系統帳號。</li>
+      <li>日期、金額的 JSON 格式要自己約定（/UI2/CL_JSON 對 DATS／TIMS 的輸出格式依版本與參數而異，上線前請實測並寫進介面規格）；金額要搭配幣別，不要只傳數字。</li>
+      <li><span class="kw">set_status</span> 的 reason 留空時由 ICM 補標準文字即可；錯誤回應也要回 JSON，不要回 HTML 錯誤頁，呼叫端才解析得了。</li>
+      <li>JSON 處理除了 /UI2/CL_JSON，也可用 kernel 內建的 <span class="kw">CALL TRANSFORMATION id</span> 搭配 <span class="kw">cl_sxml_string_writer=&gt;create( type = if_sxml=&gt;co_xt_json )</span>（asJSON 格式）；較新版本（ABAP Cloud／S/4HANA 2021 以後）另有 XCO 的 <span class="kw">xco_cp_json</span>，使用前請確認系統版本已提供。</li>
+    </ul>
+  </div>
+
+  <h3 id="ch05-17-19">19. 單元九延伸（三）：ABAP 當 HTTP 用戶端呼叫外部 REST</h3>
+  <p>BC440 只談「外部瀏覽器來呼叫 R/3」；今天同樣常見的是「ABAP 呼叫外部 Web API」（匯率、物流追蹤、MES、電子發票）。做法 <span class="src">（依 SAP 標準步驟整理）</span>：</p>
+  <ol>
+    <li><span class="tcode">SM59</span> 建 <b>型別 G（HTTP Connection to External Server）</b>目的地：Target Host、Port、Path Prefix；Logon &amp; Security 選 SSL Active 並指定 <span class="tcode">STRUST</span> 的 SSL Client PSE（對方的根憑證要先匯入）；必要時設 Proxy。</li>
+    <li>程式用 <span class="kw">CL_HTTP_CLIENT=&gt;CREATE_BY_DESTINATION</span> 取得用戶端（URL、帳密不寫死在程式裡，傳輸後由各系統的 SM59 決定連到測試或正式端點）。</li>
+  </ol>
+  <pre><code class="abap">*&amp;-------------------------------------------------------------*
+*&amp; 呼叫外部 REST API 並解析 JSON（SM59 目的地 Z_FX_API，型別 G）
+*&amp;-------------------------------------------------------------*
+TYPES: BEGIN OF ty_rate,
+         currency TYPE waers,
+         rate     TYPE decfloat34,
+       END OF ty_rate,
+       ty_rates TYPE STANDARD TABLE OF ty_rate WITH EMPTY KEY,
+       BEGIN OF ty_resp,
+         base  TYPE waers,
+         date  TYPE string,
+         rates TYPE ty_rates,
+       END OF ty_resp.
+
+DATA lo_client TYPE REF TO if_http_client.
+cl_http_client=&gt;create_by_destination(
+  EXPORTING  destination              = 'Z_FX_API'
+  IMPORTING  client                   = lo_client
+  EXCEPTIONS argument_not_found       = 1
+             destination_not_found    = 2
+             destination_no_authority = 3
+             plugin_not_active        = 4
+             internal_error           = 5
+             OTHERS                   = 6 ).
+IF sy-subrc &lt;&gt; 0.
+  MESSAGE |SM59 目的地 Z_FX_API 無法使用（{ sy-subrc }）| TYPE 'E'.
+ENDIF.
+
+lo_client-&gt;request-&gt;set_method( if_http_request=&gt;co_request_method_get ).
+cl_http_utility=&gt;set_request_uri( request = lo_client-&gt;request
+                                  uri     = |/v1/rates?base=TWD&amp;date={ sy-datum DATE = ISO }| ).
+lo_client-&gt;request-&gt;set_header_field( name = 'Accept' value = 'application/json' ).
+lo_client-&gt;propertytype_logon_popup = if_http_client=&gt;co_disabled.   "背景作業不可跳登入視窗
+
+lo_client-&gt;send( EXCEPTIONS http_communication_failure = 1
+                            http_invalid_state         = 2
+                            http_processing_failed     = 3
+                            OTHERS                     = 4 ).
+IF sy-subrc = 0.
+  lo_client-&gt;receive( EXCEPTIONS http_communication_failure = 1
+                                 http_invalid_state         = 2
+                                 http_processing_failed     = 3
+                                 OTHERS                     = 4 ).
+ENDIF.
+IF sy-subrc &lt;&gt; 0.
+  lo_client-&gt;get_last_error( IMPORTING message = DATA(lv_err) ).
+  lo_client-&gt;close( ).
+  MESSAGE |HTTP 通訊失敗：{ lv_err }| TYPE 'E'.
+ENDIF.
+
+lo_client-&gt;response-&gt;get_status( IMPORTING code = DATA(lv_code) reason = DATA(lv_reason) ).
+DATA(lv_json) = lo_client-&gt;response-&gt;get_cdata( ).
+lo_client-&gt;close( ).
+
+IF lv_code &lt;&gt; 200.
+  MESSAGE |API 回應 { lv_code } { lv_reason }| TYPE 'E'.
+ENDIF.
+
+DATA ls_resp TYPE ty_resp.
+/ui2/cl_json=&gt;deserialize( EXPORTING json        = lv_json
+                                     pretty_name = /ui2/cl_json=&gt;pretty_mode-camel_case
+                           CHANGING  data        = ls_resp ).
+
+" 只取需要的幣別：列舉比區間安全
+DATA(lt_need) = VALUE ty_rates( FOR r IN ls_resp-rates
+                                     WHERE ( currency = 'USD' OR currency = 'EUR' OR currency = 'JPY' )
+                                     ( r ) ).
+cl_demo_output=&gt;display( lt_need ).</code></pre>
+  <div class="note">ABAP Cloud／較新的 S/4HANA 版本提供 <span class="kw">CL_WEB_HTTP_CLIENT_MANAGER</span>＋<span class="kw">CL_HTTP_DESTINATION_PROVIDER</span>（以 Communication Arrangement 管理目的地），是 released API；1809 on-premise 請用上面的 CL_HTTP_CLIENT。批次呼叫外部 API 請放背景作業並記錄 SLG1 應用日誌（見 <a href="#ch04-4">4-4 章</a>）。</div>
+
+  <h3 id="ch05-17-20">20. 單元九延伸（四）：OData 與 Fiori──SEGW 與 RAP</h3>
+  <p>OData 是 SAP 在 HTTP 之上的標準資料協定：URL 就是查詢（<span class="kw">$filter</span>、<span class="kw">$orderby</span>、<span class="kw">$top</span>、<span class="kw">$skip</span>、<span class="kw">$expand</span>），有中繼資料（<span class="kw">$metadata</span>）、CSRF、ETag、批次（<span class="kw">$batch</span>），Fiori 前端直接吃。S/4HANA 1809 有兩條路：</p>
+  <table>
+    <thead><tr><th>方式</th><th>開發</th><th>註冊／測試</th><th>適用</th></tr></thead>
+    <tbody>
+      <tr><td><b>SEGW（Gateway Service Builder）</b></td><td>建專案 → 資料模型（Entity Type／Set）→ Generate Runtime Objects → 在 <b>*_DPC_EXT</b> 重新定義 GET_ENTITYSET／GET_ENTITY／CREATE_ENTITY…</td><td><span class="tcode">/IWFND/MAINT_SERVICE</span> 註冊；<span class="tcode">/IWFND/GW_CLIENT</span> 測試</td><td>1809 的主流；複雜邏輯、既有 BAPI 包裝</td></tr>
+      <tr><td><b>CDS＋@OData.publish: true</b></td><td>CDS View 加註記，自動產生 OData V2（SADL）</td><td>同上</td><td>唯讀查詢、報表型 Fiori Elements（1809 可用，後續版本改建議 RAP）</td></tr>
+      <tr><td><b>RAP</b></td><td>CDS View Entity＋Behavior Definition／Implementation＋Service Definition＋Service Binding（ADT）</td><td>Service Binding 上直接 Publish／Preview</td><td>S/4HANA 1909 起逐步提供、2020 起完整（<span class="kw">DEFINE VIEW ENTITY</span> 需 ABAP 7.55／S/4HANA 2020）；新開發首選</td></tr>
+    </tbody>
+  </table>
+  <p><b>SEGW 的 GET_ENTITYSET</b>：把 OData 的 $filter 轉成 RANGE、排序、分頁，並把 Casper 的第一條經驗寫進去──$top／$skip 分頁若沒有穩定排序，HANA 上翻頁會重複或漏資料：</p>
+  <pre><code class="abap">*&amp;-------------------------------------------------------------*
+*&amp; ZCL_ZBC440_FLIGHT_DPC_EXT → 重新定義 FLIGHTSET_GET_ENTITYSET
+*&amp;   GET /sap/opu/odata/sap/ZBC440_FLIGHT_SRV/FlightSet?$filter=Carrid eq 'LH'&amp;$top=20
+*&amp;-------------------------------------------------------------*
+METHOD flightset_get_entityset.
+  " 1. $filter → select-options（屬性名用 ABAP 欄位名）
+  DATA(lt_filter) = io_tech_request_context-&gt;get_filter( )-&gt;get_filter_select_options( ).
+  DATA lt_r_carrid TYPE RANGE OF s_carr_id.
+  DATA lt_r_connid TYPE RANGE OF s_conn_id.
+  LOOP AT lt_filter INTO DATA(ls_filter).
+    CASE ls_filter-property.
+      WHEN 'CARRID'. lt_r_carrid = CORRESPONDING #( ls_filter-select_options ).
+      WHEN 'CONNID'. lt_r_connid = CORRESPONDING #( ls_filter-select_options ).
+    ENDCASE.
+  ENDLOOP.
+
+  " 2. 查詢：一定要有穩定的 ORDER BY（主鍵），分頁才可靠
+  SELECT carrid, connid, fldate, price, currency, seatsmax, seatsocc
+    FROM sflight
+    WHERE carrid IN @lt_r_carrid
+      AND connid IN @lt_r_connid
+    ORDER BY carrid, connid, fldate
+    INTO CORRESPONDING FIELDS OF TABLE @et_entityset.
+
+  " 3. $inlinecount 與 $top / $skip
+  IF io_tech_request_context-&gt;has_inlinecount( ) = abap_true.
+    es_response_context-inlinecount = lines( et_entityset ).
+  ENDIF.
+  /iwbep/cl_mgw_data_util=&gt;paging( EXPORTING is_paging = is_paging
+                                   CHANGING  ct_data   = et_entityset ).
+ENDMETHOD.</code></pre>
+  <div class="tip">大量資料時，應把 $top／$skip 直接轉成 SQL 的 <span class="kw">UP TO n ROWS OFFSET m</span>（7.51+），在資料庫端分頁，而不是先全部讀進記憶體再用 paging 裁切；但同樣<b>必須先有 ORDER BY</b>。Fiori 前端做「多選篩選」時，產生的是多個 <span class="kw">eq</span> 條件的 OR，這正好符合 Casper 第二條經驗「<b>列舉比區間安全</b>」──設計 API 參數時不要讓呼叫端傳號碼區間。</div>
+  <p><b>RAP 的最小唯讀範例</b>（S/4HANA 2020／ABAP 7.55 以上；1809 請改用 <span class="kw">define view</span>＋<span class="kw">@OData.publish: true</span>）：</p>
+  <pre><code class="sql">// 1) CDS View Entity（ADT：New → Data Definition）
+@AccessControl.authorizationCheck: #CHECK
+@EndUserText.label: 'BC440 Flight Connections'
+@UI.headerInfo: { typeName: 'Connection', typeNamePlural: 'Connections' }
+define root view entity ZI_BC440_Connection
+  as select from spfli
+{
+      @UI.lineItem: [{ position: 10 }]  @UI.selectionField: [{ position: 10 }]
+      @Consumption.valueHelpDefinition: [{ entity: { name: 'ZI_BC440_CarrierVH', element: 'Carrid' } }]
+  key carrid   as Carrid,
+      @UI.lineItem: [{ position: 20 }]
+  key connid   as Connid,
+      @UI.lineItem: [{ position: 30 }]
+      cityfrom as CityFrom,
+      @UI.lineItem: [{ position: 40 }]
+      cityto   as CityTo,
+      deptime  as DepTime
+}
+
+// 2) Access Control（DCL）：authorizationCheck: #CHECK 時必須有，對應 S_CARRID
+@EndUserText.label: 'BC440 Connection DCL'
+@MappingRole: true
+define role ZI_BC440_Connection {
+  grant select on ZI_BC440_Connection
+    where ( Carrid ) = aspect pfcg_auth( S_CARRID, CARRID, ACTVT = '03' );
+}
+
+// 3) Service Definition
+@EndUserText.label: 'BC440 Connection Service'
+define service ZUI_BC440_CONNECTION {
+  expose ZI_BC440_Connection as Connection;
+}
+
+// 4) Service Binding（ADT 圖形編輯器）：Binding Type = OData V4 - UI
+//    → Publish → Preview 即得到一個 Fiori Elements List Report</code></pre>
+  <p>要能新增／修改（課程的「預訂航班」），再加 Behavior Definition（<span class="kw">managed</span> 或包既有 BAPI 的 <span class="kw">unmanaged</span>）與 Behavior Implementation 類別；RAP 的交易模型、鎖定、ETag、草稿（Draft）都由框架處理，這些正是當年 ITS「同步」「狀態管理」想解決的問題。</p>
+  <div class="warn"><b>Fiori 上線檢核</b>：① Gateway 服務在 <span class="tcode">/IWFND/MAINT_SERVICE</span> 註冊（RAP 在 Service Binding Publish）；② <span class="tcode">SICF</span> 的 <span class="kw">/sap/opu/odata</span>、<span class="kw">/sap/bc/ui5_ui5</span> 節點已啟用；③ 使用者角色（<span class="tcode">PFCG</span>）同時有前端的 Catalog／Group（或 Space／Page）與後端的 S_SERVICE、業務權限；④ 標準 Fiori App 要先在 Fiori Apps Reference Library 查所需的服務與角色──再一次，<b>先找標準再客製</b>。</div>
+
+  <h3 id="ch05-17-qa">練習與自我檢核</h3>
+  <ol>
+    <li><b>ITS 的五層架構是哪五層？WGate 與 AGate 各負責什麼、用什麼協定連線？</b><br>
+      參考答案要點：瀏覽器 → HTTP 伺服器 → ITS → R/3 應用伺服器 → 資料庫。WGate 對 HTTP 伺服器（CGI／ISAPI／NSAPI）；AGate 對應用伺服器（WebTransaction 用 DIAG、WebRFC 用 RFC）；WGate↔AGate 用 HTTP，可 SNC 加密。今天 ITS 已整合進 Kernel，由 ICM／ICF 取代 WGate＋IIS。</li>
+    <li><b>Global.srvc 與 &lt;service&gt;.srvc 的讀取順序？何謂隱式登入與顯式登入？現代 SICF 的對應是什麼？</b><br>
+      要點：先 Global 再個別服務檔，後者覆蓋；~client／~login／~password／~language 全填＝隱式（共用帳號），有缺＝顯式（ITS 產生登入頁）。SICF 對應為服務節點的 Logon Data（匿名服務）與標準登入程序；匿名帳號用 Service 型使用者、最小權限。</li>
+    <li><b>為什麼 WebTransaction 只能用「簡單畫面」？BAPI 為什麼不能用例外、不能 COMMIT？</b><br>
+      要點：EnjoySAP 控制項（Control Framework）無法轉成 HTML；BAPI 可被非 SAP 系統呼叫，所以用 RETURN（BAPIRET2）回報；提交權在呼叫端，以 BAPI_TRANSACTION_COMMIT（WAIT）控制 LUW。</li>
+    <li><b>使用者按瀏覽器「上一頁」會發生什麼事？~SyncBehaviour 兩種值的差別？AWSY 功能碼要怎麼處理？</b><br>
+      要點：瀏覽器與 R/3 畫面狀態不一致，送出的資料被忽略。NoResync 只顯示禁止訊息；Resync 由 ITS 送 AWSY&lt;prog&gt;&lt;dynnr&gt;，交易在 PAI 呼叫 ITS_GET_SYNC_INFO 取 SITSSYNC（SUBSC='MAIN'）並回捲到該畫面；分框用 AWSS／AWSY。現代 REST 無狀態，改用 ETag 樂觀鎖。</li>
+    <li><b>field-set、field-transport、field-get 哪一個會立即觸發 RFC？為什麼 field-transport 不要放在 LOOP 裡？</b><br>
+      要點：field-set 只累積清單；field-transport 一次傳送；field-get 立即執行。放 LOOP 會每行觸發一次 RFC，大量資料時效能很差。Include 為 AVWRTCXM；判斷是否 ITS 用 ITS_PING。</li>
+    <li><b>寫出 WebRFC 函數模組的標準介面，並說明 RETURN_CODE 0／1／3 的意義。</b><br>
+      要點：TABLES QUERY_STRING（W3QUERY）、HTML（W3HTML）、MIME（W3MIME）；CHANGING CONTENT_TYPE、CONTENT_LENGTH、RETURN_CODE（W3PARAM）。0＝關閉連線、1＝保持、3＝關閉並結束 ITS 會話。函數要在 SMW0 做 Internet Release；呼叫 URL 為 …/wgate/WebRFC/!?_function=…。</li>
+    <li><b>指出强晟筆記中至少四處錯誤並更正。</b><br>
+      要點：SWO1 → SMW0；WHEN 'AWSY' OF 'AWSS' → OR；QUEST_STRING → QUERY_STRING；striCmp 是不分大小寫；tsadmin → itsadmin；HTML_TEMPLATE_MERGER → WWW_HTML_MERGER；非對稱加密的機密性是公鑰加密私鑰解密；&lt;image&gt;／&lt;options&gt;／&lt;intpu&gt; 的錯字；mimeURL 的 language 少了 ~。</li>
+    <li><b>實作題：寫一個 ICF handler，GET /sap/bc/zbc440_api?carrid=LH,AA 回傳 SPFLI 的 JSON；說明為什麼一定要 ORDER BY，以及為什麼把多值參數轉成 EQ 列舉。</b><br>
+      要點：參考第 18 節程式。HANA 沒有預設排序，分頁或取第一筆若不排序，結果每次可能不同（Casper 第一條經驗：成本評價 H／E 兩種角度交錯被抓到）；區間比的是字典序，遇到號碼段不連續或前導零會多抓漏抓，列舉才精確（第二條經驗）。記得 SICF 啟用服務、Handler 內做 AUTHORITY-CHECK。</li>
+    <li><b>實作題：用 CL_HTTP_CLIENT 呼叫外部 REST。URL 與帳密該放哪裡？背景作業要注意什麼？</b><br>
+      要點：放 SM59 型別 G 目的地（系統相依設定，傳輸後各環境各自指向測試／正式端點），憑證匯入 STRUST SSL Client PSE；背景作業要關閉登入彈窗（propertytype_logon_popup = co_disabled），檢查 send／receive 的 sy-subrc 與 HTTP 狀態碼，最後 close( )。</li>
+    <li><b>情境題：客戶要讓「沒有裝 SAP GUI 的倉管人員」在平板上查庫存並做簡單過帳，你會怎麼選技術？</b><br>
+      要點：先查標準 Fiori App（例如庫存查詢、Post Goods Movement 類 App）與 Fiori Launchpad 角色；若只是臨時要用既有交易，可用 WEBGUI（Integrated ITS）磁磚；確實需要客製才用 RAP＋Fiori Elements；不會再用 WebTransaction／WebRFC，也盡量不自寫 ICF 頁面。</li>
+    <li><b>SMW0 在 S/4HANA 還有什麼用途？WWWDATA 與 WWWPARAMS 各存什麼？</b><br>
+      要點：存 Excel／Word 範本、Logo 等二進位物件（Binary data，RELID='MI'）與 HTML 範本（RELID='HT'）；WWWDATA 存物件內容，WWWPARAMS 存 mimetype、filesize 等屬性。可用 WWWDATA_IMPORT 讀出、DOWNLOAD_WEB_OBJECT 下載，或如第 15 節由 ICF 直接提供。</li>
+  </ol>
+</section>

@@ -1,0 +1,1952 @@
+<section class="chapter" id="ch04-2" data-title="對話式程式 Module Pool：Screen / Tabstrip / Table Control / Custom Control">
+  <h2 id="ch04-2">第 4-2 章 對話式程式 Module Pool：Screen / Tabstrip / Table Control / Custom Control</h2>
+  <p class="lede">前面幾章寫的都是「跑一次、出一張報表」的程式；這一章要做的是<b>像 SAP 標準交易一樣的畫面</b>——ME21N、VA01、MM01 那種可以輸入、可以檢查、可以分頁籤、可以一列一列維護明細的對話式程式。你會學到 Module Pool 的程式骨架與 INCLUDE 命名慣例、SE51 Screen Painter 的每一種元素、PBO／PAI 流程邏輯、SE41 功能表與功能碼型別、畫面欄位的動態控制、Subscreen 與 Tabstrip、Table Control 的完整實作（含插入／刪除／捲動／全選／排序），以及把 ALV、文字編輯器、圖片、HTML 掛進 Custom Control。最後也會說清楚：在 S/4HANA + Fiori 的時代，哪些情況還該寫 Dialog，哪些情況該改走 RAP。</p>
+
+  <div class="meta">
+    <div><b>核心 TCODE</b><span class="tcode">SE80</span><span class="tcode">SE38</span><span class="tcode">SE51</span><span class="tcode">SE41</span><span class="tcode">SE91</span><span class="tcode">SE93</span><span class="tcode">SE11</span><span class="tcode">SM30</span><span class="tcode">SMW0</span><span class="tcode">SM12</span><span class="tcode">OB58</span><span class="tcode">VA03</span><span class="tcode">ME21N</span><span class="tcode">SE24</span></div>
+    <div><b>關鍵物件</b>CXTAB_CONTROL、TABSTRIP、SY-UCOMM／SY-DYNNR／SY-LOOPC／SY-STEPL、SCREEN 結構、VRM_VALUES、VRM_SET_VALUES、SCROLLING_IN_TABLE、ICON_CREATE、ICON、TADIR、CL_GUI_CUSTOM_CONTAINER、CL_GUI_DOCKING_CONTAINER、CL_GUI_SPLITTER_CONTAINER、CL_GUI_TEXTEDIT、CL_GUI_PICTURE、CL_GUI_HTML_VIEWER、CL_GUI_ALV_GRID、CL_SALV_TABLE、ENQUEUE_E_TABLE</div>
+  </div>
+
+  <h3 id="ch04-2-01">1. Dialog 程式的定位：Type 1 與 Type M 的界線其實是模糊的</h3>
+  <p>很多 SAP 系統本身的功能，也是用 ABAP 寫出來的——SE11、VA03、ME21N 都是。螢幕（Screen／Dynpro）是 ABAP 設計最重要的工作之一，SAP 的單據、主資料維護等業務功能都靠螢幕，<b>一支程式可以包含多個螢幕</b>。</p>
+  <p>Dialog（對話）指的是使用者和程式之間任意形式的互動：輸入資料、選菜單項、按按鈕、單擊或雙擊清單條目。</p>
+
+  <table>
+    <thead><tr><th>比較項目</th><th>TYPE 1（可執行程式 REPORT）</th><th>TYPE M（Module Pool）</th></tr></thead>
+    <tbody>
+      <tr><td>副程式執行</td><td><span class="kw">PERFORM</span> / 方法呼叫</td><td><span class="kw">MODULE</span></td></tr>
+      <tr><td>顯示前程式</td><td><span class="kw">AT SELECTION-SCREEN OUTPUT</span></td><td><b>PBO</b>（PROCESS BEFORE OUTPUT）</td></tr>
+      <tr><td>輸入後程式</td><td><span class="kw">AT SELECTION-SCREEN</span></td><td><b>PAI</b>（PROCESS AFTER INPUT）</td></tr>
+      <tr><td>預設螢幕編號</td><td>1000（標準選擇畫面）</td><td>自己指定，慣例 0100、0200…</td></tr>
+      <tr><td>Dynpro Type</td><td>SELECTION-DYNPRO（自動產生）</td><td>NORMAL / SUBSCREEN / MODAL DIALOG BOX</td></tr>
+      <tr><td>首頁、末頁、捲動鍵</td><td>自動生效</td><td><b>必須自己指定</b>（PF-STATUS ＋ 捲動邏輯）</td></tr>
+      <tr><td>啟動方式</td><td>SE38 / SA38 可直接執行</td><td><b>一定要建 T-CODE</b>（SE93）才能跑</td></tr>
+      <tr><td>適合</td><td>報表</td><td>編輯資料</td></tr>
+    </tbody>
+  </table>
+
+  <p>老師的觀念轉換範例：同一件事，在 TYPE 1 裡用 <span class="kw">SY-DYNNR</span> 判斷是哪一個畫面，效果就等於 TYPE M 的 PBO／PAI 分流。</p>
+
+  <pre><code class="abap">REPORT zdynpro.
+" 由 TYPE 1 到 TYPE M 的觀念轉換：AT SELECTION-SCREEN OUTPUT ≒ PBO，AT SELECTION-SCREEN ≒ PAI
+
+DATA gs_makt TYPE makt.               " 現代寫法：不用 TABLES，自己宣告工作區
+
+" 螢幕 1000＝標準選擇畫面
+PARAMETERS p_matnr TYPE matnr.
+
+" 自定義的第二個選擇畫面 1100
+SELECTION-SCREEN BEGIN OF SCREEN 1100.
+  PARAMETERS p_werks TYPE werks_d.
+SELECTION-SCREEN END OF SCREEN 1100.
+
+AT SELECTION-SCREEN OUTPUT.           " 相當於 PBO
+  CASE sy-dynnr.
+    WHEN '1000'.                      " 標準選擇畫面
+    WHEN '1100'.                      " 自定義畫面
+    WHEN OTHERS.
+  ENDCASE.
+
+AT SELECTION-SCREEN.                  " 相當於 PAI
+  CASE sy-dynnr.
+    WHEN '1000'.
+    WHEN '1100'.
+    WHEN OTHERS.
+  ENDCASE.
+
+START-OF-SELECTION.
+  CALL SELECTION-SCREEN 1100 STARTING AT 10 5.   " 也能把第二個畫面做成彈窗</code></pre>
+
+  <div class="tip">老師的結論：<b>Type 1 與 Type M 的界線其實是模糊的。</b> Type M 一開啟就是 Dialog，但必須包裝成 T-CODE；而 Type 1 也能透過 <span class="kw">CALL SCREEN</span> 讓程式一開始就進 Dialog。<b>因此實務上都用 TYPE 1（REPORT）寫，比較方便</b>——本章所有範例都採用這個策略：REPORT ＋ CALL SCREEN。</div>
+
+  <h3 id="ch04-2-02">2. 程式骨架與 INCLUDE 命名慣例</h3>
+  <p>Dialog 程式的程式碼會被拆成多支 INCLUDE，這不是規定而是<b>SAP 的強慣例</b>（SE80 建 Module Pool 時會自動照這個規則產生，Screen Painter 精靈也會照這個規則塞程式）。</p>
+
+  <table>
+    <thead><tr><th>INCLUDE 尾碼</th><th>內容</th><th>另一種常見寫法</th></tr></thead>
+    <tbody>
+      <tr><td><b>ZXXX_TOP</b></td><td>全域宣告：DATA、CONSTANTS、CONTROLS、TABLES、CLASS 定義</td><td>ZXXX_TOP</td></tr>
+      <tr><td><b>ZXXX_O01</b></td><td>PBO 的 MODULE …&nbsp;OUTPUT</td><td>ZXXX_PBO / ZXXX_O99</td></tr>
+      <tr><td><b>ZXXX_I01</b></td><td>PAI 的 MODULE …&nbsp;INPUT</td><td>ZXXX_PAI / ZXXX_I99</td></tr>
+      <tr><td><b>ZXXX_F01</b></td><td>FORM 副程式（Table Control 的標準 FORM 都放這）</td><td>ZXXX_FRM / ZXXX_F99</td></tr>
+      <tr><td><b>ZXXX_E01</b></td><td>事件區塊（AT SELECTION-SCREEN、START-OF-SELECTION 等）</td><td>ZXXX_E99</td></tr>
+      <tr><td><b>ZXXX_C01</b></td><td>本地類別（CLASS … IMPLEMENTATION，事件處理器）</td><td>ZXXX_CL1</td></tr>
+    </tbody>
+  </table>
+
+  <pre><code class="abap">*&amp;---------------------------------------------------------------------*
+*&amp; Report ZTC_MARD_MAINT   " 主程式：只放 INCLUDE 與程式進入點
+*&amp;---------------------------------------------------------------------*
+REPORT ztc_mard_maint.
+
+INCLUDE ztc_mard_maint_top.    " 宣告（DECLARE）
+INCLUDE ztc_mard_maint_o01.    " PBO
+INCLUDE ztc_mard_maint_i01.    " PAI
+INCLUDE ztc_mard_maint_f01.    " FORM
+
+START-OF-SELECTION.
+  PERFORM load_data.           " 先撈資料
+  CALL SCREEN 0100.            " 再進入 Dialog</code></pre>
+
+  <div class="note">程式屬性、開發類別（Package）、傳輸請求都登記在 <b>TADIR</b>。查一支程式屬於哪個 Package、誰建的、是不是原廠物件，直接 SE16N 看 TADIR（OBJECT = 'PROG'、OBJ_NAME = 程式名）最快。</div>
+  <div class="tip">INCLUDE 寫在主程式的<b>前面或後面效果相同</b>（編譯時會全部串起來），但 <b>TOP 一定要在最前面</b>，因為宣告要先被看到。</div>
+  <div class="warn">Dialog 程式的所有 MODULE 與 FORM 都跑在<b>同一個程式的全域資料區</b>上。螢幕上的欄位名稱必須「等於某個全域資料物件的名稱」，例如螢幕欄位 <span class="kw">GS_MARD-MATNR</span> 對應到全域 <span class="kw">DATA gs_mard TYPE mard.</span>。這是 Dialog 程式跟 OO 封裝觀念最衝突的地方，也是它逐漸被 RAP 取代的原因之一。</div>
+
+  <h3 id="ch04-2-03">3. SE51 Screen Painter：螢幕屬性與元素</h3>
+  <p>設計一個螢幕固定四個步驟：</p>
+  <ol>
+    <li>在<b>屬性（Attributes）</b>畫面設置常規螢幕屬性（編號、類型、Next Screen、大小）。</li>
+    <li>在<b>佈局編輯器（Layout）</b>設計版面，把元素拖上去。</li>
+    <li>在<b>欄位清單（Element list）</b>設置欄位屬性。</li>
+    <li>在<b>流邏輯編輯器（Flow logic）</b>寫 PBO／PAI。</li>
+  </ol>
+
+  <h4>螢幕編號的規則</h4>
+  <ul>
+    <li>可通過「<b>程式名 ＋ 螢幕編號</b>」唯一識別一個螢幕。</li>
+    <li><b>大於 9000</b> 的螢幕編號為<b>系統預留</b>，不要用。</li>
+    <li><b>1000～1010</b> 保留給字典表的維護螢幕（SM30 產生的）以及可執行程式的標準選擇畫面。</li>
+    <li>自己寫的建議從 <b>0100 / 0200 / 2001</b> 這類編號開始，並讓編號有規律（主畫面 0100、明細 0110、彈窗 0200…）。</li>
+  </ul>
+
+  <h4>螢幕類型（Dynpro Type）</h4>
+  <table>
+    <thead><tr><th>類型</th><th>用途</th><th>限制</th></tr></thead>
+    <tbody>
+      <tr><td><b>Normal</b></td><td>一般全螢幕</td><td>可有自己的 PF-STATUS、Titlebar</td></tr>
+      <tr><td><b>Subscreen</b></td><td>被嵌到別的畫面裡（多頁籤的動態切換）</td><td>不可有 PF-STATUS、Titlebar、SET/LEAVE SCREEN、AT EXIT-COMMAND</td></tr>
+      <tr><td><b>Modal Dialog Box</b></td><td>彈出視窗</td><td>必須用 <span class="kw">CALL SCREEN … STARTING AT … ENDING AT …</span> 呼叫</td></tr>
+      <tr><td><b>Selection screen</b></td><td>選擇畫面（由宣告自動產生）</td><td>不要手動改</td></tr>
+    </tbody>
+  </table>
+
+  <h4>Layout 上可以放的元素</h4>
+  <table>
+    <thead><tr><th>元素</th><th>說明</th><th>常用屬性</th></tr></thead>
+    <tbody>
+      <tr><td><b>Text Field</b></td><td>只顯示不能輸入的文字標籤，也可以掛圖示</td><td>Output only</td></tr>
+      <tr><td><b>Input/Output Field</b></td><td>輸入／輸出欄位，Dialog 的主角</td><td>Input／Output、Required、Possible entries、Dropdown</td></tr>
+      <tr><td><b>Checkbox</b></td><td>核取方塊，勾選時值為 <b>'X'</b></td><td>要設 FctCode 才會即時觸發 PAI</td></tr>
+      <tr><td><b>Radio Button</b></td><td>單選鈕，<b>至少兩個</b>，選取後按右鍵 <b>Define group</b> 定義成一群</td><td>群組名 ≤ 4 碼</td></tr>
+      <tr><td><b>Pushbutton</b></td><td>按鈕，靠 <b>FctCode</b>（Function code）觸發程式邏輯</td><td>FctCode、FctType</td></tr>
+      <tr><td><b>Frame（Box）</b></td><td>方框，純視覺分組</td><td>可放標題</td></tr>
+      <tr><td><b>Subscreen Area</b></td><td>子畫面的挖空區，執行時用 CALL SUBSCREEN 填入</td><td>名稱不可重複</td></tr>
+      <tr><td><b>Tabstrip Control</b></td><td>頁籤，每個頁籤掛一個 Subscreen</td><td>建議用精靈產生</td></tr>
+      <tr><td><b>Table Control</b></td><td>表格式明細維護區</td><td>需搭配 <span class="kw">CONTROLS … TYPE TABLEVIEW</span></td></tr>
+      <tr><td><b>Custom Control</b></td><td>容器區，用來掛 ALV／編輯器／圖片／HTML</td><td>名稱要傳給 CL_GUI_CUSTOM_CONTAINER</td></tr>
+      <tr><td><b>Status Icon</b></td><td>顯示圖示的欄位（紅綠燈）</td><td>值來自 <b>ICON</b> 表</td></tr>
+    </tbody>
+  </table>
+
+  <div class="note">任何在 Screen 上加入的元素（Element），都會出現在 <b>Element list</b> 頁籤。物件該填的屬性填完之後，Layout 上的<b>底色會消失</b>——底色沒消，代表還有必填屬性沒設好。<span class="src">（依講義步驟整理）</span></div>
+
+  <h4>螢幕欄位可控制的四組屬性群</h4>
+  <p>PBO 中用 <span class="kw">LOOP AT SCREEN</span> 可以動態改的屬性，共有四個群組欄位可用：</p>
+  <table>
+    <thead><tr><th>群組欄位</th><th>可控屬性</th><th>值</th></tr></thead>
+    <tbody>
+      <tr><td><b>GROUP1</b>（修改群組）</td><td><b>INPUT</b> 是否可輸入</td><td>0 / 1</td></tr>
+      <tr><td><b>GROUP2</b></td><td><b>OUTPUT</b> 是否輸出</td><td>0 / 1</td></tr>
+      <tr><td><b>GROUP3</b></td><td><b>REQUIRED</b> 必輸與否</td><td>0 / 1（S/4 亦支援 2＝必輸但不顯示打勾）</td></tr>
+      <tr><td><b>GROUP4</b></td><td><b>INVISIBLE</b> 顯示與否（打星號，密碼用）</td><td>0 / 1</td></tr>
+      <tr><td>—</td><td><b>ACTIVE</b> 啟動與否（0 ＝ 整個消失且不參與 PAI）</td><td>0 / 1</td></tr>
+      <tr><td>—</td><td><b>INTENSIFIED</b> 強化顏色</td><td>0 / 1</td></tr>
+      <tr><td>—</td><td><b>LENGTH</b> 控制顯示長度</td><td>數字</td></tr>
+    </tbody>
+  </table>
+
+  <h4>游標定位</h4>
+  <pre><code class="abap">" 把游標移到指定欄位（PBO 中使用）
+SET CURSOR FIELD 'GS_SDYN_CONN-CONNID'.
+SET CURSOR FIELD 'GS_SDYN_CONN-CONNID' OFFSET 3.
+SET CURSOR LINE 5.                    " Table Control 中：移到第 5 個可見列
+
+" 反向：讀出使用者現在把游標放在哪（PAI 中使用，做雙擊 / Hotspot 很好用）
+GET CURSOR FIELD DATA(lv_fname) VALUE DATA(lv_value) LINE DATA(lv_line).
+IF sy-subrc = 0.
+  MESSAGE |游標在 { lv_fname }，值 = { lv_value }，第 { lv_line } 列| TYPE 'S'.
+ENDIF.</code></pre>
+
+  <div class="warn">截至 2022/05/16，<b>SCREEN LAYOUT（圖形版 Screen Painter）在 macOS 的 SAP GUI for Java 無法執行</b>，只能用字母版（Alphanumeric）編輯器或改用 Windows GUI／ADT。老師課堂上特別提醒過這一點。</div>
+
+  <h3 id="ch04-2-04">4. 第一支 Dialog：Flow Logic、OK_CODE 與 CALL SCREEN</h3>
+  <p><b>第 41 個練習：從螢幕設計到實作。</b>目標：在螢幕上貼一個「NCU SAP！」的 Text 和一個按鈕，按下按鈕就退出整個程式。</p>
+  <ol>
+    <li>建立螢幕：1. 定編號（2001）、2. 設 <b>NORMAL</b> 屬性、3. 設 <b>Next Screen</b> 屬性。</li>
+    <li>在 Layout 貼上 Text Field「NCU SAP！」與一個 Pushbutton，Pushbutton 的 <b>FctCode = 'EXIT'</b>。</li>
+    <li>在 Element list 加一個欄位 <b>OK_CODE</b>（型別 SY-UCOMM），這是接收功能碼的出口；同名變數也要在主程式宣告。</li>
+    <li>Flow logic 裡把 <span class="kw">MODULE USER_COMMAND_2001</span> 的註解拿掉，雙擊建立模組。</li>
+    <li>主程式用 <span class="kw">CALL SCREEN 2001.</span> 進入畫面。</li>
+  </ol>
+
+  <pre><code class="abap">*&amp;---------------------------------------------------------------------*
+*&amp; Report Z202202_41   " 第 41 練習：最小的 Dialog 程式
+*&amp;---------------------------------------------------------------------*
+REPORT z202202_41.
+
+DATA ok_code TYPE sy-ucomm.       " 螢幕上必須有一個同名的 OK_CODE 欄位
+DATA gv_save_ok TYPE sy-ucomm.    " 慣例：先備份再清空，避免殘留
+
+CALL SCREEN 2001.
+
+*----------------------------------------------------------------------*
+MODULE user_command_2001 INPUT.
+  gv_save_ok = ok_code.
+  CLEAR ok_code.                  " 一定要清，否則下一輪還會帶著舊值
+
+  CASE gv_save_ok.
+    WHEN 'EXIT'.
+      MESSAGE '您可離開了' TYPE 'I'.
+      LEAVE PROGRAM.
+      " LEAVE TO SCREEN 9999. 也是一種寫法，但要看目前螢幕是否設定了 Next Screen
+    WHEN OTHERS.
+  ENDCASE.
+ENDMODULE.</code></pre>
+
+  <p>螢幕的 Flow logic 長這樣（雙引號的註解列是 SE51 預設產生的，要用哪一段就把星號拿掉）：</p>
+
+  <pre><code class="abap">PROCESS BEFORE OUTPUT.
+  MODULE status_2001.             " 設 PF-STATUS 與 Titlebar
+  MODULE modify_screen.           " 動態控制欄位屬性
+  MODULE initial.                 " 載入資料
+
+PROCESS AFTER INPUT.
+  MODULE cancel AT EXIT-COMMAND.  " ★ 一定放最前面，見第 5 節
+  MODULE user_command_2001.</code></pre>
+
+  <div class="tip">口訣：<b>PBO 專職「螢幕的控制」（畫面長什麼樣）；PAI 專職「使用者輸入後的資料處理」（順序與邏輯）。</b> 老師反覆強調這兩句，寫錯地方是初學者最常見的 bug 來源。</div>
+  <div class="note">若程式很簡單，PAI 的 MODULE 可以直接寫在主程式裡，不必拆 INCLUDE；程式一長就務必拆。<b>建議建立一支空程式，照著教材一步一步做一遍</b>，才能理解每個章節要傳達的精神。</div>
+
+  <h3 id="ch04-2-05">5. SE41 Menu Painter：PF-STATUS、Titlebar 與功能碼型別</h3>
+  <p>Dialog 畫面的上方工具列、功能表、以及 F 鍵配置，都由 <b>GUI Status（PF-STATUS）</b>決定；視窗標題由 <b>GUI Title（Titlebar）</b>決定。兩者都可以在 SE80 的程式樹狀圖下建立，也可以用 <span class="tcode">SE41</span> 單獨修改或複製。</p>
+
+  <pre><code class="abap">*&amp;---------------------------------------------------------------------*
+*&amp; Module STATUS_2001 OUTPUT     " PBO：畫面一出現就設定功能表與標題
+*&amp;---------------------------------------------------------------------*
+MODULE status_2001 OUTPUT.
+  SET PF-STATUS 'STATUS'.
+  SET TITLEBAR  'TITLE'.
+ENDMODULE.
+
+" 進階：可以隱藏某些按鈕
+" SET PF-STATUS 'STATUS' EXCLUDING VALUE #( ( 'DELE' ) ( 'INSR' ) ).
+" 標題帶參數：GUI Title 內容寫成「銷售訂單 &amp;1 明細」
+" SET TITLEBAR 'TITLE' WITH lv_vbeln.</code></pre>
+
+  <h4>Status Type（狀態類型）</h4>
+  <table>
+    <thead><tr><th>類型</th><th>用在什麼螢幕</th></tr></thead>
+    <tbody>
+      <tr><td><b>Normal screen</b></td><td>Dynpro Type = Normal 的全螢幕</td></tr>
+      <tr><td><b>Dialog box</b></td><td>Dynpro Type = Modal Dialog Box 的彈出視窗（工具列會自動縮簡）</td></tr>
+      <tr><td><b>Context menu</b></td><td>右鍵選單</td></tr>
+    </tbody>
+  </table>
+
+  <h4>Function Type（功能碼型別）——最容易被忽略卻最關鍵</h4>
+  <table>
+    <thead><tr><th>Function Type</th><th>行為</th><th>用途</th></tr></thead>
+    <tbody>
+      <tr><td><b>（空白）</b></td><td>一般功能碼。<b>會完整跑完 PAI</b>（包含所有 FIELD 檢查）才進到 USER_COMMAND</td><td>存檔、執行、查詢</td></tr>
+      <tr><td><b>E</b></td><td><b>Exit command。</b>會<b>跳過</b>所有欄位檢查，直接執行 <span class="kw">MODULE … AT EXIT-COMMAND</span></td><td>BACK / EXIT / CANCEL</td></tr>
+      <tr><td><b>S</b></td><td>系統功能（不進使用者程式）</td><td>系統保留</td></tr>
+      <tr><td><b>T</b></td><td>直接呼叫另一個 T-CODE</td><td>跳轉</td></tr>
+      <tr><td><b>P</b></td><td>本地處理（不觸發 PAI 到伺服器）</td><td><b>Tabstrip 本地捲動</b>、Table Control 欄寬調整</td></tr>
+    </tbody>
+  </table>
+
+  <div class="warn">最經典的坑：<b>使用者填錯資料被 E 類訊息擋住，結果連「返回」都按不出去，只能砍掉 SAP GUI。</b> 解法就是把 BACK／EXIT／CANCEL 的 Function Type 設成 <b>E</b>，並在 PAI <b>最前面</b>寫 <span class="kw">MODULE cancel AT EXIT-COMMAND.</span>。講義原文明確寫著：「指定為 E 類的這一行應該移到前面，否則檢查不過時會無法跳離程式。」</div>
+
+  <pre><code class="abap">*&amp;---------------------------------------------------------------------*
+*&amp; Module CANCEL INPUT   " 掛在 AT EXIT-COMMAND，跳過所有欄位檢查
+*&amp;---------------------------------------------------------------------*
+MODULE cancel INPUT.
+  CASE ok_code.
+    WHEN 'BACK'.   LEAVE TO SCREEN 0.   " 回上一層畫面
+    WHEN 'EXIT'.   LEAVE PROGRAM.       " 離開整個程式
+    WHEN 'CANCEL'. LEAVE TO SCREEN 0.
+  ENDCASE.
+ENDMODULE.</code></pre>
+
+  <p>接續第 41 練習，加上功能表之後的完整程式：</p>
+
+  <pre><code class="abap">*&amp;---------------------------------------------------------------------*
+*&amp; Report Z202202_41   " 加上 PF-STATUS / TITLEBAR / 功能表的版本
+*&amp;---------------------------------------------------------------------*
+REPORT z202202_41.
+
+DATA ok_code TYPE sy-ucomm.
+
+CALL SCREEN 2001.
+
+*----------------------------------------------------------------------*
+MODULE status_2001 OUTPUT.
+  SET PF-STATUS 'STATUS'.
+  SET TITLEBAR  'TITLE'.
+ENDMODULE.
+
+*----------------------------------------------------------------------*
+MODULE user_command_2001 INPUT.
+  DATA(lv_ok) = ok_code.
+  CLEAR ok_code.
+
+  CASE lv_ok.
+    WHEN 'MENU11'. MESSAGE '您點了 MENU11' TYPE 'I'.
+    WHEN 'MENU12'. MESSAGE '您點了 MENU12' TYPE 'I'.
+    WHEN 'MENU21'. MESSAGE '您點了 MENU21' TYPE 'I'.
+    WHEN 'MENU22'. MESSAGE '您點了 MENU22' TYPE 'I'.
+    WHEN 'ZCAS'.   MESSAGE '您點了 ZCAS'   TYPE 'E'.   " E 類會停在本畫面
+    WHEN 'EXIT'.
+      MESSAGE '您可離開了' TYPE 'I'.
+      LEAVE PROGRAM.
+    WHEN OTHERS.
+  ENDCASE.
+ENDMODULE.
+
+*----------------------------------------------------------------------*
+MODULE cancel INPUT.               " Function Type = E
+  LEAVE PROGRAM.
+  " 若寫 LEAVE TO SCREEN 0 則表示回上一頁
+ENDMODULE.</code></pre>
+
+  <div class="note">重要觀念：<b>若同時有多個 PF-STATUS，而 Function Code 同名時，代表它們會執行同一段程式</b>（因為 CASE 判斷的是 ok_code 的值）。這是刻意設計——顯示模式與修改模式用兩個 STATUS，共用同一批功能碼。</div>
+  <div class="warn">系統保留鍵：<b>F1</b>（說明）、<b>F2</b>（形同雙擊）、<b>F4</b>（可能輸入值）、<b>F9</b>、<b>Shift+F2</b>、<b>Shift+F4</b>、<b>Shift+F5</b>，客製時<b>勿佔用</b>。另外選 <b>Fiori 主題</b>時，Function key 那一排（save / back / exit / cancel …）可能<b>不顯示</b>，只能靠鍵盤或功能表，設計時要留意。</div>
+
+  <h3 id="ch04-2-06">6. 多螢幕的控制：SET SCREEN / LEAVE TO SCREEN / CALL SCREEN</h3>
+  <p>螢幕的執行順序有兩種決定方式：</p>
+  <ul>
+    <li><b>靜態指定</b>：在螢幕屬性的 <b>Next Screen</b> 欄位填下一個螢幕編號。填 <b>0</b> 表示「結束這一層、回到呼叫者」。</li>
+    <li><b>動態指定</b>：在 PAI 用指令改變流程。</li>
+  </ul>
+
+  <table>
+    <thead><tr><th>指令</th><th>行為</th><th>備註</th></tr></thead>
+    <tbody>
+      <tr><td><span class="kw">SET SCREEN n.</span></td><td>把「下一個螢幕」暫時改成 n，<b>但不會立刻跳</b>，會把目前 PAI 跑完</td><td>常與 LEAVE SCREEN 併用</td></tr>
+      <tr><td><span class="kw">LEAVE SCREEN.</span></td><td>立刻結束目前螢幕，跳到 Next Screen</td><td></td></tr>
+      <tr><td><span class="kw">LEAVE TO SCREEN n.</span></td><td>＝ SET SCREEN n ＋ LEAVE SCREEN</td><td><b>最常用</b></td></tr>
+      <tr><td><span class="kw">LEAVE TO SCREEN 0.</span></td><td>結束目前這一層，回到呼叫它的畫面（沒有上層就結束程式）</td><td>BACK 鍵的標準寫法</td></tr>
+      <tr><td><span class="kw">CALL SCREEN n.</span></td><td><b>堆疊式</b>呼叫，n 結束後<b>會回到原畫面</b>的下一行</td><td>做彈窗、做明細畫面</td></tr>
+      <tr><td><span class="kw">LEAVE PROGRAM.</span></td><td>離開整支程式</td><td>EXIT 鍵</td></tr>
+      <tr><td><span class="kw">LEAVE TO TRANSACTION 'XX'.</span></td><td>跳到別的交易</td><td>不回來</td></tr>
+    </tbody>
+  </table>
+
+  <pre><code class="abap">" ── 方式一：設定下一個 SCREEN ────────────────────────────────
+SET SCREEN 300.
+LEAVE SCREEN.
+" 等價於： LEAVE TO SCREEN 300.
+
+" ── 方式二：呼叫 SCREEN，結束後仍回到原 SCREEN ─────────────
+CALL SCREEN 101.                     " 呼叫端
+" …… 101 結束後，程式回到這一行的下一行
+
+" 被呼叫的 101 要這樣結束：
+"   SET SCREEN 0.
+"   LEAVE SCREEN.          （或直接 LEAVE TO SCREEN 0.）
+
+" ── 方式三：彈出視窗（螢幕屬性必須是 Modal Dialog Box）────────
+CALL SCREEN 0200
+  STARTING AT 10 5      " 左上角：column 10, row 5
+  ENDING   AT 80 20.    " 右下角：column 80, row 20</code></pre>
+
+  <div class="warn">彈出視窗必須<b>同時</b>滿足三個條件才會正常：(1) 螢幕屬性 Dynpro Type = <b>Modal Dialog Box</b>；(2) 呼叫時給 <b>STARTING AT / ENDING AT</b>；(3) 該畫面用的 GUI Status 的 Status Type = <b>Dialog box</b>。少一個就會變成怪怪的全螢幕或跑版。</div>
+  <div class="tip">不想自己畫彈窗時，先找標準 FM：<b>POPUP_TO_CONFIRM</b>（是／否）、<b>POPUP_TO_DECIDE</b>、<b>POPUP_TO_INFORM</b>、<b>POPUP_WITH_TABLE_DISPLAY</b>（選一列）、<b>POPUP_GET_VALUES</b>（臨時輸入欄位）。90% 的彈窗需求不必自己建 Screen。</div>
+
+  <h3 id="ch04-2-07">7. 欄位動態控制：LOOP AT SCREEN 與 Group</h3>
+  <p><b>第 03 節：單選按鈕 RADIO、框 BOX、輸入框的運用。</b> Radio 要<b>兩個以上</b>，貼好之後全選按右鍵 <b>Define group</b> 定成一群。把 FIELD2、FIELD3 的 Element list 中 <b>Group1 設為 'SEL'</b>，就可以在 PBO 一次控制整群。</p>
+
+  <pre><code class="abap">*&amp;---------------------------------------------------------------------*
+*&amp; Module MODIFY_SCREEN OUTPUT   " PBO：動態控制欄位屬性
+*&amp;---------------------------------------------------------------------*
+MODULE modify_screen OUTPUT.
+  LOOP AT SCREEN.
+    IF screen-group1 = 'SEL'.        " GROUP1 = SEL 的整群不能輸入（FIELD2、FIELD3）
+      screen-input = 0.
+    ENDIF.
+    IF screen-name = 'FIELD1'.       " FIELD1 設成必輸
+      screen-required = 1.
+    ENDIF.
+    MODIFY SCREEN.                   " ★ 一定要 MODIFY，屬性才會生效
+  ENDLOOP.
+ENDMODULE.</code></pre>
+
+  <div class="warn"><b>三個必記的坑：</b>(1) 改完屬性一定要 <span class="kw">MODIFY SCREEN.</span>，忘了寫完全沒效果；(2) <span class="kw">screen-name</span> 與 <span class="kw">screen-group1</span> 的比較值<b>一律用大寫</b>（Modif ID 在判斷時一定要大寫）；(3) Modif ID <b>最多 3 碼</b>，Screen Painter 的 Group1～Group4 各 <b>3 碼</b>。</div>
+
+  <p>在選擇畫面（Type 1）用 <b>MODIF ID</b> 也是同一套機制，老師的兩個示範：</p>
+
+  <pre><code class="abap">REPORT zradio.
+" 用 MODIF ID 分兩群，一群反白、一群不反白
+PARAMETERS: test1(10) TYPE c MODIF ID sc1,
+            test2(10) TYPE c MODIF ID sc2,
+            test3(10) TYPE c MODIF ID sc1,
+            test4(10) TYPE c MODIF ID sc2.
+
+AT SELECTION-SCREEN OUTPUT.
+  LOOP AT SCREEN.
+    IF screen-group1 = 'SC1'.        " 判斷值必須大寫
+      screen-intensified = '0'.
+      MODIFY SCREEN.
+      CONTINUE.
+    ENDIF.
+    IF screen-group1 = 'SC2'.
+      screen-intensified = '1'.
+      MODIFY SCREEN.
+    ENDIF.
+  ENDLOOP.</code></pre>
+
+  <pre><code class="abap">*&amp;---------------------------------------------------------------------*
+*&amp; Report ZMODIFYID   " MODIF ID 的完整運用：選什麼、才開放什麼欄位
+*&amp;---------------------------------------------------------------------*
+REPORT zmodifyid.
+
+" 第一個框框：選擇物料類型
+SELECTION-SCREEN BEGIN OF BLOCK b1 WITH FRAME TITLE TEXT-001.
+  SELECTION-SCREEN COMMENT 1(20) txt01.
+  PARAMETERS:
+    pa TYPE c RADIOBUTTON GROUP g1 DEFAULT 'X' USER-COMMAND flag,
+    " USER-COMMAND flag 表示這組元件會觸發事件（沒有它，畫面不會即時重繪）
+    pb TYPE c RADIOBUTTON GROUP g1.
+SELECTION-SCREEN END OF BLOCK b1.
+
+" 第二個框框：自製 → 開放物料編號 / 物料描述
+SELECTION-SCREEN BEGIN OF BLOCK b2 WITH FRAME TITLE TEXT-002.
+  SELECTION-SCREEN BEGIN OF LINE.
+    SELECTION-SCREEN COMMENT 1(8) txt02 FOR FIELD p1.
+    PARAMETERS p1 TYPE c LENGTH 20 MODIF ID in2.   " Modif ID 最多三碼
+  SELECTION-SCREEN END OF LINE.
+  SELECTION-SCREEN SKIP 1.
+  SELECTION-SCREEN BEGIN OF LINE.
+    SELECTION-SCREEN COMMENT 1(8) txt03.
+    PARAMETERS p2 TYPE c LENGTH 30 MODIF ID in2.
+  SELECTION-SCREEN END OF LINE.
+SELECTION-SCREEN END OF BLOCK b2.
+
+" 第三個框框：採購 → 開放採購單號
+SELECTION-SCREEN BEGIN OF BLOCK b3 WITH FRAME TITLE TEXT-003.
+  SELECTION-SCREEN BEGIN OF LINE.
+    SELECTION-SCREEN COMMENT 1(10) txt04 FOR FIELD p3.
+    PARAMETERS p3 TYPE c LENGTH 20 MODIF ID in3.
+  SELECTION-SCREEN END OF LINE.
+SELECTION-SCREEN END OF BLOCK b3.
+
+" 第四個框框：勾了才「出現」備註（ACTIVE = 0 是整個消失）
+SELECTION-SCREEN BEGIN OF BLOCK b4 WITH FRAME TITLE TEXT-004.
+  PARAMETERS pc AS CHECKBOX USER-COMMAND mark.
+  SELECTION-SCREEN BEGIN OF LINE.
+    SELECTION-SCREEN COMMENT 1(10) txt05.
+    PARAMETERS p4(20) TYPE c MODIF ID in4.
+  SELECTION-SCREEN END OF LINE.
+SELECTION-SCREEN END OF BLOCK b4.
+
+INITIALIZATION.
+  txt01 = '請選擇物料類型：'.
+  txt02 = '物料編號:'.
+  txt03 = '物料描述:'.
+  txt04 = '採購單號:'.
+  txt05 = '備註說明:'.
+
+AT SELECTION-SCREEN OUTPUT.
+  LOOP AT SCREEN.                    " SCREEN 是系統結構，可在 SE11 查看
+    IF screen-group1 = 'IN2' AND pa &lt;&gt; 'X'.
+      screen-input = 0.              " 1 = 可輸入，0 = 不可輸入（變灰）
+      CLEAR: p1, p2.
+    ENDIF.
+    IF screen-group1 = 'IN3' AND pb &lt;&gt; 'X'.
+      screen-input = 0.
+      CLEAR p3.
+    ENDIF.
+    IF screen-group1 = 'IN4' AND pc &lt;&gt; 'X'.
+      screen-active = 0.             " ACTIVE = 0：整個欄位消失
+      CLEAR p4.
+    ENDIF.
+    MODIFY SCREEN.                   " 確認修改後的屬性
+  ENDLOOP.
+
+AT SELECTION-SCREEN.                 " 提交錯誤訊息
+  CASE sy-ucomm.
+    WHEN 'ONLI'.                     " 點執行時
+      IF pa = 'X' AND ( p1 IS INITIAL OR p2 IS INITIAL ).
+        MESSAGE '請填寫相關物料信息！' TYPE 'E'.
+      ELSEIF pb = 'X' AND p3 IS INITIAL.
+        MESSAGE '請填寫採購單號！' TYPE 'E'.
+      ELSEIF pc = 'X' AND p4 IS INITIAL.
+        MESSAGE '請填寫備註說明！' TYPE 'E'.
+      ENDIF.
+  ENDCASE.
+
+START-OF-SELECTION.
+  " 現代寫法：不用 WRITE 排版，直接丟 CL_SALV_TABLE
+  DATA(lt_out) = VALUE ztt_material_info(
+    ( matnr = COND #( WHEN pa = 'X' THEN p1 ELSE 'WG0000000001' )
+      maktx = COND #( WHEN pa = 'X' THEN p2 ELSE '採購物料' )
+      ebeln = COND #( WHEN pb = 'X' THEN p3 ELSE space )
+      remark = p4 ) ).
+
+  TRY.
+      cl_salv_table=&gt;factory( IMPORTING r_salv_table = DATA(lo_alv)
+                              CHANGING  t_table      = lt_out ).
+      lo_alv-&gt;get_functions( )-&gt;set_all( ).
+      lo_alv-&gt;get_columns( )-&gt;set_optimize( abap_true ).
+      lo_alv-&gt;display( ).
+    CATCH cx_salv_msg INTO DATA(lx_salv).
+      MESSAGE lx_salv-&gt;get_text( ) TYPE 'E'.
+  ENDTRY.</code></pre>
+
+  <div class="warn"><b>SCREEN-INPUT = 0 與 SCREEN-ACTIVE = 0 的差別</b>：INPUT = 0 只是變灰（欄位還在、值還會傳回 PAI）；ACTIVE = 0 是整個欄位消失且<b>不參與 PAI 傳輸</b>。要「藏起來」用 ACTIVE，要「唯讀顯示」用 INPUT。另外被 INPUT = 0 灰掉的欄位，使用者改不了，但<b>程式改得了</b>——安全檢查不能只靠畫面。</div>
+
+  <h3 id="ch04-2-08">8. 在畫面上顯示與維護資料表</h3>
+  <p><b>第 04 節。</b>課程最開始建立了自己的資料表 <b>Z00_VBAK</b>，現在用 Screen 讓使用者維護它。從 Screen Painter 的「Get from Dictionary」把欄位拉上畫面時，欄位名稱會是 <b>Z00_VBAK-XXXX</b>，所以程式裡要有一個同名的全域結構。</p>
+
+  <h4>寫法一：TABLES（講義原始寫法）</h4>
+  <pre><code class="abap">" 講義原寫法：TABLES 會產生一個同名全域工作區，剛好接上畫面欄位名
+TABLES z00_vbak.
+
+MODULE initial OUTPUT.
+  SELECT SINGLE * FROM z00_vbak INTO @z00_vbak.  " 直接載入 TABLES 工作區
+ENDMODULE.</code></pre>
+
+  <div class="warn"><b>SPEC 明訂 TABLES 屬於應淘汰的語法</b>，在報表程式中一律不要用。但在 Dialog 程式中它有一個「無法完全避開」的用途：<b>快速產生一個與資料表同名的全域工作區，好讓 Screen Painter 拉出來的欄位名對得上</b>。現代做法是：自己宣告一個結構，並在 Screen Painter 中<b>把欄位名改成該結構的名稱</b>。</div>
+
+  <h4>寫法二：自宣告工作區（現代寫法，建議）</h4>
+  <pre><code class="abap">*&amp;---------------------------------------------------------------------*
+*&amp; Report Z202202_41   " 用自宣告的工作區承接畫面欄位
+*&amp;---------------------------------------------------------------------*
+REPORT z202202_41.
+
+DATA gs_vbak TYPE z00_vbak.          " 畫面欄位命名為 GS_VBAK-VBELN … 即可
+DATA gt_vbak TYPE STANDARD TABLE OF z00_vbak WITH EMPTY KEY.
+
+MODULE initial OUTPUT.
+  " 只在第一次進畫面時載入，避免每次 PBO 都打 DB
+  IF gs_vbak IS INITIAL.
+    SELECT SINGLE vbeln, erdat, ernam, kunnr, netwr, waerk
+      FROM z00_vbak
+      INTO CORRESPONDING FIELDS OF @gs_vbak.
+  ENDIF.
+ENDMODULE.</code></pre>
+
+  <div class="note">兩種寫法執行結果一樣。差別在於：用 TABLES 的工作區，Screen Painter 會自動帶出<b>欄位抬頭（Label）</b>；用自宣告的變數則<b>不會自動顯示抬頭</b>，要自己貼 Text Field 或在 Element list 手動指定 Dict. 參考。</div>
+  <div class="warn"><b>老師的重要提醒</b>：對筆數比較大的資料表，<b>直接把整張表放在 Screen 上是不妥的做法</b>——會影響效能，也會增加 LOCK 的機率。正確做法是「先用選擇畫面過濾 → 撈進內表 → 用 Table Control 分頁顯示」。</div>
+
+  <h4>鎖定與資料一致性</h4>
+  <pre><code class="abap">" 進入編輯模式前一定要鎖，離開時一定要解
+" 前提：SE11 建立 Lock Object EZ00_VBAK（表 Z00_VBAK，Mode E＝獨佔寫入鎖）
+CALL FUNCTION 'ENQUEUE_EZ00_VBAK'
+  EXPORTING
+    mode_z00_vbak  = 'E'
+    mandt          = sy-mandt
+    vbeln          = gs_vbak-vbeln
+    _scope         = '2'          " 2＝鎖到 COMMIT WORK 為止（Dialog 最常用）
+    _wait          = abap_true
+  EXCEPTIONS
+    foreign_lock   = 1
+    system_failure = 2
+    OTHERS         = 3.
+
+IF sy-subrc &lt;&gt; 0.
+  " sy-msgv1 會帶出「是誰鎖住的」
+  MESSAGE |單據 { gs_vbak-vbeln } 正被 { sy-msgv1 } 編輯中| TYPE 'E'.
+ENDIF.
+
+" …… 使用者編輯、按下存檔 ……
+MODIFY z00_vbak FROM TABLE @gt_vbak.
+IF sy-subrc = 0.
+  COMMIT WORK AND WAIT.
+  MESSAGE '存檔成功' TYPE 'S'.
+ELSE.
+  ROLLBACK WORK.
+  MESSAGE '存檔失敗' TYPE 'E'.
+ENDIF.
+
+CALL FUNCTION 'DEQUEUE_EZ00_VBAK'    " 離開畫面時解鎖
+  EXPORTING
+    mode_z00_vbak = 'E'
+    mandt         = sy-mandt
+    vbeln         = gs_vbak-vbeln.</code></pre>
+
+  <div class="tip">鎖住不放是 Dialog 程式最常被抱怨的問題。三個保命習慣：(1) <b>只在真的要改的時候才鎖</b>，顯示模式不要鎖；(2) 在 <span class="kw">AT EXIT-COMMAND</span> 的模組裡一定要 DEQUEUE；(3) <span class="tcode">SM12</span> 是查／砍殘留鎖的地方，上線後一定要教會 key user 用。</div>
+
+  <h3 id="ch04-2-09">9. 欄位合理性檢查：FIELD、CHAIN、ON INPUT / ON REQUEST</h3>
+  <p><b>第 05 節。</b>PAI 裡最重要的兩個關鍵字是 <b>FIELD</b> 與 <b>CHAIN</b>。它們決定了「檢查失敗時，哪些欄位會保持可輸入狀態」——這是 Dialog 程式比選擇畫面強大的地方。</p>
+
+  <table>
+    <thead><tr><th>語法</th><th>意義</th></tr></thead>
+    <tbody>
+      <tr><td><span class="kw">FIELD f MODULE m.</span></td><td>一律檢查。檢查失敗（E 訊息）時，<b>只有 f 這個欄位</b>保持可輸入</td></tr>
+      <tr><td><span class="kw">FIELD f MODULE m ON INPUT.</span></td><td><b>欄位不為初始值</b>時才觸發</td></tr>
+      <tr><td><span class="kw">FIELD f MODULE m ON REQUEST.</span></td><td><b>欄位被改過</b>（值與上次不同）時才觸發</td></tr>
+      <tr><td><span class="kw">CHAIN … ENDCHAIN.</span></td><td>把多個欄位綁成一組；檢查失敗時<b>整組</b>都保持可輸入</td></tr>
+      <tr><td><span class="kw">MODULE m ON CHAIN-INPUT.</span></td><td>CHAIN 中<b>任一欄位不為空</b>就觸發</td></tr>
+      <tr><td><span class="kw">MODULE m ON CHAIN-REQUEST.</span></td><td>CHAIN 中<b>任一欄位被改過</b>就觸發（Table Control 的標準寫法）</td></tr>
+      <tr><td><span class="kw">MODULE m AT EXIT-COMMAND.</span></td><td>只有 Function Type = E 的功能碼會觸發，<b>跳過所有檢查</b></td></tr>
+      <tr><td><span class="kw">FIELD f VALUES (…).</span></td><td>不寫程式的固定值檢查</td></tr>
+      <tr><td><span class="kw">FIELD f MODULE m AT CURSOR-SELECTION.</span></td><td>游標停在該欄位並按 F2／雙擊時觸發</td></tr>
+    </tbody>
+  </table>
+
+  <pre><code class="abap">*----------------------------------------------------------------------*
+*  Flow logic：PAI 的各種檢查寫法
+*----------------------------------------------------------------------*
+PROCESS AFTER INPUT.
+
+  MODULE cancel AT EXIT-COMMAND.     " ★ E 類必須放最前面
+
+  " 單個欄位檢查
+  FIELD fld1 MODULE check1 ON REQUEST.   " 有修改才檢查
+  FIELD fld2 MODULE check2 ON INPUT.     " 不為空就檢查
+  FIELD fld3 MODULE check3.              " 一律檢查
+
+  " 單個欄位、多個 MODULE
+  FIELD fld1 MODULE check1a
+             MODULE check1b.
+
+  " 多欄位一起檢查：失敗時 FLD1~FLD4 都保持可輸入
+  CHAIN.
+    FIELD fld1.
+    FIELD fld2, fld3, fld4.
+    MODULE chk_all_1.
+    MODULE chk_all_2.
+  ENDCHAIN.
+
+  " 只在「有輸入」時才檢查，避免不必要的檢查
+  CHAIN.
+    FIELD fld1.
+    FIELD fld2, fld3, fld4.
+    MODULE chk_all_1 ON CHAIN-INPUT.
+    MODULE chk_all_2.
+  ENDCHAIN.
+
+  " 只在「有改變」時才檢查
+  CHAIN.
+    FIELD fld1.
+    FIELD fld2, fld3, fld4.
+    MODULE chk_all_1 ON CHAIN-REQUEST.
+    MODULE chk_all_2.
+  ENDCHAIN.
+
+  MODULE user_command_2001.</code></pre>
+
+  <pre><code class="abap">*&amp;---------------------------------------------------------------------*
+*&amp; 三個檢查模組（配合上面的 flow logic）
+*&amp;---------------------------------------------------------------------*
+MODULE check1 INPUT.
+  CASE fld1.
+    WHEN 'NG'.  MESSAGE e005(ymess) WITH 'FLD1 ERROR'.     " E：停在本畫面
+    WHEN 'NON'. MESSAGE i005(ymess) WITH 'FLD1 WARNING'.   " I：彈窗，按確定續行
+    WHEN 'OK'.  MESSAGE s005(ymess) WITH 'FLD1 OK'.        " S：狀態列，續行
+  ENDCASE.
+ENDMODULE.
+
+MODULE check2 INPUT.
+  CASE fld2.
+    WHEN 'NG'.  MESSAGE e005(ymess) WITH 'FLD2 ERROR'.
+    WHEN 'NON'. MESSAGE i005(ymess) WITH 'FLD2 WARNING'.
+    WHEN 'OK'.  MESSAGE s005(ymess) WITH 'FLD2 OK'.
+  ENDCASE.
+ENDMODULE.
+
+MODULE check3 INPUT.
+  MESSAGE i005(ymess) WITH 'FLD3 一律警告'.
+ENDMODULE.</code></pre>
+
+  <p>SAP 標準的四層輸入檢查，前三層<b>不必寫程式</b>，設定好就自動生效：</p>
+  <table>
+    <thead><tr><th>層次</th><th>檢查內容</th><th>設定在哪</th></tr></thead>
+    <tbody>
+      <tr><td>Mandatory fields check</td><td>是否必輸</td><td>Element list 的 Required 屬性 / screen-required</td></tr>
+      <tr><td>Field format check</td><td>欄位型態（日期、數值）</td><td>Data Element 的型別</td></tr>
+      <tr><td>Fixed Values</td><td>Domain 值域</td><td>SE11 Domain 的 Value Range</td></tr>
+      <tr><td>Foreign key check</td><td>外來鍵值</td><td>SE11 欄位的 Foreign Key</td></tr>
+      <tr><td>（第五層）自訂邏輯</td><td>跨欄位、跨表的商業規則</td><td>PAI 的 FIELD / CHAIN MODULE</td></tr>
+    </tbody>
+  </table>
+
+  <div class="tip">補充：若元素用 <b>Checkbox</b>，勾選表示值為 <b>'X'</b>；沒勾就是空白。判斷一律寫 <span class="kw">IF gs_x-flag = abap_true.</span>。</div>
+
+  <h3 id="ch04-2-10">10. 訊息控制 SE91 與 Dialog 中的訊息行為</h3>
+  <p><b>第 06 節。</b>自定義訊息類別（Message Class）要以 <b>Y</b> 或 <b>Z</b> 起頭，用 <span class="tcode">SE91</span> 建立，存在自己的 Package（課程是 <b>ZP_CASPER</b>）。</p>
+
+  <pre><code class="abap">" 兩種等價的寫法
+MESSAGE e005(ymess) WITH 'FLD1 ERROR'.
+
+MESSAGE ID 'YMESS' TYPE 'E' NUMBER 005
+        DISPLAY LIKE 'I'                  " 只改「外觀」，行為仍是 E
+        WITH 'FLD1 ERROR'.
+
+" 動態組訊息（訊息編號放變數時只能用這種）
+DATA(lv_msgno) = '005'.
+MESSAGE ID 'YMESS' TYPE 'E' NUMBER lv_msgno WITH lv_matnr.
+
+" 把訊息接起來不要跳出（做 log 用）
+MESSAGE e005(ymess) WITH 'FLD1 ERROR' INTO DATA(lv_msg).
+APPEND VALUE #( type = 'E' message = lv_msg ) TO gt_log.</code></pre>
+
+  <table>
+    <thead><tr><th>TYPE</th><th>意義</th><th>在 Dialog（PAI）中的行為</th></tr></thead>
+    <tbody>
+      <tr><td><b>S</b></td><td>Success 成功</td><td>訊息顯示在<b>下一個</b>畫面的狀態列。假設由 Screen 100 跳到 200，訊息會等到 200 開啟時才出現</td></tr>
+      <tr><td><b>I</b></td><td>Information 訊息</td><td><b>即時</b>彈出對話方塊，按確定後繼續原流程</td></tr>
+      <tr><td><b>W</b></td><td>Warning 警告</td><td>顯示在狀態列，欄位保持可輸入，<b>按 Enter 可以繼續</b></td></tr>
+      <tr><td><b>E</b></td><td>Error 錯誤</td><td><b>停在原畫面（Screen 100）且不重跑 PBO</b>，只有 FIELD/CHAIN 涵蓋的欄位可再輸入</td></tr>
+      <tr><td><b>A</b></td><td>Abend 異常終止</td><td>終止交易，回到 SAP Easy Access（Dialog 少用）</td></tr>
+      <tr><td><b>X</b></td><td>Exit</td><td>產生 short dump（Dialog 少用）</td></tr>
+    </tbody>
+  </table>
+
+  <div class="warn"><b>E 訊息不重跑 PBO</b>是 Dialog 最容易誤判的行為：你在 PBO 裡設定的欄位屬性、下拉清單內容不會被重新計算，畫面停留在使用者剛剛看到的狀態。所以「E 訊息之後要順便改畫面」的需求做不到，要改用 W 或改用 <span class="kw">SET SCREEN</span> 重進。</div>
+  <div class="warn"><b>前景／背景要區分訊息</b>：背景（Batch）執行時 E／A 訊息會直接讓 Job 失敗，I／S 訊息只寫進 Job Log。程式要能前景也能背景執行的話，一定要用 <span class="kw">IF sy-batch = abap_true.</span> 分流，否則背景會在 E 訊息處掛掉。<b>DISPLAY LIKE 'I'</b> 只決定提示訊息的抬頭風格，不改變 E 的行為。</div>
+
+  <h3 id="ch04-2-11">11. 下拉選單（Listbox）</h3>
+  <p><b>第 07 節。</b>在 Screen Painter 的欄位屬性中，把 <b>Dropdown</b> 設為 <b>Listbox with key</b>（顯示 key ＋ 文字）或 <b>Listbox without key</b>，然後在 PBO 用 FM <b>VRM_SET_VALUES</b> 灌入清單值。</p>
+
+  <pre><code class="abap">" ── TOP：宣告 ─────────────────────────────────────────────
+TYPE-POOLS vrm.                   " S/4 仍相容；新程式可直接用型別 VRM_VALUES
+DATA gv_listbox(4) TYPE c.        " 畫面上的下拉欄位（名稱要與畫面元素同名）
+DATA gv_fname TYPE vrm_id.
+DATA gt_vva   TYPE vrm_values.</code></pre>
+
+  <pre><code class="abap">*&amp;---------------------------------------------------------------------*
+*&amp; Module LIST_VALUES OUTPUT   " PBO：建立下拉清單內容（講義原始做法）
+*&amp;---------------------------------------------------------------------*
+MODULE list_values OUTPUT.
+  gv_fname = 'GV_LISTBOX'.        " 一定要是畫面欄位名（大寫）
+
+  gt_vva = VALUE #( ( key = 'TWD' text = '新台幣' )
+                    ( key = 'USD' text = '美金'   ) ).
+
+  CALL FUNCTION 'VRM_SET_VALUES'
+    EXPORTING
+      id              = gv_fname
+      values          = gt_vva
+    EXCEPTIONS
+      id_illegal_name = 1
+      OTHERS          = 2.
+  IF sy-subrc &lt;&gt; 0.
+    MESSAGE '下拉清單建立失敗' TYPE 'S' DISPLAY LIKE 'E'.
+  ENDIF.
+ENDMODULE.</code></pre>
+
+  <p>更實用的做法：直接把幣別表 <b>TCURC</b>（或自建的 Z00_CURR）撈進來當清單。</p>
+
+  <pre><code class="abap">MODULE list_values OUTPUT.
+  IF gt_vva IS INITIAL.            " 只建一次，別每次 PBO 都打 DB
+    SELECT waers AS key, waers AS text
+      FROM tcurc
+      INTO TABLE @DATA(lt_curr)
+      UP TO 200 ROWS
+      ORDER BY waers.
+
+    gt_vva = CORRESPONDING #( lt_curr ).
+
+    CALL FUNCTION 'VRM_SET_VALUES'
+      EXPORTING id = 'GV_LISTBOX' values = gt_vva
+      EXCEPTIONS OTHERS = 2.
+  ENDIF.
+ENDMODULE.</code></pre>
+
+  <div class="warn">老師的忠告：<b>下拉式（Dropdown）選單的屬性，只有在資料筆數不大時才使用。</b> 筆數一多（幾百筆以上）不但畫面卡，使用者也找不到——那時應該改用 <b>Search Help（F4）</b>，它有搜尋、有分頁、有多欄條件。</div>
+
+  <h3 id="ch04-2-12">12. Subscreen 子畫面</h3>
+  <p><b>第 08 節、第 19 節。</b>Dynpro（Dynamic Program）＝ 一個螢幕 ＋ 它的 flow logic ＋ controls。Subscreen 讓你把畫面切成可替換的區塊，是 Tabstrip 與 SAP 標準增強（Screen Exit）的基礎。</p>
+
+  <h4>作法</h4>
+  <ol>
+    <li>在主畫面 Layout 貼上 <b>Subscreen Area</b>（命名例如 SUB1）。</li>
+    <li>新增螢幕 2002，<b>Dynpro Type 一定要選 Subscreen</b>；貼上要顯示的元素後啟動。</li>
+    <li>同法建立第二個子螢幕 2003。</li>
+    <li>主程式宣告一個變數決定要顯示哪一個：<span class="kw">DATA gv_screenid TYPE sy-dynnr VALUE '2002'.</span></li>
+    <li>主畫面 PBO 末尾加上 <span class="kw">CALL SUBSCREEN</span>；主畫面 PAI 對應加上 <span class="kw">CALL SUBSCREEN</span>（不帶 INCLUDING）。</li>
+  </ol>
+
+  <pre><code class="abap">*----------------------------------------------------------------------*
+*  主畫面 2001 的 flow logic
+*----------------------------------------------------------------------*
+PROCESS BEFORE OUTPUT.
+  MODULE status_2001.
+  MODULE modify_screen.
+  MODULE initial.
+  MODULE list_values.
+  " SY-REPID 表示當前主程式；gv_screenid 決定顯示哪一個子畫面
+  CALL SUBSCREEN sub1 INCLUDING sy-repid gv_screenid.
+
+PROCESS AFTER INPUT.
+  MODULE cancel AT EXIT-COMMAND.
+  CALL SUBSCREEN sub1.              " PAI 側只寫區域名，不帶 INCLUDING
+  FIELD fld1 MODULE check1 ON REQUEST.
+  FIELD fld2 MODULE check2 ON INPUT.
+  FIELD fld3 MODULE check3.
+  MODULE user_command_2001.</code></pre>
+
+  <pre><code class="abap">*&amp;---------------------------------------------------------------------*
+*&amp; 由功能表決定顯示哪一個子畫面
+*&amp;---------------------------------------------------------------------*
+DATA gv_screenid TYPE sy-dynnr VALUE '2002'.
+
+MODULE user_command_2001 INPUT.
+  DATA(lv_ok) = ok_code.
+  CLEAR ok_code.
+
+  gv_screenid = SWITCH #( lv_ok
+                  WHEN 'MENU11' THEN '2002'      " 第一個子畫面
+                  WHEN 'MENU12' THEN '2003'      " 第二個子畫面
+                  ELSE gv_screenid ).
+
+  CASE lv_ok.
+    WHEN 'EXIT'. LEAVE PROGRAM.
+    WHEN OTHERS.
+  ENDCASE.
+ENDMODULE.</code></pre>
+
+  <h4>呼叫 Subscreen 的鐵律（老師逐條列出）</h4>
+  <ul>
+    <li><b>不可</b>放在 <span class="kw">LOOP … ENDLOOP</span> 之內。</li>
+    <li><b>不可</b>放在 <span class="kw">CHAIN … ENDCHAIN</span> 之內。</li>
+    <li><b>不必</b>有自己的 OK_CODE。</li>
+    <li>Subscreen Area 的<b>名稱不可重複</b>。</li>
+    <li><b>不會</b>有 <span class="kw">MODULE … AT EXIT-COMMAND</span>。</li>
+    <li><b>不會</b>有自己的 Titlebar、PF-STATUS、SET SCREEN、LEAVE SCREEN。</li>
+    <li>Dynpro Type <b>必須是 Subscreen</b>。</li>
+  </ul>
+
+  <pre><code class="abap">*----------------------------------------------------------------------*
+*  跨程式呼叫 Subscreen（Screen Exit / Enhancement 的核心機制）
+*  情境：程式 A 的畫面 100，要嵌入程式 B（通常是 Function Group）的 0100
+*----------------------------------------------------------------------*
+PROCESS BEFORE OUTPUT.
+  MODULE export_data.                              " 先把資料丟給 B
+  CALL SUBSCREEN suba1 INCLUDING 'SAPLXXXX' '0100'.
+
+PROCESS AFTER INPUT.
+  MODULE user_exit_cmd AT EXIT-COMMAND.
+  CALL SUBSCREEN suba1.
+  MODULE import_data.                              " 再把 B 改過的值收回來
+  FIELD f1 MODULE check_f1.
+  CHAIN.
+    FIELD f2, f3.
+    MODULE check_f3.
+  ENDCHAIN.
+  MODULE user_command_0100.</code></pre>
+
+  <pre><code class="abap">" 對應的兩個模組：靠 Function Module 當「資料傳送帶」
+MODULE export_data OUTPUT.
+  CALL FUNCTION 'Z_SUBSCR_SET_DATA'      " 存進 FG 的全域變數
+    EXPORTING is_data = gs_data.
+ENDMODULE.
+
+MODULE import_data INPUT.
+  CALL FUNCTION 'Z_SUBSCR_GET_DATA'      " 取回 FG 的全域變數
+    IMPORTING es_data = gs_data.
+ENDMODULE.</code></pre>
+
+  <div class="warn">當程式 A 的 CALL SUBSCREEN 指向程式 B 時，<b>Subscreen 只能存取 B 自己的 GLOBAL DATA</b>——它看不到 A 的變數。所以程式 B 一般會是一個 <b>Function Group</b>，用 FM 當進出口。<b>這正是 SAP Screen Exit（Enhancement）的原理</b>：標準畫面挖一塊 Subscreen Area，你在自己的 FG 裡畫子畫面，再用 EXIT_SAPxxx 的 FM 收送資料。</div>
+
+  <h3 id="ch04-2-13">13. Tabstrip 表頁籤控制項</h3>
+  <p><b>第 09 節。</b>Tabstrip 就是「多個 Subscreen ＋ 一排頁籤按鈕」。強烈建議<b>用精靈（Wizard）產生</b>，它會自動幫你建常數、CONTROLS 宣告、PBO/PAI 模組，並把程式塞進三支 INCLUDE。</p>
+
+  <h4>精靈第一個選項：兩種捲動模式（一定要選對）</h4>
+  <table>
+    <thead><tr><th>模式</th><th>Subscreen Area</th><th>Function Type</th><th>特性</th></tr></thead>
+    <tbody>
+      <tr><td><b>Scrolling local in tabstrip control</b>（scroll in SAP GUI）</td><td><b>一個頁籤一個</b> Subscreen Area</td><td><b>P</b></td><td>切換頁籤<b>不送伺服器</b>，速度快；但所有頁籤的資料一次全部載入</td></tr>
+      <tr><td><b>PAI scrolling in tabstrip control</b>（scroll on application server）</td><td><b>所有頁籤共用一個</b> Subscreen Area</td><td>空白</td><td>切換頁籤<b>會觸發 PAI</b>，可以做檢查、可以延遲載入；頁籤多時省記憶體</td></tr>
+    </tbody>
+  </table>
+
+  <pre><code class="abap">*&amp;---------------------------------------------------------------------*
+*&amp; Include Z202202_41_TOP   " Tabstrip 精靈產生的宣告（不必修改）
+*&amp;---------------------------------------------------------------------*
+*&amp;SPWIZARD: FUNCTION CODES FOR TABSTRIP 'TAB'
+CONSTANTS: BEGIN OF c_tab,
+             tab1 TYPE sy-ucomm VALUE 'TAB_FC1',
+             tab2 TYPE sy-ucomm VALUE 'TAB_FC2',
+           END OF c_tab.
+
+*&amp;SPWIZARD: DATA FOR TABSTRIP 'TAB'
+CONTROLS: tab TYPE TABSTRIP.              " ★ Tabstrip 的專用型別
+
+DATA: BEGIN OF g_tab,
+        subscreen   TYPE sy-dynnr,                       " 目前顯示的子螢幕編號
+        prog        TYPE sy-repid VALUE 'Z202202_41',    " 目前程式
+        pressed_tab TYPE sy-ucomm VALUE c_tab-tab1,      " 目前被按的頁籤
+      END OF g_tab.</code></pre>
+
+  <pre><code class="abap">*&amp;---------------------------------------------------------------------*
+*&amp; Include Z202202_41_PBO   " 設定 active tab 與對應的子螢幕
+*&amp;---------------------------------------------------------------------*
+MODULE tab_active_tab_set OUTPUT.
+  tab-activetab = g_tab-pressed_tab.       " ★ 讓頁籤反白在正確位置
+  CASE g_tab-pressed_tab.
+    WHEN c_tab-tab1. g_tab-subscreen = '2002'.
+    WHEN c_tab-tab2. g_tab-subscreen = '2003'.
+    WHEN OTHERS.
+      "&amp;SPWIZARD: DO NOTHING
+  ENDCASE.
+ENDMODULE.</code></pre>
+
+  <pre><code class="abap">*&amp;---------------------------------------------------------------------*
+*&amp; Include Z202202_41_PAI   " 記住使用者按了哪個頁籤
+*&amp;---------------------------------------------------------------------*
+MODULE tab_active_tab_get INPUT.
+  ok_code = sy-ucomm.
+  CASE ok_code.
+    WHEN c_tab-tab1. g_tab-pressed_tab = c_tab-tab1.
+    WHEN c_tab-tab2. g_tab-pressed_tab = c_tab-tab2.
+    WHEN OTHERS.
+      "&amp;SPWIZARD: DO NOTHING
+  ENDCASE.
+ENDMODULE.</code></pre>
+
+  <pre><code class="abap">*----------------------------------------------------------------------*
+*  主畫面 2001 加上 Tabstrip 之後的完整 flow logic
+*----------------------------------------------------------------------*
+PROCESS BEFORE OUTPUT.
+*&amp;SPWIZARD: PBO FLOW LOGIC FOR TABSTRIP 'TAB'
+  MODULE tab_active_tab_set.
+  CALL SUBSCREEN tab_sca
+    INCLUDING g_tab-prog g_tab-subscreen.
+
+  MODULE status_2001.
+  MODULE modify_screen.
+  MODULE initial.
+  MODULE list_values.
+  CALL SUBSCREEN sub1 INCLUDING sy-repid gv_screenid.
+
+PROCESS AFTER INPUT.
+  MODULE cancel AT EXIT-COMMAND.        " ★ E 類移到最前面
+*&amp;SPWIZARD: PAI FLOW LOGIC FOR TABSTRIP 'TAB'
+  CALL SUBSCREEN tab_sca.
+  MODULE tab_active_tab_get.
+
+  FIELD fld1 MODULE check1 ON REQUEST.
+  FIELD fld2 MODULE check2 ON INPUT.
+  FIELD fld3 MODULE check3.
+  MODULE user_command_2001.</code></pre>
+
+  <div class="tip">動態控制頁籤：把某個頁籤變灰或隱藏，做法是在 PBO 用 <span class="kw">LOOP AT SCREEN</span> 找 <span class="kw">screen-name = 'TAB_FC2'</span> 設 <span class="kw">screen-active = 0</span>；或直接 <span class="kw">SET PF-STATUS … EXCLUDING</span>。另外可以用 <span class="kw">tab-activetab = c_tab-tab2.</span> 在程式中強制切到某一頁。</div>
+  <div class="note">Tabstrip 精靈會自動建立三支 INCLUDE（TOP／PBO／PAI），存檔並啟動後可以逐一觀察，<b>都不必修改</b>。INCLUDE 寫在主程式前面或後面效果相同。</div>
+
+  <h3 id="ch04-2-14">14. Table Control：觀念與精靈</h3>
+  <p><b>第 12、13、20 節。</b>Table Control 就是畫面上的「可編輯表格」。它跟 ALV Grid 的差別在於：<b>Table Control 是 Dynpro 原生元件</b>，欄位就是螢幕欄位，可以逐格控制屬性、逐格做 FIELD 檢查；而 ALV Grid 是 GUI Control（畫面外掛）。</p>
+
+  <table>
+    <thead><tr><th>比較</th><th>Table Control</th><th>CL_GUI_ALV_GRID</th></tr></thead>
+    <tbody>
+      <tr><td>本質</td><td>Dynpro 元件</td><td>GUI Control（Custom Container）</td></tr>
+      <tr><td>編輯</td><td>天生可編輯，欄位級檢查最細</td><td>要設 edit＝X，檢查靠事件</td></tr>
+      <tr><td>排序／篩選／匯出</td><td><b>要自己寫</b></td><td>內建</td></tr>
+      <tr><td>資料量</td><td>幾百到幾千列還好（只送可見列）</td><td>上萬列較佳</td></tr>
+      <tr><td>逐列不同屬性</td><td><b>非常容易</b>（迴圈內改 screen）</td><td>要用 style 表</td></tr>
+      <tr><td>建議</td><td>單據明細維護（表頭＋明細）</td><td>報表、大量清單</td></tr>
+    </tbody>
+  </table>
+
+  <h4>什麼時候會觸動 PAI？（可用 <span class="kw">/h</span> Debug 實測）</h4>
+  <ul>
+    <li><b>不會</b>觸動 PAI：水平捲動、調整欄寬、移動欄位順序、選取行列。</li>
+    <li><b>會</b>觸動 PAI：<b>垂直捲動</b>、儲存版面設定（Save layout）、按任何功能鍵。</li>
+  </ul>
+
+  <div class="warn">可以放進 Table Control 的資料來源，必須是 <b>Transparent Table</b> 或 <b>Structure Type</b>（DDIC 型別）。純程式內宣告的區域結構拉不進 Screen Painter，所以<b>做 Table Control 之前，先在 SE11 建好一個 Structure</b>——這是老師強調「設定較多，請善用精靈」的原因。</div>
+
+  <h4>Table Control Wizard 的九個步驟</h4>
+  <ol>
+    <li>建立程式與螢幕，並在 Element list 加 <b>OK_CODE</b>。</li>
+    <li>在 Layout 拉出 <b>Table Control Wizard</b>（<b>範圍不要拉太小</b>，否則欄位塞不下）。</li>
+    <li><b>Name of the table control</b>：命名（例如 TC_MARD）。</li>
+    <li><b>Table / Structure</b>：指定 DDIC 來源（選 Dictionary），以及對應的內表名。</li>
+    <li><b>Definition of Columns</b>：選取要顯示在畫面上的欄位。</li>
+    <li><b>Table control attributes</b>：可否編輯、可否選取列、標題列等。</li>
+    <li><b>Select additional table maintenance functions</b>：勾選<b>可捲動、插入列、刪除列、全選、取消全選</b>——勾了精靈才會產生對應的 FORM。</li>
+    <li><b>Set Includes</b>：指定四支 INCLUDE（TOP／O01／I01／F01）。</li>
+    <li><b>Finished</b>：完成後回主程式，把資料撈進內表，再 <span class="kw">CALL SCREEN</span>。</li>
+  </ol>
+
+  <div class="tip">老師的話：<b>「Table Control Wizard 所產生的代碼也重要，必須仔細的閱讀。我們手動新增時會用到。」</b> 第 13 節就是要你<b>不靠精靈再做一次</b>（貼 Table Control 而不是 Table Control Wizard），才會真的懂。</div>
+
+  <h4>Table Control 的核心變數</h4>
+  <pre><code class="abap">CONTROLS: tc_mard TYPE TABLEVIEW USING SCREEN 0100.
+" tc_mard 的型別實際上是 DDIC 結構 CXTAB_CONTROL，重要欄位：
+
+" tc_mard-lines        總列數（決定捲軸長度）→ PBO 一定要設
+" tc_mard-top_line     目前顯示的第一列在內表中的索引 → 控制捲動位置
+" tc_mard-current_line PAI 迴圈中「目前這一列」在內表中的索引 → MODIFY 用
+" tc_mard-cols[]       欄位屬性內表（可改順序、寬度、是否可見）
+" tc_mard-invisible    整個 TC 隱藏
+" tc_mard-v_scroll / h_scroll  是否顯示捲軸
+
+" 另兩個系統欄位：
+" sy-loopc  PBO 迴圈中：畫面上「實際可見的列數」→ 捲動計算必備
+" sy-stepl  迴圈中：目前是畫面上的第幾列（1..sy-loopc）→ 逐列改屬性用</code></pre>
+
+  <h3 id="ch04-2-15">15. Table Control 的 Flow Logic 與同步機制</h3>
+  <p>Table Control 最難懂的地方在「畫面的可見列」與「內表的所有列」是兩回事。PBO 的 LOOP 負責把內表<b>倒進</b>畫面，PAI 的 LOOP 負責把畫面<b>倒回</b>內表。</p>
+
+  <pre><code class="abap">*----------------------------------------------------------------------*
+*  PBO：把內表倒進畫面
+*----------------------------------------------------------------------*
+PROCESS BEFORE OUTPUT.
+  MODULE status_0100.
+
+*&amp;SPWIZARD: PBO FLOW LOGIC FOR TABLECONTROL 'TC_MARD'
+  MODULE tc_mard_change_tc_attr.       " 設定 lines（捲軸長度）
+* MODULE tc_mard_change_col_attr.      " 需要時：整欄屬性（永久性修改）
+
+  LOOP AT   gt_mard
+       INTO gs_mard                    " ★ 沒有 header line 的現代寫法
+       WITH CONTROL tc_mard
+       CURSOR tc_mard-current_line.
+    MODULE tc_mard_get_lines.          " 記住 sy-loopc
+    MODULE tc_mard_change_field_attr.  " 逐列屬性（暫時性修改）
+  ENDLOOP.</code></pre>
+
+  <pre><code class="abap">*----------------------------------------------------------------------*
+*  PAI：把畫面倒回內表
+*----------------------------------------------------------------------*
+PROCESS AFTER INPUT.
+  MODULE exit_0100 AT EXIT-COMMAND.    " ★ E 類放最前面
+
+*&amp;SPWIZARD: PAI FLOW LOGIC FOR TABLECONTROL 'TC_MARD'
+  LOOP AT gt_mard.                     " 注意：PAI 的 LOOP 不帶 INTO
+    CHAIN.
+      FIELD gs_mard-matnr.
+      FIELD gs_mard-werks.
+      FIELD gs_mard-lgort.
+      FIELD gs_mard-labst.
+      MODULE tc_mard_modify ON CHAIN-REQUEST.   " 有改才寫回內表
+    ENDCHAIN.
+    FIELD gs_mard-mark
+      MODULE tc_mard_mark ON REQUEST.            " 勾選欄單獨處理
+  ENDLOOP.
+
+  MODULE tc_mard_user_command.</code></pre>
+
+  <pre><code class="abap">*&amp;---------------------------------------------------------------------*
+*&amp; PBO 的兩個模組
+*&amp;---------------------------------------------------------------------*
+MODULE tc_mard_change_tc_attr OUTPUT.
+  " ★ 一定要設 lines，否則捲軸長度不對、捲不到最後一列
+  DESCRIBE TABLE gt_mard LINES tc_mard-lines.
+ENDMODULE.
+
+MODULE tc_mard_get_lines OUTPUT.
+  " sy-loopc = 這一輪畫面上實際顯示了幾列，捲動計算要用
+  g_tc_mard_lines = sy-loopc.
+ENDMODULE.
+
+*&amp;---------------------------------------------------------------------*
+*&amp; PAI 的寫回模組：TC 與內表同步的關鍵一行
+*&amp;---------------------------------------------------------------------*
+MODULE tc_mard_modify INPUT.
+  MODIFY gt_mard
+    FROM gs_mard
+    INDEX tc_mard-current_line.        " ★ 用 current_line，不是 sy-tabix
+ENDMODULE.</code></pre>
+
+  <div class="warn"><b>Table Control 三大經典 bug：</b><br>
+  (1) <b>忘記 <span class="kw">DESCRIBE TABLE … LINES tc-lines</span></b> → 捲軸不動、只看得到第一頁。<br>
+  (2) <b>MODIFY 時用了 <span class="kw">sy-tabix</span> 而不是 <span class="kw">tc-current_line</span></b> → 改 A 列卻寫到 B 列，最常在捲動後爆出來。<br>
+  (3) <b>PAI 沒有 MODIFY</b> → 使用者輸入的值在下一次 PBO 被內表原值蓋回去，看起來像「改了又跳回來」。</div>
+
+  <h4>永久性 vs 暫時性屬性修改</h4>
+  <p>PBO 中 <b>LOOP 之前</b>改 <span class="kw">tc-cols</span> 屬於<b>永久性修改</b>（整欄一致）；<b>LOOP 之內</b>改 <span class="kw">screen-…</span> 屬於<b>暫時性修改</b>（只影響當列）。善加利用，可以做到「不同列屬性不同」，例如第二、四列必填。</p>
+
+  <pre><code class="abap">*&amp;---------------------------------------------------------------------*
+*&amp; 永久性修改：整欄變唯讀 / 調整欄位順序
+*&amp;---------------------------------------------------------------------*
+MODULE tc_mard_change_col_attr OUTPUT.
+  LOOP AT tc_mard-cols ASSIGNING FIELD-SYMBOL(&lt;ls_col&gt;).
+    CASE &lt;ls_col&gt;-screen-name.
+      WHEN 'GS_MARD-MATNR' OR 'GS_MARD-WERKS' OR 'GS_MARD-LGORT'.
+        &lt;ls_col&gt;-screen-input = 0.        " 主鍵欄整欄唯讀
+      WHEN 'GS_MARD-LABST'.
+        &lt;ls_col&gt;-index = 4.               " 調整這一欄的顯示順序
+    ENDCASE.
+  ENDLOOP.
+ENDMODULE.
+
+*&amp;---------------------------------------------------------------------*
+*&amp; 暫時性修改：逐列不同（放在 PBO 的 LOOP 之內）
+*&amp;---------------------------------------------------------------------*
+MODULE tc_mard_change_field_attr OUTPUT.
+  LOOP AT SCREEN.
+    " 已存在 DB 的列，主鍵不給改；新增列（NEW 旗標）才可以改
+    IF gs_mard-newrow &lt;&gt; abap_true
+       AND screen-name CS 'MATNR'.
+      screen-input = 0.
+    ENDIF.
+    " 偶數列的數量欄設成必填（示範暫時性修改的威力）
+    IF sy-stepl MOD 2 = 0 AND screen-name CS 'LABST'.
+      screen-required = 1.
+    ENDIF.
+    MODIFY SCREEN.
+  ENDLOOP.
+ENDMODULE.</code></pre>
+
+  <h3 id="ch04-2-16">16. 完整範例：一支可跑的 Table Control 維護程式</h3>
+  <p>把前面所有觀念組起來。這支 <b>ZTC_MARD_MAINT</b> 讓使用者用選擇畫面過濾庫存（MARD），在 Table Control 中編輯、插入、刪除、全選、排序，最後鎖定並存回資料庫。四支 INCLUDE ＋ 一個螢幕 0100 ＋ 一個 GUI Status 'S0100' ＋ 一個 GUI Title 'T0100'。</p>
+
+  <h4>16.1 SE11 先建結構</h4>
+  <p>先建一個結構 <b>ZSTC_MARD</b>（因為 Table Control 只吃 DDIC 型別）：</p>
+  <table>
+    <thead><tr><th>欄位</th><th>型別</th><th>說明</th></tr></thead>
+    <tbody>
+      <tr><td>MARK</td><td>CHAR1</td><td>選取欄（給刪除／全選用）</td></tr>
+      <tr><td>NEWROW</td><td>CHAR1</td><td>是否為新增列（自己加的旗標）</td></tr>
+      <tr><td>MATNR</td><td>MATNR</td><td>物料</td></tr>
+      <tr><td>WERKS</td><td>WERKS_D</td><td>工廠</td></tr>
+      <tr><td>LGORT</td><td>LGORT_D</td><td>儲存地點</td></tr>
+      <tr><td>LABST</td><td>LABST</td><td>非限制使用庫存</td></tr>
+      <tr><td>INSME</td><td>INSME</td><td>品檢庫存</td></tr>
+      <tr><td>SPEME</td><td>SPEME</td><td>凍結庫存</td></tr>
+      <tr><td>ICON</td><td>ICON-NAME (CHAR4)</td><td>紅綠燈欄位（Status Icon）</td></tr>
+    </tbody>
+  </table>
+
+  <h4>16.2 主程式</h4>
+  <pre><code class="abap">*&amp;---------------------------------------------------------------------*
+*&amp; Report ZTC_MARD_MAINT
+*&amp; 用 Table Control 維護庫存（MARD）— 完整可跑範例
+*&amp;---------------------------------------------------------------------*
+REPORT ztc_mard_maint.
+
+INCLUDE ztc_mard_maint_top.     " 宣告
+INCLUDE ztc_mard_maint_o01.     " PBO
+INCLUDE ztc_mard_maint_i01.     " PAI
+INCLUDE ztc_mard_maint_f01.     " FORM
+
+*----------------------------------------------------------------------*
+INITIALIZATION.
+  s_werks-sign = 'I'. s_werks-option = 'EQ'. s_werks-low = '1000'.
+  APPEND s_werks TO s_werks.
+
+START-OF-SELECTION.
+  PERFORM load_data.
+  IF gt_mard IS INITIAL.
+    MESSAGE '查無資料' TYPE 'S' DISPLAY LIKE 'E'.
+    RETURN.
+  ENDIF.
+  CALL SCREEN 0100.</code></pre>
+
+  <h4>16.3 INCLUDE ZTC_MARD_MAINT_TOP（宣告）</h4>
+  <pre><code class="abap">*&amp;---------------------------------------------------------------------*
+*&amp; Include ZTC_MARD_MAINT_TOP
+*&amp;---------------------------------------------------------------------*
+
+" ── 選擇畫面 ────────────────────────────────────────────────
+SELECT-OPTIONS: s_matnr FOR gs_mard-matnr,      " 見下方 gs_mard 宣告
+                s_werks FOR gs_mard-werks OBLIGATORY,
+                s_lgort FOR gs_mard-lgort.
+
+" ── Table Control 的工作區與內表 ────────────────────────────
+" ★ 螢幕欄位名稱必須是 GS_MARD-MATNR、GS_MARD-WERKS …
+DATA: gs_mard TYPE zstc_mard,
+      gt_mard TYPE STANDARD TABLE OF zstc_mard WITH EMPTY KEY,
+      gt_orig TYPE STANDARD TABLE OF zstc_mard WITH EMPTY KEY.  " 原始快照，用來比對異動
+
+" ── Table Control 本體宣告 ──────────────────────────────────
+*&amp;SPWIZARD: DECLARATION OF TABLECONTROL 'TC_MARD' ITSELF
+CONTROLS: tc_mard TYPE TABLEVIEW USING SCREEN 0100.
+
+*&amp;SPWIZARD: LINES OF TABLECONTROL 'TC_MARD'
+DATA: g_tc_mard_lines TYPE sy-loopc.        " PBO 記錄可見列數
+
+" ── 其他 ────────────────────────────────────────────────────
+DATA: ok_code    TYPE sy-ucomm,
+      gv_ok      TYPE sy-ucomm,
+      gv_changed TYPE abap_bool,            " 是否有未存檔的異動
+      gv_sortdir TYPE c LENGTH 1.           " 排序方向 A / D
+
+CONSTANTS: gc_icon_ok   TYPE icon-name VALUE '@08@',   " 綠燈
+           gc_icon_warn TYPE icon-name VALUE '@09@',   " 黃燈
+           gc_icon_ng   TYPE icon-name VALUE '@0A@'.   " 紅燈</code></pre>
+
+  <h4>16.4 螢幕 0100 的 Flow Logic</h4>
+  <pre><code class="abap">*----------------------------------------------------------------------*
+*  Screen 0100 (Normal)  Next screen = 0
+*----------------------------------------------------------------------*
+PROCESS BEFORE OUTPUT.
+  MODULE status_0100.
+  MODULE tc_mard_change_tc_attr.
+  MODULE tc_mard_change_col_attr.
+
+  LOOP AT   gt_mard
+       INTO gs_mard
+       WITH CONTROL tc_mard
+       CURSOR tc_mard-current_line.
+    MODULE tc_mard_get_lines.
+    MODULE tc_mard_change_field_attr.
+  ENDLOOP.
+
+PROCESS AFTER INPUT.
+  MODULE exit_0100 AT EXIT-COMMAND.          " ★ Function Type = E
+
+  LOOP AT gt_mard.
+    CHAIN.
+      FIELD gs_mard-labst.
+      FIELD gs_mard-insme.
+      FIELD gs_mard-speme.
+      MODULE tc_mard_modify ON CHAIN-REQUEST.
+    ENDCHAIN.
+    FIELD gs_mard-mark MODULE tc_mard_mark ON REQUEST.
+  ENDLOOP.
+
+  MODULE tc_mard_user_command.</code></pre>
+
+  <h4>16.5 INCLUDE ZTC_MARD_MAINT_O01（PBO）</h4>
+  <pre><code class="abap">*&amp;---------------------------------------------------------------------*
+*&amp; Include ZTC_MARD_MAINT_O01
+*&amp;---------------------------------------------------------------------*
+MODULE status_0100 OUTPUT.
+  " 沒有異動時把 SAVE 灰掉
+  DATA(lt_excl) = COND ttftit( WHEN gv_changed = abap_false
+                               THEN VALUE #( ( 'SAVE' ) ) ).
+  SET PF-STATUS 'S0100' EXCLUDING lt_excl.
+  SET TITLEBAR  'T0100' WITH lines( gt_mard ).
+ENDMODULE.
+
+*----------------------------------------------------------------------*
+MODULE tc_mard_change_tc_attr OUTPUT.
+  DESCRIBE TABLE gt_mard LINES tc_mard-lines.   " ★ 捲軸長度
+ENDMODULE.
+
+*----------------------------------------------------------------------*
+MODULE tc_mard_get_lines OUTPUT.
+  g_tc_mard_lines = sy-loopc.                   " ★ 可見列數
+ENDMODULE.
+
+*----------------------------------------------------------------------*
+MODULE tc_mard_change_col_attr OUTPUT.          " 永久性：主鍵整欄唯讀
+  LOOP AT tc_mard-cols ASSIGNING FIELD-SYMBOL(&lt;ls_col&gt;).
+    IF &lt;ls_col&gt;-screen-name CS 'MATNR'
+    OR &lt;ls_col&gt;-screen-name CS 'WERKS'
+    OR &lt;ls_col&gt;-screen-name CS 'LGORT'.
+      &lt;ls_col&gt;-screen-input = 0.
+    ENDIF.
+  ENDLOOP.
+ENDMODULE.
+
+*----------------------------------------------------------------------*
+MODULE tc_mard_change_field_attr OUTPUT.        " 暫時性：逐列不同
+  " 新增列才允許輸入主鍵
+  IF gs_mard-newrow = abap_true.
+    LOOP AT SCREEN.
+      IF screen-name CS 'MATNR' OR screen-name CS 'WERKS'
+      OR screen-name CS 'LGORT'.
+        screen-input = 1.
+        MODIFY SCREEN.
+      ENDIF.
+    ENDLOOP.
+  ENDIF.
+
+  " 紅綠燈：庫存為負亮紅燈，為零亮黃燈，其餘綠燈
+  gs_mard-icon = COND #( WHEN gs_mard-labst &lt; 0 THEN gc_icon_ng
+                         WHEN gs_mard-labst = 0 THEN gc_icon_warn
+                         ELSE gc_icon_ok ).
+ENDMODULE.</code></pre>
+
+  <h4>16.6 INCLUDE ZTC_MARD_MAINT_I01（PAI）</h4>
+  <pre><code class="abap">*&amp;---------------------------------------------------------------------*
+*&amp; Include ZTC_MARD_MAINT_I01
+*&amp;---------------------------------------------------------------------*
+MODULE exit_0100 INPUT.                 " Function Type = E，跳過所有檢查
+  CASE ok_code.
+    WHEN 'BACK' OR 'EXIT' OR 'CANCEL'.
+      IF gv_changed = abap_true.
+        CALL FUNCTION 'POPUP_TO_CONFIRM'
+          EXPORTING
+            titlebar              = '離開確認'
+            text_question         = '資料尚未存檔，確定要離開嗎？'
+            default_button        = '2'
+            display_cancel_button = abap_false
+          IMPORTING
+            answer                = DATA(lv_answer)
+          EXCEPTIONS
+            OTHERS                = 1.
+        IF lv_answer &lt;&gt; '1'.
+          RETURN.                       " 使用者說不要，留在原畫面
+        ENDIF.
+      ENDIF.
+      PERFORM unlock_all.
+      LEAVE TO SCREEN 0.
+  ENDCASE.
+ENDMODULE.
+
+*----------------------------------------------------------------------*
+MODULE tc_mard_modify INPUT.            " ★ 畫面 → 內表 的同步
+  gs_mard-newrow = gs_mard-newrow.      " 保留旗標
+  MODIFY gt_mard FROM gs_mard INDEX tc_mard-current_line.
+  gv_changed = abap_true.
+ENDMODULE.
+
+*----------------------------------------------------------------------*
+MODULE tc_mard_mark INPUT.              " 勾選欄的同步
+  MODIFY gt_mard FROM gs_mard INDEX tc_mard-current_line
+    TRANSPORTING mark.
+ENDMODULE.
+
+*----------------------------------------------------------------------*
+MODULE tc_mard_user_command INPUT.
+  gv_ok = ok_code.
+  CLEAR ok_code.
+
+  " ★ 先交給 Table Control 的標準處理（插入 / 刪除 / 捲動 / 全選）
+  PERFORM user_ok_tc USING    'TC_MARD'
+                              'GT_MARD'
+                              'MARK'
+                     CHANGING gv_ok.
+
+  CASE gv_ok.
+    WHEN 'SAVE'.   PERFORM save_data.
+    WHEN 'REFR'.   PERFORM load_data.
+    WHEN 'SORTA'.  PERFORM sort_tc USING 'A'.
+    WHEN 'SORTD'.  PERFORM sort_tc USING 'D'.
+    WHEN 'TOP'.    tc_mard-top_line = 1.
+    WHEN 'BOTM'.   tc_mard-top_line = nmax( val1 = 1
+                                            val2 = lines( gt_mard ) - g_tc_mard_lines + 1 ).
+    WHEN OTHERS.
+  ENDCASE.
+ENDMODULE.</code></pre>
+
+  <h4>16.7 INCLUDE ZTC_MARD_MAINT_F01（FORM）</h4>
+  <pre><code class="abap">*&amp;---------------------------------------------------------------------*
+*&amp; Include ZTC_MARD_MAINT_F01
+*&amp;---------------------------------------------------------------------*
+FORM load_data.
+  SELECT matnr, werks, lgort, labst, insme, speme
+    FROM mard
+    WHERE matnr IN @s_matnr
+      AND werks IN @s_werks
+      AND lgort IN @s_lgort
+    ORDER BY matnr, werks, lgort
+    INTO CORRESPONDING FIELDS OF TABLE @gt_mard
+    UP TO 1000 ROWS.
+
+  gt_orig = gt_mard.                    " 保留快照，存檔時比對
+  CLEAR: gv_changed.
+  tc_mard-top_line = 1.
+ENDFORM.
+
+*----------------------------------------------------------------------*
+FORM save_data.
+  " 只挑真的有變動的列
+  DATA(lt_upd) = VALUE tt_zstc_mard(
+    FOR ls IN gt_mard
+    WHERE ( matnr IS NOT INITIAL )
+    ( COND #( WHEN NOT line_exists( gt_orig[ matnr = ls-matnr
+                                             werks = ls-werks
+                                             lgort = ls-lgort
+                                             labst = ls-labst
+                                             insme = ls-insme
+                                             speme = ls-speme ] )
+              THEN ls ) ) ).
+  DELETE lt_upd WHERE matnr IS INITIAL.
+
+  IF lt_upd IS INITIAL.
+    MESSAGE '沒有需要儲存的異動' TYPE 'S'.
+    RETURN.
+  ENDIF.
+
+  " ── 鎖定 ──
+  LOOP AT lt_upd INTO DATA(ls_upd).
+    CALL FUNCTION 'ENQUEUE_EMMARD'
+      EXPORTING
+        mode_mard      = 'E'
+        mandt          = sy-mandt
+        matnr          = ls_upd-matnr
+        werks          = ls_upd-werks
+        lgort          = ls_upd-lgort
+        _scope         = '2'
+      EXCEPTIONS
+        foreign_lock   = 1
+        system_failure = 2
+        OTHERS         = 3.
+    IF sy-subrc &lt;&gt; 0.
+      MESSAGE |物料 { ls_upd-matnr } 已被 { sy-msgv1 } 鎖定| TYPE 'E'.
+      RETURN.
+    ENDIF.
+  ENDLOOP.
+
+  " ── 寫回 ──
+  " ★ 實務上庫存數量絕不可以直接 UPDATE MARD，必須走 MIGO / BAPI_GOODSMVT_CREATE。
+  "   這裡僅示範 Table Control 的存檔骨架，請換成自建 Z 表或 BAPI。
+  TRY.
+      MODIFY zstc_stock FROM TABLE @lt_upd.
+      IF sy-subrc = 0.
+        COMMIT WORK AND WAIT.
+        gt_orig = gt_mard.
+        CLEAR gv_changed.
+        MESSAGE |已儲存 { lines( lt_upd ) } 筆| TYPE 'S'.
+      ELSE.
+        ROLLBACK WORK.
+        MESSAGE '存檔失敗' TYPE 'E'.
+      ENDIF.
+    CATCH cx_sy_open_sql_db INTO DATA(lx_db).
+      ROLLBACK WORK.
+      MESSAGE lx_db-&gt;get_text( ) TYPE 'E'.
+  ENDTRY.
+
+  PERFORM unlock_all.
+ENDFORM.
+
+*----------------------------------------------------------------------*
+FORM unlock_all.
+  CALL FUNCTION 'DEQUEUE_ALL'.          " 最省事的全解鎖
+ENDFORM.
+
+*----------------------------------------------------------------------*
+FORM sort_tc USING p_dir TYPE c.
+  " Table Control 沒有內建排序，要自己排內表
+  IF p_dir = 'A'.
+    SORT gt_mard BY matnr ASCENDING werks ASCENDING lgort ASCENDING.
+  ELSE.
+    SORT gt_mard BY matnr DESCENDING werks DESCENDING lgort DESCENDING.
+  ENDIF.
+  tc_mard-top_line = 1.                 " 排完回到第一列
+ENDFORM.</code></pre>
+
+  <div class="warn"><b>絕對不要直接 UPDATE MARD / MARC / MBEW。</b> 在 S/4HANA 中庫存主檔仍由 MM 模組維護，數量異動必須走 <b>MIGO / BAPI_GOODSMVT_CREATE</b>；物料主檔異動走 <b>BAPI_MATERIAL_SAVEDATA</b>。上面的範例只是拿 MARD 當「畫面上的資料來源」示範 Table Control 的骨架，實際存檔請改寫進自建的 Z 表或呼叫 BAPI。</div>
+
+  <h3 id="ch04-2-17">17. Table Control 的標準 FORM：插入、刪除、捲動、全選</h3>
+  <p>精靈產生的 <b>TABLECONTROL_FORMS</b> 這一段程式是 SAP 的標準寫法，用 <b>Field Symbol ＋ 動態 ASSIGN</b> 做到「一套 FORM 服務所有 Table Control」。手動建 Table Control 時，把這一段複製過去就好。</p>
+
+  <h4>17.1 總入口 USER_OK_TC</h4>
+  <pre><code class="abap">*&amp;---------------------------------------------------------------------*
+*&amp;      Form  USER_OK_TC   " 攔截所有 &lt;TC 名稱&gt;_&lt;動作&gt; 格式的功能碼
+*&amp;---------------------------------------------------------------------*
+FORM user_ok_tc USING    p_tc_name    TYPE dynfnam
+                         p_table_name
+                         p_mark_name
+                CHANGING p_ok         TYPE sy-ucomm.
+
+  DATA: l_ok     TYPE sy-ucomm,
+        l_offset TYPE i.
+
+  " 功能碼必須以 TC 名稱開頭，例如 TC_MARD_INSR
+  SEARCH p_ok FOR p_tc_name.
+  IF sy-subrc &lt;&gt; 0.
+    EXIT.                               " 不是 TC 的功能碼，交回主流程
+  ENDIF.
+  l_offset = strlen( p_tc_name ) + 1.
+  l_ok = p_ok+l_offset.
+
+  CASE l_ok.
+    WHEN 'INSR'.                        " 插入列
+      PERFORM fcode_insert_row USING p_tc_name p_table_name.
+      CLEAR p_ok.
+
+    WHEN 'DELE'.                        " 刪除列
+      PERFORM fcode_delete_row USING p_tc_name p_table_name p_mark_name.
+      CLEAR p_ok.
+
+    WHEN 'P--' OR                       " 第一頁
+         'P-'  OR                       " 上一頁
+         'P+'  OR                       " 下一頁
+         'P++'.                         " 最後一頁
+      PERFORM compute_scrolling_in_tc USING p_tc_name l_ok.
+      CLEAR p_ok.
+
+    WHEN 'MARK'.                        " 全選
+      PERFORM fcode_tc_mark_lines USING p_tc_name p_table_name p_mark_name.
+      CLEAR p_ok.
+
+    WHEN 'DMRK'.                        " 取消全選
+      PERFORM fcode_tc_demark_lines USING p_tc_name p_table_name p_mark_name.
+      CLEAR p_ok.
+
+*   WHEN 'L--' OR 'L-' OR 'R+' OR 'R++'.   " 水平捲動（精靈預設註解掉）
+*   WHEN 'SASCEND' OR 'SDESCEND'.          " 欄位排序（要自己實作）
+  ENDCASE.
+ENDFORM.</code></pre>
+
+  <div class="tip">口訣：<b>Table Control 的功能碼＝「TC 名稱 ＋ 底線 ＋ 動作」</b>，例如 TC 叫 <b>TC_MARD</b>，插入列就是 <b>TC_MARD_INSR</b>、刪除是 <b>TC_MARD_DELE</b>、全選是 <b>TC_MARD_MARK</b>、下一頁是 <b>TC_MARD_P+</b>。在 SE41 建 GUI Status 時就照這個規則命名，USER_OK_TC 才攔得到。</div>
+
+  <h4>17.2 插入列</h4>
+  <pre><code class="abap">*&amp;---------------------------------------------------------------------*
+*&amp;      Form  FCODE_INSERT_ROW
+*&amp;---------------------------------------------------------------------*
+FORM fcode_insert_row USING p_tc_name TYPE dynfnam
+                            p_table_name.
+
+  DATA: l_lines_name TYPE feld-name,
+        l_selline    TYPE sy-stepl,
+        l_lastline   TYPE i,
+        l_line       TYPE i,
+        l_table_name TYPE feld-name.
+
+  FIELD-SYMBOLS: &lt;tc&gt;    TYPE cxtab_control,
+                 &lt;table&gt; TYPE STANDARD TABLE,
+                 &lt;lines&gt; TYPE i.
+
+  ASSIGN (p_tc_name) TO &lt;tc&gt;.
+
+  " 取得 TC 所對應的內表（加 [] 表示表體，不是 header line）
+  l_table_name = |{ p_table_name }[]|.
+  ASSIGN (l_table_name) TO &lt;table&gt;.
+
+  " 取得畫面可見列數變數 G_&lt;TC 名稱&gt;_LINES
+  l_lines_name = |G_{ p_tc_name }_LINES|.
+  ASSIGN (l_lines_name) TO &lt;lines&gt;.
+
+  " 游標在哪一列？
+  GET CURSOR LINE l_selline.
+  IF sy-subrc &lt;&gt; 0.                     " 游標不在表內 → 追加到最後
+    l_selline = &lt;tc&gt;-lines + 1.
+    IF l_selline &gt; &lt;lines&gt;.
+      &lt;tc&gt;-top_line = l_selline - &lt;lines&gt; + 1.
+    ELSE.
+      &lt;tc&gt;-top_line = 1.
+    ENDIF.
+  ELSE.                                 " 游標在表內 → 插在游標那一列
+    l_selline  = &lt;tc&gt;-top_line + l_selline - 1.
+    l_lastline = &lt;tc&gt;-top_line + &lt;lines&gt; - 1.
+  ENDIF.
+  l_line = l_selline - &lt;tc&gt;-top_line + 1.
+
+  INSERT INITIAL LINE INTO &lt;table&gt; INDEX l_selline.
+  &lt;tc&gt;-lines = &lt;tc&gt;-lines + 1.
+  SET CURSOR LINE l_line.
+ENDFORM.</code></pre>
+
+  <h4>17.3 刪除列（依 MARK 欄）</h4>
+  <pre><code class="abap">*&amp;---------------------------------------------------------------------*
+*&amp;      Form  FCODE_DELETE_ROW
+*&amp;---------------------------------------------------------------------*
+FORM fcode_delete_row USING p_tc_name TYPE dynfnam
+                            p_table_name
+                            p_mark_name.
+
+  DATA l_table_name TYPE feld-name.
+  FIELD-SYMBOLS: &lt;tc&gt;         TYPE cxtab_control,
+                 &lt;table&gt;      TYPE STANDARD TABLE,
+                 &lt;wa&gt;         TYPE any,
+                 &lt;mark_field&gt; TYPE any.
+
+  ASSIGN (p_tc_name) TO &lt;tc&gt;.
+  l_table_name = |{ p_table_name }[]|.
+  ASSIGN (l_table_name) TO &lt;table&gt;.
+
+  DESCRIBE TABLE &lt;table&gt; LINES &lt;tc&gt;-lines.
+
+  LOOP AT &lt;table&gt; ASSIGNING &lt;wa&gt;.
+    ASSIGN COMPONENT p_mark_name OF STRUCTURE &lt;wa&gt; TO &lt;mark_field&gt;.
+    IF &lt;mark_field&gt; = 'X'.
+      DELETE &lt;table&gt; INDEX syst-tabix.
+      IF sy-subrc = 0.
+        &lt;tc&gt;-lines = &lt;tc&gt;-lines - 1.
+      ENDIF.
+    ENDIF.
+  ENDLOOP.
+ENDFORM.</code></pre>
+
+  <div class="warn">SAP 這段標準碼在 <b>LOOP 中 DELETE 同一張表</b>。它之所以「能動」，是因為 DELETE 之後 <span class="kw">sy-tabix</span> 的後續處理剛好抵銷；但這是脆弱寫法。自己寫時建議改成一行：<span class="kw">DELETE gt_mard WHERE mark = abap_true.</span>，再重設 <span class="kw">tc-lines</span>，既安全又快。</div>
+
+  <h4>17.4 垂直捲動</h4>
+  <pre><code class="abap">*&amp;---------------------------------------------------------------------*
+*&amp;      Form  COMPUTE_SCROLLING_IN_TC   " 用標準 FM 算出新的 top_line
+*&amp;---------------------------------------------------------------------*
+FORM compute_scrolling_in_tc USING p_tc_name
+                                   p_ok.
+  DATA: l_tc_new_top_line TYPE i,
+        l_tc_name         TYPE feld-name,
+        l_tc_lines_name   TYPE feld-name,
+        l_tc_field_name   TYPE feld-name.
+
+  FIELD-SYMBOLS: &lt;tc&gt;    TYPE cxtab_control,
+                 &lt;lines&gt; TYPE i.
+
+  ASSIGN (p_tc_name) TO &lt;tc&gt;.
+  l_tc_lines_name = |G_{ p_tc_name }_LINES|.
+  ASSIGN (l_tc_lines_name) TO &lt;lines&gt;.
+
+  IF &lt;tc&gt;-lines = 0.                    " 沒有任何一列
+    l_tc_new_top_line = 1.
+  ELSE.
+    CALL FUNCTION 'SCROLLING_IN_TABLE'
+      EXPORTING
+        entry_act      = &lt;tc&gt;-top_line
+        entry_from     = 1
+        entry_to       = &lt;tc&gt;-lines
+        last_page_full = 'X'
+        loops          = &lt;lines&gt;
+        ok_code        = p_ok
+        overlapping    = 'X'
+      IMPORTING
+        entry_new      = l_tc_new_top_line
+      EXCEPTIONS
+        OTHERS         = 0.
+  ENDIF.
+
+  " 捲動後把游標放回同一欄的第一列
+  GET CURSOR FIELD l_tc_field_name AREA l_tc_name.
+  IF syst-subrc = 0 AND l_tc_name = p_tc_name.
+    SET CURSOR FIELD l_tc_field_name LINE 1.
+  ENDIF.
+
+  &lt;tc&gt;-top_line = l_tc_new_top_line.
+ENDFORM.</code></pre>
+
+  <h4>17.5 全選 / 取消全選</h4>
+  <pre><code class="abap">*&amp;---------------------------------------------------------------------*
+*&amp;      Form  FCODE_TC_MARK_LINES / FCODE_TC_DEMARK_LINES
+*&amp;---------------------------------------------------------------------*
+FORM fcode_tc_mark_lines USING p_tc_name p_table_name p_mark_name.
+  PERFORM set_all_marks USING p_tc_name p_table_name p_mark_name 'X'.
+ENDFORM.
+
+FORM fcode_tc_demark_lines USING p_tc_name p_table_name p_mark_name.
+  PERFORM set_all_marks USING p_tc_name p_table_name p_mark_name space.
+ENDFORM.
+
+FORM set_all_marks USING p_tc_name p_table_name p_mark_name p_value.
+  DATA l_table_name TYPE feld-name.
+  FIELD-SYMBOLS: &lt;tc&gt;         TYPE cxtab_control,
+                 &lt;table&gt;      TYPE STANDARD TABLE,
+                 &lt;wa&gt;         TYPE any,
+                 &lt;mark_field&gt; TYPE any.
+
+  ASSIGN (p_tc_name) TO &lt;tc&gt;.
+  l_table_name = |{ p_table_name }[]|.
+  ASSIGN (l_table_name) TO &lt;table&gt;.
+
+  LOOP AT &lt;table&gt; ASSIGNING &lt;wa&gt;.
+    ASSIGN COMPONENT p_mark_name OF STRUCTURE &lt;wa&gt; TO &lt;mark_field&gt;.
+    &lt;mark_field&gt; = p_value.
+  ENDLOOP.
+ENDFORM.</code></pre>
+
+  <h4>17.6 老師的 ZSORT 小範例：控制行號與退出鍵</h4>
+  <p>示範 <span class="kw">TOP_LINE</span> 的效果（一開機就從第 2 列開始顯示），以及最基本的 BACK 處理。第一次設計時老師故意<b>漏掉退出鍵</b>，讓大家體會「按不出去」的痛。</p>
+
+  <pre><code class="abap">*&amp;---------------------------------------------------------------------*
+*&amp; Report ZSORT   " 用 VALUE #( ) 準備測試資料，並控制 TOP_LINE
+*&amp;---------------------------------------------------------------------*
+REPORT zsort.
+
+DATA: gt_makt TYPE STANDARD TABLE OF makt WITH EMPTY KEY,
+      gs_makt TYPE makt.
+
+*&amp;SPWIZARD: DECLARATION OF TABLECONTROL 'TC_MAKT' ITSELF
+CONTROLS: tc_makt TYPE TABLEVIEW USING SCREEN 0100.
+DATA: g_tc_makt_lines TYPE sy-loopc,
+      ok_code         TYPE sy-ucomm.
+
+START-OF-SELECTION.
+  " VALUE #( ) 的分組寫法：BASE 之外，也可用「共用欄位 ( 差異欄位 )」
+  gt_makt = VALUE #(
+      matnr = 'APPLE' ( spras = 'M' maktx = 'APPLE-M' )
+                      ( spras = 'E' maktx = 'APPLE-E' )
+      matnr = 'GOOGL' ( spras = 'M' maktx = 'GOOGL-M' )
+                      ( spras = 'E' maktx = 'GOOGL-E' )
+      matnr = 'FACEB' ( spras = 'M' maktx = 'FACEB-M' )
+                      ( spras = 'E' maktx = 'FACEB-E' ) ).
+
+  tc_makt-top_line = 2.                 " ★ 一進畫面就從第 2 列開始顯示
+  CALL SCREEN 0100.
+
+*----------------------------------------------------------------------*
+MODULE status_0100 OUTPUT.
+  SET PF-STATUS 'ZSORT'.                " 記得要有 BACK / EXIT！
+ENDMODULE.
+
+MODULE tc_makt_change_tc_attr OUTPUT.
+  DESCRIBE TABLE gt_makt LINES tc_makt-lines.
+ENDMODULE.
+
+MODULE tc_makt_get_lines OUTPUT.
+  g_tc_makt_lines = sy-loopc.
+ENDMODULE.
+
+MODULE tc_makt_modify INPUT.
+  MODIFY gt_makt FROM gs_makt INDEX tc_makt-current_line.
+ENDMODULE.
+
+MODULE tc_makt_user_command INPUT.
+  DATA(lv_ok) = ok_code.
+  CLEAR ok_code.
+  PERFORM user_ok_tc USING 'TC_MAKT' 'GT_MAKT' ' ' CHANGING lv_ok.
+ENDMODULE.
+
+MODULE user_command_0100 INPUT.
+  CASE ok_code.
+    WHEN 'BACK'. LEAVE TO SCREEN 0.     " ★ 第一次設計時漏掉這個，就出不去了
+    WHEN OTHERS.
+  ENDCASE.
+  CLEAR ok_code.
+ENDMODULE.</code></pre>
+
+  <h3 id="ch04-2-18">18. Custom Control：把 ALV、編輯器、圖片、HTML 掛上畫面</h3>
+  <p><b>第 10 節。</b>Custom Control 是一塊「保留區」，執行時由 <b>CL_GUI_CUSTOM_CONTAINER</b> 接管，然後在裡面放任何 GUI Control。作法固定三步：<b>建 Container → 建 Control → 餵資料</b>，而且要用 <span class="kw">IF gv_init IS INITIAL.</span> 保證<b>只建一次</b>（PBO 每次都會跑）。</p>
+
+  <h4>18.1 文字編輯器 CL_GUI_TEXTEDIT</h4>
+  <pre><code class="abap">*&amp;---------------------------------------------------------------------*
+*&amp; TOP：宣告
+*&amp;---------------------------------------------------------------------*
+DATA: gv_init      TYPE abap_bool,
+      go_container TYPE REF TO cl_gui_custom_container,
+      go_editor    TYPE REF TO cl_gui_textedit.
+
+" 編輯器的內容用 80 碼的字元表承接
+TYPES: ty_line TYPE c LENGTH 80.
+DATA  gt_text TYPE STANDARD TABLE OF ty_line WITH EMPTY KEY.
+
+INITIALIZATION.
+  gt_text = VALUE #( ( '請在此開始輸入' ) ).</code></pre>
+
+  <pre><code class="abap">*&amp;---------------------------------------------------------------------*
+*&amp; Module STATUS_2001 OUTPUT   " PBO：建立 Container 與文字編輯器
+*&amp;---------------------------------------------------------------------*
+MODULE status_2001 OUTPUT.
+  SET PF-STATUS 'STATUS'.
+  SET TITLEBAR  'TITLE'.
+
+  IF gv_init IS INITIAL.
+    " ★ container_name 必須等於 Layout 上 Custom Control 的名稱
+    go_container = NEW cl_gui_custom_container( container_name = 'CUSCON' ).
+
+    IF go_container IS BOUND.
+      go_editor = NEW cl_gui_textedit(
+        parent                     = go_container
+        wordwrap_mode              = cl_gui_textedit=&gt;wordwrap_at_fixed_position
+        wordwrap_position          = 80
+        wordwrap_to_linebreak_mode = cl_gui_textedit=&gt;true ).
+
+      " 隱藏編輯器自己的工具列與狀態列（要更像 SAP 原生畫面時）
+      go_editor-&gt;set_toolbar_mode( 0 ).
+      go_editor-&gt;set_statusbar_mode( 0 ).
+    ENDIF.
+    gv_init = abap_true.
+  ENDIF.
+
+  go_editor-&gt;set_text_as_r3table( table = gt_text ).
+ENDMODULE.
+
+*&amp;---------------------------------------------------------------------*
+*&amp; PAI：把使用者打的字取回來（★ 一定要先 flush，否則拿到舊值）
+*&amp;---------------------------------------------------------------------*
+MODULE get_editor_text INPUT.
+  cl_gui_cfw=&gt;flush( ).
+  go_editor-&gt;get_text_as_r3table( IMPORTING table = gt_text ).
+ENDMODULE.</code></pre>
+
+  <div class="warn"><b>GUI Control 的黃金定律</b>：所有 <span class="kw">get_*</span> 之前一定要 <span class="kw">cl_gui_cfw=&gt;flush( )</span>，因為 Control 的值住在前端（SAP GUI），不 flush 就拿不到使用者最新輸入的內容。這是 Custom Control 最常見的「值抓不到」原因。</div>
+
+  <h4>18.2 掛 ALV Grid（CL_GUI_ALV_GRID）</h4>
+  <pre><code class="abap">DATA: go_cont TYPE REF TO cl_gui_custom_container,
+      go_grid TYPE REF TO cl_gui_alv_grid.
+
+MODULE status_0100 OUTPUT.
+  SET PF-STATUS 'S0100'.
+
+  IF go_grid IS NOT BOUND.
+    go_cont = NEW cl_gui_custom_container( container_name = 'ALV_AREA' ).
+    go_grid = NEW cl_gui_alv_grid( i_parent = go_cont ).
+
+    DATA(ls_layout) = VALUE lvc_s_layo( cwidth_opt = abap_true
+                                        zebra      = abap_true
+                                        sel_mode   = 'A'
+                                        grid_title = '庫存明細' ).
+
+    go_grid-&gt;set_table_for_first_display(
+      EXPORTING
+        i_structure_name = 'ZSTC_MARD'
+        is_layout        = ls_layout
+      CHANGING
+        it_outtab        = gt_mard ).
+  ELSE.
+    " 資料變了只要 refresh，不要重建物件
+    go_grid-&gt;refresh_table_display(
+      EXPORTING is_stable = VALUE lvc_s_stbl( row = abap_true col = abap_true ) ).
+  ENDIF.
+ENDMODULE.</code></pre>
+
+  <div class="tip">只是要「全螢幕看一張表」時，<b>不需要 Custom Control，也不需要建 Screen</b>——直接 <span class="kw">cl_salv_table=&gt;factory( )</span> 兩行搞定。要<b>編輯、事件、多容器分割</b>時才用 CL_GUI_ALV_GRID ＋ Custom Control。另外 <b>CL_GUI_DOCKING_CONTAINER</b> 可以「不畫 Screen 就把 ALV 掛在選擇畫面旁邊」，<b>CL_GUI_SPLITTER_CONTAINER</b> 可以把一塊 Custom Control 切成上下／左右多格。</div>
+
+  <h4>18.3 圖片 CL_GUI_PICTURE</h4>
+  <pre><code class="abap">DATA: go_pic_cont TYPE REF TO cl_gui_custom_container,
+      go_picture  TYPE REF TO cl_gui_picture.
+
+MODULE show_picture OUTPUT.
+  IF go_picture IS NOT BOUND.
+    go_pic_cont = NEW cl_gui_custom_container( container_name = 'PIC_AREA' ).
+    go_picture  = NEW cl_gui_picture( parent = go_pic_cont ).
+
+    " 圖片先用 SMW0 上傳成 MIME 物件，再用 DP 產生一個暫時 URL
+    DATA lv_url TYPE cndp_url.
+    CALL FUNCTION 'DP_PUBLISH_WWW_URL'
+      EXPORTING
+        objid    = 'ZLOGO'              " SMW0 上傳時給的物件名稱
+        lifetime = cndp_lifetime_transaction
+      IMPORTING
+        url      = lv_url
+      EXCEPTIONS
+        OTHERS   = 5.
+
+    IF sy-subrc = 0.
+      go_picture-&gt;load_picture_from_url( url = lv_url ).
+      go_picture-&gt;set_display_mode(
+        display_mode = cl_gui_picture=&gt;display_mode_fit_center ).
+    ENDIF.
+  ENDIF.
+ENDMODULE.</code></pre>
+
+  <div class="note"><b>第 11 節：上傳文件 SMW0</b>（講義有處誤植為 SWM0）。步驟：<span class="tcode">SMW0</span> → 選 <b>Binary data for WebRFC applications</b> → 指定 Package → Create → 給物件名稱與描述 → 上傳本機檔案。<b>前提是 SAP 主機必須由 BASIS 提前配置</b>（MIME repository / ICM）。上傳後就能用 DP_PUBLISH_WWW_URL 取得 URL 給 CL_GUI_PICTURE 或 SmartForms 使用。<span class="src">（依講義步驟整理）</span></div>
+
+  <h4>18.4 HTML CL_GUI_HTML_VIEWER</h4>
+  <pre><code class="abap">DATA: go_html_cont TYPE REF TO cl_gui_custom_container,
+      go_html      TYPE REF TO cl_gui_html_viewer.
+
+MODULE show_html OUTPUT.
+  IF go_html IS NOT BOUND.
+    go_html_cont = NEW cl_gui_custom_container( container_name = 'HTML_AREA' ).
+    go_html      = NEW cl_gui_html_viewer( parent = go_html_cont ).
+
+    " 方式一：直接餵 HTML 內容
+    DATA(lt_html) = VALUE w3htmltab(
+      ( line = '&lt;html&gt;&lt;body style="font-family:Arial"&gt;' )
+      ( line = '&lt;h2&gt;NCU SAP ！&lt;/h2&gt;' )
+      ( line = |&lt;p&gt;目前使用者：{ sy-uname }，日期：{ sy-datum DATE = USER }&lt;/p&gt;| )
+      ( line = '&lt;/body&gt;&lt;/html&gt;' ) ).
+
+    DATA lv_url TYPE c LENGTH 250.
+    go_html-&gt;load_data( IMPORTING assigned_url = lv_url
+                        CHANGING  data_table   = lt_html ).
+    go_html-&gt;show_url( url = lv_url ).
+
+    " 方式二：直接開外部網址
+    " go_html-&gt;show_url( url = 'https://help.sap.com' ).
+  ENDIF.
+ENDMODULE.</code></pre>
+
+  <div class="warn">Custom Control 裡的物件<b>離開畫面時要釋放</b>，否則同一個 session 反覆進出會累積控制項、拖慢 GUI：<span class="kw">go_grid-&gt;free( ). go_container-&gt;free( ). CLEAR: go_grid, go_container, gv_init.</span> 放在 EXIT 模組裡。</div>
+
+  <h3 id="ch04-2-19">19. 圖示（ICON）與其他小技巧</h3>
+  <p><b>第 16 節：控制 icon 的小範例。</b>SAP 所有圖示都存在資料表 <b>ICON</b> 裡，可以用 SE16N 查（欄位 <b>ID</b> 是 <b>@xx@</b> 這種內碼，<b>NAME</b> 是 ICON_XXX 這種名稱）。</p>
+
+  <pre><code class="abap">*&amp;---------------------------------------------------------------------*
+*&amp; Report ZICON   " 在畫面上顯示圖示（第一次設計時漏掉退出鍵）
+*&amp;---------------------------------------------------------------------*
+REPORT zicon.
+
+DATA: gv_icon1 TYPE icon-name,          " 畫面上放一個 Status Icon 或字元欄位
+      ok_code  TYPE sy-ucomm.
+
+START-OF-SELECTION.
+  CALL SCREEN 0100.
+
+*----------------------------------------------------------------------*
+MODULE status_0100 OUTPUT.
+  SET PF-STATUS 'STA_100'.              " ★ 記得要含 CANCEL / BACK
+* SET TITLEBAR 'xxx'.
+
+  CALL FUNCTION 'ICON_CREATE'
+    EXPORTING
+      name                  = 'ICON_FAILURE'   " ★ 前面不可有空白！
+      text                  = '失敗'
+      info                  = '滑鼠移上去會顯示這段說明'
+      add_stdinf            = 'X'
+    IMPORTING
+      result                = gv_icon1
+    EXCEPTIONS
+      icon_not_found        = 1
+      outputfield_too_short = 2
+      OTHERS                = 3.
+  IF sy-subrc &lt;&gt; 0.
+    MESSAGE '圖示建立失敗' TYPE 'S' DISPLAY LIKE 'E'.
+  ENDIF.
+
+  " 更簡單的做法：直接用型別池 ICON 的常數（不必呼叫 FM）
+  " TYPE-POOLS icon.  →  gv_icon1 = icon_led_green.
+ENDMODULE.
+
+*----------------------------------------------------------------------*
+MODULE user_command_0100 INPUT.
+  CASE ok_code.
+    WHEN 'CANCEL'. SET SCREEN 0.        " ← 第一次設計時就是漏了這段
+  ENDCASE.
+  CLEAR ok_code.
+ENDMODULE.</code></pre>
+
+  <div class="warn">講義原程式寫的是 <span class="kw">name = ' ICON_FAILURE'</span>，<b>前面多了一個空白</b>，會直接觸發 ICON_NOT_FOUND。這種「看不出來的空白」在 ICON_CREATE、SET PF-STATUS、CALL TRANSACTION 都很常見，抓不到圖示時第一個先檢查它。</div>
+
+  <h4>Parameter ID 無所不在</h4>
+  <p><b>第 17 節。</b>Dialog 畫面的欄位也能掛 <b>Parameter ID</b>（SET/GET parameter）——在 Element list 的欄位屬性裡填 <b>Parameter ID</b>，並勾 <b>SET parameter / GET parameter</b>，使用者上次輸入的值下次會自動帶出來。（詳見第 3 章 SPA/GPA 一節。）</p>
+
+  <pre><code class="abap">" 程式中手動存取（Element list 沒勾時）
+GET PARAMETER ID 'MAT' FIELD gs_mard-matnr.     " 進畫面時帶出
+SET PARAMETER ID 'MAT' FIELD gs_mard-matnr.     " 離開時記住
+" ID 必須先存在於資料表 TPARA，否則語法檢查會警告</code></pre>
+
+  <h3 id="ch04-2-20">20. S/4HANA 的定位：Dialog 程式還要不要寫？</h3>
+  <p>這是 2025 年學 Module Pool 一定要先想清楚的問題。答案不是「不要寫」，而是「<b>看情境選工具</b>」。</p>
+
+  <table>
+    <thead><tr><th>情境</th><th>建議做法</th><th>理由</th></tr></thead>
+    <tbody>
+      <tr><td>簡單的 Z 表維護</td><td><b>SM30 / SE54 表維護產生器</b></td><td>零程式碼，自動有鎖定、傳輸、變更記錄</td></tr>
+      <tr><td>查詢型報表</td><td><b>SELECT-OPTIONS ＋ CL_SALV_TABLE</b></td><td>不必畫 Screen，維護成本最低</td></tr>
+      <tr><td>報表 ＋ 少量編輯</td><td><b>CL_GUI_ALV_GRID</b>（可編輯 ALV）</td><td>比 Table Control 好寫，內建排序篩選匯出</td></tr>
+      <tr><td>單據式維護（表頭 ＋ 多明細 ＋ 頁籤）且使用者只用 SAP GUI</td><td><b>Module Pool ＋ Table Control ＋ Tabstrip</b></td><td>Dialog 仍是 GUI 上最完整的解</td></tr>
+      <tr><td>要在瀏覽器 / 手機上用</td><td><b>RAP ＋ Fiori Elements</b>（CDS ＋ Behavior Definition ＋ OData V4）</td><td>Dialog 不可能上 Fiori Launchpad</td></tr>
+      <tr><td>要擴充標準交易的畫面</td><td><b>Screen Exit / BAdI 的 Subscreen</b></td><td>本章第 12 節的跨程式 Subscreen 機制</td></tr>
+      <tr><td>雲端 ABAP（BTP / Public Cloud）</td><td><b>只能 RAP</b></td><td>Dynpro 相關語法在 ABAP Cloud 中<b>不在白名單內</b>，語法檢查直接擋掉</td></tr>
+    </tbody>
+  </table>
+
+  <div class="warn"><b>ABAP Cloud 的硬限制</b>：在 S/4HANA Cloud、BTP ABAP Environment，或在 on-premise 用「ABAP for Cloud Development」語言版本時，<b>CALL SCREEN、Dynpro、Table Control、CL_GUI_* 全部不可用</b>。所以新專案若有「未來要上雲」的規劃，Dialog 就不該再開新的。反之，S/4HANA on-premise 的 Classic ABAP 版本仍完整支援 Dialog，SAP 也還在用（VA01、ME21N 至今仍是 Dynpro）。</div>
+  <div class="tip">老師的實務觀察：<b>有些公司會用 ABAP 開發 SAP 模組以外的功能。</b> 遇到這種情境，你還要繼續精進 Screen 設計技巧——例如 <b>ME21N</b> 的結構就包含「左側導航欄 ＋ 主階 HEADER ＋ 子階 ITEM OVERVIEW ＋ 子階再展開的 ITEM DETAIL」，那是 Subscreen ＋ Tabstrip ＋ Table Control 的綜合體。想學畫面設計，直接拆 ME21N 是最好的教材。</div>
+
+  <h3 id="ch04-2-21">21. 除錯與檢查清單</h3>
+  <table>
+    <thead><tr><th>症狀</th><th>最可能的原因</th></tr></thead>
+    <tbody>
+      <tr><td>按鈕按下去沒反應</td><td>Pushbutton 沒填 <b>FctCode</b>；或畫面上沒有 <b>OK_CODE</b> 欄位；或 PAI 沒有 MODULE user_command</td></tr>
+      <tr><td>按了 A 功能卻執行 B</td><td>ok_code 用完<b>沒有 CLEAR</b>，殘留舊值</td></tr>
+      <tr><td>錯誤訊息之後按不出去</td><td>BACK/EXIT/CANCEL 的 Function Type 不是 <b>E</b>；或 AT EXIT-COMMAND 沒放在 PAI 最前面</td></tr>
+      <tr><td>使用者輸入的值改了又跳回原值</td><td>PAI 沒有 <span class="kw">MODIFY itab … INDEX tc-current_line</span></td></tr>
+      <tr><td>Table Control 捲不動 / 只看得到第一頁</td><td>PBO 沒有 <span class="kw">DESCRIBE TABLE … LINES tc-lines</span></td></tr>
+      <tr><td>捲動之後改到錯的列</td><td>MODIFY 用了 sy-tabix 而不是 <b>tc-current_line</b></td></tr>
+      <tr><td>插入列的位置不對</td><td>沒有正確 ASSIGN <b>G_&lt;TC&gt;_LINES</b>（PBO 的 sy-loopc 沒存）</td></tr>
+      <tr><td>LOOP AT SCREEN 改了沒效果</td><td>忘了 <span class="kw">MODIFY SCREEN.</span>；或比較值沒大寫</td></tr>
+      <tr><td>Custom Control 取不到使用者輸入</td><td>沒有 <span class="kw">cl_gui_cfw=&gt;flush( )</span></td></tr>
+      <tr><td>進出畫面幾次後 GUI 變慢</td><td>Container / Control 沒有 <span class="kw">free( )</span></td></tr>
+      <tr><td>下拉選單沒東西</td><td>VRM_SET_VALUES 的 <b>id</b> 不等於畫面欄位名（要大寫、要完整）</td></tr>
+      <tr><td>Subscreen 出不來</td><td>Dynpro Type 不是 Subscreen；或 CALL SUBSCREEN 放進了 LOOP／CHAIN</td></tr>
+      <tr><td>頁籤點了不換頁</td><td>PBO 沒設 <span class="kw">tab-activetab</span>；或 Function Type 選錯（本地捲動要 P）</td></tr>
+      <tr><td>單據被鎖住解不掉</td><td><span class="tcode">SM12</span> 查並刪除；程式端要在 EXIT 模組 DEQUEUE</td></tr>
+    </tbody>
+  </table>
+
+  <div class="tip">Debug 技巧：在畫面的<b>命令欄輸入 <span class="kw">/h</span></b> 再按任何按鈕，就會停在 PAI 的第一行，可以逐步觀察 flow logic 的執行順序——這也是老師建議用來實測「哪些動作會觸動 PAI」的方法。另外 <b>ST05</b>（SQL Trace）可以抓出「PBO 每次都打 DB」這種效能地雷。</div>
+
+  <h3 id="ch04-2-qa">練習與自我檢核</h3>
+  <ol>
+    <li><b>Type 1 vs Type M</b>：不看筆記說出兩者在「副程式、顯示前、輸入後、螢幕編號、首末頁」五項的差別，並解釋為什麼老師說「都用 TYPE 1 寫程式比較方便」。</li>
+    <li><b>第 41 練習（螢幕設計到實作）</b>：建立一支空程式，在螢幕 2001 上貼「NCU SAP！」的 Text 與一個按鈕，按下就 <span class="kw">LEAVE PROGRAM</span>。<br><i>要點</i>：畫面要有 OK_CODE 欄位、主程式要宣告同名變數、按鈕要填 FctCode、用 CALL SCREEN 2001 進入。</li>
+    <li><b>第 02 節（螢幕功能表）</b>：用 SE41 建 GUI Status 與 GUI Title，做出 MENU11／MENU12／MENU21／MENU22／ZCAS／EXIT 六個功能碼，並讓 ZCAS 拋 E 類訊息。<br><i>延伸</i>：驗證「兩個 PF-STATUS 中同名的 Function Code 會走同一段程式」。</li>
+    <li><b>E 類按鈕</b>：故意把 CANCEL 的 Function Type 留空白，再讓某個欄位檢查失敗，體驗「跳不出去」；然後改成 E 並把 AT EXIT-COMMAND 移到 PAI 最前面。</li>
+    <li><b>第 03 節（Radio / Box / Group）</b>：貼兩個以上 Radio 並 Define group；把 FIELD2、FIELD3 設 Group1 = 'SEL' 使其不可輸入，FIELD1 設為必輸。<br><i>要點</i>：LOOP AT SCREEN ＋ MODIFY SCREEN，判斷值大寫。</li>
+    <li><b>第 04 節（維護 Z00_VBAK）</b>：用 Screen 顯示 Z00_VBAK，先用 TABLES 寫法、再改成自宣告工作區的寫法，比較「欄位抬頭是否自動出現」。<br><i>思考</i>：為什麼老師說「筆數大的表直接放 Screen 上是不妥的做法」？</li>
+    <li><b>第 05 節（合理性檢查）</b>：加入 FLD1／FLD2／FLD3 三個欄位，分別用 ON REQUEST、ON INPUT、無附加條件觸發 CHECK1～CHECK3，觀察三者觸發時機的差異。<br><i>延伸</i>：把三個欄位包成 CHAIN，改用 ON CHAIN-REQUEST，比較「檢查失敗時哪些欄位還能輸入」。</li>
+    <li><b>第 06 節（SE91）</b>：建立訊息類別 YMESS，寫出 <span class="kw">MESSAGE e005(ymess) WITH …</span> 與 <span class="kw">MESSAGE ID … TYPE … NUMBER … DISPLAY LIKE 'I'</span> 兩種寫法，並說明 S／I／W／E 在「Screen 100 → Screen 200」情境下各自何時出現。</li>
+    <li><b>第 07 節（下拉選單）</b>：用 VRM_SET_VALUES 做出 TWD／USD 的 Listbox with key，再改成直接從 TCURC（或自建的 Z00_CURR）撈值。<br><i>思考</i>：什麼時候該改用 Search Help 而不是 Dropdown？</li>
+    <li><b>第 08 節（Subscreen）</b>：建立 2002／2003 兩個 Subscreen，用功能表 MENU11／MENU12 切換 <span class="kw">gv_screenid</span>。<br><i>要點</i>：CALL SUBSCREEN 不可放進 LOOP／CHAIN；PBO 要帶 INCLUDING、PAI 不帶。</li>
+    <li><b>Subscreen 七條鐵律</b>：不看筆記默寫出來（不可放 LOOP／不可放 CHAIN／不必 OK_CODE／名稱不可重複／不會有 AT EXIT-COMMAND／不會有自己的 Titlebar 與 PF-STATUS 與 SET/LEAVE SCREEN／Dynpro Type 必須是 Subscreen）。</li>
+    <li><b>第 09 節（Tabstrip）</b>：用精靈建立 Tabstrip，觀察自動產生的三支 INCLUDE（常數 C_TAB、CONTROLS TAB、G_TAB 結構、TAB_ACTIVE_TAB_SET／GET）。<br><i>延伸</i>：分別用「本地捲動（Function Type = P，一頁籤一區）」與「伺服器捲動（Function Type 空白，共用一區）」各做一次，比較差異。</li>
+    <li><b>第 10 節（Custom Control）</b>：在 Custom Control 中放入 CL_GUI_TEXTEDIT，並在 PAI 用 flush ＋ get_text_as_r3table 把內容取回內表。<br><i>延伸</i>：改掛 CL_GUI_ALV_GRID、CL_GUI_PICTURE、CL_GUI_HTML_VIEWER 各一次。</li>
+    <li><b>第 11 節（SMW0）</b>：用 SMW0 上傳一張公司 Logo，並用 DP_PUBLISH_WWW_URL ＋ CL_GUI_PICTURE 顯示在畫面上。（需 BASIS 先配置。）</li>
+    <li><b>第 12 節（TC Wizard）</b>：建立 Z202202_41_TABLE，用 Table Control Wizard 以 <b>SPFLI</b> 為例做出可捲動的表格，並在主程式撈 1000 筆後 CALL SCREEN 2000。<br><i>要點</i>：精靈的第 7 步一定要勾「插入／刪除／全選／取消全選」，才會產生對應 FORM。</li>
+    <li><b>第 13 節（不靠精靈）</b>：再建一個 dynnr 3000，改用一般的 Table Control（不是 Wizard），從 Dictionary 選欄位貼進去，然後<b>手動</b>把 TOP／PBO／PAI／FORM 四段程式補齊。</li>
+    <li><b>第 14 節（驗證所學）</b>：打開標準交易 <span class="tcode">OB58</span>（財務報表版本維護），用 F1 → 技術資訊找出它的程式與螢幕編號，再用 SE51 觀察它的 Layout 與 flow logic，指出它用了哪些本章學過的元件。</li>
+    <li><b>第 15 節（Z00_VBAK Table Control）</b>：把 Z00_VBAK 做成表控制項，支援新增、刪除、存檔，並加上 ENQUEUE／DEQUEUE。<br><i>要點</i>：先在 SE11 建一個含 MARK 欄的 Structure，Table Control 才吃得下。</li>
+    <li><b>第 16 節（ICON）</b>：完成 ZICON，用 ICON_CREATE 顯示 ICON_FAILURE，並找出講義原程式的錯誤（name 前面多一個空白）。<br><i>延伸</i>：改用型別池 <b>icon</b> 的常數（icon_led_green 等），並到 SE16N 查資料表 <b>ICON</b> 找出五個常用圖示的 ID。</li>
+    <li><b>第 18 節（Group / MODIF ID）</b>：完成 ZRADIO 與 ZMODIFYID，做出「選自製 → 開放物料欄位；選採購 → 開放採購單號；勾核取方塊 → 才出現備註」。<br><i>要點</i>：Modif ID 最多 3 碼、判斷值一律大寫、要有 USER-COMMAND 才會即時重繪、SCREEN-INPUT 與 SCREEN-ACTIVE 的差別。</li>
+    <li><b>第 20 節（PAI 觸發實測）</b>：用 <span class="kw">/h</span> 進 Debug，逐一測試「水平捲動、調欄寬、移動欄位、選取行列、垂直捲動、存版面」哪些會觸動 PAI，把結果寫下來。</li>
+    <li><b>Table Control 功能碼</b>：說出 TC 名稱為 TC_MARD 時，插入列、刪除列、下一頁、全選的功能碼各是什麼，並解釋 USER_OK_TC 是怎麼用 <span class="kw">SEARCH</span> ＋ <span class="kw">STRLEN</span> 把動作切出來的。</li>
+    <li><b>三大 bug</b>：不看筆記說出 Table Control 的三個經典 bug（沒設 lines／用 sy-tabix／沒 MODIFY）以及各自的症狀。</li>
+    <li><b>永久 vs 暫時</b>：寫出一個範例，讓 Table Control 的「主鍵欄整欄唯讀」（永久性，改 tc-cols）而「偶數列的數量欄必填」（暫時性，LOOP 內改 screen）。</li>
+    <li><b>綜合實作</b>：完成本章第 16 節的 ZTC_MARD_MAINT，並補上：(a) 排序按鈕、(b) 未存檔離開時的 POPUP_TO_CONFIRM、(c) 紅綠燈欄位、(d) ENQUEUE／DEQUEUE。<br><i>加分</i>：把存檔對象改成自建 Z 表，並比對 gt_orig 只送真正異動的列。</li>
+    <li><b>拆解 ME21N</b>：打開 ME21N，指出畫面上哪些區塊是 Subscreen、哪些是 Tabstrip、哪些是 Table Control，並說明「左側導航欄 ＋ HEADER ＋ ITEM OVERVIEW ＋ ITEM DETAIL」的四層結構分別對應本章哪一節的技術。</li>
+    <li><b>S/4HANA 定位題</b>：給定五個需求（Z 表維護、查詢報表、可編輯清單、單據式維護、要上手機），各自選出最合適的技術，並說明為什麼 ABAP Cloud 中不能用 Dynpro。</li>
+  </ol>
+</section>

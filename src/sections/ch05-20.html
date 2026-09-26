@@ -1,0 +1,989 @@
+<section class="chapter" id="ch05-20" data-title="BC480 PDF-Based Print Forms（Adobe Forms）">
+  <h2>第 5-20 章 BC480 PDF-Based Print Forms（Adobe Forms）</h2>
+  <p class="lede">BC480 教你用「SAP Interactive Forms by Adobe」做列印表單：在 <span class="tcode">SFP</span> 建立<b>介面（Interface）</b>與<b>表單（Form = Context + Layout）</b>，在 Adobe LiveCycle Designer 畫版面，最後由 ABAP 列印程式呼叫<b>生成的函數模組</b>，交給 J2EE 上的 <b>Adobe Document Services（ADS）</b>產生 PDF。在 S/4HANA，Adobe Forms 是官方主推的輸出技術，SmartForms／SAPscript 只剩維護舊表單的份。本章依原課程九個單元的順序整理，並把列印程式全部改寫成 7.52 現代寫法。</p>
+
+  <div class="meta">
+    <div><b>核心 TCODE</b><span class="tcode">SFP</span><span class="tcode">SE80</span><span class="tcode">SE37</span><span class="tcode">SMARTFORMS</span><span class="tcode">SMARTSTYLES</span><span class="tcode">SO10</span><span class="tcode">SE78</span><span class="tcode">SE63</span><span class="tcode">SM59</span><span class="tcode">SP01</span><span class="tcode">SPRO</span><span class="tcode">OPD</span></div>
+    <div><b>關鍵物件</b>FP_FUNCTION_MODULE_NAME、FP_JOB_OPEN、FP_JOB_CLOSE、FP_FIELD_LIST、FP_GET_LAST_ADS_ERRSTR、SSF_FUNCTION_MODULE_NAME、ADDRESS_INTO_PRINTFORM、READ_TEXT、SFPOUTPUTPARAMS、SFPDOCPARAMS（/1BCDWB/DOCPARAMS）、FPFORMOUTPUT（/1BCDWB/FORMOUTPUT）、SFPJOBOUTPUT、TLINE、CX_FP_API、CX_FP_EXCEPTION、CL_BCS、STXFPCUST、FPFONTREPL、TTDTG、RSXFT_MIGRATE_BDS_GRAPHICS、RSTXLDMC、F150_DUNN_PDF、FI_PRINT_DUNNING_NOTICE_PDF</div>
+  </div>
+
+  <h3 id="ch05-20-01">1. 課程定位與教材對照</h3>
+  <p>BC480 屬於 ABAP 開發人員的<b>表單輸出專題課</b>，對象是 Developer 與 Development Consultant，先修 <a href="#ch05-1">BC400</a>；上過 <a href="#ch05-19">BC470 SmartForms</a> 會輕鬆很多，因為 Smart Styles、文字模組、介面觀念幾乎一樣。依 SAP 課程分級慣例屬於進階專題（相當於 300 級）。本章對照兩份素材：</p>
+  <ul>
+    <li><b>强晟筆記</b>：2007-12 版《BC480: Creating PDF-based Print Forms》中文自學筆記，共 291 頁，版本基準是 SAP NetWeaver ’04（Web AS 6.40）、Adobe LiveCycle Designer 6/7。强晟在後記坦言當時 SAP GUI 開不起 Designer，「本篇完全是紙上談兵」，所以筆記是翻譯加整理，操作細節以原廠教材為準。</li>
+    <li><b>原廠教材</b>：BC480 Col18（Course Version 18，Material 50147786，© 2022），共 230 頁，以 NetWeaver 7.0～7.40 為基準。</li>
+  </ul>
+  <table>
+    <thead><tr><th>單元</th><th>主題</th><th>强晟筆記頁碼</th><th>原廠 Col18 Unit／Lesson（頁碼）</th><th>本章小節</th></tr></thead>
+    <tbody>
+      <tr><td>1</td><td>架構概覽</td><td>p5–15</td><td>Unit 1 L1 Outlining the Architecture（p9–18）</td><td>2</td></tr>
+      <tr><td>2</td><td>表單介面</td><td>p16–28</td><td>Unit 2 L1 Creating the Form Interface（p19–28）</td><td>3</td></tr>
+      <tr><td>3</td><td>Context：基本元素、內表、條件、Alternative</td><td>p29–42</td><td>Unit 3 L1（p31–38）</td><td>4</td></tr>
+      <tr><td>3</td><td>資料夾與圖片</td><td>p43–45</td><td>Unit 3 L2（p39–42）</td><td>5</td></tr>
+      <tr><td>3</td><td>地址（BAS）與長文字、Smart Styles</td><td>p46–71（樣式見附錄 p246）</td><td>Unit 3 L3（p43–76，Smart Styles p51–60）</td><td>6、7</td></tr>
+      <tr><td>4</td><td>Adobe LiveCycle Designer 概覽</td><td>p72–105</td><td>Unit 4 L1（p77–96）</td><td>8</td></tr>
+      <tr><td>4</td><td>表單結構：Master Page、Content Area、Subform</td><td>p106–119</td><td>Unit 4 L2（p97–108）</td><td>9</td></tr>
+      <tr><td>5</td><td>靜態元素、動態元素、資料繫結</td><td>p120–152</td><td>Unit 5 L1–L2（p109–126）</td><td>10</td></tr>
+      <tr><td>5</td><td>顯示樣式（Display Pattern）</td><td>p153–168</td><td>Unit 5 L2 Display Patterns（p126–132）</td><td>11</td></tr>
+      <tr><td>5</td><td>表格、條件分頁、控制層級、巢狀表格</td><td>p169–181</td><td>Unit 5 L3（p133–150）</td><td>12</td></tr>
+      <tr><td>6</td><td>表單腳本 FormCalc / JavaScript</td><td>p182–204</td><td>Unit 6 L1（p151–168）</td><td>13</td></tr>
+      <tr><td>7</td><td>整合進 ABAP 列印程式、例外處理</td><td>p205–220、附錄 p247–253</td><td>Unit 7 L1（p169–188）</td><td>14、15</td></tr>
+      <tr><td>8</td><td>下載上傳、PDF 匯入、無障礙</td><td>p221–244</td><td>Unit 8 L1（p189–200）</td><td>16</td></tr>
+      <tr><td>8</td><td>客製化（催款單等）、字型、ADS HTTP 連線</td><td>附錄 p254–265</td><td>Unit 8 L2 Administering（p201–210）</td><td>17</td></tr>
+      <tr><td>9</td><td>舊表單移轉（SAPscript／SmartForms）</td><td>附錄 p266–290</td><td>Unit 9 L1 Migrating Legacy Forms（p211–230）</td><td>18</td></tr>
+    </tbody>
+  </table>
+  <p><b>2007 版與 Col18 的主要差異</b>：</p>
+  <ul>
+    <li>2007 版的「附錄」（樣式、例外處理、客製化、基礎管理、移轉）在新版被拆回正課：例外處理併入 Unit 7，客製化與管理成為 Unit 8 Lesson 2，移轉成為 Unit 9。</li>
+    <li>新版增加：<b>三種介面類型</b>（多了 NW 7.0 的 XML Schema-Based）、表單版面類型 ACF／ZCI、Context 的<b>控制層級（Control Level）</b>與<b>單筆記錄（Single Record）</b>、Designer 7.1 的<b>真正表格物件</b>、<b>條件分頁（Conditional Break）</b>、巢狀表格、<span class="kw">XFP</span> 輸出、<span class="kw">Fillable = N</span>、Additional Print Options／Print Ticket（NW 7.31）、<span class="tcode">SE63</span> 翻譯、字型替代檔 <span class="kw">xfa.xci</span> 與表 <span class="kw">FPFONTREPL</span>、Trace 等級。</li>
+    <li>2007 版說「從 NW ’04 起金額數量欄位必須自己指定參考欄位」，Col18 補充：<b>從 NW 7.0 起又會自動評估字典參考</b>，自訂參考欄位只用於覆寫。</li>
+  </ul>
+
+  <h3 id="ch05-20-02">2. 架構：設計時、執行時與 Adobe Document Services</h3>
+  <p><b>使用者視角</b>：用 TCODE 開應用 → 在畫面輸入資料、觸發業務流程 → 列印。可以先在 SAP GUI 自動載入的 Adobe Reader 預覽 PDF，再從預覽觸發輸出，產生 spool request，於 <span class="tcode">SP01</span> 管理。</p>
+  <p><b>設計時（Design Time）</b>要做三件事，都在 <span class="tcode">SFP</span>（或 <span class="tcode">SE80</span> → 其他物件 → More 頁籤）：</p>
+  <table>
+    <thead><tr><th>物件</th><th>內容</th><th>重點</th></tr></thead>
+    <tbody>
+      <tr><td><b>Interface（介面）</b></td><td>程式可以傳哪些資料給表單；另含全域資料與初始化程式碼</td><td>獨立的 Repository 物件、可重複使用；<b>沒有表單也能單獨存在</b>（Col18 Unit 1 測驗題）</td></tr>
+      <tr><td><b>Form（表單範本）</b></td><td>= <b>Context</b>（此表單實際用介面中的哪些部分，另可加文字模組、圖片）+ <b>Layout</b></td><td>Context 永遠屬於某一張表單</td></tr>
+      <tr><td><b>Layout（版面）</b></td><td>在 Adobe LiveCycle Designer 設計的靜態與動態元素</td><td>技術上存成 XML 格式 <b>XDP（XML Data Package）</b></td></tr>
+    </tbody>
+  </table>
+  <p>表單範本<b>啟用（Activate）</b>時做三件事：檢查 Context 語法 → 儲存 → 最重要的：<b>產生一支函數模組</b>。這支生成的函數模組封裝了表單的全部屬性，程式要印表單時呼叫的就是它（部分文件把「表單範本」稱為「表單物件 form object」）。</p>
+  <p><b>執行時（Runtime）</b>：ABAP 程式取得並計算所有資料 → 傳給生成的函數模組。因為介面可重複使用，只要多張表單共用同一個介面，一支列印程式就能呼叫多張表單。</p>
+  <p><b>列印情境的系統架構</b>（Web AS 6.20 起 SAP 系統可同時跑 ABAP 與 Java，需安裝 J2EE 引擎）：</p>
+  <ol>
+    <li><b>整合進傳統 ABAP 程式（列印情境）</b>：大量處理，列印、郵寄、傳真；資料擷取與 spool 處理由 ABAP 負責。</li>
+    <li><b>瀏覽器互動情境</b>：使用者在網頁中填表，Java Web Dynpro，或 NW 7.0 起的 ABAP Web Dynpro（見 <a href="#ch05-23">5-23 章 Web Dynpro ABAP</a>）。</li>
+  </ol>
+  <p>兩種情境的<b>渲染（rendering）都由 ADS 完成</b>。ABAP 端流程：應用程式透過 <b>PPF（Post Processing Framework，Output Control 的後繼者）</b>判斷要不要輸出、輸出哪一種 → <b>表單處理執行環境（Form Processing Runtime）</b>開關 spool job，並以 <b>SOAP over HTTP</b> 呼叫 ADS 的 Web Service → ADS 負責填欄位、分頁、套版 → 回傳 PDF → 依程式設定送 spool 或郵寄。</p>
+  <p>ADS 部署在 J2EE 引擎上，由 ADS Web Service 與下列 SAP J2EE 服務組成：<b>Document Services Data Manager、Document Services Font Manager、PDF Manipulation Module、XML Form Module、Document Services License Service</b>。注意：<span class="tcode">SFP</span> 的複製、測試等功能也需要標準 ADS 連線可用。</p>
+  <p><b>PDF 表單相對於 SmartForms／SAPscript 的優點</b>（Col18 列舉）：PDF 是網路表單的事實標準；Designer 好用且整合於 ABAP Workbench；BMP/JPEG/GIF/PNG/EXIF 圖片免轉換直接放；物件（含文字）可旋轉；同一張表單可混用直式橫式頁面；可做無障礙表單；複雜版面元素可在開發者間共享；可匯入現有 PDF／Word；TrueType 字型免上傳；PostScript/PCL/PDF/Zebra 印表機都能印條碼；郵寄傳真更容易；表單是標準 Repository 物件，走傳輸與版本管理；可做互動情境。</p>
+  <div class="note">相關 SAP Note：735050（SAP ERP 可用的表單總覽）、894389（Interactive Forms 限制）、852235（ERP 6.0 一般限制）。2007 版筆記還提到 mySAP ERP 2004 隨附的表單只提供給 pilot customer 使用，這在今天已不適用。</div>
+  <div class="warn"><b>S/4HANA 現況</b>：Adobe Forms 是 S/4HANA 的策略性表單技術；SAPscript（<a href="#ch05-18">5-18 章</a>）與 SmartForms（<a href="#ch04-3">4-3 章</a>、<a href="#ch05-19">5-19 章</a>）仍可執行，但新開發請一律用 Adobe Forms。ADS 有兩種來源：地端 NetWeaver AS Java 上的 ADS，或 SAP BTP 上的 <b>SAP Forms Service by Adobe</b>（雲端渲染，連線設定依官方設定指南與 SAP Note）。S/4HANA 的新版 Output Management 以 BRFplus 決定輸出（<span class="tcode">OPD</span>），新式表單多採 Gateway/OData 型的資料來源（對應 XML Schema-Based 介面），並可用 Fiori「Maintain Form Templates」管理範本。本章的 ABAP Dictionary-Based 介面＋自寫列印程式仍是客製報表、客製單據最常見的做法。</div>
+
+  <h3 id="ch05-20-03">3. 表單介面（Form Interface）</h3>
+  <p>每張 PDF 表單都需要介面，它是 ABAP 程式與表單之間的連結：<b>只有定義在介面裡的資料才能從程式傳進表單</b>。開發一定從介面開始。</p>
+  <p><b>介面類型</b>（Properties 頁籤決定，差別在參數數量與種類）：</p>
+  <table>
+    <thead><tr><th>類型</th><th>用途</th><th>說明</th></tr></thead>
+    <tbody>
+      <tr><td><b>ABAP Dictionary-Based</b></td><td>列印情境（<b>新開發一律選它</b>）</td><td>預設 import 參數只有 <span class="kw">/1BCDWB/DOCPARAMS</span>（TYPE SFPDOCPARAMS），預設 export 參數只有 <span class="kw">/1BCDWB/FORMOUTPUT</span>（TYPE FPFORMOUTPUT）</td></tr>
+      <tr><td><b>Smart Forms-Compatible</b></td><td>保留舊列印程式不改時用</td><td>可加 export 參數、可用 TABLES 參數（只有要在表單 ABAP 程式裡改內表時才需要）</td></tr>
+      <tr><td><b>XML Schema-Based</b>（NW 7.0 起）</td><td>主要給 Web Dynpro 互動情境</td><td>沒有 Context；S/4HANA Gateway 型表單亦屬此類</td></tr>
+    </tbody>
+  </table>
+  <p><b>不建議用 Smart Forms 相容介面</b>的三個理由：① 會收到錯誤的列印參數（例如封面頁），且 XSF/XDF 參數已不能用；② spool job 含多個 PDF 時只拿得回一個；③ 只有 ABAP Dictionary 介面能設定 Business Communication Services（BCS）。</p>
+  <p><b>參數欄位</b>（和 <span class="tcode">SE37</span> 定義函數參數一樣）：</p>
+  <ul>
+    <li><b>參數名稱</b>；<b>型別指定</b>只允許 <span class="kw">TYPE</span>（從 SmartForms 移轉來的介面才可用 <span class="kw">LIKE</span>）；型別名稱可為 ABAP 型別（c、i、n…）或字典型別（資料元素、表格類型）。</li>
+    <li><b>Optional</b>：多張表單共用一個介面時，把不是每張都需要的參數設為選用，可讓介面數量保持精簡。</li>
+    <li><b>Pass Value</b>：傳值（複製）而非傳參照，參數可在介面程式中修改而不影響原值；但大參數（內表）會拖慢效能。</li>
+    <li><b>Default Value</b>：非結構參數可設預設值；有預設值者自動為選用。</li>
+  </ul>
+  <p><b>例外</b>：介面宣告的例外可在表單的 ABAP 程式中用 <span class="kw">RAISE &lt;exception&gt;</span> 或 <span class="kw">MESSAGE … RAISING &lt;exception&gt;</span> 觸發，它是<b>傳統例外</b>（非 6.10 起的類別型例外），實際由生成的函數模組拋出，呼叫端以 <span class="kw">sy-subrc</span> 判斷。</p>
+  <p><b>對外不可見的部分</b>：全域定義（Global Fields、Field Symbols、Global Types）、初始化程式碼（Initialization）、金額數量欄位（Currency/Quantity Fields）。</p>
+  <ul>
+    <li><b>Global Fields</b>：用預設值或初始化程式碼給值；可放進版面；移轉來的 SmartForms 還能在程式行節點使用。</li>
+    <li><b>Field Symbols</b>：變數的佔位符，動態程式與加速內表處理時好用；PDF 表單中可在 ABAP 程式碼裡指派。</li>
+    <li><b>Global Types</b>：需要 ABAP 內建型別或字典型別以外的型別時，在 Types 編輯器宣告本地型別。</li>
+    <li><b>Initialization</b>：資料送進表單前的最後加工處。<b>非移轉自 SmartForms 的表單，這是唯一能執行 ABAP 的地方。</b>用到的介面欄位或全域欄位必須列在 Input／Output 參數中；Input 與 Output 的區分只是結構化用途，<b>兩者都是傳參照</b>，所以修改 input 參數是永久的（Col18 測驗題補充：只有設了 Pass Value 的 import 參數才能在初始化中修改）。用 <span class="kw">DATA</span> 宣告的區域變數出了初始化就看不到，<b>不能用在版面</b>。<span class="kw">SYST</span> 系統欄位不必宣告但不應修改。</li>
+    <li><b>Currency/Quantity Fields</b>：ABAP 區分金額數量的內部與外部表示，例如內部 1000 可能印成 USD 10.00 或 JPY 1000（小數位資訊在 <span class="kw">TCURX</span>、<span class="kw">T006</span>）。NW ’04 時代必須為每個要列印的金額數量欄位指定參考欄位（F4 選欄位 → 選參考欄位 → 標示是金額或數量）；NW 7.0 起字典參考會自動評估，自訂參考只用於覆寫。</li>
+  </ul>
+  <pre><code class="abap">*&amp;-------------------------------------------------------------*
+*&amp; SFP 介面 ZBC480_IF_INVOICE → Initialization（初始化程式碼）
+*&amp;   Input 參數 ：IS_CUSTOMER, IT_BOOKINGS
+*&amp;   Output 參數：GT_SUMS, GV_BOOK_COUNT, GV_GREETING（皆為 Global Fields）
+*&amp;   全域型別   ：TYPES ty_amount TYPE sbook-forcuram.（在 Types 編輯器宣告）
+*&amp;-------------------------------------------------------------*
+" 1. 明細筆數：給版面的「共 n 筆」浮動欄位用
+gv_book_count = lines( it_bookings ).
+
+" 2. 依幣別加總：合計在 ABAP 算好再傳，不要在表單裡用腳本加總（效能）
+gt_sums = VALUE #(
+  FOR GROUPS grp OF b IN it_bookings GROUP BY b-forcurkey
+  ( currency = grp
+    amount   = REDUCE ty_amount( INIT s = CONV ty_amount( 0 )
+                                 FOR m IN GROUP grp
+                                 NEXT s = s + m-forcuram ) ) ).
+
+" 3. 稱謂：取代「親愛的先生／女士」
+gv_greeting = COND #( WHEN is_customer-form IS INITIAL
+                      THEN |{ is_customer-name } 您好：|
+                      ELSE |{ is_customer-form } { is_customer-name } 您好：| ).
+
+" 4. 需要重複執行的邏輯：原教材寫在介面的 FORM 子程序裡，
+"    新寫法請呼叫全域類別的靜態方法，方便單元測試與重用
+gv_due_date = zcl_bc480_invoice_util=&gt;calc_due_date( is_customer ).</code></pre>
+  <div class="warn">原教材說「初始化程式碼中可呼叫在介面建立的 FORM 子程序」。語法上仍可行，但依本圖書館規範新程式不用 FORM/PERFORM，請把共用邏輯放進全域類別（<a href="#ch02-4">2-4 章 模組化</a>）。另外，<b>別忘了把要修改的 import 參數勾 Pass Value</b>，否則改不動或改到呼叫端的原始資料。</div>
+
+  <h3 id="ch05-20-04">4. 表單 Context：拖放、內表、條件與 Alternative</h3>
+  <p><span class="tcode">SFP</span> 輸入表單名稱 → 建立，Properties 頁籤填：描述、<b>版面類型</b>（只與互動情境有關：<b>ACF</b> Active Component Framework 需在 PC 安裝元件，見 SAP Note 766191；較新的 <b>ZCI</b> Zero Client Installation 只需新版 Adobe Reader，見 SAP Note 955795）、<b>使用的介面名稱</b>（雙擊可開啟；修改被表單使用中的介面時系統<b>不會警告</b>，但可能把表單弄壞）。第一次儲存自動帶入套件，之後要改用「轉到 → 物件目錄條目」（套件與傳輸見 <a href="#ch01-1">1-1 章</a>）。</p>
+  <p><b>Context 頁籤分四區</b>：</p>
+  <ul>
+    <li><b>Interface</b>（左上）：所有介面欄位加系統欄位 <span class="kw">SFPSY-DATE</span>、<span class="kw">SFPSY-TIME</span>、<span class="kw">SFPSY-USERNAME</span>、<span class="kw">SFPSY-SUBRC</span>；若為 SmartForms 相容介面則顯示 <span class="kw">SFSY-…</span>。</li>
+    <li><b>Context</b>（右上）：版面可用的元素，是介面的子集再加上圖片、文字等；在這裡按右鍵建立新元素。</li>
+    <li><b>介面欄位屬性</b>（左下）與 <b>Context 元素的屬性／明細／條件</b>（右下，例如圖片來源、外部文字名稱）。</li>
+  </ul>
+  <p><b>使用介面的要點</b>：</p>
+  <ul>
+    <li>從介面樹拖放到 Context 樹，或右鍵「建立 → 資料、結構和迴圈（Loop）」；SmartForms 相容介面可再用「建立 → 資料和結構」加入 <span class="kw">sy-</span> 系統欄位。</li>
+    <li>來自結構與內表的原始欄位標記為「Generated」；可以把欄位拖進內表，讓每筆資料有自己的長文字。</li>
+    <li>可在右下「屬性」改名；參照字典型別的欄位會自動帶出描述（NW ’04 SP11 起，SAP Note 808116）。</li>
+    <li>Context 中欄位順序無關緊要，除非是巢狀。</li>
+    <li><b>不需要的欄位設為 Inactive</b>（右鍵）：它就不進 XML 資料流（XFD），可提升效能。但 inactive <b>不會把必填參數變成選用</b>，列印程式仍須傳值。測試時把非來自介面的 Context 欄位設 inactive 很有用。</li>
+  </ul>
+  <p><b>內表的 XML 表示</b>：Context 中的內表永遠以巢狀方式顯示，這反映它在 <b>XSD（XML Schema Definition）</b>中的結構。Designer 需要這份 XSD，<span class="tcode">SFP</span> 會自動從 Context 產生，<b>不能手改</b>。內表與欄位之間一定有一層 <b>DATA</b> 代表行型別，要加欄位就加在 DATA 結構裡；要巢狀，就把第一個內表拖進第二個的 DATA 結構。</p>
+  <p><b>內表（Loop）節點的屬性</b>（Col18 補充）：</p>
+  <ul>
+    <li>可限定傳入 XML 資料流的列：相當於 <span class="kw">LOOP AT it INTO wa FROM r1 TO r2</span>，或加 WHERE 條件 <span class="kw">LOOP AT it INTO wa WHERE field = value</span>。</li>
+    <li>WHERE 最常用於把 T2 巢狀進 T1：例如 T1 為客戶、T2 為訂位，在 T2 設 <span class="kw">CUST_NUMBER = T1-CUST_NUMBER</span>，結果是一張 XML 表，版面很好處理。</li>
+    <li><b>Control Level 頁籤</b>（NW 7.0 起）：依欄位分組，讓平面內表輸出成巢狀樣子；只有資料已依該層級排序才有意義。</li>
+    <li>只要某一列時，不要用整張表加 WHERE 或索引，改用右鍵「建立 → <b>Single Record</b>」（NW 7.0 起），指定列號或鍵值，Designer 會把它當結構處理；結果可用 <span class="kw">SFPSY-SUBRC</span>（<span class="kw">SY-SUBRC</span> 的複本）判斷。</li>
+  </ul>
+  <p><b>條件（Condition）</b>：大多數節點可設條件，執行時不成立，該元素（若是結構、內表、資料夾則連同所有子元素）就不進資料流。條件能減少資料傳輸、也能從版面隱藏欄位。條件中可用<b>所有介面欄位</b>（即使沒拖進 Context），但<b>不能參照其他 Context 欄位或 ABAP 系統欄位</b>。有條件的節點圖示旁會多一個條件符號。</p>
+  <p><b>Alternative（二選一）</b>：有 TRUE、FALSE 兩個子節點，條件成立處理 TRUE 分支，否則處理 FALSE 分支，像 ABAP 的 IF／ELSE。</p>
+  <div class="warn">Alternative 的條件和一般節點的條件<b>意義不同</b>：它決定資料流要放 TRUE 還是 FALSE 的內容，<b>不</b>決定 Alternative 本身要不要處理（Alternative 的邏輯一定會處理）。</div>
+  <div class="tip">Context 條件請用「列舉」思維：例如「只有航空公司為 AA、LH、SQ 才印附加條款」就寫成多個等式，而不是字母區間。區間比的是字典序，不是業務語意，編碼規則一變就漏抓或多抓（Casper 實務經驗第 2 條）。</div>
+
+  <h3 id="ch05-20-05">5. 資料夾與圖片（Folder / Graphic）</h3>
+  <p><b>資料夾</b>：表單越細，Context 樹越難看懂。把節點分組放進資料夾，可收合展開。典型用途：</p>
+  <ul>
+    <li>催款單依逾期天數有不同催款文字，執行時只傳其中一段：各文字設不同條件，再收進同一資料夾。</li>
+    <li>多個節點共用同一條件：不必每個節點各設一次，改把條件設在資料夾上，會傳遞給所有子節點。</li>
+  </ul>
+  <p>資料夾也讓 Designer 端的作業更簡單，並幫你組織版面。</p>
+  <p><b>圖片</b>：右鍵 Context 頂層節點 → 建立 → 圖片（Graphic），在右下屬性指定圖片類型：</p>
+  <table>
+    <thead><tr><th>類型</th><th>設定</th><th>說明</th></tr></thead>
+    <tbody>
+      <tr><td><b>Graphic Content（圖片內容）</b></td><td>指定一個 Context 欄位，執行時裝圖片資料；型別 <span class="kw">STRING</span>（Base64 編碼）或 <span class="kw">XSTRING</span>（二進位），並填 MIME 類型，例如 <span class="kw">image/bmp</span>、<span class="kw">image/jpeg</span></td><td>最常用：由程式讀 MIME Repository 或 SE78 後傳入</td></tr>
+      <tr><td><b>Graphic Reference（圖片參照）</b></td><td>按 URL 按鈕，URL 可拆成動態部分（介面的 STRING 變數）與靜態部分（單引號括起的文字），可自訂分隔符</td><td>例如執行時為 http://www.sap.com/IMAGES/logo1.bmp 或 logo2.gif</td></tr>
+    </tbody>
+  </table>
+  <p>支援格式：BMP、JPEG、TIFF、PNG、GIF（<b>不支援動畫 GIF</b>），Designer 7.0 起加 EXIF。</p>
+  <pre><code class="abap">*&amp;-------------------------------------------------------------*
+*&amp; 取公司 Logo 給 Graphic Content 節點（介面參數 IV_LOGO TYPE xstring）
+*&amp;-------------------------------------------------------------*
+" 方案 A：MIME Repository（SE80 → MIME Repository，建議做法）
+cl_mime_repository_api=&gt;get_api( )-&gt;get(
+  EXPORTING  i_url     = '/SAP/PUBLIC/ZBC480/logo.png'
+  IMPORTING  e_content = DATA(lv_logo)
+  EXCEPTIONS OTHERS    = 1 ).
+IF sy-subrc &lt;&gt; 0.
+  CLEAR lv_logo.                        "找不到就不印 Logo，不要讓整張單據失敗
+ENDIF.
+DATA(lv_logo_mime) = CONV string( 'image/png' ).   "傳給 Context 的 MIME Type 欄位
+
+" 方案 B：沿用 SmartForms 時代上傳到 SE78 的圖（BDS）
+cl_ssf_xsf_utilities=&gt;get_bds_graphic_as_bmp(
+  EXPORTING  p_object = 'GRAPHICS'
+             p_name   = 'ZLOGO_COLOR'
+             p_id     = 'BMAP'
+             p_btype  = 'BCOL'              "彩色；黑白用 'BMON'
+  RECEIVING  p_bmp    = DATA(lv_logo_bmp)
+  EXCEPTIONS not_found      = 1
+             internal_error = 2
+             OTHERS         = 3 ).
+IF sy-subrc = 0.
+  lv_logo      = lv_logo_bmp.
+  lv_logo_mime = 'image/bmp'.
+ENDIF.</code></pre>
+  <div class="note">教材（NW ’04）說 ADS 不能直接存取 MIME Repository，所以靜態圖片只能用檔案伺服器或網址。實務上最穩的做法就是上面這種：<b>由 ABAP 讀成 XSTRING 走 Graphic Content 傳入</b>，不受 ADS 主機能不能連到檔案路徑影響。</div>
+
+  <h3 id="ch05-20-06">6. 地址：Business Address Services（BAS）與非 BAS 地址</h3>
+  <p>很多應用改用 <b>BAS</b>（6.10 以前叫 Central Address Management）取代自己的地址表，地址以<b>地址號碼</b>唯一識別。放進版面的地址會依國家別規則格式化（依 ISO 11180 與萬國郵政聯盟規範，細節見函數 <span class="kw">ADDRESS_INTO_PRINTFORM</span> 說明）。在 Context 建立地址節點，就不必懂 BAS 細節也不必煩惱格式，版面上它就是一般文字。</p>
+  <p><b>地址節點的欄位</b>：</p>
+  <ul>
+    <li><b>地址類型</b>：① 公司地址（交貨地址、公司代碼），只需 10 位字元的地址號碼；② 私人地址（自然人，含稱謂等屬性；一人可有多地址），需地址號碼＋人員號碼；③ 公司聯絡人（有部門、房號等），也需地址號碼＋人員號碼；④ 動態定義：指定一個介面參數，執行時填 1、2、3 對應前三種。號碼通常都是介面參數。</li>
+    <li><b>寄件國家（Sender Country）</b>：必填，可用介面參數動態決定；若判定為國內地址就不印國家。</li>
+    <li>執行時在 BAS 找不到指定號碼的地址，生成的函數模組會發出錯誤訊息並<b>中止</b>。</li>
+    <li>同時有郵政信箱與街道地址時，下拉選擇印哪個；選「動態定義」則指定一個欄位，執行時值為 <span class="kw">X</span> 印街道、空白印信箱。</li>
+    <li><b>行優先順序（Priority of Lines）</b>：空間不夠時先隱藏地址的哪些部分，例如 A 稱謂、P 必要空行、D 部門（詳見 ADDRESS_INTO_PRINTFORM 文件）。</li>
+  </ul>
+  <p><b>不在 BAS 的地址</b>：若應用沒用 BAS 但仍要國家別格式，必須自己用 ABAP 呼叫 <span class="kw">ADDRESS_INTO_PRINTFORM</span>（在列印程式或介面初始化皆可），把應用的地址欄位一一對應到輸入結構，決定 <span class="kw">number_of_lines</span>（最大行數），再把回傳的單欄內表轉成 <span class="kw">TLINE</span> 兩欄內表（TDFORMAT 段落格式、TDLINE 內容），當作<b>動態文字</b>放進表單。</p>
+  <pre><code class="abap">*&amp;-------------------------------------------------------------*
+*&amp; 非 BAS 地址 → 國家別格式 → 動態文字（寫在介面 Initialization）
+*&amp;   Input : IS_CUSTOMER（SCUSTOM）, IV_SENDING_COUNTRY
+*&amp;   Output: GT_ADDRESS_TEXT TYPE tline_tab（Global Field，給 Context 動態文字節點）
+*&amp;-------------------------------------------------------------*
+DATA lt_addr_lines TYPE szadr_printform_table.
+
+" 1. 應用資料 → ADRS1（公司/一般地址格式）的欄位對應
+DATA(ls_adrs1) = VALUE adrs1(
+  title_text = is_customer-form
+  name1      = is_customer-name
+  street     = is_customer-street
+  post_code1 = is_customer-postcode
+  city1      = is_customer-city
+  country    = is_customer-country ).
+
+" 2. 依寄件國與收件國規則格式化
+CALL FUNCTION 'ADDRESS_INTO_PRINTFORM'
+  EXPORTING
+    address_1               = ls_adrs1
+    address_type            = '1'            "1=一般/公司
+    sender_country          = iv_sending_country
+    number_of_lines         = 6
+  IMPORTING
+    address_printform_table = lt_addr_lines.
+
+" 3. 單欄結果 → TLINE：'*' 代表 Smart Style 的預設段落
+gt_address_text = VALUE #( FOR ls_line IN lt_addr_lines
+                           ( tdformat = '*' tdline = ls_line-address_line ) ).</code></pre>
+  <div class="note"><b>教材勘誤</b>：强晟筆記的範例寫成 <span class="kw">TYPE-POOLS: zsadr</span>、<span class="kw">TYPE adrsl</span>、<span class="kw">address_l</span>、<span class="kw">zsadr_printform_table</span>，這是 PDF 抽字把數字 1 認成 l、把 s 認成 z 的結果；正確名稱是型別群組 <span class="kw">SZADR</span>、結構 <span class="kw">ADRS1</span>、參數 <span class="kw">ADDRESS_1</span>、表格型別 <span class="kw">SZADR_PRINTFORM_TABLE</span>。另外原範例的 IMPORTING 目標寫成 <span class="kw">lt_address_line</span>，與宣告的 <span class="kw">lt_address_lines</span> 不一致。7.02 起型別群組會自動載入，不必再寫 <span class="kw">TYPE-POOLS</span>。</div>
+
+  <h3 id="ch05-20-07">7. 長文字：文字模組、Include Text、動態文字與 Smart Styles</h3>
+  <p>Context 可放四種長文字，<span class="tcode">SFP</span> 會自動轉成 ADS 看得懂的 <b>XHTML</b>（HTML4 的 XML 版本）：① BAS 地址、② 文字模組（SmartForms Text Module）、③ Include Text（SAPscript 文字）、④ 動態文字。</p>
+  <p><b>為什麼要把文字集中存在資料庫</b>：只建一次、到處重用；要改只改一處，所有表單同步生效。典型例子：頁首（公司地址）、頁尾（董事、登記資訊）、整頁的交易條款。</p>
+  <table>
+    <thead><tr><th>比較</th><th>文字模組（Text Module）</th><th>Include Text（SAPscript 標準文字）</th></tr></thead>
+    <tbody>
+      <tr><td>維護 TCODE</td><td><span class="tcode">SMARTFORMS</span> → 文字模組</td><td><span class="tcode">SO10</span></td></tr>
+      <tr><td>Client</td><td><b>跨 Client</b></td><td><b>Client 相依</b></td></tr>
+      <tr><td>傳輸</td><td>自動連結傳輸組織器，首次儲存要指定套件</td><td>須<b>手動</b>加入傳輸請求</td></tr>
+      <tr><td>Context 參數</td><td>名稱、語言（固定值加單引號，或介面參數名）、樣式選項</td><td>文字名稱、文字物件、文字 ID、語言（同左可常數或欄位）</td></tr>
+    </tbody>
+  </table>
+  <div class="note"><b>教材勘誤</b>：强晟筆記寫「運行事務碼 SO01（包含文本）」，SO01 是 SAPoffice 收件匣；維護標準文字（Include Text）的是 <span class="tcode">SO10</span>，Col18 原文亦為 SO10。</div>
+  <p><b>文字模組編輯重點</b>：</p>
+  <ul>
+    <li>「管理」頁籤必須指定樣式，預設 <span class="kw">SYSTEM</span>。所見即所得，段落格式與字元格式的可選清單取決於樣式；格式名稱 1～2 個字元，<span class="kw">*</span> 代表預設段落。</li>
+    <li>行會依版面元素寬度自動換行，編輯器的標準寬度不影響輸出。Enter 開新段落（可換格式）、Shift+Enter 段內換行。</li>
+    <li>超連結技術上可放，但<b>不會出現在 PDF</b>（6.40 亦然）；全螢幕編輯器可切到 SAPscript 行編輯器，但 <b>SAPscript 命令執行時一律忽略</b>，最好別用。</li>
+    <li>欄位用 <span class="kw">&amp;…&amp;</span> 包起來，例如 <span class="kw">&amp;SFPSY-DATE&amp;</span>，只能用按鈕插入／編輯。可用：介面欄位、SFPSY 欄位、部分 SYST 欄位（如 sy-mandt、sy-sysid；清單處理欄位如 sy-pagno 不可用）。欄位名不分大小寫；SAPscript／SmartForms 的格式選項（偏移、非零等）在 PDF 表單中<b>被忽略</b>。</li>
+    <li>文字中的欄位執行時若未定義，程式會<b>中止</b>，而且設計時<b>無法做語法檢查</b>（字典欄位與 SFPSY 欄位除外）。</li>
+  </ul>
+  <p><b>放進 Context</b>：右鍵「建立 → 文字」。名稱與語言若動態決定，設計時無法檢查，建議勾「即使文字不存在也不報錯」避免中止；不指定語言則用表單原始語言。樣式有三種選擇：「從文字模組複製樣式」、指定另一個樣式（樣式不能動態，<b>不加</b>單引號）、兩者都不選（連 SYSTEM 都不套，印成純文字）。</p>
+  <p><b>Include Text 的限制</b>：SAPscript 命令全被忽略（所以<b>不能巢狀</b> INCLUDE），SAPscript 樣式也被忽略；所有段落與字元格式一律以 Context 指定的 <b>Smart Style</b> 解讀。例如 SAPscript 裡 B 是粗體，Smart Style 裡 B 若是小字，就全部印成小字；樣式中沒定義的格式直接忽略。可用「標準段落」覆寫所有 <span class="kw">*</span> 段落（相當於 INCLUDE 的 PARAGRAPH 附加），「第一段」設定第一段格式（相當於 NEW-PARAGRAPH）；標準段落留空時，所有標準段落都用第一段的格式。</p>
+  <p><b>動態文字</b>：指定一個行型別為 <span class="kw">TLINE</span> 的內表，執行時裝 ITF 格式文字（TDFORMAT 段落格式、TDLINE 內容，看起來就像行編輯器的文字）。要連續文字，只在第一行填段落格式，其餘行只填 TDLINE，每行最多 132 字元，結果都在同一段。字元格式用角括號：<span class="kw">前文&lt;AB&gt;格式化文字&lt;/&gt;後文</span>。這張 TLINE 內表<b>只能在動態文字節點的「欄位」中指定</b>，不要另外做成獨立 Context 節點；樣式必須是 Smart Style。</p>
+  <pre><code class="abap">*&amp;-------------------------------------------------------------*
+*&amp; 動態文字：訂單抬頭長文 + 程式組出的付款說明
+*&amp;   GT_NOTE_TEXT TYPE tline_tab → Context 動態文字節點的「欄位」
+*&amp;-------------------------------------------------------------*
+DATA lt_lines TYPE tline_tab.
+DATA(lv_tdname) = CONV tdobname( iv_vbeln ).
+
+CALL FUNCTION 'READ_TEXT'
+  EXPORTING
+    id       = '0001'
+    language = iv_langu
+    name     = lv_tdname
+    object   = 'VBBK'
+  TABLES
+    lines    = lt_lines
+  EXCEPTIONS
+    not_found = 1
+    OTHERS    = 2.
+IF sy-subrc &lt;&gt; 0.
+  CLEAR lt_lines.                         "沒有長文不是錯誤，照樣列印
+ENDIF.
+
+" 第一行指定段落格式，其餘只填 TDLINE → 連成同一段；&lt;B&gt;…&lt;/&gt; 為 Smart Style 字元格式
+gt_note_text = VALUE #(
+  ( tdformat = 'P1' tdline = |付款條件：&lt;B&gt;{ iv_zterm_text }&lt;/&gt;，| )
+  ( tdline   = |請於 { iv_due_date DATE = USER } 前匯款。| )
+  ( LINES OF lt_lines ) ).</code></pre>
+  <p><b>Smart Styles</b>（<span class="tcode">SMARTSTYLES</span>，或 SMARTFORMS 初始畫面選 Style）：只改 Y/Z 客戶命名空間的樣式，SAP 樣式先複製；樣式同樣走傳輸（首次儲存要套件）、有啟用／未啟用版本。表頭資料「標準設定」含：標準段落（編輯器中以 <span class="kw">*</span> 標示，至少先定義一個段落格式）、Tab 間距（只在 SmartForms 有效，<b>PDF 表單忽略</b>）、CH／LN 單位。段落可設編號與大綱（Numbering and Outline）。詳細操作 2007 版直接指向 BC470，請見 <a href="#ch05-19">5-19 章</a>。</p>
+
+  <h3 id="ch05-20-08">8. Adobe LiveCycle Designer：基本操作、物件庫、測試資料</h3>
+  <p>選 <span class="tcode">SFP</span> 的「Layout」頁籤即開啟內嵌的 Designer。前置條件（教材年代）：完整安裝的 SAP GUI 6.20／6.40 以上、Adobe Reader 6.0 以上。</p>
+  <div class="warn"><b>兩個會讓你白做工的陷阱</b>：① 不要用新版 Designer 建的表單再拿舊版 Designer 改。② <span class="tcode">SFP</span> 在顯示模式時 <b>Designer 仍可編輯</b>，你改得很開心，離開版面區就全部丟失；狀態列只會提示一次「對版面的修改不能在顯示模式下儲存！」。</div>
+  <p><b>工作區</b>：中央是版面編輯器（Layout Editor）；上方可開 <b>Script Editor</b>（FormCalc／JavaScript）；左右是面板視窗（Palette），可經「面板 → 管理面板」開關，「復位面板位置」回到標準。工具列有選單列及四條按鈕列（標準、字型、段落、版面），拖曳時按 Ctrl 可自由擺放，「工具 → 自訂」可顯示／隱藏。</p>
+  <table>
+    <thead><tr><th>面板</th><th>用途</th></tr></thead>
+    <tbody>
+      <tr><td><b>Hierarchy（層級）</b></td><td>以樹狀列出版面所有物件；右鍵重新命名、刪除；Ctrl 多選。<b>名稱大小寫敏感</b>（Field ≠ field ≠ FIELD）；同一子表單中同名元素會編號 FIELD[0]、FIELD[1]，應避免</td></tr>
+      <tr><td><b>Data View（資料檢視）</b></td><td>顯示所有 active 的 Context 節點（Adobe 稱 data schema）。<b>不要在這裡直接改</b>，要改資料來源就改 Context</td></tr>
+      <tr><td><b>Library（物件庫）</b></td><td>可拖放到頁面的所有物件，可自訂；SAP 附「Form Builder」頁籤（含預定義日期物件）</td></tr>
+      <tr><td><b>Object／Layout／Border</b></td><td>物件屬性、尺寸位置（Expand to fit、邊距、標題位置、旋轉 90 度與錨點）、框線與背景填色（無、純色、雙色漸層）</td></tr>
+      <tr><td><b>Font／Paragraph</b></td><td>文字欄位與靜態文字的字型段落</td></tr>
+      <tr><td><b>Info／Report</b></td><td>Info 顯示 Context 輸入的資訊；Report 列出欄位與 Context 的繫結狀況，本地預覽的警告也在這</td></tr>
+      <tr><td><b>Drawing Aids（繪圖輔助）</b></td><td>格線、尺規單位（改單位會自動換算既有數值），設定存進表單</td></tr>
+    </tbody>
+  </table>
+  <p><b>加入物件的步驟</b>：① 選頁面；② Context 物件從 Data View 拖，其他物件（靜態文字、圖片）從 Library 拖（右鍵「保持繪圖工具」可連續建立同型物件）；③ 在 Hierarchy 重新命名成有意義的名稱；④ 調整大小；⑤ 在 Layout／Border／Object／Font／Paragraph 設細節。「編輯 → 複製多個」可一次複製並對齊；「版面」選單提供對齊與同尺寸功能。</p>
+  <p><b>巢狀 vs. 連續物件</b>：設計時精確定位的物件（Master Page 上的樣板物件、Positioned 子表單中的物件），在 Hierarchy 中調整順序不影響版面位置；執行時才決定位置的物件（Flowed 內容），Hierarchy 順序<b>就是</b>輸出順序，例如兩個 Master Page 預設排上面的先處理、交換表格儲存格順序就會交換輸出位置。</p>
+  <p><b>重用與共享物件庫</b>：把物件右鍵「新增到物件庫」或直接拖進 Library 頁籤；可把多個物件存成一個庫物件；可「新增群組」；「恢復標準物件」可還原。物件庫可發佈到伺服器，每個物件存成獨立 XML 檔（副檔名 <b>XFO</b>），預設依登入語言分目錄；「共享物件庫位置」可指定一份 XML 清單：</p>
+  <pre><code class="xml">&lt;?xml version="1.0" encoding="UTF-8"?&gt;
+&lt;!-- Designer：Library 面板選單 → Shared Library Location --&gt;
+&lt;objectLibraryTabSet&gt;
+  &lt;tab name="Extras 1" directory="\\machine1\ABC" permission="adm"/&gt;
+  &lt;tab name="Extras 2" directory=".\XYZ"          permission="adm"/&gt;
+&lt;/objectLibraryTabSet&gt;</code></pre>
+  <p><b>XFA 與複製表單</b>：Designer 使用 <b>XFA（XML Forms Architecture）</b>描述表單範本，支援 JavaScript 與 FormCalc。XML 原始碼可直接改，但很容易弄壞表單；用剪貼簿在表單間複製版面會缺 data schema 資訊，<b>要搬表單請用 SFP「公用程式 → 下載表單物件」</b>（含 Context 與版面）。</p>
+  <p><b>表單屬性</b>（Designer「編輯 → 表單屬性」）：</p>
+  <ul>
+    <li><b>Locale</b>（語言＋國家，例如英語／英國），決定日期時間與小數點格式。實務由 ABAP 程式動態設定，這裡設的是測試用。</li>
+    <li><b>預設腳本語言</b>：JavaScript（較適合互動）或 FormCalc（較適合列印），個別腳本仍可改用另一種；<b>預設執行位置</b>也在此設定。</li>
+    <li><b>預覽類型</b>只影響 Designer 預覽，不影響 spool 預覽（spool 預覽非互動，除非程式設 <span class="kw">fillable = 'X'</span>）。</li>
+    <li><b>Variables</b>：表單層級的文字變數（見第 13 節）。</li>
+    <li><b>預覽用資料檔</b>：指定一個 XML 檔給 Designer 預覽用（本地、不經 ADS，字型與 ADS 渲染結果可能不同）。</li>
+  </ul>
+  <pre><code class="xml">&lt;!-- Designer 預覽測試資料：&lt;data&gt; 必要；欄位名大小寫敏感；內表每列用 &lt;DATA&gt; 包起來 --&gt;
+&lt;data&gt;
+  &lt;IS_CUSTOMER&gt;
+    &lt;MANDT&gt;800&lt;/MANDT&gt;
+    &lt;NAME&gt;Rahn&lt;/NAME&gt;
+    &lt;FORM&gt;Frau&lt;/FORM&gt;
+    &lt;STREET&gt;NG Road 1&lt;/STREET&gt;
+    &lt;POSTBOX/&gt;
+    &lt;CITY&gt;Walldorf&lt;/CITY&gt;
+  &lt;/IS_CUSTOMER&gt;
+  &lt;IT_BOOKINGS&gt;
+    &lt;DATA&gt;
+      &lt;MANDT&gt;800&lt;/MANDT&gt;
+      &lt;CARRID&gt;AA&lt;/CARRID&gt;
+      &lt;CONNID&gt;0017&lt;/CONNID&gt;
+    &lt;/DATA&gt;
+    &lt;DATA&gt;
+      &lt;MANDT&gt;800&lt;/MANDT&gt;
+      &lt;CARRID&gt;AZ&lt;/CARRID&gt;
+      &lt;CONNID&gt;0788&lt;/CONNID&gt;
+    &lt;/DATA&gt;
+  &lt;/IT_BOOKINGS&gt;
+  &lt;LOGO href="\\MyMachine\Uli.bmp"/&gt;
+&lt;/data&gt;</code></pre>
+  <p><b>不用手寫測試檔的方法</b>：6.40 SP10 起 <span class="tcode">SFP</span>「公用程式 → 設定」可指定把執行時合併傳輸的資料（XFD）存成前端檔案，直接拿來當預覽資料（SAP Note 779319）；設定只對該使用者、該 session 有效，多次列印會互相覆蓋，需要<b>除錯權限</b>且不能在背景使用。</p>
+  <p><b>預覽</b>：「Preview PDF」頁籤不能輸入測試資料，只能讀 XML 檔。看不到預覽頁籤時，關閉 SFP → 開 Adobe Reader → 「編輯 → 偏好設定 → 網際網路」勾「在瀏覽器中顯示 PDF」→ 重開；再不行就重裝 Reader。要看 spool 預覽：「表單 → 測試」（F8）會產生函數模組並進 Function Builder 測試環境手動輸入資料（可存成測試資料目錄），或啟用後直接跑列印程式。</p>
+
+  <h3 id="ch05-20-09">9. 表單結構：Master Page、Content Area、Body Page 與 Subform</h3>
+  <p>「頁」這個詞聽起來簡單，但 Designer 的頁面觀念要分清楚：</p>
+  <table>
+    <thead><tr><th>元素</th><th>角色</th><th>SmartForms／SAPscript 粗略對應</th></tr></thead>
+    <tbody>
+      <tr><td><b>Master Page（主頁面）</b></td><td>至少一個，自動建立。放在上面的物件出現在所有輸出頁，這種永遠不變的物件稱為<b>樣板物件（boilerplate）</b>，例如 Logo</td><td>次視窗（Secondary Window）</td></tr>
+      <tr><td><b>Content Area（內容區）</b></td><td>主頁面上至少一個，定義動態輸出可用的空間；<b>只能放在主頁面上</b></td><td rowspan="2">主視窗（MAIN Window）的組合</td></tr>
+      <tr><td><b>Body Page（頁體，新版 Design View 的 Page）</b></td><td>頂層子表單，是動態內容的容器，使用內容區的空間；空間不夠時找下一個內容區（可能自動換頁），所以一個頁體可以印成很多頁</td></tr>
+      <tr><td><b>Subform（子表單）</b></td><td>把多個物件包成一組，可收合；分 <b>Positioned</b>（物件固定在子表單內的相對位置，Hierarchy 順序無關）與 <b>Flowed</b>（依執行時占用空間一個接一個排，頁體就是典型）</td><td>範本（Template）／迴圈</td></tr>
+    </tbody>
+  </table>
+  <p>設計順序建議<b>先做靜態的主頁面</b>，再做頁體。</p>
+  <p><b>多個主頁面</b>（在 Object 面板設定，<b>記得先切到 Master Pages 頁籤</b>，只在 Hierarchy 雙擊節點不夠）：頁面尺寸（信封、A4）、方向（Portrait 直式／Landscape 橫式）、<b>出現次數上限</b>。例如第一個主頁面（有地址、Logo）限 1 次，資料多到一頁放不下時，Hierarchy 中第二個主頁面自動成為後續頁；若限了次數卻沒有其他主頁面，執行時該限制會被忽略。</p>
+  <p><b>頁體的位置（Place）</b>：要開新頁就設「Top of Next Page」或「Top of Page &lt;主頁面&gt;」；第一個頁體的「Following Previous」其實就是從 Hierarchy 第一個主頁面開始。設「On Page &lt;主頁面&gt;」時：前一個子表單已在那個主頁面，就同頁接著印（空間夠的話）；前一個在別的主頁面，就換頁並用指定主頁面開新頁。</p>
+  <p><b>範例：插入「交易條款」頁</b>：另建主頁面 TERMS，再建新頁體，Place 設「Top of Page TERMS」。也可以讓前一個子表單設「之後 → 到 TERMS 頁」，但<b>每個強制換頁都做一個新頁體</b>，Hierarchy 會好讀很多。</p>
+  <p><b>防止換頁</b>：① 選物件；② Hierarchy 右鍵「Wrap in Subform」；③ Object 面板 Subform 頁籤取消「Allow Page Breaks within Content」。主頁面上、或 Positioned 子表單內的子表單不可用。兩個子表單之間不換頁：設「Keep with Previous」／「Keep with Next」。</p>
+  <div class="tip">教材的可讀性建議：① 雖然可以完全不用頁體、所有東西都放主頁面，<b>強烈不建議</b>；② 子表單 B 要在另一個主頁面時，不要把它巢狀在子表單 A 裡；③ 不要在子表單的「After」設「Go to next page」，要換頁就新建頁體；④ 頁體設 Keep with Previous/Next 沒有意義，只用於一般子表單；⑤ <b>巢狀子表單會降低處理效能</b>。</div>
+
+  <h3 id="ch05-20-10">10. 靜態元素、動態欄位與資料繫結（Data Binding）</h3>
+  <p><b>靜態圖片</b>（通常放主頁面當樣板物件）：必須用有效 URL 指定位置（檔案伺服器、內網或網際網路；NW ’04 無法存取 MIME Repository）。</p>
+  <ul>
+    <li>用資料夾圖示瀏覽時要填<b>完整路徑</b>：<span class="kw">C:\image.gif</span> 在 Designer 預覽可以用，實際執行時 C:\ 指的是 <b>ADS 所在伺服器</b>的磁碟，而且路徑必須公開可存取。</li>
+    <li>網址必須加 <span class="kw">http://</span> 或 <span class="kw">https://</span>，且 ADS 要連得到。</li>
+    <li>勾「<b>嵌入圖片（Embed Image Data）</b>」可避免執行時路徑錯誤。注意：嵌入後 URL <b>仍必須保留</b>當作原始位置參考；嵌入後修改 URL，圖片會重新上傳。</li>
+    <li>尺寸三選一：Use Image Size（原尺寸，不能拉把手）、Scale Image Proportionally（等比縮放）、Scale Image to Fit（自訂尺寸，不保比例）。</li>
+  </ul>
+  <p><b>靜態文字</b>：所見即所得，自動斷字；Enter 新段落、Shift+Enter 換行（同段同格式）。框太小時右下角出現紅色小加號。先選取文字再到 Font 面板改字型、粗斜體、底線、顏色；Paragraph 面板設水平對齊（左、右、置中、左右對齊）、垂直對齊、縮排與間距。</p>
+  <div class="warn"><b>字型陷阱</b>：Designer 預覽用的是你電腦上的字型，執行時用的是 <b>ADS 伺服器</b>上的字型，兩者可能完全不同。只用 ADS 伺服器上有安裝的字型；最保險的是 Times New Roman、Arial、Courier（强晟補充：中文用宋體、黑體）。每份文件用的字型越少越好（效能）。</div>
+  <p><b>幾何物件</b>：線（任意角度，Object 面板有水平／垂直／45 度按鈕）、矩形（框線、圓角、背景色）、圓（可只畫弧）。通常放主頁面。</p>
+  <p><b>動態欄位的兩種放法</b>：① 從 Data View 拖到版面（<b>最佳</b>，自動建立型別正確的欄位與資料繫結）；② 從 Library 拖文字欄位再手動繫結。已放進版面的 Context 元素在 Data View 名稱右側有特殊符號；同一欄位可放多次，此時面板中部分屬性會顯示「混合」。Data View 右鍵「顯示資訊」可看字典描述或外部文字的類型與鍵值。</p>
+  <p><b>文字欄位（Text Field）</b>可對應簡單字串、文字模組、SAPscript 文字、動態文字或 BAS 地址，Designer 一視同仁：</p>
+  <ul>
+    <li>Layout：長度未知就勾 <b>Expand to fit</b>（只有一行就只允許水平延伸）；輸入的寬度只是粗估。</li>
+    <li>Caption（標題）：描述動態內容的靜態文字，與給視障者的 Tooltip 不同；設定位置（上下左右）與保留空間；Font／Paragraph 面板的小三角可選「編輯標題」「編輯值」，預設兩者一起。</li>
+    <li>Object → Field：Appearance 只對互動表單有意義；<b>Allow Multiple Lines</b> 只在 Binding 未選 XHTML 時相關，不勾時普通文字超過一行會被截掉；<b>Limit Length</b> 對應字典長度，相當於 SAPscript 的 <span class="kw">&amp;symbol(8)&amp;</span>。</li>
+    <li>Object → Value：Type 只與互動有關；<b>Default</b> 值在沒有繫結或繫結失效時使用（空欄位仍保持空）。</li>
+    <li>Object → Binding → <b>Data Format</b>：要保留格式、換行、字型就選 <b>XHTML</b>。從 Data View 拖來的格式化文字（地址、SmartForms 文字、SAPscript 文字、動態文字）會自動勾選；選了 XHTML 後 Font 與 Paragraph 面板的設定都被忽略。文字沒有格式就不要選 XHTML，看起來一樣但<b>效能很差</b>。</li>
+  </ul>
+  <div class="note"><b>筆記勘誤</b>：强晟筆記此段寫「如果從數據視圖拖一個對應上下文中 ABAP 欄位的文本欄位，這個選項會自動被選中」，與下一句「沒有格式就不應選 XHTML」矛盾。依原意應為：一般 ABAP 欄位（Plain Text）<b>不會</b>自動選 XHTML，只有格式化文字才會。</div>
+  <p><b>資料繫結規則</b>：</p>
+  <ul>
+    <li>所有動態欄位都必須有繫結，它連結版面物件與 Context（Data Connection）；<b>繫結大小寫敏感</b>。</li>
+    <li>絕對名稱以 <span class="kw">$record</span> 開頭（代表一批資料的目前記錄，例如這一位客戶）；相對名稱只對同一子表單內的元素有效。</li>
+    <li>繫結設 <b>Normal</b> 時，物件名稱必須等於 Data View 欄位名，所以<b>改名會斷掉繫結</b>；同一 Context 元素要在版面放多次，繫結要設 <b>Global</b>；繫結錯誤或設 <b>None</b> 會得到錯誤或空資料。</li>
+    <li>必須手動設定繫結的情況：從 Library 拖入、複製貼上既有元素（繫結不會跟著複製）、元素移到別的子表單或拆掉子表單。最簡單的補救：點繫結欄右邊小三角從 Context 選，或把 Data View 的元素<b>拖到該欄位上</b>，順便更新名稱、標題、型別。</li>
+  </ul>
+  <p>設 Data View 有頂層結構 SUB1（欄位 OBJ1），Hierarchy 有子表單 SUB1 內含物件 OBJ1，下列四種組合都正確（第 2、3 種對 OBJ1 是相對名稱）：</p>
+  <table>
+    <thead><tr><th>#</th><th>子表單 SUB1 的繫結</th><th>物件 OBJ1 的繫結</th></tr></thead>
+    <tbody>
+      <tr><td>1</td><td>Normal</td><td>Normal</td></tr>
+      <tr><td>2</td><td>Normal</td><td>OBJ1</td></tr>
+      <tr><td>3</td><td>$record.SUB1</td><td>OBJ1</td></tr>
+      <tr><td>4</td><td>$record.SUB1</td><td>$record.SUB1.OBJ1</td></tr>
+    </tbody>
+  </table>
+  <p><b>檢查繫結</b>：Report 面板的 Binding 頁籤列出一般繫結欄位、參照繫結欄位（含相對或絕對路徑）、<b>無繫結欄位</b>（值由腳本決定時才該這樣），以及「未繫結的資料節點」（Context 有、版面沒用）。繫結失敗的欄位名左側會出現警示燈。未繫結節點太多，表示 Context 甚至介面該瘦身了。</p>
+  <p><b>其他動態欄位</b>：</p>
+  <ul>
+    <li><b>Image Field</b>：對應 Context 的 Graphic Content 或 Graphic Reference；可 Expand to fit。URL 或嵌入設定會被忽略，除非繫結設 None（那還不如直接用靜態圖片）。</li>
+    <li><b>Numeric Field</b>：Decimal、Float、Integer（Binding 頁籤設定）。金額與小數在 SAP 有特殊處理，<b>一律從 Data View 拖</b>，會自動帶正確型別與小數位所需的腳本。</li>
+    <li><b>Date/Time Field</b>：Date、Time、Date and Time 三種。ABAP 型別 d/t（字典 DATS/TIMS）會自動轉成正確輸入格式；ABAP 與字典都沒有「日期加時間」的單一型別。</li>
+    <li><b>Floating Field（浮動欄位）</b>：嵌在靜態文字裡的欄位，例如用客戶真名取代「親愛的先生／女士」。游標放在靜態文字中 →「插入 → Floating Field」→ 選取該欄位到 Binding 頁籤指定繫結（用小三角選最安全）→ 右鍵重新命名。預設是文字欄位，可在 Field 頁籤改型別；Presence 自動顯示為 Hidden 不必擔心。<b>頁碼</b>也用浮動欄位：「插入 → 目前頁碼」或「總頁數」，會自動帶腳本。</li>
+  </ul>
+  <p><b>輸出格式化的途徑</b>：顯示樣式（日期格式、去前導零…）、Field 頁籤的 Limit Length、ABAP 程式（偏移、壓縮空白）。字元欄位<b>沒有</b>像 SAPscript／SmartForms 那樣的輸出選項（如偏移），要在列印程式或介面初始化中先處理好。</p>
+
+  <h3 id="ch05-20-11">11. 顯示樣式（Display Pattern）與地區設定</h3>
+  <p>顯示樣式（部分文件稱 <b>picture clause</b>）以規則描述日期、時間、數字、文字在文件中的呈現。例如 ABAP 內部 YYYYMMDD 的今天可以印成「2007-12-16」「Sonntag, den 16. Dezember 2007」或「Sunday, December 16, 2007」。</p>
+  <ul>
+    <li>樣式是<b>選用</b>的，只在必要時用；不用就依 locale 的標準格式。在 Object → Field 頁籤設定，下拉有常用樣式，也可自由輸入，輸入後<b>按 Enter</b> 讓 Designer 檢查語法。</li>
+    <li>Field 頁籤的 Edit Pattern、Value 頁籤的 Validation Pattern 只給互動表單；Binding 頁籤的 <b>Data Pattern</b> 定義資料如何被讀入，Context 來的日期時間會自動正確解析，<b>不要手動設</b>。</li>
+    <li>樣式由符號（依欄位型別，例如 MMMM＝完整月份名，執行時依 locale 變成 January／Januar／Janvier）、單引號包起來的字面文字（例如 <span class="kw">'請於下列日期前付款' MM-DD-YY</span>），以及可直接使用的逗號、減號、冒號、斜線、句點、空白組成。</li>
+    <li><b>樣式不會自動翻譯</b>，而且<b>大小寫敏感</b>；長樣式要確保欄位夠寬，啟用後用測試程式確認。</li>
+    <li>多選一樣式語法：<span class="kw">category{pattern}|category{pattern}</span>，數量不限，執行時採用符合資料的那一個（例如各地車牌格式不同）。</li>
+  </ul>
+  <table>
+    <thead><tr><th>日期符號</th><th>意義</th><th>時間符號</th><th>意義</th></tr></thead>
+    <tbody>
+      <tr><td>D／DD</td><td>日（1–31／補零 01–31）</td><td>h／hh</td><td>12 小時制（1–12／01–12）</td></tr>
+      <tr><td>M／MM</td><td>月（1–12／01–12）</td><td>H／HH</td><td>24 小時制（0–23／00–23）</td></tr>
+      <tr><td>MMM／MMMM</td><td>月份縮寫／完整名稱</td><td>M／MM</td><td>分（0–59／00–59）</td></tr>
+      <tr><td>EEE／EEEE</td><td>星期縮寫／完整名稱</td><td>S／SS</td><td>秒（0–59／00–59）</td></tr>
+      <tr><td>YY／YYYY</td><td>兩位／四位年</td><td>A、Z</td><td>上下午 AM/PM、時區（GMT、GMT+05:00、EST、PDT…）</td></tr>
+    </tbody>
+  </table>
+  <p>範例：<span class="kw">MMM DD, YYYY</span> → en_US「Dec 16, 2007」、de_DE「Dez 16, 2007」；<span class="kw">EEEE, 'der' D. MMMM YYYY</span> → 「Sunday, der 16. December 2007」／「Sonntag, der 16. Dezember 2007」；<span class="kw">h:MM A</span> → 9:10 AM。只有符號部分被在地化，單引號內永遠不變，所以樣式要能適用所有翻譯版本。</p>
+  <table>
+    <thead><tr><th>數字符號</th><th>意義</th><th>文字符號</th><th>意義</th></tr></thead>
+    <tbody>
+      <tr><td>9</td><td>一位數字，空或空白時印 0</td><td>A</td><td>一個字母</td></tr>
+      <tr><td>8</td><td><b>依幣別／單位決定的小數位</b>（會考慮字典參考）</td><td>X</td><td>任一字元</td></tr>
+      <tr><td>z／Z</td><td>一位數字；空、空白或 0 時印「無」／印空白</td><td>O 或 0</td><td>一個英數字元</td></tr>
+      <tr><td>s／S</td><td>負數印減號，否則印「無」／印空白</td><td>9</td><td>一個數字</td></tr>
+      <tr><td>$ ／ , ／ .</td><td>在地化的貨幣符號／千分位／小數點</td><td colspan="2"></td></tr>
+    </tbody>
+  </table>
+  <p>數字範例（en_US ／ de_DE）：<span class="kw">S999.9</span> 對 1.55 → 「 001.6」／「 001,6」；<span class="kw">SZZ9.99</span> 對 -1.55 → 「- 1.55」；<span class="kw">szz9.99</span> 對 -155 → 「-155.00」／「-155,00」；<span class="kw">$9,999.99</span> 對 1.55 → 「$0,001.55」／「€0.001,55」。字典的小數位與輸出長度會自動參考，但可被顯示樣式覆寫；要依幣別決定小數位（USD 兩位、JPY 零位）就<b>必須明確用符號 8</b>，並給預期最大值，例如 <span class="kw">zz,zzz,zz9.88</span>。</p>
+  <p><b>預定義日期物件</b>：固定樣式翻譯時不會轉換，但表格裡又常要固定日期長度。為了兼顧在地化與固定長度，SAP GUI 版 Designer 在 Library 的「Form Builder」頁籤附了四種預定義日期欄位，本質是在 initialize 事件跑下面的 FormCalc：</p>
+  <pre><code class="javascript">// 預定義日期欄位：initialize 事件（FormCalc）
+// 1 = 短格式、2 = 中、3 = 長、4 = 完整；依目前 locale 取對應日期樣式
+$.format.picture = DateFmt(1, $.locale)   // 顯示用
+$.ui.picture     = DateFmt(1, $.locale)   // 使用者輸入用（互動表單）
+// 注意：腳本會覆寫欄位上手動設定的樣式</code></pre>
+  <p><b>不寫樣式時的國家別格式</b>：日期預設用中等格式，資料依 locale 格式化。Locale 必須在 ABAP 程式設定（Designer 雖有很多地方能設，但以程式為準），例如全球客戶的發票要依客戶所在國規則印日期：</p>
+  <ul>
+    <li><b>新介面（ABAP Dictionary）</b>：設定 <span class="kw">/1BCDWB/DOCPARAMS</span> 的 <span class="kw">COUNTRY</span> 與 <span class="kw">LANGU</span>；有給 COUNTRY 時 <span class="kw">SET COUNTRY</span> 會被忽略。</li>
+    <li><b>舊介面（SmartForms 相容）</b>：用 <span class="kw">SET COUNTRY</span> 決定格式，語言用 <span class="kw">CONTROL_PARAMETERS-LANGU</span>。</li>
+  </ul>
+
+  <h3 id="ch05-20-12">12. 表格：動態表格、表頭、條件分頁、控制層級與巢狀表格</h3>
+  <p>發票、訂單確認沒有表格很難想像。資料在 ABAP 收進內表傳給生成的函數模組，逐列處理由 ADS 完成。表格其實是<b>巢狀子表單</b>：至少一個表格子表單加一個列子表單，儲存格是一般版面元素。列子表單能在執行時重複的叫<b>動態表格</b>（往下長），列數設計時固定的叫<b>靜態表格</b>。</p>
+  <p><b>建立動態表格（Designer 7.1 以上）</b>：Data View 面板選單 → Options → 勾「<b>Allow Tables To Be Generated</b>」，再把內表從 Data View 拖到頁面；沒勾的話產生的是巢狀 Flowed／Positioned 子表單。除非要做多行列或橫向延伸的表格，一般都產生動態表格。放進頁面時，除非確定不超過一頁，<b>放在 Flowed 子表單中</b>才能分頁。拖曳格線調欄寬列高；用 Table 工具列或 Table 選單增刪儲存格，例如「Table → Insert → Row Above」加表頭列。</p>
+  <p><b>減少傳給 ADS 的資料</b>：與其在版面刪欄位，不如縮小介面的行型別，或在 Context 把多餘欄位設 inactive。</p>
+  <table>
+    <thead><tr><th>對象</th><th>可調整的設定</th></tr></thead>
+    <tbody>
+      <tr><td>整張表</td><td>Row Shading 頁籤勾 Apply Alternating Row Shading（斑馬紋）；Binding 頁籤 <b>Min Count = 1</b> 可讓沒資料時也印表頭，Min Count = 0 則至少一列資料才印；Table 頁籤 Allow Page Breaks within Content 決定能否跨頁；只要外框就在表格的 Border 面板設</td></tr>
+      <tr><td>表頭列</td><td>取有意義的名稱（條件分頁與腳本會用到）；Pagination 頁籤決定首頁／後續頁是否印表頭</td></tr>
+      <tr><td>表頭欄位</td><td>有字典參照時欄名取自資料元素文字，可自改；要動態欄名就把靜態文字改成文字欄位；改表頭欄寬，資料欄寬自動跟著變</td></tr>
+      <tr><td>DATA（Body）列</td><td>Binding 頁籤可設最少／最多列數（最少不足會印空白列；兩者相等就是靜態表格）；設定條件分頁</td></tr>
+      <tr><td>DATA 欄位</td><td>依 Library 設定可能是 Sunken Box 的 3D 外觀，列印表單請改掉；框線、邊距、寬高同表頭</td></tr>
+    </tbody>
+  </table>
+  <p><b>條件分頁（Conditional Break）</b>：在 DATA 列的 Object → Pagination 頁籤按加號新增條件，每個條件可選 FormCalc 或 JavaScript，任何結果為真／假的邏輯式都行。最常見是比較這一列與前一列的某個儲存格，例如航空公司不同就插入空白分隔列或新表頭；Designer 會為表格欄位產生建議程式碼供修改。可跳到的位置與一般子表單相同，也可以不換頁只插入額外表頭（把它設為 Leader）。</p>
+  <div class="warn"><b>條件分頁與控制層級的前提是「資料已排序」</b>（教材 Hint 原話：依列比較的條件分頁通常只在表格事先排序過才有意義）。在 S/4HANA 上，<b>HANA 沒有預設排序</b>，SELECT 不加 ORDER BY 或不 SORT，同一張單據今天印出三段 AA、明天印出 AA／LH／AA 交錯是正常現象。Casper 在成本評價案上就是這樣踩坑（item category H 與 cost component E 兩種資料交替被抓到，成本結果不穩定，最後固定抓 H）。<b>凡是「分組」「取第一筆」「跟上一列比」，一律在 ABAP 先明確排序。</b></div>
+  <pre><code class="javascript">// DATA 列 → Object → Pagination → Conditional Break（JavaScript，示意）
+// 航空公司與上一列不同時觸發：插入分隔表頭 HDR_CARRIER（Leader）
+// 實務請以 Designer 自動產生的建議程式碼為底再修改
+this.index &gt; 0 &amp;&amp;
+  this.CARRID.rawValue !=
+  this.parent.resolveNode("DATA[" + (this.index - 1) + "]").CARRID.rawValue</code></pre>
+  <p>表頭注意：條件分頁設的表頭，在「資料放不下而自然換頁」時<b>不會</b>出現，除非你明確指定；反之，表頭若在 Pagination 頁籤勾了「Include Header Row in Subsequent Pages」，只在一般換頁出現，條件分頁時不出現。所以一張表可以有好幾個表頭，分別服務一般換頁與資料驅動的分頁。</p>
+  <p><b>控制層級（Control Level）</b>：同一排序欄位值相同的一群記錄。最簡單的做法是在 Context 內表的 <b>Control Levels 頁籤</b>設定（每層可選升冪／降冪），再把表格從 Data View 拖到版面，看起來就像巢狀表格。資料可以自己排序（在列印程式或表單初始化），並在 Properties 頁籤勾 <b>Already sorted</b>；或取消勾選讓系統在渲染前自動排序，但<b>只有全域介面欄位或 call-by-value 的 import 參數才行</b>（call-by-reference import 參數是唯讀的）。</p>
+  <p><b>巢狀表格</b>：例如每條航線（ID、NO.、Departure、Destination）下列出所有航班日期。兩種做法：① 介面本身就是巢狀（巢狀字典型別或本地型別），直接從 Data View 拖；② 在 Context 把一張內表巢狀進另一張，並在<b>內層</b>表設 <b>WHERE</b> 條件說明兩表如何結合（Col18 測驗題：巢狀時必須指定的是 WHERE）。</p>
+  <pre><code class="abap">*&amp;-------------------------------------------------------------*
+*&amp; 列印程式端：送進表單前先把排序這件事做對
+*&amp;-------------------------------------------------------------*
+" 航線（外層表）：明確 ORDER BY，不依賴資料庫預設順序
+SELECT carrid, connid, cityfrom, cityto
+  FROM spfli
+  WHERE carrid IN @s_carr
+  ORDER BY carrid, connid
+  INTO TABLE @DATA(lt_conn).
+
+" 航班日期（內層表）：Context 以 WHERE CARRID = T1-CARRID AND CONNID = T1-CONNID 巢狀
+SELECT carrid, connid, fldate
+  FROM sflight
+  WHERE carrid IN @s_carr
+  ORDER BY carrid, connid, fldate
+  INTO TABLE @DATA(lt_dates).
+
+" 若資料是從別的內表組出來的（無法 ORDER BY），傳給表單前自己 SORT，
+" 並在 Context 勾 Already sorted：
+SORT lt_bookings BY carrid connid fldate bookid.</code></pre>
+
+  <h3 id="ch05-20-13">13. 表單腳本：FormCalc 與 JavaScript</h3>
+  <p>PDF 表單列印時，資料在 ABAP（Web AS ABAP）收集 → 傳給 J2EE 上的 ADS → 與版面和邏輯合併 → PDF 回傳 ABAP。<b>渲染期間無法與 ABAP 溝通，所以表單本身不能寫 ABAP</b>，只能對動態元素寫 FormCalc 或 JavaScript。</p>
+  <ul>
+    <li>可加腳本的是所有<b>非靜態</b>物件（數值、文字、日期、圖片欄位、子表單…）；內容區、靜態文字、靜態圖片、線／圓／矩形沒有事件。但腳本可以存取表單中所有物件，包括靜態物件。</li>
+    <li>選物件後在 Script Editor 輸入，選事件、選語言（每個事件可不同）。<b>列印表單：簡單工作用 FormCalc、複雜工作用 JavaScript；互動（Web）表單用 JavaScript</b>。</li>
+    <li>腳本可在 Client 或 Server 執行，列印表單沒有使用者互動，<b>應在 Server 端執行</b>。預設語言與執行位置請在表單屬性設好。</li>
+    <li>放大 Script Editor 才看得到「Show Events with Scripts」；配合在 Hierarchy 全選，可一次看全表單的腳本。打句點會跳出成員提示（可在 Tools → Options → Workspace 關閉）。</li>
+  </ul>
+  <p><b>事件與處理順序</b>：</p>
+  <table>
+    <thead><tr><th>事件</th><th>時機</th><th>典型用途</th></tr></thead>
+    <tbody>
+      <tr><td><b>initialize</b></td><td>物件初始化，資料流合併之後</td><td>動態決定欄位值、套預定義樣式</td></tr>
+      <tr><td><b>calculate</b></td><td>合併後、顯示前；計算相依值改變時<b>會重算</b></td><td>查看並改寫欄位值（覆蓋原繫結結果）；<b>絕對避免自我參照</b></td></tr>
+      <tr><td><b>form:ready</b></td><td>表單與資料合併載入、calculate 與 validate 都觸發後，<b>分頁完成前</b></td><td>動態隱藏物件；Flowed 子表單中後面的物件會補上空位</td></tr>
+      <tr><td><b>layout:ready</b></td><td>版面套用、分頁插入之後</td><td>存取主頁面上的物件、頁碼（Col18 測驗題：可在此事件存取主頁面元素）</td></tr>
+    </tbody>
+  </table>
+  <p><b>FormCalc 語法基礎</b>：分號 <span class="kw">;</span> 或 <span class="kw">//</span> 開始註解到行尾；命令可跨行；約 37 個關鍵字（if、do、or…）<b>不分大小寫</b>；運算子 + - * /，比較 == &lt;&gt; &lt; &gt; &lt;= &gt;= 或 eq ne lt gt le ge。<b>ABAP 程式設計師注意：= 是指派，== 才是相等。變數大小寫敏感。</b></p>
+  <p><b>存取 Context 欄位（accessor）</b>：前綴 <span class="kw">$record.</span>，照 Data View 的名稱以句點串接，ABAP 的原始寫法（連字號）在這裡無效。內表與欄位之間一定有一層 <b>DATA</b>；不指定第幾筆就取第一筆（更一般的規則：同層同名物件，模糊參照一律指第一個）；指定第幾筆用 <span class="kw">$record.IT_SUMS.DATA[4].CURRENCY</span>，<b>索引從 0 起算</b>（不像 sy-tabix 從 1）；目前列用不帶索引的 DATA；全部列用 <span class="kw">DATA[*]</span>。版面上沒用到的 Context 欄位也能存取。沒有繫結的欄位、或要改物件屬性時，改用 Hierarchy 中的名稱。</p>
+  <p><b>存取物件</b>：<span class="kw">$</span> 代表目前物件；同層、外層子表單所在層、直接子物件（腳本掛在子表單時）可直接寫名稱；測試方法是在 Script Editor 打名稱加句點，有提示就能直接存取。沿子表單往下可用兩個句點省略中間層，例如從 SUB1 用 <span class="kw">$..PHONE</span>。完整名稱從主頁面或頁面名稱開始（無名子表單略過）：在 Hierarchy 選物件、開任一事件，第一行註解就是 <span class="kw">data.Masters.FIRST.SUB1.SUB2.NAME::ready:layout</span>，雙冒號前就是完整名稱。為了效能，路徑寫最短即可。隱藏子表單等於隱藏其全部內容。</p>
+  <pre><code class="javascript">; ===== 文字欄位 PHONE_NO 的 initialize 事件（FormCalc）=====
+; 非 calculate 事件：要用一般指派 $ = ...
+if ($record.IS_CUSTOMER.COUNTRY == "TW")
+then $ = "+886 2 2345 6789"
+else $ = "+49 6227 777777"
+endif
+
+; ===== 同一欄位改寫在 calculate 事件 =====
+; calculate 事件不需指派：欄位自動取「最後一個運算式」的值
+; calculate 可能執行多次，$ = $ + 1 這種自我參照會得到意外結果
+if ($record.IS_CUSTOMER.COUNTRY == "TW")
+then "+886 2 2345 6789"
+else "+49 6227 777777"
+endif
+
+; ===== 內表欄位存取 =====
+$record.IT_SUMS.DATA[0].CURRENCY      ; 第一筆（索引從 0 起）
+$record.IT_SUMS.DATA.CURRENCY         ; 表格內＝目前列
+Sum($record.IT_BOOKINGS.DATA[*].FORCURAM)  ; 全部列（示意；合計請在 ABAP 算）</code></pre>
+  <p><b>表單變數</b>：表單屬性的 Variables 頁籤定義，不影響介面與 Context，全表單可見；會出現在 Hierarchy，但不能像 Context 欄位那樣放進版面，也不能用於 Default Binding。可為多行文字或數字，<b>變數名不分大小寫</b>。</p>
+  <p><b>改物件屬性</b>：值含單位要加引號（"12cm"）；RGB 為三個 0–255 的數字（0,0,0 黑、255,0,0 紅、255,255,255 白）；靜態物件沒有事件，要改它的屬性就把腳本掛在某個非靜態物件上。不知道屬性怎麼寫，就先做一個有該設定的假物件，看它的 XML（例如 <span class="kw">&lt;caption reserve="35mm"&gt;&lt;font typeface="Arial" size="12pt"/&gt;…&lt;/caption&gt;</span>）。</p>
+  <pre><code class="javascript">// ===== 改物件屬性（FormCalc）=====
+FOOTER.presence = "hidden"                           ; 隱藏子表單（連同內容）
+StaticImage1.rotate = "90"
+StaticText1.x = "12cm"                               ; 有單位要加引號
+StaticText1.caption.font.fill.color.value = "200,0,0" ; RGB
+TextField1.caption.value.text = "Dynamic caption"
+TextField1.caption.font.typeface = "Times New Roman"
+TextField1.assist.toolTip = "Better explanation"
+$.break.after = "contentArea"                        ; 目前子表單之後換頁（只對子表單）
+
+// ===== 頁碼與最後一頁判斷：layout:ready 事件 =====
+$ = $layout.page(ref($))                             ; 目前頁（取代 SAPscript &amp;PAGE&amp;）
+$ = $layout.pageCount()                              ; 總頁數（取代 &amp;SAPSCRIPT-FORMPAGES&amp;）
+if ($layout.pageCount() == $layout.page(ref($))) then
+  $.presence = "visible"                             ; 只在最後一頁顯示（例如簽核欄、總計）
+else
+  $.presence = "hidden"
+endif
+
+// ===== 同樣的事用 JavaScript 寫 =====
+// FormCalc $ → JS this；$record → xfa.record；欄位值要 .rawValue；變數要 .value
+if (xfa.record.IS_CUSTOMER.COUNTRY.value == "TW") {
+  this.rawValue = "+886 2 2345 6789";
+}
+count.value = 7;   // 表單變數</code></pre>
+  <table>
+    <thead><tr><th>存取項目</th><th>FormCalc</th><th>JavaScript</th></tr></thead>
+    <tbody>
+      <tr><td>目前欄位或物件</td><td><span class="kw">$</span></td><td><span class="kw">this</span></td></tr>
+      <tr><td>Context 資料的根</td><td><span class="kw">$record</span></td><td><span class="kw">xfa.record</span></td></tr>
+      <tr><td>欄位值</td><td><span class="kw">&lt;field&gt;</span>，如 $ = 7</td><td><span class="kw">&lt;field&gt;.rawValue</span>，如 this.rawValue = 7</td></tr>
+      <tr><td>變數值</td><td><span class="kw">&lt;variable&gt;</span>，如 count = 7</td><td><span class="kw">&lt;variable&gt;.value</span>，如 count.value = 7</td></tr>
+    </tbody>
+  </table>
+  <p><b>函數</b>：按 Script Editor 工具列綠色 <b>fn</b> 看清單（邏輯、字串、算術）。函數名不分大小寫，參數（變數）大小寫敏感。</p>
+  <ul>
+    <li><span class="kw">HasValue(v)</span>：欄位<b>有值回傳 1、沒值回傳 0</b>。</li>
+    <li><span class="kw">Exists(v)</span>：參照有效回傳 1，可用來檢查重複子表單的某索引是否存在，例如 <span class="kw">if (Exists(TABLE.DATA[0].FIELD) == 0) then … endif</span>。</li>
+    <li><span class="kw">Substr(s, start, count)</span>：從第 start 個字元（<b>第一個字元為 1</b>）起取最多 count 個字元。</li>
+  </ul>
+  <div class="note"><b>筆記勘誤</b>：强晟筆記寫「HasValue 在字段有值時返回 0，沒有值就返回 1」，<b>正好相反</b>，Col18 與 Adobe 文件皆為有值回傳 1（true）。又寫「Substr(s, n1, n2) 返回從第 n1 到第 n2 個字元」，第三個參數其實是<b>長度</b>不是結束位置。</div>
+  <p><b>找腳本錯誤</b>：跑 Designer 預覽，結果在 Report 面板的 Warnings 頁籤（依版本會覆蓋或累加，累加時用「Clear Warnings」清掉）。同一事件中語法錯誤<b>之後</b>的命令全被忽略，之前的正確命令照常執行。</p>
+  <div class="warn"><b>SAP 語法檢查（Ctrl+F2）與表單啟用（Ctrl+F3）都不檢查版面與腳本</b>，只保證介面與 Context 正確。用本地 XML 測試資料預覽只適合快速看樣子，Server 端腳本可能得到錯誤結果，<b>一定要用 ABAP 程式實測</b>。更持久的方法是 Trace：<span class="tcode">SFP</span>「公用程式 → 設定」指定是否產生 Trace 檔、深度與存放目錄；Level 1（Short Trace）足以追腳本錯誤，「Very detailed」會附上 ADS 渲染細節並把 Trace 附在 PDF 裡；需要除錯權限；背景處理不能下載，要用 Very detailed 讓 Trace 附在 spool 文件上。</div>
+  <p><b>效能：能不寫腳本就不寫</b>。替代方案依序為：列印程式或介面初始化的 ABAP、靜態屬性取代動態屬性、能用動態屬性就不用腳本、短（相對）名稱取代長路徑、用子表單隱藏元素。典型例子：<b>不要在表單裡加總明細</b>，在 ABAP 算好，介面除了明細內表再多一個合計參數。</p>
+  <p><b>不寫程式就讓空值欄位整組隱藏</b>：① Hierarchy 選取元素 → 右鍵 Wrap in Subform；② 子表單的繫結設為那個可能有值或沒值的欄位；③ Binding 頁籤勾 Repeat Subform for Each Data Item，但<b>不要</b>勾 Min Count 與 Max。</p>
+
+  <h3 id="ch05-20-14">14. 整合進 ABAP：列印程式的標準結構</h3>
+  <p>表單本身不能執行，只能用測試資料預覽，一定要有 ABAP 程式處理。從表單列印的角度，列印程式由下列部分組成：</p>
+  <ol>
+    <li><b>從資料庫取業務資料</b>：最重的部分。額外計算也在這裡做，讓表單內的計算越少越好（Enterprise Services Architecture 的精神：不要把多餘資料傳給表單、也不在表單內再取資料）。想知道表單實際用了哪些欄位，可呼叫 <span class="kw">FP_FIELD_LIST</span>，回傳單欄內表列出欄位名（結構會展開成個別欄位）。</li>
+    <li><b>取得生成的函數模組名稱</b>：名稱因表單與系統而異（形如 /1BCDWB/SM000000xx），必須呼叫 <span class="kw">FP_FUNCTION_MODULE_NAME</span> 傳入表單名，由 <span class="kw">E_FUNCNAME</span> 取得；<span class="kw">E_INTERFACE_TYPE</span> 為 <span class="kw">S</span> 表示 SmartForms 相容介面，空白表示新介面。它用<b>類別型例外</b>，不能查 sy-subrc，要用 TRY…CATCH。</li>
+    <li><b>開啟列印</b>：新介面必須明確呼叫 <span class="kw">FP_JOB_OPEN</span>（唯一參數 <span class="kw">IE_OUTPUTPARAMS</span> TYPE <span class="kw">SFPOUTPUTPARAMS</span>）。</li>
+    <li><b>呼叫生成的函數模組</b>：在 OPEN 與 CLOSE 之間可呼叫任意次，產生多份 PDF，成為同一 spool request 的不同部分，<span class="tcode">SP01</span> 可分別列印。<b>SmartForms 與 PDF 表單不能混在同一個 job。</b></li>
+    <li><b>結束列印</b>：<span class="kw">FP_JOB_CLOSE</span> 回傳是否成功與 spool ID。熟 SAPscript 的人可把 FP_JOB_OPEN／CLOSE 想成 OPEN_FORM／CLOSE_FORM。</li>
+  </ol>
+  <div class="warn">SmartForms 相容（舊）介面的表單<b>絕對不能</b>呼叫 FP_JOB_OPEN／FP_JOB_CLOSE，否則程式中止；舊介面的生成函數模組會隱含地自己開關。</div>
+  <p><b>SFPOUTPUTPARAMS 常用欄位</b>：</p>
+  <table>
+    <thead><tr><th>欄位</th><th>作用</th></tr></thead>
+    <tbody>
+      <tr><td><span class="kw">NODIALOG</span></td><td>X＝不顯示印表機對話框</td></tr>
+      <tr><td><span class="kw">PREVIEW</span></td><td>X＝預覽</td></tr>
+      <tr><td><span class="kw">NOPRINT</span></td><td>不做後端列印，但仍可從 Adobe Reader 預覽中列印</td></tr>
+      <tr><td><span class="kw">NOPDF</span></td><td>X＝只產生列印檔 PDL（Printer Definition Language）不產生 PDF，較快，但 <span class="tcode">SP01</span> 無法檢視。預設兩者都產生；PDL 用於 PostScript、PCL、Zebra</td></tr>
+      <tr><td><span class="kw">GETPDF</span>／<span class="kw">GETPDL</span></td><td>X＝把 PDF／PDL 以 XSTRING 放在 /1BCDWB/FORMOUTPUT-PDF／-PDL 回傳；<b>GETPDF = X 時無法預覽</b></td></tr>
+      <tr><td><span class="kw">DEST</span>、<span class="kw">COPIES</span></td><td>輸出裝置、份數</td></tr>
+      <tr><td><span class="kw">REQNEW</span></td><td>X＝開新的 spool request；不設（預設）則嘗試併入既有 request（SAP Note 85318）</td></tr>
+      <tr><td><span class="kw">REQFINAL</span></td><td>X＝關閉 spool request，之後其他文件不能再用</td></tr>
+      <tr><td><span class="kw">CONNECTION</span></td><td>指定 ADS 的 RFC 目的地（HTTP/HTTPS），不填用標準 ADS 連線</td></tr>
+      <tr><td><span class="kw">XFP</span></td><td>輸出 XML 格式的表單資料（不含版面）供外部系統處理，對應 SmartForms 的 XSF、SAPscript 的 RDI</td></tr>
+      <tr><td><span class="kw">XDCNAME</span></td><td>執行時改用另一個 XDC 印表機描述檔（字型替代等）</td></tr>
+    </tbody>
+  </table>
+  <p><b>生成函數模組的標準參數</b>：唯一的（選用）標準 import 參數 <span class="kw">/1BCDWB/DOCPARAMS</span>（SFPDOCPARAMS）：<span class="kw">LANGU</span> 處理語言（無此語言用登入語言，再無用表單原始語言）、<span class="kw">REPLANGU1～3</span> 最多三個替代語言、<span class="kw">COUNTRY</span> 決定小數點與日期時間格式（語言＋國家＝locale）、<span class="kw">FILLABLE</span>（X＝可互動並授與 Reader 權限，可填寫並連資料存檔；N＝可填但不能連同資料存檔）、<span class="kw">DARATAB</span> 歸檔索引表。唯一的（選用）標準 export 參數 <span class="kw">/1BCDWB/FORMOUTPUT</span>（FPFORMOUTPUT）：<span class="kw">PDF</span>、<span class="kw">PDL</span>、<span class="kw">PAGES</span>（列印頁數）。其餘參數都是你在介面定義的業務資料，所以<b>生成的函數模組永遠動態呼叫</b>。</p>
+  <pre><code class="abap">*&amp;-------------------------------------------------------------*
+*&amp; ZBC480_PRINT_INVOICE：航班訂位發票（ABAP Dictionary-Based 介面）
+*&amp;   表單 ZBC480_INVOICE / 介面 ZBC480_IF_INVOICE
+*&amp;   介面 import：IS_CUSTOMER TYPE scustom, IT_BOOKINGS TYPE zbc480_t_booking
+*&amp;-------------------------------------------------------------*
+REPORT zbc480_print_invoice.
+
+DATA gv_custid TYPE s_customer.
+SELECT-OPTIONS s_cust FOR gv_custid NO INTERVALS OBLIGATORY.  "列舉客戶，不給區間
+PARAMETERS: p_form TYPE fpname    DEFAULT 'ZBC480_INVOICE',
+            p_dest TYPE rspopname DEFAULT 'LP01',
+            p_prev AS CHECKBOX    DEFAULT abap_true.
+
+START-OF-SELECTION.
+  " ① 取業務資料：明列欄位、@ 主機變數、明確排序（HANA 無預設排序）
+  DATA lt_customers TYPE STANDARD TABLE OF scustom WITH EMPTY KEY.
+  SELECT id, name, form, street, postcode, city, country, langu, email
+    FROM scustom
+    WHERE id IN @s_cust
+    ORDER BY id
+    INTO CORRESPONDING FIELDS OF TABLE @lt_customers.
+  IF lt_customers IS INITIAL.
+    MESSAGE '查無客戶資料' TYPE 'S' DISPLAY LIKE 'E'.
+    RETURN.
+  ENDIF.
+
+  DATA lt_bookings TYPE zbc480_t_booking.
+  SELECT customid, carrid, connid, fldate, bookid, forcuram, forcurkey, order_date
+    FROM sbook
+    WHERE customid IN @s_cust
+      AND cancelled = @abap_false
+    ORDER BY customid, carrid, connid, fldate, bookid
+    INTO CORRESPONDING FIELDS OF TABLE @lt_bookings.
+
+  " ② 取生成的函數模組名稱（類別型例外）
+  DATA lv_fm_name TYPE rs38l_fnam.
+  TRY.
+      CALL FUNCTION 'FP_FUNCTION_MODULE_NAME'
+        EXPORTING
+          i_name     = p_form
+        IMPORTING
+          e_funcname = lv_fm_name.
+    CATCH cx_fp_api INTO DATA(lx_fp).
+      MESSAGE lx_fp-&gt;get_text( ) TYPE 'S' DISPLAY LIKE 'E'.
+      RETURN.
+  ENDTRY.
+
+  " ③ 開啟列印工作
+  DATA(ls_outparams) = VALUE sfpoutputparams(
+    dest     = p_dest
+    nodialog = abap_true
+    preview  = p_prev
+    reqnew   = abap_true ).
+  CALL FUNCTION 'FP_JOB_OPEN'
+    CHANGING
+      ie_outputparams = ls_outparams
+    EXCEPTIONS
+      cancel          = 1
+      usage_error     = 2
+      system_error    = 3
+      internal_error  = 4
+      OTHERS          = 5.
+  IF sy-subrc &lt;&gt; 0.
+    MESSAGE |FP_JOB_OPEN 失敗（{ sy-subrc }）| TYPE 'S' DISPLAY LIKE 'E'.
+    RETURN.
+  ENDIF.
+
+  " ④ 每位客戶呼叫一次生成的函數模組 → 同一 spool request 的多個部分
+  DATA ls_formout TYPE fpformoutput.
+  LOOP AT lt_customers INTO DATA(ls_cust).
+    DATA(ls_docparams) = VALUE sfpdocparams( langu   = ls_cust-langu
+                                             country = ls_cust-country ).
+    DATA(lt_cust_book) = VALUE zbc480_t_booking(
+      FOR b IN lt_bookings WHERE ( customid = ls_cust-id ) ( b ) ).
+
+    CALL FUNCTION lv_fm_name                      "永遠動態呼叫
+      EXPORTING
+        /1bcdwb/docparams  = ls_docparams
+        is_customer        = ls_cust
+        it_bookings        = lt_cust_book
+      IMPORTING
+        /1bcdwb/formoutput = ls_formout
+      EXCEPTIONS
+        usage_error        = 1
+        system_error       = 2
+        internal_error     = 3
+        OTHERS             = 4.
+    IF sy-subrc &lt;&gt; 0.
+      DATA lv_ads_err TYPE string.
+      CALL FUNCTION 'FP_GET_LAST_ADS_ERRSTR'      "取 ADS 端的錯誤字串
+        IMPORTING e_adserrstr = lv_ads_err.
+      MESSAGE |客戶 { ls_cust-id } 輸出失敗：{ lv_ads_err }| TYPE 'I'.
+    ENDIF.
+  ENDLOOP.
+
+  " ⑤ 結束列印工作，取回 spool 號碼
+  DATA ls_result TYPE sfpjoboutput.
+  CALL FUNCTION 'FP_JOB_CLOSE'
+    IMPORTING
+      e_result       = ls_result
+    EXCEPTIONS
+      usage_error    = 1
+      system_error   = 2
+      internal_error = 3
+      OTHERS         = 4.
+  IF sy-subrc = 0.
+    LOOP AT ls_result-spoolids INTO DATA(lv_spool).
+      MESSAGE |已產生 Spool { lv_spool }（SP01 查看）| TYPE 'S'.
+    ENDLOOP.
+  ENDIF.</code></pre>
+  <div class="tip">選擇畫面用 <span class="kw">NO INTERVALS</span> 逼使用者列舉客戶號碼，是 Casper 實務經驗第 2 條的體現：客戶號碼有 ALPHA 前導零、號碼段又常不連續，用 BT 區間印單據很容易多印或漏印。其他選擇畫面技巧見 <a href="#ch03-1">3-1 章</a>、內嵌宣告與 FOR／REDUCE 見 <a href="#ch02-2">2-2 章</a>。</div>
+  <p><b>Additional Print Options</b>（NW 7.31 起）：選輸出裝置後按 Enter，出現「Additional print options」按鈕，可選整份 PDF 的附加選項（僅 PCL／POSTSCRIPT 型裝置；SAP Note 1806471）。沒有列印對話框（背景、更新作業）時改用 <b>Print Ticket</b>，把 ticket 名稱傳給 SFPOUTPUTPARAMS 的 Print Ticket 欄位。前提：ADS 7.31 SP7 或 7.40 SP2、Basis 7.31 SP07 或 7.40 SP02（SAP Note 1729666）。</p>
+  <p><b>表單翻譯（<span class="tcode">SE63</span>）</b>：① 啟用表單；② 進 SE63；③ 選單「Translation – ABAP Objects → Other Texts」；④ 選 PDF-Based Forms → <b>PDFB</b>；⑤ 物件名稱填大寫表單名，來源／目標語言要含 locale 共四碼（例如 <span class="kw">enUS</span>），用 F4 選最保險；⑥ 下方視窗「Edit → Copy Source Text」把來源文字流複製過來（依版本可能只有選單沒有圖示）；⑦ 翻譯藍色標示的字並存檔；⑧ 執行時用 SFPDOCPARAMS 的 <span class="kw">LANGU</span> 選語言、<span class="kw">COUNTRY</span> 決定 locale。</p>
+  <p><b>列印預覽</b>：<span class="tcode">SP01</span> 與 <span class="tcode">SFP</span> 的預覽用 Adobe Reader 顯示；同一 spool request 的多份 PDF 保持為獨立部分，可用箭頭到首／上／下／末部分。SAP GUI 預覽其實是 HTML 控制項內嵌瀏覽器，Reader 沒開「在瀏覽器中顯示 PDF」時預覽會空白、另外跳出 Reader 視窗。</p>
+
+  <h3 id="ch05-20-15">15. 例外處理、取回 PDF 另行處理、沿用 SmartForms 程式</h3>
+  <p><b>類別型例外</b>（6.10 引入，詳見 <a href="#ch05-2">5-2 章 ABAP Objects</a>）：可能拋例外的程式碼包在 <span class="kw">TRY … ENDTRY</span>；拋出後跳到第一個合適的 <span class="kw">CATCH</span>，目前區塊與外層都找不到就短傾印（dump）；沒拋就不執行任何 CATCH。<span class="kw">CATCH 類別 INTO 參照變數</span> 可取得例外物件，所有例外類別都有 <span class="kw">GET_TEXT</span>。多個 CATCH 要<b>子類別在前、父類別在後</b>；根類別是 <span class="kw">CX_ROOT</span>（Col18 測驗題）。</p>
+  <p>呼叫全域方法或函數前，要先看它用舊（sy-subrc）還是新（類別型）例外。<span class="kw">FP_FUNCTION_MODULE_NAME</span> 可能拋 <span class="kw">CX_FP_API_REPOSITORY</span>、<span class="kw">CX_FP_API_USAGE</span>、<span class="kw">CX_FP_API_INTERNAL</span>，繼承鏈為 <span class="kw">CX_ROOT → CX_STATIC_CHECK → CX_FP_EXCEPTION → CX_FP_API</span>；不需分辨時抓任一父類別即可。<b>所有 PDF 表單處理專屬的例外都是 CX_FP_EXCEPTION 的子類別。</b></p>
+  <pre><code class="abap">*&amp;-------------------------------------------------------------*
+*&amp; 例外順序：子類別在前、父類別在後
+*&amp;-------------------------------------------------------------*
+TRY.
+    CALL FUNCTION 'FP_FUNCTION_MODULE_NAME'
+      EXPORTING i_name     = p_form
+      IMPORTING e_funcname = lv_fm_name.
+  CATCH cx_fp_api_repository INTO DATA(lx_repo).  "表單不存在或未啟用
+    MESSAGE |表單 { p_form } 不存在或未啟用：{ lx_repo-&gt;get_text( ) }| TYPE 'E'.
+  CATCH cx_fp_api_usage INTO DATA(lx_usage).      "呼叫方式錯誤
+    MESSAGE lx_usage-&gt;get_text( ) TYPE 'E'.
+  CATCH cx_fp_exception INTO DATA(lx_fp).         "其他 PDF 表單例外（含 INTERNAL）
+    MESSAGE lx_fp-&gt;get_text( ) TYPE 'E'.
+ENDTRY.
+
+" 教材的算術例外範例改寫：溢位抓 CX_SY_ARITHMETIC_OVERFLOW，
+" 除以零 CX_SY_ZERODIVIDE 沒有專屬 CATCH → 落到父類別 CX_ROOT
+TRY.
+    DATA lv_result TYPE p LENGTH 8 DECIMALS 2.
+    lv_result = p_int1 * p_int2.                  "計算型別為 p，過大會溢位
+    lv_result = p_int1 / p_int2.
+  CATCH cx_sy_arithmetic_overflow INTO DATA(lx_ovf).
+    MESSAGE lx_ovf-&gt;get_text( ) TYPE 'I'.
+  CATCH cx_root INTO DATA(lx_any).
+    MESSAGE |未處理的例外：{ lx_any-&gt;get_text( ) }| TYPE 'I'.
+ENDTRY.</code></pre>
+  <div class="note"><b>教材小瑕疵</b>：溢位範例把 PARAMETERS 的 TYPE i 預設值寫成 99999999999，超出 4 位元組整數上限 2147483647；說明文字又說拋出的是 CX_SY_ARITHMETIC_ERROR，實際拋出的是其子類別 <span class="kw">CX_SY_ARITHMETIC_OVERFLOW</span>（才會被第一個 CATCH 接住）。</div>
+  <p><b>取回 PDF 另行處理</b>：FP_JOB_OPEN 設 <span class="kw">GETPDF = X</span>，生成的函數模組把 PDF 以 XSTRING 放在 <span class="kw">/1BCDWB/FORMOUTPUT-PDF</span>，用於下載、或交給 <b>Business Communication Services</b> 郵寄傳真（BC-SRV-GBT；範例程式 <span class="kw">BCS_EXAMPLE_*</span>，郵件寫法另見 <a href="#ch04-4">4-4 章</a>）。</p>
+  <pre><code class="abap">*&amp;-------------------------------------------------------------*
+*&amp; GETPDF：取回 PDF → 以 CL_BCS 寄出，或下載到 PC
+*&amp;-------------------------------------------------------------*
+DATA(ls_outparams) = VALUE sfpoutputparams( getpdf = abap_true nodialog = abap_true ).
+" … FP_JOB_OPEN / 呼叫生成的函數模組（IMPORTING /1bcdwb/formoutput = ls_formout）/ FP_JOB_CLOSE …
+
+DATA(lt_pdf_solix) = cl_bcs_convert=&gt;xstring_to_solix( ls_formout-pdf ).
+
+" (a) 郵寄
+TRY.
+    DATA(lo_send) = cl_bcs=&gt;create_persistent( ).
+    DATA(lo_doc)  = cl_document_bcs=&gt;create_document(
+      i_type    = 'RAW'
+      i_subject = |訂位發票 { ls_cust-id }|
+      i_text    = VALUE soli_tab( ( line = |{ ls_cust-name } 您好，附件為本期發票。| ) ) ).
+    lo_doc-&gt;add_attachment(
+      i_attachment_type    = 'PDF'
+      i_attachment_subject = |INV_{ ls_cust-id }|
+      i_attachment_size    = CONV so_obj_len( xstrlen( ls_formout-pdf ) )
+      i_att_content_hex    = lt_pdf_solix ).
+    lo_send-&gt;set_document( lo_doc ).
+    lo_send-&gt;add_recipient( cl_cam_address_bcs=&gt;create_internet_address( ls_cust-email ) ).
+    lo_send-&gt;set_send_immediately( abap_true ).
+    lo_send-&gt;send( ).
+    COMMIT WORK.                                   "沒有 COMMIT，信只會躺在 SOST
+  CATCH cx_bcs INTO DATA(lx_bcs).
+    MESSAGE lx_bcs-&gt;get_text( ) TYPE 'I'.
+ENDTRY.
+
+" (b) 下載到 PC（前景）
+cl_gui_frontend_services=&gt;gui_download(
+  EXPORTING  bin_filesize = xstrlen( ls_formout-pdf )
+             filename     = |C:\\temp\\INV_{ ls_cust-id }.pdf|
+             filetype     = 'BIN'
+  CHANGING   data_tab     = lt_pdf_solix
+  EXCEPTIONS OTHERS       = 1 ).</code></pre>
+  <p><b>沿用 SmartForms 應用程式</b>：SmartForms 移轉成 PDF 表單後，舊列印程式可以一行都不改。因為 <span class="kw">SSF_FUNCTION_MODULE_NAME</span>（SmartForms 版的 FP_FUNCTION_MODULE_NAME）已增強：它會查管理表 <span class="kw">STXFPCUST</span>，決定回傳 SmartForms 的函數，或移轉後 PDF 表單的函數，參數 <span class="kw">FM_NAME</span> 自動帶正確名稱；生成的函數模組反正是動態呼叫。登錄方法：<span class="tcode">SMARTFORMS</span>「公用程式 → 移轉 → PDF-Based Form（新版選單為 Interactive Form）→ 切換執行環境（Switch Runtime）」。</p>
+  <pre><code class="abap">" 舊 SmartForms 列印程式原封不動：STXFPCUST 有登錄時，FM_NAME 自動換成 PDF 表單的函數
+DATA lv_fm_name TYPE rs38l_fnam.
+CALL FUNCTION 'SSF_FUNCTION_MODULE_NAME'
+  EXPORTING
+    formname           = 'ZSF_INVOICE'
+  IMPORTING
+    fm_name            = lv_fm_name
+  EXCEPTIONS
+    no_form            = 1
+    no_function_module = 2
+    OTHERS             = 3.
+IF sy-subrc = 0.
+  DATA(ls_control) = VALUE ssfctrlop( no_dialog = abap_true preview = abap_true ).
+  DATA(ls_options) = VALUE ssfcompop( tddest = 'LP01' ).
+  CALL FUNCTION lv_fm_name
+    EXPORTING
+      control_parameters = ls_control
+      output_options     = ls_options
+      user_settings      = abap_false
+      is_customer        = ls_cust
+    EXCEPTIONS
+      formatting_error   = 1
+      internal_error     = 2
+      send_error         = 3
+      user_canceled      = 4
+      OTHERS             = 5.
+ENDIF.</code></pre>
+  <p>也可以新建使用 SmartForms 相容介面的 PDF 表單給舊程式用，但 SAP 建議<b>表單與程式都用新技術</b>。相容介面的生成函數模組重要參數：<span class="kw">CONTROL_PARAMETERS</span>（等於 /1BCDWB/DOCPARAMS 加 FP_JOB_OPEN 的 IE_OUTPUTPARAMS 的混合）、<span class="kw">OUTPUT_OPTIONS</span>（spool 設定）、<span class="kw">USER_SETTINGS</span>（X＝用使用者預設 spool 設定）；部分相容參數已無實際作用。SmartForms 參數細節見 <a href="#ch04-3">4-3 章</a>。</p>
+
+  <h3 id="ch05-20-16">16. 下載上傳、PDF 匯入與無障礙表單</h3>
+  <p><b>下載／上傳表單物件</b>：表單是 ABAP Repository 物件，可像報表、TCODE 一樣傳輸；但傳輸太慢或沒有匯入權限時，可用 <span class="tcode">SFP</span>「公用程式 → 下載表單物件／上傳表單物件」。</p>
+  <ul>
+    <li>下載的是<b>目前版本（含所有語言）</b>，不必先儲存或啟用。</li>
+    <li>2007 版筆記說「下載表單要記得也下載它使用的介面」；Col18 改為「<b>下載表單時會一併下載使用的介面</b>」（Unit 8 測驗題答案為 True）。以新版為準，但上傳到另一系統前仍建議確認介面已存在。</li>
+    <li>只下載 Context 一部分：選節點（不能多選）→「公用程式 → 下載子樹」。</li>
+    <li>下載 PDF：① Layout 頁籤 → 版面編輯器的 Preview PDF 頁籤（沒合併資料，除非表單屬性指定了 XML 測試資料）→ Ctrl+Shift+S；② 從 spool 預覽（「表單 → 測試」或跑列印程式）→ Ctrl+Shift+S 或「檔案 → 另存副本」。</li>
+    <li>從 Designer 手動複製 XML 原始碼<b>不會帶 Context</b>，會得到殘缺表單。</li>
+  </ul>
+  <p><b>匯入 PDF</b>：因為 PDF（頁面描述）與 XFA（表單物件的宣告式組合）本質不同，不可能一對一轉換，它只是加速把現有 PDF 表單（例如傳真單、稅務表單）轉成 ADS 可用 XFA 範本的輔助工具，事後調整可能要花好幾小時。多數文字、表單欄位、多數圖片、線與矩形可轉；限制：<b>內嵌字型無法轉入 XFT</b>、PDF 內的 JavaScript 變成 XFT 裡的註解需重做、多數 Acrobat 內建表單動作不轉、向量圖與部分點陣圖不支援。步驟：<span class="tcode">SFP</span> → Layout 頁籤 →「工具 → 匯入」→ 檔案類型選 Adobe PDF Files (*.pdf) → 開啟。選項用預設最好：</p>
+  <ul>
+    <li><b>Conversion Type</b>：永遠選 Optimize for editing。</li>
+    <li><b>Join Text</b>：Paragraph（最好維護，相近文字併成會自動換行的文字塊）／Text Block（不換行）／Line by line（每行一塊）／Single Words、Single Characters（最像原稿但極難維護，不建議）；容差一般用 High，特殊情況調低避免不該合併的文字被併起來。</li>
+    <li><b>Page Range</b> 只選需要的頁；<b>Image conversion</b> 勾選以內嵌圖片；<b>Summary report</b> 勾選以找出未知字型、編碼問題；<b>Trace information</b> 一律設 none（專家才看得懂，又大幅增加 XFT 大小）。</li>
+    <li>也能匯入 Microsoft Word 與 RTF 文件。</li>
+  </ul>
+  <p><b>無障礙（Accessibility）</b>：目標族群與做法：</p>
+  <table>
+    <thead><tr><th>障礙</th><th>問題</th><th>解法</th></tr></thead>
+    <tbody>
+      <tr><td>行動不便</td><td>無法使用滑鼠</td><td>在 Adobe Reader 用 Tab 移動欄位（只與互動表單有關）</td></tr>
+      <tr><td>弱視</td><td>看得到但看不清</td><td>Reader 的放大鏡或縮放</td></tr>
+      <tr><td>全盲</td><td>看不到</td><td>螢幕閱讀器，並需產生 <b>Tagged PDF</b>：邏輯閱讀順序、導覽輔助、圖片與條碼的替代文字</td></tr>
+    </tbody>
+  </table>
+  <p>前兩類自動滿足，全盲族群需要表單作者依原則設計：建立邏輯結構（標題頁、標題、章節、多欄文字、表格），把相關單元（地址、單據資訊）用子表單組起來。ADS 渲染時產生閱讀順序，預設每頁「子表單由上而下、由左而右，子表單內也由上而下、由左而右」。</p>
+  <p><b>閱讀順序範例</b>：Field1（X=13cm, Y=0.7cm）、Field2（X=18cm, Y=0.65cm）、StaticText1（X=13.2cm, Y=1.55cm），螢幕閱讀器會讀「E A Payment」（强晟筆記譯為「高 前 低後」）。三個問題：① Field2 的 Y 比較高所以先被讀 → 把 Field2 的 Y 對齊 Field1；② 說明文字在欄位下方所以晚讀 → 把 Payment 設成 Field1 的 Caption（位置 Bottom）；③ E 是什麼意思 → 不想顯示標題就寫在 Tooltip 或自訂螢幕閱讀文字。又如「名／姓／暱稱」與「街道／郵遞區號／城市」兩欄並排，直接放在頁面上會讀成「名、街道、姓、郵遞區號…」，<b>用子表單包成兩組</b>就能改正順序而不必移動版面。</p>
+  <ul>
+    <li><b>替代文字</b>：Accessibility 面板可設圖片與條碼的替代文字、自訂螢幕閱讀文字（MSAA 相容閱讀器優先讀它，而非 Tooltip、Caption 或技術名稱），可逐物件改搜尋順序或關閉。</li>
+    <li><b>浮動欄位</b>與代表文字節點、地址節點的欄位，Screen Reader Precedence 要設 <b>None</b>，否則會把技術名稱也念出來。</li>
+    <li>要讓閱讀器認得是表格，<b>必須用 XFA 表格</b>（子表單 Flowed、方向 Table／Table Row），不要用一般子表單階層（Flowed／Western Text）拼的「假表格」。表格導覽靠閱讀器廠商與 Adobe 合作（2007 版舉 Reader 6.0.2 + JAWS 5.0，Col18 舉 Reader 7.0 + JAWS 7.0）。</li>
+    <li><b>Tab 順序</b>：預設從左上開始由左而右、由上而下，會尊重子表單、選項按鈕、內容區（並排的兩個子表單會先走完第一個）；主頁面與主子表單依垂直位置決定先後。要改：「檢視 → Tab Order」依序點選物件。</li>
+  </ul>
+
+  <h3 id="ch05-20-17">17. 客製化與管理：催款單、字型、ADS 連線</h3>
+  <p><b>先標準、再客製</b>（Casper 實務經驗第 3 條）：SAP 已經為很多業務提供標準 PDF 表單與列印程式，第一步是找到標準表單、複製到客戶命名空間改版面，並在客製化中切換，而不是自己從頭寫列印程式、更不是改標準程式。增強點見 <a href="#ch03-4">3-4 章 BAdI／Enhancement Framework</a>。</p>
+  <p><b>範例一：催款單（FI 催款）</b></p>
+  <ol>
+    <li>在 <span class="tcode">SFP</span> 把標準表單 <span class="kw">F150_DUNN_PDF</span> 複製到客戶命名空間，調整文字（如地址）、加公司 Logo，啟用。</li>
+    <li>改用 PDF 取代 SAPscript／SmartForms：客製化（<span class="tcode">SPRO</span>）「Financial Accounting → Financial Accounting Global Settings → Business Transaction Events」，進入 SAP Business Framework: Business Transaction Events 畫面，選「Settings → P/S Modules … of an SAP Application」，把應用識別 <b>FI-FI</b>、事件 <b>1720</b> 的函數模組改成 <span class="kw">FI_PRINT_DUNNING_NOTICE_PDF</span>，儲存。</li>
+    <li>把自己的表單登錄進催款程序：依客製化路徑（或 <span class="tcode">SPRO</span>）選催款程序（例如四級催款、每兩週）→ 選「一般／法律催款程序的表單」並輸入公司代碼 → 在各催款層級填入你的表單副本 → 存檔，<b>忽略「表單不存在或未啟用」的警告</b>（因為系統只會去檢查 SAPscript 表單）。</li>
+  </ol>
+  <p><b>範例二：公共部門請求列印</b>：標準 PDF 表單 <span class="kw">FM_PAYMENTREQUEST</span>（付款請求）、<span class="kw">FM_ACCEPTANCEREQUEST</span>（收款請求），同樣複製後修改，於客製化「Public Sector Management → Funds Management Government → Specific FM Postings → Requests → Additional Details → Request Printout: Assign Custom Form」登錄。特點：同一表單類型可登錄多張表單，<b>甚至混用 SAPscript 與 PDF</b>，執行時跳對話框讓使用者選。</p>
+  <p><b>字型管理</b>：ADS 只能用 Font Manager 模組安裝的字型。Adobe 附帶字型在 <span class="kw">/usr/sap/&lt;SAPSID&gt;/&lt;Installation&gt;/j2ee/os_libs/adssap/FontManagerService/fonts/adobe</span>。可另加 OpenType（.otf）、TrueType（.ttf）、PostScript Type 1（.pfb/.pfm）：</p>
+  <ol>
+    <li>在 <span class="kw">/usr/sap/&lt;SAPSID&gt;/SYS/global/AdobeDocumentServices/FontManagerService</span> 下建立 <span class="kw">fonts/</span> 子目錄（&lt;Installation&gt; 在純 J2EE 系統為 JC&lt;xx&gt;，ABAP+J2EE 系統為 DVEBMGS&lt;xx&gt;）。</li>
+    <li>其下再建 <span class="kw">customer</span> 子目錄，把字型複製到 <span class="kw">…/fonts/customer</span>。</li>
+    <li>重啟 Document Services Font Manager 服務，重啟應用 com.adobe/AdobeDocumentServices。</li>
+  </ol>
+  <p>重要檔案 <span class="kw">/usr/sap/&lt;SAPSID&gt;/SYS/global/AdobeDocumentServices/lib/xfa.xci</span>：決定各印表機類型（PS、PCL、PDF、Zebra）是否內嵌字型，以及渲染時找不到字型的<b>替代規則</b>。Courier、Helvetica、Times、Arial、Times New Roman <b>永不內嵌</b>。執行時可用 FP_JOB_OPEN 的 <span class="kw">IE_OUTPUTPARAMS-XDCNAME</span> 指定另一個檔；表 <span class="kw">FPFONTREPL</span> 可為特定表單與語言指定替代字型。別和 Designer 的設計時字型替代搞混（Tools → Options → Document Handling → Modify Font Substitutions）。</p>
+  <div class="note">2007 版的新增字型路徑是 <span class="kw">/usr/sap/&lt;SAPSID&gt;/&lt;Installation&gt;/j2ee/cluster/server/persistent/com.adobe~FontManagerService/font/customer</span>，重啟整個 Web AS 生效；Col18 改為上面的 SYS/global 路徑、只重啟 ADS 相關服務。實際路徑以你系統的 ADS 版本與安裝指南為準。</div>
+  <p><b>設定 ADS 的 HTTP 連線</b>（列印情境需在 ABAP+J2EE 的 NetWeaver AS 上安裝 ADS）：</p>
+  <ol>
+    <li>登入 Central Instance 主機，執行 <span class="tcode">SM59</span>（RFC 目的地觀念見 <a href="#ch04-1">4-1 章</a>）。</li>
+    <li>建立，名稱 <b>ADS</b>（也可建多個任意名稱的連線，但要在程式中以 FP_JOB_OPEN 的 <span class="kw">IE_OUTPUTPARAMS-CONNECTION</span> 明確指定）；Connection Type <b>G</b>（HTTP to External Server）；填描述，Enter。</li>
+    <li>Technical Settings：Target Host 填 J2EE 引擎主機；Service No. 填 J2EE HTTP 埠，規則 <b>5&lt;J2EE 執行個體號&gt;00</b>（執行個體 00 即 50000）；Path Prefix 精確填 <span class="kw">/AdobeDocumentServices/Config?style=rpc</span>，用 SSL 則 <span class="kw">/AdobeDocumentServicesSec/Config?style=rpc</span>。按 Enter 出現「Query string not allowed」警告，<b>忽略</b>。</li>
+    <li>Logon/Security 頁籤依安全需求設定帳號 → 存檔 → Test Connection，<span class="kw">status_reason</span> 為 <b>OK</b> 即成功。</li>
+  </ol>
+  <div class="note"><b>筆記勘誤</b>：强晟筆記的 Path Prefix 寫成 <span class="kw">/AdobeDocumentService/Config?style=rpc</span>（少了 s），照抄會連不上；正確是 <span class="kw">AdobeDocumentServices</span>（Col18 原文）。</div>
+  <div class="warn"><b>S/4HANA 維運提醒</b>：ADS 連線是 Adobe Forms 的單點故障，<span class="tcode">SFP</span> 的測試、複製功能也依賴它。上線前請 Basis 用標準測試程式（例如 FP_TEST_00、FP_CHECK_DESTINATION_SERVICE）驗證 ADS 連線與渲染；雲端 ADS（SAP Forms Service by Adobe）的連線方式不同，依 SAP 官方設定指南設定。</div>
+
+  <h3 id="ch05-20-18">18. 舊表單移轉：SAPscript 與 SmartForms → PDF 表單</h3>
+  <p><b>先看舊表格做法</b>（Col18 Unit 9）：Designer 6.0／7.0 沒有 Table 物件，要手動用子表單拼表格（7.1 起會自動把舊表格顯示成新表格）：</p>
+  <ol>
+    <li>外層子表單（例如 IT_BOOKINGS）：Flowed、方向 Top to Bottom；不勾 Repeat Subform for Each Data Item；要整張在一頁就不勾 Allow Page Breaks within Content（資料少時忽略，放不下時自動換頁從下一頁開始）；外框在外層 Border 面板設。</li>
+    <li>內層子表單（永遠叫 DATA）：Flowed、方向 Western Text；不勾 Allow Page Breaks；<b>勾 Repeat Subform for Each Data Item</b>；邊距上下左右 0cm，寬高 Expand to fit；列與列之間的橫線在內層 Border 面板設（Unit 9 測驗題）。</li>
+    <li>刪掉不印的欄位（沒有腳本就不能把同一內表處理兩次、留部分欄位給第二輪）；列印表單避免 3D 框：「Object → Field → Appearance」選 None（同型欄位可 Ctrl／Shift 多選一起改）。</li>
+    <li>移除 Caption（否則每列都重複）：多選欄位 →「Layout → Caption → Position → None」。個別欄寬無關，由整張表決定；高度填最小值並 Expand to fit。</li>
+    <li>儲存格框線與網底在各儲存格 Border 面板設；邊距如 0.1cm。</li>
+    <li>欄寬最好在外層 Object → Subform 頁籤的 <b>Column Widths</b> 一次填，例如 <span class="kw">2cm 2.3cm 3cm 3.5cm 2cm 4cm</span>，值與單位間<b>不能有空格</b>，不寫單位預設是<b>英吋</b>（Drawing Aids 的單位只用於尺規）。</li>
+    <li>表頭：外層右鍵 Insert Subform 命名 HEADER（F2 改名），放在 DATA 上方，Flowed／Western Text，每欄放一個靜態文字、邊距與資料欄一致；HEADER 的 Binding 不勾 Repeat；DATA 的 Binding 設 <b>Overflow Leader = HEADER</b>，換頁時表頭就會重複。</li>
+  </ol>
+  <div class="note"><b>筆記勘誤</b>：强晟筆記在「溢出前導（Leader）」旁註「懷疑是 Header 之誤」。其實 <b>Overflow Leader</b> 就是 XFA 的正式術語（溢位時的前導子表單），對應還有 Overflow Trailer，不是筆誤。另 2007 版把 XFA 表格寫成外層「表格」、內層「表格列」、HEADER 流向「表頭」，那是 Designer 7.1 的真表格；上面 7 步是 6.0／7.0 的做法。</div>
+  <p><b>為什麼 SAPscript 難移轉</b>：SAPscript 沒有把表單邏輯和程式分開，印明細要多次呼叫 <span class="kw">WRITE_FORM</span> 觸發輸出；表單內要算 ABAP 還得呼叫表單外的子程序，程式與表單之間通訊極多。SmartForms 一開始就把邏輯放表單、程式只收集資料傳給介面，PDF 表單沿用這個介面觀念，所以<b>重用 SmartForms 及其程式比重用 SAPscript 容易得多</b>。</p>
+  <table>
+    <thead><tr><th>物件</th><th>SAPscript</th><th>SmartForms</th></tr></thead>
+    <tbody>
+      <tr><td>表單</td><td>手動轉換</td><td>支援自動轉換（<b>會遺失細節</b>）</td></tr>
+      <tr><td>程式</td><td>手動轉換</td><td>可重用（可能需修改）</td></tr>
+      <tr><td>文字</td><td>可重用，但 SAPscript 欄位與命令除外</td><td>可重用，但 SmartForms 系統欄位與輸出選項除外</td></tr>
+      <tr><td>樣式</td><td>可移轉成 Smart Style</td><td>SmartForms 文字中可重用</td></tr>
+      <tr><td>圖片</td><td><span class="kw">RSTXLDMC</span> 匯入者不可重用；<span class="tcode">SE78</span> 匯入者可移轉到 MIME Repository</td><td>可移轉到 MIME Repository</td></tr>
+    </tbody>
+  </table>
+  <p>文字中所有欄位必須在 Context 中定義，未知欄位（包括所有 SAPscript／SmartForms 欄位）會讓程式執行時<b>中止</b>。RSTXLDMC 匯入的圖若原始檔還在檔案伺服器，複製到 ADS 存取得到的位置即可；SE78 的圖用報表 <span class="kw">RSXFT_MIGRATE_BDS_GRAPHICS</span> 移轉到 MIME Repository。</p>
+  <p><b>移轉 SAPscript 的建議</b>：雖然有 SAPscript → SmartForms、SmartForms → PDF 兩段移轉工具，兩段都要大量手工，<b>直接從頭建新的 PDF 表單比較快</b>；並把大表單拆成「一張表單只代表一種業務情境」，例如 SAPscript <span class="kw">RVORDER01</span> 同時用於詢價／報價／訂單確認，這種做法在 PDF 表單中要避免。SAPscript 本身的觀念見 <a href="#ch05-18">5-18 章</a>。</p>
+  <table>
+    <thead><tr><th>SAPscript</th><th>PDF 表單對應</th></tr></thead>
+    <tbody>
+      <tr><td>MAIN 視窗</td><td>放在主頁面內容區中、類型 Flowed 的頁體</td></tr>
+      <tr><td>多個 MAIN（分欄文字）</td><td>多個內容區，文字欄位勾 Object → Field → Allow Multiple Lines</td></tr>
+      <tr><td>MAIN 的 TOP／BODY 區</td><td>表頭／一般 Flowed 子表單（屬於表格時為 Table／Table Row）</td></tr>
+      <tr><td>次視窗</td><td>主頁面上的物件</td></tr>
+      <tr><td>文字元素（無／有符號）</td><td>靜態文字／含浮動欄位的靜態文字</td></tr>
+      <tr><td>Tab</td><td>靜態文字可用 Tab 但不能定位置與類型，改用 Positioned 子表單</td></tr>
+      <tr><td>INCLUDE 文字／圖片</td><td>Include Text（或文字模組）／靜態圖片（考慮內嵌）</td></tr>
+      <tr><td>單位 pt、ch、ln</td><td>先在 SAPscript 統一單位，新表單用 mm、cm、in</td></tr>
+      <tr><td><span class="kw">/: DEFINE</span>、文字符號</td><td>表單屬性 → Variables 全域變數</td></tr>
+      <tr><td><span class="kw">/: NEW-PAGE</span>（<span class="kw">NEW-PAGE XYZ</span>）</td><td>新頁體，Place：Top of Next Page（Top of Page XYZ）</td></tr>
+      <tr><td><span class="kw">/: IF</span>、<span class="kw">/: CASE</span></td><td>有條件的 Context 元素、Alternative、Min Count = 0 的子表單、帶腳本的元素（CASE 需巢狀條件）</td></tr>
+      <tr><td><span class="kw">/: BOX</span></td><td>Border 面板</td></tr>
+      <tr><td><span class="kw">/: SET DATE MASK</span>／<span class="kw">SET TIME MASK</span></td><td>Object → Field → Display Pattern 或腳本；可用四種預定義日期物件</td></tr>
+      <tr><td><span class="kw">/: SET COUNTRY</span></td><td>列印程式中 /1BCDWB/DOCPARAMS-COUNTRY</td></tr>
+      <tr><td><span class="kw">/: PROTECT</span></td><td>不勾 Allow Page Breaks within Content 的子表單；多個子表單連在一起用 Keep with Previous/Next</td></tr>
+      <tr><td><span class="kw">/: PERFORM</span></td><td><b>不可用</b>（表單內只能寫腳本，不能呼叫 ABAP）</td></tr>
+      <tr><td>程式符號／系統符號／標準符號</td><td>拷進 Context 的介面參數／介面中可選／不可用（非用不可就在列印程式讀 <span class="kw">TTDTG</span> 再當介面參數傳）</td></tr>
+      <tr><td><span class="kw">&amp;PAGE&amp;</span>／<span class="kw">&amp;SAPSCRIPT-FORMPAGES&amp;</span></td><td>layout:ready 的浮動欄位腳本 <span class="kw">$layout.page(ref($))</span>／<span class="kw">$layout.pageCount()</span>；可用「插入 → 目前頁碼／總頁數」自動產生</td></tr>
+      <tr><td><span class="kw">&amp;SAPSCRIPT-JOBPAGES&amp;</span></td><td>不可用（只能在列印程式查，表單內無法取得）</td></tr>
+      <tr><td><span class="kw">&amp;NEXTPAGE&amp;</span>、最後一頁判斷（<span class="kw">&amp;NEXTPAGE&amp; EQ 0</span>）</td><td>layout:ready 腳本 <span class="kw">if ($layout.pageCount() == $layout.page(ref($))) then … endif</span></td></tr>
+      <tr><td>OPEN_FORM／CLOSE_FORM／START_FORM</td><td>FP_JOB_OPEN／FP_JOB_CLOSE／生成的函數模組（<b>參數都不同</b>）</td></tr>
+      <tr><td>END_FORM、WRITE_FORM、CONTROL_FORM</td><td>不可用（文字順序由表單決定）</td></tr>
+      <tr><td>WRITE_FORM_LINES</td><td>Context 動態文字，傳 TLINE 內表</td></tr>
+    </tbody>
+  </table>
+  <div class="note"><b>教材勘誤</b>：Col18 的符號對照表把 &amp;SAPSCRIPT-FORMPAGES&amp; 的自動插入也寫成「Insert → Current Page Number」，應為「Number of Pages（總頁數）」；表中 &amp;SAPSCRIPT-JOBPAGES&amp; 列重複出現，第二列實為 &amp;NEXTPAGE&amp;（强晟筆記此處正確）。</div>
+  <p><b>移轉 SmartForms 的前置作業</b>：確認所有參照物件（字典型別、Smart Styles、文字模組、SAPscript 文字）都存在；把多情境大表單拆小：① 每種業務情境各建一個暫存副本；② 在各副本刪掉不屬於該情境的條件與子樹（用 SmartForms Builder 與 NW 7.0 起的 Form Info 圖形精靈，2007 版寫 NW ’04）；③ 介面也拿掉條件（簡化並加速取資料）；④ 存檔啟用。</p>
+  <p><b>移轉步驟</b>：<span class="tcode">SMARTFORMS</span> 初始畫面「公用程式 → 移轉 → Interactive Form（舊版選單為「基於 PDF 的表單」）→ 匯出」，輸入 SmartForm 名、目標 PDF 表單名與目標介面名（預設取自 SmartForm，可相同可不同；已存在可選覆寫或改名）。主要選項：</p>
+  <ul>
+    <li><b>Generate Interface</b>：建立或覆寫介面（確認後）；介面已移轉並手改過就取消。</li>
+    <li><b>Texts</b>：移轉所有文字節點。文字元素 → 靜態文字（ITF 轉 XHTML）；文字模組與 SAPscript 文字 → 參照 Context 的欄位（XFA &lt;field&gt;），執行時才由 ITF 轉 XHTML。子選項：<b>Append Mode</b>（A 直接接、N 新行、P 新段落；ADS 不支援，以包含 <span class="kw">append_mode__</span> 欄位的子表單加腳本模擬，<b>建議不要用</b>）、<b>Generate Data Binding to Context</b>（sfsy 欄位如 sfsy-page、sfsy-formpages 與部分 sy 欄位如 sy-datum、sy-uzeit 由 ADS 直接解析；<span class="kw">&amp;mystruct-myfield&amp;</span> 改名為 <span class="kw">mystruct.myfield</span>）、<b>Display Fields as Placeholders</b>（不自動繫結，顯示成 <span class="kw">{MYSTRUCT-MYFIELD}</span>，事後手動替換）。</li>
+    <li><b>Addresses</b>：成為連到 Context 地址節點的欄位，執行時以純文字帶入，移轉後需手動排版。</li>
+    <li><b>Folder／Templates／Tables and Loops</b>：分別成為 Context 的資料夾／迴圈節點與版面的 XFA &lt;subform&gt;；取消時該節點被忽略但子節點照移轉規則處理（例如 Texts 開著，資料夾中的文字仍會移轉）。</li>
+    <li><b>Output Options</b>：框線、網底、頁面保護移入版面；<b>視窗節點的輸出選項一律移轉</b>。</li>
+    <li><b>Header/Footer Events</b>：成為 XFA leader／trailer 子表單。</li>
+    <li><b>Conditions</b>：資料驅動條件（CARRIER = 'LH'）由 ABAP 評估 → 產生 Context 條件；版面驅動條件（只在第一頁）由 ADS 評估 → 產生含 <span class="kw">subform_condition__</span> 的子表單，但 ADS／Designer 不支援，須以腳本重建。<b>預設不移轉條件</b>，建議先評估並拆成多張表單。</li>
+    <li><b>Program Nodes</b>：程式節點只允許存在於移轉表單，預設不勾，建議改用其他方式（如腳本）實現。移轉的程式行保留原碼，但<b>全部在產生資料流時（ADS 渲染前）執行</b>，不能依賴換頁等版面時點。</li>
+  </ul>
+  <p>執行轉換後用「公用程式 → 移轉 → Interactive Form → 顯示日誌」看協定（<b>沒有錯誤就不會顯示日誌</b>），再用「… → 編輯」進 Designer 收尾，最後啟用表單與介面。<b>不要低估收尾的時間。</b>移轉後若要讓舊程式自動改用 PDF 表單，記得做第 15 節的 Switch Runtime。</p>
+  <p><b>SmartForms 中應避免（移轉時都要手工修）</b>：SAP 字元（&lt;123&gt;）；流程邏輯中的程式行節點；超出 Adobe XHTML 子集的文字格式（移轉時遺失）；資料相關輸出條件（條件頁籤的表格控制）與時間條件（如主視窗關閉後）的組合；過時的 R/3 4.6C 表格；範本儲存格版面被其他儲存格打斷（text1 在 cell 1-1、text2 在 cell 1-2、text3 又在 cell 1-1）；表格參數與匯出參數（新介面不支援，表格改成 <span class="kw">TYPE &lt;表格類型&gt;</span> 的 import 參數，應用資料不要用 export 參數）；文字模組、圖片、地址、迴圈上以 OR 連結的輸出條件（如 SFSY-PAGE &gt; 10）與資料條件的組合；依版面條件（目前頁 = 1）或版面事件（換頁）的程式行；輸出格式 XDF 或 HTML。</p>
+  <div class="tip">實務判斷：<b>SmartForms 簡單、邏輯乾淨</b>→用移轉工具加 Switch Runtime，舊程式不動；<b>SmartForms 複雜、塞滿程式節點與版面條件</b>→直接重做 PDF 表單，把邏輯搬回列印程式或介面初始化；<b>SAPscript</b>→一律重做。SmartForms 本身的實作見 <a href="#ch04-3">4-3 章</a> 與 <a href="#ch05-19">5-19 章</a>。</div>
+
+  <h3 id="ch05-20-qa">練習與自我檢核</h3>
+  <ol>
+    <li><b>下列哪一個可以沒有表單而獨立存在：介面、Context、Layout、生成的函數模組？</b><br>要點：介面。它是獨立的 Repository 物件，可被多張表單共用；Context 與 Layout 永遠屬於某張表單，函數模組是表單啟用時產生的。</li>
+    <li><b>新開發應選哪種介面類型？為何不建議 Smart Forms 相容介面？</b><br>要點：ABAP Dictionary-Based。相容介面會拿到錯誤的列印參數、XSF/XDF 參數不能用、多份 PDF 的 spool 只回一份、不能設定 BCS。XML Schema-Based 主要給 Web Dynpro／Gateway 型表單。</li>
+    <li><b>介面初始化中改了 import 參數卻沒生效或出錯，最可能原因？</b><br>要點：該參數沒勾 Pass Value（call-by-reference import 是唯讀）；另外用到的欄位必須列在初始化的 Input／Output 參數中，用 DATA 宣告的區域變數不能用在版面。</li>
+    <li><b>Context 中把欄位設 Inactive 有什麼效果？會讓必填參數變選用嗎？</b><br>要點：不進 XML 資料流、提升效能；不會，列印程式仍須傳值。</li>
+    <li><b>Alternative 節點的條件與一般節點條件差在哪？</b><br>要點：一般條件決定該節點（含子節點）是否進資料流；Alternative 條件決定走 TRUE 或 FALSE 分支，Alternative 本身一定被處理。條件中可用所有介面欄位，不能用其他 Context 欄位與系統欄位。</li>
+    <li><b>文字模組與 Include Text 的維護 TCODE、Client 相依性與傳輸方式？</b><br>要點：文字模組在 SMARTFORMS、跨 Client、自動進傳輸；Include Text 在 SO10（不是 SO01）、Client 相依、手動加傳輸。兩者的 SAPscript 命令與輸出選項在 PDF 表單中都被忽略，格式以 Smart Style 解讀。</li>
+    <li><b>Master Page、Content Area、Body Page 各相當於 SmartForms 的什麼？</b><br>要點：主頁面上的物件≈次視窗；內容區＋頁體≈主視窗；頁體是動態內容容器，可延伸成多頁。</li>
+    <li><b>哪些情況必須手動設定資料繫結？繫結 Normal 的風險？</b><br>要點：從 Library 拖入、複製貼上、移到別的子表單或拆子表單。Normal 繫結靠名稱對應，版面物件改名就斷；同一元素放多次要用 Global。</li>
+    <li><b>寫出一個依幣別決定小數位、最大到千萬的數字顯示樣式。</b><br>要點：<span class="kw">zz,zzz,zz9.88</span>；符號 8 代表依幣別／單位的小數位，USD 印兩位、JPY 不印小數。樣式不自動翻譯、大小寫敏感。</li>
+    <li><b>表格用條件分頁「航空公司不同就插分隔表頭」，但輸出時分組亂跳，原因與解法？</b><br>要點：資料沒排序。HANA 沒有預設排序，SELECT 要 ORDER BY 或 ABAP SORT；控制層級要嘛自己排序並勾 Already sorted，要嘛讓系統排序（只限全域欄位或 call-by-value 參數）。</li>
+    <li><b>FormCalc 的 calculate 事件與 initialize 事件在指派上的差別？為何不能寫 $ = $ + 1？</b><br>要點：calculate 取最後一個運算式的值、不需指派；它可能重算多次，自我參照會累加出錯。其他事件要寫 $ = 值。</li>
+    <li><b>FormCalc 與 JavaScript 的四個 accessor 對照？HasValue 回傳值？</b><br>要點：$／this、$record／xfa.record、欄位值直接寫／.rawValue、變數直接寫／.value。HasValue 有值回傳 1（强晟筆記寫反了）。</li>
+    <li><b>為什麼 Ctrl+F3 啟用成功，執行時表單仍可能出錯？如何追？</b><br>要點：啟用只檢查介面與 Context，不檢查版面與腳本；用 Designer 預覽的 Warnings、SFP「公用程式 → 設定」的 Trace（需除錯權限），並一定要用 ABAP 程式實測。</li>
+    <li><b>寫出新介面列印程式的五個步驟與對應函數。</b><br>要點：取資料（FP_FIELD_LIST 可查表單用到的欄位）→ FP_FUNCTION_MODULE_NAME（TRY…CATCH CX_FP_API）→ FP_JOB_OPEN（SFPOUTPUTPARAMS）→ 動態呼叫生成函數（/1BCDWB/DOCPARAMS、/1BCDWB/FORMOUTPUT，可多次）→ FP_JOB_CLOSE（SFPJOBOUTPUT）。舊介面不可呼叫 JOB_OPEN／CLOSE。</li>
+    <li><b>SFPOUTPUTPARAMS 中哪個欄位開新 spool request？要把 PDF 拿回來寄信要設哪個？此時能預覽嗎？</b><br>要點：REQNEW；GETPDF，PDF 在 /1BCDWB/FORMOUTPUT-PDF，此時不能預覽。寄信用 CL_BCS，別忘了 COMMIT WORK。</li>
+    <li><b>SmartForms 移轉成 PDF 表單後，如何讓舊列印程式不改碼就改印 PDF？</b><br>要點：SMARTFORMS「公用程式 → 移轉 → … → Switch Runtime」在 STXFPCUST 登錄，SSF_FUNCTION_MODULE_NAME 會自動回傳 PDF 表單的函數名。</li>
+    <li><b>催款單要改用自己的 PDF 表單，需做哪些客製化？為何會出現「表單不存在」警告？</b><br>要點：複製 F150_DUNN_PDF；BTE 事件 1720（FI-FI）的 P/S 模組改 FI_PRINT_DUNNING_NOTICE_PDF；在催款程序各層級填表單副本。警告是因為系統只檢查 SAPscript 表單，可忽略。這就是「先標準再客製」。</li>
+    <li><b>設定 SM59 的 ADS 連線：類型、埠號規則、Path Prefix？</b><br>要點：類型 G；5&lt;J2EE 執行個體號&gt;00；/AdobeDocumentServices/Config?style=rpc（SSL 為 AdobeDocumentServicesSec），忽略 Query string 警告，測試 status_reason = OK。</li>
+    <li><b>SAPscript 的 /: PERFORM、&amp;SAPSCRIPT-JOBPAGES&amp;、最後一頁判斷在 PDF 表單怎麼處理？</b><br>要點：PERFORM 不可用（只能腳本）；JOBPAGES 表單內取不到；最後一頁用 layout:ready 比較 $layout.pageCount() 與 $layout.page(ref($))。</li>
+    <li><b>實作題</b>：建立介面 ZBC480_IF_INVOICE（IS_CUSTOMER、IT_BOOKINGS、Global Field GT_SUMS）、表單 ZBC480_INVOICE（主頁面放 Logo 與地址、頁體放依航空公司分組並有重複表頭的訂位表、頁尾「第 x／y 頁」），並寫列印程式讓每位客戶一份 PDF、同一 spool，另可勾選改為寄 PDF。<br>要點：合計在初始化用 REDUCE 算；Logo 走 Graphic Content（XSTRING）；表格 Overflow Leader／Include Header Row in Subsequent Pages；控制層級前先 ORDER BY；頁碼用 layout:ready；程式參考第 14、15 節。</li>
+  </ol>
+</section>

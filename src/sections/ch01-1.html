@@ -1,0 +1,920 @@
+<section class="chapter" id="ch01-1" data-title="編寫第一支程式：SE38 / SQL / 內表 / WRITE / Package / Request / STMS">
+  <h2 id="ch01-1">第 1-1 章 編寫第一支程式：SE38 / SQL / 內表 / WRITE / Package / Request / STMS</h2>
+  <p class="lede">這一章把 ABAP 開發者第一週要會的事一次講完：認得住十個核心 TCODE、在 SE38 建出第一支 Z 開頭的報表、寫出第一句 ABAP SQL、把資料放進內表再輸出、把程式歸進 Package 並掛到傳輸請求，最後沿著 DEV → QAS → PRD 傳出去。學完之後，你能獨立完成「查資料 → 寫程式 → 存檔激活 → 執行 → 傳輸」的完整迴圈，並且知道哪些是講義裡的舊寫法、在 S/4HANA 該怎麼改。</p>
+
+  <div class="meta">
+    <div><b>核心 TCODE</b><span class="tcode">SE38</span><span class="tcode">SE11</span><span class="tcode">SE16N</span><span class="tcode">SE16H</span><span class="tcode">SE80</span><span class="tcode">SE21</span><span class="tcode">SE09</span><span class="tcode">SE10</span><span class="tcode">STMS</span><span class="tcode">SE93</span><span class="tcode">SA38</span><span class="tcode">SE37</span><span class="tcode">SE14</span><span class="tcode">SM30</span><span class="tcode">SU53</span><span class="tcode">SCI</span><span class="tcode">ABAPDOCU</span><span class="tcode">SPRO</span><span class="tcode">VA03</span><span class="tcode">FB03</span><span class="tcode">CO03</span><span class="tcode">ME23N</span><span class="tcode">KSB5</span></div>
+    <div><b>關鍵物件</b>VBAK、VBAP、LIKP、LIPS、MARA、MAKT、MARC、MARD、BKPF、BSEG、ACDOCA、MATDOC、T002、TRDIR、TADIR、E070/E071、CL_SALV_TABLE</div>
+  </div>
+
+  <h3 id="ch01-1-01">1. 認識十個核心 TCODE（先會查，才會寫）</h3>
+  <p>老師的第一堂課不是教語法，而是要你先「看得懂 SAP 在做什麼」。寫 ABAP 的人如果不會用標準交易查資料，寫出來的程式一定跟業務對不上。下表是講義列出的十個 TCODE，建議背下來當日常工具。</p>
+
+  <table>
+    <thead><tr><th>TCODE</th><th>用途</th><th>備註／對應資料表</th></tr></thead>
+    <tbody>
+      <tr><td>SE11</td><td>ABAP Dictionary 資料字典</td><td>看 Table／View／Data Element／Domain 的定義與外鍵</td></tr>
+      <tr><td>SE38</td><td>ABAP Editor 建立與執行程式</td><td>本章主戰場</td></tr>
+      <tr><td>SPRO</td><td>後台配置 IMG</td><td>能配置解決的，就不要寫程式</td></tr>
+      <tr><td>SE16N</td><td>維護與瀏覽資料（含技術欄位、可組合條件）</td><td>可以拿來「學寫 SQL」，見本章第 4 節</td></tr>
+      <tr><td>SE16</td><td>瀏覽資料（較陽春的資料瀏覽器）</td><td>S/4HANA 亦可用 SE16N 取代</td></tr>
+      <tr><td>VA03</td><td>瀏覽銷售訂單</td><td>VBAK（主檔）／VBAP（明細）</td></tr>
+      <tr><td>FB03</td><td>瀏覽 FI 會計傳票</td><td>BKPF（表頭）／BSEG（行項目）；S/4 讀 ACDOCA</td></tr>
+      <tr><td>CO03</td><td>瀏覽生產工單</td><td>AUFK／AFKO／AFPO／AFVC</td></tr>
+      <tr><td>ME23N</td><td>瀏覽採購單</td><td>EKKO（表頭）／EKPO（明細）／EKBE（歷史）</td></tr>
+      <tr><td>KSB5</td><td>瀏覽 CO 管理會計傳票</td><td>COEP／COBK；S/4 亦落在 ACDOCA</td></tr>
+    </tbody>
+  </table>
+
+  <div class="tip">口訣：<b>SAP 幾乎所有業務單據都是「主檔＋子檔」成對出現</b>。VBAK/VBAP（訂單）、LIKP/LIPS（交貨）、EKKO/EKPO（採購）、BKPF/BSEG（會計）、AUFK/AFPO（工單）、VBRK/VBRP（發票）。抓到這個規律，第一次面對陌生模組也不會慌。</div>
+
+  <div class="note"><b>作業 1-01</b>：找出 FI、CO、SD、MM、PP 五個模組的「重大雙檔」（主檔／子檔配對）。<br>參考答案方向：FI＝BKPF/BSEG（S/4 為 ACDOCA）；CO＝COBK/COEP；SD＝VBAK/VBAP、LIKP/LIPS、VBRK/VBRP；MM＝EKKO/EKPO、MKPF/MSEG（S/4 為 MATDOC）；PP＝AUFK+AFKO/AFPO。</div>
+
+  <h3 id="ch01-1-02">2. 開發環境：SE38、SE80 與 ADT（Eclipse）</h3>
+  <p>ABAP 有三種主要的開發入口，功能有重疊但定位不同：</p>
+  <ul>
+    <li><b>SE38（ABAP Editor）</b>：最直接的入口，適合寫可執行報表（Type 1）。初學者從這裡開始。</li>
+    <li><b>SE80（Object Navigator 物件瀏覽器）</b>：以「Package／程式／Function Group／Class／Screen」為樹狀結構管理，可以一次看到一個開發物件底下的所有 Include、畫面、文字元素。建 Function Group、Module Pool、Class 建議走 SE80。</li>
+    <li><b>ADT（ABAP Development Tools for Eclipse）</b>：S/4HANA 時代的正式開發工具。<b>CDS View、AMDP、RAP（Restful ABAP Programming Model）、ABAP Unit 的完整體驗只有 ADT 有</b>，SE80 在 S/4 已被 SAP 標示為「不再增強」。</li>
+  </ul>
+  <div class="warn">S/4HANA 注意：CDS View（DDLS）、Behavior Definition、Service Binding 等物件<b>無法在 SE80 建立</b>，必須用 Eclipse + ADT。SE80 仍可用來看舊物件，但新開發建議一律 ADT。SE80 在 SAP BTP ABAP Environment（雲端）更是完全不存在。</div>
+  <div class="tip">GUI 端仍然需要：Debug、SM30 維護、SE93 建 TCODE、STMS 傳輸這些工作在 GUI 做比較順。實務上是「Eclipse 寫程式 + GUI 做運維」兩邊並用。</div>
+
+  <h3 id="ch01-1-03">3. 寫程式的四步驟與命名規則（Z／Y 命名空間）</h3>
+  <p>講義把建立第一支程式拆成四個動作，這四步在 S/4HANA 依然完全一樣：</p>
+  <ol>
+    <li><b>程式名稱一定要 Z 開頭</b>（或 Y 開頭）。</li>
+    <li><b>設定屬性</b>：Title、Type、Status、Application。</li>
+    <li><b>指定 Package</b>：練習環境可選 <span class="kw">Local Object</span>（$TMP）；正式開發要放進自己的 Package（例如講義用的 <b>Z600_2409_ERP000</b>）。</li>
+    <li><b>執行程式</b>：F8，或用 SA38／SE93 建成 TCODE 執行。</li>
+  </ol>
+
+  <p><b>命名空間規則</b>：SAP 保留了所有不以 Z／Y 開頭的名稱給標準物件。客戶自建物件只能用 <b>Z*</b> 或 <b>Y*</b>；若公司有向 SAP 申請的專屬命名空間，則是 <b>/ABCDE/</b> 這種斜線包起來的形式。表格、資料元素、Domain、Class、Function Module 全部適用同一規則。</p>
+
+  <table>
+    <thead><tr><th>Program Status</th><th>意義</th><th>使用時機</th></tr></thead>
+    <tbody>
+      <tr><td>P</td><td>SAP Standard Production Program（標準生產程式）</td><td>SAP 原廠用，客戶不選</td></tr>
+      <tr><td>K</td><td>Customer Production Program（客戶生產程式）</td><td><b>預設選這一項</b>，正式上線的客製程式</td></tr>
+      <tr><td>S</td><td>System Program（系統程式）</td><td>系統層級工具</td></tr>
+      <tr><td>T</td><td>Test Program（測試程式）</td><td>臨時測試、不打算上線的</td></tr>
+    </tbody>
+  </table>
+
+  <div class="tip">實務命名建議：<code>Z</code> + 模組 + 用途 + 序號，例如 <code>ZSD_ORDER_LIST01</code>、<code>ZFI_ACDOCA_RPT</code>。看名字就知道歸誰維護。講義的課堂命名是 <code>Z2202_00_01</code> 這種「課程代號_學號_序號」，方便老師點名批改。</div>
+
+  <div class="warn">$TMP（Local Object）的物件<b>永遠無法傳輸</b>到 QAS／PRD。練習可以用，但只要這支程式將來要上線，一開始就放進正式 Package，不然事後搬家（SE03 → Change Object Directory Entry）很麻煩。</div>
+
+  <h3 id="ch01-1-04">4. 用 SE16N／SE16H 學寫 SQL</h3>
+  <p>老師的心法：<b>不會寫 SQL 就先去 SE16N 點一遍</b>。SE16N 的選擇畫面本質上就是一句 SELECT，把條件填一填、按執行，你要的 WHERE 條件就成形了。</p>
+  <ul>
+    <li>SE16N 進入後在指令列輸入 <code>&amp;SAP_EDIT</code> 可開啟編輯模式（<b>正式機嚴禁使用，會繞過所有業務邏輯與變更文件</b>）。</li>
+    <li>SE16N 支援「技術欄位名稱／描述」切換、可指定輸出欄位、可設定筆數上限。</li>
+    <li><b>SE16H</b>（HANA 版）更強：可直接做 <b>Group By、Sum、Count、以及多表 JOIN</b>，等於在畫面上做出一份聚合報表，很適合先驗證邏輯再寫成 ABAP。</li>
+  </ul>
+  <div class="note"><b>作業 2-01</b>：用 SE16H 把作業 1-01 找到的 FI、CO、SD、MM、PP 重大雙檔做成關聯（在 SE16H 的 <span class="kw">Table Join</span> 區塊填入第二張表與關聯欄位，例如 VBAK-VBELN = VBAP-VBELN）。</div>
+  <div class="tip">SE16H 的 Group By／Sum 功能是「不寫程式就能出報表」的最快路徑，很多臨時性的查數需求根本不必開發。這也呼應本章最後一節「解決企業問題的手段與順序」。</div>
+
+  <h3 id="ch01-1-05">5. 第一支 SELECT：從講義的舊寫法到 S/4HANA 現代寫法</h3>
+  <p>講義的第一支程式 <b>Z2202_00_01</b>（取出料號為 DXTR1000 的訂單明細）原本是這樣寫的（此處<b>刻意保留作為反例</b>）：</p>
+
+  <pre><code class="abap">" ===== 反例：講義原始寫法，S/4HANA 請勿再這樣寫 =====
+REPORT z2202_00_01.
+TABLES: vbap.                          " 宣告了整張表當共用工作區
+SELECT * INTO CORRESPONDING FIELDS OF vbap
+  FROM vbap
+  WHERE matnr = 'DXTR1000'.            " 主機變數沒有 @、寫死常數
+  WRITE: / vbap-vbeln, vbap-posnr, vbap-matnr,
+           vbap-meins, vbap-kwmeng.
+ENDSELECT.                             " 一筆一筆丟回 AP Server，效能最差</code></pre>
+
+  <div class="warn">上面這段有四個 S/4HANA 的地雷：<br>
+  1. <b>TABLES:</b> 會產生全域工作區，在 OO 環境與現代 ABAP 中已被視為 obsolete（ABAP Objects 語法檢查會直接報錯）。<br>
+  2. <b>SELECT ... ENDSELECT</b> 是逐筆迴圈，每一圈都在 DB 與 AP Server 間往返，違反 S/4HANA「Code Push-Down」原則。<br>
+  3. <b>SELECT *</b> 在 HANA 的欄式儲存上代價極高——只取 5 個欄位卻讀了 VBAP 全部兩百多欄。<br>
+  4. WHERE 條件的主機變數<b>沒有逸出字元 @</b>，在嚴格語法模式下無法通過。</div>
+
+  <p>改寫成 S/4HANA 1809 之後的現代 ABAP：</p>
+
+  <pre><code class="abap">REPORT z2202_00_01.
+
+" 第一支 SELECT 的現代寫法：明列欄位 + 內嵌宣告 + 一次抓進內表
+SELECT vbeln, posnr, matnr, meins, kwmeng
+  FROM vbap
+  WHERE matnr = 'DXTR1000'          " 常數不需要 @；只有主機變數才要
+  INTO TABLE @DATA(lt_vbap).
+
+IF lt_vbap IS INITIAL.
+  MESSAGE '查無資料' TYPE 'S' DISPLAY LIKE 'W'.
+  RETURN.
+ENDIF.
+
+LOOP AT lt_vbap ASSIGNING FIELD-SYMBOL(&lt;ls_vbap&gt;).
+  WRITE: / &lt;ls_vbap&gt;-vbeln,
+           &lt;ls_vbap&gt;-posnr,
+           &lt;ls_vbap&gt;-matnr,
+           &lt;ls_vbap&gt;-meins,
+           &lt;ls_vbap&gt;-kwmeng.
+ENDLOOP.</code></pre>
+
+  <div class="tip">講義標註的「進化三段」正是這支程式的學習路徑：<b>1. UP TO n ROWS（限制筆數） → 2. Field List（明列欄位） → 3. WHERE（加條件）</b>。開發時養成習慣：先 <code>UP TO 10 ROWS</code> 試跑，確認欄位與資料對了，再拿掉限制。</div>
+
+  <pre><code class="abap">" 開發階段的安全寫法：先限制筆數再放大
+SELECT vbeln, posnr, matnr, meins, kwmeng
+  FROM vbap
+  WHERE matnr = 'DXTR1000'
+  ORDER BY vbeln, posnr                 " 沒有 ORDER BY 就沒有順序保證
+  INTO TABLE @DATA(lt_vbap)
+  UP TO 10 ROWS.</code></pre>
+
+  <div class="warn">HANA 沒有「預設排序」這回事。舊 DB 常常剛好照主鍵回傳，HANA 是平行處理，<b>不下 ORDER BY 的結果順序完全不保證</b>，同一支程式跑兩次可能不同。凡是「抓第一筆」「比對前後筆」的邏輯，一定要明確 ORDER BY。<code>SELECT SINGLE</code> 若 WHERE 不是完整主鍵，回傳的是<b>任意一筆</b>，不是「第一筆」。</div>
+
+  <h3 id="ch01-1-06">6. 選擇畫面 PARAMETERS 與型態宣告（Search Help 的關鍵）</h3>
+  <p>講義 <b>Z2202_00_02</b> 讓使用者自己輸入料號；<b>Z2202_00_03</b> 則刻意示範「宣告方式不同，會不會有下拉選單（Search Help）」的差別。這是初學者最容易踩的坑。</p>
+
+  <pre><code class="abap">REPORT z2202_00_02.
+
+" 寫法 A：直接用 DDIC 欄位型態 —— 自動繼承 Search Help、轉換常式、欄位說明
+PARAMETERS p_matnr TYPE vbap-matnr.
+
+SELECT vbeln, posnr, matnr, meins, kwmeng
+  FROM vbap
+  WHERE matnr = @p_matnr               " 主機變數一律加 @
+  INTO TABLE @DATA(lt_vbap).
+
+LOOP AT lt_vbap INTO DATA(ls_vbap).
+  WRITE: / ls_vbap-vbeln, ls_vbap-posnr, ls_vbap-matnr,
+           ls_vbap-meins, ls_vbap-kwmeng.
+ENDLOOP.</code></pre>
+
+  <pre><code class="abap">REPORT z2202_00_03.
+
+" 寫法 B：自訂型態 —— 只有長度、沒有語意，畫面上「沒有下拉選單」
+TYPES: ty_matnr(40) TYPE c.
+PARAMETERS p_bad TYPE ty_matnr.        " 反例：F4 出不來
+
+" 寫法 C：型態指向 Data Element —— Search Help 會回來
+TYPES: ty_matnr_dd TYPE matnr.         " matnr 是 Data Element
+PARAMETERS p_ok TYPE ty_matnr_dd.
+
+" 寫法 D：最直接、實務最常用
+PARAMETERS p_best TYPE mara-matnr.</code></pre>
+
+  <div class="tip">口訣：<b>「型態要接到 DDIC，F4 才會來」</b>。<br>
+  <code>TYPE c LENGTH 40</code> → 沒有 Search Help；<br>
+  <code>TYPE matnr</code>（Data Element）→ 有 Search Help（Data Element 掛了 Search Help 或 Domain 有 Value Table）；<br>
+  <code>TYPE mara-matnr</code>（表-欄位）→ 有 Search Help，且欄位說明、外鍵檢查一起繼承。</div>
+
+  <div class="note">關聯鏈要記住：<b>VBAP-MATNR → Data Element MATNR → Domain MATNR → Value Table MARA</b>。Search Help 與外鍵檢查就是沿著這條鏈走出來的。</div>
+
+  <div class="warn">S/4HANA 的 MATNR 長度已由 18 碼延伸為 <b>40 碼</b>（Extended Material Number）。所有自訂欄位、介面結構請一律 <code>TYPE matnr</code>，不要自己寫 <code>CHAR18</code>，否則在 S/4 上會被截斷。講義寫 <code>ty_matnr(40)</code> 正是為了配合 S/4 的長度，但仍建議直接用 DDIC 型態。</div>
+
+  <h3 id="ch01-1-07">7. 工作區與內表：從 TYPES 到 Internal Table</h3>
+  <p>講義 <b>Z2202_00_04</b> 的重點在於建立四層概念：<b>TYPES（型態） → STRUCTURE（結構） → WORK AREA（工作區） → INTERNAL TABLE（內表）</b>。這是所有 ABAP 程式的骨架。</p>
+
+  <pre><code class="abap">REPORT z2202_00_04.
+
+" ① 定義結構型態（只是藍圖，不佔記憶體）
+TYPES: BEGIN OF ty_vbap,
+         vbeln  TYPE vbap-vbeln,
+         posnr  TYPE vbap-posnr,
+         matnr  TYPE vbap-matnr,
+         meins  TYPE vbap-meins,
+         kwmeng TYPE vbap-kwmeng,
+       END OF ty_vbap.
+
+" ② 定義內表型態（表格藍圖）
+TYPES: ty_t_vbap TYPE STANDARD TABLE OF ty_vbap WITH EMPTY KEY.
+
+" ③ 真正配置記憶體：工作區（一列）與內表（多列）
+DATA: ls_vbap TYPE ty_vbap,           " Work Area = 一列
+      lt_vbap TYPE ty_t_vbap.         " Internal Table = 多列
+
+" ④ 建構式寫法：直接生出一列 / 一張表，不必逐欄位搬
+ls_vbap = VALUE #( vbeln = '0000000001'
+                   posnr = '000010'
+                   matnr = 'DXTR1000'
+                   meins = 'PC'
+                   kwmeng = 10 ).
+
+lt_vbap = VALUE #( ( vbeln = '0000000001' posnr = '000010' matnr = 'DXTR1000' )
+                   ( vbeln = '0000000001' posnr = '000020' matnr = 'DXTR2000' ) ).</code></pre>
+
+  <div class="note">ABAP 的基本資料型態（講義列出的）：<b>C</b>（字元）、<b>D</b>（日期 YYYYMMDD）、<b>P</b>（壓縮十進位，金額數量用）、<b>N</b>（數字字串）、<b>I</b>（整數）、<b>F</b>（浮點）、<b>STRING</b>（變長字串）。另外還有 <b>X</b>（十六進位）、<b>T</b>（時間 HHMMSS）、<b>XSTRING</b>、以及 S/4 新增的 <b>INT8</b>（8-byte 整數）與 <b>DECFLOAT16/34</b>。<br>金額欄位一律用 <b>CURR</b>（DDIC）／<b>P DECIMALS 2</b>（ABAP），<b>絕不要用 F 浮點數算錢</b>。</div>
+
+  <div class="tip">內表三種型態的選擇：<b>STANDARD TABLE</b>（順序存取，APPEND 快，READ 需線性掃描）、<b>SORTED TABLE</b>（自動維持排序，二分搜尋）、<b>HASHED TABLE</b>（唯一鍵，READ 為 O(1)，不能 APPEND 只能 INSERT）。做「大表對照查值」時用 HASHED，效能差距是數量級的。</div>
+
+  <h3 id="ch01-1-08">8. 關鍵案例：用內表取代 ENDSELECT 提升效率</h3>
+  <p>講義 <b>Z2202_00_05</b> 是整章最重要的觀念題：把 <code>SELECT ... ENDSELECT</code> 換成「一次抓進內表 + LOOP」。老師把它拆成十個編號步驟，建議直接背成模板。</p>
+
+  <pre><code class="abap">REPORT z2202_00_05.
+
+"=== 01 定義結構 =====================================
+TYPES: BEGIN OF ty_vbap,
+         vbeln  TYPE vbap-vbeln,
+         posnr  TYPE vbap-posnr,
+         matnr  TYPE vbap-matnr,
+         meins  TYPE vbap-meins,
+         kwmeng TYPE vbap-kwmeng,
+       END OF ty_vbap.
+
+"=== 02 定義內表（工作區改用 LOOP 內嵌宣告，不必另外開）====
+DATA lt_vbap TYPE STANDARD TABLE OF ty_vbap WITH EMPTY KEY.
+
+"=== 03 選擇畫面：型態接 DDIC，才有下拉選單 =============
+PARAMETERS p_matnr TYPE mara-matnr OBLIGATORY.
+
+"=== 04 一次讀進內表（只跟 DB 往返一次）=================
+START-OF-SELECTION.
+  SELECT vbeln, posnr, matnr, meins, kwmeng
+    FROM vbap
+    WHERE matnr = @p_matnr
+    ORDER BY vbeln, posnr
+    INTO TABLE @lt_vbap.
+
+  IF sy-subrc &lt;&gt; 0.
+    MESSAGE |料號 { p_matnr ALPHA = OUT } 查無訂單明細| TYPE 'S' DISPLAY LIKE 'W'.
+    RETURN.
+  ENDIF.
+
+"=== 05 迴圈輸出 =====================================
+  LOOP AT lt_vbap ASSIGNING FIELD-SYMBOL(&lt;ls&gt;).
+    WRITE: / &lt;ls&gt;-vbeln, &lt;ls&gt;-posnr, &lt;ls&gt;-matnr,
+             &lt;ls&gt;-meins, &lt;ls&gt;-kwmeng.
+  ENDLOOP.
+
+  WRITE: / |共 { lines( lt_vbap ) } 筆|.</code></pre>
+
+  <div class="note"><b>作業 3-01（講義解答 Z2202_00_06）</b>：請找出多餘的程式碼並刪除，並讓選擇螢幕的料號可下拉選單。<br>要刪的是 <code>TABLES: VBAP.</code>（用不到了）、<code>TYPES: TY_MATNR(40) TYPE C.</code> 與 <code>DATA: W_MATNR</code>（沒被用到）；要改的是把 <code>PARAMETERS p_matnr TYPE ty_matnr</code> 改成 <code>TYPE mara-matnr</code>，Search Help 就出來了。</div>
+
+  <div class="tip">老師說這支「可以用背的，久了就成習慣」。實務上 90% 的報表都是這個骨架：<b>選擇畫面 → 一次 SELECT 進內表 → 加工 → 輸出</b>。差別只在中間加工多複雜、輸出用 WRITE 還是 ALV。</div>
+
+  <div class="warn">效能觀念：<code>SELECT ... ENDSELECT</code> 每圈一次 DB 往返；一萬筆就是一萬次網路來回。改成 <code>INTO TABLE</code> 只有一次。這在傳統 DB 上就已經是常識，在 S/4HANA（DB 與 AP 分離、且 HANA 擅長批次回傳）差距更大。另外 <code>INTO CORRESPONDING FIELDS OF TABLE</code> 是「依名稱對應」，會多一層搬移成本且容易因欄位改名而靜默出錯——<b>明列欄位 + INTO TABLE</b> 才是首選。</div>
+
+  <h3 id="ch01-1-09">9. 傳票案例：主子檔 JOIN 與 S/4HANA 的 ACDOCA</h3>
+  <p>講義第 4 節用 FI 傳票示範「怎麼把主檔與子檔關聯起來」。原始寫法是兩支 <code>SELECT ... ENDSELECT</code> 各印各的，再進化成一句 JOIN。以下是現代化改寫。</p>
+
+  <pre><code class="abap">REPORT z20211109_ncu.
+
+" 舊 ECC 觀念：BKPF（表頭）與 BSEG（行項目）用 BUKRS + BELNR + GJAHR 關聯
+PARAMETERS: p_gjahr TYPE bkpf-gjahr DEFAULT '2021',
+            p_budat TYPE bkpf-budat DEFAULT '20211109'.
+
+START-OF-SELECTION.
+  SELECT h~gjahr, h~budat, h~cputm, h~usnam, h~belnr,
+         h~tcode, h~blart,
+         d~buzei, d~koart, d~valut, d~prctr, d~dmbtr,
+         d~shkzg, d~pargb, d~bschl, d~kokrs, d~kostl,
+         d~menge, d~werks
+    FROM bkpf AS h
+    INNER JOIN bseg AS d
+      ON  h~bukrs = d~bukrs        " 三個鍵都要接，少一個就是笛卡兒乘積
+      AND h~belnr = d~belnr
+      AND h~gjahr = d~gjahr
+    WHERE h~gjahr = @p_gjahr
+      AND h~budat = @p_budat
+    ORDER BY h~usnam, h~belnr, d~buzei
+    INTO TABLE @DATA(lt_accts).
+
+  LOOP AT lt_accts ASSIGNING FIELD-SYMBOL(&lt;ls&gt;).
+    WRITE: / &lt;ls&gt;-gjahr, &lt;ls&gt;-budat, &lt;ls&gt;-cputm, &lt;ls&gt;-usnam,
+             &lt;ls&gt;-belnr, &lt;ls&gt;-buzei, &lt;ls&gt;-tcode, &lt;ls&gt;-blart,
+             &lt;ls&gt;-bschl, &lt;ls&gt;-dmbtr, &lt;ls&gt;-werks.
+  ENDLOOP.</code></pre>
+
+  <div class="tip">初學者最常見的語法錯誤：<b>ABAP 每一句敘述都以「句點 .」結束，不是分號</b>；冒號「:」是「鏈式敘述（chained statement）」的縮寫符號，例如 <code>WRITE: a, b, c.</code> 等同三句 WRITE。JOIN 時<b>三個關聯鍵（BUKRS、BELNR、GJAHR）少接一個，就會變成笛卡兒乘積</b>，筆數暴增且金額全錯——這是 FI 報表最常見的災難。</div>
+
+  <div class="warn"><b>S/4HANA 重大變更</b>：BSEG 在 S/4 仍存在但已非唯一真相來源，<b>總帳的完整明細落在 ACDOCA（Universal Journal）</b>。<br>
+  ・BSEG 是 Cluster 概念遺留、欄位受限、且<b>不能當作報表主表</b>（無法有效索引）。<br>
+  ・FI + CO + AA + ML 已合併為單一 ACDOCA，不需要再 join COEP、FAGLFLEXA、ANEP。<br>
+  ・GLT0、FAGLFLEXT、BSIS/BSAS/BSID/BSAD/BSIK/BSAK 在 S/4 已改為 <b>相容視圖（Compatibility View）</b>，可讀但效能差，新開發一律改讀 ACDOCA 或標準 CDS View（如 <code>I_JournalEntryItem</code>）。</div>
+
+  <pre><code class="abap">" S/4HANA 建議寫法：直接讀 ACDOCA（Universal Journal）
+SELECT rbukrs, gjahr, belnr, docln, budat, bldat, blart,
+       racct, rcntr, prctr, segment,
+       hsl, wsl, ksl, waers, drcrk, usnam
+  FROM acdoca
+  WHERE rldnr  = '0L'                 " 0L = Leading Ledger，一定要帶
+    AND rbukrs = @p_bukrs
+    AND gjahr  = @p_gjahr
+    AND budat  = @p_budat
+  ORDER BY rbukrs, gjahr, belnr, docln
+  INTO TABLE @DATA(lt_acdoca).</code></pre>
+
+  <div class="tip">在 SAP 環境中解決「雙檔關聯」的七種手段（講義原話）：<br>
+  1. SELECT 的 JOIN + WRITE ／ 2. SELECT 的 JOIN + ALV 報表 ／ 3. SQVI Query View ／ 4. SE11 建 View ／ 5. SE16H ／ 6. 轉出 Excel 再 VLOOKUP ／ 7. 轉出 Excel 再 Power BI。<br>
+  S/4HANA 再加第 8 種：<b>建 CDS View</b>——它同時取代了 4（SE11 View）與 3（Query），而且能直接被 Fiori、Analytics、OData 消費。</div>
+
+  <div class="note"><b>作業 4-01</b>：請指出 MARA、MARC、MARD、MAKT 的關聯性。<br>答案要點：MARA＝物料主檔一般資料（鍵：MATNR）；MARC＝工廠層級（MATNR + WERKS）；MARD＝儲存地點層級庫存（MATNR + WERKS + LGORT）；MAKT＝物料多語系描述（MATNR + SPRAS）。層層往下加鍵，是 SAP 主資料的典型「一般→工廠→儲位」三層結構。</div>
+
+  <h3 id="ch01-1-10">10. ACDOCA 與 MATDOC 重要欄位、SE37 建立 Function Group</h3>
+  <p>講義第 5 節把 ACDOCA 的關鍵欄位整理成一張速查表，這是 S/4HANA FI/CO 開發的必備字典。</p>
+
+  <table>
+    <thead><tr><th>欄位</th><th>意義</th><th>欄位</th><th>意義</th></tr></thead>
+    <tbody>
+      <tr><td>MANDT</td><td>集團代碼（Client）</td><td>RLDNR</td><td>分類帳碼（Ledger，0L＝主帳）</td></tr>
+      <tr><td>GJAHR</td><td>傳票年度</td><td>BELNR / DOCLN</td><td>傳票號碼／傳票項次</td></tr>
+      <tr><td>RBUKRS</td><td>公司代碼</td><td>RCNTR</td><td>成本中心</td></tr>
+      <tr><td>PRCTR</td><td>利潤中心</td><td>RFAREA</td><td>功能範圍</td></tr>
+      <tr><td>RACCT</td><td>會計科目</td><td>RBUSA</td><td>業務範圍</td></tr>
+      <tr><td>KOKRS</td><td>控制範圍</td><td>SEGMENT</td><td>財報段別</td></tr>
+      <tr><td>TSL</td><td>交易幣別金額（Transaction）</td><td>WSL</td><td>交易幣別金額</td></tr>
+      <tr><td>HSL</td><td>公司碼本位幣金額</td><td>KSL</td><td>集團幣別金額</td></tr>
+      <tr><td>POPER</td><td>過帳期間</td><td>BUDAT / BLDAT</td><td>過帳日期／憑證日期</td></tr>
+      <tr><td>BLART</td><td>文件類型</td><td>BSCHL</td><td>過帳代碼</td></tr>
+      <tr><td>USNAM</td><td>輸入人員</td><td>KTOSL</td><td>交易代碼</td></tr>
+      <tr><td>LINETYPE</td><td>行項目類別</td><td>KTOPL</td><td>科目表</td></tr>
+      <tr><td>EBELN</td><td>採購編號</td><td>KDAUF</td><td>訂單編號</td></tr>
+      <tr><td>MATNR</td><td>物料號碼</td><td>WERKS</td><td>工廠代碼</td></tr>
+      <tr><td>KUNNR</td><td>客戶編號</td><td>WWERT</td><td>匯率轉換日期</td></tr>
+      <tr><td>KOART</td><td>科目類別</td><td>AFABE</td><td>折舊範圍</td></tr>
+      <tr><td>ANLN1 / ANLN2</td><td>主資產碼／次資產碼</td><td>PRZNR</td><td>企業流程</td></tr>
+      <tr><td>ERKRS</td><td>營運考量（CO-PA）</td><td>TAX_COUNTRY</td><td>稅務國別</td></tr>
+      <tr><td>GKONT / GKOAR</td><td>子科目碼／科目類別 D（客戶）K（供應商）</td><td>DRCRK</td><td>借貸方向 S／H</td></tr>
+    </tbody>
+  </table>
+
+  <div class="note">ACDOCA 的欄位數會隨 <b>CO-PA 特性設定</b>而變動，講義提到約在 <b>470～520 欄</b>之間。這也是為什麼在 ACDOCA 上<b>絕對不能寫 SELECT *</b>——一次讀五百欄的成本非常可觀。</div>
+
+  <div class="warn"><b>MM 對應的變更</b>：MKPF／MSEG 在 S/4HANA 已合併為 <b>MATDOC</b>（Material Document，含表頭與行項目），MKPF/MSEG 成為相容視圖。庫存彙總表 MARD-LABST、MCHB、MSKA 等在 S/4 是由 MATDOC 即時彙總而來（MATDOC_EXTRACT），因此 <b>MB5B 這類期初期末庫存報表的邏輯已完全改寫</b>。自建庫存報表請以 MATDOC 或標準 CDS（如 <code>I_MaterialDocumentItem</code>）為來源。</div>
+
+  <p><b>SE37 / SE80 建立 Function Group 與 Function Module</b>：</p>
+  <ul>
+    <li>Function Group（程式類型 <b>F</b>）是 Function Module 的容器，一個 FG 底下可以有很多 FM，共用 FG 的全域資料。</li>
+    <li>建立步驟：SE80 → 選 <span class="kw">Function Group</span> → 輸入名稱（例如講義的 <b>Z600_ERP300</b>）→ 存檔並指定 Package → <b>激活</b>。</li>
+    <li>講義特別提醒（20250320）：<b>激活時要把 Include 程式（LZxxxTOP、LZxxxUXX）一併勾選激活，否則會失敗</b>。這是新手最常卡住的地方。</li>
+    <li>SE11 產生表格維護畫面（Table Maintenance Generator）時也需要指定一個 Function Group，所以建議先把自己的 FG 建好。</li>
+  </ul>
+
+  <pre><code class="abap">" Function Module 的現代呼叫方式：例外用 class-based 或至少檢查 sy-subrc
+DATA(lv_matnr_in) = CONV matnr( '000000000000001234' ).
+
+CALL FUNCTION 'CONVERSION_EXIT_MATN1_OUTPUT'
+  EXPORTING
+    input  = lv_matnr_in
+  IMPORTING
+    output = DATA(lv_matnr_out).
+
+" 更現代的等價寫法：字串範本的 ALPHA 選項，不必呼叫 FM
+DATA(lv_disp) = |{ lv_matnr_in ALPHA = OUT }|.</code></pre>
+
+  <div class="note"><b>作業 5-01</b>：找出你認為最重要的 MATDOC 二十個欄位，並用第 9 節（原講義 4-1）所學寫成程式。<br>提示欄位：MBLNR、MJAHR、ZEILE、BUDAT、BLDAT、BWART、MATNR、WERKS、LGORT、CHARG、MENGE、MEINS、DMBTR、WAERS、SHKZG、LIFNR、KUNNR、EBELN、EBELP、AUFNR。</div>
+
+  <h3 id="ch01-1-11">11. WRITE 清單輸出：格式、TOP-OF-PAGE、HIDE，以及 S/4 時代的定位</h3>
+  <p>WRITE 是 ABAP 最古老的輸出方式，產生的是「Classical List（傳統清單）」。講義第 8 節用它示範了對齊、畫表格線、雙擊鑽取等技巧。</p>
+
+  <pre><code class="abap">REPORT zdemo_write.
+
+" ① 對齊：WRITE 後面的數字是「起始欄位（column）」
+SELECT matnr, mtart FROM mara
+  WHERE matnr BETWEEN 'P-100' AND 'P-200'
+  ORDER BY matnr
+  INTO TABLE @DATA(lt_mara)
+  UP TO 10 ROWS.
+
+TOP-OF-PAGE.
+  " 每一頁的表頭：TEXT-001 等文字元素在 SE38 → 移至 → 文字元素 維護
+  WRITE: /0 TEXT-001, 16 sy-vline,
+          20 TEXT-002, 28 sy-vline,
+          30 TEXT-003, 50 sy-vline.
+  ULINE.
+
+START-OF-SELECTION.
+  LOOP AT lt_mara ASSIGNING FIELD-SYMBOL(&lt;ls&gt;).
+    WRITE: /0  &lt;ls&gt;-matnr, 16 sy-vline,
+            20 &lt;ls&gt;-mtart, 28 sy-vline,
+            30 space,      50 sy-vline.
+    ULINE.
+  ENDLOOP.
+
+  ULINE.
+  WRITE: / |共 { lines( lt_mara ) } 筆|, 50 TEXT-001, sy-uname.</code></pre>
+
+  <div class="note">常用系統欄位：<b>SY-VLINE</b>（垂直線 │）、<b>SY-ULINE</b>（水平線 ─）、<b>ULINE</b> 敘述（畫整條線）、<b>SY-UNAME</b>（使用者）、<b>SY-DATUM／SY-UZEIT</b>（系統日期時間）、<b>SY-SUBRC</b>（回傳碼）、<b>SY-TABIX</b>（LOOP 內目前列號）、<b>SY-INDEX</b>（DO/WHILE 圈數）。<br>WRITE 的常用附加：<code>NO-ZERO</code>（去前導零）、<code>NO-GAP</code>（不留空白）、<code>LEFT-JUSTIFIED / RIGHT-JUSTIFIED</code>、<code>UNDER f</code>（對齊某欄）、<code>DD/MM/YYYY</code>（日期格式）、<code>COLOR n</code>、<code>DECIMALS n</code>。</div>
+
+  <p><b>HIDE 與 AT LINE-SELECTION：雙擊鑽取（Drill-down）</b>——講義 08-6 示範顯示銷售訂單，雙擊某一行就顯示該料號的描述。</p>
+
+  <pre><code class="abap">REPORT zdemo_hide.
+
+DATA gt_makt TYPE SORTED TABLE OF makt WITH UNIQUE KEY matnr spras.
+DATA gv_matnr TYPE vbap-matnr.
+
+START-OF-SELECTION.
+  SELECT vbeln, posnr, matnr FROM vbap
+    WHERE matnr LIKE 'P-%'
+    ORDER BY vbeln, posnr
+    INTO TABLE @DATA(lt_vbap).
+
+  SELECT matnr, spras, maktx FROM makt
+    WHERE matnr LIKE 'P-%' AND spras = @sy-langu
+    INTO CORRESPONDING FIELDS OF TABLE @gt_makt.
+
+  LOOP AT lt_vbap ASSIGNING FIELD-SYMBOL(&lt;ls&gt;).
+    gv_matnr = &lt;ls&gt;-matnr.
+    WRITE: /10 &lt;ls&gt;-vbeln, 20 &lt;ls&gt;-posnr, 30 &lt;ls&gt;-matnr.
+    HIDE gv_matnr.          " 把本行的料號藏進系統暫存區
+  ENDLOOP.
+  CLEAR gv_matnr.
+
+AT LINE-SELECTION.
+  " 雙擊時，系統自動把該行 HIDE 起來的值還原到 gv_matnr
+  IF line_exists( gt_makt[ matnr = gv_matnr spras = sy-langu ] ).
+    DATA(ls_makt) = gt_makt[ matnr = gv_matnr spras = sy-langu ].
+    WRITE: / ls_makt-matnr, ls_makt-maktx.
+  ELSE.
+    MESSAGE |料號 { gv_matnr } 無描述| TYPE 'S'.
+  ENDIF.</code></pre>
+
+  <div class="tip">老師說：<b>「這支程式可以當做簡單的追蹤問題樣版」</b>。HIDE 的原理是把「目前這一行想帶到次清單的變數值」暫存在系統區，只有 <code>AT LINE-SELECTION</code> 被觸發時才依行號取回。除錯查資料時，比開 ALV 還快。</div>
+
+  <div class="warn"><b>S/4HANA 時代 WRITE 的定位</b>：<br>
+  ・WRITE 清單<b>沒有排序、篩選、匯出 Excel、版面配置（Layout）、列印預覽</b>等功能，使用者一定會抱怨。<br>
+  ・Classical List <b>無法在 Fiori Launchpad／SAP GUI for HTML 以外的環境正常顯示</b>，也不能被 OData 消費。<br>
+  ・因此 WRITE 現在的合理用途只剩三種：<b>(1) 教學與觀念驗證、(2) 背景 Job 的執行 Log（Spool）、(3) 極簡的批次處理結果訊息</b>。<br>
+  ・<b>只要是給使用者看的報表，一律用 ALV</b>：全螢幕／簡易報表用 <code>CL_SALV_TABLE</code>，需要編輯欄位、事件、細部控制才用 <code>CL_GUI_ALV_GRID</code>。舊的 <code>REUSE_ALV_GRID_DISPLAY</code> 仍能跑，但不建議新開發使用。</div>
+
+  <pre><code class="abap">" 同一份資料，改用 ALV 只要三行 —— 這才是 S/4HANA 該交出去的東西
+TRY.
+    cl_salv_table=&gt;factory(
+      IMPORTING r_salv_table = DATA(lo_alv)
+      CHANGING  t_table      = lt_vbap ).
+
+    lo_alv-&gt;get_functions( )-&gt;set_all( abap_true ).   " 開啟工具列全部功能
+    lo_alv-&gt;get_columns( )-&gt;set_optimize( abap_true ).
+    lo_alv-&gt;get_display_settings( )-&gt;set_list_header( '銷售訂單明細' ).
+    lo_alv-&gt;display( ).
+
+  CATCH cx_salv_msg INTO DATA(lx_salv).
+    MESSAGE lx_salv-&gt;get_text( ) TYPE 'E'.
+ENDTRY.</code></pre>
+
+  <h3 id="ch01-1-12">12. JOIN 的差異、多語系 T002 與同名不同義的欄位</h3>
+  <p>講義 08-2 用一支程式同時跑 INNER JOIN 與 LEFT JOIN，讓學生自己數筆數，體會兩者差別。老師的註解只有一句：<b>「沒事別用 LEFT JOIN」</b>。</p>
+
+  <pre><code class="abap">REPORT zdemo_join.
+
+" ① INNER JOIN：兩邊都要有才出現。MAKT 沒有 E 語系的料號會消失
+SELECT a~matnr, a~mtart, t~maktx
+  FROM mara AS a
+  INNER JOIN makt AS t ON a~matnr = t~matnr
+  WHERE a~matnr BETWEEN 'P-100' AND 'P-200'
+    AND t~spras = 'E'
+  ORDER BY a~matnr
+  INTO TABLE @DATA(lt_inner).
+
+WRITE: / |INNER JOIN 筆數：{ lines( lt_inner ) }|.
+
+" ② LEFT OUTER JOIN：MARA 全留，找不到描述的 MAKTX 為空
+"    注意 SPRAS 條件必須寫在 ON 裡面，寫在 WHERE 會把 LEFT 打回 INNER
+SELECT a~matnr, a~mtart, t~maktx
+  FROM mara AS a
+  LEFT OUTER JOIN makt AS t
+    ON  a~matnr = t~matnr
+    AND t~spras = 'E'
+  WHERE a~matnr BETWEEN 'P-100' AND 'P-200'
+  ORDER BY a~matnr
+  INTO TABLE @DATA(lt_left).
+
+WRITE: / |LEFT JOIN 筆數：{ lines( lt_left ) }|.
+
+LOOP AT lt_left ASSIGNING FIELD-SYMBOL(&lt;ls&gt;).
+  WRITE: / &lt;ls&gt;-matnr, &lt;ls&gt;-mtart, &lt;ls&gt;-maktx.
+ENDLOOP.</code></pre>
+
+  <div class="warn"><b>LEFT JOIN 的兩個經典陷阱</b>：<br>
+  1. 右表的過濾條件<b>寫在 WHERE 就會退化成 INNER JOIN</b>（因為 NULL 不滿足條件而被濾掉），必須寫在 <code>ON</code> 子句裡。<br>
+  2. 若右表對同一鍵有多筆（例如 MAKT 沒限定 SPRAS），LEFT JOIN 會<b>把左表的列數放大</b>，金額類欄位再做 SUM 就會重複計算。這是報表金額對不起來最常見的原因。</div>
+
+  <p><b>語系 T002</b>：SAP 用單碼語言鍵（SPRAS）。講義列出的常用對照：</p>
+  <table>
+    <thead><tr><th>語言</th><th>SPRAS（單碼）</th><th>ISO（雙碼）</th></tr></thead>
+    <tbody>
+      <tr><td>簡體中文</td><td>1</td><td>ZH</td></tr>
+      <tr><td>繁體中文</td><td>M</td><td>ZF</td></tr>
+      <tr><td>英文</td><td>E</td><td>EN</td></tr>
+      <tr><td>德文</td><td>D</td><td>DE</td></tr>
+    </tbody>
+  </table>
+
+  <pre><code class="abap">" 語系轉換：單碼 &lt;-&gt; ISO 雙碼
+DATA lv_iso  TYPE laiso.
+DATA lv_lang TYPE sy-langu.
+
+" 單碼 -&gt; ISO
+CALL FUNCTION 'CONVERSION_EXIT_ISOLA_OUTPUT'
+  EXPORTING input  = sy-langu
+  IMPORTING output = lv_iso.
+
+" ISO -&gt; 單碼
+CALL FUNCTION 'CONVERSION_EXIT_ISOLA_INPUT'
+  EXPORTING input  = 'ZF'
+  IMPORTING output = lv_lang.
+
+" 最佳實務：不要寫死 'E'，用 sy-langu，並在查不到時 fallback 到英文
+SELECT SINGLE maktx FROM makt
+  WHERE matnr = @lv_matnr AND spras = @sy-langu
+  INTO @DATA(lv_maktx).
+IF sy-subrc &lt;&gt; 0.
+  SELECT SINGLE maktx FROM makt
+    WHERE matnr = @lv_matnr AND spras = 'E'
+    INTO @lv_maktx.
+ENDIF.</code></pre>
+
+  <p><b>同名不同義的欄位（講義 08-3）</b>：這是 SD 模組最容易搞混的地方。</p>
+  <table>
+    <thead><tr><th>欄位</th><th>在訂單</th><th>在交貨單</th></tr></thead>
+    <tbody>
+      <tr><td>VBELN</td><td>VBAK-VBELN／VBAP-VBELN＝訂單編號</td><td>LIKP-VBELN／LIPS-VBELN＝DN 交貨單編號</td></tr>
+      <tr><td>POSNR</td><td>VBAP-POSNR＝訂單項次</td><td>LIPS-POSNR＝DN 項次</td></tr>
+      <tr><td colspan="2">串接關係</td><td>LIPS-VGBEL = VBAP-VBELN（來源訂單號）<br>LIPS-VGPOS = VBAP-POSNR（來源訂單項次）</td></tr>
+    </tbody>
+  </table>
+  <div class="tip">SD 的文件流是 <b>VBFA（Document Flow）</b>在串：報價 → 訂單 → 交貨 → 發票。要追一張訂單出到哪，查 VBFA 的 VBELV（前導單）／VBELN（後續單）／VBTYP_N（單據類別）比自己 join 各表安全得多。</div>
+
+  <h3 id="ch01-1-13">13. RANGES／SELECT-OPTIONS：區間與列舉</h3>
+  <p>講義 08-8 標註「有點難，可半年後再學」，但它是 ABAP 選擇條件的底層原理，早懂早受益。</p>
+
+  <pre><code class="abap">REPORT zrange.
+
+" 現代寫法：用 RANGE OF 型態（不要再用 RANGES: 敘述，它會產生帶表頭列的舊物件）
+DATA lt_carrid TYPE RANGE OF spfli-carrid.
+
+" ① 區間（BT）：low 到 high 之間
+lt_carrid = VALUE #( ( sign = 'I' option = 'BT' low = 'AA' high = 'HH' ) ).
+
+" ② 列舉（EQ）：逐一列出，最精準
+lt_carrid = VALUE #( sign = 'I' option = 'EQ'
+                     ( low = 'AA' )
+                     ( low = 'LH' )
+                     ( low = 'UA' ) ).
+
+SELECT carrid, connid, cityfrom, cityto
+  FROM spfli
+  WHERE carrid IN @lt_carrid          " IN 一律搭配 @
+  ORDER BY carrid, connid
+  INTO TABLE @DATA(lt_spfli).
+
+LOOP AT lt_spfli ASSIGNING FIELD-SYMBOL(&lt;ls&gt;).
+  WRITE: / &lt;ls&gt;-carrid, &lt;ls&gt;-connid, &lt;ls&gt;-cityfrom, &lt;ls&gt;-cityto.
+ENDLOOP.</code></pre>
+
+  <p>RANGE 表固定有四個欄位：</p>
+  <table>
+    <thead><tr><th>欄位</th><th>型態</th><th>意義</th></tr></thead>
+    <tbody>
+      <tr><td>SIGN</td><td>CHAR 1</td><td><b>I</b>＝Include 包含（一般用這個）；<b>E</b>＝Exclude 排除</td></tr>
+      <tr><td>OPTION</td><td>CHAR 2</td><td>EQ 等於、NE 不等、GT 大於、GE 大於等於、LT 小於、LE 小於等於、<b>BT</b> 區間、<b>NB</b> 非區間、<b>CP</b> 樣式包含（可用 * ）、<b>NP</b> 樣式排除</td></tr>
+      <tr><td>LOW</td><td>同來源欄位</td><td>低值（單值時只用這個）</td></tr>
+      <tr><td>HIGH</td><td>同來源欄位</td><td>高值，<b>只有 OPTION 為 BT／NB 時才參與運算</b></td></tr>
+    </tbody>
+  </table>
+
+  <div class="warn"><b>老師實戰血淚：條件用「區間」與用「列舉」答案會不一樣，用列舉的才正確。</b><br>
+  原因有三：<br>
+  1. <b>BT 是字串比較</b>，不是數值比較。CHAR 型欄位 <code>'003' BT '007'</code> 看似 003~007，但如果值域裡出現 <code>'0035'</code>、<code>'01A'</code> 這種長度或格式不一致的資料，會意外被包含或排除。<br>
+  2. 值域<b>不連續</b>時，區間會把中間你不想要的代碼一併撈進來（例如成本要素區間中夾雜了不該加總的科目）。<br>
+  3. 帶前導零的 NUMC／CHAR 欄位若未經 <b>ALPHA 轉換</b>，畫面輸入的 <code>100</code> 與資料庫的 <code>0000000100</code> 比較結果會出乎意料。<br>
+  <b>結論：涉及金額彙總、成本歸集這類「不能多也不能少」的邏輯，寧可用 EQ 逐一列舉，也不要圖方便用 BT 區間。</b></div>
+
+  <div class="note">定義 Range 的兩種方式：<br>
+  1. <code>DATA lt_x TYPE RANGE OF &lt;型態&gt;.</code>（型態可以是基本型態或表欄位）—— <b>建議用這種</b>。<br>
+  2. <code>RANGES: g_x FOR spfli-carrid.</code>（此處的參考只能是表欄位，不能是 Data Element；且會產生帶表頭列的舊式物件）—— 已 obsolete。<br>
+  另外 <code>SELECT-OPTIONS s_matnr FOR mara-matnr.</code> 本身就是一張 RANGE 表，加上選擇畫面，這是實務上最常用的做法。</div>
+
+  <pre><code class="abap">" 實務標準骨架：SELECT-OPTIONS 直接餵進 WHERE ... IN
+TABLES mara.   " 注意：SELECT-OPTIONS 的 FOR 需要一個宣告過的欄位；
+               " 現代寫法可改為先 TYPES 再用 RANGE，或維持此處最小範圍的宣告
+
+SELECT-OPTIONS: s_matnr FOR mara-matnr,
+                s_mtart FOR mara-mtart.
+PARAMETERS:     p_max   TYPE i DEFAULT 100.
+
+START-OF-SELECTION.
+  SELECT matnr, mtart, meins
+    FROM mara
+    WHERE matnr IN @s_matnr
+      AND mtart IN @s_mtart
+    ORDER BY matnr
+    INTO TABLE @DATA(lt_out)
+    UP TO @p_max ROWS.</code></pre>
+
+  <div class="tip">若要完全避開 <code>TABLES:</code>，可以先在程式中宣告一個結構型態的變數，再對它 <code>SELECT-OPTIONS ... FOR</code>：<br>
+  <code>DATA gs_mara TYPE mara.</code> → <code>SELECT-OPTIONS s_matnr FOR gs_mara-matnr.</code><br>
+  這樣既有選擇畫面，也不會產生 TABLES 的全域工作區。</div>
+
+  <h3 id="ch01-1-14">14. Package、SE21、SE80 與程式類型</h3>
+  <p><b>Package（舊稱 Development Class 開發類）</b>是 ABAP 所有開發物件的歸屬單位。講義的定義：</p>
+  <ul>
+    <li>儲存 SAP 系統開發過程中的所有相關物件（程式、表結構定義、資料類型等），方便管理與查詢。</li>
+    <li>透過 Package 可以方便地把它所包含的物件<b>批量傳輸</b>到不同伺服器。傳輸是透過<b>請求號（Request）</b>進行，請求號是一份文件，記錄所有物件的修改記錄。</li>
+    <li>不屬於任何開發類的物件，可分配給本地開發類 <b>$TMP</b>；該類中的物件<b>不能進行系統間傳輸</b>，主要用於測試。</li>
+  </ul>
+
+  <p><b>建立步驟（SE21 或 SE80）</b><span class="src">（依講義步驟整理）</span>：</p>
+  <ol>
+    <li>執行 <span class="tcode">SE21</span>（Package Builder），或 <span class="tcode">SE80</span> → 下拉選 <span class="kw">Package</span>。</li>
+    <li>輸入 Package 名稱（必須 Z／Y 開頭，例如講義的 <b>Z600_2409_ERP000</b>），按 <span class="kw">Create</span>。</li>
+    <li>填入 Short Description、<b>Software Component</b>（客戶物件選 <code>HOME</code>）、<b>Transport Layer</b>（選系統的標準傳輸層，例如 <code>ZDEV</code> 或 <code>SAP</code>；此欄決定物件會被傳到哪條傳輸路徑）。</li>
+    <li>Package Type 一般選 <span class="kw">Not a Main Package</span>（不是主套件）。</li>
+    <li>存檔 → 系統要求指定 <b>Workbench Request</b> → 建立或選一個既有的請求號 → 完成。</li>
+  </ol>
+  <div class="warn">Transport Layer 若選錯（例如選成 <code>SAP</code> 或留空），物件可能無法沿著客戶的 DEV→QAS→PRD 路徑傳輸，或被歸為「不可傳輸」。建 Package 前先問 Basis 這套系統的客戶傳輸層代碼。</div>
+
+  <p><b>SE80 物件瀏覽器</b>：同一個 Package 底下可組織多個物件——程式、Function Group、Class、Table、Screen、Transaction、Message Class 全都掛在樹上。開發時把 SE80 開著，比反覆切 SE38／SE11／SE37 快得多。</p>
+
+  <p><b>程式類型（Program Type，可由 TRDIR 資料表查詢）</b>：</p>
+  <table>
+    <thead><tr><th>Type</th><th>名稱</th><th>說明</th></tr></thead>
+    <tbody>
+      <tr><td><b>1</b></td><td>Executable Program 可執行程式</td><td>可由 ABAP Editor 直接執行；processing blocks 依預先定義的順序執行；可使用標準 selection screen；主要用來顯示 List。<b>報表都是這一型</b>。</td></tr>
+      <tr><td><b>M</b></td><td>Module Pool 模組池</td><td>必須至少定義一個 TCODE 指定 initial screen；畫面順序可由 screen attributes 靜態指定，或由程式碼動態指定。<b>VA01／VA02／VA03 三個 TCODE 共用同一個 Module Pool 與畫面</b>。</td></tr>
+      <tr><td><b>F</b></td><td>Function Group 函數組</td><td>包含 function modules、local data declarations 與 screens。</td></tr>
+      <tr><td><b>I</b></td><td>Include Program</td><td>可包含任何 ABAP 敘述；不能單獨執行，是模組化的容器。</td></tr>
+      <tr><td><b>J</b></td><td>Interface Pool 介面池</td><td>包含 global interfaces 與 local data declarations。</td></tr>
+      <tr><td><b>K</b></td><td>Class Pool 類別池</td><td>包含 global classes 與 local data declarations。</td></tr>
+      <tr><td><b>S</b></td><td>Subroutine Pool</td><td>只放 FORM 的容器（已不建議新開發使用）。</td></tr>
+    </tbody>
+  </table>
+
+  <div class="note">Type I／F／J／K 這些程式<b>不能直接執行</b>，它們是 modularization units 的容器，被其他可執行程式呼叫。只要呼叫了其中任一 module，系統就會把整個主程式載入當前的 internal session。<br>查詢方式：<code>SE16N → TRDIR → NAME = 'Z*' </code>，看 SUBC 欄位。</div>
+
+  <pre><code class="abap">" 用程式查自己 Package 底下有哪些物件（TADIR = 開發物件目錄）
+PARAMETERS p_devc TYPE tadir-devclass DEFAULT 'Z600_2409_ERP000'.
+
+SELECT pgmid, object, obj_name, author, srcsystem
+  FROM tadir
+  WHERE devclass = @p_devc
+  ORDER BY object, obj_name
+  INTO TABLE @DATA(lt_tadir).
+
+LOOP AT lt_tadir ASSIGNING FIELD-SYMBOL(&lt;ls&gt;).
+  WRITE: / &lt;ls&gt;-pgmid, &lt;ls&gt;-object, &lt;ls&gt;-obj_name, &lt;ls&gt;-author.
+ENDLOOP.
+
+" 查程式類型（TRDIR-SUBC：1=可執行 M=Module Pool F=FuncGroup I=Include K=Class）
+SELECT name, subc, cnam, unam, udat
+  FROM trdir
+  WHERE name LIKE 'Z%'
+  ORDER BY name
+  INTO TABLE @DATA(lt_trdir)
+  UP TO 100 ROWS.</code></pre>
+
+  <div class="note"><b>作業 7-01</b>：核對自己的 SE21，確認是否有跟上進度。此檔視為點名檔及作業繳交記錄。</div>
+
+  <h3 id="ch01-1-15">15. 傳輸請求 SE09／SE10 與 STMS 傳輸路徑</h3>
+  <p>ABAP 的每一次修改都會被記錄在<b>傳輸請求（Transport Request，TR）</b>裡。這是 SAP 變更管理的核心。</p>
+
+  <p><b>兩種請求</b>：</p>
+  <ul>
+    <li><b>Workbench Request（工作台請求）</b>：跨 Client 的開發物件——程式、Table、Class、Function、Screen。編號形式 <code>DEVK900123</code>。</li>
+    <li><b>Customizing Request（客製化請求）</b>：Client 相關的設定資料（SPRO 的配置）。編號形式 <code>DEVK900124</code>。</li>
+  </ul>
+
+  <p><b>請求的結構</b>：一個 Request（主請求）底下掛數個 <b>Task（任務）</b>，每位開發者一個 Task，物件實際登記在 Task 上。</p>
+
+  <table>
+    <thead><tr><th>TCODE</th><th>用途</th></tr></thead>
+    <tbody>
+      <tr><td>SE09</td><td>Transport Organizer（Workbench 請求，講義用這支查請求號）</td></tr>
+      <tr><td>SE10</td><td>Transport Organizer（含 Customizing 請求，功能與 SE09 幾乎相同）</td></tr>
+      <tr><td>SE01</td><td>Transport Organizer（擴充視圖，可看傳輸日誌、建立各類請求）</td></tr>
+      <tr><td>SE03</td><td>Transport Organizer Tools（改物件的 Package、搜尋請求中的物件、鎖定/解鎖）</td></tr>
+      <tr><td>STMS</td><td>Transport Management System，匯入佇列、執行傳輸</td></tr>
+    </tbody>
+  </table>
+
+  <p><b>請求狀態</b>（講義原文）：<b>Modifiable＝可修改</b>（還在開發中，物件被鎖住）；<b>Released＝已釋放</b>（已寫出檔案，可以被匯入下一個系統，內容不能再改）。</p>
+
+  <p><b>釋放與傳輸的完整流程</b><span class="src">（依講義步驟整理）</span>：</p>
+  <ol>
+    <li>開發完成 → <span class="tcode">SE09</span> 找到自己的 Request。</li>
+    <li>先<b>釋放 Task</b>（子項）：選中 Task → 按卡車圖示（Release Directly）。</li>
+    <li>再<b>釋放 Request</b>（主項）：同樣按卡車圖示。此時系統會做語法／一致性檢查，並把物件寫成傳輸檔案（cofiles + data files）。</li>
+    <li><span class="tcode">STMS</span> → Import Overview → 進入 <b>QAS</b> 的 Import Queue → 找到剛才的請求號 → Import Request。</li>
+    <li>在 QAS 測試通過後，再從 STMS 的 <b>PRD</b> 佇列匯入。</li>
+  </ol>
+
+  <p><b>STMS 的觀念（講義 10-5）</b>：標準三層架構是 <b>DEV → QAS → PRD</b>，「有時不只這三區」。常見的變化包括：</p>
+  <table>
+    <thead><tr><th>系統</th><th>全名</th><th>角色</th></tr></thead>
+    <tbody>
+      <tr><td>DEV</td><td>Development</td><td>唯一可以改程式的地方（其他系統通常鎖住）</td></tr>
+      <tr><td>QAS / QA / TST</td><td>Quality Assurance</td><td>使用者測試 UAT、整合測試</td></tr>
+      <tr><td>PRD / PRO</td><td>Production</td><td>正式生產環境</td></tr>
+      <tr><td>SBX</td><td>Sandbox</td><td>沙箱，通常不在傳輸路徑上</td></tr>
+      <tr><td>TRN</td><td>Training</td><td>教育訓練機</td></tr>
+      <tr><td>PRE / PPD</td><td>Pre-Production</td><td>上線前最後演練（含真實資料副本）</td></tr>
+    </tbody>
+  </table>
+
+  <div class="warn"><b>傳輸的三大鐵律</b>：<br>
+  1. <b>傳輸順序不能亂</b>。請求號是依釋放時間編號的，匯入時若跳號（先匯 900130 再匯 900125），舊的請求會覆蓋新的，造成「明明修好了卻又壞掉」。務必依序匯入或用 Import All。<br>
+  2. <b>相依物件要同一批傳</b>。Table 改了欄位、程式用了新欄位，兩者若分在不同 Request 且分批傳，QAS 會出現「欄位不存在」的短暫錯誤。<br>
+  3. <b>$TMP 的東西傳不出去</b>。上線前用 SE03 → Change Object Directory Entry 把 Package 從 $TMP 改成正式 Package，系統會要求指定 Request。</div>
+
+  <div class="tip">查「這支程式是被哪個請求號傳出去的」：<span class="tcode">SE03</span> → Search for Objects in Requests/Tasks，輸入物件名稱即可。或直接查資料表 <b>E070</b>（請求表頭）、<b>E071</b>（請求內物件）、<b>E07T</b>（請求說明）。</div>
+
+  <pre><code class="abap">" 查某個物件被登記在哪些傳輸請求裡（E071 = 傳輸請求物件明細）
+PARAMETERS p_obj TYPE e071-obj_name DEFAULT 'Z2202_00_05'.
+
+SELECT e071~trkorr, e071~pgmid, e071~object, e071~obj_name,
+       e070~trstatus, e070~as4user, e070~as4date, e07t~as4text
+  FROM e071
+  INNER JOIN e070 ON e070~trkorr = e071~trkorr
+  LEFT OUTER JOIN e07t ON  e07t~trkorr = e071~trkorr
+                       AND e07t~langu  = @sy-langu
+  WHERE e071~obj_name = @p_obj
+  ORDER BY e070~as4date DESCENDING
+  INTO TABLE @DATA(lt_tr).
+
+LOOP AT lt_tr ASSIGNING FIELD-SYMBOL(&lt;ls&gt;).
+  " TRSTATUS: D=Modifiable L=Modifiable(protected) R=Released O=Release started
+  WRITE: / &lt;ls&gt;-trkorr, &lt;ls&gt;-trstatus, &lt;ls&gt;-as4user, &lt;ls&gt;-as4date, &lt;ls&gt;-as4text.
+ENDLOOP.</code></pre>
+
+  <h3 id="ch01-1-16">16. 自建資料表練習（SE11／SE14／SM30）</h3>
+  <p>講義第 9 節要每位學員建立四張自己的表，作為整個課程的練習資料庫。命名規則：<b>Z_學號_表名</b>（學號用二位數字），例如 <code>Z2202_00_KNA1</code>。</p>
+
+  <table>
+    <thead><tr><th>表名</th><th>欄位</th><th>型態／長度</th></tr></thead>
+    <tbody>
+      <tr><td rowspan="3">Z2202_00_KNA1（客戶）</td><td>MANDT 用戶端</td><td>CLNT 3</td></tr>
+      <tr><td>KUNNR 客戶編號</td><td>CHAR 10</td></tr>
+      <tr><td>NAME 客戶名稱</td><td>CHAR 40</td></tr>
+      <tr><td rowspan="3">Z2202_00_MARA（物料）</td><td>MANDT 用戶端</td><td>CLNT 3</td></tr>
+      <tr><td>MATNR 物料編號</td><td>CHAR 40</td></tr>
+      <tr><td>NAME 物料名稱</td><td>CHAR 40</td></tr>
+      <tr><td rowspan="7">Z2202_00_VBAK（訂單主檔）</td><td>MANDT 用戶端</td><td>CLNT 3</td></tr>
+      <tr><td>ZSDNO 銷售編號</td><td>CHAR 10</td></tr>
+      <tr><td>ZCC 公司代碼</td><td>CHAR 4</td></tr>
+      <tr><td>ZDT 銷售日期</td><td>DATS 8</td></tr>
+      <tr><td>KUNNR 客戶編號</td><td>CHAR 10</td></tr>
+      <tr><td>ZAMT 銷售金額</td><td>CURR 15,2</td></tr>
+      <tr><td>ZCUR 交易貨幣</td><td>CUKY 5</td></tr>
+      <tr><td rowspan="7">Z2202_00_VBAP（訂單明細）</td><td>MANDT 用戶端</td><td>CLNT 3</td></tr>
+      <tr><td>ZSDNO 銷售編號</td><td>CHAR 10</td></tr>
+      <tr><td>MATNR 物料編號</td><td>CHAR 40</td></tr>
+      <tr><td>ZQTY 銷售數量</td><td>NUMC 8</td></tr>
+      <tr><td>ZPRI 物料單價</td><td>CURR 15,2</td></tr>
+      <tr><td>ZAMT 銷售金額</td><td>CURR 15,2</td></tr>
+      <tr><td>ZCUR 交易貨幣</td><td>CUKY 5</td></tr>
+    </tbody>
+  </table>
+
+  <p><b>建表的關鍵設定（老師特別強調的坑）</b>：</p>
+  <ul>
+    <li>Delivery and Maintenance 頁籤，Data Browser/Table View Maint. 必須選 <b>「X — Display/Maintenance Allowed」</b>，否則 SE16N／SM30 都進不去。</li>
+    <li><b>技術設定（Technical Settings）</b>必修：Data Class（一般主檔選 <code>APPL0</code>，交易資料選 <code>APPL1</code>）、Size Category。沒設定就無法激活。</li>
+    <li>表必須<b>先激活</b>，才能執行 <span class="kw">Utilities → Table Maintenance Generator</span>（產生維護畫面）。</li>
+    <li>Table Maintenance Generator 需要指定一個 <b>Function Group</b>——所以要先在 SE80／SE37 把自己的 FG 建好。</li>
+    <li><b>Recording Routine 要勾「no, or user, recording routine」</b>，這樣在 SM30 編輯資料時才不會每次都要求輸入 Change Request 號碼。</li>
+    <li>一旦產生了維護畫面（Maintenance Screen Number），<b>SE16N 就變成只能瀏覽不能維護，資料只能在 SM30 維護</b>。</li>
+    <li><b>Primary Key 一旦建立很難修改</b>，設計時務必想清楚。事後要調整可研究 <span class="tcode">SE14</span>（Database Utility，可做 Activate and Adjust Database，注意會有資料轉換風險）。</li>
+  </ul>
+
+  <div class="note">DDIC 共有 37 種預設型態，常用的：<br>
+  <b>CLNT</b> Client、<b>CHAR</b> 文字、<b>CUKY</b> 幣別鍵、<b>CURR</b> 金額（必須指定參考幣別欄位）、<b>DATS</b> 日期 YYYYMMDD、<b>TIMS</b> 時間 HHMMSS、<b>INT2</b> 整數 ±32767、<b>INT4</b> 整數、<b>NUMC</b> 數字型文字、<b>QUAN</b> 數量（必須指定參考單位欄位）、<b>UNIT</b> 單位鍵、<b>DEC</b> 十進位、<b>LANG</b> 語言、<b>RAW/LRAW</b> 二進位。<br>
+  <b>CURR 一定要配 CUKY，QUAN 一定要配 UNIT</b>，這是 DDIC 的強制規則（在 Currency/Quantity Fields 頁籤設定），否則無法激活。</div>
+
+  <div class="tip">建第二張表時務必練習完整鏈路：<b>建 Data Element → 建 Domain → 設 Value Table → 建 Foreign Key</b>。這條鏈走過一次，就會理解為什麼 <code>VBAK-MATNR</code> 會自動有 F4 與輸入檢查。全部做完後回頭看 SE11 裡的標準表 MARA，就能理解 STRUCTURE（結構）與 Append Structure 的意義。</div>
+
+  <div class="note"><b>作業 9-01 / 10-01</b>：總共要建立客戶、料號、訂單主檔、訂單明細四張表，並用 SE16N／SM30 建入測試資料。</div>
+
+  <h3 id="ch01-1-17">17. 編輯器熱鍵、Pretty Printer、SE93／SA38 與其他工具</h3>
+  <p><b>ABAP Editor 熱鍵（講義 08-1；若失效通常是被中文輸入法攔截）</b>：</p>
+  <table>
+    <thead><tr><th>功能</th><th>熱鍵</th><th>功能</th><th>熱鍵</th></tr></thead>
+    <tbody>
+      <tr><td>調整字體大小</td><td>Ctrl + 滑鼠滾輪</td><td>矩陣（區塊）點選</td><td>Ctrl + ↑↓←→</td></tr>
+      <tr><td>加入註解</td><td>Ctrl + ,（逗號）</td><td>取消註解</td><td>Ctrl + .（句號）</td></tr>
+      <tr><td>刪除一行</td><td>Ctrl + Shift + X</td><td>剪下（需反白）</td><td>Ctrl + X</td></tr>
+      <tr><td>複製</td><td>Ctrl + C</td><td>貼上</td><td>Ctrl + V</td></tr>
+      <tr><td>轉小寫</td><td>Ctrl + L</td><td>轉大寫</td><td>Ctrl + U</td></tr>
+      <tr><td>大小寫互轉</td><td>Ctrl + K</td><td>原地複製一行</td><td>Ctrl + D</td></tr>
+      <tr><td>取消</td><td>Ctrl + Z</td><td>重做</td><td>Ctrl + Y</td></tr>
+      <tr><td>尋找</td><td>Ctrl + F</td><td>取代</td><td>Ctrl + H</td></tr>
+      <tr><td>Pretty Printer</td><td>Shift + F1</td><td>語法檢查</td><td>Ctrl + F2</td></tr>
+      <tr><td>激活</td><td>Ctrl + F3</td><td>執行</td><td>F8</td></tr>
+      <tr><td>Where-Used List</td><td>Ctrl + Shift + F3</td><td>設中斷點</td><td>Ctrl + Shift + F12</td></tr>
+    </tbody>
+  </table>
+
+  <div class="tip"><b>雙擊的威力</b>：在編輯器裡對任何變數、型態、Function、Table 名稱<b>雙擊</b>，會直接跳到它的定義處（Forward Navigation）。老師特別提到「對變數雙擊，會往上跳到其原始出處」——這是理解別人程式最快的方法。跳過去之後按 <b>F3</b> 或綠色返回鍵回來。</div>
+
+  <p><b>其他必知工具</b>：</p>
+  <ul>
+    <li><b>Pretty Printer（Shift+F1）</b>：自動縮排、統一大小寫。在 SE38 右下角的 <span class="kw">Options</span> 圖示裡可設定風格（關鍵字大寫／小寫、縮排寬度）——<b>老師建議勿動預設值</b>，團隊風格一致比較重要。</li>
+    <li><b>SA38</b>：直接輸入程式名稱執行，不進編輯器。</li>
+    <li><b>SE93</b>：把程式編譯成 TCODE。老師提醒：「其實很多時候，在學模組運用時，PROGRAM 就可以了」——不必急著建 TCODE。<br>建立步驟：SE93 → 輸入 Z 開頭的 TCODE 名稱 → Create → 選 <span class="kw">Program and selection screen (report transaction)</span> → 填程式名稱 → 存檔並指定 Package／Request。</li>
+    <li><b>SU53</b>：權限不足時的第一招。跳出 "No authorization" 之後<b>立刻</b>執行 SU53，會顯示最後一次失敗的權限檢查物件與欄位值，截圖給 Basis 就能開權限。</li>
+    <li><b>SCI（Code Inspector）</b>：靜態程式碼檢查，可檢查命名規則、效能問題、安全性問題。搭配 <b>ATC（ABAP Test Cockpit）</b>是 S/4HANA 的標準做法。</li>
+    <li><b>ABAPDOCU</b>：SAP 內建的 ABAP 語法文件與範例程式庫（對應的範例程式是 DEMO* 開頭）。忘記語法時比 Google 快。</li>
+    <li><b>個人清單（Favorites）</b>：SAP Easy Access 左側可把常用 TCODE 與程式加進「我的最愛」，還可以放網址與檔案捷徑。</li>
+    <li><b>搜尋的萬用字元</b>：SAP 各處搜尋一律用 <b><code>*</code></b>（多字元）與 <b><code>+</code></b>（單一字元）；ABAP SQL 的 LIKE 則是 <b><code>%</code></b> 與 <b><code>_</code></b>。兩套不要搞混。</li>
+  </ul>
+
+  <p><b>TIME ZONE 的觀念（講義 10-10）</b>：</p>
+  <table>
+    <thead><tr><th>系統欄位</th><th>意義</th></tr></thead>
+    <tbody>
+      <tr><td>SY-DATUM</td><td>系統（Application Server）日期</td></tr>
+      <tr><td>SY-UZEIT</td><td>系統時間</td></tr>
+      <tr><td>SY-DATLO</td><td>使用者本地日期（依 SU3 設定的時區換算）</td></tr>
+      <tr><td>SY-TIMLO</td><td>使用者本地時間</td></tr>
+      <tr><td>SY-ZONLO</td><td>使用者時區</td></tr>
+    </tbody>
+  </table>
+  <div class="warn">跨國系統一定要分清楚 SY-DATUM 與 SY-DATLO。台灣使用者連到設在美國的 AP Server，<code>SY-DATUM</code> 可能還是昨天。使用者的時區在 <span class="tcode">SU3</span> → Defaults 頁籤設定。存進資料庫的時間戳記建議用 <b>TIMESTAMP／TIMESTAMPL</b>（UTC），顯示時再用 <code>CONVERT TIME STAMP ... TIME ZONE</code> 換算。</div>
+
+  <pre><code class="abap">" 時區換算的現代寫法
+DATA lv_ts TYPE timestampl.
+GET TIME STAMP FIELD lv_ts.                  " 取得 UTC 時間戳記
+
+CONVERT TIME STAMP lv_ts TIME ZONE sy-zonlo
+        INTO DATE DATA(lv_date) TIME DATA(lv_time).
+
+WRITE: / |UTC 時戳：{ lv_ts }|,
+       / |使用者時區 { sy-zonlo }：{ lv_date DATE = USER } { lv_time TIME = USER }|,
+       / |系統日期 SY-DATUM：{ sy-datum DATE = USER }|,
+       / |本地日期 SY-DATLO：{ sy-datlo DATE = USER }|.</code></pre>
+
+  <h3 id="ch01-1-18">18. 除錯入門（Debug）</h3>
+  <p>講義以截圖為主，這裡整理成可操作的文字步驟<span class="src">（依講義步驟整理）</span>。</p>
+
+  <p><b>進入 Debugger 的四種方法</b>：</p>
+  <ol>
+    <li><b>設中斷點</b>：在 SE38 編輯器中，游標停在該行 → 點左側「停止」圖示，或按 <b>Ctrl+Shift+F12</b>。執行到該行就會停。</li>
+    <li><b>指令列輸入 <code>/h</code></b>：在任何畫面的指令列輸入 <code>/h</code> 按 Enter，畫面顯示 "Debugging switched on"，接著按下一個動作就會進入偵錯。<b>這招對標準程式最好用</b>。</li>
+    <li><b>程式中寫死</b>：加一行 <code>BREAK-POINT.</code>（所有人都會停，<b>絕不能傳到正式機</b>）或 <code>BREAK &lt;使用者名稱&gt;.</code>（只有指定使用者會停）。</li>
+    <li><b>SE80／SAT</b>：對背景 Job 用 SM37 → 選 Job → 指令列 <code>JDBG</code> 進入偵錯。</li>
+  </ol>
+
+  <p><b>Debugger 的操作鍵</b>：</p>
+  <table>
+    <thead><tr><th>鍵</th><th>動作</th><th>用途</th></tr></thead>
+    <tbody>
+      <tr><td>F5</td><td>Single Step（單步進入）</td><td>會鑽進 FORM／FUNCTION／METHOD 內部</td></tr>
+      <tr><td>F6</td><td>Execute（單步跳過）</td><td>把整個子程式當一行執行完</td></tr>
+      <tr><td>F7</td><td>Return（跳出）</td><td>執行完目前子程式後回到呼叫端</td></tr>
+      <tr><td>F8</td><td>Continue（繼續）</td><td>跑到下一個中斷點或結束</td></tr>
+    </tbody>
+  </table>
+
+  <p><b>常用技巧</b>：</p>
+  <ul>
+    <li><b>Watchpoint（監看點）</b>：不知道變數在哪裡被改壞時，設 Watchpoint（新 Debugger 的 Break./Watchpoints 頁籤），變數值一變就停。這是抓「金額為什麼變成 0」這類問題的利器。</li>
+    <li><b>看內表</b>：在 Variables 區輸入內表名稱，雙擊即可展開所有列；可用上方的篩選功能找特定列。</li>
+    <li><b>改值</b>：在 Debugger 裡雙擊變數值 → 修改 → 按鉛筆／Change 圖示，可以即時改變執行結果，用來模擬各種情境（<b>正式機請小心，這會真的影響過帳結果</b>）。</li>
+    <li><b>Call Stack</b>：看目前的呼叫堆疊，快速找出「是誰呼叫我的」。</li>
+    <li><b>SY-SUBRC 是第一嫌疑犯</b>：每個 SELECT、READ TABLE、CALL FUNCTION 之後都先看 SY-SUBRC，多數 bug 在這裡就抓到了。</li>
+  </ul>
+
+  <pre><code class="abap">" 除錯友善的寫法：把關鍵判斷點寫成明確的訊息，而不是靜默失敗
+SELECT SINGLE matnr, mtart, meins
+  FROM mara
+  WHERE matnr = @p_matnr
+  INTO @DATA(ls_mara).
+
+IF sy-subrc &lt;&gt; 0.
+  " 不要只 RETURN，留下可追查的訊息
+  MESSAGE |MARA 查無料號 { p_matnr ALPHA = OUT }（程式 { sy-repid } 第一段查詢）|
+          TYPE 'E'.
+ENDIF.
+
+" 開發階段的條件式中斷點：只對自己停，不影響同事
+IF sy-uname = 'CASPER'.
+  BREAK-POINT.       " 上線前務必移除
+ENDIF.</code></pre>
+
+  <div class="warn">上線檢查清單：<b>BREAK-POINT</b>、寫死的使用者名稱、<b>&amp;SAP_EDIT</b> 相關程式碼、暫時註解掉的授權檢查、寫死的 Client／公司代碼、寫死的日期——這六樣是 Code Review 一定要掃的東西。SCI／ATC 可以自動幫你抓 BREAK-POINT。</div>
+
+  <h3 id="ch01-1-19">19. 解決企業問題的手段與順序</h3>
+  <p>講義最後一節只有三句話，但它是整套課程的價值觀，也是資深顧問與新手最大的差別：</p>
+  <ol>
+    <li><b>能配置的就用後台配置（SPRO）解決。</b></li>
+    <li><b>一定要改程式就用增強（Enhancement／BAdI／User Exit）。</b></li>
+    <li><b>非不得已才寫程式。</b></li>
+  </ol>
+
+  <div class="tip">為什麼？因為<b>維護成本</b>。配置在升級時原封不動；增強有標準的接點，升級時 SAP 會提示；自建程式在每次升級（例如 ECC → S/4HANA，或 S/4 年度版本升級）都要重新測試、可能要重寫。<br>
+  延伸順序（S/4HANA 版）：<b>標準功能 → 配置 → Fiori 標準 App → CDS View / Custom Field（Key User Extensibility） → BAdI / Enhancement → 自建 ABAP 程式 → Side-by-side（BTP）</b>。<b>Clean Core</b> 是 S/4HANA 的核心原則：核心越乾淨，升級越輕鬆。</div>
+
+  <div class="warn">S/4HANA 的「Clean Core」還有一個現實理由：<b>SAP 已宣告修改核心的客製會影響雲端遷移路徑</b>。若公司未來打算上 RISE with SAP 或 Public Cloud，所有非標準的核心修改都會變成阻礙。開發前先問：「這個需求標準有沒有？Fiori 有沒有？CDS 能不能做？」</div>
+
+  <h3 id="ch01-1-qa">練習與自我檢核</h3>
+  <ol>
+    <li><b>作業 1-01</b>：找出 FI、CO、SD、MM、PP 五大模組的重大雙檔。<br><i>要點：BKPF/BSEG（S/4→ACDOCA）、COBK/COEP、VBAK/VBAP、EKKO/EKPO、MKPF/MSEG（S/4→MATDOC）、AUFK+AFKO/AFPO。</i></li>
+    <li><b>作業 2-01</b>：用 SE16H 把上題找到的雙檔做成關聯，並試著加上 Group By 與 Sum。</li>
+    <li><b>作業 3-01</b>：把 Z2202_00_05 的多餘程式碼刪掉，並讓選擇螢幕的料號能下拉選單。<br><i>要點：刪 <code>TABLES: VBAP.</code>、未使用的 TYPES 與 DATA；<code>PARAMETERS p_matnr TYPE mara-matnr</code>。</i></li>
+    <li><b>作業 4-01</b>：說明 MARA、MARC、MARD、MAKT 的關聯性。<br><i>要點：MATNR → +WERKS → +LGORT 的三層結構，MAKT 是 MATNR+SPRAS 的多語系描述。</i></li>
+    <li><b>作業 5-01</b>：列出你認為最重要的 MATDOC 二十個欄位，並照第 9 節寫成 JOIN 報表程式。</li>
+    <li><b>作業 7-01</b>：檢查自己的 SE21，確認 Package 已建立、程式已歸屬、Request 已產生。</li>
+    <li><b>作業 8-01</b>：<code>DESCRIBE TABLE</code> 能算出內表筆數，那「通透表（Transparent Table，即資料庫表）」如何計算筆數？<br><i>答案：用 <code>SELECT COUNT(*) FROM mara INTO @DATA(lv_cnt).</code> 或 <code>SELECT COUNT( * ) AS cnt ... INTO ...</code>。切勿把整張表撈進內表再 <code>lines( )</code>，那會把 DB 拖垮。另外 <code>DESCRIBE TABLE it LINES lv_n</code> 現代等價寫法是 <code>lv_n = lines( it )</code>；<code>DESCRIBE TABLE it KIND lv_k</code> 可取回內表種類（S 標準／O 排序／H 雜湊），<code>OCCURS</code> 可取回初始行大小。</i></li>
+    <li><b>作業 8-02</b>：把第 11 節的 ZDEMO 改寫成「由畫面上決定語系」。<br><i>要點：加 <code>PARAMETERS p_spras TYPE sy-langu DEFAULT sy-langu.</code>，WHERE 改成 <code>spras = @p_spras</code>。進階：用 <code>SELECT-OPTIONS</code> 支援多語系並在 ALV 中分欄顯示。</i></li>
+    <li><b>作業 9-01 / 10-01</b>：建立客戶、料號、訂單主檔、訂單明細四張自建表，設定技術設定、產生 Table Maintenance、用 SM30 建資料。</li>
+    <li><b>自我檢核</b>：不看講義，能否在 15 分鐘內完成——建 Package（SE21）→ 建程式（SE38）→ 寫出「選擇畫面 + SELECT 進內表 + ALV 輸出」→ 激活 → 執行 → 在 SE09 找到自己的 Request？做得到，這一章就過關了。</li>
+    <li><b>觀念題</b>：為什麼在 S/4HANA 上 <code>SELECT *</code> 特別傷？<br><i>要點：HANA 是欄式（Column Store）儲存，只讀需要的欄位成本極低；SELECT * 等於強迫掃描並重組所有欄位（ACDOCA 有 500 欄），且無法使用只掃描部分欄位的最佳化。</i></li>
+    <li><b>觀念題</b>：為什麼老師說「條件用區間跟用列舉，答案會不同，用列舉的才正確」？<br><i>要點：BT 是字串比較、值域可能不連續、前導零／ALPHA 轉換差異。金額彙總類邏輯務必用 EQ 逐一列舉。</i></li>
+  </ol>
+</section>

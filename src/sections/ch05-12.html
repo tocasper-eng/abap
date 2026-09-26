@@ -1,0 +1,895 @@
+<section class="chapter" id="ch05-12" data-title="BC415 ABAP 遠端函數呼叫（RFC 與 BAPI）">
+  <h2>第 5-12 章 BC415 ABAP 遠端函數呼叫（RFC 與 BAPI）</h2>
+  <p class="lede">BC415 是原廠「Remote Function Calls in ABAP」課程，教的是 RFC 的<b>底層機制</b>：RFC 目的地怎麼設、同步／非同步／交易式／佇列式四種呼叫各自的 LUW 行為、平行處理、外部 C 程式的 RFC SDK、S_RFC 與信任關係，最後帶到 BAPI 與 BOR。<a href="#ch04-1">4-1 章</a>偏重「拿 BAPI 開請購單、採購單」的實戰；本章補齊「為什麼這樣呼叫、呼叫時系統底下發生了什麼事」，兩章請搭配閱讀。</p>
+  <div class="meta">
+    <div><b>核心 TCODE</b><span class="tcode">SM59</span><span class="tcode">SM58</span><span class="tcode">SMQ1</span><span class="tcode">SMQ2</span><span class="tcode">SMT1</span><span class="tcode">SMT2</span><span class="tcode">SMGW</span><span class="tcode">ST22</span><span class="tcode">ST05</span><span class="tcode">SM51</span><span class="tcode">SMLG</span><span class="tcode">RZ11</span><span class="tcode">RZ12</span><span class="tcode">SE37</span><span class="tcode">SE11</span><span class="tcode">SWO1</span><span class="tcode">BAPI</span><span class="tcode">SBGRFCMON</span><span class="tcode">UCONCOCKPIT</span></div>
+    <div><b>關鍵物件</b>RFCDES、ARFCSSTATE、ARFCSDATA、TRFCQOUT、S_RFC、S_RFCACL、RFC_SYSTEM_INFO、START_OF_BACKGROUNDTASK、RESTART_OF_BACKGROUNDTASK、ID_OF_BACKGROUNDTASK、STATUS_OF_BACKGROUNDTASK、TRFC_SET_QUEUE_NAME、BAPI_TRANSACTION_COMMIT、BAPI_TRANSACTION_ROLLBACK、BAPIRET2、BALW_BAPIRETURN_GET2、SWE_EVENT_CREATE、SCUSTOM、SAP0001</div>
+  </div>
+
+  <h3 id="ch05-12-01">1. 課程定位與教材對照</h3>
+  <p>BC415 屬於原廠 BC4xx 開發專題系列，定位在 BC400（ABAP Workbench 基礎，見 <a href="#ch05-1">5-1 章</a>）之後的<b>進階專題（300 等級內容）</b>：預設你已會寫函數模組（<a href="#ch02-4">2-4 章</a>）、懂 SAP LUW 與更新任務（<a href="#ch05-11">5-11 章 BC414</a>）。本章素材只有<b>强晟 2007 年的中文自學筆記</b>（共 123 頁，對應 R/3 4.6C～4.7／Web AS 6.20），沒有原廠英文新版教材可對照，所以下表只列筆記頁碼。</p>
+  <table>
+    <thead><tr><th>原課程單元</th><th>課（Lesson）</th><th>强晟筆記頁碼</th><th>本章小節</th></tr></thead>
+    <tbody>
+      <tr><td>Unit 1 課程概覽</td><td>課程目標</td><td>p4</td><td>本節</td></tr>
+      <tr><td>Unit 2 介紹</td><td>跨系統資料分佈、R/3 架構、SAP Gateway</td><td>p5–p16</td><td>2、3</td></tr>
+      <tr><td rowspan="8">Unit 3 遠端函數呼叫</td><td>L1 概覽</td><td>p17–p24</td><td>4</td></tr>
+      <tr><td>L2 RFC 目的地</td><td>p25–p33</td><td>5、6</td></tr>
+      <tr><td>L3 同步 RFC</td><td>p34–p37</td><td>7</td></tr>
+      <tr><td>L4 非同步 RFC</td><td>p38–p53</td><td>8、9</td></tr>
+      <tr><td>L5 交易式 RFC（tRFC）</td><td>p54–p61</td><td>10</td></tr>
+      <tr><td>L6 佇列式 RFC（qRFC）</td><td>p62–p64</td><td>11</td></tr>
+      <tr><td>L7 外部程式的 RFC</td><td>p65–p70</td><td>12</td></tr>
+      <tr><td>L8 RFC 型態選擇與 RFC 授權</td><td>p71–p78</td><td>13、14</td></tr>
+      <tr><td>Unit 4 BAPI</td><td>BOR、BAPI 性質、BAPI Explorer、從 ABAP 呼叫</td><td>p79–p91</td><td>15、16</td></tr>
+      <tr><td rowspan="2">附錄</td><td>Web RFC／Business Connector（R/2、CPI-C、QAPI 筆記作者略過）</td><td>p92–p96</td><td>17</td></tr>
+      <tr><td>BAPI 工場（自建 FlightCustomer 的 GetList／GetDetail）</td><td>p97–p122</td><td>18、19</td></tr>
+    </tbody>
+  </table>
+  <div class="note"><b>2007 版與現在的差異</b>：① 筆記時代還沒有 <b>bgRFC</b>（NetWeaver 7.0 EhP1 之後才有），tRFC/qRFC 在 S/4HANA 仍可用，但新開發建議 bgRFC（見 <a href="#ch04-1-03">4-1 章第 3 節</a>）；② 外部程式用的「Classic RFC SDK（librfc32）」已停止支援，改用 <b>SAP NetWeaver RFC SDK</b>（JCo 3、NCo 3、PyRFC 都建在它上面）；③ R/2、SNA 閘道、CPI-C、Web RFC、SAP Business Connector 都已退場；④ 7.40 起多了 <b>UCON（Unified Connectivity）</b> 用白名單管控哪些 RFC 函數可被外部呼叫；⑤ BOR 與 SWO1 的「BAPI 工場」在 S/4HANA 不再是建議的 API 開發方式，現在是 RAP／OData／released API。</div>
+  <div class="tip">筆記裡作者兩次問「BC416 在哪？」，並推測是 R/3 的 HTTP 服務課程。講義此處只是提一句「用 HTTP 取代 RFC 協定交換資料參見 BC416」，筆記沒有更多內容；現代對應的主題是 ICF 服務、<span class="kw">CL_HTTP_CLIENT</span> 與 SM59 的 G／H 型目的地，本章第 5 節會一併列出。</div>
+
+  <h3 id="ch05-12-02">2. 跨系統資料分佈：通訊介面與資料介面</h3>
+  <p>課程開場的問題意識：企業裡會同時有多套 SAP（不同版本、不同功能）與非 SAP 系統（資料分析、辦公自動化⋯），如何讓它們<b>資訊共享、業務互通</b>？SAP 的答案是 RFC——它是一個概念，包含 OLE、DCOM 這類公共技術，也包含 IDoc、BAPI 這類 SAP 專有技術。</p>
+  <table>
+    <thead><tr><th>介面層</th><th>說明</th><th>對應課程</th></tr></thead>
+    <tbody>
+      <tr><td><b>CPI-C</b></td><td>Common Programming Interface – Communication，程式對程式的通訊介面：一組呼叫用來連線、傳送／接收資料、再斷線。<b>RFC 建在 CPI-C 之上</b>（RFC 呼叫一律透過 CPI-C 傳輸）</td><td>BC415 附錄</td></tr>
+      <tr><td><b>RFC</b></td><td>遠端呼叫函數模組；只處理簡單的輸入／輸出</td><td>BC415（本章）</td></tr>
+      <tr><td><b>ALE</b></td><td>SAP 為跨系統資料分佈提供的介面，<b>絕大部分基於 RFC 與 IDoc</b></td><td>BIT300（ALE）、BIT320／BIT350（IDoc），見 <a href="#ch05-22">5-22 章</a></td></tr>
+    </tbody>
+  </table>
+  <p><b>CPI-C 只在三種情況才用</b>：① 平台無法使用 RFC（極少見）；② 維護以前就用 CPI-C 通訊的舊程式；③ 需要比 RFC 更複雜的通訊協定（RFC 只能處理簡單的輸入／輸出）。講義把 CPI-C 練習放在附錄，筆記作者略過。</p>
+  <p>講義把 ABAP 程式對外的管道分成兩類，這個區分到今天仍然適用：</p>
+  <table>
+    <thead><tr><th>類別</th><th>成員</th><th>用途</th></tr></thead>
+    <tbody>
+      <tr><td><b>通訊介面</b></td><td>RFC、CPI-C（4.7／Web AS 6.20 起再加 HTTP）</td><td>對外通訊的大門：遠端系統（R/2、R/3、外部系統）、Internet 程式</td></tr>
+      <tr><td><b>資料介面</b></td><td>批次輸入（Batch Input）、直接輸入（Direct Input）、CALL TRANSACTION、Open SQL、Native SQL</td><td>讀寫本系統資料庫；詳見 BC420（<a href="#ch05-13">5-13 章</a>）與 BC414（<a href="#ch05-11">5-11 章</a>）</td></tr>
+      <tr><td>檔案 I/O</td><td>應用伺服器檔案</td><td>批次交換，見 <a href="#ch04-4">4-4 章</a></td></tr>
+    </tbody>
+  </table>
+  <div class="warn"><b>S/4HANA 現況</b>：Native SQL 的 <span class="kw">EXEC SQL</span> 已列為禁用，改用 ADBC（<span class="kw">CL_SQL_STATEMENT</span>）或 AMDP；Direct Input 多半被 LSMW／Migration Cockpit（LTMC、LTMOM）取代。選介面時仍然是：<b>先找標準（released API、BAPI、IDoc）→ 才考慮自寫 RFC</b>。</div>
+
+  <h3 id="ch05-12-03">3. R/3 三層架構與 SAP Gateway</h3>
+  <p>SAP 採用<b>模組化、軟體導向的主從式（Client/Server）架構</b>，把表示層、應用層、資料庫層分散到不同主機，這是系統高延展性的基礎：</p>
+  <ul>
+    <li><b>資料庫層</b>：RDBMS 管理主資料、交易資料，也存放 ABAP 程式與中繼資料（Repository）。</li>
+    <li><b>應用層</b>：執行 ABAP 程式；開發者可用 ABAP Workbench 補充 SAP 功能。</li>
+    <li><b>表示層</b>：SAP GUI，或其他前端（AFE：Alternative Front Ends）與介面。</li>
+  </ul>
+  <p><b>實例（Instance）</b>是一套系統的管理單元，定義該應用伺服器提供哪些服務：對話（Dialog）、更新（Update）、佇列（Enqueue）、背景（Background）、列印（Spool）、<b>閘道（Gateway）</b>。<b>分派器（Dispatcher）</b>在應用伺服器上協調工作程序，透過<b>訊息伺服器（Message Server）</b>與同系統的其他實例溝通，透過<b>閘道服務</b>與外部系統溝通。</p>
+  <ul>
+    <li><b>SAP 的對外通訊一律經過 SAP Gateway，基於 TCP/IP。</b>從 3.0 版起每個實例都有自己的閘道；閘道也可以裝在非 SAP 主機上。</li>
+    <li>與 IBM R/2 或其他 LU6.2 系統通訊時，要在閘道加裝 <b>SNA 功能</b>（TCP/IP 與 LU6.2 之間的轉換），這種閘道稱為 <b>SNA 閘道</b>。把附加元件集中裝在一台專用主機，可以把設定與維護的影響降到最小。</li>
+    <li>遠端 Windows NT 應用只能用「遠端閘道」啟動（因為遠端程式只能透過該閘道啟動）。筆記作者由此理解了為何 NetWeaver 2004s 安裝包裡有獨立、各平台版本的元件。</li>
+    <li>閘道的即時狀態用 <span class="tcode">SMGW</span>（Gateway Monitor）觀察，第 14 節詳述。</li>
+  </ul>
+  <div class="note">講義提到的 <b>Interface Adviser</b>（1998 年 4.5 版的線上選型工具）早已下線；現代等價物是 SAP API Business Hub（api.sap.com）與各產品的 Integration Guide。ALE 元件與預定義介面仍是維持分散式系統資料一致性的主要手段（見 <a href="#ch05-22">5-22 章</a>）。</div>
+  <div class="warn"><b>S/4HANA 現況</b>：R/2、SNA／LU6.2 已完全退場。閘道安全改由 <span class="kw">secinfo</span>／<span class="kw">reginfo</span> 存取控制清單管理（誰可以向閘道註冊外部程式、誰可以被閘道啟動），這是資安稽核必查項目，屬 Basis 範疇。</div>
+
+  <h3 id="ch05-12-04">4. RFC 概覽：本地呼叫與遠端呼叫的差別</h3>
+  <ul>
+    <li><b>本地呼叫</b>函數模組時，它與呼叫程式跑在<b>同一個工作程序</b>。</li>
+    <li><b>遠端呼叫</b>時，若目標是 SAP 系統，函數在<b>自己的工作程序</b>執行（有自己的 SAP LUW）。目標可以是同一套或不同套 SAP、R/2，或外部非 SAP 系統上的伺服器程式。</li>
+    <li><b>呼叫端在每一次 RFC 時都會 roll out，因此觸發一次隱式資料庫提交（implicit DB commit）。</b>這句是整門課最重要的技術細節。</li>
+    <li>RFC 目的地用 <span class="tcode">SM59</span> 維護，存在 <b>RFCDES</b> 表；ABAP 程式呼叫遠端函數時必須指定目的地，每個協作系統要有一筆。</li>
+    <li>從 4.6C 起，可遠端呼叫的函數模組也可以傳<b>巢狀結構</b>（深層結構、字串、內表型參數也可以，但外部呼叫端要能處理）。</li>
+  </ul>
+  <table>
+    <thead><tr><th>型態</th><th>語法特徵</th><th>LUW</th><th>能否取回結果</th><th>目標須在線</th><th>監控</th></tr></thead>
+    <tbody>
+      <tr><td><b>sRFC</b> 同步</td><td><span class="kw">DESTINATION</span></td><td>每次呼叫一個 DB LUW（隱式提交）</td><td>可（IMPORTING）</td><td>是</td><td><span class="tcode">ST22</span></td></tr>
+      <tr><td><b>aRFC</b> 非同步</td><td><span class="kw">STARTING NEW TASK</span></td><td>每次呼叫一個 LUW</td><td>可（RECEIVE RESULTS）</td><td>是</td><td><span class="tcode">SM50</span></td></tr>
+      <tr><td><b>tRFC</b> 交易式</td><td><span class="kw">IN BACKGROUND TASK</span></td><td><b>多個呼叫綁成一個 LUW</b>，出錯自動回滾</td><td>否</td><td>否（會重試）</td><td><span class="tcode">SM58</span></td></tr>
+      <tr><td><b>qRFC</b> 佇列式</td><td><span class="kw">TRFC_SET_QUEUE_NAME</span> ＋ tRFC</td><td>同 tRFC，且依序</td><td>否</td><td>否</td><td><span class="tcode">SMQ1</span>／<span class="tcode">SMQ2</span></td></tr>
+    </tbody>
+  </table>
+  <p>tRFC 產生的各個 LUW 是<b>各自獨立處理</b>的，不一定照產生順序執行；為了保證順序，4.6A 起提供 qRFC 作為 tRFC 的擴充，可用在 SAP-SAP 與 SAP-外部連線。</p>
+  <div class="warn"><b>隱式提交的實務後果</b>：① 在 <span class="kw">OPEN CURSOR</span>（未加 <span class="kw">WITH HOLD</span>）或 <span class="kw">SELECT</span> 迴圈中呼叫 sRFC，資料庫游標會被關掉，下一次 FETCH 直接 DUMP；② 你在本地已經 <span class="kw">INSERT</span>／<span class="kw">UPDATE</span> 但還不想提交的資料，會因為一次 sRFC 被「偷偷」提交，之後的 <span class="kw">ROLLBACK WORK</span> 撤不回來。更新相關的 LUW 規則請對照 <a href="#ch05-11">5-11 章</a>。</div>
+
+  <h3 id="ch05-12-05">5. RFC 目的地（SM59）：型別、負載平衡與登入使用者</h3>
+  <ul>
+    <li>目的地<b>只在來源系統（呼叫端）維護</b>，依遠端系統種類選擇型別。</li>
+    <li>4.7／Web AS 6.20 起新增兩種 HTTP 目的地型別，可用 HTTP（取代 RFC 協定）與 Internet 上的應用交換資料。</li>
+  </ul>
+  <table>
+    <thead><tr><th>型別</th><th>名稱</th><th>重點</th></tr></thead>
+    <tbody>
+      <tr><td><b>3</b></td><td>ABAP（R/3）連線</td><td>連另一套 SAP ABAP 系統。<b>型別 3 的目的地名稱區分大小寫</b></td></tr>
+      <tr><td><b>2</b></td><td>R/2 連線</td><td>需 CPIC 型 R/2 使用者、SNA 閘道（IBM）或主機閘道（Siemens）；名稱必須與閘道端資訊表一致，不能自由命名（已淘汰）</td></tr>
+      <tr><td><b>T</b></td><td>TCP/IP 連線</td><td>外部 RFC 伺服器程式；分「啟動」與「註冊」兩種變體（下述）</td></tr>
+      <tr><td><b>H</b></td><td>HTTP 連至 ABAP 系統</td><td>4.7 新增</td></tr>
+      <tr><td><b>G</b></td><td>HTTP 連至外部伺服器</td><td>4.7 新增；現在呼叫 REST API 的標準做法（搭配 <span class="kw">CL_HTTP_CLIENT</span>）</td></tr>
+      <tr><td><b>I</b></td><td>內部連線</td><td>同一系統的各應用伺服器（第 9 節 aRFC 會用到）</td></tr>
+      <tr><td><b>L</b></td><td>邏輯目的地</td><td>指向另一個既有目的地</td></tr>
+      <tr><td><b>X</b></td><td>經由 ABAP 驅動程式的連線</td><td>特殊裝置／驅動</td></tr>
+    </tbody>
+  </table>
+  <div class="note">筆記列的型別中有一項「互聯網連接」，與 SM59 樹狀結構對不上；依上下文推測是「內部連接（I）」的翻譯誤植，這裡以 SM59 實際型別為準。</div>
+  <p><b>型別 3 的兩種連線方式</b>（<span class="src">（依講義步驟整理）</span>）：</p>
+  <ul>
+    <li><b>負載分配（Load Distribution，新版稱 Load Balancing）＝否</b>：要連到特定應用伺服器，填<b>目標主機（Target Host）</b>與<b>系統號（System Number）</b>。</li>
+    <li><b>負載分配＝是</b>：填<b>系統標識（SID）</b>、<b>訊息伺服器（Message Server）</b>與<b>登入群組（Logon Group）</b>。這些資訊可在目標系統的 <span class="tcode">SM51</span>（伺服器概覽）與 <span class="tcode">SMLG</span>（登入群組）找到；訊息伺服器由參數 <span class="kw">rdisp/mshost</span> 決定，可用 <span class="tcode">RZ11</span> 或報表 <span class="kw">RSPFPAR</span> 查。</li>
+    <li>Logon &amp; Security 頁可存目標系統的登入資料，使用目的地時就能自動登入。使用者型別必須是<b>對話（Dialog）</b>或 <b>CPIC（新版叫「通訊 Communication」）</b>；現在一般再加上 <b>System</b> 型。</li>
+  </ul>
+  <p><b>型別 T 的兩種變體</b>：</p>
+  <ol>
+    <li><b>啟動（Start）</b>：實際通訊建立時才啟動外部程式。a) 在應用伺服器上：程式名要給完整路徑；b) 在明確主機（Explicit Host）上：要指定主機名與含程式名的完整路徑；c) 在前端工作站上：在目前 SAP GUI 的電腦上啟動，要給完整的絕對路徑。</li>
+    <li><b>註冊（Registered Server Program）</b>：存取一個已經手動啟動、並用 RFC 呼叫向閘道註冊了<b>程式標識（Program ID）</b>的程式。不必每次啟動，適合常駐、頻繁呼叫的程式。要填 Program ID 與閘道主機／服務（閘道就是目前應用伺服器時可省略）。<b>JCo／NCo／PyRFC 的伺服器模式都是這一種。</b></li>
+  </ol>
+  <p>4.7／6.20 起，目的地還可以<b>自動檢查目標應用所需的權限</b>，適用所有目的地型別。</p>
+  <pre><code class="abap">*&amp;-------------------------------------------------------------*
+*&amp; 程式開頭先檢查 SM59 目的地是否存在、可連線
+*&amp; RFCDES：RFC 目的地主檔（SM59 維護的內容就存在這裡）
+*&amp;-------------------------------------------------------------*
+PARAMETERS p_dest TYPE rfcdest OBLIGATORY DEFAULT 'QAS_CLNT300'.
+
+START-OF-SELECTION.
+  " 型別 3 的名稱區分大小寫：不要自作主張 TRANSLATE TO UPPER CASE
+  SELECT SINGLE rfcdest, rfctype
+    FROM rfcdes
+    WHERE rfcdest = @p_dest
+    INTO @DATA(ls_dest).
+  IF sy-subrc &lt;&gt; 0.
+    MESSAGE |目的地 { p_dest } 不存在（SM59 名稱區分大小寫）| TYPE 'E'.
+  ENDIF.
+
+  " 用標準 RFC 函數 RFC_PING 做最輕量的連線測試
+  DATA lv_msg TYPE c LENGTH 255.
+  CALL FUNCTION 'RFC_PING'
+    DESTINATION p_dest
+    EXCEPTIONS
+      communication_failure = 1 MESSAGE lv_msg
+      system_failure        = 2 MESSAGE lv_msg
+      OTHERS                = 3.
+  WRITE: / |{ ls_dest-rfcdest }（型別 { ls_dest-rfctype }）|,
+         / COND string( WHEN sy-subrc = 0 THEN `連線正常`
+                        ELSE |連線失敗 { sy-subrc }：{ lv_msg }| ).</code></pre>
+  <div class="warn"><b>S/4HANA 注意</b>：目的地裡的密碼不要用個人帳號，一律用 Type = System／Communication 的技術帳號，並啟用 <b>SNC</b>（Secure Network Communications）加密。雲端與地端之間則透過 SAP Cloud Connector，不再直接開 SAProuter 埠。</div>
+
+  <h3 id="ch05-12-06">6. 三個預定義目的地：SPACE、NONE、BACK</h3>
+  <table>
+    <thead><tr><th>目的地</th><th>意義</th><th>用途</th></tr></thead>
+    <tbody>
+      <tr><td><b>SPACE</b>（空白）</td><td>本地呼叫，等同於根本不寫 <span class="kw">DESTINATION</span></td><td>用變數當目的地時，變數為空就自動退化成本地呼叫</td></tr>
+      <tr><td><b>NONE</b></td><td>也是本地，但請求會送到<b>目前應用伺服器的預設閘道</b>，像外部請求一樣處理（有自己的工作程序、會隱式提交）</td><td>只有一套系統時測試 RFC 行為；要讓函數在獨立 session 跑（例如隔離函數群組全域資料）</td></tr>
+      <tr><td><b>BACK</b></td><td>在被 A 呼叫的遠端函數（B 上）裡，再<b>反向呼叫 A</b> 的函數</td><td><b>只支援同步 RFC</b>；R/3 到 R/2 的連線不能用 BACK</td></tr>
+    </tbody>
+  </table>
+  <p>三個標準目的地都不能從 R/2 系統使用。</p>
+  <pre><code class="abap">*&amp;-------------------------------------------------------------*
+*&amp; 被呼叫端（系統 B）的 RFC 函數：處理到一半，用 BACK 回呼叫端寫日誌
+*&amp; SE37 屬性頁：Processing Type = Remote-Enabled Module
+*&amp;-------------------------------------------------------------*
+FUNCTION z_bc415_callee.
+*"  IMPORTING
+*"     VALUE(IV_MATNR) TYPE  MATNR
+*"  EXPORTING
+*"     VALUE(EV_MAKTX) TYPE  MAKTX
+  SELECT SINGLE maktx
+    FROM makt
+    WHERE matnr = @iv_matnr
+      AND spras = @sy-langu
+    INTO @ev_maktx.
+
+  " BACK：回到原呼叫端（系統 A）執行 Z_BC415_CALLER_LOG；只能是同步呼叫
+  DATA lv_msg TYPE c LENGTH 255.
+  CALL FUNCTION 'Z_BC415_CALLER_LOG'
+    DESTINATION 'BACK'
+    EXPORTING
+      iv_text = |B 系統已讀取 { iv_matnr }|
+    EXCEPTIONS
+      communication_failure = 1 MESSAGE lv_msg
+      system_failure        = 2 MESSAGE lv_msg
+      OTHERS                = 3.
+ENDFUNCTION.
+
+*&amp; 呼叫端（系統 A）只有一套系統時，先用 NONE 測試整條路徑
+CALL FUNCTION 'Z_BC415_CALLEE'
+  DESTINATION 'NONE'
+  EXPORTING  iv_matnr = 'TG11'
+  IMPORTING  ev_maktx = DATA(lv_maktx)
+  EXCEPTIONS communication_failure = 1
+             system_failure        = 2
+             OTHERS                = 3.</code></pre>
+
+  <h3 id="ch05-12-07">7. 同步 RFC：語法、標準例外、遠端 Context 與遠端除錯</h3>
+  <p><span class="kw">CALL FUNCTION … DESTINATION</span> 可以呼叫遠端的 ABAP 函數模組，<b>甚至是外部伺服器程式的 C 子程式</b>。處理會停在呼叫端，等遠端函數處理完並回傳輸出後才繼續。</p>
+  <p><b>一定要處理兩個標準例外</b>：</p>
+  <ul>
+    <li><span class="kw">COMMUNICATION_FAILURE</span>：呼叫端的 RFCDES 沒有維護該目的地，或無法建立與遠端的連線。</li>
+    <li><span class="kw">SYSTEM_FAILURE</span>：遠端要啟動的函數模組或 C 子程式不存在；遠端發生 DUMP、遠端觸發 A／X 訊息，也都走這個例外。</li>
+  </ul>
+  <p><b>遠端 Context</b>：只要呼叫程式的 Context 還活著，對遠端目的地的連線就保持；遠端被載入的函數群組也保持活著（與本地呼叫相同）。所以連續呼叫同一函數群組的兩個函數，它們<b>可以存取同一份函數群組全域資料</b>。但每一次同步 RFC 呼叫都有<b>自己的資料庫 LUW</b>（遠端各自隱式提交）。</p>
+  <pre><code class="abap">*&amp;-------------------------------------------------------------*
+*&amp; 同步 RFC 的標準寫法：兩個系統例外 + MESSAGE 取回原因
+*&amp;-------------------------------------------------------------*
+DATA lv_msg  TYPE c LENGTH 255.
+DATA ls_info TYPE rfcsi.
+
+CALL FUNCTION 'RFC_SYSTEM_INFO'          "標準 RFC：取目標系統資訊
+  DESTINATION p_dest
+  IMPORTING
+    rfcsi_export          = ls_info
+  EXCEPTIONS
+    communication_failure = 1 MESSAGE lv_msg   "目的地不存在／連不上
+    system_failure        = 2 MESSAGE lv_msg   "遠端函數不存在／遠端 DUMP
+    OTHERS                = 3.
+
+CASE sy-subrc.
+  WHEN 0.
+    WRITE: / |SID { ls_info-rfcsysid } 主機 { ls_info-rfchost } 版本 { ls_info-rfcsaprl }|.
+  WHEN 1.
+    MESSAGE |連線失敗：{ lv_msg }（檢查 SM59、網路、閘道）| TYPE 'I'.
+  WHEN 2.
+    MESSAGE |遠端系統錯誤：{ lv_msg }（到目標系統 ST22 看 DUMP）| TYPE 'I'.
+  WHEN OTHERS.
+    MESSAGE |未預期錯誤 { sy-subrc }| TYPE 'I'.
+ENDCASE.
+
+" 呼叫結束、不再需要遠端 Context 時，主動關閉連線（釋放遠端 session）
+CALL FUNCTION 'RFC_CONNECTION_CLOSE'
+  EXPORTING  destination = p_dest
+  EXCEPTIONS OTHERS      = 1.</code></pre>
+  <p><b>遠端除錯</b>：SAP 對 SAP 的連線可以直接除錯被呼叫的遠端函數，從呼叫端的除錯器一步一步走進去。也可以在呼叫端除錯器中對每個 RFC 敘述前自動設中斷點：<b>中斷點 → 敘述中斷點 → 進入 RFC</b>（新版除錯器：Breakpoints → Breakpoint at → Statement，輸入 <span class="kw">CALL FUNCTION DESTINATION</span>）。條件是<b>遠端登入使用者必須是對話型且有除錯權限</b>，否則遠端函數會一步執行完畢（背景處理）。除錯細節見 <a href="#ch05-4">5-4 章 BC403</a>。</p>
+  <p><b>RFC 對話（RFC Dialog）</b>：遠端函數若使用了畫面（<span class="kw">CALL SCREEN</span>、<span class="kw">CALL TRANSACTION</span>、顯示清單），畫面會顯示在<b>呼叫端的 session</b>。條件同樣是遠端登入使用者為對話型，否則觸發 <span class="kw">SYSTEM_FAILURE</span>。在<b>背景作業</b>中執行時，這種 RFC 對話會讓程式中止並觸發 <span class="kw">SYSTEM_FAILURE</span>。</p>
+  <div class="warn">技術帳號（System／Communication 型）無法除錯、也無法顯示遠端畫面。上線環境不要為了除錯把 RFC 帳號改成 Dialog 型——那等於開了一個可互動登入的萬用帳號。在 QAS 另建一個除錯用目的地才是正解。</div>
+
+  <h3 id="ch05-12-08">8. 非同步 RFC：STARTING NEW TASK 與結果回收</h3>
+  <p>加上 <span class="kw">STARTING NEW TASK task</span>，遠端函數啟動後呼叫端<b>立即繼續執行</b>，兩邊完全分開處理；輸出之後再收。任務名稱可自由取（但要唯一）。aRFC 用於<b>程序的平行處理</b>。</p>
+  <ul>
+    <li>被呼叫的函數在自己的工作程序執行；也可以在背景作業中使用 aRFC，但每個呼叫仍各自佔用工作程序。</li>
+    <li>在 RFCDES 可用 aRFC 選項為每個目的地設定 aRFC 呼叫數量；超過後目標伺服器會做自動負載檢查，資源不足時系統會等一下，讓同一遠端伺服器平衡下一個呼叫。</li>
+    <li><b>呼叫時不能寫 IMPORTING</b>（呼叫不等結束），也<b>只能處理 COMMUNICATION_FAILURE 與 SYSTEM_FAILURE</b>；函數自己的輸出與特定例外要到回呼常式裡再處理（也可以不收）。</li>
+  </ul>
+  <p><b>帶確認的 aRFC</b>：原教材用 <span class="kw">PERFORMING subr ON END OF TASK</span> 指定一個 FORM，函數結束時自動呼叫它，FORM 裡用 <span class="kw">RECEIVE RESULTS FROM FUNCTION</span> 取回輸出。依本圖書館規範，新程式不再寫 FORM，改用 <span class="kw">CALLING meth ON END OF TASK</span>：方法必須是 public、且只有一個 <span class="kw">IMPORTING p_task TYPE clike</span> 參數，收到的就是任務名稱，可用來判斷是哪個 aRFC 剛結束。</p>
+  <p><b>回呼常式的限制</b>（原教材強調）：</p>
+  <ul>
+    <li>不能包含會中斷目前程式的敘述：<span class="kw">CALL SCREEN</span>、<span class="kw">SUBMIT</span>、<span class="kw">COMMIT WORK</span>、<span class="kw">WAIT</span>、RFC、W 或 I 類訊息。</li>
+    <li>回呼常式裡的 <span class="kw">WRITE</span> 沒有作用。</li>
+    <li><b>只有在呼叫程式處於 roll-out 狀態時</b>（也就是執行到 <span class="kw">WAIT</span> 時）回呼常式才會被自動執行。</li>
+    <li><span class="kw">RECEIVE RESULTS … KEEPING TASK</span>：讓遠端載入的函數群組 Context 保留到呼叫程式結束，之後可在<b>同一任務名稱</b>下的 aRFC 繼續使用舊的遠端 Context。</li>
+  </ul>
+  <p><b>WAIT 的運作</b>：執行 <span class="kw">WAIT … UNTIL</span> 時先檢查條件，成立就直接往下；不成立就在 roll-out 狀態等 aRFC 回傳，回傳時執行回呼常式，再回到 WAIT 檢查。這個「檢查／等待」會一直重複，直到條件成立或<b>已經沒有任何未完成的 aRFC</b>。<b>WAIT 會設定 sy-subrc</b>，所以回呼常式裡 RECEIVE RESULTS 得到的 sy-subrc 必須先存到自己的變數。</p>
+  <pre><code class="abap">*&amp;-------------------------------------------------------------*
+*&amp; aRFC：同時向多個系統取系統資訊，用類別方法回收結果
+*&amp; （取代原教材 PERFORMING up1 ON END OF TASK + FORM up1 USING t）
+*&amp;-------------------------------------------------------------*
+CLASS lcl_collector DEFINITION FINAL.
+  PUBLIC SECTION.
+    TYPES: BEGIN OF ty_result,
+             task  TYPE c LENGTH 32,
+             sysid TYPE rfcsi-rfcsysid,
+             host  TYPE rfcsi-rfchost,
+             subrc TYPE sysubrc,
+             msg   TYPE c LENGTH 255,
+           END OF ty_result,
+           tt_result TYPE STANDARD TABLE OF ty_result WITH EMPTY KEY.
+    DATA mt_result TYPE tt_result READ-ONLY.
+    DATA mv_open   TYPE i.
+    METHODS on_end IMPORTING p_task TYPE clike.   "只能有這一個參數
+ENDCLASS.
+
+CLASS lcl_collector IMPLEMENTATION.
+  METHOD on_end.
+    DATA ls_info TYPE rfcsi.
+    DATA lv_msg  TYPE c LENGTH 255.
+    RECEIVE RESULTS FROM FUNCTION 'RFC_SYSTEM_INFO'
+      IMPORTING  rfcsi_export          = ls_info
+      EXCEPTIONS communication_failure = 1 MESSAGE lv_msg
+                 system_failure        = 2 MESSAGE lv_msg
+                 OTHERS                = 3.
+    DATA(lv_subrc) = sy-subrc.            "先存起來：WAIT 會覆寫 sy-subrc
+    APPEND VALUE #( task  = p_task
+                    sysid = ls_info-rfcsysid
+                    host  = ls_info-rfchost
+                    subrc = lv_subrc
+                    msg   = lv_msg ) TO mt_result.
+    mv_open = mv_open - 1.                "7.54+ 才能寫 mv_open -= 1
+  ENDMETHOD.
+ENDCLASS.
+
+START-OF-SELECTION.
+  DATA(lo_coll) = NEW lcl_collector( ).
+  DATA lt_dest TYPE STANDARD TABLE OF rfcdest WITH EMPTY KEY.
+  lt_dest = VALUE #( ( 'QAS_CLNT300' ) ( 'PRD_CLNT100' ) ).
+  DATA lv_msg TYPE c LENGTH 255.
+
+  LOOP AT lt_dest INTO DATA(lv_dest).
+    DATA(lv_task) = CONV char32( |T{ sy-tabix }| ).       "任務名稱唯一
+    CALL FUNCTION 'RFC_SYSTEM_INFO'
+      STARTING NEW TASK lv_task
+      DESTINATION lv_dest
+      CALLING lo_coll-&gt;on_end ON END OF TASK
+      EXCEPTIONS                                          "只能接這兩個
+        communication_failure = 1 MESSAGE lv_msg
+        system_failure        = 2 MESSAGE lv_msg
+        OTHERS                = 3.
+    IF sy-subrc = 0.
+      lo_coll-&gt;mv_open = lo_coll-&gt;mv_open + 1.
+    ENDIF.
+  ENDLOOP.
+
+  " 7.40 起的正式寫法；舊的 WAIT UNTIL 屬過時短式。加 UP TO 避免永遠等下去
+  WAIT FOR ASYNCHRONOUS TASKS UNTIL lo_coll-&gt;mv_open = 0 UP TO 60 SECONDS.
+
+  " aRFC 回來的順序不固定——跟 HANA 一樣，要排序就自己排
+  DATA(lt_result) = lo_coll-&gt;mt_result.
+  SORT lt_result BY task.
+  cl_demo_output=&gt;display( lt_result ).</code></pre>
+  <div class="note">原講義 p40、p41 把 <span class="kw">RECEIVE RESULTS</span> 寫成「RECEIVE RESULT」、例外寫成「COMMUICATION_FAILURE」，都是筆誤；正確關鍵字是 <b>RECEIVE RESULTS FROM FUNCTION</b> 與 <b>COMMUNICATION_FAILURE</b>。另外原講義把 <span class="kw">DESTINATION</span> 寫在 <span class="kw">STARTING NEW TASK</span> 前面，ABAP 關鍵字文件的標準順序是 <span class="kw">STARTING NEW TASK … DESTINATION …</span>，本章程式以文件為準。</div>
+  <div class="tip">這就是 Casper 第一條經驗的另一種面貌：<b>非同步回來的順序和呼叫順序無關</b>，就像 HANA 沒有預設排序一樣。把 aRFC 結果收進內表後要「取第一筆」或依序輸出，一定要先 <span class="kw">SORT</span>。</div>
+
+  <h3 id="ch05-12-09">9. aRFC 平行處理：跨系統、同系統、RFC 群組與對話型 aRFC</h3>
+  <table>
+    <thead><tr><th>情境</th><th>寫法</th><th>說明</th></tr></thead>
+    <tbody>
+      <tr><td>不同 SAP 系統間</td><td><span class="kw">DESTINATION 'B'</span></td><td>aRFC 最適合實作多系統平行處理</td></tr>
+      <tr><td>同系統、指定應用伺服器</td><td>DESTINATION 用型別 I 的內部目的地</td><td>在 SM59「內部連線」可看到各應用伺服器的目的地</td></tr>
+      <tr><td>同系統、自動負載分配</td><td><span class="kw">DESTINATION IN GROUP group</span> 或 <span class="kw">IN GROUP DEFAULT</span></td><td>系統挑群組內負荷最低的伺服器；DEFAULT 表示從所有應用伺服器中挑</td></tr>
+      <tr><td>同一應用伺服器</td><td>不寫 DESTINATION</td><td>多個工作程序平行處理；<b>注意：一支程式會同時佔用多個工作程序</b></td></tr>
+    </tbody>
+  </table>
+  <ul>
+    <li>RFC 群組（RFC Server Group）：講義寫「用 SM59 把應用伺服器分群」，新版是在 <span class="tcode">RZ12</span> 維護。分群時可設定伺服器在什麼資源條件下才算「可接受 aRFC」。</li>
+    <li>群組內沒有可用伺服器時觸發例外 <span class="kw">RESOURCE_FAILURE</span>。</li>
+    <li><span class="kw">DESTINATION IN GROUP</span> 與 <span class="kw">DESTINATION</span> 完全不同：<b>必須寫在 STARTING NEW TASK 之後</b>、<b>只能用在同一系統內</b>、<b>不能與一般 DESTINATION 並用</b>。</li>
+  </ul>
+  <pre><code class="abap">*&amp;-------------------------------------------------------------*
+*&amp; 平行處理：把工廠清單切給 RZ12 群組 parallel_generators 平行計算
+*&amp; RESOURCE_FAILURE 時等一個任務結束再重送
+*&amp;-------------------------------------------------------------*
+DATA lv_msg TYPE c LENGTH 255.
+DATA(lo_coll) = NEW lcl_plant_collector( ).        "結構同上一段的 collector
+DATA lt_werks TYPE STANDARD TABLE OF werks_d WITH EMPTY KEY.
+lt_werks = VALUE #( ( '1710' ) ( '1720' ) ( '1730' ) ).     "列舉，不用區間
+
+LOOP AT lt_werks INTO DATA(lv_werks).
+  DATA(lv_task) = CONV char32( |W{ lv_werks }| ).
+  DO.
+    CALL FUNCTION 'Z_BC415_PLANT_CALC'              "必須是 Remote-Enabled
+      STARTING NEW TASK lv_task
+      DESTINATION IN GROUP 'parallel_generators'   "RZ12 群組名，區分大小寫
+      CALLING lo_coll-&gt;on_end ON END OF TASK
+      EXPORTING
+        iv_werks = lv_werks
+      EXCEPTIONS
+        communication_failure = 1 MESSAGE lv_msg
+        system_failure        = 2 MESSAGE lv_msg
+        resource_failure      = 3                  "群組內沒有空的工作程序
+        OTHERS                = 4.
+    CASE sy-subrc.
+      WHEN 0.
+        lo_coll-&gt;mv_open = lo_coll-&gt;mv_open + 1.
+        EXIT.
+      WHEN 3.
+        " 等至少一個任務回來再重試，不要忙等
+        DATA(lv_before) = lo_coll-&gt;mv_open.
+        WAIT FOR ASYNCHRONOUS TASKS UNTIL lo_coll-&gt;mv_open &lt; lv_before UP TO 10 SECONDS.
+      WHEN OTHERS.
+        MESSAGE |{ lv_werks } 無法派送：{ lv_msg }| TYPE 'I'.
+        EXIT.
+    ENDCASE.
+  ENDDO.
+ENDLOOP.
+
+WAIT FOR ASYNCHRONOUS TASKS UNTIL lo_coll-&gt;mv_open = 0 UP TO 600 SECONDS.</code></pre>
+  <p><b>對話型 aRFC</b>：非同步呼叫的函數若含畫面，畫面會顯示在呼叫端的<b>新視窗（新的外部 session）</b>。限制：</p>
+  <ul>
+    <li>遠端登入使用者須為對話型，否則 <span class="kw">SYSTEM_FAILURE</span>。</li>
+    <li>也允許遠端除錯，除錯畫面出現在新的外部 session，同樣要對話型與除錯權限。</li>
+    <li><b>每位使用者最多 6 個外部 session</b>（講義年代的限制；新版可由參數 <span class="kw">rdisp/max_alt_modes</span> 調整，上限 16），已經開滿時觸發 <span class="kw">SYSTEM_FAILURE</span>。</li>
+    <li><b>經過 SAProuter 時對話型 aRFC 無效</b>：每個 aRFC session 都要建立一條回到來源系統的返回連線，SAProuter 會擋掉。</li>
+  </ul>
+  <div class="warn"><b>S/4HANA 注意</b>：平行處理請務必用 RZ12 群組限制可用工作程序比例，否則一支程式就能吃光所有 DIA 程序，把線上使用者卡死。大量資料的平行處理框架也可考慮 <span class="kw">CL_ABAP_PARALLEL</span>（7.52 可用）或 FI／CO 的 Mass Activity、SPTA 框架（<span class="kw">SPTA_PARA_PROCESS_START_2</span>）。</div>
+
+  <h3 id="ch05-12-10">10. 交易式 RFC（tRFC）：LUW 綁定、執行機制與自動重試</h3>
+  <p>同步與非同步 RFC 每次呼叫都在遠端建立獨立的 LUW；<b>tRFC 可以把多個遠端函數綁進同一個 LUW</b>，出錯時自動回滾。語法是 <span class="kw">IN BACKGROUND TASK</span>，<b>必須寫在 DESTINATION 之前</b>；執行到 <span class="kw">COMMIT WORK</span> 時，之前登記的 tRFC 才綁成一個 LUW 送出（不等待）。</p>
+  <ul>
+    <li>tRFC 也是非同步，但與 aRFC 不同，<b>無法取回被呼叫函數的輸出</b>：沒有 IMPORTING、沒有 ON END OF TASK、沒有 RECEIVE RESULTS。</li>
+    <li><b>執行機制</b>：tRFC 呼叫先存進本地表 <b>ARFCSSTATE</b>（LUW 執行狀態）與 <b>ARFCSDATA</b>（tRFC 的輸入資料）。來源系統用 <span class="tcode">SM58</span> 顯示與管理這些 LUW。</li>
+    <li>不想立即執行、要排到之後某個時間：在 COMMIT WORK 前本地呼叫 <span class="kw">START_OF_BACKGROUNDTASK</span>，指定日期與時間。COMMIT WORK 會自動判斷是立即作業還是排程作業；作業執行時從 tRFC 表讀出資料送出，<b>成功就刪除表中條目</b>，失敗就啟動自動重試或回滾。</li>
+    <li>若 COMMIT WORK 同時觸發了本地更新（<span class="kw">CALL FUNCTION … IN UPDATE TASK</span>），<b>tRFC 只會在本地更新成功後才執行</b>。</li>
+  </ul>
+  <p><b>成功或錯誤的自動機制</b>：</p>
+  <ul>
+    <li><b>連不上目的地</b>：記錄在 ARFCSSTATE（SM58 可見），作業重新排程。重試次數與間隔在目的地的 tRFC 選項設定，<b>預設重試 30 次、每次間隔 15 分鐘</b>。</li>
+    <li><b>遠端執行時被 A／X 訊息中止或觸發例外</b>：遠端目前 LUW 的所有修改都回滾，錯誤記在來源系統 ARFCSSTATE；這些條目留在 tRFC 表中，<b>作業不會重新排程</b>。你要用 SM58 找出錯誤、到遠端系統修正，再在 SM58 用功能「<b>執行 LUW（Execute LUW）</b>」重新觸發。</li>
+    <li><b>想回滾遠端、又要讓來源系統重新排程</b>（典型例子：要處理的主資料被鎖住，稍後再試就好）：在遠端函數中呼叫 <span class="kw">RESTART_OF_BACKGROUNDTASK</span>，<b>不要</b>用 <span class="kw">MESSAGE A…</span> 或 <span class="kw">RAISE</span>。</li>
+  </ul>
+  <p><b>LUW 綁定規則</b>：</p>
+  <ul>
+    <li>COMMIT WORK 前送往<b>不同目的地</b>的 tRFC，會依目的地分成不同 LUW（例：X1、X2 送 B → LUW1；X3、X4 送 C → LUW2）。</li>
+    <li>加 <span class="kw">AS SEPARATE UNIT</span> 的 tRFC 永遠自成一個 LUW。</li>
+    <li>每個 tRFC LUW 有唯一的<b>交易標識（TID）</b>（SM58 可見）。COMMIT WORK <b>之前</b>呼叫 <span class="kw">ID_OF_BACKGROUNDTASK</span> 取得 TID；COMMIT WORK <b>之後</b>用 <span class="kw">STATUS_OF_BACKGROUNDTASK</span> 依 TID 查執行狀態。</li>
+    <li>也可以呼叫外部 C 函數，但外部伺服器程式要自己實作回滾機制（見 RFC SDK 文件與範例）。</li>
+  </ul>
+  <pre><code class="abap">*&amp;-------------------------------------------------------------*
+*&amp; tRFC：兩個函數綁成一個 LUW 送到 WMS，排到今晚 22:00 執行
+*&amp; 函數參數名稱以 SE37 為準（不同版本可能略有差異）
+*&amp;-------------------------------------------------------------*
+DATA lv_tid TYPE arfctid.
+DATA(lv_dest) = CONV rfcdest( 'WMS_CLNT100' ).
+
+CALL FUNCTION 'Z_WMS_HEADER_POST'
+  IN BACKGROUND TASK                 "必須在 DESTINATION 之前
+  DESTINATION lv_dest
+  EXPORTING is_head = ls_head.
+
+CALL FUNCTION 'Z_WMS_ITEMS_POST'
+  IN BACKGROUND TASK
+  DESTINATION lv_dest
+  EXPORTING it_item = lt_item.       "同目的地 → 同一個 LUW
+
+" 另一筆獨立的通知，不和上面綁在一起
+CALL FUNCTION 'Z_WMS_NOTIFY'
+  IN BACKGROUND TASK
+  AS SEPARATE UNIT
+  DESTINATION lv_dest
+  EXPORTING iv_text = |入庫單 { ls_head-docno }|.
+
+" COMMIT 前取 TID（寫進自己的介面日誌表，日後可對 SM58）
+CALL FUNCTION 'ID_OF_BACKGROUNDTASK'
+  IMPORTING tid = lv_tid.
+
+" 不立即送：排到今晚 22:00
+CALL FUNCTION 'START_OF_BACKGROUNDTASK'
+  EXPORTING
+    startdate = sy-datum
+    starttime = '220000'.
+
+COMMIT WORK.                          "沒有這行，什麼都不會送出
+
+INSERT zif_log FROM @( VALUE zif_log( tid    = lv_tid
+                                docno  = ls_head-docno
+                                erdat  = sy-datum
+                                ernam  = sy-uname ) ).
+COMMIT WORK.</code></pre>
+  <pre><code class="abap">*&amp;-------------------------------------------------------------*
+*&amp; 被呼叫端（WMS 系統）的 tRFC 函數：物料被鎖時要求「稍後重送」
+*&amp;-------------------------------------------------------------*
+FUNCTION z_wms_items_post.
+*"  IMPORTING
+*"     VALUE(IT_ITEM) TYPE  ZWMS_ITEM_T
+  LOOP AT it_item INTO DATA(ls_item).
+    CALL FUNCTION 'ENQUEUE_EMMARAE'
+      EXPORTING  matnr          = ls_item-matnr
+      EXCEPTIONS foreign_lock   = 1
+                 system_failure = 2
+                 OTHERS         = 3.
+    IF sy-subrc &lt;&gt; 0.
+      " 回滾這次遠端執行，並讓來源系統重新排程 → SM58 會自動再送
+      " 不要用 MESSAGE ... TYPE 'A' 或 RAISE：那樣只會卡在 SM58 等人工處理
+      CALL FUNCTION 'RESTART_OF_BACKGROUNDTASK'.
+      RETURN.
+    ENDIF.
+  ENDLOOP.
+
+  " ……實際過帳邏輯（呼叫 BAPI 或更新自建表）
+  " tRFC 的遠端 LUW 由框架在函數結束後統一提交，這裡不要自己 COMMIT WORK
+ENDFUNCTION.</code></pre>
+  <div class="note">原講義 p56 一處把狀態表寫成「ARFCSTATE」，正確名稱是 <b>ARFCSSTATE</b>（ARFC + S + STATE，S 代表 Send 端）。接收端還有 <b>ARFCRSTATE</b> 記錄已執行過的 TID，用來保證「只執行一次（Exactly Once）」。</div>
+
+  <h3 id="ch05-12-11">11. 佇列式 RFC（qRFC）：保證順序</h3>
+  <p>要讓 tRFC 進入一個<b>先進先出（FIFO）</b>佇列，必須在<b>每一個</b> tRFC 呼叫之前，用 <span class="kw">TRFC_SET_QUEUE_NAME</span> 指定佇列名稱。佇列名稱規則：</p>
+  <ul>
+    <li>最多 <b>24 個字元</b>；</li>
+    <li>不能以空白或百分號（<b>%</b>）開頭；</li>
+    <li>不能包含星號（<b>*</b>）。</li>
+  </ul>
+  <p><b>資料存放與管理</b>：同一佇列的 tRFC LUW 一樣存在 ARFCSSTATE／ARFCSDATA，<b>但不能再用 SM58 管理</b>，要改用佇列管理 <span class="tcode">SMQ1</span>。佇列資料（佇列屬性以及指向 tRFC 表中相關 LUW 的指標）存在 <b>TRFCQOUT</b>。SMQ1 可以：列出佇列、顯示佇列中的 LUW 與含輸入資料的函數模組、開始或停止佇列傳輸、刪除佇列。</p>
+  <p><b>錯誤處理</b>：遠端某個 LUW 出錯時，<b>整個佇列都停下（回滾）</b>，該 LUW 與佇列中其後所有 LUW 都留在佇列與 tRFC 表中；修正錯誤後在 SMQ1 重新傳輸佇列。</p>
+  <pre><code class="abap">*&amp;-------------------------------------------------------------*
+*&amp; qRFC：同一張採購單的「建立 → 變更 → 刪除」必須依序到達 MES
+*&amp; 佇列名 = 前綴 + 單號，每張單一條佇列；不同單可以平行
+*&amp;-------------------------------------------------------------*
+DATA(lv_qname) = CONV trfcqnam( |ZPO{ ls_po-ebeln }| ).  "≤ 24 字元，不以 % 或空白開頭，不含 *
+
+DATA(lt_steps) = VALUE string_table( ( `CREATE` ) ( `CHANGE` ) ).
+LOOP AT lt_steps INTO DATA(lv_step).
+  " 每一個 tRFC 之前都要重設佇列名
+  CALL FUNCTION 'TRFC_SET_QUEUE_NAME'
+    EXPORTING  qname = lv_qname
+    EXCEPTIONS invalid_queue_name = 1
+               OTHERS             = 2.
+  IF sy-subrc &lt;&gt; 0.
+    MESSAGE |佇列名稱 { lv_qname } 不合法| TYPE 'E'.
+  ENDIF.
+
+  CALL FUNCTION 'Z_MES_PO_SYNC'
+    IN BACKGROUND TASK
+    DESTINATION 'MES_SYSTEM'
+    EXPORTING iv_action = lv_step
+              is_po     = ls_po.
+ENDLOOP.
+
+COMMIT WORK.
+" 出站佇列看 SMQ1；目標若設為入站佇列（TRFC_SET_QIN_PROPERTIES）則在對方 SMQ2</code></pre>
+  <div class="warn"><b>S/4HANA 現況</b>：tRFC、qRFC 仍然支援（ALE／IDoc、CRM Middleware 底層都還在用），但 SAP 對新開發的建議是 <b>bgRFC</b>：Type T 對應 tRFC、Type Q 對應 qRFC，用 <span class="kw">CL_BGRFC_DESTINATION_OUTBOUND</span> 建立單元、<span class="kw">IN BACKGROUND UNIT</span> 呼叫，監控在 <span class="tcode">SBGRFCMON</span>，設定在 <span class="tcode">SBGRFCCONF</span>。完整範例見 <a href="#ch04-1-03">4-1 章第 3 節</a>。</div>
+  <div class="tip">佇列名的設計和 Casper 第二條經驗同一道理：<b>用明確的業務鍵（單號）列舉出每一條佇列</b>，不要把所有單據塞進一條大佇列，也不要用「號碼區間」切佇列——一筆卡住會擋住整條，區間切法又會因編碼規則改變而錯亂。</div>
+
+  <h3 id="ch05-12-12">12. 外部程式的 RFC：RFC SDK、saprfc.ini 與 C API</h3>
+  <p>SAP 為所有標準外部平台提供 <b>RFC 函式庫（RFC SDK）</b>，內含 C 程式用的 RFC 呼叫；安裝後就能寫 <b>RFC 用戶端</b>（外部呼叫 SAP）或 <b>RFC 伺服器</b>（SAP 呼叫外部）程式。函式庫附有 C 語言範例與文件。</p>
+  <p><b>C 程式的目的地</b>維護在文字檔 <span class="kw">saprfc.ini</span>，系統附帶一份含範例條目的檔案：</p>
+  <pre><code class="text"># saprfc.ini（Classic RFC SDK）範例
+DEST=T71_AS1          # TYPE=A：直接連某台應用伺服器
+TYPE=A
+ASHOST=iwdf5071
+SYSNR=00
+
+DEST=T71_LB           # TYPE=B：透過訊息伺服器負載平衡
+TYPE=B
+R3NAME=T71
+MSHOST=iwdf5071
+GROUP=SPACE
+
+DEST=EXTPGM           # TYPE=E：外部伺服器程式（對應 SM59 型別 T）
+TYPE=E
+GWHOST=hs0815
+GWSERV=sapgw17
+TPHOST=hs0815
+TPNAME=D:\abc\srfcserv
+
+# 現代 NetWeaver RFC SDK 改用 sapnwrfc.ini，參數名稱改為 ASHOST / SYSNR / MSHOST / GROUP /
+# GWHOST / GWSERV / PROGRAM_ID 等，且不再有 TYPE=A/B/E 的寫法</code></pre>
+  <p><b>外部 RFC 用戶端</b>的結構：<span class="kw">RfcOpen</span> 帶目的地與登入資料建立連線 → <span class="kw">RfcCall</span> 呼叫 SAP 函數、<span class="kw">RfcReceive</span> 取回輸出（兩者分開即可做非同步）；要同步就改用 <span class="kw">RfcCallReceive</span> → <span class="kw">RfcClose</span> 關閉。RFC SDK 的 <b>sapinfo</b> 範例呼叫遠端系統的 <span class="kw">RFC_SYSTEM_INFO</span> 取得系統資料。</p>
+  <p><b>外部 RFC 伺服器</b>：<span class="kw">RfcAccept</span> 接受連入 → 每個要被遠端呼叫的 C 子程式先用 <span class="kw">RfcInstallFunction</span> 註冊 → <span class="kw">RfcDispatch</span> 把呼叫分派到對應子程式 → 子程式內用 <span class="kw">RfcGetData</span> 取得輸入、<span class="kw">RfcSendData</span> 回傳結果 → <span class="kw">RfcClose</span>。</p>
+  <pre><code class="text">/* Classic RFC SDK 伺服器骨架（講義 p70，僅示意結構） */
+main(...)
+{
+    RfcAccept(...);                 /* 接受 SAP 閘道的連入 */
+    RfcInstallFunction(abc, ...);   /* 註冊可被遠端呼叫的 C 函數 */
+    RfcInstallFunction(xyz, ...);
+    RfcDispatch(...);               /* 把呼叫分派給 abc / xyz */
+    RfcClose(...);
+}
+static RFC_RC abc(...)
+{
+    RfcGetData(...);                /* 取 ABAP 傳來的 EXPORTING/TABLES */
+    /* ... 業務處理 ... */
+    RfcSendData(...);               /* 回傳 IMPORTING/TABLES */
+}
+
+/* 對照：NetWeaver RFC SDK（sapnwrfc）改為
+   RfcOpenConnection / RfcGetFunctionDesc / RfcCreateFunction /
+   RfcInvoke / RfcRegisterServer / RfcListenAndDispatch / RfcCloseConnection */</code></pre>
+  <div class="note">講義 p70 說伺服器範例程式是 <b>sapinfo</b>，筆記作者已標註「程式名疑似錯誤」——作者判斷正確：sapinfo 是<b>用戶端</b>範例，<b>伺服器</b>範例是 <b>srfcserv</b>（上面 saprfc.ini 的 <span class="kw">TPNAME=D:\abc\srfcserv</span> 就是它）。這個伺服器範例提供多個可被標準系統透過對應目的地呼叫的子程式，例如由 ABAP 報表 RSRFCDOC 呼叫。</div>
+  <div class="warn"><b>S/4HANA 現況</b>：Classic RFC SDK（librfc32.dll）已停止維護，S/4HANA 不應再使用。外部程式請用 <b>SAP NetWeaver RFC SDK</b> 以及建在它上面的 <b>JCo 3</b>（Java）、<b>NCo 3</b>（.NET）、<b>PyRFC</b>（Python）；實作範例與 Cloud Connector 設定見 <a href="#ch04-1-06">4-1 章第 6 節</a>、<a href="#ch04-1-07">第 7 節</a>。</div>
+
+  <h3 id="ch05-12-13">13. RFC 型態怎麼選，以及 RFC 權限：S_RFC、信任關係、S_RFCACL</h3>
+  <p><b>通訊錯誤時的處理狀態</b>決定了型態選擇：</p>
+  <ul>
+    <li><b>sRFC／aRFC</b>：發生通訊錯誤時，<b>遠端處理狀態未知</b>（不知道對方到底做了沒）。所以適合「遠端處理狀態不重要」的<b>資料讀取</b>，出錯重讀即可。</li>
+    <li><b>tRFC／qRFC</b>：一定會確認遠端處理狀態（持續嘗試直到確認成功），所以適合「處理狀態非常重要」的<b>遠端資料修改</b>。</li>
+  </ul>
+  <div class="tip">實務口訣：<b>讀用 sRFC，寫用 tRFC／qRFC／bgRFC。</b>如果一定要用 sRFC 做寫入（例如外部系統同步呼叫 BAPI 建單），就要設計「冪等」：先以外部單號查詢是否已建立，再決定要不要建，避免通訊逾時後重送造成重複單據。</div>
+
+  <p><b>S_RFC 權限檢查</b>：</p>
+  <ul>
+    <li>權限物件 <b>S_RFC</b> 定義每個 RFC 登入使用者可以啟動<b>哪個函數群組</b>的 RFC；該使用者只能執行被授權函數群組中的函數。</li>
+    <li>S_RFC 檢查<b>預設自動啟用</b>，可用設定檔參數關閉（參數名 <span class="kw">auth/rfc_authority_check</span>；上線系統絕不可關）。</li>
+    <li>遠端函數內部行為的權限（例如 CALL TRANSACTION 的交易碼權限）會和 <b>RFC 登入使用者</b>的使用者主檔比對，不是呼叫端的使用者。</li>
+  </ul>
+  <table>
+    <thead><tr><th>S_RFC 欄位</th><th>內容</th></tr></thead>
+    <tbody>
+      <tr><td><b>RFC_TYPE</b></td><td>講義年代只有 <b>FUGR</b>（函數群組）；新版另有 <b>FUNC</b>（單一函數模組），可做更細的授權</td></tr>
+      <tr><td><b>RFC_NAME</b></td><td>函數群組名（或 FUNC 時的函數名）。<b>*</b> 表示所有函數群組都可執行</td></tr>
+      <tr><td><b>ACTVT</b></td><td>固定 <b>16</b>（執行）</td></tr>
+    </tbody>
+  </table>
+  <div class="warn">講義說「後兩個值固定，只要改 RFC_NAME」，並舉例 RFC_NAME = * 代表全開。<b>實務上 RFC 帳號給 * 是資安稽核的紅燈。</b>依 Casper 第二條經驗，授權也要「列舉」：把介面實際會呼叫的函數群組（或 FUNC 層級的函數名）一筆一筆列出來，不要用萬用字元或名稱區間（如 Z*），因為新開的 Z 群組會被自動放行。SAP 另提供 <span class="tcode">STAUTHTRACE</span>／<span class="tcode">STUSOBTRACE</span> 收集實際用到的函數，協助產出最小授權。</div>
+  <pre><code class="abap">*&amp;-------------------------------------------------------------*
+*&amp; 在自建 RFC 函數內再做一次業務權限檢查（S_RFC 只管「能不能呼叫」）
+*&amp;-------------------------------------------------------------*
+FUNCTION z_bc415_get_price.
+*"  IMPORTING
+*"     VALUE(IV_VKORG) TYPE  VKORG
+*"  EXPORTING
+*"     VALUE(ES_RETURN) TYPE  BAPIRET2
+  " 對 RFC 登入使用者（sy-uname = 技術帳號）檢查業務權限
+  AUTHORITY-CHECK OBJECT 'V_VBAK_VKO'
+    ID 'VKORG' FIELD iv_vkorg
+    ID 'VTWEG' DUMMY
+    ID 'SPART' DUMMY
+    ID 'ACTVT' FIELD '03'.
+  IF sy-subrc &lt;&gt; 0.
+    es_return = VALUE #( type       = 'E'
+                         id         = '00'
+                         number     = '001'
+                         message    = |使用者 { sy-uname } 無銷售組織 { iv_vkorg } 的權限|
+                         message_v1 = sy-uname ).
+    RETURN.
+  ENDIF.
+  " ……讀價格
+ENDFUNCTION.
+
+*&amp; 呼叫端也可以先確認自己的 S_RFC（例如在分派前做健檢）
+AUTHORITY-CHECK OBJECT 'S_RFC'
+  ID 'RFC_TYPE' FIELD 'FUGR'
+  ID 'RFC_NAME' FIELD 'ZBC415'
+  ID 'ACTVT'    FIELD '16'.</code></pre>
+  <p><b>信任關係（Trusted RFC，僅限 SAP 對 SAP）</b>：</p>
+  <ul>
+    <li>兩套系統間宣告信任關係後，可在信任系統做特定 RFC 登入<b>而不必傳密碼</b>。</li>
+    <li>名詞別弄反：<b>信任系統（trusting）＝ RFC 目標系統</b>，在這一端宣告；<b>被信任系統（trusted）＝ RFC 來源系統</b>。</li>
+    <li><span class="tcode">SMT1</span>：定義信任關係；<span class="tcode">SMT2</span>：在被信任系統顯示「把本系統宣告為被信任」的信任系統。</li>
+    <li>被信任系統的使用者要用 SM59 建一個<b>信任目的地</b>（Trusted System = Yes），只填遠端使用者名、不比對密碼；既有信任關係下仍可用一般（帶密碼）目的地。</li>
+    <li>信任系統中要給被放行的使用者 <b>S_RFCACL</b> 授權。詳細設定見 SAP Note 128447。</li>
+  </ul>
+  <table>
+    <thead><tr><th>S_RFCACL 欄位</th><th>意義</th></tr></thead>
+    <tbody>
+      <tr><td>RFC_SYSID</td><td>呼叫端（被信任）系統 ID</td></tr>
+      <tr><td>RFC_CLIENT</td><td>呼叫端用戶端（Client）</td></tr>
+      <tr><td>RFC_USER</td><td>呼叫端使用者</td></tr>
+      <tr><td>RFC_EQUSER</td><td>是否只允許<b>同名</b>使用者（Y／N）</td></tr>
+      <tr><td>RFC_TCODE</td><td>呼叫端交易碼</td></tr>
+      <tr><td>RFC_INFO</td><td>呼叫端附加資訊（保留未用）</td></tr>
+      <tr><td>ACTVT</td><td>只能是 16（執行）</td></tr>
+    </tbody>
+  </table>
+  <div class="warn"><b>S/4HANA 注意</b>：① S_RFCACL 的 RFC_USER = * 且 RFC_EQUSER = N 等於「來源系統任何人都能以任何身分登入」，是稽核最常抓的高風險授權；② 新版信任關係有新舊兩種安全方法，新建議搭配 SNC 並依 SAP Note 3089413 升級；③ 7.40 起的 <b>UCON</b>（<span class="tcode">UCONCOCKPIT</span>）可把「允許被外部 RFC 呼叫的函數」限縮成白名單，先 Logging 一段時間再切 Final，是 S/4HANA 專案資安必做項目。</div>
+
+  <h3 id="ch05-12-14">14. RFC 工具與追蹤</h3>
+  <table>
+    <thead><tr><th>工具</th><th>用途</th></tr></thead>
+    <tbody>
+      <tr><td><span class="tcode">ST22</span></td><td>分析遠端 RFC 函數造成的 DUMP（要到<b>被呼叫端</b>系統看）</td></tr>
+      <tr><td><span class="tcode">SMGW</span></td><td>閘道監控：顯示目前應用伺服器上所有經過閘道的遠端連線；閘道追蹤：轉到 → 追蹤 → 閘道 → 顯示檔案</td></tr>
+      <tr><td><span class="tcode">ST05</span></td><td>開啟／關閉／顯示與目前使用者相關的 <b>RFC Trace</b></td></tr>
+      <tr><td><span class="tcode">SM59</span></td><td>目的地層級追蹤：在目的地勾 Trace 旗標，再從 SM59 選 RFC → 顯示追蹤</td></tr>
+      <tr><td><span class="tcode">SM58</span>／<span class="tcode">SMQ1</span>／<span class="tcode">SMQ2</span></td><td>tRFC／出站 qRFC／入站 qRFC 監控</td></tr>
+      <tr><td>除錯器</td><td>中斷點 → 敘述中斷點 → 進入 RFC：每個 RFC 敘述前自動停</td></tr>
+      <tr><td>ABAP 編輯器 i 鍵（F1）</td><td>查 ABAP 關鍵字文件的 RFC 主題</td></tr>
+    </tbody>
+  </table>
+  <div class="tip">現代補充：<span class="tcode">STAD</span> 可看每次 RFC 的回應時間與資料量；<span class="tcode">SRT_UTIL</span> 看 Web Service；外部系統打進來的 RFC 登入失敗先看 <span class="tcode">SM21</span> 系統日誌與 <span class="tcode">SU53</span>（以 RFC 帳號執行）。除錯技巧整體見 <a href="#ch05-4">5-4 章</a>，效能見 <a href="#ch05-21">5-21 章</a>。</div>
+
+  <h3 id="ch05-12-15">15. BAPI 概念：業務物件、BOR 與 BAPI 的性質</h3>
+  <p><b>SAP 業務物件（Business Object）</b>提供物件導向角度的業務資料與流程；<b>業務物件資料庫（BOR, Business Object Repository）</b>依應用元件階層管理業務物件、組織物件與技術物件（例：客戶訂單、客戶、發票、員工、申請、交貨）。</p>
+  <table>
+    <thead><tr><th>業務物件例</th><th>屬性</th><th>方法</th></tr></thead>
+    <tbody>
+      <tr><td>員工</td><td>姓名、地址、薪資</td><td>修改地址、加薪</td></tr>
+      <tr><td>客戶訂單</td><td>客戶、日期、項目清單</td><td>建立、修改、封鎖</td></tr>
+    </tbody>
+  </table>
+  <p><b>BOR 物件類型的元件</b>：</p>
+  <ul>
+    <li><b>基本資料</b>：內部標識、發佈層級、傳輸資料等技術細節。</li>
+    <li><b>介面</b>：物件類型採用的介面清單（其屬性、方法、事件）。</li>
+    <li><b>鍵欄位</b>：唯一識別物件的屬性，通常就是資料庫表的鍵。</li>
+    <li><b>屬性</b>：可以是資料庫欄位值（欄位參照）、執行時計算值（虛擬屬性）、指向其他物件的參照（物件參照；在 Workflow 中很好用）。</li>
+    <li><b>方法</b>：呼叫交易碼、函數模組或其他 ABAP；<b>BAPI 被視為 API 方法</b>。</li>
+    <li><b>事件</b>：給 Workflow 用，只在 BOR 定義。觸發方式：連到變更文件、狀態管理、訊息控制，或呼叫 <span class="kw">SWE_EVENT_CREATE</span>。</li>
+  </ul>
+  <p><b>什麼是 BAPI</b>：業務物件上<b>特殊的、可遠端呼叫的方法</b>，以 <b>RFC 函數模組</b>實作；可建立物件、查詢屬性、修改屬性——<b>BAPI 是通往 SAP 資料的介面</b>。用途包括 Internet 應用元件（給沒有 SAP 經驗的使用者）、SAP 元件間的業務物件通訊、VB／Java／C++ 外部用戶端。</p>
+  <p><b>BAPI 的性質</b>：</p>
+  <ul>
+    <li>外部系統可以像呼叫物件方法一樣呼叫 BAPI。</li>
+    <li><b>SAP 保證 BAPI 介面不會做不相容的變更</b>（這是 BAPI 相對於一般 RFC 函數最大的價值）。</li>
+    <li>也可以在 SAP 系統內用 BAPI 存取業務資料，客戶與夥伴更容易擴充功能。</li>
+    <li><b>顯示</b>傳給 BAPI 或從 BAPI 回傳的資料，是呼叫程式的工作（BAPI 本身不能有畫面）。</li>
+    <li>回傳參數 <b>RETURN</b> 帶成功或錯誤訊息，依版本是 <b>BAPIRETURN、BAPIRETURN1、BAPIRET1、BAPIRET2 或 BAPIRET2_FIX</b>，常用欄位：TYPE（S／E／W／I，另有 A）、ID（訊息類別）、NUMBER、MESSAGE、MESSAGE_V1～V4。</li>
+    <li><b>成功時 RETURN 可能是完全空白，也可能只有 TYPE = S</b>，要依各 BAPI 文件判讀。</li>
+  </ul>
+  <p><b>BAPI 的資料庫更新</b>：通常經由更新任務執行，同步或非同步在呼叫 commit BAPI 時決定。<b>含資料庫更新的 BAPI 內部不能寫 COMMIT WORK 或 ROLLBACK WORK</b>；BAPI LUW 的結束由服務物件 <b>BapiService（物件類型 SAP0001）</b>的特殊 BAPI 負責：</p>
+  <ul>
+    <li>BapiService.TransactionCommit → <span class="kw">BAPI_TRANSACTION_COMMIT</span></li>
+    <li>BapiService.TransactionRollback → <span class="kw">BAPI_TRANSACTION_ROLLBACK</span></li>
+  </ul>
+  <p><b>標準 BAPI 與 BAPI Explorer</b>：很多業務物件都有 <b>GetList、GetDetail、CreateFromData</b>；個別物件另有專屬 BAPI（例如 Customer 的 CheckPassword）。交易碼 <span class="tcode">BAPI</span>（BAPI Explorer）依應用分組顯示所有有 BAPI 的業務物件及完整介面；它是 BOR 的邏輯視圖，只顯示有 BAPI 的物件。BAPI 程式設計方針在 BAPI Explorer 的「專案（Project）」頁籤。SAP 另交付 VB、C++、Java 用的 BAPI 函式庫（課程 CA925、CA926、CA927）。</p>
+  <div class="note">BAPIRET2 的判讀、<span class="kw">BAPI_TRANSACTION_COMMIT</span> 的 <span class="kw">WAIT</span> 參數、Extension In/Out 等實戰細節在 <a href="#ch04-1-08">4-1 章第 8 節</a>、<a href="#ch04-1-09">第 9 節</a>、<a href="#ch04-1-15">第 15 節</a>，這裡不重複。</div>
+
+  <h3 id="ch05-12-16">16. 從 ABAP 呼叫 BAPI，尤其是跨系統呼叫</h3>
+  <ul>
+    <li>講義年代<b>只能用函數呼叫（本地或遠端）</b>從 ABAP 存取 BAPI；SAP 當時計畫把 BOR 業務物件整合進 ABAP 類別庫，但這件事後來並沒有全面實現，而是走向 RAP 的 Business Object。</li>
+    <li>BAPI 函數模組命名規則：<b>BAPI_&lt;業務物件&gt;_&lt;方法&gt;</b>（例：<span class="kw">BAPI_FLCUST_GETLIST</span>）。</li>
+    <li><b>BAPI 函數模組沒有例外（EXCEPTIONS）</b>，成功或錯誤一律透過 RETURN 回傳。</li>
+  </ul>
+  <p>跨系統呼叫會修改資料的 BAPI 時，最關鍵的一點：<b>COMMIT 必須透過同一個目的地、在同一個遠端 session 裡呼叫</b>。第 7 節說過每次 sRFC 在遠端有自己的<b>資料庫</b> LUW，但 BAPI 在遠端登記的<b>更新任務</b>會留在遠端 session 裡，直到你透過同一連線呼叫 <span class="kw">BAPI_TRANSACTION_COMMIT</span> 才真正寫入。</p>
+  <pre><code class="abap">*&amp;-------------------------------------------------------------*
+*&amp; 跨系統呼叫 FlightCustomer.CreateFromData，並在遠端提交
+*&amp; （BAPI_FLCUST_* 為 SAP 航班訓練模型的標準 BAPI，參數與 BAPISCUNEW 欄位以 SE37/SE11 為準）
+*&amp;-------------------------------------------------------------*
+DATA lt_return TYPE STANDARD TABLE OF bapiret2 WITH EMPTY KEY.
+DATA ls_commit TYPE bapiret2.
+DATA lv_custno TYPE s_customer.
+DATA lv_msg    TYPE c LENGTH 255.
+DATA(lv_dest)  = CONV rfcdest( 'QAS_CLNT300' ).
+
+DATA(ls_new) = VALUE bapiscunew( custname = 'Casper Lin'
+                                 city     = 'Taichung'
+                                 countr   = 'TW'
+                                 custtype = 'P'
+                                 langu    = sy-langu ).
+
+CALL FUNCTION 'BAPI_FLCUST_CREATEFROMDATA'
+  DESTINATION lv_dest
+  EXPORTING
+    customer_data  = ls_new
+  IMPORTING
+    customernumber = lv_custno
+  TABLES
+    return         = lt_return
+  EXCEPTIONS                                   "BAPI 自己沒有例外，這兩個是 RFC 的
+    communication_failure = 1 MESSAGE lv_msg
+    system_failure        = 2 MESSAGE lv_msg
+    OTHERS                = 3.
+IF sy-subrc &lt;&gt; 0.
+  MESSAGE |RFC 失敗：{ lv_msg }| TYPE 'E'.
+ENDIF.
+
+IF line_exists( lt_return[ type = 'E' ] ) OR line_exists( lt_return[ type = 'A' ] ).
+  " 在遠端回滾——同樣要走同一個 DESTINATION
+  CALL FUNCTION 'BAPI_TRANSACTION_ROLLBACK'
+    DESTINATION lv_dest
+    EXCEPTIONS OTHERS = 1.
+ELSE.
+  CALL FUNCTION 'BAPI_TRANSACTION_COMMIT'
+    DESTINATION lv_dest                        "少了這行 = 在本機 commit，遠端什麼都沒寫
+    EXPORTING  wait   = abap_true
+    IMPORTING  return = ls_commit
+    EXCEPTIONS OTHERS = 1.
+ENDIF.
+
+" 結束遠端 session；之後再呼叫就是全新的 Context
+CALL FUNCTION 'RFC_CONNECTION_CLOSE'
+  EXPORTING  destination = lv_dest
+  EXCEPTIONS OTHERS      = 1.
+
+cl_demo_output=&gt;display( lt_return ).</code></pre>
+  <div class="warn"><b>最常見的跨系統 BAPI 錯誤</b>：BAPI 用 <span class="kw">DESTINATION</span> 呼叫，<span class="kw">BAPI_TRANSACTION_COMMIT</span> 卻忘了加 <span class="kw">DESTINATION</span>——結果 commit 的是本機，遠端的更新任務在 session 結束時被丟掉，BAPI 明明回 S 卻查不到單據。另外中間若先呼叫了 <span class="kw">RFC_CONNECTION_CLOSE</span>，遠端 session 也就不見了，commit 同樣無效。</div>
+
+  <h3 id="ch05-12-17">17. 附錄：Web RFC、ITS 與 SAP Business Connector（已淘汰）</h3>
+  <p>講義附錄原本有五個主題：R/2 的 RFC 目的地、Web RFC、CPI-C、透過佇列 API（QAPI）的非同步資料傳輸、CPI-C／QAPI 練習；筆記作者略過了 R/2、CPI-C、QAPI 與練習，只整理了 Web RFC 與 BAPI 工場。</p>
+  <p><b>五層主從架構</b>：<b>ITS（Internet Transaction Server）</b>把 SAP 的三層架構與兩層的 HTTP 主從架構接起來：瀏覽器 ↔ HTTP 伺服器 ↔ ITS ↔ SAP 應用伺服器 ↔ 資料庫伺服器。從 SAP 角度看，ITS 與 HTTP 伺服器構成應用層與表示層之間的中間層；從網路使用者角度看，ITS 維護著執行時產生的互動式 HTML 頁面。</p>
+  <p><b>Web RFC</b>：透過 ITS 呼叫 SAP 中特殊函數模組的術語。一律先呼叫服務函數 <span class="kw">WWW_DISPATCH_REQUEST</span>，由它代理執行實際呼叫。Web RFC 函數的特性：回傳 HTML 頁面或 MIME 物件、可讀寫資料庫、可呼叫業務物件；講義列「不能被 Internet 使用者使用」。SAP 交付了一批基礎功能的 Web RFC 函數，詳見 BC440（<a href="#ch05-17">5-17 章</a>）。</p>
+  <p><b>透過 Business Connector 以 XML 呼叫 RFC</b>：SAP Business Connector（SAP 開發、客戶可免費使用的中介軟體）可設定一個指向 RFC 函數的服務；外部用 URL 呼叫時傳入 XML 檔，Business Connector 把資料轉給函數介面，再把回應轉成 XML 回傳。XML 範例當年放在 SAP Interface Repository（ifr.sap.com，已失效）；進一步內容見課程 BIT530。</p>
+  <div class="warn"><b>S/4HANA 現況</b>：ITS 自 6.40 起已整合進 Kernel（SAP GUI for HTML、<span class="tcode">SICF</span> 的 webgui 服務仍在），但 <b>Web RFC 與 ITS Flow Logic 已不再用於新開發</b>；SAP Business Connector 已結束維護，由 SAP PI/PO、再到 SAP Integration Suite（Cloud Integration）取代。現在要讓外部用 HTTP 呼叫 ABAP 邏輯，選項依序是：① 標準 released OData／SOAP API（api.sap.com）→ ② RAP 自建 OData V4 服務 → ③ SEGW 的 OData V2 → ④ 自寫 ICF Handler（實作 <span class="kw">IF_HTTP_EXTENSION</span>）。這正是「先標準、再客製」。</div>
+
+  <h3 id="ch05-12-18">18. 附錄：BAPI 工場（一）── GetList 與 GetDetail 函數模組</h3>
+  <p>講義用航班訓練模型示範自建 BAPI。業務情境：先用一個 BAPI 列出<b>航班客戶清單</b>，從中選一位客戶，再用另一個 BAPI 顯示該客戶<b>明細</b>。對應業務物件 <b>FlightCustomer（物件類型 SCUSTOMER）</b>，需要兩個 BAPI：<b>GetList</b> 與 <b>GetDetail</b>。兩者有明顯的先後依賴，卻仍保持功能獨立——已知客戶 ID 時可以直接呼叫 GetDetail，不必先呼叫 GetList。</p>
+  <p>操作步驟（<span class="src">（依講義步驟整理）</span>）：</p>
+  <ol>
+    <li>訓練資料用報表 <span class="kw">SAPBC_DATA_GENERATOR</span> 產生（講義說可從 service.sap.com/ocs-download 下載課程程式，帳號 walldorf／training，筆記作者登入失敗，只好自己從頭做）。</li>
+    <li><span class="tcode">SE11</span> 建結構 <b>ZBAPICUST</b>（短文「GetList BAPI」），兩個欄位：ID 用資料元素 <b>S_CUSTOMER</b>、NAME 用 <b>S_CUSTNAME</b>，按 Enter 自動帶出其餘資訊。<b>筆記作者實作時系統要求欄位名改成 CUSTOMERID、CUSTNAME</b>（ID、NAME 與保留字衝突的檢查）。</li>
+    <li><span class="tcode">SE37</span> 建函數群組 <b>ZGBAPI</b>（筆記作者原想取 ZG，但函數群組名至少 4 個字元）。</li>
+    <li>建函數 <b>ZBAPI_GET_CUSTOMER_LIST</b>：屬性頁短文「ZBAPI GetList」、處理類型選 <b>Remote-Enabled（遠端函數呼叫）</b>；Export 參數 RETURN 參照 BAPIRETURN；Tables 參數 SCUST_LIST 參照 ZBAPICUST；Import、Changing、Exceptions 都不填。</li>
+    <li>在函數群組全域資料宣告工作區、內表與訊息結構（轉到 → 全域資料），GetDetail 可共用。</li>
+    <li>建函數 <b>ZBAPI_GET_CUSTOMER_DETAIL</b>：短文「ZBAPI GetDetail」、Remote-Enabled；Export 參數 SCUST_ID、SCUST_NAME、SCUST_POSTCODE、SCUST_CITY、SCUST_CUSTTYPE、SCUST_DISCOUNT（分別參照 SCUSTOM 的 ID、NAME、POSTCODE、CITY、CUSTTYPE、DISCOUNT）與 RETURN（BAPIRETURN）。</li>
+  </ol>
+  <div class="note"><b>講義與筆記的錯誤與不一致，一次整理</b>：① GetDetail 步驟寫「在「表」「輸入」頁不需要輸入條目」，但程式碼用到 <span class="kw">WHERE id = id</span>，<b>Import 頁一定要有 ID 參數</b>（筆記作者已指出，型別 SCUSTOM-ID）；② 步驟寫函數群組「ZG」，前面實際建的是 <b>ZGBAPI</b>；③ 程式註解的表參數參照 <b>ZBAPICUST00</b>，與步驟的 ZBAPICUST 不一致；④ 第六節輸入的函數名「ZBAP_GET_CUSTOMER_DETAIL」少了 I，應為 <b>ZBAPI_GET_CUSTOMER_DETAIL</b>；⑤ 原程式用 <span class="kw">TABLES scustom</span>、<span class="kw">OCCURS 0 WITH HEADER LINE</span>、<span class="kw">SELECT *</span>、FORM set_return_message，全部是禁用寫法，下面改寫。</div>
+  <pre><code class="abap">*&amp;-------------------------------------------------------------*
+*&amp; 函數群組 ZGBAPI 的 TOP Include（LZGBAPITOP）
+*&amp; 原教材：全域工作區 scustom、帶表頭行的內表、BEGIN OF message 結構
+*&amp; 改寫：不宣告全域工作區；訊息轉換做成區域類別，取代 FORM set_return_message
+*&amp;-------------------------------------------------------------*
+FUNCTION-POOL zgbapi MESSAGE-ID zbc415.
+
+CLASS lcl_bapi_msg DEFINITION FINAL.
+  PUBLIC SECTION.
+    CLASS-METHODS build
+      IMPORTING iv_type          TYPE symsgty
+                iv_id            TYPE symsgid
+                iv_number        TYPE symsgno
+                iv_v1            TYPE simple OPTIONAL
+                iv_v2            TYPE simple OPTIONAL
+      RETURNING VALUE(rs_return) TYPE bapiret2.
+ENDCLASS.
+
+*&amp; 實作放在另一個 Include（例如 LZGBAPIC01），並在主程式 SAPLZGBAPI 中 INCLUDE
+CLASS lcl_bapi_msg IMPLEMENTATION.
+  METHOD build.
+    " BALW_BAPIRETURN_GET2：依訊息類別/號碼組出含訊息文字的 BAPIRET2
+    " （原教材用 BALW_BAPIRETURN_GET 回傳舊結構 BAPIRETURN）
+    DATA(lv_v1) = CONV symsgv( iv_v1 ).
+    DATA(lv_v2) = CONV symsgv( iv_v2 ).
+    CALL FUNCTION 'BALW_BAPIRETURN_GET2'
+      EXPORTING
+        type   = iv_type
+        cl     = iv_id
+        number = iv_number
+        par1   = lv_v1
+        par2   = lv_v2
+      IMPORTING
+        return = rs_return.
+  ENDMETHOD.
+ENDCLASS.</code></pre>
+  <pre><code class="abap">FUNCTION zbapi_get_customer_list.
+*"----------------------------------------------------------------
+*"  Remote-Enabled Module
+*"  EXPORTING
+*"     VALUE(RETURN) TYPE  BAPIRET2          "原教材 BAPIRETURN
+*"  TABLES
+*"      SCUST_LIST STRUCTURE  ZBAPICUST       "CUSTOMERID, CUSTNAME
+*"----------------------------------------------------------------
+  CLEAR: scust_list[], return.
+
+  " 原教材：SELECT * ... INTO CORRESPONDING FIELDS OF TABLE itab，再 scust_list[] = itab[]
+  " 改寫：明列欄位、別名對到結構欄位、直接寫進表參數
+  " HANA 沒有預設排序：清單給外部系統「取第一筆」前，一定要 ORDER BY
+  SELECT id   AS customerid,
+         name AS custname
+    FROM scustom
+    ORDER BY id
+    INTO CORRESPONDING FIELDS OF TABLE @scust_list.
+
+  IF sy-subrc &lt;&gt; 0.
+    " 講義沿用訊息類別 FN 022；自建 BAPI 請改用自己的訊息類別
+    return = lcl_bapi_msg=&gt;build( iv_type   = 'E'
+                                  iv_id     = 'FN'
+                                  iv_number = '022' ).
+  ENDIF.
+ENDFUNCTION.</code></pre>
+  <pre><code class="abap">FUNCTION zbapi_get_customer_detail.
+*"----------------------------------------------------------------
+*"  Remote-Enabled Module
+*"  IMPORTING
+*"     VALUE(ID) TYPE  S_CUSTOMER             "講義步驟漏了這個參數
+*"  EXPORTING
+*"     VALUE(SCUST_ID)       TYPE  SCUSTOM-ID
+*"     VALUE(SCUST_NAME)     TYPE  SCUSTOM-NAME
+*"     VALUE(SCUST_POSTCODE) TYPE  SCUSTOM-POSTCODE
+*"     VALUE(SCUST_CITY)     TYPE  SCUSTOM-CITY
+*"     VALUE(SCUST_CUSTTYPE) TYPE  SCUSTOM-CUSTTYPE
+*"     VALUE(SCUST_DISCOUNT) TYPE  SCUSTOM-DISCOUNT
+*"     VALUE(RETURN)         TYPE  BAPIRET2
+*"----------------------------------------------------------------
+  CLEAR: scust_id, scust_name, scust_postcode, scust_city,
+         scust_custtype, scust_discount, return.
+
+  " S_CUSTOMER 是 NUMC 8：外部呼叫端（Java/Python）要自己補前導零 '00000042'
+
+  " 原教材：TABLES scustom + SELECT SINGLE * + 逐欄 scust_xxx = scustom-xxx
+  SELECT SINGLE id, name, postcode, city, custtype, discount
+    FROM scustom
+    WHERE id = @id
+    INTO (@scust_id, @scust_name, @scust_postcode,
+          @scust_city, @scust_custtype, @scust_discount).
+
+  IF sy-subrc &lt;&gt; 0.
+    return = lcl_bapi_msg=&gt;build( iv_type   = 'E'
+                                  iv_id     = 'FN'
+                                  iv_number = '020'
+                                  iv_v1     = id ).
+  ENDIF.
+ENDFUNCTION.</code></pre>
+  <div class="tip">BAPI 設計慣例上，GetDetail 應該回傳<b>一個結構</b>（例如標準的 <span class="kw">BAPISCUDAT</span>）而不是六個散的純量參數——結構新增欄位不會破壞外部呼叫端的相容性，散參數則每加一個就要改介面。而在動手做 Z BAPI 之前，先到 <span class="tcode">BAPI</span> 查：FlightCustomer <b>本來就有標準的 BAPI_FLCUST_GETLIST／BAPI_FLCUST_GETDETAIL</b>。先找標準，再想客製。</div>
+
+  <h3 id="ch05-12-19">19. 附錄：BAPI 工場（二）── 用 SWO1 的 BOR/BAPI 精靈掛上業務物件</h3>
+  <p>函數寫好後，要掛到 BOR 的業務物件上才算「BAPI」（<span class="src">（依講義步驟整理）</span>）：</p>
+  <ol>
+    <li><span class="tcode">SWO1</span>（Business Object Builder）→ 物件類型輸入 <b>SCUSTOMER</b> → 修改（系統要求變更請求時可選本地物件或建請求）。</li>
+    <li>選單「公用程式 → API 方法 → 新增方法」，輸入函數 <b>ZBAPI_GET_CUSTOMER_LIST</b> → 綠色勾 → 出現「建立 API 方法：方法特性」。</li>
+    <li>方法名 <b>GetCustomerList</b>，填說明文件；屬性段勾選「<b>同步</b>」與「<b>實例無關（Instance-independent）</b>」。</li>
+    <li>下一步「建立參數」：參數名每個單字首字母大寫（如 ScustList、CustDetail）；<b>BOR 方法參數名必須與函數參數名相同（大小寫除外）</b>；表參數要指定是輸入或輸出，並勾 <b>Mline</b>（Multiple Line）欄。練習中直接按下一步即可。</li>
+    <li>「擴充程式」：系統警告此 BAPI 尚未實作，選「是」產生模板，把「物件導向封裝」程式加進函數，使它成為業務物件的方法。</li>
+    <li>回到「修改物件類型」，展開「方法」，新方法出現且帶綠色圖示 → 選取後按工具列「<b>產生（Generate）</b>」→ 可按測試或 F8 測試。</li>
+    <li>GetDetail 同樣流程（方法名 GetCustomerDetail），但<b>生成前要雙擊方法，在「一般」頁籤「不要」勾選「實例無關」</b>。</li>
+  </ol>
+  <p><b>為什麼 GetDetail 不能勾「實例無關」？</b>（筆記作者留給讀者的問題）因為 GetDetail 作用在<b>某一個特定的客戶</b>上：它是<b>實例相關（instance-dependent）</b>的方法，呼叫前必須先用鍵欄位（FlightCustomer 的鍵欄位就是<b>客戶編號 ID</b>）建立物件實例，BOR 會把鍵欄位對應到函數的 Import 參數。GetList、CreateFromData 這類方法在物件還不存在或跨多個物件時呼叫，所以是實例無關的（類似類別的 static 方法）。對照 ABAP Objects：實例相關 ≈ 實例方法、實例無關 ≈ 靜態方法（見 <a href="#ch05-2">5-2 章 BC401</a>）。</p>
+  <p>講義說 BAPI 開發方針在《BAPI Programming Guide》，筆記作者找不到並推測 BC417 會談到；該指南現在收在 SAP Help Portal 的「BAPI Programming Guide（CA-BFA）」。</p>
+  <div class="warn"><b>S/4HANA 現況</b>：BOR 與 SWO1 仍存在（Workflow 也還在用 BOR 物件），但 <b>SAP 已不建議再用 BOR 新建 BAPI</b>。S/4HANA 新的 API 路線是：CDS View Entity（7.54+ 用 <span class="kw">DEFINE VIEW ENTITY</span>，1809／7.53 用 <span class="kw">DEFINE VIEW</span>）＋ RAP Business Object（Behavior Definition 需 7.54+／S/4HANA 1909 以上較完整）＋ OData V4 Service Binding；1809 上常見做法是 CDS ＋ SEGW／<span class="kw">@OData.publish</span>。若只是要給外部系統一個可遠端呼叫的函數，直接做 Remote-Enabled 函數模組（<a href="#ch04-1-05">4-1 章第 5 節</a>）就好，不必掛 BOR。</div>
+
+  <h3 id="ch05-12-qa">練習與自我檢核</h3>
+  <ol>
+    <li><b>為什麼在 SELECT 迴圈或 OPEN CURSOR 之後呼叫同步 RFC 會出事？</b><br>參考答案要點：呼叫端每次 RFC 都 roll out，觸發隱式資料庫提交，會關閉未加 WITH HOLD 的游標、並提交尚未打算提交的本地變更。</li>
+    <li><b>SPACE、NONE、BACK 三個目的地的差異？BACK 有什麼限制？</b><br>要點：SPACE＝本地呼叫（等同不寫 DESTINATION）；NONE＝本地但經預設閘道、當外部請求處理；BACK＝被呼叫函數反向呼叫原呼叫端，只支援同步，R/3 到 R/2 不可用。</li>
+    <li><b>同步 RFC 一定要處理哪兩個例外？各在什麼情況觸發？</b><br>要點：COMMUNICATION_FAILURE（RFCDES 無此目的地、連不上）；SYSTEM_FAILURE（遠端函數不存在、遠端 DUMP、A/X 訊息、非對話帳號卻要顯示畫面）。</li>
+    <li><b>aRFC 呼叫時為什麼不能寫 IMPORTING？結果要怎麼收？回呼常式何時執行？</b><br>要點：呼叫不等結束；用 CALLING meth ON END OF TASK（舊式 PERFORMING）加 RECEIVE RESULTS FROM FUNCTION；只有在呼叫端 roll out（WAIT FOR ASYNCHRONOUS TASKS）時才執行；WAIT 會覆寫 sy-subrc。</li>
+    <li><b>DESTINATION IN GROUP 的三條規則？群組沒資源時會怎樣？</b><br>要點：寫在 STARTING NEW TASK 之後、只能同系統、不能與 DESTINATION 並用；觸發 RESOURCE_FAILURE。群組在 RZ12 維護。</li>
+    <li><b>寫一段 tRFC：兩個函數綁同一 LUW、第三個獨立 LUW，並在 COMMIT 前取 TID。</b><br>要點：IN BACKGROUND TASK 在 DESTINATION 前；第三個加 AS SEPARATE UNIT；ID_OF_BACKGROUNDTASK 在 COMMIT WORK 前；STATUS_OF_BACKGROUNDTASK 在 COMMIT WORK 後。</li>
+    <li><b>tRFC 失敗有哪兩種情況？各自會不會自動重試？遠端要「晚點再試」該怎麼寫？</b><br>要點：連不上 → 記 ARFCSSTATE、依目的地設定重試（預設 30 次、每 15 分鐘）；遠端 A/X 或例外 → 回滾、不重排，要 SM58 Execute LUW；要重排就呼叫 RESTART_OF_BACKGROUNDTASK，不要 MESSAGE A 或 RAISE。</li>
+    <li><b>tRFC 資料存哪兩張表？qRFC 多了哪張表、用什麼交易碼管理？佇列名有哪些規則？</b><br>要點：ARFCSSTATE、ARFCSDATA；TRFCQOUT，用 SMQ1（入站 SMQ2）；≤24 字元、不以空白或 % 開頭、不含 *。</li>
+    <li><b>讀資料與改資料各該選哪一類 RFC？為什麼？</b><br>要點：sRFC/aRFC 通訊錯誤時遠端狀態未知，適合讀；tRFC/qRFC 保證確認處理狀態，適合改。S/4HANA 新開發改用 bgRFC。</li>
+    <li><b>S_RFC 三個欄位？為什麼 RFC_NAME 不該給 *？</b><br>要點：RFC_TYPE（FUGR，新版另有 FUNC）、RFC_NAME、ACTVT=16；應列舉實際函數群組／函數，萬用字元與區間會自動放行新物件（Casper 經驗二）。</li>
+    <li><b>信任關係裡，哪一端是 trusting？在哪裡設定？被放行的使用者需要什麼授權？</b><br>要點：trusting＝RFC 目標系統，用 SMT1 定義；SMT2 在被信任端檢視；使用者需 S_RFCACL（七個欄位）；參考 SAP Note 128447。</li>
+    <li><b>BAPI 與一般 RFC 函數的差別？BAPI 裡可以寫 COMMIT WORK 嗎？</b><br>要點：BAPI 是 BOR 業務物件的 API 方法、SAP 保證介面相容、沒有 EXCEPTIONS 只用 RETURN；內部不寫 COMMIT/ROLLBACK，由 BapiService（SAP0001）的 BAPI_TRANSACTION_COMMIT／ROLLBACK 結束 LUW。</li>
+    <li><b>跨系統呼叫 BAPI 後，BAPI 回 S 但目標系統查不到資料，最可能的原因？</b><br>要點：BAPI_TRANSACTION_COMMIT 沒加同一個 DESTINATION（commit 到本機），或 commit 前已 RFC_CONNECTION_CLOSE 使遠端 session 消失。</li>
+    <li><b>BAPI 工場中，GetList 與 GetDetail 在 SWO1 的「實例無關」要怎麼勾？為什麼？</b><br>要點：GetList 勾實例無關；GetDetail 不勾，因為它作用在由鍵欄位（客戶 ID）識別的特定物件實例上。</li>
+    <li><b>把原教材 ZBAPI_GET_CUSTOMER_LIST 改寫成 S/4HANA 寫法時，除了語法之外還要補什麼？</b><br>要點：SELECT 明列欄位並加 ORDER BY（HANA 無預設排序）；RETURN 改用 BAPIRET2 與 BALW_BAPIRETURN_GET2；不用 FORM 改區域類別；而且動手前先查標準 BAPI_FLCUST_GETLIST（先標準、再客製）。</li>
+  </ol>
+</section>

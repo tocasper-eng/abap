@@ -1,0 +1,875 @@
+<section class="chapter" id="ch01-4" data-title="不寫程式的報表開發：SQVI QuickViewer / SQ01 SQ02 SQ03 InfoSet Query / SQ99">
+  <h2 id="ch01-4">第 1-4 章 不寫程式的報表開發：SQVI QuickViewer / SQ01 SQ02 SQ03 InfoSet Query / SQ99</h2>
+  <p class="lede">這一章的教學重點只有一句話：<b>在不寫一行程式的狀況下，完成二階（多表聯結）報表的查詢</b>。你會學到 SQVI 快速檢視器（三分鐘出報表、但只屬於你自己），以及 SQ03 使用者群組 → SQ02 InfoSet → SQ01 Query 這套「三件套」的正確建立順序、資料來源怎麼選、附加欄位怎麼補、產生出來的 AQ 程式名怎麼解碼、怎麼掛成 TCODE、怎麼傳輸到 QAS/PRD，最後是什麼時候該放棄 Query 直接寫 ABAP，以及 S/4HANA 時代改用 CDS View ＋ Fiori Embedded Analytics 的時機。老師說這門課三小時可以教完，但它能幫你擋掉一半以上的臨時報表需求。</p>
+
+  <div class="meta">
+    <div><b>核心 TCODE</b><span class="tcode">SQVI</span><span class="tcode">SQ00</span><span class="tcode">SQ01</span><span class="tcode">SQ02</span><span class="tcode">SQ03</span><span class="tcode">SQ07</span><span class="tcode">SE93</span><span class="tcode">SE38</span><span class="tcode">SE16H</span><span class="tcode">SE16N</span><span class="tcode">SU01</span><span class="tcode">SU3</span><span class="tcode">SE37</span><span class="tcode">GRR1</span><span class="tcode">GRR2</span><span class="tcode">GR31</span><span class="tcode">FGI0</span></div>
+    <div><b>關鍵物件</b>KNA1、KNB1、KNVV、VBAK、VBAP、QALS、LIKP、LIPS、START_REPORT、D_SREPOVARI、RSAQ_DECODE_REPORT_NAME、RSAQ_QUERY_CALL、RSAQR3TR、AQ* 產生程式、CL_SALV_TABLE、CDS View</div>
+  </div>
+
+  <h3 id="ch01-4-01">1. 三層工具的定位：SE16H → SQVI → SAP Query → 自己寫程式</h3>
+  <p>使用者丟一個報表需求過來，先問自己「非得寫程式不可嗎？」。SAP 給了一整排不寫程式的工具，成本由低到高排序如下：</p>
+
+  <table>
+    <thead><tr><th>層級</th><th>工具</th><th>能做什麼</th><th>不能做什麼</th></tr></thead>
+    <tbody>
+      <tr><td>0</td><td><span class="tcode">SE16N</span> / <span class="tcode">SE16H</span></td><td>單表瀏覽；SE16H 在 HANA 上可做群組加總、排序、甚至多表聯結</td><td>沒有固定版面、不能給一般使用者當正式報表、不易掛 TCODE</td></tr>
+      <tr><td>1</td><td><span class="tcode">SQVI</span> QuickViewer</td><td>個人用的多表聯結報表，ALV 輸出，五分鐘完成</td><td><b>只屬於建立者本人</b>、無法傳輸、無法給別人執行</td></tr>
+      <tr><td>2</td><td><span class="tcode">SQ03</span>＋<span class="tcode">SQ02</span>＋<span class="tcode">SQ01</span> SAP Query</td><td>可分享、可授權、可掛 TCODE、可傳輸；支援附加欄位與 ABAP 程式碼區段</td><td>複雜邏輯、效能調校、單元測試、對外介面都很吃力</td></tr>
+      <tr><td>3</td><td><span class="tcode">SE38</span> 自己寫 ABAP</td><td>什麼都能做</td><td>成本最高，要走完整開發與傳輸流程</td></tr>
+      <tr><td>3+</td><td>CDS View ＋ Fiori（S/4HANA）</td><td>可重用、可 OData 曝露、可進 Analytical List Page／Embedded Analytics</td><td>需要 Eclipse ADT 與較完整的建模概念</td></tr>
+    </tbody>
+  </table>
+
+  <div class="tip">老師的三小時總結：<b>「教學重點：在不寫程式的狀況下，完成二階報表的查詢。」</b>所謂「二階」就是主檔＋子檔兩張表聯結，例如 KNA1＋KNB1、VBAK＋KNA1、VBAP＋QALS。這正是 90% 臨時報表需求的形狀。</div>
+
+  <div class="note"><b>講義建議的練習命名原則</b>（把同一個需求用六種工具做一遍，名字就看得出來是誰做的）：<br>
+  SE16H → <b>ZERP###H</b>；SQVI → <b>ZERP###V</b>；SQ03 使用者群組 → <b>ZERP###U</b>；SQ02 InfoSet → <b>ZERP###I</b>；SQ01 Query → <b>ZERP###Q</b>；SE38＋TCODE → <b>ZERP###P</b>；START_REPORT 參數交易 → <b>ZERP###A</b>。</div>
+
+  <h3 id="ch01-4-02">2. SQVI QuickViewer：最快的個人報表（但不可傳輸）</h3>
+  <p><span class="tcode">SQVI</span> 是 SAP Query 的「單人簡化版」。它不需要使用者群組、不需要 InfoSet，一個畫面內就把「選哪些表、怎麼聯結、要哪些欄位、要哪些選擇條件」全部做完。<span class="src">（依講義步驟整理）</span></p>
+
+  <ol>
+    <li>進入 <span class="tcode">SQVI</span>，輸入 QuickView 名稱（最長 14 碼，建議 <b>ZERP###V</b>），按「建立」。</li>
+    <li>輸入抬頭說明（Title）、備註，選擇<b>資料來源</b>：
+      <ul>
+        <li><b>表格（Table）</b>：只查一張表，最單純。</li>
+        <li><b>表格聯結（Table join）</b>：多表聯結，二階報表就選這個。</li>
+        <li><b>邏輯資料庫（Logical database）</b>：沿用 SAP 標準的取數樹（含權限檢查）。</li>
+        <li><b>InfoSet</b>：直接沿用 SQ02 已經做好的 InfoSet。</li>
+      </ul>
+    </li>
+    <li>選擇「表格聯結」後進入 Join 畫面，按「插入表格」加入第二張表；SAP 會依外鍵自動連線，<b>務必檢查自動連上的欄位是否正確</b>，多餘的連線用滑鼠右鍵刪除。</li>
+    <li>回到基本清單（Basis mode）畫面，左邊是欄位群組樹，勾選 <b>清單欄位（List fields）</b> 與 <b>選擇欄位（Selection fields）</b>。</li>
+    <li>存檔後按 <b>執行（F8）</b>，出現選擇畫面 → 再 F8 → ALV 報表。</li>
+  </ol>
+
+  <div class="warn"><b>SQVI 的三個硬限制，一定要先跟使用者講清楚：</b>
+  <br>1. QuickView <b>是使用者私有的</b>，別人登入看不到，也不能執行。
+  <br>2. <b>無法掛傳輸請求</b>，DEV 做好不會自己跑到 QAS／PRD；老師的說法是「一般是不傳輸，直接就地使用」。
+  <br>3. 不支援附加欄位的 ABAP 程式碼區段（那是 SQ02 InfoSet 才有的功能）。
+  <br>要正式化，就在 <span class="tcode">SQ01</span> 用「Query → 由 QuickView 轉換（Convert QuickView）」把它升級成 Query，之後才有使用者群組、授權與傳輸。</div>
+
+  <div class="tip">SQVI 的定位是「可取代 SQ01/SQ02/SQ03 的個人版」。自己查資料、驗證 Join 是否正確時用 SQVI 最快；確定邏輯 OK 再花時間做成 Query。</div>
+
+  <p>講義第 11 節的實作是 <b>SQVI 品質檢驗</b>：把 <b>VBAP</b>（銷售訂單行項目）與 <b>QALS</b>（檢驗批記錄）聯結，做出「待出貨訂單對應成品檢驗狀態」的清單。Join 條件通常走物料與工廠（VBAP-MATNR = QALS-MATNR、VBAP-WERKS = QALS-WERK），必要時再加交貨單（QALS 的檢驗批來源可為交貨 LIKP/LIPS）。<span class="src">（依講義步驟整理）</span></p>
+
+  <h3 id="ch01-4-03">3. SQ03 使用者群組：三件套的第一步</h3>
+  <p>SAP Query 的建立順序是<b>固定的</b>，講義特別提醒：「設計之前，要先將 INFOSET、USER_GROUP 指定正確。」</p>
+
+  <table>
+    <thead><tr><th>順序</th><th>TCODE</th><th>物件</th><th>做什麼</th></tr></thead>
+    <tbody>
+      <tr><td>1</td><td>SQ03</td><td>使用者群組 User Group</td><td>決定「誰可以用這組報表」，並把 InfoSet 掛進來</td></tr>
+      <tr><td>2</td><td>SQ02</td><td>InfoSet</td><td>決定「資料從哪來、有哪些欄位」（Join／LDB／程式）</td></tr>
+      <tr><td>3</td><td>SQ01</td><td>Query 查詢</td><td>決定「報表長什麼樣子」（選擇欄位、輸出欄位、小計、排序）</td></tr>
+      <tr><td>4</td><td>SQ00</td><td>執行</td><td>SQ00 與 SQ01 畫面幾乎一樣，SQ00 定位是「執行」、SQ01 是「維護」</td></tr>
+    </tbody>
+  </table>
+
+  <p><b>SQ03 建立步驟</b><span class="src">（依講義步驟整理）</span>：</p>
+  <ol>
+    <li>進 <span class="tcode">SQ03</span>，先看畫面上方的<b>查詢區（Query Area）</b>是不是你要的（見下一節），必要時用「環境 → 查詢區」切換。</li>
+    <li>輸入使用者群組名稱（講義用 <b>ZCERPS</b>、<b>ZVBAP_QALS</b>、<b>ZVBAK_KNA1</b>、<b>Z000</b>），按「建立」，輸入說明文字後存檔。</li>
+    <li>按 <b>「指定使用者與 InfoSet」</b>：
+      <ul>
+        <li><b>指定使用者</b>：把要執行報表的 SAP 帳號加進來。有勾「Change authorization」的人才能改 Query。</li>
+        <li><b>指定 InfoSet</b>：把 SQ02 做好的 InfoSet 打勾掛進這個群組（InfoSet 還沒建時先跳過，建完再回來掛）。</li>
+      </ul>
+    </li>
+  </ol>
+
+  <div class="note">講義的三個實作使用者群組：<b>ZCERPS</b>（對應 Query <b>QUE_KNV1</b>）、<b>ZVBAP_QALS</b>（出貨檢驗）、<b>ZVBAK_KNA1 / Z000</b>（訂單主檔，對應 Query <b>QUE_VBAK_KNA1</b>）。</div>
+
+  <h3 id="ch01-4-04">4. 查詢區 Standard Area 與 Global Area：能不能傳輸的關鍵</h3>
+  <p>SAP Query 的所有物件（使用者群組、InfoSet、Query）都存在某個<b>查詢區</b>裡，這決定了它的可見範圍與傳輸方式。講義第 01-3 節的「AREA 群組範圍」講的就是這件事。</p>
+
+  <table>
+    <thead><tr><th>查詢區</th><th>代碼</th><th>範圍</th><th>傳輸方式</th></tr></thead>
+    <tbody>
+      <tr><td>標準區 Standard Area</td><td>（空白）</td><td><b>依 Client 分離</b>，只在建立它的 client 看得到；不屬於任何 Package</td><td>不會自動進傳輸請求，要用程式 <b>RSAQR3TR</b> 匯出／匯入</td></tr>
+      <tr><td>全域區 Global Area</td><td><b>G</b></td><td><b>跨 Client</b>，整個系統共用</td><td>屬於 Package、可掛傳輸請求，像一般開發物件一樣走 STMS</td></tr>
+    </tbody>
+  </table>
+
+  <div class="tip">要讓報表跟著傳輸走，就把使用者群組／InfoSet／Query 建在<b>全域區</b>。這也是為什麼講義的 START_REPORT 參數裡，使用者群組後面第 13 碼是一個 <b>G</b>：那個 G 就是在告訴系統「這個 Query 在全域區」。</div>
+
+  <p><b>如何切換查詢區</b>：在 SQ01／SQ02／SQ03 任一畫面，選單「環境（Environment） → 查詢區（Query Areas）」，選「標準區」或「全域區」。切錯區最典型的症狀是<b>「明明建好了卻在清單裡找不到」</b>。</p>
+
+  <p><b>SU01 參數 AQW</b>（講義 10-1）：在 <span class="tcode">SU01</span>（或使用者自己用 <span class="tcode">SU3</span>）的「參數」頁籤加一筆參數 ID <b>AQW</b>，就能指定該使用者預設進入的查詢區；填 <b>G</b> 代表預設進全域區。講義的說法是「maintain AQW parameter in SU01 for required user ID and SAVE，This will enable that particular User to see all ABAP Queries」——實際效果是讓該使用者一登入 SQ01 就看到全域區的 Query，不必每次手動切換。</p>
+
+  <div class="warn">標準區的 Query 是 <b>client-specific</b>：你在 DEV 100 建的，DEV 200 看不到，PRD 更看不到。實務上很多「報表不見了」的求救單，答案都是查詢區或 client 不對。跨系統搬運標準區 Query 要跑 <b>RSAQR3TR</b>（SE38 執行，選 Export／Import，會產生 transport dataset）。</div>
+
+  <h3 id="ch01-4-05">5. SQ02 InfoSet：資料來源怎麼選</h3>
+  <p>InfoSet 是三件套裡最重要、也最需要動腦的一層。它回答兩個問題：<b>資料從哪裡來</b>、<b>使用者可以看到哪些欄位</b>。</p>
+
+  <p>建立 InfoSet 時，SAP 會要你四選一：</p>
+  <table>
+    <thead><tr><th>資料來源</th><th>說明</th><th>什麼時候用</th></tr></thead>
+    <tbody>
+      <tr><td><b>表格聯結 Table join over table</b></td><td>自己拉 DDIC 表格做 Join（可設 inner／left outer join）</td><td>最常用。二階報表、主檔＋子檔都走這個</td></tr>
+      <tr><td><b>邏輯資料庫 Logical database</b></td><td>沿用 SAP 標準的取數程式樹（例如 SD 的 VAV、MM 的 MEPOLDB、HR 的 PNP），自帶選擇畫面與權限檢查</td><td>需要標準權限檢查、或資料結構是階層式（抬頭→項目→排程行）時</td></tr>
+      <tr><td><b>使用程式讀取的表格 Table + read program</b></td><td>指定一張表，再自己寫取數程式填值</td><td>資料要先加工才進表的情況</td></tr>
+      <tr><td><b>資料檢索程式 Data retrieval program</b>（Sequential dataset）</td><td>完全自己寫 ABAP 取數，把資料丟進定義好的結構</td><td>來源是檔案、外部系統、或邏輯太複雜時</td></tr>
+    </tbody>
+  </table>
+
+  <p><b>SQ02 建立步驟</b><span class="src">（依講義步驟整理）</span>：</p>
+  <ol>
+    <li>進 <span class="tcode">SQ02</span>，確認查詢區，輸入 InfoSet 名稱（講義：<b>ZKNA1_KNB1</b>、<b>ZVBAP_QALS</b>、<b>ZVBAK_KNA1</b>），按「建立」。</li>
+    <li>輸入說明文字，選「表格聯結」並填第一張表（主表），Enter。</li>
+    <li>在 Join 畫面按「插入表格」加入第二張表；SAP 依外鍵自動畫連線，<b>手動核對每一條連線</b>；按右鍵可切換 Inner／Left Outer Join。</li>
+    <li>回上一頁時，SAP 問「欄位群組（Field Groups）」要怎麼建，通常選 <b>「每個表格一個欄位群組，只含清單欄位／關鍵欄位」</b> 或「包含所有表格欄位」。欄位群組決定使用者在 SQ01 看到的欄位分類。</li>
+    <li>把需要的欄位從右邊的表格樹拖進左邊的欄位群組（沒有拖進去的欄位，SQ01 就選不到）。</li>
+    <li>存檔 → <b>產生（Generate，Ctrl+F3）</b>。<b>沒有按產生，Query 端不會看到你的修改。</b></li>
+    <li>按「角色／使用者群組指派」，把這個 InfoSet 掛給 SQ03 建好的使用者群組。</li>
+  </ol>
+
+  <div class="tip">口訣：<b>「InfoSet 改完一定要 Generate；Generate 完一定要回頭看 Query 有沒有壞掉。」</b>InfoSet 改欄位群組或刪欄位，會讓已經在用該欄位的 Query 出現「欄位不存在」的錯誤。</div>
+
+  <p>講義的三個 InfoSet 實作：</p>
+  <ul>
+    <li><b>ZKNA1_KNB1</b>（02-1）：客戶一般資料 <b>KNA1</b> ＋ 公司代碼資料 <b>KNB1</b>，Join 條件 KNA1-KUNNR = KNB1-KUNNR。用來查「客戶編號與帳號（統馭科目 AKONT）關聯」。</li>
+    <li><b>ZVBAP_QALS</b>（02-2）：銷售訂單行項目 <b>VBAP</b> ＋ 檢驗批 <b>QALS</b>，用來查「待出貨訂單與成品檢驗」。</li>
+    <li><b>ZVBAK_KNA1</b>（02-3）：銷售訂單抬頭 <b>VBAK</b> ＋ 客戶主檔 <b>KNA1</b>，Join 條件 VBAK-KUNNR = KNA1-KUNNR，即「訂單主檔＋客戶名稱」。</li>
+  </ul>
+
+  <h3 id="ch01-4-06">6. Join 的陷阱：Inner Join、Left Outer Join 與效能</h3>
+  <p>InfoSet 的 Join 就是 ABAP SQL 的 Join，所有 SQL 的坑它一個都不會少。以下三個是最常踩的。</p>
+
+  <p><b>坑一：該用 Left Outer 卻用了 Inner，資料整批消失。</b>例如 VBAP ＋ QALS，如果某些訂單行項目還沒有檢驗批，Inner Join 會把它們整批濾掉，使用者就會說「我的訂單少了一半」。</p>
+
+  <pre><code class="abap">" 用 ABAP SQL 表達 InfoSet 裡那條 Join：VBAP + QALS（出貨檢驗）
+" Left Outer Join：沒有檢驗批的訂單行項目也要留下來
+SELECT a~vbeln,
+       a~posnr,
+       a~matnr,
+       a~werks,
+       a~kwmeng,
+       a~vrkme,
+       b~prueflos,          " 檢驗批號
+       b~herkunft,          " 檢驗批來源（01 進料、03 生產、04 交貨…）
+       b~stat34,            " 使用決策已作成
+       b~lmengezu           " 允收數量
+  FROM vbap AS a
+  LEFT OUTER JOIN qals AS b
+    ON  b~matnr = a~matnr
+    AND b~werk  = a~werks
+ WHERE a~vbeln IN @s_vbeln
+   AND a~matnr IN @s_matnr
+  INTO TABLE @DATA(lt_out).
+
+IF lt_out IS INITIAL.
+  MESSAGE '查無資料' TYPE 'S' DISPLAY LIKE 'W'.
+  RETURN.
+ENDIF.</code></pre>
+
+  <div class="warn"><b>Left Outer Join 的 WHERE 條件位置很關鍵。</b>如果把「b~stat34 = 'X'」寫在 WHERE，Left Outer 會退化成 Inner Join（因為 NULL 不符合條件）；要保留左表全部資料，條件必須寫在 <b>ON</b> 子句裡。SQ02 的 Join 畫面沒有辦法漂亮地表達這件事，這正是 Query 做不下去、該改寫 ABAP 的訊號之一。</div>
+
+  <p><b>坑二：Join 太多張表，HANA 上照樣慢。</b>InfoSet 裡拉五、六張表很容易，但每多一張表就是一次 Join。實務建議：主表加 1～2 張參照表就好，文字（MAKT、T001W 之類）盡量用「附加表格」在 RECORD PROCESSING 裡單筆讀，或改用有內建文字的 CDS View。</p>
+
+  <p><b>坑三：沒有給有索引的選擇欄位。</b>Query 的選擇畫面是使用者自己填的，如果沒有把 <b>MANDT 以外的主鍵／索引欄位</b>放進選擇欄位，使用者就會用一個沒有索引的欄位掃全表。做 InfoSet 時，一定要把主表的關鍵欄位（VBELN、MATNR、KUNNR、WERKS、日期）都放進欄位群組。</p>
+
+  <h3 id="ch01-4-07">7. 附加欄位 Additional Field 與 InfoSet 的 ABAP 程式碼區段</h3>
+  <p>InfoSet 比 SQVI 強大的地方，就在於它可以<b>加欄位、寫程式</b>。在 SQ02 的 Join／欄位畫面，選單「附加項（Extras）」可以新增三種東西：</p>
+
+  <table>
+    <thead><tr><th>類型</th><th>用途</th><th>要不要寫程式</th></tr></thead>
+    <tbody>
+      <tr><td><b>附加欄位 Additional Field</b></td><td>自己算出來的欄位：金額換算、天數差、狀態中文化、單價 = 金額 / 數量</td><td>要，寫在該欄位的 Code 區</td></tr>
+      <tr><td><b>附加表格 Additional Table</b></td><td>用目前這筆資料的鍵值去讀另一張表（例如用 MATNR 讀 MAKT 取品名）</td><td>不用，指定表名即可，系統自動做 SELECT SINGLE</td></tr>
+      <tr><td><b>附加結構 Additional Structure</b></td><td>把一組附加欄位包成一個結構，方便管理</td><td>依內含欄位而定</td></tr>
+    </tbody>
+  </table>
+
+  <p><b>新增附加欄位的步驟</b><span class="src">（依講義步驟整理）</span>：Extras → 建立 → 選「附加欄位」→ 輸入欄位名稱（建議 Z 開頭）→ 指定長度、輸出長度、資料型態（或直接「Like 參考欄位」指向某個 DDIC 欄位）→ 輸入抬頭文字（Header）→ 存檔 → 切到 <b>Code</b> 頁籤寫程式 → 回主畫面把它拖進欄位群組 → <b>Generate</b>。</p>
+
+  <p>InfoSet 的程式碼區段（Code 頁籤上方的下拉選單）依執行時機分成幾段，觀念跟一支 ABAP 報表的事件一樣：</p>
+
+  <table>
+    <thead><tr><th>區段</th><th>執行時機</th><th>典型用途</th></tr></thead>
+    <tbody>
+      <tr><td><b>DATA</b></td><td>全域宣告區</td><td>宣告暫存變數、緩衝用的內表</td></tr>
+      <tr><td><b>INIT</b> / INITIALIZATION</td><td>選擇畫面顯示前</td><td>給選擇欄位預設值</td></tr>
+      <tr><td><b>AT SELECTION-SCREEN</b></td><td>使用者按執行後</td><td>檢核輸入值</td></tr>
+      <tr><td><b>START-OF-SELECTION</b></td><td>取數開始前，只跑一次</td><td><b>一次把要用的參照資料撈進緩衝內表</b></td></tr>
+      <tr><td><b>RECORD PROCESSING</b></td><td><b>每讀到一筆資料就跑一次</b></td><td>計算附加欄位、過濾資料（可用 CHECK／REJECT）</td></tr>
+      <tr><td><b>END-OF-SELECTION</b></td><td>全部讀完後</td><td>收尾、統計</td></tr>
+    </tbody>
+  </table>
+
+  <p>下面是一段實用的 RECORD PROCESSING 範例，示範「算出未交量、把狀態轉成中文、算出交期逾期天數」。<b>InfoSet 的程式碼區段裡，表格欄位是以工作區形式直接引用（例如 <span class="kw">VBAP-KWMENG</span>），這是 SAP Query 產生器的規定寫法，不能改成內嵌宣告的變數名。</b></p>
+
+  <pre><code class="abap">" ===== 區段：DATA（宣告）=====
+TYPES: BEGIN OF ty_makt,
+         matnr TYPE makt-matnr,
+         maktx TYPE makt-maktx,
+       END OF ty_makt.
+DATA gt_makt TYPE HASHED TABLE OF ty_makt WITH UNIQUE KEY matnr.
+
+" ===== 區段：START-OF-SELECTION（只跑一次，先把品名一次撈進緩衝）=====
+SELECT matnr, maktx
+  FROM makt
+ WHERE spras = @sy-langu
+  INTO TABLE @gt_makt.
+
+" ===== 區段：RECORD PROCESSING（每一筆資料都會跑）=====
+" 1. 未交數量 = 訂單量 - 已交量
+ZOPEN_QTY = VBAP-KWMENG - VBAP-KLMENG.
+
+" 2. 用緩衝內表取品名，避免在迴圈裡下 SELECT
+ZMAKTX = COND #( WHEN line_exists( gt_makt[ matnr = VBAP-MATNR ] )
+                 THEN gt_makt[ matnr = VBAP-MATNR ]-maktx
+                 ELSE '' ).
+
+" 3. 檢驗狀態中文化（QALS-STAT34 = 'X' 代表已作使用決策）
+ZQM_STATUS = SWITCH string( QALS-STAT34
+                            WHEN 'X' THEN '檢驗完成'
+                            ELSE          '檢驗中／未檢驗' ).
+
+" 4. 交期逾期天數（負數代表尚未到期）
+ZDELAY_DAYS = sy-datum - VBAP-EDATU.
+
+" 5. 過濾：只留下有未交量的資料（CHECK 不成立就跳過這一筆）
+CHECK ZOPEN_QTY &gt; 0.</code></pre>
+
+  <div class="warn"><b>RECORD PROCESSING 裡千萬不要下 SELECT。</b>它是每筆資料跑一次，一萬筆資料就是一萬次 DB round trip，在 HANA 上一樣會被 DB 連線成本拖垮。正確做法是上面示範的：<b>START-OF-SELECTION 一次撈進 HASHED TABLE 緩衝，RECORD PROCESSING 只做記憶體查表</b>。真的需要單筆讀取時，改用「附加表格 Additional Table」讓系統幫你做（它有做內部緩衝）。</div>
+
+  <div class="tip">附加欄位若要出現在<b>選擇畫面</b>，在建立附加欄位時要勾選讓它可以當選擇欄位；但要記得，附加欄位是在資料讀出來<b>之後</b>才算的，用它當條件等於「先全撈再過濾」，資料量大時很慢。能用原生欄位篩選就用原生欄位。</div>
+
+  <h3 id="ch01-4-08">8. SQ01 設計報表：從欄位到版面</h3>
+  <p>InfoSet 準備好、使用者群組也掛好之後，才輪到 <span class="tcode">SQ01</span>。步驟<span class="src">（依講義步驟整理）</span>：</p>
+  <ol>
+    <li>進 <span class="tcode">SQ01</span>，先按「使用者群組（Shift+F7）」選定群組（例如 <b>ZVBAP_QALS</b>）——<b>沒選群組就建不出 Query</b>。</li>
+    <li>輸入 Query 名稱（講義：<b>QUE_KNV1</b>、<b>ZVBAP_QALS</b>、<b>QUE_VBAK_KNA1</b>），按「建立」，選 InfoSet。</li>
+    <li><b>第 1 頁：抬頭與備註</b>——填 Query 標題、備註，以及輸出格式（<b>SAP List Viewer／ALV Grid</b> 最常用，也可選 ABAP List、Excel、Word 合併列印、下載檔案）。</li>
+    <li><b>第 2 頁：選擇欄位群組</b>——勾選這個 Query 要用到哪些欄位群組。</li>
+    <li><b>第 3 頁：選擇欄位</b>——勾選要出現在報表上的欄位。</li>
+    <li><b>第 4 頁：選擇（Selections）</b>——勾選哪些欄位要出現在選擇畫面上，並可指定是 SELECT-OPTION 還是 PARAMETER、是否必填。</li>
+    <li><b>基本清單（Basic List）</b>——排欄位順序（Line/Sequence）、排序（Sort）、小計（Total／Counter）、群組小計。</li>
+    <li>還可再做 <b>統計清單（Statistics）</b>與<b>排名清單（Ranked List）</b>，做出「前 10 大客戶」這種報表。</li>
+    <li>存檔 → 執行（F8）→ 測試 → 回頭調整。</li>
+  </ol>
+
+  <div class="tip">老師的命名習慣是 <b>QUE_</b> 開頭（QUE_KNV1、QUE_VBAK_KNA1）。講義在第 09-2 節特別註記「最好還是命名成 QUE_」，因為 Query 名稱會被編進產生的程式名裡，前綴一致才好在 SE38 用萬用字元找到它們。</div>
+
+  <div class="note">Query 的執行結果如果選 ALV，使用者可以自己拉版面（Layout）並儲存成 <b>/變式名稱</b>，等於免費得到一套個人化報表。另外 SQ01 選單「Query → 執行並列印」、「Query → 背景執行」都支援排程。</div>
+
+  <h3 id="ch01-4-09">9. 產生的程式：AQ 開頭的程式名怎麼解碼</h3>
+  <p>存檔 Query 時，SAP 會偷偷幫你產生一支真的 ABAP 程式，名字是 <b>AQ</b> 開頭的 30 碼怪名字。講義列出的三個實例：</p>
+
+  <table>
+    <thead><tr><th>產生的程式名</th><th>使用者群組</th><th>Query 名稱</th></tr></thead>
+    <tbody>
+      <tr><td><code>AQZZZCERPS======QUE_KNV1======</code></td><td>ZCERPS</td><td>QUE_KNV1</td></tr>
+      <tr><td><code>AQZZZVBAP_QALS==ZVBAP_QALS====</code></td><td>ZVBAP_QALS</td><td>ZVBAP_QALS</td></tr>
+      <tr><td><code>AQZZZ000========QUE_VBAK_KNA1=</code></td><td>Z000</td><td>QUE_VBAK_KNA1</td></tr>
+    </tbody>
+  </table>
+
+  <p><b>名稱結構</b>：第 1～2 碼固定是 <b>AQ</b>；第 3～4 碼是查詢區／工作區識別；<b>第 5～16 碼（12 碼）是使用者群組</b>，不足以 <b>=</b> 補滿；<b>第 17～30 碼（14 碼）是 Query 名稱</b>，不足一樣以 <b>=</b> 補滿。所以看到 <code>AQZZZCERPS======QUE_KNV1======</code>，去掉等號就知道是「使用者群組 ZCERPS 的 Query QUE_KNV1」。</p>
+
+  <p>不用自己數格子，SAP 有現成的函數 <b>RSAQ_DECODE_REPORT_NAME</b>：在 <span class="tcode">SE37</span> 直接測試執行，輸入程式名就會回傳 Query、InfoSet 與使用者群組。這在「PRD 出現 dump 只知道程式名是 AQ 開頭」時特別好用。</p>
+
+  <pre><code class="abap">REPORT zaq_decode.
+
+PARAMETERS p_prog TYPE progname OBLIGATORY
+           DEFAULT 'AQZZZVBAP_QALS==ZVBAP_QALS===='.
+
+START-OF-SELECTION.
+
+  DATA lv_query     TYPE aqadef-quname.
+  DATA lv_usergroup TYPE aqadef-bgname.
+  DATA lv_infoset   TYPE aqadef-isname.
+  DATA lv_workspace TYPE aqadef-wsid.
+
+  " 用標準函數把 AQ 程式名還原成 Query / InfoSet / 使用者群組
+  TRY.
+      CALL FUNCTION 'RSAQ_DECODE_REPORT_NAME'
+        EXPORTING
+          program   = p_prog
+        IMPORTING
+          workspace = lv_workspace
+          usergroup = lv_usergroup
+          query     = lv_query
+          infoset   = lv_infoset.
+    CATCH cx_root INTO DATA(lx_err).
+      MESSAGE lx_err-&gt;get_text( ) TYPE 'E'.
+  ENDTRY.
+
+  WRITE: / |查詢區 Workspace : { lv_workspace }|,
+         / |使用者群組 Group : { lv_usergroup }|,
+         / |InfoSet         : { lv_infoset }|,
+         / |Query           : { lv_query }|.</code></pre>
+
+  <div class="note">另一個方向（由 Query 找程式名）：在 <span class="tcode">SQ01</span> 選單「Query → 其他功能（More Functions） → 顯示報表名稱（Display Report Name）」，SAP 會直接把 30 碼程式名秀給你，複製即可貼到 SE38／SE93。</div>
+
+  <p>產生的程式長成下面這樣。它是<b>系統自動產生的骨架</b>，只是把工作丟給幾支同樣自動產生的 Function Module（<code>...EXTR</code> 取數、<code>...SHOW</code> 顯示）：</p>
+
+  <pre><code class="abap">REPORT AQZZZVBAP_QALS==ZVBAP_QALS====.
+
+INCLUDE /1BCDWB/IQG000000000008DAT.          " 資料宣告（自動產生）
+DATA %dtab TYPE STANDARD TABLE OF /1BCDWB/IQG000000000008 WITH HEADER LINE.
+DATA %subrc TYPE sy-subrc.
+INCLUDE /1BCDWB/IQG000000000008SSCR.         " 選擇畫面（自動產生）
+INCLUDE /1BCDWB/IQG000000000008SSCRAT.       " 選擇畫面事件（自動產生）
+
+START-OF-SELECTION.
+  IF %runmode-extr_on &lt;&gt; space.
+    CALL FUNCTION '/1BCDWB/IQG000000000008EXTR'   " 取數
+      TABLES     %selopt = %seloptions
+                 %dtab   = %dtab
+      CHANGING   %rtmode = %runmode
+      EXCEPTIONS no_data = 1
+                 OTHERS  = 2.
+    %subrc = sy-subrc.
+    CALL FUNCTION 'RSAQRT_CHECK_EXTR'
+      EXPORTING extr_subrc = %subrc
+      TABLES    dtab       = %dtab
+      CHANGING  rtmode     = %runmode.
+  ENDIF.
+
+END-OF-SELECTION.
+  IF %runmode-show_on &lt;&gt; space.
+    CALL FUNCTION '/1BCDWB/IQG000000000008SHOW'   " 顯示（ALV）
+      TABLES   %dtab   = %dtab
+      CHANGING %rtmode = %runmode.
+  ENDIF.</code></pre>
+
+  <div class="warn"><b>這支程式絕對不能手動修改。</b>它是 Query 的產物，只要有人在 SQ01／SQ02 存檔或系統升級後重新產生，你的修改就會全部消失。它用了 <code>WITH HEADER LINE</code> 這種在自寫程式中已被禁止的舊語法，也不代表你可以照抄——那是產生器的內部實作。<br>另外，S/4HANA 升級後常見的 <b>LOAD_PROGRAM_NOT_FOUND</b> dump，原因就是 AQ 程式尚未重新產生；解法是在 SQ01 重新產生該 Query，或執行標準的 Query 重產生程式（RSAQGENQ 系列）。</div>
+
+  <h3 id="ch01-4-10">10. 把 Query 掛成 TCODE：方式一（直接掛程式）與方式二（START_REPORT 參數交易）</h3>
+
+  <h4>方式一：SE93 直接掛 AQ 程式</h4>
+  <p>最直覺的做法：<span class="tcode">SE93</span> → 建立交易碼（講義：<b>ZQUE_KNV1</b>、<b>ZVBAP_QALS</b>、<b>ZVBAK_KNA1</b>）→ 選「<b>使用選擇畫面的程式與變式（Report Transaction）</b>」→ 程式名填那 30 碼的 <code>AQ...</code>。</p>
+
+  <div class="warn"><b>方式一有風險</b>：AQ 程式名裡「編」進了使用者群組與 Query 名，但<b>不同系統／不同 client 產生出來的 <code>/1BCDWB/IQG0000000000xx</code> 內部編號不一樣</b>；且升級或重產生後程式可能被刪除重建。所以 TCODE 掛在 AQ 程式上，在 DEV 好好的，傳到 PRD 可能就找不到程式。這正是講義要教「方式二」的原因。</div>
+
+  <h4>方式二：START_REPORT 參數交易（推薦）</h4>
+  <p>SAP 提供標準程式 <b>START_REPORT</b>，它接受三個參數，執行時<b>動態</b>算出該叫哪支 Query，就不受 AQ 程式名變動影響。先在 <span class="tcode">SE38</span> 執行 START_REPORT 試跑，確認參數填對，再去 SE93 做成 TCODE。講義的原話是：<b>「確保可以試行成功，再做 SE93。」</b></p>
+
+  <table>
+    <thead><tr><th>參數（Screen Field）</th><th>填什麼</th><th>講義實例</th></tr></thead>
+    <tbody>
+      <tr><td><b>D_SREPOVARI-REPORTTYPE</b></td><td>報表類型，SAP Query 固定填 <b>AQ</b></td><td>AQ</td></tr>
+      <tr><td><b>D_SREPOVARI-REPORT</b></td><td><b>SQ03 使用者群組</b>，補空白到 12 碼；<b>第 13 碼填查詢區</b>（全域區填 <b>G</b>）</td><td><code>ZCERPS      G</code><br><code>ZVBAP_QALS  G</code><br><code>ZVBAK_KNA1  G</code></td></tr>
+      <tr><td><b>D_SREPOVARI-EXTDREPORT</b></td><td><b>SQ01 的 Query 名稱</b></td><td><code>QUE_KNV1</code><br><code>ZVBAP_QALS</code><br><code>QUE_VBAK_KNA1</code></td></tr>
+    </tbody>
+  </table>
+
+  <div class="warn"><b>老師特別提醒：「參數的長度要注意。」</b>D_SREPOVARI-REPORT 是「12 碼使用者群組 ＋ 第 13 碼查詢區」。用講義的尺規對照：<br>
+  <code>1234567890123</code><br>
+  <code>ZCERPS      G</code>（ZCERPS 6 碼 ＋ 6 個空白 ＋ G）<br>
+  <code>ZERP300     G</code>（ZERP300 7 碼 ＋ 5 個空白 ＋ G）<br>
+  <code>ZVBAP_QALS  G</code>（ZVBAP_QALS 10 碼 ＋ 2 個空白 ＋ G）<br>
+  空白數算錯，執行時就會說找不到 Query。用 SE38 試跑時，把游標放到欄位上按 F1 → 技術資訊，可確認欄位長度。</div>
+
+  <p><b>SE93 建立參數交易的步驟</b><span class="src">（依講義步驟整理）</span>：</p>
+  <ol>
+    <li><span class="tcode">SE93</span> → 輸入交易碼（講義：<b>ZVBAP_QALS2</b>、<b>ZQUE_VBAK_KNA1</b>，建議命名 <b>ZERP###A</b>）→ 建立。</li>
+    <li>選 <b>「具有參數的交易（Transaction with parameters / parameter transaction）」</b>。</li>
+    <li><b>Transaction</b> 填 <b>START_REPORT</b>；勾選 <b>「Skip initial screen（略過起始畫面）」</b>與 <b>「Inherit GUI attributes」</b>。</li>
+    <li>下方參數表填入三行：<code>D_SREPOVARI-REPORTTYPE = AQ</code>、<code>D_SREPOVARI-REPORT = &lt;使用者群組&gt;+G</code>、<code>D_SREPOVARI-EXTDREPORT = &lt;Query 名&gt;</code>。</li>
+    <li>存檔、掛傳輸請求、測試。</li>
+  </ol>
+
+  <div class="note">講義 08 節的兩組完整設定：<br>
+  <b>ZVBAP_QALS2</b>：REPORTTYPE = AQ、REPORT = <code>ZVBAP_QALS  G</code>、EXTDREPORT = <code>ZVBAP_QALS</code>（2024/11/07）<br>
+  <b>ZQUE_VBAK_KNA1</b>：REPORTTYPE = AQ、REPORT = <code>ZVBAK_KNA1  G</code>、EXTDREPORT = <code>QUE_VBAK_KNA1</code>（2025/03/21）<br>
+  另有一組示範 REPORT = <code>ZERP300     G</code>、EXTDREPORT = <code>ZERP300</code>。</div>
+
+  <h3 id="ch01-4-11">11. 從 Query 畢業：把它變成自己的 Z 程式</h3>
+  <p>Query 做到一個程度就會撞牆：要加複雜判斷、要串多個資料來源、要效能、要寫測試。這時有三條路。</p>
+
+  <p><b>路一：直接 SUBMIT 那支 AQ 程式，把結果撈回來加工。</b>適合「Query 已經對了，只是要多做一點事」。</p>
+
+  <pre><code class="abap">REPORT zque_wrapper.
+
+SELECT-OPTIONS s_vbeln FOR vbak-vbeln.
+
+START-OF-SELECTION.
+
+  " 把選擇條件組成 RSPARAMS，動態丟給 Query 產生的程式
+  DATA(lt_seltab) = VALUE rsparams_tt(
+    FOR ls_r IN s_vbeln (
+      selname = 'SP$00001'          " Query 選擇畫面上的欄位名，可在 SE38 顯示程式時查到
+      kind    = 'S'
+      sign    = ls_r-sign
+      option  = ls_r-option
+      low     = ls_r-low
+      high    = ls_r-high ) ).
+
+  SUBMIT ('AQZZZ000========QUE_VBAK_KNA1=')
+    WITH SELECTION-TABLE lt_seltab
+    AND RETURN.</code></pre>
+
+  <div class="warn">用 <code>SUBMIT</code> 呼叫 AQ 程式的最大問題，是<b>程式名與選擇欄位名（SP$00001、SP$00002…）都不穩定</b>，Query 一改就可能對不上。只適合短期救急。</div>
+
+  <p><b>路二：用標準函數 RSAQ_QUERY_CALL 取得 Query 的資料。</b>比 SUBMIT 乾淨得多，因為你傳的是「使用者群組 ＋ Query 名 ＋ 查詢區」這種穩定的邏輯名稱，而不是 30 碼的實體程式名。</p>
+
+  <pre><code class="abap">REPORT zque_call.
+
+START-OF-SELECTION.
+
+  DATA lt_seltab  TYPE TABLE OF rsparams.
+  DATA lt_listdsc TYPE TABLE OF rsaqldesc.
+  DATA lr_data    TYPE REF TO data.
+
+  TRY.
+      CALL FUNCTION 'RSAQ_QUERY_CALL'
+        EXPORTING
+          workspace       = 'G'                 " 'G' = 全域區；空白 = 標準區
+          query           = 'QUE_VBAK_KNA1'     " SQ01 的 Query 名
+          usergroup       = 'ZVBAK_KNA1'        " SQ03 的使用者群組
+          skip_selscreen  = 'X'                 " 不顯示選擇畫面
+          data_to_memory  = 'X'                 " 資料放記憶體，不直接輸出清單
+        IMPORTING
+          ref_to_ldata    = lr_data             " 指向結果內表的參考
+        TABLES
+          selection_table = lt_seltab           " 選擇條件
+          listdesc        = lt_listdsc.         " 欄位描述
+
+      " 用 Field Symbol 接住動態產生的結果內表
+      ASSIGN lr_data-&gt;* TO FIELD-SYMBOL(&lt;lt_result&gt;).
+      IF &lt;lt_result&gt; IS ASSIGNED.
+        cl_salv_table=&gt;factory(
+          IMPORTING r_salv_table = DATA(lo_alv)
+          CHANGING  t_table      = &lt;lt_result&gt; ).
+        lo_alv-&gt;get_functions( )-&gt;set_all( ).
+        lo_alv-&gt;display( ).
+      ENDIF.
+
+    CATCH cx_root INTO DATA(lx_err).
+      MESSAGE lx_err-&gt;get_text( ) TYPE 'E'.
+  ENDTRY.</code></pre>
+
+  <p><b>路三（正解）：把 InfoSet 的 Join 直接改寫成一支自己的 ABAP 報表。</b>Query 只是幫你想清楚了資料模型，真正要長期維護的東西，還是自己寫比較好。下面把講義的 <b>ZVBAK_KNA1</b>（訂單抬頭＋客戶主檔）寫成現代 ABAP：</p>
+
+  <pre><code class="abap">REPORT zsd_order_customer.
+
+TABLES: vbak.   " 僅為了讓 SELECT-OPTIONS 取得型別參考
+
+SELECT-OPTIONS: s_vbeln FOR vbak-vbeln,
+                s_kunnr FOR vbak-kunnr,
+                s_erdat FOR vbak-erdat.
+PARAMETERS: p_vkorg TYPE vbak-vkorg.
+
+START-OF-SELECTION.
+
+  " InfoSet ZVBAK_KNA1 的 Join：VBAK-KUNNR = KNA1-KUNNR
+  SELECT h~vbeln,
+         h~erdat,
+         h~auart,          " 訂單類型
+         h~vkorg,          " 銷售組織
+         h~vtweg,
+         h~spart,
+         h~kunnr,          " 售達方
+         h~netwr,          " 淨值
+         h~waerk,          " 幣別
+         c~name1 AS cust_name,
+         c~ort01 AS city,
+         c~land1 AS country
+    FROM vbak AS h
+    INNER JOIN kna1 AS c ON c~kunnr = h~kunnr
+   WHERE h~vbeln IN @s_vbeln
+     AND h~kunnr IN @s_kunnr
+     AND h~erdat IN @s_erdat
+     AND ( @p_vkorg IS INITIAL OR h~vkorg = @p_vkorg )
+   ORDER BY h~vbeln
+    INTO TABLE @DATA(lt_order).
+
+  IF lt_order IS INITIAL.
+    MESSAGE |查無符合條件的訂單| TYPE 'S' DISPLAY LIKE 'W'.
+    RETURN.
+  ENDIF.
+
+  TRY.
+      cl_salv_table=&gt;factory(
+        IMPORTING r_salv_table = DATA(lo_alv)
+        CHANGING  t_table      = lt_order ).
+
+      lo_alv-&gt;get_functions( )-&gt;set_all( ).
+      lo_alv-&gt;get_columns( )-&gt;set_optimize( abap_true ).
+      lo_alv-&gt;get_display_settings( )-&gt;set_list_header( |訂單主檔與客戶清單（共 { lines( lt_order ) } 筆）| ).
+      lo_alv-&gt;display( ).
+
+    CATCH cx_salv_msg INTO DATA(lx_salv).
+      MESSAGE lx_salv-&gt;get_text( ) TYPE 'E'.
+  ENDTRY.</code></pre>
+
+  <p>同樣的邏輯套用在講義第一個實作 <b>ZKNA1_KNB1</b>（客戶編號與帳號關聯）：</p>
+
+  <pre><code class="abap">REPORT zfi_customer_account.
+
+TABLES kna1.
+
+SELECT-OPTIONS: s_kunnr FOR kna1-kunnr.
+PARAMETERS      p_bukrs TYPE knb1-bukrs OBLIGATORY.
+
+START-OF-SELECTION.
+
+  " InfoSet ZKNA1_KNB1：KNA1（一般資料）＋ KNB1（公司代碼資料）
+  SELECT a~kunnr,
+         a~name1,
+         a~land1,
+         a~ort01,
+         b~bukrs,          " 公司代碼
+         b~akont,          " 統馭科目（客戶對應的總帳科目）
+         b~zterm,          " 付款條件
+         b~zwels,          " 付款方式
+         b~loevm AS del_flag
+    FROM kna1 AS a
+    INNER JOIN knb1 AS b ON b~kunnr = a~kunnr
+   WHERE a~kunnr IN @s_kunnr
+     AND b~bukrs = @p_bukrs
+   ORDER BY a~kunnr
+    INTO TABLE @DATA(lt_cust).
+
+  cl_salv_table=&gt;factory(
+    IMPORTING r_salv_table = DATA(lo_alv)
+    CHANGING  t_table      = lt_cust ).
+  lo_alv-&gt;get_functions( )-&gt;set_all( ).
+  lo_alv-&gt;display( ).</code></pre>
+
+  <div class="tip">實務流程建議：<b>SQVI 驗證 Join → SQ02/SQ01 做成正式 Query 給使用者先用 → 需求穩定後再改寫成 Z 程式或 CDS View</b>。這樣既快又不會做白工。</div>
+
+  <h3 id="ch01-4-12">12. SQ00、SQ99 與 Query 家族 TCODE 一覽</h3>
+  <table>
+    <thead><tr><th>TCODE</th><th>名稱</th><th>說明</th></tr></thead>
+    <tbody>
+      <tr><td>SQ00</td><td>SAP Query: Start Queries</td><td>執行 Query。講義原話：「Sq00 : to start queries and Sq01 : to maintain queries，其實畫面長得一樣」</td></tr>
+      <tr><td>SQ01</td><td>SAP Query: Maintain Queries</td><td>建立與維護 Query（主戰場）</td></tr>
+      <tr><td>SQ02</td><td>SAP Query: Maintain InfoSet</td><td>建立資料來源與欄位群組</td></tr>
+      <tr><td>SQ03</td><td>SAP Query: Maintain User Groups</td><td>使用者群組與 InfoSet 指派</td></tr>
+      <tr><td>SQ07</td><td>SAP Query: Language Comparison</td><td>Query 文字的多語言比對／翻譯</td></tr>
+      <tr><td>SQVI</td><td>QuickViewer</td><td>個人用快速報表</td></tr>
+      <tr><td>SE93</td><td>Maintain Transaction</td><td>把 Query 掛成 TCODE</td></tr>
+      <tr><td>SE16H</td><td>General Table Display (HANA)</td><td>HANA 版資料瀏覽器，支援群組、加總、多表關聯</td></tr>
+    </tbody>
+  </table>
+
+  <div class="note"><b>關於 SQ99</b>：講義標題把 SQ99 與 QuickViewer、InfoSet Query 並列。要注意的是，SAP Query 家族的標準交易碼是 SQ00～SQ03、SQ07～SQ11 與 SQVI，<b>SQ99 在多數標準系統中查不到</b>；若你的系統有 SQ99，通常是客戶自建、指向 InfoSet Query（Ad Hoc Query）的捷徑。要用 InfoSet Query，正規入口是在 <span class="tcode">SQ01</span> 選定 InfoSet 後按「InfoSet Query」按鈕（HR 模組則是 Ad Hoc Query／PQAH）。InfoSet Query 的特色是「拖拉欄位、即時看筆數」的探索式介面，不需要先設計版面。</div>
+
+  <p><b>Query 跳轉（Drill-down，講義 10-2）</b>：在 SQ01 的「基本清單」設計畫面，可以用選單「Goto → 報表指派（Report assignment）」把某個欄位連結到另一支報表或交易（例如點訂單號跳 VA03、點客戶號跳 XD03）。這樣使用者從清單可以直接鑽進單據，是 Query 最受歡迎的功能之一。<span class="src">（依講義步驟整理）</span></p>
+
+  <h3 id="ch01-4-13">13. Report Painter / Report Writer：另一條不寫程式的路</h3>
+  <p>SAP 還有另一套「不寫程式」的報表工具，方向完全不同，常被拿來跟 SAP Query 混淆。</p>
+
+  <table>
+    <thead><tr><th>比較項目</th><th>SAP Query / SQVI</th><th>Report Painter / Report Writer</th></tr></thead>
+    <tbody>
+      <tr><td>TCODE</td><td>SQ00～SQ03、SQVI</td><td>GRR1／GRR2／GRR3（Painter）、GR31／GR32／GR33（Writer）、GS01 建 Set、GR21 建 Library</td></tr>
+      <tr><td>資料來源</td><td>任意 DDIC 表格、View、邏輯資料庫</td><td>只讀「報表表格（Report Table）」——FI-SL／CO 的彙總表，如 GLPCT、COSP、COSS、CCSS</td></tr>
+      <tr><td>輸出形狀</td><td><b>清單式</b>（一列一筆明細）</td><td><b>矩陣式</b>（列＝科目／成本要素，欄＝期間、實際／預算／差異）</td></tr>
+      <tr><td>典型用途</td><td>訂單清單、客戶清單、檢驗批清單</td><td>損益表、成本中心報表、預算 vs 實際差異分析</td></tr>
+      <tr><td>學習難度</td><td>低</td><td>中高（要懂 Library、Set、Characteristic、Key Figure）</td></tr>
+    </tbody>
+  </table>
+
+  <div class="tip">選擇口訣：<b>「要看明細清單用 SAP Query；要看期間對比的財務矩陣用 Report Painter。」</b>Report Writer 是 Report Painter 的底層（Painter 是所見即所得的介面，Writer 是原始的列／欄定義），Painter 做不出來的才降到 Writer。</div>
+
+  <div class="warn">S/4HANA 上 CO/FI 的資料集中到 <b>ACDOCA</b>，很多舊的 Report Painter 報表（讀 COSP／COSS／GLT0）在 Migration 後會抓不到資料或抓錯。S/4 的建議路線是 <b>FGI0／FGI1（Drilldown Report）</b>或直接用 Fiori 的 Embedded Analytics（例如 Financial Statement 系列 App），而不是繼續加 Report Painter。</div>
+
+  <h3 id="ch01-4-14">14. S/4HANA 補充：什麼時候該改用 CDS View ＋ Fiori</h3>
+  <p>SAP Query 在 S/4HANA 1809 之後仍然可以用，SAP 也沒有宣告停用，但它已經是「classic」工具。S/4 的官方報表路線是 <b>CDS View → OData → Fiori Elements</b>，也就是 Embedded Analytics。</p>
+
+  <p><b>把 InfoSet 的 Join 改寫成 CDS View</b>（用 ADT／Eclipse 建立 Data Definition）：</p>
+
+  <pre><code class="abap">@AbapCatalog.sqlViewName: 'ZVSDORDCUST'
+@AbapCatalog.compiler.compareFilter: true
+@AccessControl.authorizationCheck: #CHECK
+@EndUserText.label: '銷售訂單 + 客戶（取代 InfoSet ZVBAK_KNA1）'
+define view Z_I_SalesOrderCustomer
+  as select from vbak as SalesOrder
+    inner join   kna1 as Customer
+      on SalesOrder.kunnr = Customer.kunnr
+{
+  key SalesOrder.vbeln          as SalesOrderId,
+      SalesOrder.erdat          as CreationDate,
+      SalesOrder.auart          as OrderType,
+      SalesOrder.vkorg          as SalesOrganization,
+      SalesOrder.kunnr          as SoldToParty,
+      Customer.name1            as CustomerName,
+      Customer.land1            as Country,
+      @Semantics.amount.currencyCode: 'Currency'
+      SalesOrder.netwr          as NetAmount,
+      @Semantics.currencyCode: true
+      SalesOrder.waerk          as Currency
+}</code></pre>
+
+  <p>再加上分析註解，就能直接被 Fiori 的<b>分析清單頁（Analytical List Page）</b>與 Query Browser 使用：</p>
+
+  <pre><code class="abap">@AbapCatalog.sqlViewName: 'ZVSDORDCUBE'
+@Analytics.dataCategory: #CUBE           " 宣告為分析用的 Cube
+@AccessControl.authorizationCheck: #CHECK
+@EndUserText.label: '銷售訂單分析 Cube'
+define view Z_C_SalesOrderCube
+  as select from Z_I_SalesOrderCustomer
+{
+      @ObjectModel.foreignKey.association: '_Customer'
+  key SalesOrderId,
+      @Consumption.filter.selectionType: #INTERVAL
+      @Consumption.filter.mandatory: true
+      CreationDate,
+      SalesOrganization,
+      SoldToParty,
+      CustomerName,
+      Country,
+      @DefaultAggregation: #SUM          " 金額預設加總
+      @Semantics.amount.currencyCode: 'Currency'
+      NetAmount,
+      @Semantics.currencyCode: true
+      Currency
+}</code></pre>
+
+  <div class="note">S/4HANA 上的「不寫程式報表」新選項：<br>
+  <b>Custom CDS Views</b>（Fiori App，線上拉關聯建 View）、<b>View Browser（F2170）</b>找現成的標準 CDS View、<b>Query Browser（F1068）</b>直接執行分析型 Query、<b>Custom Analytical Queries（F1572）</b>拉出自己的分析報表、<b>KPI Modeler</b> 做卡片與磚。這幾支 App 才是 S/4 版的 SQ01。</div>
+
+  <table>
+    <thead><tr><th>情境</th><th>建議工具</th><th>理由</th></tr></thead>
+    <tbody>
+      <tr><td>臨時、一次性、只有自己看</td><td>SE16H 或 SQVI</td><td>五分鐘搞定，不留技術債</td></tr>
+      <tr><td>部門共用、GUI 使用者、ECC 沿用</td><td>SQ03/SQ02/SQ01（建在全域區）</td><td>可授權、可傳輸、免開發</td></tr>
+      <tr><td>需要複雜計算、多來源、效能調校、單元測試</td><td>自己寫 ABAP ＋ CL_SALV_TABLE</td><td>Query 的 Code 區段撐不住</td></tr>
+      <tr><td>要重複被多個報表／App／介面使用</td><td>CDS View</td><td>一次建模、處處可用（ABAP SQL、OData、Analytics）</td></tr>
+      <tr><td>使用者要在 Fiori Launchpad 上看、要下鑽、要圖表</td><td>CDS Cube ＋ Analytical List Page / Query Browser</td><td>Embedded Analytics 直接讀即時資料，免 BW</td></tr>
+      <tr><td>要對外提供 API</td><td>CDS ＋ RAP／OData Service</td><td>Query 沒有介面能力</td></tr>
+    </tbody>
+  </table>
+
+  <div class="warn"><b>S/4HANA 上做 InfoSet 的兩個地雷：</b>
+  <br>1. <b>MKPF／MSEG 與 BKPF／BSEG 在 S/4 已改為相容視圖</b>（實體表為 <b>MATDOC</b> 與 <b>ACDOCA</b>）。把它們拉進 InfoSet Join 通常還能查，但效能可能非常差，因為每次都要即時組出相容視圖。物料憑證改查 MATDOC、會計行項目改查 ACDOCA 或標準 CDS View。
+  <br>2. <b>VBUK／VBUP 在 S/4 已被移除</b>（狀態欄位併入 VBAK／VBAP）。ECC 沿用過來的 InfoSet 若含 VBUK/VBUP，升級後一定要重做。
+  <br>3. 部分版本可以把 CDS View 的 SQL View 名稱當成一般 View 放進 InfoSet；但新式（不產生 SQL View）的 CDS 就不行，這時只能改寫程式。</div>
+
+  <h3 id="ch01-4-15">15. 常用 SAP 標準表速查（做 InfoSet 前先背起來）</h3>
+  <p>講義 10-5 節整理了一份標準表清單，這是做 Join 的彈藥庫，完整保留如下。</p>
+
+  <h4>SD 主資料：客戶主檔</h4>
+  <table>
+    <thead><tr><th>資料表</th><th>說明</th></tr></thead>
+    <tbody>
+      <tr><td>KNA1</td><td>客戶主檔的一般資料（全公司共用）</td></tr>
+      <tr><td>KNB1</td><td>客戶主檔公司代碼資料（含統馭科目 AKONT）</td></tr>
+      <tr><td>KNBK</td><td>客戶主檔銀行明細</td></tr>
+      <tr><td>KNVK</td><td>客戶主要聯繫夥伴</td></tr>
+      <tr><td>KNVV</td><td>客戶主檔銷售資料</td></tr>
+      <tr><td>KNVP</td><td>客戶主檔夥伴功能</td></tr>
+    </tbody>
+  </table>
+
+  <h4>SD 主資料：價格條件</h4>
+  <table>
+    <thead><tr><th>資料表</th><th>說明</th></tr></thead>
+    <tbody>
+      <tr><td>KONH</td><td>條件（抬頭）</td></tr>
+      <tr><td>KONP</td><td>條件（項目）</td></tr>
+      <tr><td>KONV</td><td>條件（交易資料）</td></tr>
+      <tr><td>KOND</td><td>條件（資料）</td></tr>
+    </tbody>
+  </table>
+
+  <div class="warn">S/4HANA：<b>KONV 已被 PRCD_ELEMENTS</b> 取代（KONV 保留為相容視圖）。新程式與新 InfoSet 請直接用 PRCD_ELEMENTS。</div>
+
+  <h4>SD 憑證：訂單、交貨、發票</h4>
+  <table>
+    <thead><tr><th>資料表</th><th>說明</th></tr></thead>
+    <tbody>
+      <tr><td>VBAK / VBAP</td><td>銷售憑證抬頭 / 行項目資料</td></tr>
+      <tr><td>VBUK / VBUP</td><td>銷售憑證抬頭狀態 / 項目狀態（<b>S/4 已移除，狀態併入 VBAK/VBAP</b>）</td></tr>
+      <tr><td>VBPA</td><td>銷售憑證夥伴</td></tr>
+      <tr><td>VBEP</td><td>銷售憑證排程行資料</td></tr>
+      <tr><td>LIKP / LIPS</td><td>交貨單抬頭 / 行項目</td></tr>
+      <tr><td>VBRK / VBRP</td><td>發票（Billing）抬頭 / 行項目</td></tr>
+    </tbody>
+  </table>
+
+  <h4>MM 主資料：物料</h4>
+  <table>
+    <thead><tr><th>資料表</th><th>說明</th></tr></thead>
+    <tbody>
+      <tr><td>MARA</td><td>物料一般資料</td></tr>
+      <tr><td>MAKT</td><td>物料說明（依語言）</td></tr>
+      <tr><td>MARC</td><td>物料的工廠資料</td></tr>
+      <tr><td>MARD</td><td>物料的儲存地點資料（庫存）</td></tr>
+      <tr><td>MBEW</td><td>物料評價（成本）</td></tr>
+      <tr><td>MVKE</td><td>物料銷售視圖資料</td></tr>
+    </tbody>
+  </table>
+
+  <h4>MM 主資料：供應商</h4>
+  <table>
+    <thead><tr><th>資料表</th><th>說明</th></tr></thead>
+    <tbody>
+      <tr><td>LFA1</td><td>供應商主檔（一般）</td></tr>
+      <tr><td>LFB1</td><td>供應商主檔（公司代碼）</td></tr>
+      <tr><td>LFB5</td><td>供應商主檔（催款資料）</td></tr>
+      <tr><td>LFM1</td><td>供應商採購組織資料</td></tr>
+      <tr><td>LFM2</td><td>供應商採購資料</td></tr>
+      <tr><td>LFBK</td><td>供應商銀行明細</td></tr>
+    </tbody>
+  </table>
+
+  <h4>MM 憑證：採購與物料異動</h4>
+  <table>
+    <thead><tr><th>資料表</th><th>說明</th></tr></thead>
+    <tbody>
+      <tr><td>EINA / EINE</td><td>採購資訊記錄：一般資料 / 採購組織資料</td></tr>
+      <tr><td>EKKO / EKPO</td><td>採購訂單抬頭 / 行項目</td></tr>
+      <tr><td>EKET</td><td>交貨計畫（Schedule Lines）</td></tr>
+      <tr><td>EKKN</td><td>採購憑證的帳戶設定</td></tr>
+      <tr><td>EKPA</td><td>採購夥伴功能</td></tr>
+      <tr><td>EBAN / EBKN</td><td>採購申請 / 採購申請帳戶設定</td></tr>
+      <tr><td>MKPF / MSEG</td><td>物料憑證抬頭 / 行項目（<b>S/4 實體表為 MATDOC</b>）</td></tr>
+    </tbody>
+  </table>
+
+  <h4>FI / CO 常用透明表</h4>
+  <table>
+    <thead><tr><th>資料表</th><th>說明</th></tr></thead>
+    <tbody>
+      <tr><td>SKA1</td><td>總帳科目主檔（科目表層級）</td></tr>
+      <tr><td>BNKA</td><td>銀行主檔</td></tr>
+      <tr><td>BKPF / BSEG</td><td>會計憑證抬頭 / 行項目（<b>S/4 明細集中在 ACDOCA</b>）</td></tr>
+      <tr><td>BSAD / BSID</td><td>已清 / 未清應收帳款（S/4 為 CDS 相容視圖）</td></tr>
+      <tr><td>BSAK / BSIK</td><td>已清 / 未清應付帳款</td></tr>
+      <tr><td>BSAS / BSIS</td><td>已清 / 未清總帳科目</td></tr>
+      <tr><td>TKA01 / TKA02</td><td>成本控制範圍 / 成本控制範圍分配</td></tr>
+      <tr><td>CSKS / CSKT</td><td>成本中心主檔 / 成本中心說明文字</td></tr>
+      <tr><td>CRCO</td><td>工作中心對成本中心的分配</td></tr>
+      <tr><td>KALO</td><td>成本核算運行：成本核算對象</td></tr>
+      <tr><td>KANZ</td><td>銷售訂單項目的成本核算對象分配</td></tr>
+      <tr><td>COSP</td><td>CO 對象：外部記帳的成本總計</td></tr>
+      <tr><td>COEP / COBK</td><td>CO 物件：期間別行項目 / 憑證抬頭</td></tr>
+      <tr><td>COST</td><td>CO 物件：價格總計</td></tr>
+      <tr><td>FAGLFLEXA / FAGLFLEXT</td><td>新總帳實際行項目 / 總計（<b>S/4 由 ACDOCA 取代</b>）</td></tr>
+    </tbody>
+  </table>
+
+  <h4>QM 品質管理</h4>
+  <table>
+    <thead><tr><th>資料表</th><th>說明</th></tr></thead>
+    <tbody>
+      <tr><td>QALS</td><td>檢驗批記錄（本章 ZVBAP_QALS 實作的主角）</td></tr>
+      <tr><td>QAVE</td><td>檢驗處理：使用決策（UD）</td></tr>
+      <tr><td>QAMV</td><td>檢驗處理的特性說明</td></tr>
+      <tr><td>QAMR</td><td>檢驗處理的特性結果</td></tr>
+      <tr><td>QASR</td><td>檢驗特性的採樣結果</td></tr>
+    </tbody>
+  </table>
+
+  <h4>PP 生產計劃</h4>
+  <table>
+    <thead><tr><th>資料表</th><th>說明</th></tr></thead>
+    <tbody>
+      <tr><td>AUFK</td><td>訂單主檔（工單／內部訂單共用）</td></tr>
+      <tr><td>AFKO</td><td>PP 訂單抬頭資料</td></tr>
+      <tr><td>AFPO</td><td>訂單項目</td></tr>
+      <tr><td>AFVC</td><td>訂單的工序</td></tr>
+      <tr><td>AFRU</td><td>訂單確認（報工）</td></tr>
+      <tr><td>AUFM</td><td>針對訂單的貨物移動</td></tr>
+    </tbody>
+  </table>
+
+  <h4>狀態（Status）相關表</h4>
+  <table>
+    <thead><tr><th>資料表</th><th>說明</th></tr></thead>
+    <tbody>
+      <tr><td>JEST</td><td>個別物件狀態（輸入 OR00000＋工單號可查該工單所有狀態編號）</td></tr>
+      <tr><td>TJ01 / TJ01T</td><td>使用者自訂狀態 / 其文字（講義寫 JJ01T，正確表名為 TJ01T）</td></tr>
+      <tr><td>TJ02 / TJ02T</td><td>系統狀態 / 系統狀態文字</td></tr>
+      <tr><td>JSTO</td><td>狀態物件資訊（可用 order type 的 status profile 查詢）</td></tr>
+      <tr><td>TJ30 / TJ30T</td><td>使用者狀態（依狀態設定檔）/ 其文字</td></tr>
+    </tbody>
+  </table>
+
+  <h4>使用者與固定資產</h4>
+  <table>
+    <thead><tr><th>資料表</th><th>說明</th></tr></thead>
+    <tbody>
+      <tr><td>USR21</td><td>使用者名稱與地址碼的對應</td></tr>
+      <tr><td>USR02</td><td>登入資料（密碼、鎖定、有效期）</td></tr>
+      <tr><td>ADRP</td><td>個人（中央地址管理）</td></tr>
+      <tr><td>ANLA</td><td>資產主檔區段</td></tr>
+      <tr><td>ANLC</td><td>資產價值欄位（年度）</td></tr>
+      <tr><td>ANLP</td><td>資產期間價值</td></tr>
+      <tr><td>ANEP / ANEK</td><td>資產憑證行項目 / 資產過帳憑證抬頭</td></tr>
+      <tr><td>ANLZ</td><td>資產的時間相依配置（成本中心、廠區等）</td></tr>
+      <tr><td>T087</td><td>評估群組</td></tr>
+    </tbody>
+  </table>
+
+  <div class="tip">找表的萬用技巧，比背表名更重要：<b>在畫面欄位上按 F1 → 技術資訊（Technical Information）</b>，直接看到表名與欄位名；或用 <span class="tcode">SE11</span> 以 <code>*KNA*</code> 這種萬用字元搜尋；或開 <span class="tcode">ST05</span> SQL Trace 錄一段標準交易，看它到底讀了哪些表。</div>
+
+  <h3 id="ch01-4-16">16. 傳輸、授權與運維檢查表</h3>
+  <ul>
+    <li><b>傳輸</b>：全域區物件 → 掛傳輸請求走 STMS；標準區物件 → 用 <b>RSAQR3TR</b> 匯出／匯入。傳輸順序一定是 <b>使用者群組 → InfoSet → Query</b>，順序反了會因為找不到相依物件而失敗。</li>
+    <li><b>授權</b>：核心權限物件是 <b>S_QUERY</b>（02＝維護、23＝傳輸），加上使用者要被指派到對應的 SQ03 使用者群組；此外報表讀到的資料表仍受 <b>S_TABU_DIS／S_TABU_NAM</b> 與模組權限（如 V_VBAK_VKO）管制。權限出問題先跑 <span class="tcode">SU53</span>。</li>
+    <li><b>使用者參數</b>：<b>AQW</b>＝預設查詢區（填 G 進全域區）。</li>
+    <li><b>升級後</b>：Query 產生的 AQ 程式需要重新產生，否則 TCODE 會 dump <b>LOAD_PROGRAM_NOT_FOUND</b>。</li>
+    <li><b>命名</b>：使用者群組、InfoSet、Query 一律 Z 開頭，Query 建議 <b>QUE_</b> 前綴，TCODE 用 <b>Z</b> 開頭。</li>
+    <li><b>文件化</b>：把「TCODE ↔ Query ↔ InfoSet ↔ 使用者群組 ↔ AQ 程式名」做成一張對照表存起來。這張表在別人接手時價值連城。</li>
+  </ul>
+
+  <p>最後給一段小工具程式，把系統裡所有 AQ 開頭的程式列出來並解碼，一次盤點所有 Query：</p>
+
+  <pre><code class="abap">REPORT zaq_inventory.
+
+START-OF-SELECTION.
+
+  " 找出所有由 SAP Query 產生的報表程式
+  SELECT name AS progname
+    FROM trdir
+   WHERE name LIKE 'AQ%'
+     AND subc = '1'                 " 1 = 可執行報表
+   ORDER BY name
+    INTO TABLE @DATA(lt_prog).
+
+  TYPES: BEGIN OF ty_out,
+           progname  TYPE progname,
+           usergroup TYPE aqadef-bgname,
+           query     TYPE aqadef-quname,
+           infoset   TYPE aqadef-isname,
+         END OF ty_out.
+  DATA lt_out TYPE STANDARD TABLE OF ty_out.
+
+  LOOP AT lt_prog ASSIGNING FIELD-SYMBOL(&lt;ls_prog&gt;).
+    CLEAR: DATA(lv_grp), DATA(lv_qry), DATA(lv_iset).
+    CALL FUNCTION 'RSAQ_DECODE_REPORT_NAME'
+      EXPORTING program   = &lt;ls_prog&gt;-progname
+      IMPORTING usergroup = lv_grp
+                query     = lv_qry
+                infoset   = lv_iset
+      EXCEPTIONS OTHERS    = 1.
+    CHECK sy-subrc = 0.
+    APPEND VALUE #( progname  = &lt;ls_prog&gt;-progname
+                    usergroup = lv_grp
+                    query     = lv_qry
+                    infoset   = lv_iset ) TO lt_out.
+  ENDLOOP.
+
+  cl_salv_table=&gt;factory(
+    IMPORTING r_salv_table = DATA(lo_alv)
+    CHANGING  t_table      = lt_out ).
+  lo_alv-&gt;get_functions( )-&gt;set_all( ).
+  lo_alv-&gt;get_display_settings( )-&gt;set_list_header( |系統內 SAP Query 盤點（{ lines( lt_out ) } 支）| ).
+  lo_alv-&gt;display( ).</code></pre>
+
+  <div class="note">上面的 <code>CLEAR: DATA(...)</code> 只是為了示意；實務上請把三個變數在 LOOP 外用 <code>DATA lv_grp TYPE aqadef-bgname.</code> 宣告好，迴圈內用 <code>CLEAR</code> 即可。舊式 Function Module 的 IMPORTING 參數不支援內嵌宣告。</div>
+
+  <h3 id="ch01-4-qa">練習與自我檢核</h3>
+  <ol>
+    <li><b>（講義 11 節）SQVI 品質檢驗</b>：用 SQVI 建 <b>ZERP###V</b>，聯結 <b>VBAP</b> 與 <b>QALS</b>，做出「待出貨訂單＋檢驗批狀態」清單。<br><i>提示</i>：資料來源選「表格聯結」，Join 條件 MATNR＋WERKS；輸出欄位至少要有 VBELN、POSNR、MATNR、KWMENG、PRUEFLOS、HERKUNFT、STAT34。做完想想：為什麼這份 QuickView 沒辦法給主管執行？</li>
+    <li><b>（講義 02-1）ZKNA1_KNB1</b>：用 SQ03 建使用者群組、SQ02 建 InfoSet 聯結 KNA1＋KNB1、SQ01 做出「客戶編號 → 統馭科目（AKONT）」對照表。<br><i>提示</i>：KNB1 一定要用 BUKRS 當必填選擇條件，否則跨公司代碼的客戶會出現重複列。</li>
+    <li><b>（講義 02-3 / 03-3）ZVBAK_KNA1 ＋ QUE_VBAK_KNA1</b>：做出訂單抬頭＋客戶名稱報表，並在 SQ01 加上「依銷售組織小計淨值」。<br><i>提示</i>：小計要在「基本清單」畫面對 VKORG 設 Sort，再對 NETWR 勾 Total。</li>
+    <li>把第 3 題的 Query 用 <b>方式二 START_REPORT</b> 掛成 TCODE <b>ZERP###A</b>。<br><i>答案要點</i>：REPORTTYPE＝AQ；REPORT＝使用者群組補空白到 12 碼＋第 13 碼 G；EXTDREPORT＝Query 名。做之前先在 SE38 執行 START_REPORT 試跑成功。</li>
+    <li>找出第 3 題 Query 產生的程式名，並說明它的 30 碼各代表什麼。<br><i>答案要點</i>：SQ01 選單「Query → 其他功能 → 顯示報表名稱」，或用 <b>RSAQ_DECODE_REPORT_NAME</b>；AQ＋區域 2 碼＋使用者群組 12 碼（以＝補滿）＋Query 名 14 碼（以＝補滿）。</li>
+    <li>在 InfoSet 裡加一個附加欄位「未交數量」＝ KWMENG − KLMENG，並讓它只顯示大於 0 的資料。<br><i>答案要點</i>：Extras → 附加欄位 → 型別參考 VBAP-KWMENG；程式寫在 <b>RECORD PROCESSING</b>；過濾用 <code>CHECK</code>。</li>
+    <li>解釋：為什麼在 RECORD PROCESSING 裡寫 <code>SELECT SINGLE maktx FROM makt ...</code> 是壞習慣？該怎麼改？<br><i>答案要點</i>：每筆資料一次 DB 存取；改成 START-OF-SELECTION 一次撈進 HASHED TABLE，或用「附加表格」。</li>
+    <li>你的 Query 在 DEV 100 建好了，PRD 的使用者說看不到。列出三個要檢查的地方。<br><i>答案要點</i>：(a) 建在標準區還是全域區？標準區要跑 RSAQR3TR；(b) 使用者有沒有被指派到該 SQ03 使用者群組；(c) S_QUERY 與資料表權限（SU53）。</li>
+    <li>比較 SAP Query 與 Report Painter 的差異，各舉一個最適合的報表需求。<br><i>答案要點</i>：Query＝明細清單（訂單清單）；Report Painter＝期間矩陣（成本中心實際 vs 預算）。</li>
+    <li>在 S/4HANA 上，什麼情況你會選擇「不做 Query，直接建 CDS View」？至少說三個理由。<br><i>答案要點</i>：需要被多處重用／要曝露成 OData 給 Fiori 或外部系統／要進 Embedded Analytics 做下鑽與圖表／要版本控管與傳輸／效能需要 code pushdown。</li>
+    <li>把講義的 <b>ZVBAP_QALS</b> InfoSet 改寫成一支自己的 ABAP 報表（CL_SALV_TABLE），並加上 Left Outer Join 讓沒有檢驗批的訂單也能顯示。<br><i>提示</i>：對照本章第 6 節的程式碼，注意 QALS 的過濾條件要放在 ON 而不是 WHERE。</li>
+    <li>用本章最後的 <b>ZAQ_INVENTORY</b> 概念，盤點你手上系統有幾支 Query、分屬哪些使用者群組，並整理成「TCODE ↔ Query ↔ InfoSet」對照表。</li>
+  </ol>
+</section>

@@ -1,0 +1,82 @@
+<section class="chapter" id="ch00" data-title="總覽：如何使用這座圖書館">
+  <h2>總覽：如何使用這座圖書館</h2>
+  <p class="lede">這是把 <b>Dropbox\09_SAP_AB_ABAP編程</b> 多年累積的教材，整理成可以隨時查閱的 ABAP 線上圖書館。所有程式碼都已改寫為 <b>SAP S/4HANA 1809 以後</b>可直接使用的現代 ABAP 寫法（內嵌宣告、<span class="kw">@</span> 逸出主機變數、建構式運算、CL_SALV_TABLE、class-based exception）。</p>
+
+  <div class="meta">
+    <div><b>資料來源</b>00_SAP_DOC 十六本自編教材（ABAP_01_1 ～ ABAP_04_4，2509 版）</div>
+    <div><b>語法基準</b>ABAP 7.53 / S/4HANA 1809 以上，並標註 7.54～7.57 才有的語法</div>
+    <div><b>閱讀方式</b>左側選章 → 右側內文；上方搜尋框可全文搜尋；每段程式碼右上可一鍵複製</div>
+  </div>
+
+  <h3 id="ch00-01">1. 四部曲學習路線與原廠教材專區</h3>
+  <table>
+    <thead><tr><th>部</th><th>主題</th><th>學完可以做什麼</th><th>章節</th></tr></thead>
+    <tbody>
+      <tr><td>第一部</td><td>資料字典：讓模組顧問自由自在的飛</td><td>看得懂 SAP 資料結構、會建 Z 表與維護畫面、不寫程式也能出報表</td><td>1-1 ～ 1-4</td></tr>
+      <tr><td>第二部</td><td>內表與 SQL：模組顧問進化成 ABAPER</td><td>寫得出可上線的 ALV 報表，會用 7.40+ 新語法與效能寫法</td><td>2-1 ～ 2-4</td></tr>
+      <tr><td>第三部</td><td>視窗報表與增強：顧問會程式等於空間無限</td><td>設計選擇畫面、OOALV、看得懂並寫得出 User Exit / BAdI</td><td>3-1 ～ 3-4</td></tr>
+      <tr><td>第四部</td><td>進階技巧：目標成為專職的 ABAPER</td><td>介面（RFC/BAPI）、對話式程式、表單、批次匯入與排程</td><td>4-1 ～ 4-4</td></tr>
+      <tr><td>第五部</td><td>原廠教材專區：强晟 19 本筆記 × SAP 原廠教材</td><td>依 SAP 原廠 BC 課程體系（BC400～BC490、BIT750、NET310、SAPNW）逐課查閱，可回查原 PDF 頁碼</td><td><a href="#ch05-0">5-0</a> ～ 5-24</td></tr>
+      <tr><td>第六部</td><td>實戰專題：除錯的絕招</td><td>開發者與顧問都用得上的除錯、錯誤定位、資料追蹤與效能調優實戰流程（取材 L35_SAP调试技术）</td><td><a href="#ch06-1">6-1</a> ～ 6-3</td></tr>
+      <tr><td>第七部</td><td>程式範例庫：ABAP OOP 原則．模式．實踐</td><td>134 支隨書 OOP 範例改寫成現代語法：類別、繼承多型、SOLID 設計原則、設計模式、動態程式與綜合實戰（取材 L36）</td><td><a href="#ch07-1">7-1</a> ～ 7-7</td></tr>
+      <tr><td>第八部</td><td>實戰源碼庫：36 套專案程式</td><td>真實上線的表單、報表、批導、介面與增強程式拆解，逐一改寫成 S/4HANA 寫法並指出原程式的問題（取材 L31）</td><td><a href="#ch08-1">8-1</a> ～ 8-8</td></tr>
+    </tbody>
+  </table>
+
+  <div class="note">第一～四部是依 Casper 自編講義的「教學順序」；<b>第五部</b>則是依 SAP 原廠課程的「課號體系」整理，素材來自 <b>L28_强晟_19本原廠教材筆記_含原廠教材</b>。同一個主題（例如 ALV、BAdI、SmartForms）兩邊都有時，第一～四部偏實戰、第五部偏原廠觀念全貌，章節之間已互相連結。先看 <a href="#ch05-0">5-0 專區導覽</a> 的檔案清冊與學習路線。</div>
+
+  <div class="tip">建議路線：先把 <b>2-2 內表與 ABAP SQL</b> 讀熟（那是整座圖書館的地基），再回頭補 1-2 資料字典，接著 2-3 ALV 就能產出第一支能交付的報表。</div>
+
+  <h3 id="ch00-02">2. 這份文件的體例</h3>
+  <ul>
+    <li><span class="tcode">SE38</span> 這樣的標記代表交易碼，可直接在 SAP 命令列輸入。</li>
+    <li><b>藍底方塊</b>是補充說明、<b>綠底方塊</b>是實務技巧或老師口訣、<b>紅底方塊</b>是 S/4HANA 注意事項或常見錯誤，紅色的請務必看。</li>
+    <li><span class="src">（依講義步驟整理）</span> 代表原講義該處只有截圖，內文是依 SAP 標準流程補寫成可操作的文字步驟。</li>
+    <li>每章最後都有「練習與自我檢核」，題目沿用原教材編號，方便對照舊講義。</li>
+  </ul>
+
+  <h3 id="ch00-03">3. 開發前的三個提醒</h3>
+  <div class="warn"><b>一、HANA 沒有預設排序。</b>同一支 <span class="kw">SELECT</span> 不加 <span class="kw">ORDER BY</span>，在 HANA 上兩次執行可能回傳不同順序。任何「取第一筆」的邏輯（<span class="kw">SELECT SINGLE</span>、<span class="kw">UP TO 1 ROWS</span>、<span class="kw">READ TABLE ... INDEX 1</span>）都必須先明確排序，否則結果會時對時錯。實務上就發生過成本評價同時存在 item category「H」與 cost component「E」兩種角度、程式沒排序而一下抓到 H、一下抓到 E，導致成本忽高忽低的案例。</div>
+  <div class="warn"><b>二、條件用「列舉」比用「區間」安全。</b>選擇條件用區間（<span class="kw">BT</span>）時，比較的是字典序而非業務語意，號碼段不連續、有 ALPHA 前導零、編碼規則改過的時候就會漏抓或多抓；改成逐項列舉（多筆 <span class="kw">EQ</span>）結果才正確。詳見 <a href="#ch03-1">3-1 選擇畫面</a>。</div>
+  <div class="warn"><b>三、先找標準，再想客製。</b>順序永遠是：標準設定 → BAdI／Enhancement Spot → Enhancement Point → 修改標準（Modification）。每往右一步，升級時的維護成本就高一個量級。</div>
+
+  <h3 id="ch00-04">4. 最常用的交易碼</h3>
+  <table>
+    <thead><tr><th>類別</th><th>交易碼</th><th>用途</th></tr></thead>
+    <tbody>
+      <tr><td>開發</td><td>SE38 / SE80 / SE24 / SE37 / SE11 / SE51 / SE41 / SE93</td><td>程式、物件瀏覽器、類別、函數、字典、畫面、選單、交易碼</td></tr>
+      <tr><td>資料</td><td>SE16N / SE16H / SM30 / SM34 / SE54 / SE14</td><td>查表、維護表、維護視圖與表群組、資料庫工具</td></tr>
+      <tr><td>除錯</td><td>/h、SAT、ST05、SE30、ST22、SM21、SDBE</td><td>除錯、執行時間分析、SQL 追蹤、短傾印、系統日誌</td></tr>
+      <tr><td>增強</td><td>CMOD / SMOD / SE18 / SE19 / SE84</td><td>客戶出口專案、BAdI 定義與實作、物件導覽</td></tr>
+      <tr><td>介面</td><td>SM59 / SM58 / SMQ1 / SMQ2 / BAPI / SOAMANAGER</td><td>RFC 目的地、tRFC/qRFC 佇列、BAPI 瀏覽、Web Service</td></tr>
+      <tr><td>批次</td><td>SHDB / SM35 / SM36 / SM37 / SP01</td><td>錄製、批次輸入、排程作業、Spool</td></tr>
+      <tr><td>表單</td><td>SMARTFORMS / SMARTSTYLES / SE71 / SFP / SE78 / NACE</td><td>SmartForms、樣式、SAPscript、Adobe Form、圖檔、輸出決定</td></tr>
+      <tr><td>傳輸</td><td>SE09 / SE10 / SE01 / STMS / SCC1</td><td>傳輸請求與傳輸管理</td></tr>
+    </tbody>
+  </table>
+
+  <h3 id="ch00-05">5. 最常用的資料表（S/4HANA 版）</h3>
+  <table>
+    <thead><tr><th>模組</th><th>資料表</th><th>S/4HANA 變動</th></tr></thead>
+    <tbody>
+      <tr><td>MM 物料</td><td>MARA / MARC / MARD / MBEW / MAKT / MCHB</td><td>MARD、MBEW 等庫存與評價表在 S/4 為相容視圖（NSDM），實體資料在 MATDOC 聚合</td></tr>
+      <tr><td>MM 採購</td><td>EKKO / EKPO / EKET / EKBE / EBAN</td><td>大致不變</td></tr>
+      <tr><td>MM 異動</td><td>MATDOC</td><td>取代 MKPF / MSEG，後兩者保留為相容視圖</td></tr>
+      <tr><td>SD</td><td>VBAK / VBAP / LIKP / LIPS / VBRK / VBRP / PRCD_ELEMENTS</td><td>VBUK / VBUP 已併入 VBAK / VBAP；KONV 改名 PRCD_ELEMENTS</td></tr>
+      <tr><td>FI / CO</td><td>ACDOCA / BKPF / BSEG / SKA1 / SKB1</td><td>ACDOCA 為總帳與明細的單一真相來源，BSIS/BSAS/COEP/GLT0 等已成視圖</td></tr>
+      <tr><td>PP</td><td>AUFK / AFKO / AFPO / AFVC / RESB / STPO / MAST</td><td>大致不變</td></tr>
+      <tr><td>主檔</td><td>KNA1 / LFA1 / BUT000 / BUT020</td><td>客戶與供應商統一走 Business Partner（BP），XD01 / XK01 停用</td></tr>
+      <tr><td>組織</td><td>T001 / T001W / T001L / T001K / TCURR</td><td>大致不變</td></tr>
+    </tbody>
+  </table>
+
+  <h3 id="ch00-qa">6. 這份圖書館還可以怎麼長大</h3>
+  <p>同目錄下的 <b>CLAUDE.md</b> 與 <b>SKILL.md</b> 已定義好擴充規則。之後想加東西時，只要把新資料放進 Dropbox 對應資料夾，然後告訴 Claude「照 SKILL.md 把 XXX 加進 ABAP 圖書館」，就會依同樣的體例、同樣的 S/4HANA 語法基準續寫，章節編號與側欄目錄會自動接上。可以優先補的方向：</p>
+  <ol>
+    <li>09_ABAP二次開發 的 SD / MM / PP / FI / CO / QM 實務案例（ZMMI0001、ZPPB0002 缺料表、DBCO 連 SQL Server 等）。</li>
+    <li>15_累計心得 的常用日期函數、HR 表、ACDOCA 筆記、透過欄位查表名。</li>
+    <li>09_ABAP二次開發 底下各模組的實務案例與累計心得。（L31、L35、L36 已完成，見第六～八部）</li>
+    <li>原廠教材：L28 的 19 本强晟筆記與原廠教材<b>已完成</b>（第五部）；L29 原廠教材、TAW10/11/12、HA100/300/400 仍待補。</li>
+    <li>CDS View、RAP、ABAP Cloud 這一塊全新的內容，目前教材尚未涵蓋。</li>
+  </ol>
+</section>

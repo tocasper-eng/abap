@@ -1,0 +1,1706 @@
+<section class="chapter" id="ch04-4" data-title="綜合技巧：BDC 批次匯入 / 郵件 / FTP / 檔案處理 / 背景作業">
+  <h2 id="ch04-4">第 4-4 章 綜合技巧：BDC 批次匯入 / 郵件 / FTP / 檔案處理 / 背景作業</h2>
+  <p class="lede">這一章是「介面程式」的總集篇。企業導入 SAP 之後，最常被要求的不是報表，而是「把外面的資料弄進來、把裡面的結果送出去」：MES 產生 CSV 放到 FTP、SAP 定時抓下來、逐筆用 CO11N 報工、把成功失敗寫成紀錄表、印成 PDF 再寄給相關人，整串排成背景作業每小時跑一次。老師用一支真實的工時上傳程式 <b>ZPPI0002</b> 把 FTP、Excel 上傳、BDC、寄信、Spool 轉 PDF 全部串起來。學完這一章，你能自己寫出一支「無人值守、有紀錄、有通知、可重跑」的介面程式，也知道在 S/4HANA 上哪些寫法該換掉。</p>
+
+  <div class="meta">
+    <div><b>核心 TCODE</b><span class="tcode">SHDB</span><span class="tcode">SM35</span><span class="tcode">SM36</span><span class="tcode">SM37</span><span class="tcode">SM59</span><span class="tcode">SM49</span><span class="tcode">SM69</span><span class="tcode">AL11</span><span class="tcode">FILE</span><span class="tcode">SCOT</span><span class="tcode">SOST</span><span class="tcode">SBWP</span><span class="tcode">SO23</span><span class="tcode">SP01</span><span class="tcode">SU3</span><span class="tcode">SE38</span><span class="tcode">SE37</span><span class="tcode">SE93</span><span class="tcode">SM62</span><span class="tcode">SM64</span><span class="tcode">SJOBREPO</span><span class="tcode">CO11N</span><span class="tcode">MIGO</span><span class="tcode">LTMC</span></div>
+    <div><b>關鍵物件</b>BDCDATA、BDCMSGCOLL、CTU_PARAMS、BDC_OPEN_GROUP、BDC_INSERT、BDC_CLOSE_GROUP、FORMAT_MESSAGE、MESSAGE_TEXT_BUILD、CL_GUI_FRONTEND_SERVICES、GUI_UPLOAD、GUI_DOWNLOAD、OPEN DATASET、CL_ABAP_CHAR_UTILITIES、CL_ABAP_CONV_CODEPAGE、CL_FDT_XL_SPREADSHEET、FTP_CONNECT、FTP_COMMAND、FTP_R3_TO_SERVER、FTP_SERVER_TO_R3、FTP_DISCONNECT、HTTP_SCRAMBLE、SCMS_BINARY_TO_TEXT、SX_TABLE_LINE_WIDTH_CHANGE、CL_BCS、CL_DOCUMENT_BCS、CL_CAM_ADDRESS_BCS、CL_BCS_CONVERT、SO_DOCUMENT_SEND_API1、SO_DLI_LIST_READ_XDL、CONVERT_ABAPSPOOLJOB_2_PDF、JOB_OPEN、JOB_SUBMIT、JOB_CLOSE、BP_EVENT_RAISE、TBTCO、TBTCP、TSP01、AUFK、AFRU、ZPPWORKMA0001</div>
+  </div>
+
+  <h3 id="ch04-4-01">1. 這一章的地圖：一支程式串起五件事</h3>
+  <p>講義開頭老師就說了：「這支工時回報上傳，應該算寫得非常好，有 FTP、有發 MAIL、有 EXCEL 上傳，也是先放暫存檔 <span class="kw">T_XLS</span>，然後才用 BDC 做完整的檢查，連訊息也回寫得很清楚。」這句話其實就是介面程式的標準骨架，值得抄下來當口訣：</p>
+  <ol>
+    <li><b>取得來源</b>：從 FTP 抓檔，或從 PC 上傳 Excel／CSV。兩條路走完都倒進同一張暫存內表。</li>
+    <li><b>暫存 + 正規化</b>：全部先進 <span class="kw">T_XLS</span> 這種「寬鬆型別（全部字元欄）」的暫存表，再做去引號、ALPHA 補零、日期轉換。</li>
+    <li><b>驗證</b>：查主檔存不存在（工單查 AUFK）、必填欄位、數值可不可轉。錯的先標 <span class="kw">STATUS = 'E'</span>，不要丟掉。</li>
+    <li><b>過帳</b>：只處理 <span class="kw">STATUS = SPACE</span> 的那些，用 BDC 呼叫 CO11N，訊息收回來寫進 <span class="kw">MSG</span>。</li>
+    <li><b>留痕與通知</b>：整批結果寫進自建紀錄表 <span class="kw">ZPPWORKMA0001</span>、顯示 ALV、必要時把 Spool 轉 PDF 寄給群組。</li>
+  </ol>
+  <div class="tip"><b>老師口訣</b>：<b>「先落地、再驗證、最後才過帳；錯的不要刪，標起來。」</b> 介面程式最怕的是「跑一半死掉、不知道跑到哪」。所有資料先落到暫存表／紀錄表，就算中途中斷也能查、能重跑。</div>
+  <div class="note">講義這一份原本的課程索引還列了 BC414「SAPscript: Form Design and Text Management」的十一個小節（Introduction / SAPscript Overview / Form Elements / Graphical Editor and Line Editor / Symbols and Control Statements / Print Program / Styles / The Next Generation / Modifications / Maintenance / Appendix）。表單設計的內容請看第 4-3 章 SmartForms；本章專注在第 01 節「工時上傳」的綜合技巧。</div>
+
+  <h3 id="ch04-4-02">2. 範例主程式 ZPPI0002 的骨架與選擇畫面</h3>
+  <p>主程式只做「流程編排」，所有細節都在 INCLUDE 裡。這是介面程式很好的分層：主程式一眼看得懂在做什麼。</p>
+
+<pre><code class="abap">REPORT zppi0002 NO STANDARD PAGE HEADING
+                LINE-SIZE  255
+                LINE-COUNT 65
+                MESSAGE-ID zpp01.        " 自建訊息類別，訊息集中管理
+
+INCLUDE zppi0002top.    " 宣告 + 選擇畫面
+INCLUDE zppi0002f01.    " 所有 FORM
+
+*--- F4：讓使用者挑 PC 上的檔案
+AT SELECTION-SCREEN ON VALUE-REQUEST FOR p_files.
+  PERFORM get_pc_file CHANGING p_files.
+
+START-OF-SELECTION.
+
+  CLEAR gt_xls.
+
+  " 勾了寄信卻沒填收件群組 → 擋下來
+  IF p_email = abap_true AND p_group IS INITIAL.
+    MESSAGE s000 WITH TEXT-e01.
+    STOP.
+  ENDIF.
+
+  IF p_upftp = abap_true.
+    PERFORM get_data_from_ftp.      " 走 FTP
+    PERFORM adjust_t_xls.           " 正規化 + 驗證（FTP／PC 共用同一支）
+  ELSE.
+    PERFORM upload_excel.           " 走 PC Excel
+    PERFORM adjust_t_xls.
+  ENDIF.
+
+  PERFORM process_co11n_rtn.        " BDC 過帳
+  PERFORM modify_log_table.         " 回寫紀錄表 ZPPWORKMA0001
+  PERFORM display_alv_rtn.          " ALV 呈現結果
+
+  IF p_email = abap_true.
+    PERFORM z_print_spool_pdf.      " Spool → PDF
+    PERFORM z_send_pdf_email.       " 寄出
+  ENDIF.
+
+END-OF-SELECTION.</code></pre>
+
+  <p>選擇畫面用 <span class="kw">RADIOBUTTON GROUP</span> 分成「FTP 來源」和「PC 來源」兩組，並用 <span class="kw">MODIF ID</span> 把欄位分群，方便在 <span class="kw">AT SELECTION-SCREEN OUTPUT</span> 動態灰掉不相干的欄位。</p>
+
+<pre><code class="abap">*&amp;--- INCLUDE ZPPI0002TOP ：選擇畫面
+SELECTION-SCREEN BEGIN OF BLOCK b1 WITH FRAME TITLE TEXT-s01.
+
+" BDC 顯示模式：A=全部畫面 E=只顯示錯誤 N=完全不顯示
+PARAMETERS: p_mode TYPE ctu_params-dismode DEFAULT 'N'.
+
+" --- 來源一：FTP
+PARAMETERS: p_upftp  RADIOBUTTON GROUP g1 DEFAULT 'X' USER-COMMAND uc1,
+            p_fpath  TYPE rlgrap-filename MODIF ID ftp DEFAULT '/CO01/',      " 收檔路徑
+            p_fbakup TYPE rlgrap-filename MODIF ID ftp DEFAULT '/CO01_BAK/'.  " 備份路徑
+
+PARAMETERS: p_ip   TYPE char20      MODIF ID key DEFAULT '192.0.2.10',
+            p_user TYPE scms_ftpus  MODIF ID key DEFAULT 'FTP_USER',
+            p_pw   TYPE scms_ftppw  MODIF ID key.     " 密碼欄位型別自帶隱藏顯示
+
+" --- 來源二：PC Excel／CSV
+PARAMETERS: p_uppc  RADIOBUTTON GROUP g1,
+            p_files TYPE rlgrap-filename MODIF ID pcf.
+
+" --- 通知
+PARAMETERS: p_email AS CHECKBOX,
+            p_group TYPE sood-objnam MODIF ID mal.   " SBWP 通訊群組名稱
+
+SELECTION-SCREEN END OF BLOCK b1.
+
+*--- 依 radio button 動態開關欄位
+AT SELECTION-SCREEN OUTPUT.
+  LOOP AT SCREEN INTO DATA(ls_scr).
+    CASE ls_scr-group1.
+      WHEN 'FTP' OR 'KEY'.
+        ls_scr-input = COND #( WHEN p_upftp = abap_true THEN 1 ELSE 0 ).
+      WHEN 'PCF'.
+        ls_scr-input = COND #( WHEN p_uppc  = abap_true THEN 1 ELSE 0 ).
+      WHEN 'MAL'.
+        ls_scr-input = COND #( WHEN p_email = abap_true THEN 1 ELSE 0 ).
+      WHEN OTHERS.
+        CONTINUE.
+    ENDCASE.
+    MODIFY SCREEN FROM ls_scr.
+  ENDLOOP.</code></pre>
+
+  <div class="warn"><b>不要把 FTP 帳密寫死在程式裡。</b>講義的範例把 IP／帳號／密碼直接當 <span class="kw">DEFAULT</span> 寫在 PARAMETERS（甚至密碼 <span class="kw">'???0517'</span>），這在教學可以，正式系統絕對不行。正確做法：存在自建設定表（密碼欄位加密）、或用 SM59 的 RFC destination 保管、或走 Secure Store（<span class="kw">CL_ABAP_SSF</span> / SSFS）。程式碼被傳輸到 QAS/PRD 時，Request 裡就會躺著明碼密碼。</div>
+
+  <p>暫存表 <span class="kw">T_XLS</span> 在講義裡是 <span class="kw">DATA: BEGIN OF t_xls OCCURS 0 ... WITH HEADER LINE</span>。S/4HANA 應改寫成型別 + 內表：</p>
+
+<pre><code class="abap">*--- 暫存表：所有欄位刻意用字元型，因為外部檔案什麼髒資料都可能進來
+TYPES: BEGIN OF ty_xls,
+         aufnr  TYPE char12,   " 工單
+         lmnga  TYPE char15,   " 產出量
+         meinh  TYPE char03,   " 產出量單位
+         xmnga  TYPE char15,   " 壞品數量
+         grund  TYPE char04,   " 無效工時原因代碼
+         ism01  TYPE char15,   " 工時 1
+         ile01  TYPE char03,   " 工時 1 單位
+         ism02  TYPE char15,
+         ile02  TYPE char03,
+         ism03  TYPE char15,
+         ile03  TYPE char03,
+         ism04  TYPE char15,
+         ile04  TYPE char03,
+         budat  TYPE char08,   " 過帳日期（外部給的字串）
+         vornr  TYPE char04,   " 作業
+         status TYPE char01,   " ' '=待處理 'S'=成功 'E'=失敗
+         msg    TYPE char220,  " 回寫訊息
+       END OF ty_xls.
+
+TYPES ty_t_xls TYPE STANDARD TABLE OF ty_xls WITH EMPTY KEY.
+
+DATA gt_xls TYPE ty_t_xls.</code></pre>
+
+  <div class="tip"><b>為什麼暫存表全用字元欄？</b>因為外部檔案的「1,234.5」「2025/09/01」「  A0001 」丟進 <span class="kw">TYPE p</span> 或 <span class="kw">TYPE d</span> 會直接 dump（<span class="kw">CX_SY_CONVERSION_NO_NUMBER</span>）。先用字元收下來，轉換時包 <span class="kw">TRY...CATCH</span>，轉不成功就標 <span class="kw">'E'</span> 並寫「轉碼失敗」，程式不會死。這正是講義 <span class="kw">MODIFY_ZPPWORKMA0001</span> 裡包 TRY／CATCH 的用意。</div>
+
+  <h3 id="ch04-4-03">3. BDC 是什麼：三種批次輸入作法</h3>
+  <p>BDC＝Batch Data Communication（批次輸入）。原理很直白：<b>把「使用者在畫面上敲鍵盤」的整個過程錄成資料，再讓程式重播一遍。</b>它不呼叫任何 API，而是真的去跑那支交易的畫面邏輯（PBO/PAI），所以<b>所有標準檢查、Enhancement、User Exit 都會照跑</b>——這是 BDC 最大的優點，也是它慢的原因。</p>
+
+  <table>
+    <thead><tr><th>作法</th><th>怎麼做</th><th>執行時機</th><th>錯誤處理</th><th>適用</th></tr></thead>
+    <tbody>
+      <tr><td><b>SHDB 錄製</b></td><td>TCODE <span class="tcode">SHDB</span> 錄一次操作，再由系統產生程式範本</td><td>只是「產生程式碼」的工具</td><td>—</td><td>取得畫面編號與欄位名的最快方式</td></tr>
+      <tr><td><b>CALL TRANSACTION USING</b></td><td>程式內組 BDCDATA，直接呼叫交易</td><td>同步（線上就跑完）</td><td><span class="kw">MESSAGES INTO</span> 收訊息，自己判斷</td><td>筆數不多、要即時知道結果、要把訊息回寫給使用者</td></tr>
+      <tr><td><b>SESSION（批次輸入群組）</b></td><td><span class="kw">BDC_OPEN_GROUP</span> → <span class="kw">BDC_INSERT</span> → <span class="kw">BDC_CLOSE_GROUP</span></td><td>非同步，之後在 <span class="tcode">SM35</span> 執行</td><td>SM35 自動保留錯誤 session，可補跑</td><td>大量資料、夜間跑、需要人工介入修正</td></tr>
+      <tr><td><b>LSMW / LTMC</b></td><td>設定式工具，底層仍可能用 BDC/BAPI/IDoc</td><td>專案期一次性搬資料</td><td>工具本身管</td><td>導入期主檔／期初資料遷移</td></tr>
+    </tbody>
+  </table>
+
+  <div class="note"><b>兩者的關鍵差異</b>：<span class="kw">CALL TRANSACTION</span> 出錯了資料就在那邊，你得自己記錄、自己重跑；<span class="kw">SESSION</span> 出錯的那筆會留在 SM35 的 session 裡，管理員可以用「顯示錯誤（Display errors only）」模式一筆一筆修好再送出——這是 SESSION 唯一無可取代的價值。</div>
+
+  <h3 id="ch04-4-04">4. SHDB 錄製與 BDCDATA 結構</h3>
+  <p>不會寫 BDC 的人，第一步永遠是 <span class="tcode">SHDB</span>。<span class="src">（依講義步驟整理）</span></p>
+  <ol>
+    <li><span class="tcode">SHDB</span> → <b>New recording</b>，輸入錄製名稱（例：<span class="kw">Z_CO11N</span>）與要錄的交易碼（<span class="kw">CO11N</span>）。</li>
+    <li>按 <b>Start recording</b>，系統就會把你接下來的每一個畫面、每一個欄位、每一次按鍵記下來。像真的使用者一樣把單開完、按存檔。</li>
+    <li>回到 SHDB 清單，選這筆錄製 → <b>Program</b>，系統直接吐出一支含 <span class="kw">bdc_dynpro</span> / <span class="kw">bdc_field</span> 的完整程式範本。</li>
+    <li>把裡面固定的值換成內表欄位，就完成了 90%。</li>
+  </ol>
+  <p>錄製結果就是一張 <span class="kw">BDCDATA</span> 表。它只有四個欄位，非常好記：</p>
+  <table>
+    <thead><tr><th>欄位</th><th>長度</th><th>意義</th></tr></thead>
+    <tbody>
+      <tr><td><span class="kw">PROGRAM</span></td><td>40</td><td>畫面所屬的程式名（例：<span class="kw">SAPLCORU_S</span>）</td></tr>
+      <tr><td><span class="kw">DYNPRO</span></td><td>4</td><td>畫面編號（例：<span class="kw">0100</span>）</td></tr>
+      <tr><td><span class="kw">DYNBEGIN</span></td><td>1</td><td><span class="kw">'X'</span> 表示「這一列是新畫面的開頭」</td></tr>
+      <tr><td><span class="kw">FNAM</span></td><td>132</td><td>欄位名（<span class="kw">結構-欄位</span>，例 <span class="kw">AFRUD-AUFNR</span>）或控制欄位</td></tr>
+      <tr><td><span class="kw">FVAL</span></td><td>132</td><td>欄位值（一律是「使用者會敲進去的那個字串」）</td></tr>
+    </tbody>
+  </table>
+
+  <p>三個特殊控制欄位一定要背：</p>
+  <ul>
+    <li><b><span class="kw">BDC_OKCODE</span></b>：這個畫面按的功能碼。<span class="kw">'=BU'</span> 存檔、<span class="kw">'/00'</span> Enter、<span class="kw">'=BACK'</span> 或 <span class="kw">'/EBACK'</span> 返回、<span class="kw">'/EE'</span> 離開、<span class="kw">'=P+'</span> 下一頁、<span class="kw">'=P-'</span> 上一頁。前面加 <span class="kw">/E</span> 代表用 <b>系統功能碼</b>（相當於在指令列打）。</li>
+    <li><b><span class="kw">BDC_CURSOR</span></b>：游標停在哪個欄位。看起來沒用，其實在 Table Control、在「輸入後才展開子畫面」的場合非常關鍵——很多欄位是游標移過去才會觸發 PAI 檢查。</li>
+    <li><b><span class="kw">BDC_SUBSCR</span></b>：子畫面（Subscreen）區域。值是「子畫面程式 + 畫面編號」，用來指定接下來的欄位屬於哪一塊子畫面。錄製時系統會自動產生，<b>不要手動刪掉</b>。</li>
+  </ul>
+
+  <p>兩個 helper FORM 是 BDC 的標準配備。講義用的是舊寫法（<span class="kw">WITH HEADER LINE</span> 的全域 <span class="kw">BDCDATA</span>），現代寫法改成把內表當參數傳：</p>
+
+<pre><code class="abap">*&amp;--- 開一個新畫面
+FORM bdc_dynpro USING iv_program TYPE bdcdata-program
+                      iv_dynpro  TYPE bdcdata-dynpro
+             CHANGING ct_bdc     TYPE ty_t_bdcdata.
+
+  APPEND VALUE bdcdata( program  = iv_program
+                        dynpro   = iv_dynpro
+                        dynbegin = abap_true ) TO ct_bdc.
+
+ENDFORM.
+
+*&amp;--- 塞一個欄位值
+FORM bdc_field USING iv_fnam TYPE bdcdata-fnam
+                     iv_fval TYPE any
+            CHANGING ct_bdc  TYPE ty_t_bdcdata.
+
+  DATA lv_fval TYPE bdcdata-fval.
+
+  lv_fval = |{ iv_fval }|.
+  CONDENSE lv_fval.                      " BDC 的值前面不可以有多餘空白
+
+  APPEND VALUE bdcdata( fnam = iv_fnam
+                        fval = lv_fval ) TO ct_bdc.
+
+ENDFORM.</code></pre>
+
+  <div class="tip">如果你用的是 ABAP 7.40 以上，其實連 FORM 都可以省掉，直接用 <span class="kw">VALUE #( )</span> 一次把整張 BDCDATA 寫出來，可讀性反而更好（見下一節）。老師的舊寫法要保留是因為錄製產生的範本長那樣，你要看得懂。</div>
+
+  <h3 id="ch04-4-05">5. CALL TRANSACTION USING：MODE / UPDATE / MESSAGES INTO</h3>
+  <p>講義的 CO11N 報工就是 <span class="kw">CALL TRANSACTION</span>。先看資料怎麼組——注意 <span class="kw">SAPLCORU_S</span> 的 <span class="kw">0100</span> 畫面、OKCODE <span class="kw">'=BU'</span>（Save），以及四組工時是「有值才塞」：</p>
+
+<pre><code class="abap">*&amp;--- 組 CO11N 的 BDC 資料（現代寫法：一次 VALUE 完成）
+FORM build_bdc_co11n USING    is_xls TYPE ty_xls
+                     CHANGING ct_bdc TYPE ty_t_bdcdata.
+
+  CLEAR ct_bdc.
+
+  " 過帳日期：外部字串 YYYYMMDD → 依使用者格式的外部顯示字串
+  DATA(lv_budat) = conv_date_to_external( is_xls-budat ).
+
+  ct_bdc = VALUE #(
+    ( program = 'SAPLCORU_S' dynpro = '0100' dynbegin = abap_true )
+    ( fnam = 'BDC_OKCODE'  fval = '=BU' )        " 存檔
+    ( fnam = 'AFRUD-RUECK' fval = '' )           " 確認號碼留空 → 用工單/作業
+    ( fnam = 'AFRUD-AUFNR' fval = is_xls-aufnr )
+    ( fnam = 'AFRUD-VORNR' fval = is_xls-vornr )
+    ( fnam = 'AFRUD-LMNGA' fval = is_xls-lmnga )
+    ( fnam = 'AFRUD-MEINH' fval = is_xls-meinh )
+    ( fnam = 'AFRUD-XMNGA' fval = is_xls-xmnga )
+    ( fnam = 'AFRUD-GRUND' fval = is_xls-grund )
+    ( fnam = 'AFRUD-BUDAT' fval = lv_budat ) ).
+
+  " 工時 1~4：有值才送，避免把空值蓋掉預設值
+  IF is_xls-ism01 IS NOT INITIAL.
+    APPEND VALUE #( fnam = 'AFRUD-ISM01' fval = is_xls-ism01 ) TO ct_bdc.
+    APPEND VALUE #( fnam = 'AFRUD-ILE01' fval = is_xls-ile01 ) TO ct_bdc.
+  ENDIF.
+  IF is_xls-ism02 IS NOT INITIAL.
+    APPEND VALUE #( fnam = 'AFRUD-ISM02' fval = is_xls-ism02 ) TO ct_bdc.
+    APPEND VALUE #( fnam = 'AFRUD-ILE02' fval = is_xls-ile02 ) TO ct_bdc.
+  ENDIF.
+  IF is_xls-ism03 IS NOT INITIAL.
+    APPEND VALUE #( fnam = 'AFRUD-ISM03' fval = is_xls-ism03 ) TO ct_bdc.
+    APPEND VALUE #( fnam = 'AFRUD-ILE03' fval = is_xls-ile03 ) TO ct_bdc.
+  ENDIF.
+  IF is_xls-ism04 IS NOT INITIAL.
+    APPEND VALUE #( fnam = 'AFRUD-ISM04' fval = is_xls-ism04 ) TO ct_bdc.
+    APPEND VALUE #( fnam = 'AFRUD-ILE04' fval = is_xls-ile04 ) TO ct_bdc.
+  ENDIF.
+
+ENDFORM.</code></pre>
+
+  <p>接著呼叫。<span class="kw">CALL TRANSACTION</span> 的三個附加語法必須清楚：</p>
+
+  <table>
+    <thead><tr><th>附加</th><th>值</th><th>意義</th></tr></thead>
+    <tbody>
+      <tr><td rowspan="4"><span class="kw">MODE</span>（畫面顯示）</td><td><span class="kw">'A'</span></td><td>All screens：全部畫面都顯示，一步一步跑。<b>除錯用</b></td></tr>
+      <tr><td><span class="kw">'E'</span></td><td>Errors only：正常時不顯示，出錯時停在那個畫面。<b>找錯最好用</b></td></tr>
+      <tr><td><span class="kw">'N'</span></td><td>No display：完全不顯示。<b>背景作業一定要用這個</b></td></tr>
+      <tr><td><span class="kw">'P'</span></td><td>不顯示，但允許中斷點（可在被呼叫的交易裡下斷點除錯）</td></tr>
+      <tr><td rowspan="3"><span class="kw">UPDATE</span>（更新模式）</td><td><span class="kw">'S'</span></td><td>Synchronous 同步：更新完成才回來，<span class="kw">sy-subrc</span> 才真正可信</td></tr>
+      <tr><td><span class="kw">'A'</span></td><td>Asynchronous 非同步：丟給更新工作程序就回來，快但無法確認結果</td></tr>
+      <tr><td><span class="kw">'L'</span></td><td>Local update：在同一個工作程序內更新（不進 update task），速度快</td></tr>
+      <tr><td><span class="kw">MESSAGES INTO</span></td><td><span class="kw">BDCMSGCOLL</span> 內表</td><td>把交易產生的所有訊息（S/W/E/A/X）收下來</td></tr>
+    </tbody>
+  </table>
+
+<pre><code class="abap">FORM call_co11n CHANGING cs_xls TYPE ty_xls.
+
+  DATA: lt_bdc TYPE ty_t_bdcdata,
+        lt_msg TYPE STANDARD TABLE OF bdcmsgcoll WITH EMPTY KEY.
+
+  PERFORM build_bdc_co11n USING cs_xls CHANGING lt_bdc.
+
+  CALL TRANSACTION 'CO11N'
+       USING            lt_bdc
+       MODE             p_mode          " A / E / N
+       UPDATE           'L'             " Local update
+       MESSAGES INTO    lt_msg.
+
+  DATA(lv_subrc) = sy-subrc.
+
+  COMMIT WORK AND WAIT.                 " local update 之後要自己 commit
+
+  PERFORM eval_bdc_messages USING lt_msg lv_subrc CHANGING cs_xls.
+
+ENDFORM.</code></pre>
+
+  <p>如果要一次控制更多細節，改用 <span class="kw">OPTIONS FROM</span> 傳一個 <span class="kw">CTU_PARAMS</span> 結構，這是比 <span class="kw">MODE/UPDATE</span> 更完整的介面：</p>
+
+<pre><code class="abap">DATA(ls_opt) = VALUE ctu_params(
+    dismode  = p_mode        " 顯示模式 A/E/N/P
+    updmode  = 'S'           " 更新模式 S/A/L
+    cattmode = ' '           " CATT 模式
+    defsize  = abap_true     " 用預設畫面大小，避免因螢幕解析度不同而失敗
+    racommit = abap_true     " 被呼叫交易內的 COMMIT WORK 不中止 CALL TRANSACTION
+    nobinpt  = abap_false    " abap_true 時 sy-binpt 不設為 X，交易表現得像線上
+    nobiend  = abap_false ). " 資料用完後仍留在批次輸入模式
+
+CALL TRANSACTION 'CO11N'
+     USING         lt_bdc
+     OPTIONS FROM  ls_opt
+     MESSAGES INTO lt_msg.</code></pre>
+
+  <div class="warn"><b>三個一定要記的陷阱：</b>
+  <ul>
+    <li><b><span class="kw">defsize = 'X'</span> 幾乎一定要開。</b>不開的話，BDC 會用「目前使用者的畫面大小」跑；不同人的 SAP GUI 視窗大小不同，Table Control 可見列數就不同，同一支程式在你電腦上跑得過、在別人電腦上就掛掉。</li>
+    <li><b><span class="kw">UPDATE 'A'</span>（非同步）時 <span class="kw">sy-subrc</span> 不可信。</b>更新失敗會變成 SM13 的 update terminate，你的程式卻以為成功了。要確定結果就用 <span class="kw">'S'</span>。</li>
+    <li><b>被呼叫的交易裡如果有 <span class="kw">COMMIT WORK</span>，預設會直接結束 CALL TRANSACTION</b>，後面的畫面就不跑了。要繼續就設 <span class="kw">racommit = 'X'</span>。</li>
+  </ul></div>
+
+  <div class="note"><b>S/4HANA 語法檢查</b>：新版 ABAP 對「純呼叫交易」的形式（<span class="kw">CALL TRANSACTION 'XX'</span>，不帶 USING）要求明示 <span class="kw">WITH AUTHORITY-CHECK</span> 或 <span class="kw">WITHOUT AUTHORITY-CHECK</span>，否則語法檢查會出警告。<span class="kw">CALL TRANSACTION ... USING bdcdata</span> 這種 BDC 形式本身就會做交易權限檢查（除非用 <span class="kw">AUTHORITY-CHECK</span> 相關附加關掉），但呼叫者仍必須擁有該 TCODE 的 <span class="kw">S_TCODE</span> 與底層物件權限。<b>BDC 不會幫你繞過權限。</b></div>
+
+  <h3 id="ch04-4-06">6. 錯誤訊息：從 BDCMSGCOLL 變成看得懂的中文字</h3>
+  <p><span class="kw">BDCMSGCOLL</span> 收回來的是「訊息代號」，不是文字。要變成人看得懂的句子有三條路：</p>
+
+<pre><code class="abap">FORM eval_bdc_messages USING it_msg   TYPE bdcmsgcoll_tab
+                             iv_subrc TYPE sy-subrc
+                    CHANGING cs_xls   TYPE ty_xls.
+
+  DATA lv_text TYPE string.
+
+  cs_xls-status = 'S'.
+  cs_xls-msg    = TEXT-s01.        " 「過帳成功」
+
+  LOOP AT it_msg INTO DATA(ls_msg).
+
+    " 作法一（最推薦）：MESSAGE ... INTO，語法內建、不用呼叫 FM
+    MESSAGE ID     ls_msg-msgid
+            TYPE   ls_msg-msgtyp
+            NUMBER ls_msg-msgnr
+            WITH   ls_msg-msgv1 ls_msg-msgv2 ls_msg-msgv3 ls_msg-msgv4
+            INTO   lv_text.
+
+    " 只要出現一筆 E/A/X 就算失敗，且以第一筆錯誤為主
+    IF ls_msg-msgtyp CA 'EAX'.
+      cs_xls-status = 'E'.
+      cs_xls-msg    = |{ ls_msg-msgid }{ ls_msg-msgnr } { lv_text }|.
+      EXIT.
+    ENDIF.
+
+  ENDLOOP.
+
+  " CALL TRANSACTION 本身回傳非 0，但訊息表卻是空的 → 也要當失敗
+  IF iv_subrc &lt;&gt; 0 AND cs_xls-status &lt;&gt; 'E'.
+    cs_xls-status = 'E'.
+    cs_xls-msg    = |CALL TRANSACTION failed, RC={ iv_subrc }|.
+  ENDIF.
+
+ENDFORM.</code></pre>
+
+  <p>另外兩個常見的函數模組，在需要「拿到字串但不想動 sy-msg*」時很好用：</p>
+
+<pre><code class="abap">*--- 作法二：FORMAT_MESSAGE（最常見，可指定語言）
+DATA lv_msg TYPE char200.
+
+CALL FUNCTION 'FORMAT_MESSAGE'
+  EXPORTING
+    id        = ls_msg-msgid
+    lang      = sy-langu          " '2' 表示用登入語言；也可寫死 'ZH'
+    no        = ls_msg-msgnr
+    v1        = ls_msg-msgv1
+    v2        = ls_msg-msgv2
+    v3        = ls_msg-msgv3
+    v4        = ls_msg-msgv4
+  IMPORTING
+    msg       = lv_msg
+  EXCEPTIONS
+    not_found = 1
+    OTHERS    = 2.
+
+*--- 作法三：MESSAGE_TEXT_BUILD（傳整個 SY 結構最方便）
+DATA lv_out TYPE natxt.
+
+CALL FUNCTION 'MESSAGE_TEXT_BUILD'
+  EXPORTING
+    msgid               = sy-msgid
+    msgnr               = sy-msgno
+    msgv1               = sy-msgv1
+    msgv2               = sy-msgv2
+    msgv3               = sy-msgv3
+    msgv4               = sy-msgv4
+  IMPORTING
+    message_text_output = lv_out.</code></pre>
+
+  <div class="tip"><b>老師的紀錄表設計值得抄</b>：<span class="kw">ZPPWORKMA0001</span> 除了業務欄位，還放了 <span class="kw">ORA</span>（原始整列字串）、<span class="kw">STATUS</span>、<span class="kw">MSG</span>、<span class="kw">ERDAT</span>／<span class="kw">ERTIM</span>／<span class="kw">ERNAM</span>。<b>把「原始那一行」整串存下來</b>是關鍵：日後客戶說「我那筆明明有傳」，你直接調出原始行就能斷案。</div>
+
+<pre><code class="abap">*&amp;--- 回寫紀錄表：先刪同鍵、再整批寫入（可重跑）
+FORM modify_log_table.
+
+  DATA lt_log TYPE STANDARD TABLE OF zppworkma0001.
+
+  " 1) 同一批的鍵值先刪掉，讓程式可以重跑而不會殘留舊結果
+  DELETE FROM zppworkma0001
+    FOR ALL ENTRIES IN @gt_xls
+    WHERE aufnr = @gt_xls-aufnr
+      AND vornr = @gt_xls-vornr.
+
+  LOOP AT gt_xls ASSIGNING FIELD-SYMBOL(&lt;ls_xls&gt;).
+
+    DATA(ls_log) = VALUE zppworkma0001( ).
+
+    TRY.
+        " 字元 → 型別欄位的轉換都可能爆，包起來
+        ls_log = CORRESPONDING #( &lt;ls_xls&gt; ).
+
+      CATCH cx_sy_conversion_no_number cx_sy_conversion_error INTO DATA(lx_conv).
+        CLEAR ls_log.
+        ls_log-aufnr  = &lt;ls_xls&gt;-aufnr.
+        ls_log-vornr  = &lt;ls_xls&gt;-vornr.
+        ls_log-status = 'E'.
+        ls_log-msg    = |轉碼失敗：{ lx_conv-&gt;get_text( ) }|.
+        &lt;ls_xls&gt;-status = 'E'.
+        &lt;ls_xls&gt;-msg    = '轉碼失敗'.
+    ENDTRY.
+
+    ls_log-ora   = |{ &lt;ls_xls&gt; }|.       " 原始整列，出事時的證據
+    ls_log-erdat = sy-datlo.
+    ls_log-ertim = sy-timlo.
+    ls_log-ernam = sy-uname.
+    APPEND ls_log TO lt_log.
+
+  ENDLOOP.
+
+  MODIFY zppworkma0001 FROM TABLE lt_log.
+  COMMIT WORK AND WAIT.
+
+ENDFORM.</code></pre>
+
+  <div class="warn"><b><span class="kw">FOR ALL ENTRIES</span> 空表陷阱</b>：<span class="kw">gt_xls</span> 若為空，上面的 <span class="kw">DELETE ... FOR ALL ENTRIES</span> 會變成「沒有 WHERE 條件」，整張表被清空！凡是 <span class="kw">FOR ALL ENTRIES</span>，前面一定要加 <span class="kw">IF gt_xls IS NOT INITIAL.</span> 這條規矩對 SELECT 一樣適用（SELECT 空表會抓回全表）。</div>
+
+  <h3 id="ch04-4-07">7. SESSION 方式：BDC_OPEN_GROUP / BDC_INSERT / BDC_CLOSE_GROUP 與 SM35</h3>
+  <p>資料量大（幾千、幾萬筆）或需要人工修正時，改用 Session。三支函數而已：</p>
+
+<pre><code class="abap">REPORT zbdc_session_demo.
+
+CONSTANTS gc_group TYPE apqi-groupid VALUE 'ZCO11N_UPLOAD'.
+
+DATA lt_bdc TYPE ty_t_bdcdata.
+
+START-OF-SELECTION.
+
+  " 1) 開群組
+  CALL FUNCTION 'BDC_OPEN_GROUP'
+    EXPORTING
+      client              = sy-mandt
+      group               = gc_group          " SM35 上看到的名稱
+      user                = sy-uname          " 執行者
+      keep                = abap_true         " 成功後仍保留 session（方便查）
+      holddate            = sy-datum          " 在此日期前不自動處理
+    EXCEPTIONS
+      client_invalid      = 1
+      destination_invalid = 2
+      group_invalid       = 3
+      group_is_locked     = 4
+      holddate_invalid    = 5
+      internal_error      = 6
+      queue_error         = 7
+      running             = 8
+      system_lock_error   = 9
+      user_invalid        = 10
+      OTHERS              = 11.
+
+  IF sy-subrc &lt;&gt; 0.
+    MESSAGE |BDC_OPEN_GROUP failed RC={ sy-subrc }| TYPE 'E'.
+  ENDIF.
+
+  " 2) 每一筆資料塞一個交易
+  LOOP AT gt_xls INTO DATA(ls_xls) WHERE status = space.
+
+    PERFORM build_bdc_co11n USING ls_xls CHANGING lt_bdc.
+
+    CALL FUNCTION 'BDC_INSERT'
+      EXPORTING
+        tcode            = 'CO11N'
+      TABLES
+        dynprotab        = lt_bdc
+      EXCEPTIONS
+        internal_error   = 1
+        not_open         = 2
+        queue_error      = 3
+        tcode_invalid    = 4
+        printing_invalid = 5
+        posting_invalid  = 6
+        OTHERS           = 7.
+
+  ENDLOOP.
+
+  " 3) 關群組（此時才真的產生 SM35 的 session）
+  CALL FUNCTION 'BDC_CLOSE_GROUP'
+    EXCEPTIONS
+      not_open    = 1
+      queue_error = 2
+      OTHERS      = 3.
+
+  MESSAGE |批次輸入群組 { gc_group } 已建立，請至 SM35 執行| TYPE 'S'.</code></pre>
+
+  <p><span class="tcode">SM35</span> 的三種執行模式，跟 CALL TRANSACTION 的 MODE 是對應的：</p>
+  <ul>
+    <li><b>Process/Foreground（前景）</b>：一個畫面一個畫面走，用來看 BDC 到底卡在哪。</li>
+    <li><b>Display errors only（僅顯示錯誤）</b>：正常畫面自動跑過，出錯才停下來讓你改。<b>日常補跑最常用。</b></li>
+    <li><b>Background（背景）</b>：完全不顯示，交給背景作業跑。</li>
+  </ul>
+
+  <div class="tip">要讓 session 自己在背景被消化，排一支標準程式 <span class="kw">RSBDCSUB</span> 的背景作業，指定 group 名稱即可。SM35 的 Log 按鈕可以看到每一筆的訊息，錯誤 session 會保留，修完再送。相關資料表：<span class="kw">APQI</span>（群組表頭）、<span class="kw">APQD</span>（資料）。</div>
+
+  <div class="warn"><b>Session 沒有「即時回饋」。</b>你的程式跑完只知道「已建立群組」，不知道成功幾筆。如果業務要求「上傳完馬上告訴我哪幾筆錯」，就必須用 <span class="kw">CALL TRANSACTION</span>；或用 Session 但另外寫一支程式去讀 SM35 的 log（<span class="kw">BDC_...</span> 相關 FM／<span class="kw">APQI</span>）回報，複雜度高很多。</div>
+
+  <h3 id="ch04-4-08">8. BDC 的九個坑（老師特別強調）</h3>
+  <table>
+    <thead><tr><th>#</th><th>坑</th><th>解法</th></tr></thead>
+    <tbody>
+      <tr><td>1</td><td><b>日期格式</b>：BDC 的值等同「使用者敲進去的字」。同一支程式，A 使用者 SU3 設 <span class="kw">DD.MM.YYYY</span>、B 設 <span class="kw">YYYY/MM/DD</span>，結果就不同</td><td>用 <span class="kw">WRITE lv_date TO lv_char</span> 或 FM <span class="kw">CONVERSION_EXIT_DATUM_OUTPUT</span> 轉成「目前使用者的外部格式」再送；或在背景作業指定一個格式固定的技術帳號</td></tr>
+      <tr><td>2</td><td><b>小數點格式</b>：SU3 的 Decimal notation 有 <span class="kw">1,234,567.89</span> / <span class="kw">1.234.567,89</span> / <span class="kw">1 234 567,89</span> 三種</td><td>數量金額也要用 <span class="kw">WRITE ... TO</span> 轉外部格式；或全公司統一 SU3 設定並寫進上線 checklist</td></tr>
+      <tr><td>3</td><td><b>SU3 使用者參數</b>：Parameter ID 會自動帶預設值進畫面欄位（例如工廠 WRK、公司代碼 BUK）</td><td>BDC 要明確送出每一個欄位值，<b>不要依賴預設值</b>；或替背景作業建立參數乾淨的專用帳號</td></tr>
+      <tr><td>4</td><td><b>前導零 / ALPHA</b>：Excel 的 <span class="kw">1000123</span> 和資料庫的 <span class="kw">001000123</span> 對不起來</td><td>丟進 BDC 前先跑 <span class="kw">CONVERSION_EXIT_ALPHA_INPUT</span>；顯示回使用者時用 <span class="kw">..._OUTPUT</span></td></tr>
+      <tr><td>5</td><td><b>Excel 帶來的引號與空白</b>：CSV 匯出常變成 <span class="kw">"1000123"</span></td><td>講義用 <span class="kw">TRANSLATE t_xls-aufnr USING '" '</span> 把雙引號換成空白，再 <span class="kw">CONDENSE</span>。現代寫法用 <span class="kw">REPLACE ALL OCCURRENCES OF '"' IN lv_x WITH space</span></td></tr>
+      <tr><td>6</td><td><b>Table Control 捲動</b>：畫面一次只顯示 N 列，第 N+1 列必須先翻頁</td><td>見下方程式；核心是每 N 筆送一次 <span class="kw">BDC_OKCODE = '=P+'</span>，並用 <span class="kw">BDC_CURSOR</span> 定位</td></tr>
+      <tr><td>7</td><td><b>畫面大小</b>：Table Control 可見列數隨 GUI 視窗大小改變</td><td><span class="kw">defsize = 'X'</span>，或改用「每頁固定第 1 列輸入」的定位欄位（很多交易有 <span class="kw">Position</span> 欄）</td></tr>
+      <tr><td>8</td><td><b>Enhancement / User Exit 跳出額外畫面</b>：正式機有客製檢查，開發機沒有</td><td>錄製一定要在「有客製的環境」錄；上線前用 <span class="kw">MODE 'A'</span> 在 QAS 完整跑一次</td></tr>
+      <tr><td>9</td><td><b>SAP 升級後畫面改版</b>：欄位改名、畫面編號改變 → BDC 全部失效</td><td>這是 BDC 的原罪。所以 S/4HANA 一律「先找 BAPI，找不到才 BDC」</td></tr>
+    </tbody>
+  </table>
+
+<pre><code class="abap">*&amp;--- Table Control 捲動的標準寫法（以每頁可輸入 lc_rows 列為例）
+CONSTANTS lc_rows TYPE i VALUE 5.        " 該畫面每頁可輸入列數
+
+DATA(lv_idx) = 0.
+
+LOOP AT lt_item INTO DATA(ls_item).
+
+  DATA(lv_row) = lv_idx MOD lc_rows + 1.   " 本頁的第幾列（1..lc_rows）
+
+  IF lv_row = 1.
+    " 每頁的第一列 → 先開新畫面
+    APPEND VALUE bdcdata( program  = 'SAPMV45A'
+                          dynpro   = '4001'
+                          dynbegin = abap_true ) TO lt_bdc.
+    " 游標放在本頁第一列，確保系統認得目前的捲動位置
+    APPEND VALUE bdcdata( fnam = 'BDC_CURSOR'
+                          fval = |VBAP-POSNR({ lv_row WIDTH = 2 ALIGN = RIGHT PAD = '0' })| ) TO lt_bdc.
+  ENDIF.
+
+  APPEND VALUE bdcdata(
+    fnam = |RV45A-MABNR({ lv_row WIDTH = 2 ALIGN = RIGHT PAD = '0' })|
+    fval = ls_item-matnr ) TO lt_bdc.
+  APPEND VALUE bdcdata(
+    fnam = |VBAP-KWMENG({ lv_row WIDTH = 2 ALIGN = RIGHT PAD = '0' })|
+    fval = |{ ls_item-kwmeng }| ) TO lt_bdc.
+
+  lv_idx = lv_idx + 1.
+
+  " 本頁塞滿了，或已是最後一筆 → 決定按什麼鍵
+  IF lv_idx MOD lc_rows = 0.
+    APPEND VALUE bdcdata( fnam = 'BDC_OKCODE' fval = '=P+' ) TO lt_bdc.   " 翻下一頁
+  ENDIF.
+
+ENDLOOP.
+
+" 最後補一次 Enter 與存檔
+APPEND VALUE bdcdata( fnam = 'BDC_OKCODE' fval = '/00'  ) TO lt_bdc.
+APPEND VALUE bdcdata( fnam = 'BDC_OKCODE' fval = '=SICH' ) TO lt_bdc.</code></pre>
+
+  <div class="tip"><b>Table Control 欄位名的寫法</b>：<span class="kw">結構-欄位(列號)</span>，列號固定兩位、右靠、補零，例如 <span class="kw">VBAP-KWMENG(03)</span>。這是 BDC 新手最常寫錯的地方（寫成 <span class="kw">(3)</span> 就找不到欄位）。字串範本 <span class="kw">WIDTH = 2 ALIGN = RIGHT PAD = '0'</span> 剛好可以生出來。</div>
+
+  <h3 id="ch04-4-09">9. BDC vs BAPI：S/4HANA 的選用原則</h3>
+  <p>這是本章最重要的觀念題。老師的立場很明確：<b>能用 BAPI 就不要用 BDC</b>。但 BDC 沒有死，它在 S/4HANA 上仍有無可取代的場合。</p>
+
+  <table>
+    <thead><tr><th>比較</th><th>BDC（CALL TRANSACTION）</th><th>BAPI / Function Module</th><th>OData / RAP</th></tr></thead>
+    <tbody>
+      <tr><td>執行對象</td><td>畫面（PBO/PAI）</td><td>函數介面</td><td>服務介面</td></tr>
+      <tr><td>效能</td><td>慢（每筆都跑一次畫面）</td><td>快</td><td>快</td></tr>
+      <tr><td>檢查完整度</td><td><b>最完整</b>（含所有 Exit、客製）</td><td>只有該 BAPI 實作的檢查</td><td>依 Behavior Definition</td></tr>
+      <tr><td>升級穩定度</td><td><b>差</b>，畫面一改就壞</td><td>好，SAP 保證介面相容</td><td>好</td></tr>
+      <tr><td>能否背景執行</td><td>可（MODE 'N'）</td><td>可</td><td>可</td></tr>
+      <tr><td>Fiori 畫面</td><td><b>完全不能錄</b></td><td>—</td><td>原生支援</td></tr>
+      <tr><td>回傳訊息</td><td>BDCMSGCOLL</td><td>BAPIRET2</td><td>Message container</td></tr>
+    </tbody>
+  </table>
+
+  <div class="warn"><b>S/4HANA 三個必須知道的變化：</b>
+  <ul>
+    <li><b>Fiori／SAP GUI for HTML 的畫面錄不了 BDC。</b>SHDB 只能錄傳統 SAP GUI Dynpro。如果那支交易在 S/4HANA 只剩 Fiori App，就沒有 BDC 這條路，只能找 OData 或 BAPI。</li>
+    <li><b>很多經典交易在 S/4HANA 被廢止或改版</b>（例如客戶／供應商主檔統一成 Business Partner，XD01／MK01 已不建議使用，改用 <span class="tcode">BP</span> 與 <span class="kw">BAPI_BUPA_*</span> / <span class="kw">CVI</span>）。舊系統轉過來的 BDC 程式一定要重驗。</li>
+    <li><b>資料遷移改用 Migration Cockpit（<span class="tcode">LTMC</span> / Fiori「Migrate Your Data」）</b>，LSMW 在 S/4HANA 已不受支援（SAP Note 2287723）。期初資料不要再寫 BDC。</li>
+  </ul></div>
+
+  <p>以 CO11N 報工為例，S/4HANA 的建議寫法是改用 BAPI，錯誤處理乾淨得多：</p>
+
+<pre><code class="abap">*&amp;--- 以 BAPI 取代 CO11N 的 BDC（生產訂單確認）
+DATA lt_return TYPE STANDARD TABLE OF bapiret2.
+
+DATA(lt_conf) = VALUE bapi_pp_timeticket_tab(
+  ( orderid   = ls_xls-aufnr            " 工單
+    operation = ls_xls-vornr            " 作業
+    yield     = ls_xls-lmnga            " 產出量
+    scrap     = ls_xls-xmnga            " 壞品量
+    un_yield  = ls_xls-meinh
+    postg_date = lv_budat
+    ex_finish  = abap_true
+    conf_activity1 = ls_xls-ism01
+    un_activity1   = ls_xls-ile01 ) ).
+
+CALL FUNCTION 'BAPI_PRODORDCONF_CREATE_TT'
+  EXPORTING
+    post_wrong_entries = '0'          " 有錯就整批不寫
+  TABLES
+    timetickets        = lt_conf
+    return             = lt_return.
+
+IF line_exists( lt_return[ type = 'E' ] ) OR line_exists( lt_return[ type = 'A' ] ).
+  CALL FUNCTION 'BAPI_TRANSACTION_ROLLBACK'.
+  ls_xls-status = 'E'.
+  ls_xls-msg    = lt_return[ type = 'E' ]-message.
+ELSE.
+  CALL FUNCTION 'BAPI_TRANSACTION_COMMIT' EXPORTING wait = abap_true.
+  ls_xls-status = 'S'.
+  ls_xls-msg    = '報工成功'.
+ENDIF.</code></pre>
+
+  <div class="tip"><b>找 BAPI 的三個方法</b>：(1) <span class="tcode">BAPI</span> 交易碼看 Business Object Repository；(2) <span class="tcode">SE37</span> 用 <span class="kw">BAPI_*</span> 加關鍵字模糊搜尋；(3) 在該交易的畫面做一次操作，用 <span class="tcode">ST05</span> 追 SQL 找到主表，再用 <span class="tcode">SE84</span> 找相關函數群組。找不到 BAPI 時再回頭考慮 BDC。</div>
+
+  <h3 id="ch04-4-10">10. 前景檔案處理：GUI_UPLOAD / GUI_DOWNLOAD / XLSX</h3>
+  <p>「前景」指的是使用者坐在 SAP GUI 前面。這時候可以動使用者的 PC 檔案，用的是 <span class="kw">CL_GUI_FRONTEND_SERVICES</span>（或它包裝的 <span class="kw">GUI_UPLOAD</span> / <span class="kw">GUI_DOWNLOAD</span>）。</p>
+
+<pre><code class="abap">*&amp;--- 選檔對話框（講義的 GET_PC_FILE 現代化）
+FORM get_pc_file CHANGING cv_file TYPE rlgrap-filename.
+
+  DATA: lt_ftab   TYPE filetable,
+        lv_rc     TYPE i,
+        lv_action TYPE i.
+
+  cl_gui_frontend_services=&gt;file_open_dialog(
+    EXPORTING
+      window_title            = '請選擇上傳檔案'
+      initial_directory       = 'C:\Temp'
+      multiselection          = abap_false
+      default_extension       = 'csv'
+      file_filter             = |CSV (*.csv)\|*.csv\|Excel (*.xlsx)\|*.xlsx\|All (*.*)\|*.*\||
+    CHANGING
+      file_table              = lt_ftab
+      rc                      = lv_rc
+      user_action             = lv_action
+    EXCEPTIONS
+      file_open_dialog_failed = 1
+      cntl_error              = 2
+      error_no_gui            = 3
+      not_supported_by_gui    = 4
+      OTHERS                  = 5 ).
+
+  IF sy-subrc &lt;&gt; 0
+     OR lv_action = cl_gui_frontend_services=&gt;action_cancel.
+    RETURN.
+  ENDIF.
+
+  IF line_exists( lt_ftab[ 1 ] ).
+    cv_file = lt_ftab[ 1 ]-filename.
+  ENDIF.
+
+ENDFORM.</code></pre>
+
+<pre><code class="abap">*&amp;--- 讀 CSV / TXT：GUI_UPLOAD + 自行切欄
+FORM upload_csv USING iv_file TYPE string.
+
+  TYPES: BEGIN OF ty_line,
+           line TYPE string,
+         END OF ty_line.
+
+  DATA lt_raw TYPE STANDARD TABLE OF ty_line.
+
+  cl_gui_frontend_services=&gt;gui_upload(
+    EXPORTING
+      filename                = iv_file
+      filetype                = 'ASC'          " ASC=文字 BIN=二進位
+      has_field_separator     = abap_false     " 自己切比較可控
+      codepage                = '4110'         " UTF-8；BIG5 用 '8300'
+    CHANGING
+      data_tab                = lt_raw
+    EXCEPTIONS
+      file_open_error         = 1
+      file_read_error         = 2
+      no_batch                = 3              " ← 背景執行會噴這個！
+      gui_refuse_filetransfer = 4
+      invalid_type            = 5
+      OTHERS                  = 19 ).
+
+  IF sy-subrc &lt;&gt; 0.
+    MESSAGE |檔案讀取失敗 RC={ sy-subrc }| TYPE 'E'.
+  ENDIF.
+
+  " 第 1 列是標題，從第 2 列開始
+  LOOP AT lt_raw INTO DATA(ls_raw) FROM 2.
+
+    " 先清掉 Excel 匯出常見的雙引號與 BOM
+    DATA(lv_line) = ls_raw-line.
+    REPLACE ALL OCCURRENCES OF '"' IN lv_line WITH ``.
+    REPLACE ALL OCCURRENCES OF cl_abap_char_utilities=&gt;byte_order_mark_utf8
+            IN lv_line WITH ``.
+
+    SPLIT lv_line AT ','
+      INTO DATA(lv_aufnr) DATA(lv_lmnga) DATA(lv_meinh) DATA(lv_xmnga)
+           DATA(lv_grund) DATA(lv_ism01) DATA(lv_ile01) DATA(lv_ism02)
+           DATA(lv_ile02) DATA(lv_ism03) DATA(lv_ile03) DATA(lv_ism04)
+           DATA(lv_ile04) DATA(lv_budat) DATA(lv_vornr).
+
+    APPEND VALUE ty_xls( aufnr = condense( lv_aufnr )
+                         lmnga = condense( lv_lmnga )
+                         meinh = condense( lv_meinh )
+                         xmnga = condense( lv_xmnga )
+                         grund = condense( lv_grund )
+                         ism01 = condense( lv_ism01 )
+                         ile01 = condense( lv_ile01 )
+                         ism02 = condense( lv_ism02 )
+                         ile02 = condense( lv_ile02 )
+                         ism03 = condense( lv_ism03 )
+                         ile03 = condense( lv_ile03 )
+                         ism04 = condense( lv_ism04 )
+                         ile04 = condense( lv_ile04 )
+                         budat = condense( lv_budat )
+                         vornr = condense( lv_vornr ) ) TO gt_xls.
+
+  ENDLOOP.
+
+ENDFORM.</code></pre>
+
+  <div class="warn"><b>編碼與 BOM 是 CSV 的兩大殺手（尤其中文）。</b>
+  <ul>
+    <li><span class="kw">codepage</span> 傳錯，中文會變亂碼。常見 SAP codepage：<span class="kw">1100</span> Latin-1、<span class="kw">4110</span> UTF-8、<span class="kw">4103</span> UTF-16LE、<span class="kw">8300</span> 繁體中文 BIG5。實際可用值請查 <span class="kw">TCP00</span> / <span class="kw">TCP0C</span>。</li>
+    <li>Excel 另存 CSV UTF-8 時會在檔頭放 <b>BOM</b>（<span class="kw">EF BB BF</span>），第一個欄位會多三個看不見的字元，比對永遠不相等。用 <span class="kw">cl_abap_char_utilities=&gt;byte_order_mark_utf8</span> 清掉。</li>
+    <li>反過來，SAP 產生給 Excel 開的 UTF-8 CSV，<b>要主動加上 BOM</b>，否則 Excel 用 ANSI 解讀，中文變亂碼。</li>
+  </ul></div>
+
+<pre><code class="abap">*&amp;--- 下載：讓 Excel 打得開的 UTF-8 CSV（含 BOM、Tab 分隔）
+FORM download_csv USING iv_file TYPE string.
+
+  DATA lt_out TYPE STANDARD TABLE OF string.
+
+  " 第一列前面掛 BOM，Excel 才會用 UTF-8 開
+  APPEND |{ cl_abap_char_utilities=&gt;byte_order_mark_utf8 }工單{ cl_abap_char_utilities=&gt;horizontal_tab }| &amp;&amp;
+         |作業{ cl_abap_char_utilities=&gt;horizontal_tab }| &amp;&amp;
+         |狀況{ cl_abap_char_utilities=&gt;horizontal_tab }訊息| TO lt_out.
+
+  LOOP AT gt_xls INTO DATA(ls_xls).
+    APPEND |{ ls_xls-aufnr }{ cl_abap_char_utilities=&gt;horizontal_tab }| &amp;&amp;
+           |{ ls_xls-vornr }{ cl_abap_char_utilities=&gt;horizontal_tab }| &amp;&amp;
+           |{ ls_xls-status }{ cl_abap_char_utilities=&gt;horizontal_tab }| &amp;&amp;
+           |{ ls_xls-msg }| TO lt_out.
+  ENDLOOP.
+
+  cl_gui_frontend_services=&gt;gui_download(
+    EXPORTING
+      filename                = iv_file
+      filetype                = 'ASC'
+      write_field_separator   = abap_false      " 已自己放 TAB
+      codepage                = '4110'
+      trunc_trailing_blanks   = abap_true
+    CHANGING
+      data_tab                = lt_out
+    EXCEPTIONS
+      file_write_error        = 1
+      no_batch                = 2
+      gui_refuse_filetransfer = 3
+      OTHERS                  = 24 ).
+
+  IF sy-subrc &lt;&gt; 0.
+    MESSAGE |檔案下載失敗 RC={ sy-subrc }| TYPE 'E'.
+  ENDIF.
+
+ENDFORM.</code></pre>
+
+  <p>講義用 <span class="kw">TEXT_CONVERT_XLS_TO_SAP</span> 讀 Excel。這支在舊 <span class="kw">.xls</span> 上能用，但對 <span class="kw">.xlsx</span> 常常失敗、還會受本機 Excel 版本影響。S/4HANA 建議改用 <span class="kw">CL_FDT_XL_SPREADSHEET</span>（標準內建，純 ABAP 解析，<b>不需要前端 Excel</b>）：</p>
+
+<pre><code class="abap">*&amp;--- 讀 XLSX（S/4HANA 建議做法，純 ABAP、可在背景使用）
+FORM upload_xlsx USING iv_xstring TYPE xstring.
+
+  TRY.
+      DATA(lo_xl) = NEW cl_fdt_xl_spreadsheet(
+                        document_name = 'upload.xlsx'
+                        xdocument     = iv_xstring ).
+
+      " 取得所有工作表名稱
+      lo_xl-&gt;if_fdt_doc_spreadsheet~get_worksheet_names(
+        IMPORTING worksheet_names = DATA(lt_sheets) ).
+
+      " 讀第一張工作表，回傳一個動態內表的參考
+      DATA(lo_data) = lo_xl-&gt;if_fdt_doc_spreadsheet~get_itab_from_worksheet(
+                          worksheet_name = lt_sheets[ 1 ] ).
+
+      ASSIGN lo_data-&gt;* TO FIELD-SYMBOL(&lt;lt_sheet&gt;).
+
+      LOOP AT &lt;lt_sheet&gt; ASSIGNING FIELD-SYMBOL(&lt;ls_row&gt;) FROM 2.
+        " &lt;ls_row&gt; 是動態結構，用 ASSIGN COMPONENT 取欄位
+        ASSIGN COMPONENT 1 OF STRUCTURE &lt;ls_row&gt; TO FIELD-SYMBOL(&lt;lv_c1&gt;).
+        ASSIGN COMPONENT 2 OF STRUCTURE &lt;ls_row&gt; TO FIELD-SYMBOL(&lt;lv_c2&gt;).
+        APPEND VALUE ty_xls( aufnr = &lt;lv_c1&gt; vornr = &lt;lv_c2&gt; ) TO gt_xls.
+      ENDLOOP.
+
+    CATCH cx_fdt_excel_core INTO DATA(lx_xl).
+      MESSAGE lx_xl-&gt;get_text( ) TYPE 'E'.
+  ENDTRY.
+
+ENDFORM.</code></pre>
+
+  <div class="note"><b>讀 Excel 的四種方案比較</b>：
+  <ul>
+    <li><span class="kw">TEXT_CONVERT_XLS_TO_SAP</span>：講義用的，簡單但只穩定支援舊 .xls，且需要 GUI。</li>
+    <li><span class="kw">ALSM_EXCEL_TO_INTERNAL_TABLE</span>：老牌，但上限 9999 列 / 欄寬有限、需要 GUI、逐格回傳很慢。</li>
+    <li><span class="kw">CL_FDT_XL_SPREADSHEET</span>：<b>標準內建、可在背景跑</b>，讀 .xlsx 首選。缺點是只能讀不能寫。</li>
+    <li><span class="kw">abap2xlsx</span>（開源 <span class="kw">ZCL_EXCEL</span>）：讀寫都行、可設格式與公式，但要另外安裝。</li>
+  </ul>
+  最省事的做法其實是：<b>請對方給 CSV，不要給 Excel。</b></div>
+
+  <h3 id="ch04-4-11">11. 應用伺服器檔案：OPEN DATASET / AL11</h3>
+  <p>背景作業裡<b>絕對不能用 <span class="kw">GUI_UPLOAD</span> / <span class="kw">GUI_DOWNLOAD</span> / <span class="kw">CL_GUI_FRONTEND_SERVICES</span></b>——沒有 SAP GUI，會噴 <span class="kw">no_batch</span> 例外或 <span class="kw">CNTL_ERROR</span>。背景要動檔案，只能動<b>應用伺服器</b>上的檔案，用 <span class="kw">OPEN DATASET</span>，用 <span class="tcode">AL11</span> 瀏覽。</p>
+
+<pre><code class="abap">*&amp;--- 寫應用伺服器檔案（文字模式、UTF-8）
+FORM write_app_server_file USING iv_path TYPE string.
+
+  DATA lv_msg TYPE string.
+
+  TRY.
+      OPEN DATASET iv_path
+           FOR OUTPUT
+           IN TEXT MODE ENCODING UTF-8
+           WITH SMART LINEFEED            " 依 OS 自動決定換行字元
+           MESSAGE lv_msg.
+
+      IF sy-subrc &lt;&gt; 0.
+        MESSAGE |開檔失敗：{ lv_msg }| TYPE 'E'.
+      ENDIF.
+
+      LOOP AT gt_xls INTO DATA(ls_xls).
+        DATA(lv_line) = |{ ls_xls-aufnr },{ ls_xls-vornr },{ ls_xls-status },{ ls_xls-msg }|.
+        TRANSFER lv_line TO iv_path.
+      ENDLOOP.
+
+      CLOSE DATASET iv_path.
+
+    CATCH cx_sy_file_open cx_sy_file_authority cx_sy_file_io INTO DATA(lx_file).
+      MESSAGE lx_file-&gt;get_text( ) TYPE 'E'.
+  ENDTRY.
+
+ENDFORM.
+
+*&amp;--- 讀應用伺服器檔案
+FORM read_app_server_file USING iv_path TYPE string.
+
+  DATA lv_line TYPE string.
+
+  OPEN DATASET iv_path FOR INPUT IN TEXT MODE ENCODING UTF-8.
+  IF sy-subrc &lt;&gt; 0.
+    MESSAGE |檔案不存在：{ iv_path }| TYPE 'E'.
+  ENDIF.
+
+  DO.
+    READ DATASET iv_path INTO lv_line.
+    IF sy-subrc &lt;&gt; 0.
+      EXIT.
+    ENDIF.
+    " ...解析 lv_line...
+  ENDDO.
+
+  CLOSE DATASET iv_path.
+
+  " 處理完把檔案移到備份目錄（同一台機器才能 rename）
+  DATA(lv_bak) = |{ iv_path }.{ sy-datum }{ sy-uzeit }.bak|.
+  " DELETE DATASET iv_path.  " 或用外部指令 mv
+
+ENDFORM.</code></pre>
+
+  <table>
+    <thead><tr><th>模式</th><th>語法</th><th>用途</th></tr></thead>
+    <tbody>
+      <tr><td>文字（Unicode）</td><td><span class="kw">IN TEXT MODE ENCODING UTF-8 / DEFAULT / NON-UNICODE</span></td><td>一般 CSV／TXT，逐列讀寫</td></tr>
+      <tr><td>二進位</td><td><span class="kw">IN BINARY MODE</span></td><td>PDF、XLSX、圖片，配 <span class="kw">TYPE xstring</span></td></tr>
+      <tr><td>舊式文字</td><td><span class="kw">IN LEGACY TEXT MODE CODE PAGE '8300'</span></td><td>要產生 BIG5 等非 Unicode 編碼給舊系統吃</td></tr>
+      <tr><td>附加</td><td><span class="kw">FOR APPENDING</span></td><td>寫入 log 檔不覆蓋</td></tr>
+    </tbody>
+  </table>
+
+  <div class="tip"><b>路徑不要寫死。</b>用 <span class="tcode">FILE</span>（邏輯檔案名稱）定義邏輯路徑，程式用 <span class="kw">FILE_GET_NAME</span> 取實體路徑；這樣 DEV／QAS／PRD 的目錄不同也不必改程式。<span class="tcode">AL11</span> 可以看到伺服器上的目錄結構與 <span class="kw">DIR_HOME</span>、<span class="kw">DIR_TRANS</span> 等別名。</div>
+
+<pre><code class="abap">*--- 用邏輯檔案名取得實體路徑（跨環境安全）
+DATA lv_phys TYPE string.
+
+CALL FUNCTION 'FILE_GET_NAME'
+  EXPORTING
+    logical_filename = 'ZPP_WORKTIME_IN'      " FILE 交易碼裡定義
+    parameter_1      = |{ sy-datum }|
+  IMPORTING
+    file_name        = lv_phys
+  EXCEPTIONS
+    file_not_found   = 1
+    OTHERS           = 2.</code></pre>
+
+<pre><code class="abap">*&amp;--- 編碼轉換：xstring &lt;-&gt; string（S/4HANA 1809 = 7.53 起可用）
+DATA(lv_xstr) = iv_binary.
+
+" UTF-8 位元組 → 字串
+DATA(lo_in)  = cl_abap_conv_codepage=&gt;create_in( codepage = 'UTF-8' ).
+DATA(lv_str) = lo_in-&gt;convert( source = lv_xstr ).
+
+" 字串 → BIG5 位元組（產檔給舊系統）
+DATA(lo_out) = cl_abap_conv_codepage=&gt;create_out( codepage = 'BIG5' ).
+DATA(lv_big5) = lo_out-&gt;convert( source = lv_str ).
+
+" 切成一行一行
+SPLIT lv_str AT cl_abap_char_utilities=&gt;cr_lf INTO TABLE DATA(lt_lines).</code></pre>
+
+  <div class="warn"><b>OPEN DATASET 的權限</b>：S/4HANA 會做 <span class="kw">S_DATASET</span> 權限檢查與 <b>Validation/Virus Scan Profile</b>（<span class="kw">/SCET/...</span>）。正式機常常「開發機能跑、正式機開檔失敗 <span class="kw">sy-subrc = 8</span>」，八成是 Basis 沒開該目錄的權限。永遠加 <span class="kw">MESSAGE lv_msg</span> 把 OS 層錯誤訊息接出來，不然你只會看到一個 8。</div>
+
+  <h3 id="ch04-4-12">12. FTP：SAP 標準函數群完整流程</h3>
+  <p>講義的 FTP 流程設計得很完整，值得整套背下來：<b>連線 → 檢查來源／備份目錄 → 設 binary 模式 → 列檔名 → 逐檔 get → 備份到 BAK 目錄 → 刪來源 → 斷線</b>。這個「取走後立刻搬到備份目錄並刪除來源」的設計，可以保證同一個檔不會被處理兩次。</p>
+
+  <table>
+    <thead><tr><th>函數</th><th>用途</th><th>重點參數</th></tr></thead>
+    <tbody>
+      <tr><td><span class="kw">HTTP_SCRAMBLE</span></td><td>把密碼加擾（FTP_CONNECT 只吃加擾過的密碼）</td><td><span class="kw">source</span>／<span class="kw">sourcelen</span>／<span class="kw">key</span>（慣用 <span class="kw">26101957</span>）</td></tr>
+      <tr><td><span class="kw">FTP_CONNECT</span></td><td>建立連線</td><td><span class="kw">user</span>／<span class="kw">password</span>（已加擾）／<span class="kw">host</span>／<span class="kw">rfc_destination</span> → 回 <span class="kw">handle</span></td></tr>
+      <tr><td><span class="kw">FTP_COMMAND</span></td><td>下任意 FTP 指令：<span class="kw">cd</span>、<span class="kw">bin</span>／<span class="kw">asc</span>、<span class="kw">nlist</span>／<span class="kw">dir</span>、<span class="kw">get</span>、<span class="kw">put</span>、<span class="kw">del</span>、<span class="kw">mkdir</span></td><td><span class="kw">handle</span>／<span class="kw">command</span>，結果回 <span class="kw">TABLES data</span></td></tr>
+      <tr><td><span class="kw">FTP_SERVER_TO_R3</span></td><td>把 FTP 上的檔案抓進 ABAP 內表</td><td><span class="kw">fname</span>；<span class="kw">TABLES blob</span>（二進位）或 <span class="kw">text</span>（文字）；回 <span class="kw">blob_length</span></td></tr>
+      <tr><td><span class="kw">FTP_R3_TO_SERVER</span></td><td>把 ABAP 內表寫回 FTP</td><td><span class="kw">fname</span>／<span class="kw">blob_length</span>／<span class="kw">TABLES blob</span></td></tr>
+      <tr><td><span class="kw">FTP_DISCONNECT</span></td><td>斷線</td><td><span class="kw">handle</span></td></tr>
+      <tr><td><span class="kw">RFC_CONNECTION_CLOSE</span></td><td>釋放 RFC 連線（斷線後一定要做）</td><td><span class="kw">destination</span></td></tr>
+    </tbody>
+  </table>
+
+  <div class="note"><b>兩個 RFC destination（SM59 建立，類型 T / TCP-IP，程式 <span class="kw">sapftp</span>）</b>：
+  <ul>
+    <li><span class="kw">SAPFTP</span>：走前端（使用者的 PC），只能在有 GUI 時用。</li>
+    <li><span class="kw">SAPFTPA</span>：走應用伺服器，<b>可以在背景作業執行</b>。介面程式一律用這個。講義的註解也特別標了：「需至 TOP 區設定 <span class="kw">w_ftp_dest = 'SAPFTPA'</span>（可 background 執行）」。</li>
+  </ul></div>
+
+<pre><code class="abap">*&amp;--- FTP 完整樣板（現代化改寫）
+CLASS lcl_ftp DEFINITION.
+  PUBLIC SECTION.
+    METHODS: connect    IMPORTING iv_host TYPE string
+                                  iv_user TYPE string
+                                  iv_pwd  TYPE string
+                        RAISING   cx_static_check,
+             command    IMPORTING iv_cmd    TYPE string
+                        RETURNING VALUE(rt_result) TYPE ty_t_text,
+             get_file   IMPORTING iv_fname  TYPE string
+                        RETURNING VALUE(rv_xstr) TYPE xstring,
+             put_file   IMPORTING iv_fname  TYPE string
+                                  iv_xstr   TYPE xstring,
+             disconnect.
+  PRIVATE SECTION.
+    CONSTANTS: gc_key  TYPE i           VALUE 26101957,
+               gc_dest TYPE rfcdes-rfcdest VALUE 'SAPFTPA'.  " 背景可用
+    DATA gv_handle TYPE i.
+ENDCLASS.
+
+CLASS lcl_ftp IMPLEMENTATION.
+
+  METHOD connect.
+
+    DATA lv_pwd TYPE scms_ftppw.
+
+    lv_pwd = iv_pwd.
+
+    " 密碼必須先加擾，FTP_CONNECT 不吃明碼
+    CALL FUNCTION 'HTTP_SCRAMBLE'
+      EXPORTING
+        source      = lv_pwd
+        sourcelen   = strlen( lv_pwd )
+        key         = gc_key
+      IMPORTING
+        destination = lv_pwd.
+
+    CALL FUNCTION 'FTP_CONNECT'
+      EXPORTING
+        user            = iv_user
+        password        = lv_pwd
+        host            = iv_host
+        rfc_destination = gc_dest
+      IMPORTING
+        handle          = gv_handle
+      EXCEPTIONS
+        not_connected   = 1
+        OTHERS          = 2.
+
+    IF sy-subrc &lt;&gt; 0.
+      RAISE EXCEPTION TYPE cx_sy_conversion_error.   " 實務上換成自建例外
+    ENDIF.
+
+  ENDMETHOD.
+
+  METHOD command.
+
+    CALL FUNCTION 'FTP_COMMAND'
+      EXPORTING
+        handle        = gv_handle
+        command       = iv_cmd            " 'cd /CO01/'、'bin'、'nlist'、'del x.csv'
+      TABLES
+        data          = rt_result
+      EXCEPTIONS
+        tcpip_error   = 1
+        command_error = 2
+        data_error    = 3
+        OTHERS        = 4.
+
+  ENDMETHOD.
+
+  METHOD get_file.
+
+    DATA: lt_blob TYPE STANDARD TABLE OF ty_x255,
+          lv_len  TYPE i.
+
+    CALL FUNCTION 'FTP_SERVER_TO_R3'
+      EXPORTING
+        handle        = gv_handle
+        fname         = iv_fname
+      IMPORTING
+        blob_length   = lv_len
+      TABLES
+        blob          = lt_blob            " 二進位；文字檔可改用 text 參數
+      EXCEPTIONS
+        tcpip_error   = 1
+        command_error = 2
+        data_error    = 3
+        OTHERS        = 4.
+
+    CHECK sy-subrc = 0.
+
+    CALL FUNCTION 'SCMS_BINARY_TO_XSTRING'
+      EXPORTING
+        input_length = lv_len
+      IMPORTING
+        buffer       = rv_xstr
+      TABLES
+        binary_tab   = lt_blob.
+
+  ENDMETHOD.
+
+  METHOD put_file.
+
+    DATA: lt_blob TYPE STANDARD TABLE OF ty_x255,
+          lv_len  TYPE i.
+
+    CALL FUNCTION 'SCMS_XSTRING_TO_BINARY'
+      EXPORTING
+        buffer        = iv_xstr
+      IMPORTING
+        output_length = lv_len
+      TABLES
+        binary_tab    = lt_blob.
+
+    CALL FUNCTION 'FTP_R3_TO_SERVER'
+      EXPORTING
+        handle        = gv_handle
+        fname         = iv_fname
+        blob_length   = lv_len
+      TABLES
+        blob          = lt_blob
+      EXCEPTIONS
+        tcpip_error   = 1
+        command_error = 2
+        data_error    = 3
+        OTHERS        = 4.
+
+  ENDMETHOD.
+
+  METHOD disconnect.
+
+    CALL FUNCTION 'FTP_DISCONNECT'
+      EXPORTING handle = gv_handle.
+
+    " 這一步很多人忘記：不做會累積 RFC 連線
+    CALL FUNCTION 'RFC_CONNECTION_CLOSE'
+      EXPORTING destination = gc_dest
+      EXCEPTIONS OTHERS = 1.
+
+  ENDMETHOD.
+
+ENDCLASS.</code></pre>
+
+  <p>主流程（對應講義的 <span class="kw">GET_DATA_FROM_FTP</span> / <span class="kw">BASIS_SETTING</span>）：</p>
+
+<pre><code class="abap">FORM get_data_from_ftp.
+
+  DATA(lo_ftp) = NEW lcl_ftp( ).
+
+  TRY.
+      lo_ftp-&gt;connect( iv_host = CONV #( p_ip )
+                       iv_user = CONV #( p_user )
+                       iv_pwd  = CONV #( p_pw ) ).
+    CATCH cx_root.
+      PERFORM send_alert_mail USING 'FTP connect fail !'.
+      STOP.
+  ENDTRY.
+
+  lo_ftp-&gt;command( 'bin' ).                       " 二進位模式，避免換行字元被改
+  lo_ftp-&gt;command( |cd { p_fpath }| ).            " 進入收檔目錄
+
+  " 只列檔名（nlist），dir 會帶權限/日期等雜訊
+  DATA(lt_files) = lo_ftp-&gt;command( 'nlist' ).
+
+  LOOP AT lt_files INTO DATA(ls_file).
+
+    " 只處理 .csv
+    SPLIT ls_file-text AT '.' INTO DATA(lv_name) DATA(lv_ext).
+    CHECK to_lower( lv_ext ) = 'csv'.
+
+    DATA(lv_xstr) = lo_ftp-&gt;get_file( CONV #( ls_file-text ) ).
+    IF lv_xstr IS INITIAL.
+      PERFORM send_alert_mail USING |Read { ls_file-text } from FTP fail !|.
+      CONTINUE.
+    ENDIF.
+
+    PERFORM parse_csv_xstring USING lv_xstr.      " 解析進 gt_xls
+
+    " 備份：切到 BAK 目錄 put 一份，再回來刪掉原檔
+    lo_ftp-&gt;command( |cd ..| ).
+    lo_ftp-&gt;command( |cd { p_fbakup }| ).
+    lo_ftp-&gt;put_file( iv_fname = CONV #( ls_file-text ) iv_xstr = lv_xstr ).
+    lo_ftp-&gt;command( |cd ..| ).
+
+    lo_ftp-&gt;command( |cd { p_fpath }| ).
+    lo_ftp-&gt;command( |del { ls_file-text }| ).
+
+  ENDLOOP.
+
+  lo_ftp-&gt;disconnect( ).
+
+ENDFORM.</code></pre>
+
+  <p>取回的是二進位，講義用 <span class="kw">SCMS_BINARY_TO_TEXT</span>（<span class="kw">ENCODING = '4103'</span>）轉成文字表再 <span class="kw">SPLIT AT ','</span>。現代做法直接對 xstring 轉碼：</p>
+
+<pre><code class="abap">FORM parse_csv_xstring USING iv_xstr TYPE xstring.
+
+  TRY.
+      DATA(lv_text) = cl_abap_conv_codepage=&gt;create_in( codepage = 'UTF-8'
+                        )-&gt;convert( source = iv_xstr ).
+    CATCH cx_sy_conversion_codepage.
+      " 若來源是 BIG5，改用 BIG5 再轉一次
+      lv_text = cl_abap_conv_codepage=&gt;create_in( codepage = 'BIG5'
+                  )-&gt;convert( source = iv_xstr ).
+  ENDTRY.
+
+  REPLACE ALL OCCURRENCES OF cl_abap_char_utilities=&gt;byte_order_mark_utf8
+          IN lv_text WITH ``.
+
+  SPLIT lv_text AT cl_abap_char_utilities=&gt;cr_lf INTO TABLE DATA(lt_lines).
+
+  " 第一列是標題（講義寫 LOOP AT t_texttab FROM 2 就是這個意思）
+  LOOP AT lt_lines INTO DATA(lv_line) FROM 2.
+    CHECK lv_line IS NOT INITIAL.
+    " ...SPLIT AT ',' 進 gt_xls...
+  ENDLOOP.
+
+ENDFORM.</code></pre>
+
+  <div class="warn"><b>FTP 在 2020 年代已經不該用了。</b>帳密與資料都是明碼傳輸。SAP 標準的 <span class="kw">FTP_*</span> 函數<b>不支援 SFTP／FTPS</b>。S/4HANA 的替代方案：
+  <ul>
+    <li><b>SFTP</b>：用 <span class="tcode">SM69</span> 定義外部指令、<span class="kw">SXPG_COMMAND_EXECUTE</span> 呼叫 OS 上的 <span class="kw">sftp</span>／<span class="kw">scp</span>（配金鑰認證），SAP 端只讀寫應用伺服器目錄（<span class="tcode">AL11</span>）。</li>
+    <li><b>HTTPS / REST</b>：用 <span class="kw">CL_HTTP_CLIENT</span> 或 <span class="kw">CL_REST_HTTP_CLIENT</span>，SM59 建 <span class="kw">G</span> 型 destination，走 STRUST 憑證。</li>
+    <li><b>中介平台</b>：SAP Integration Suite（CPI）／PO 有現成的 SFTP adapter，是最乾淨的選擇。</li>
+    <li>不論哪一種，<b>密碼一律不要寫在程式或 PARAMETERS 預設值裡</b>。</li>
+  </ul></div>
+
+  <h3 id="ch04-4-13">13. 寄信：CL_BCS 完整樣板</h3>
+  <p>講義用的是舊 API <span class="kw">SO_DOCUMENT_SEND_API1</span>（更舊的還有 <span class="kw">SO_NEW_DOCUMENT_ATT_SEND_API1</span>）。這兩支要自己組 packing list、算 doc_size，很容易算錯導致附件壞掉。<b>S/4HANA 一律建議改用 <span class="kw">CL_BCS</span></b>（Business Communication Services），物件導向、附件用一行 <span class="kw">add_attachment</span> 就好。</p>
+
+<pre><code class="abap">*&amp;--- CL_BCS 完整樣板：HTML 本文 + PDF 附件 + XLSX 附件 + 多收件人
+FORM send_mail_bcs USING it_recv   TYPE ty_t_email
+                         iv_pdf    TYPE xstring
+                         iv_xlsx   TYPE xstring.
+
+  TRY.
+      "--- 1) 建立傳送請求
+      DATA(lo_send) = cl_bcs=&gt;create_persistent( ).
+
+      "--- 2) 本文（HTM 或 RAW）
+      DATA(lt_body) = VALUE bcsy_text(
+        ( line = '&lt;p&gt;各位好：&lt;/p&gt;' )
+        ( line = |&lt;p&gt;MES 工時回報上傳 SAP 已於 { sy-datum DATE = USER } { sy-uzeit TIME = USER } 完成。&lt;/p&gt;| )
+        ( line = |&lt;p&gt;成功 { lines( VALUE ty_t_xls( FOR w IN gt_xls WHERE ( status = 'S' ) ( w ) ) ) } 筆，| &amp;&amp;
+                 |失敗 { lines( VALUE ty_t_xls( FOR w IN gt_xls WHERE ( status = 'E' ) ( w ) ) ) } 筆，明細請見附件。&lt;/p&gt;| )
+        ( line = '&lt;p&gt;（本信件由系統自動發出，請勿直接回覆）&lt;/p&gt;' ) ).
+
+      DATA(lo_doc) = cl_document_bcs=&gt;create_document(
+                       i_type    = 'HTM'                 " RAW=純文字 HTM=網頁
+                       i_text    = lt_body
+                       i_subject = CONV so_obj_des( 'MES 工時回報上傳 SAP' ) ).
+
+      "--- 3) 附件：PDF（xstring → solix）
+      IF iv_pdf IS NOT INITIAL.
+        lo_doc-&gt;add_attachment(
+          i_attachment_type    = 'PDF'
+          i_attachment_subject = CONV so_obj_des( |工時上傳結果_{ sy-datum }| )   " 最長 50 字元
+          i_att_content_hex    = cl_bcs_convert=&gt;xstring_to_solix( iv_pdf ) ).
+      ENDIF.
+
+      "--- 4) 附件：XLSX
+      IF iv_xlsx IS NOT INITIAL.
+        lo_doc-&gt;add_attachment(
+          i_attachment_type    = 'XLS'
+          i_attachment_subject = CONV so_obj_des( |明細_{ sy-datum }.xlsx| )
+          i_att_content_hex    = cl_bcs_convert=&gt;xstring_to_solix( iv_xlsx ) ).
+      ENDIF.
+
+      lo_send-&gt;set_document( lo_doc ).
+
+      "--- 5) 寄件者（用 SAP 使用者，或指定一個對外的位址）
+      lo_send-&gt;set_sender( cl_sapuser_bcs=&gt;create( sy-uname ) ).
+      " 或：cl_cam_address_bcs=&gt;create_internet_address( 'sapnoreply@company.com' )
+
+      "--- 6) 收件者
+      LOOP AT it_recv INTO DATA(lv_mail).
+        lo_send-&gt;add_recipient(
+          i_recipient = cl_cam_address_bcs=&gt;create_internet_address( CONV adr6-smtp_addr( lv_mail ) )
+          i_express   = abap_true ).
+      ENDLOOP.
+
+      "--- 7) 立即送出（不等 RSCONN01 排程）
+      lo_send-&gt;set_send_immediately( abap_true ).
+      DATA(lv_ok) = lo_send-&gt;send( i_with_error_screen = abap_true ).
+
+      IF lv_ok = abap_true.
+        COMMIT WORK AND WAIT.          " ← 沒有 COMMIT 就不會真的寄出！
+        MESSAGE 'Mail 已送出，可至 SOST 查詢' TYPE 'S'.
+      ELSE.
+        MESSAGE '至少一位收件者送出失敗' TYPE 'W'.
+      ENDIF.
+
+    CATCH cx_bcs INTO DATA(lx_bcs).
+      MESSAGE |寄信失敗：{ lx_bcs-&gt;get_text( ) }| TYPE 'E'.
+  ENDTRY.
+
+ENDFORM.</code></pre>
+
+  <div class="warn"><b>CL_BCS 的五個必踩坑：</b>
+  <ul>
+    <li><b>忘了 <span class="kw">COMMIT WORK</span></b>：<span class="kw">create_persistent</span> 是走 update task 的，沒有 COMMIT 就完全沒動作，而且不會報錯。這是「程式說成功、信卻沒到」的第一名原因。</li>
+    <li><b><span class="kw">i_attachment_subject</span> 最多 50 字元</b>，超過會被截斷、附檔名跑掉。</li>
+    <li><b>附件檔名的副檔名由 <span class="kw">i_attachment_type</span> 決定</b>（'PDF'／'XLS'／'CSV'／'TXT'／'BIN'），不是由 subject 決定。</li>
+    <li><b>不呼叫 <span class="kw">set_send_immediately( 'X' )</span></b> 的話，信件只會排進佇列，要等背景程式 <span class="kw">RSCONN01</span> 跑到才送。</li>
+    <li><b>SCOT 沒設定就永遠寄不出去</b>。<span class="tcode">SCOT</span> 設定 SMTP node 與網域路由，<span class="tcode">SOST</span> 查每一封信的狀態（等待／已送／失敗），這兩個交易碼一定要會。</li>
+  </ul></div>
+
+  <p>把純文字或內表轉成附件用的 solix，用 <span class="kw">CL_BCS_CONVERT</span>：</p>
+
+<pre><code class="abap">*--- 內表 → CSV 字串 → solix 附件
+DATA(lv_csv) = REDUCE string(
+  INIT s = |工單,作業,狀況,訊息{ cl_abap_char_utilities=&gt;cr_lf }|
+  FOR ls IN gt_xls
+  NEXT s = s &amp;&amp; |{ ls-aufnr },{ ls-vornr },{ ls-status },{ ls-msg }{ cl_abap_char_utilities=&gt;cr_lf }| ).
+
+DATA(lt_solix) = cl_bcs_convert=&gt;string_to_solix(
+                   iv_string   = lv_csv
+                   iv_codepage = '4110'          " UTF-8
+                   iv_add_bom  = abap_true ).    " 讓 Excel 開得出中文
+
+" 反向：solix → xstring
+DATA(lv_x) = cl_bcs_convert=&gt;solix_to_xstring( it_solix = lt_solix ).</code></pre>
+
+  <p>講義還示範了「用 SBWP 的<b>通訊群組（Distribution List）</b>當收件人」，好處是 IT 不用改程式，使用者自己在 <span class="tcode">SBWP</span> 維護名單。用 <span class="kw">SO_DLI_LIST_READ_XDL</span> + <span class="kw">SO_DLI_READ</span> 把群組成員展開：</p>
+
+<pre><code class="abap">*&amp;--- 讀 SBWP 通訊群組成員（講義 GET_MAIL_GROUP 的重點保留）
+FORM get_mail_group USING iv_group TYPE sood-objnam
+                 CHANGING ct_recv  TYPE ty_t_email.
+
+  DATA: lt_xdl    TYPE STANDARD TABLE OF soxdl WITH EMPTY KEY,
+        lt_member TYPE STANDARD TABLE OF sodm1 WITH EMPTY KEY,
+        lt_para   TYPE STANDARD TABLE OF selc  WITH EMPTY KEY,
+        lt_parb   TYPE STANDARD TABLE OF soop1 WITH EMPTY KEY.
+
+  CALL FUNCTION 'SO_DLI_LIST_READ_XDL'
+    EXPORTING
+      dli_generic_name   = iv_group
+      private            = abap_true          " 私人群組；共用群組改 public = 'X'
+    TABLES
+      dli_display_tab    = lt_xdl
+    EXCEPTIONS
+      dl_list_no_entries = 2
+      OTHERS             = 7.
+
+  IF sy-subrc &lt;&gt; 0 OR lt_xdl IS INITIAL.
+    MESSAGE |通訊群組 { iv_group } 不存在| TYPE 'W'.
+    RETURN.
+  ENDIF.
+
+  DATA(ls_xdl) = lt_xdl[ 1 ].
+  DATA(ls_dli) = VALUE soodk( objtp = ls_xdl-dlitp
+                              objyr = ls_xdl-dliyr
+                              objno = ls_xdl-dlino ).
+
+  CALL FUNCTION 'SO_DLI_READ'
+    EXPORTING
+      dli_id  = ls_dli
+    TABLES
+      member  = lt_member
+      objpara = lt_para
+      objparb = lt_parb
+    EXCEPTIONS
+      OTHERS  = 18.
+
+  LOOP AT lt_member INTO DATA(ls_mem).
+    CASE ls_mem-memtp.
+      WHEN 'ADR'.       " 外部 e-mail 位址
+        APPEND ls_mem-address TO ct_recv.
+      WHEN 'USR'.       " 內部 SAP 使用者 → 查 SU01 的 e-mail
+        SELECT SINGLE smtp_addr
+          FROM adr6
+          INNER JOIN usr21 ON usr21~persnumber = adr6~persnumber
+                          AND usr21~addrnumber = adr6~addrnumber
+          WHERE usr21~bname = @ls_mem-memnam
+          INTO @DATA(lv_smtp).
+        IF sy-subrc = 0.
+          APPEND lv_smtp TO ct_recv.
+        ENDIF.
+    ENDCASE.
+  ENDLOOP.
+
+ENDFORM.</code></pre>
+
+  <div class="note"><b>舊 API 還會遇到，要看得懂</b>：<span class="kw">SO_DOCUMENT_SEND_API1</span> 的四張表——<span class="kw">PACKING_LIST</span>（描述每個「包」是本文還是附件、從第幾列到第幾列、型別 RAW/PDF/XLS）、<span class="kw">CONTENTS_TXT</span>（本文，255 字元一列）、<span class="kw">CONTENTS_BIN</span>（附件二進位）、<span class="kw">RECEIVERS</span>（<span class="kw">rec_type = 'U'</span> 外部位址 / <span class="kw">'B'</span> 內部使用者，<span class="kw">com_type = 'INT'</span>）。它最容易錯的是 <span class="kw">doc_size</span>：必須算成 <span class="kw">( 列數 - 1 ) * 255 + 最後一列的實際長度</span>，算錯附件就毀了。<b>這正是改用 CL_BCS 的理由。</b></div>
+
+  <h3 id="ch04-4-14">14. Spool → PDF → 當附件寄出</h3>
+  <p>講義最後那段 <span class="kw">Z_PRINT_SPOOL_PDF</span> 是很實用的技巧：<b>報表印到 Spool，再把 Spool 轉成 PDF 寄出去</b>。這樣「畫面上看到什麼、信裡就收到什麼」，不必為了寄信另外寫一份排版。</p>
+
+<pre><code class="abap">*&amp;--- Spool → PDF → xstring
+FORM get_spool_pdf CHANGING cv_pdf TYPE xstring.
+
+  DATA: lt_pdf   TYPE STANDARD TABLE OF tline,
+        lt_solix TYPE solix_tab,
+        lv_bytes TYPE i.
+
+  DATA(lv_spono) = sy-spono.        " 本次執行產生的 Spool 編號
+  IF lv_spono IS INITIAL.
+    RETURN.                          " 沒有 Spool 就不用寄
+  ENDIF.
+
+  CALL FUNCTION 'CONVERT_ABAPSPOOLJOB_2_PDF'
+    EXPORTING
+      src_spoolid              = lv_spono
+      no_dialog                = abap_true
+      pdf_destination          = 'X'
+    IMPORTING
+      pdf_bytecount            = lv_bytes
+    TABLES
+      pdf                      = lt_pdf
+    EXCEPTIONS
+      err_no_abap_spooljob     = 1
+      err_no_spooljob          = 2
+      err_no_permission        = 3
+      err_conv_not_possible    = 4
+      err_bad_destdevice       = 5
+      user_cancelled           = 6
+      err_spoolerror           = 7
+      err_temseerror           = 8
+      err_btcjob_open_failed   = 9
+      err_btcjob_submit_failed = 10
+      err_btcjob_close_failed  = 11
+      OTHERS                   = 12.
+
+  CHECK sy-subrc = 0.
+
+  " PDF 回來是 132 位元組一列的 TLINE，要轉成 255 位元組的 SOLIX 才能當附件
+  CALL FUNCTION 'SX_TABLE_LINE_WIDTH_CHANGE'
+    EXPORTING
+      line_width_dst = 255
+    TABLES
+      content_in     = lt_pdf
+      content_out    = lt_solix
+    EXCEPTIONS
+      err_line_width_src_too_long = 1
+      err_line_width_dst_too_long = 2
+      err_conv_failed             = 3
+      OTHERS                      = 4.
+
+  cv_pdf = cl_bcs_convert=&gt;solix_to_xstring( it_solix = lt_solix ).
+
+ENDFORM.</code></pre>
+
+  <div class="tip"><b>講義那個 <span class="kw">TRANSLATE ... USING ' ~'</span> 的老技巧</b>：舊寫法把 132 字元的 PDF 列一列列串成一個大字串時，字串串接會把<b>尾端空白吃掉</b>，PDF 就壞了。所以老師先把空白換成 <span class="kw">~</span>、串好之後再換回空白，最後用 <span class="kw">SHIFT ... LEFT BY 255 PLACES</span> 切成 255 一段。<b>技巧本身很聰明，但很脆弱</b>（資料裡本來就有 <span class="kw">~</span> 就毀了）。新程式請直接用 <span class="kw">SX_TABLE_LINE_WIDTH_CHANGE</span>。</div>
+
+  <div class="warn"><span class="kw">sy-spono</span> 只有在報表真的輸出到 Spool 時才會有值。在前景直接執行、結果顯示在螢幕上時，<span class="kw">sy-spono</span> 是空的。要在前景也產生 Spool，用 <span class="kw">GET_PRINT_PARAMETERS</span> 取得列印參數後 <span class="kw">NEW-PAGE PRINT ON PARAMETERS ls_params NO DIALOG.</span> ... <span class="kw">NEW-PAGE PRINT OFF.</span>。<span class="tcode">SP01</span> 可查 Spool，資料表是 <span class="kw">TSP01</span>。</div>
+
+  <h3 id="ch04-4-15">15. 背景作業：SM36 / SM37 與 JOB_OPEN / SUBMIT / JOB_CLOSE</h3>
+  <p>介面程式的終點是「排成背景作業，每天／每小時自己跑」。兩條路：<b>手動用 SM36 排</b>，或<b>程式自己建 Job</b>。</p>
+
+  <p>手動排程（<span class="tcode">SM36</span>）的步驟：<span class="src">（依講義步驟整理）</span></p>
+  <ol>
+    <li><span class="tcode">SM36</span> → 輸入 Job Name、Job Class（<b>A</b> 最高／<b>B</b> 中／<b>C</b> 一般，一般客製程式用 C）、Target server（可指定跑在哪台 App Server）。</li>
+    <li><b>Step</b>：選 ABAP program，填程式名 + <b>Variant（變式）</b>。背景作業<b>一定要有變式</b>，因為沒有人可以在畫面上輸入條件。變式在 SE38 →「以變式執行」→ Save 建立。</li>
+    <li><b>Start condition</b>：Immediate（立即）／Date-Time（指定時間）／After job（某個 Job 跑完之後）／After event（事件觸發，<span class="tcode">SM62</span> 定義事件、<span class="tcode">SM64</span> 手動觸發）／At operation mode change。</li>
+    <li>勾 <b>Periodic job</b> 並設定週期（每小時／每天／每週／每月）。</li>
+    <li>Save。到 <span class="tcode">SM37</span> 查狀態：Scheduled／Released／Ready／Active／Finished／Cancelled；點進去看 <b>Job log</b> 與 <b>Spool</b>。</li>
+  </ol>
+
+<pre><code class="abap">*&amp;--- 程式內建立背景作業（例如：使用者按下按鈕後排一支長時間的程式去背景跑）
+FORM submit_in_background.
+
+  DATA: lv_jobname  TYPE tbtcjob-jobname,
+        lv_jobcount TYPE tbtcjob-jobcount.
+
+  lv_jobname = |ZPP_WORKTIME_{ sy-datum }_{ sy-uzeit }|.
+
+  "--- 1) 開 Job
+  CALL FUNCTION 'JOB_OPEN'
+    EXPORTING
+      jobname          = lv_jobname
+    IMPORTING
+      jobcount         = lv_jobcount
+    EXCEPTIONS
+      cant_create_job  = 1
+      invalid_job_data = 2
+      jobname_missing  = 3
+      OTHERS           = 4.
+
+  IF sy-subrc &lt;&gt; 0.
+    MESSAGE |無法建立作業 RC={ sy-subrc }| TYPE 'E'.
+  ENDIF.
+
+  "--- 2) 加入 Step：SUBMIT ... VIA JOB ... AND RETURN
+  SUBMIT zppi0002
+         WITH p_upftp  = abap_true
+         WITH p_fpath  = '/CO01/'
+         WITH p_fbakup = '/CO01_BAK/'
+         WITH p_mode   = 'N'                    " 背景一定要 N
+         WITH p_email  = abap_true
+         WITH p_group  = 'PP_WORKTIME'
+         USER           sy-uname                " 以哪個帳號執行
+         VIA JOB        lv_jobname
+         NUMBER         lv_jobcount
+         AND RETURN.                            " ← 少了它會直接跑而不是排進 Job
+
+  " 也可以直接套用已存在的變式，最推薦（條件集中維護）
+  " SUBMIT zppi0002 USING SELECTION-SET 'DAILY'
+  "        VIA JOB lv_jobname NUMBER lv_jobcount AND RETURN.
+
+  "--- 3) 關 Job（此時才真正排入排程）
+  CALL FUNCTION 'JOB_CLOSE'
+    EXPORTING
+      jobcount             = lv_jobcount
+      jobname              = lv_jobname
+      strtimmed            = abap_true          " 立刻執行
+*     sdlstrtdt            = sy-datum           " 或指定日期
+*     sdlstrttm            = '220000'           " 與時間
+*     predjob_checkstat    = abap_true          " 前置作業成功才跑
+    EXCEPTIONS
+      cant_start_immediate = 1
+      invalid_startdate    = 2
+      jobname_missing      = 3
+      job_close_failed     = 4
+      job_nosteps          = 5
+      job_notex            = 6
+      lock_failed          = 7
+      OTHERS               = 8.
+
+  IF sy-subrc = 0.
+    MESSAGE |背景作業 { lv_jobname } 已排定，請至 SM37 查詢| TYPE 'S'.
+  ENDIF.
+
+ENDFORM.</code></pre>
+
+  <p><b>寫背景程式的六條紀律：</b></p>
+  <ul>
+    <li><b>不可有任何畫面互動</b>：<span class="kw">MESSAGE ... TYPE 'I'</span>、<span class="kw">POPUP_TO_CONFIRM</span>、<span class="kw">CALL SCREEN</span>、<span class="kw">WRITE</span> 之後的互動式清單，全部不行。背景遇到 <span class="kw">TYPE 'I'</span>／<span class="kw">'A'</span> 會直接讓 Job Cancel。</li>
+    <li><b>不可用任何 <span class="kw">CL_GUI_*</span> / <span class="kw">GUI_UPLOAD</span> / <span class="kw">GUI_DOWNLOAD</span> / OLE</b>。用 <span class="kw">sy-batch = abap_true</span> 判斷分流。</li>
+    <li><b>ALV 在背景會自動印到 Spool</b>：<span class="kw">CL_SALV_TABLE</span> 的 <span class="kw">display( )</span> 在背景會輸出成清單，可從 SM37 → Spool 看到。</li>
+    <li><b>用 <span class="kw">WRITE</span> 寫執行記錄</b>：背景執行時 <span class="kw">WRITE</span> 的內容會進 Spool，是最省事的 log。重要訊息另外用 <span class="kw">MESSAGE ... TYPE 'S'</span>（會進 Job log）。</li>
+    <li><b>長交易要分批 COMMIT</b>：避免 update table 爆掉、避免鎖太久。</li>
+    <li><b>要能重跑（idempotent）</b>：同一個檔案再跑一次不可以變成雙重過帳。做法是「處理完立刻移走檔案」或「紀錄表用 <span class="kw">MODIFY</span> 而非 <span class="kw">INSERT</span>」。</li>
+  </ul>
+
+<pre><code class="abap">*--- 前景/背景分流的標準寫法
+IF sy-batch = abap_true.
+  " 背景：讀應用伺服器檔案、輸出到 Spool
+  PERFORM read_app_server_file USING lv_phys.
+  DATA(lo_alv) = NEW cl_salv_table( ).
+  cl_salv_table=&gt;factory( IMPORTING r_salv_table = lo_alv
+                          CHANGING  t_table      = gt_xls ).
+  lo_alv-&gt;display( ).                     " 背景 → 自動進 Spool
+ELSE.
+  " 前景：讓使用者選 PC 檔案、顯示 ALV Grid
+  PERFORM get_pc_file CHANGING p_files.
+  PERFORM upload_csv  USING CONV string( p_files ).
+  PERFORM display_alv_rtn.
+ENDIF.
+
+*--- 觸發事件，讓下游 Job 接著跑
+CALL FUNCTION 'BP_EVENT_RAISE'
+  EXPORTING
+    eventid                = 'Z_WORKTIME_LOADED'   " SM62 定義
+    eventparm              = CONV btcevtparm( sy-datum )
+  EXCEPTIONS
+    bad_eventid            = 1
+    eventid_does_not_exist = 2
+    eventid_missing        = 3
+    raise_failed           = 4
+    OTHERS                 = 5.</code></pre>
+
+  <div class="note"><b>常用資料表與函數</b>：<span class="kw">TBTCO</span>（Job 表頭／狀態）、<span class="kw">TBTCP</span>（Job Step）、<span class="kw">TBTCS</span>（排程）、<span class="kw">BTCEVTJOB</span>（事件對應）。程式要查 Job 狀態用 <span class="kw">BP_JOB_SELECT</span> / <span class="kw">BP_JOB_READ</span>；要刪 Job 用 <span class="kw">BP_JOB_DELETE</span>。監控整批 Job 的健康度可以自己寫一支報表 SELECT <span class="kw">TBTCO</span> 找 <span class="kw">status = 'A'</span>（Aborted）的作業並寄信告警。</div>
+
+  <h3 id="ch04-4-16">16. S/4HANA 補充：Application Jobs 與 Fiori 排程</h3>
+  <p>SM36／SM37 是「技術人員」的工具，需要 <span class="kw">S_BTCH_JOB</span> 權限。S/4HANA 另外提供一套<b>給業務使用者用的排程機制</b>：</p>
+  <ul>
+    <li><b>Application Jobs（Fiori App「Application Jobs」/ F1240）</b>：使用者在 Fiori 上選一個 <b>Job Template</b>、填參數、設定週期，就能自己排程，不必進 SAP GUI，也不需要 SM36 的權限。</li>
+    <li><b>Job Catalog Entry</b>：開發端要做的事。建立一個實作 <span class="kw">IF_APJ_DPC_RUN</span>（定義參數與預設值）與 <span class="kw">IF_APJ_RT_RUN</span>（實際執行邏輯）的 ABAP 類別，再在 ADT/SE80 建立 Job Catalog Entry 與 Job Template 指向它。之後這支程式就會出現在 Fiori 的可排程清單裡。</li>
+    <li><b>SJOBREPO（Technical Job Repository）</b>：SAP 標準的技術背景作業（例如 <span class="kw">SAP_APPLICATION_LOG_DELETE</span>、各種 housekeeping）改由 Job Repository 自動註冊與啟用，不再需要人工一個一個排。<span class="tcode">SJOBREPO</span> 可以看到哪些標準 Job 已啟用。</li>
+    <li><b>SAP Job Scheduling Service / BTP</b>：跨系統的排程，屬於雲端方案。</li>
+  </ul>
+  <div class="tip"><b>什麼時候該做成 Application Job？</b>當「使用者自己想決定什麼時候跑、跑哪些條件」時。例如月結報表、對帳檔產出。純技術性的介面（每 10 分鐘抓 FTP）用傳統 SM36 即可，不必包成 Application Job。</div>
+  <div class="warn"><b>ABAP Cloud（RAP / Steampunk）不允許 BDC。</b><span class="kw">CALL TRANSACTION USING</span>、<span class="kw">BDC_*</span> 函數、<span class="kw">GUI_*</span>、<span class="kw">OPEN DATASET</span> 全部不在允許的 API 清單裡。如果你的開發要往 Clean Core 走（S/4HANA Cloud、Embedded Steampunk），這一章的技巧只能用在傳統 ABAP 開發模型（Classic ABAP）的自建程式上。</div>
+
+  <h3 id="ch04-4-17">17. 現代化重寫：ZPPI0002 的 S/4HANA 版骨架</h3>
+  <p>把前面所有原則套回講義那支程式，S/4HANA 版本應該長這樣。重點是：<b>資料來源可換、驗證獨立、過帳優先 BAPI、全程留痕、可背景可前景。</b></p>
+
+<pre><code class="abap">REPORT zppi0002 MESSAGE-ID zpp01.
+
+*&amp;---------------------------------------------------------------------*
+*&amp; 資料來源抽象化：不管 FTP 還是 PC，都回傳同一種 gt_xls
+*&amp;---------------------------------------------------------------------*
+INTERFACE lif_source.
+  METHODS fetch RETURNING VALUE(rt_data) TYPE ty_t_xls
+                RAISING   cx_static_check.
+ENDINTERFACE.
+
+CLASS lcl_source_ftp DEFINITION. PUBLIC SECTION. INTERFACES lif_source. ENDCLASS.
+CLASS lcl_source_pc  DEFINITION. PUBLIC SECTION. INTERFACES lif_source. ENDCLASS.
+
+*&amp;---------------------------------------------------------------------*
+START-OF-SELECTION.
+
+  " 前置檢查
+  IF p_email = abap_true AND p_group IS INITIAL.
+    MESSAGE e000 WITH TEXT-e01.        " 「勾選寄信時必須指定收件群組」
+  ENDIF.
+
+  " 1) 取得來源（多型，之後要加 SFTP / OData 只要多一個 class）
+  DATA(lo_src) = COND REF TO lif_source(
+                   WHEN p_upftp = abap_true THEN NEW lcl_source_ftp( )
+                   ELSE                          NEW lcl_source_pc( ) ).
+
+  TRY.
+      gt_xls = lo_src-&gt;fetch( ).
+    CATCH cx_static_check INTO DATA(lx).
+      PERFORM send_alert_mail USING lx-&gt;get_text( ).
+      MESSAGE lx-&gt;get_text( ) TYPE 'E'.
+  ENDTRY.
+
+  IF gt_xls IS INITIAL.
+    MESSAGE s000 WITH '無資料可處理'.
+    RETURN.
+  ENDIF.
+
+  " 2) 正規化 + 驗證（一次把主檔全抓回來，不要在迴圈裡 SELECT）
+  PERFORM normalize_and_validate.
+
+  " 3) 過帳（只跑通過驗證的）
+  PERFORM post_confirmations.
+
+  " 4) 留痕
+  PERFORM modify_log_table.
+
+  " 5) 呈現
+  PERFORM display_alv_rtn.
+
+  " 6) 通知
+  IF p_email = abap_true.
+    PERFORM get_spool_pdf CHANGING DATA(lv_pdf).
+    PERFORM get_mail_group USING p_group CHANGING DATA(lt_recv).
+    PERFORM send_mail_bcs  USING lt_recv lv_pdf VALUE #( ).
+  ENDIF.
+
+*&amp;---------------------------------------------------------------------*
+FORM normalize_and_validate.
+
+  " 先把工單號碼正規化（去引號、去空白、ALPHA 補零）
+  LOOP AT gt_xls ASSIGNING FIELD-SYMBOL(&lt;ls&gt;).
+    REPLACE ALL OCCURRENCES OF '"' IN &lt;ls&gt;-aufnr WITH ``.
+    CONDENSE &lt;ls&gt;-aufnr.
+    &lt;ls&gt;-aufnr = |{ &lt;ls&gt;-aufnr ALPHA = IN }|.       " 取代 CONVERSION_EXIT_ALPHA_INPUT
+    REPLACE ALL OCCURRENCES OF '"' IN &lt;ls&gt;-vornr WITH ``.
+    CONDENSE &lt;ls&gt;-vornr.
+  ENDLOOP.
+
+  " 一次撈全部工單，不要在 LOOP 裡 SELECT SINGLE（講義的舊寫法效能很差）
+  IF gt_xls IS NOT INITIAL.
+    SELECT aufnr, auart, werks, autyp
+      FROM aufk
+      FOR ALL ENTRIES IN @gt_xls
+      WHERE aufnr = @gt_xls-aufnr
+      INTO TABLE @DATA(lt_aufk).
+  ENDIF.
+
+  SORT lt_aufk BY aufnr.
+
+  LOOP AT gt_xls ASSIGNING &lt;ls&gt;.
+
+    IF NOT line_exists( lt_aufk[ aufnr = &lt;ls&gt;-aufnr ] ).
+      &lt;ls&gt;-status = 'E'.
+      &lt;ls&gt;-msg    = |工單 { &lt;ls&gt;-aufnr } 不存在|.
+      CONTINUE.
+    ENDIF.
+
+    IF &lt;ls&gt;-vornr IS INITIAL.
+      &lt;ls&gt;-status = 'E'.
+      &lt;ls&gt;-msg    = '作業號碼為空'.
+      CONTINUE.
+    ENDIF.
+
+    " 過帳日期檢查
+    IF &lt;ls&gt;-budat CN '0123456789' OR strlen( &lt;ls&gt;-budat ) &lt;&gt; 8.
+      &lt;ls&gt;-status = 'E'.
+      &lt;ls&gt;-msg    = |過帳日期格式錯誤：{ &lt;ls&gt;-budat }|.
+      CONTINUE.
+    ENDIF.
+
+  ENDLOOP.
+
+ENDFORM.
+
+*&amp;---------------------------------------------------------------------*
+FORM display_alv_rtn.
+
+  TRY.
+      cl_salv_table=&gt;factory( IMPORTING r_salv_table = DATA(lo_alv)
+                              CHANGING  t_table      = gt_xls ).
+
+      lo_alv-&gt;get_functions( )-&gt;set_all( abap_true ).
+      lo_alv-&gt;get_columns( )-&gt;set_optimize( abap_true ).
+      lo_alv-&gt;get_display_settings( )-&gt;set_striped_pattern( abap_true ).
+      lo_alv-&gt;get_display_settings( )-&gt;set_list_header( 'MES 工時回報上傳結果' ).
+
+      " 中文欄位抬頭（取代講義那一長串 CHANGE_FIELD_NAME）
+      DATA(lo_cols) = lo_alv-&gt;get_columns( ).
+      DATA(lt_head) = VALUE ty_t_head(
+        ( fname = 'AUFNR'  text = '工單號碼' )   ( fname = 'VORNR'  text = '作業' )
+        ( fname = 'LMNGA'  text = '產出量' )     ( fname = 'MEINH'  text = '產出量單位' )
+        ( fname = 'XMNGA'  text = '壞品數量' )   ( fname = 'GRUND'  text = '無效工時原因代碼' )
+        ( fname = 'ISM01'  text = '工時1' )      ( fname = 'ILE01'  text = '工時1單位' )
+        ( fname = 'ISM02'  text = '工時2' )      ( fname = 'ILE02'  text = '工時2單位' )
+        ( fname = 'ISM03'  text = '工時3' )      ( fname = 'ILE03'  text = '工時3單位' )
+        ( fname = 'ISM04'  text = '工時4' )      ( fname = 'ILE04'  text = '工時4單位' )
+        ( fname = 'BUDAT'  text = '過帳日期' )   ( fname = 'STATUS' text = '狀況' )
+        ( fname = 'MSG'    text = '訊息' ) ).
+
+      LOOP AT lt_head INTO DATA(ls_head).
+        DATA(lo_col) = lo_cols-&gt;get_column( CONV #( ls_head-fname ) ).
+        lo_col-&gt;set_long_text(   CONV #( ls_head-text ) ).
+        lo_col-&gt;set_medium_text( CONV #( ls_head-text ) ).
+        lo_col-&gt;set_short_text(  CONV #( ls_head-text ) ).
+      ENDLOOP.
+
+      lo_alv-&gt;display( ).          " 背景執行時自動輸出到 Spool
+
+    CATCH cx_salv_msg cx_salv_not_found INTO DATA(lx_salv).
+      MESSAGE lx_salv-&gt;get_text( ) TYPE 'E'.
+  ENDTRY.
+
+ENDFORM.</code></pre>
+
+  <div class="warn"><b>講義原版的三個效能問題，改寫時一定要修掉：</b>
+  <ul>
+    <li><b>迴圈裡 <span class="kw">SELECT SINGLE * FROM aufk</span></b>：一萬筆資料就是一萬次資料庫往返。改成 <span class="kw">FOR ALL ENTRIES</span> 一次撈完，或用 <span class="kw">SELECT ... FOR ALL ENTRIES</span> + <span class="kw">line_exists( )</span>。</li>
+    <li><b><span class="kw">SELECT SINGLE *</span></b>：只是要判斷存不存在，卻抓整列。明列欄位，或改用 <span class="kw">SELECT SINGLE @abap_true FROM aufk WHERE ... INTO @DATA(lv_exists)</span>。</li>
+    <li><b>迴圈裡 <span class="kw">DELETE FROM zppworkma0001</span> 逐筆刪 + <span class="kw">MODIFY</span> 逐筆寫</b>：改成整批 <span class="kw">DELETE ... FOR ALL ENTRIES</span> 與 <span class="kw">MODIFY ... FROM TABLE</span>。</li>
+  </ul></div>
+
+  <h3 id="ch04-4-18">18. 快速查表：本章重點速記</h3>
+  <table>
+    <thead><tr><th>要做什麼</th><th>用什麼</th><th>注意</th></tr></thead>
+    <tbody>
+      <tr><td>錄畫面操作</td><td><span class="tcode">SHDB</span></td><td>Fiori 畫面錄不了</td></tr>
+      <tr><td>同步跑交易</td><td><span class="kw">CALL TRANSACTION ... USING ... MODE ... UPDATE ... MESSAGES INTO</span></td><td>背景 MODE 用 'N'；defsize='X'</td></tr>
+      <tr><td>非同步批次</td><td><span class="kw">BDC_OPEN_GROUP / BDC_INSERT / BDC_CLOSE_GROUP</span> → <span class="tcode">SM35</span></td><td>背景消化用 <span class="kw">RSBDCSUB</span></td></tr>
+      <tr><td>訊息轉文字</td><td><span class="kw">MESSAGE ... INTO</span>／<span class="kw">FORMAT_MESSAGE</span>／<span class="kw">MESSAGE_TEXT_BUILD</span></td><td>優先用語法內建的 INTO</td></tr>
+      <tr><td>PC 檔案</td><td><span class="kw">CL_GUI_FRONTEND_SERVICES</span></td><td>背景不能用</td></tr>
+      <tr><td>伺服器檔案</td><td><span class="kw">OPEN DATASET / TRANSFER / READ / CLOSE</span>、<span class="tcode">AL11</span></td><td>路徑用 <span class="tcode">FILE</span> 邏輯檔名</td></tr>
+      <tr><td>讀 XLSX</td><td><span class="kw">CL_FDT_XL_SPREADSHEET</span></td><td>純 ABAP，背景可用</td></tr>
+      <tr><td>編碼轉換</td><td><span class="kw">CL_ABAP_CONV_CODEPAGE</span>、<span class="kw">CL_ABAP_CHAR_UTILITIES</span></td><td>UTF-8 CSV 記得 BOM</td></tr>
+      <tr><td>FTP</td><td><span class="kw">FTP_CONNECT / FTP_COMMAND / FTP_SERVER_TO_R3 / FTP_R3_TO_SERVER / FTP_DISCONNECT</span></td><td>背景用 <span class="kw">SAPFTPA</span>；密碼要 <span class="kw">HTTP_SCRAMBLE</span></td></tr>
+      <tr><td>寄信</td><td><span class="kw">CL_BCS</span>（新）／<span class="kw">SO_DOCUMENT_SEND_API1</span>（舊）</td><td>一定要 <span class="kw">COMMIT WORK</span>；<span class="tcode">SCOT</span> 設定、<span class="tcode">SOST</span> 查詢</td></tr>
+      <tr><td>Spool 轉 PDF</td><td><span class="kw">CONVERT_ABAPSPOOLJOB_2_PDF</span> + <span class="kw">SX_TABLE_LINE_WIDTH_CHANGE</span></td><td><span class="kw">sy-spono</span> 前景可能是空的</td></tr>
+      <tr><td>背景作業</td><td><span class="tcode">SM36</span>／<span class="tcode">SM37</span>、<span class="kw">JOB_OPEN / SUBMIT VIA JOB / JOB_CLOSE</span></td><td><span class="kw">AND RETURN</span> 不能忘；要有變式</td></tr>
+      <tr><td>使用者自助排程</td><td>Fiori「Application Jobs」＋ Job Catalog Entry</td><td>需實作 <span class="kw">IF_APJ_DPC_RUN</span> / <span class="kw">IF_APJ_RT_RUN</span></td></tr>
+    </tbody>
+  </table>
+
+  <h3 id="ch04-4-qa">練習與自我檢核</h3>
+  <ol>
+    <li><b>SHDB 錄一支 MM02。</b>錄「修改物料的基本資料視圖描述」，把產生的程式改成從 CSV 讀 MATNR + MAKTX 批次修改。提示：注意 MM02 有「選擇視圖」的彈出畫面（<span class="kw">SAPLMGMM</span> 的 <span class="kw">0060</span>），要用 <span class="kw">MSICHTAUSW-KZSEL(01)</span> 勾選視圖。</li>
+    <li><b>MODE 三選一。</b>同一支 BDC 程式，前景執行時要讓使用者看到錯誤畫面、背景執行時完全不顯示，程式該怎麼寫？答案要點：<span class="kw">DATA(lv_mode) = COND #( WHEN sy-batch = abap_true THEN 'N' ELSE 'E' ).</span></li>
+    <li><b>UPDATE 'A' 為什麼危險？</b>請說明「程式回報成功但資料庫沒有資料」的可能原因，以及該去哪個交易碼查（提示：<span class="tcode">SM13</span>）。</li>
+    <li><b>日期陷阱重現。</b>把使用者 SU3 的日期格式從 <span class="kw">YYYY.MM.DD</span> 改成 <span class="kw">MM/DD/YYYY</span>，再跑同一支 BDC，觀察會發生什麼。寫出修正的程式碼（提示：<span class="kw">WRITE lv_d TO lv_c</span> 或 <span class="kw">CONVERT_DATE_TO_EXTERNAL</span>）。</li>
+    <li><b>Table Control 捲動。</b>寫一段 BDC，在 VA01 的項目 Table Control 輸入 12 個項目，每頁只能顯示 5 列。畫出 OKCODE 的順序表。</li>
+    <li><b>FOR ALL ENTRIES 空表陷阱。</b>把第 17 節的 <span class="kw">DELETE ... FOR ALL ENTRIES</span> 在 <span class="kw">gt_xls</span> 為空時執行，會發生什麼？請寫出正確的防呆。</li>
+    <li><b>CSV 中文亂碼。</b>使用者說「你們產的 CSV 用 Excel 開中文都是亂碼」。列出三個可能原因與對應解法（提示：codepage、BOM、Excel 的地區設定）。</li>
+    <li><b>背景不能用 GUI_UPLOAD。</b>把第 10 節的 <span class="kw">upload_csv</span> 改寫成「前景讀 PC 檔、背景讀 AL11 目錄」的雙軌版本。</li>
+    <li><b>FTP 改 SFTP。</b>公司資安要求禁用 FTP。請提出至少兩種替代方案，並說明各自需要 Basis 配合什麼（提示：<span class="tcode">SM69</span> 外部指令、SAP Integration Suite）。</li>
+    <li><b>CL_BCS 寄不出去。</b>程式跑完 <span class="kw">send( )</span> 回傳 <span class="kw">abap_true</span>，但收件人沒收到信。列出四個檢查點（提示：COMMIT、<span class="tcode">SOST</span>、<span class="tcode">SCOT</span>、<span class="kw">RSCONN01</span>）。</li>
+    <li><b>把 ALV 結果寄出去。</b>寫一支程式：背景執行 → <span class="kw">CL_SALV_TABLE</span> 輸出到 Spool → 取 <span class="kw">sy-spono</span> 轉 PDF → 用 <span class="kw">CL_BCS</span> 寄給 SBWP 通訊群組。這題就是把第 13、14 節合起來。</li>
+    <li><b>排成每小時的 Job。</b>用 SM36 排定第 17 節那支程式每小時跑一次，並說明為什麼一定要建變式、Job Class 該選什麼、以及如何確保「同一個檔不會被處理兩次」。</li>
+    <li><b>BDC 還是 BAPI？</b>下列情境各該選哪一個，並說明理由：(a) 期初匯入 5 萬筆客戶主檔；(b) 每天 200 筆生產訂單報工；(c) 客戶自建的 Z 交易，沒有任何 API；(d) 要在 S/4HANA Cloud 上做。</li>
+    <li><b>紀錄表設計。</b>替第 17 節的程式設計一張執行紀錄表，欄位至少要能回答：這筆是哪個檔案哪一行來的、什麼時候處理的、誰執行的、成功還失敗、失敗原因、原始內容。</li>
+  </ol>
+</section>

@@ -1,0 +1,997 @@
+<section class="chapter" id="ch03-3" data-title="增強技術（一）：使用者出口 User Exit / 客戶出口 Customer Exit（VMOD / CMOD / SMOD）">
+  <h2 id="ch03-3">第 3-3 章 增強技術（一）：使用者出口 User Exit / 客戶出口 Customer Exit（VMOD / CMOD / SMOD）</h2>
+  <p class="lede">SAP 標準功能不可能滿足每一家公司，所以 SAP 在標準程式裡「預留了插座」，讓我們把自己的邏輯插進去，而<b>不必修改標準碼</b>——這就是增強（Enhancement），又叫出口（Exit）。這一章把第一代（基於原始碼的 User Exit：MV45AFZZ、MV50AFZ1、RV60AFZZ、VOFM 常式）與第二代（基於函數模組的 Customer Exit：SMOD／CMOD、EXIT_SAPxxx、螢幕出口、菜單出口、欄位出口）講到可以直接上機。最重要的是：<b>你要學會「怎麼在一片茫茫標準碼裡，找到那個該用的出口」</b>——本章把它整理成可照著做的步驟清單。第三、四代（BAdI／Enhancement Spot）在第 3-4 章。</p>
+
+  <div class="meta">
+    <div><b>核心 TCODE</b><span class="tcode">CMOD</span><span class="tcode">SMOD</span><span class="tcode">SE38</span><span class="tcode">SE37</span><span class="tcode">SE80</span><span class="tcode">SE84</span><span class="tcode">SE11</span><span class="tcode">SE16N</span><span class="tcode">SE93</span><span class="tcode">SE51</span><span class="tcode">SPRO</span><span class="tcode">VOFM</span><span class="tcode">V/06</span><span class="tcode">SAT</span><span class="tcode">SE30</span><span class="tcode">ST05</span><span class="tcode">SE18</span><span class="tcode">SE19</span><span class="tcode">SE09</span><span class="tcode">SPAU</span><span class="tcode">SPDD</span><span class="tcode">SPAU_ENH</span><span class="tcode">SNOTE</span><span class="tcode">VA01</span><span class="tcode">ME21N</span></div>
+    <div><b>關鍵物件</b>MV45AFZZ、MV45AFZB、MV45AFZA、MV45AFZD、MV45ATZZ、MV45AOZZ、MV45AIZZ、MV50AFZ1、RV60AFZZ、FV45EFZ1、RV45PFZA、RV64A9xx、LV61A9xx、SAPMV45A、SAPMM06E、SAPLXM06、MM06E005、V45A0003、EXIT_SAPMV45A_003、EXIT_SAPMM06E_006／007／008、ZXVVAU05、ZXM06U38、MODSAP、MODSAPT、TFDIR、ENLFDIR、TSDIR、CUATEXTS、TADIR、TSTC、TRDIR、CI_EKKODB、CI_EKPODB、MODX_FUNCTION_ACTIVE_CHECK、MODX_SUBSCREEN_ACTIVE_CHECK、MODX_ALL_ACTIVE_MENUENTRIES、DYNP_VALUES_READ、CL_SALV_TABLE</div>
+  </div>
+
+  <h3 id="ch03-3-01">1. 增強的概念：什麼時候該用增強</h3>
+  <p>增強（Enhancement）的概念其實非常廣：<b>建在 SAP 標準系統之上的所有二次開發，都可以理解為增強</b>。但 ABAP 開發講的「增強」，特指<b>標準系統事先預留好的介面</b>——SAP 在自己的程式裡寫了一個空的鉤子，我們把程式碼掛上去，執行時就會被呼叫。這種開發稱為增強，也叫出口（Exit）。</p>
+  <div class="tip">老師的一句話定調：<b>「如果增強滿足不了，就只能修正（Modification）。」</b> 修正＝改 SAP 標準碼，要申請 Access Key、升級時會在 SPAU 跟你要帳，是最後手段。順序永遠是：<b>Customizing（設定）→ 增強（Exit / BAdI）→ 自建程式（Z*）→ 最後才是修正</b>。</div>
+
+  <h4>1-1．典型的增強需求</h4>
+  <ul>
+    <li><b>業務流程檢查</b>：在某個工廠發貨，設定「在某個庫位的出貨只能使用某種移動類型」；訂單存檔前檢查信用額度、檢查客戶是否黑名單。</li>
+    <li><b>介面（欄位）增強</b>：使用者對某個欄位要求大寫，但最終使用者不照規範打，可以在出口中自動轉換；有些模組能自訂資料庫欄位，並在出口中增加欄位輸入；也能對輸入資料做檢查，甚至自動替代（Substitution）。</li>
+    <li><b>不規則業務的處理</b>：按某種特殊條件定價——從自己定義的 Z 表中按條件取值再回填價格。</li>
+    <li><b>搜尋說明（Search Help）的出口</b>：對 SAP 標準搜尋說明做權限控制，例如業務員只能查到自己負責的客戶。</li>
+  </ul>
+
+  <h4>1-2．出口的四種形態</h4>
+  <table>
+    <thead><tr><th>形態</th><th>說明</th><th>典型例子</th></tr></thead>
+    <tbody>
+      <tr><td><b>Function Module Exits</b>（函數出口）</td><td>最常見。SAP 在標準程式中呼叫一個空的函數，你在函數裡寫邏輯</td><td>EXIT_SAPMM06E_007、EXIT_SAPMV45A_003</td></tr>
+      <tr><td><b>Screen Exits</b>（螢幕出口）</td><td>SAP 在標準畫面上留一塊子螢幕區域，你自己畫欄位</td><td>SAPLXM06 螢幕 0101（採購單抬頭客制欄位）</td></tr>
+      <tr><td><b>Menu Exits</b>（菜單出口）</td><td>SAP 在 GUI Status 中預留功能碼（以 <b>+</b> 開頭），你補上文字與程式</td><td>+CUS 之類的自訂功能碼</td></tr>
+      <tr><td><b>Structure Exits</b>（結構出口）</td><td>用 Append Structure／CI_ 結構把自訂欄位加進標準表或標準結構</td><td>CI_EKKODB（加到 EKKO）、CI_EKPODB（加到 EKPO）</td></tr>
+    </tbody>
+  </table>
+
+  <h3 id="ch03-3-02">2. SAP 四代增強技術總覽與選用決策樹</h3>
+  <table>
+    <thead><tr><th>世代</th><th>技術</th><th>本質</th><th>找法／實作 TCODE</th></tr></thead>
+    <tbody>
+      <tr><td><b>第一代</b></td><td>User Exit（原始碼增強）</td><td>SAP 交付一個<b>空的 FORM 子常式</b>，放在名稱倒數第二個字元多半是 <b>Z</b> 的 INCLUDE 裡；你直接在裡面寫碼。<b>可以存取呼叫程式的所有全域資料</b></td><td>SPRO 說明文件、SE80 看 Package <b>VMOD</b>、SE38 開主程式找 <b>FORM USEREXIT_*</b>；VOFM 常式</td></tr>
+      <tr><td><b>第二代</b></td><td>Customer Exit（函數模組出口）</td><td>SAP 用 <span class="kw">CALL CUSTOMER-FUNCTION 'nnn'</span> 呼叫一個空函數 <b>EXIT_&lt;程式名&gt;_&lt;nnn&gt;</b>，函數裡只有一行 <span class="kw">INCLUDE ZX…</span>。<b>只能用介面參數，不能碰全域變數</b></td><td><span class="tcode">SMOD</span> 查增強組件、<span class="tcode">CMOD</span> 建專案並啟用；SE37 看 EXIT_*</td></tr>
+      <tr><td><b>第三代</b></td><td>Classic BAdI（old BAdI）</td><td>執行時期才產生實體（run time instantiation），技術本質是一個 <b>Interface</b>。用 <span class="kw">CL_EXITHANDLER=&gt;GET_INSTANCE</span> 取得實例，再呼叫介面方法。支援多重實作與篩選器</td><td><span class="tcode">SE18</span>／<span class="tcode">SE19</span>（第 3-4 章）</td></tr>
+      <tr><td><b>第四代</b></td><td>Kernel BAdI（new BAdI）</td><td>編譯時期就實體化（compile time），用 <span class="kw">GET BADI</span> / <span class="kw">CALL BADI</span>，效能較佳</td><td><span class="tcode">SE18</span>／<span class="tcode">SE19</span>（第 3-4 章）</td></tr>
+      <tr><td><b>第四代</b></td><td>Enhancement-Point（顯式）</td><td><b>顯式增強</b>＝SAP 手動加入到程式中的 Enhancement Options（<span class="kw">ENHANCEMENT-POINT … SPOTS …</span>）</td><td>SE38 原始碼上按「增強」眼鏡圖示（第 3-4 章）</td></tr>
+      <tr><td><b>第四代</b></td><td>Enhancement-Point（隱式）</td><td><b>隱式增強</b>＝系統內建的 Enhancement Options（每個 FORM／FUNCTION／METHOD 的頭尾、程式結尾等），不用 SAP 事先安排</td><td>SE38 →「編輯 → 增強操作 → 顯示隱含增強點」（第 3-4 章）</td></tr>
+    </tbody>
+  </table>
+
+  <h4>2-1．選用決策樹（實務順序）</h4>
+  <ol>
+    <li><b>先問：能不能用 Customizing 解決？</b>（SPRO、條件技術、輸出控制、複製控制）→ 能就不要寫程式。</li>
+    <li><b>有沒有 new/classic BAdI？</b>（SE18 / SE84 找 Enhancement Spot）→ 有就用 BAdI。BAdI 支援多重實作，最不容易和其他顧問打架，也是 SAP 在 S/4HANA 唯一持續增修的介面。</li>
+    <li><b>有沒有第二代 Customer Exit？</b>（SMOD／CMOD）→ 有就用。缺點：<b>一個增強組件在整個 client 只能被一個 CMOD 專案啟用</b>，多顧問搶同一個出口會衝突。</li>
+    <li><b>有沒有第一代 User Exit？</b>（MV45AFZZ 之類）→ SD 很多情境只有第一代做得到（例如 USEREXIT_SAVE_DOCUMENT_PREPARE、USEREXIT_MOVE_FIELD_TO_VBAP），該用還是要用。</li>
+    <li><b>有沒有隱式／顯式 Enhancement Point？</b>→ 都沒有出口時的最後救援（比修改標準碼安全）。</li>
+    <li><b>都沒有 → 才考慮修正（Modification）</b>，要 Access Key，升級走 SPAU/SPDD。</li>
+  </ol>
+  <div class="warn">老師特別提醒第一代的兩個致命傷：<b>（1）</b>系統升級時可能被新版本覆蓋而失效；<b>（2）</b>因為它看得到<b>全部全域變數</b>，如果你在裡面改了全域變數，可能破壞系統原有的邏輯。所以「光是這一點，就不要輕易碰觸了，瞭解就行」——但既有專案裡到處都是它，你一定要看得懂。</div>
+
+  <h3 id="ch03-3-03">3. 第一代 User Exit：原理與命名規則</h3>
+  <p>第一代的做法是：<b>SAP 提供一個空程式碼的子常式（FORM），在這個子常式中使用者可以加入自己的代碼</b>。它的規律是：</p>
+  <ul>
+    <li>需要修改的 SAP 標準碼，集中在一些<b>名稱倒數第二個字元為 Z</b> 的 INCLUDE 程式中（MV45AF<b>Z</b>Z、MV45AO<b>Z</b>Z、MV45AI<b>Z</b>Z、MV45AT<b>Z</b>Z…）。</li>
+    <li>子常式一般以 <b>USEREXIT_</b> 起頭。</li>
+    <li>在出口裡，<b>呼叫程式的所有全域資料都可以使用</b>（XVBAP、XVBEP、VBAK、KOMK…直接拿來用），這是第一代最強、也最危險的地方。</li>
+    <li><b>螢幕增強</b>以客戶螢幕（Include Screen）形式發佈，包含在標準程式中，<b>沒有什麼特別規律</b>，要看該模組的 IMG 說明。</li>
+    <li><b>表／結構的增強</b>是 <b>Append Structure</b>。</li>
+    <li>原始碼增強和螢幕增強的說明，可以從 <span class="tcode">SPRO</span> 後臺設定中相關模組的路徑裡面找到。</li>
+  </ul>
+  <div class="note">第一代出口<b>不需要 Access Key</b>（那些 include 是 SAP 交付給客戶修改的），但它們是 SAP 物件，儲存時會被要求指定 <b>Request</b>，並可能提示是「修改」。這也是為什麼它們在升級時要進 <span class="tcode">SPAU</span> 對帳。</div>
+
+  <h4>3-1．VA01 主程式 SAPMV45A 的 INCLUDE 結構（第一代的活教材）</h4>
+  <pre><code class="abap">*-----------------------------------------------------------------------
+*        Modulpool zur Kundenauftragsbearbeitung   ← VA01/VA02/VA03 主程式
+*-----------------------------------------------------------------------
+         INCLUDE mv45atop.
+ENHANCEMENT-POINT sapmv45a_03 SPOTS es_sapmv45a STATIC.   " ← 第四代顯式增強點
+*-----------------------------------------------------------------------
+*        U S E R - E X I T S
+*-----------------------------------------------------------------------
+*        INCLUDE mv45atzz.   " 資料宣告（Data definitions，實際寫在 MV45ATOP 中）
+         INCLUDE mv45aozz.   " 使用者模組 PBO
+         INCLUDE mv45aizz.   " 使用者模組 PAI
+         INCLUDE mv45afza.   " User-forms &lt; 3.0
+         INCLUDE mv45afzb.   " User-forms
+         INCLUDE mv45afzc.   " User-forms &lt; 3.0D
+         INCLUDE mv45afzd.   " User-forms   3.0E
+         INCLUDE mv45afzf.   " User-forms   3.0F
+*        INCLUDE mv45afzg.   " User-forms   3.1G
+         INCLUDE mv45afzh.   " User-forms   4.6B
+         INCLUDE mv45afzz.   " User-forms  ← 最常用的一支</code></pre>
+  <div class="tip">口訣：<b>「ZZ 起頭（或倒數第二碼是 Z）的空程式，就是要增強的出口；USEREXIT_ 起頭的 FORM 也是增強的切入點。」</b> 看到 SAPMV45A 這段註解 <span class="kw">U S E R - E X I T S</span>，就等於 SAP 直接告訴你插座在哪。</div>
+
+  <h3 id="ch03-3-04">4. 怎麼找第一代出口：三種可操作的方法</h3>
+  <div class="warn"><b>先記住這句話</b>：<b>第一代增強無法用 Z_FIND_USEREXITS 找出來。</b> 那支程式（第 8 節）掃的是 TADIR 裡的 SMOD／SXSD 物件，也就是第二、三代。第一代是 FORM 子常式，不在 TADIR 裡，只能靠下面三招。</div>
+
+  <h4>4-1．方法一：利用 SPRO（最正統，附官方說明文件）</h4>
+  <ol>
+    <li>執行 <span class="tcode">SPRO</span> → 按「SAP 參考 IMG（SAP Reference IMG）」。</li>
+    <li>走到目標模組的節點，找名稱含 <b>System Modifications</b>／<b>系統修改</b>／<b>User Exits</b> 的子節點。SD 的路徑是：<b>Sales and Distribution → System Modifications → User Exits</b>。</li>
+    <li>點該節點左邊的<b>文件圖示（IMG 說明）</b>，SAP 會列出這個領域所有可用的 INCLUDE 與 USEREXIT_* 子常式，<b>以及每一個出口的呼叫時機</b>（例如「呼叫於 FORM BELEG_SICHERN 開頭」）。</li>
+    <li>把要用的 INCLUDE 名稱抄下來，到 <span class="tcode">SE38</span> 開啟它，找到對應的 FORM 寫碼。</li>
+  </ol>
+  <p><span class="src">（依講義步驟整理）</span></p>
+
+  <h4>4-2．方法二：利用 SE80 ＋ Package <b>VMOD</b></h4>
+  <ol>
+    <li>執行 <span class="tcode">SE80</span>，物件類型下拉選 <b>Package（套件／開發類別）</b>。</li>
+    <li>輸入 <b>VMOD</b>（SD 使用者出口的專屬套件；講義寫成「vomd」是筆誤）→ Enter。</li>
+    <li>展開 <b>Programs／Includes</b>，就會看到 MV45AFZZ、MV45AFZA、MV45AFZB、MV45AOZZ、MV45AIZZ、MV50AFZ1、RV60AFZZ… 這一整批第一代出口 include。</li>
+    <li>雙擊任一支，用「其他功能 → 尋找（Ctrl+F）」搜 <b>USEREXIT_</b>，就能列出這支 include 內所有可用出口。</li>
+  </ol>
+  <div class="note">其他模組也有類似的套件；找不到套件時，改用方法三（從主程式反推）最快，因為那不需要背套件名稱。</div>
+
+  <h4>4-3．方法三：由 TCODE 找主程式，再從主程式找出口（最通用）</h4>
+  <ol>
+    <li>在目標交易畫面按 <b>系統 → 狀態（System → Status）</b>，看「程式（畫面）」欄位，或直接跑 <span class="tcode">SE93</span> 輸入交易碼看它掛的程式。例如 <b>VA01 → SAPMV45A</b>、<b>ME21 → SAPMM06E</b>、<b>VL01N → SAPMV50A</b>、<b>VF01 → SAPMV60A</b>。</li>
+    <li><span class="tcode">SE38</span> 開啟該主程式 → 看它的 INCLUDE 清單，找<b>倒數第二個字元是 Z</b> 的 include（多半集中在註解 <span class="kw">U S E R - E X I T S</span> 底下）。</li>
+    <li>雙擊進入 include，搜尋 <b>FORM USEREXIT_</b>，挑選符合時機的那一支。</li>
+    <li>不確定會不會被呼叫？<b>在 FORM 第一行設中斷點，跑一次交易</b>，停下來就是對的；停不下來就換一支。</li>
+  </ol>
+  <p>典型路徑：<b>SAPMV45A ⇒ MV45AFZZ ⇒ FORM USEREXIT_SAVE_DOCUMENT</b>。</p>
+  <div class="tip">老師的驗證法：<b>「是否成功，可以靠 DEBUG 來確認；怕影響所有人，可以用 IF 做小範圍的測試。」</b>——所有教學／測試用的出口碼，一律先包一層 <span class="kw">IF sy-uname = '你的帳號' AND sy-mandt = '你的 client'</span>，這是第一代出口的鐵律，因為它<b>對整個 client 的所有使用者生效</b>。</div>
+
+  <h3 id="ch03-3-05">5. 第一代增強實作：訂單存檔前的檢查</h3>
+  <p>最常用的出口是 <b>MV45AFZZ / USEREXIT_SAVE_DOCUMENT_PREPARE</b>——它是<b>存檔前最後一個可以改資料、可以擋下單據的地方</b>（呼叫於 FORM BELEG_SICHERN 的開頭）。</p>
+
+  <h4>5-1．最小可驗證版本（老師的第一個案例）</h4>
+  <pre><code class="abap">*&amp;---------------------------------------------------------------------*
+*&amp;      Form  USEREXIT_SAVE_DOCUMENT_PREPARE   （在 INCLUDE MV45AFZZ 中）
+*&amp;---------------------------------------------------------------------*
+FORM userexit_save_document_prepare.
+
+  " 只在自己的帳號＋自己的 client 生效，避免影響其他人
+  IF sy-uname = 'ERP000' AND sy-mandt = '540'.
+    MESSAGE '第一代增強的方法 MV45AFZZ USEREXIT_SAVE_DOCUMENT_PREPARE' TYPE 'I'.
+  ENDIF.
+
+ENDFORM.</code></pre>
+
+  <h4>5-2．加上日期條件並「真的擋下存檔」</h4>
+  <pre><code class="abap">FORM userexit_save_document_prepare.
+
+  IF sy-uname = 'ERP000'
+ AND sy-mandt = '540'
+ AND sy-datum = '20250501'.
+
+    " 訊息類型 E：直接中止儲存流程，畫面停在原處讓使用者修正
+    MESSAGE '第一代增強：MV45AFZZ USEREXIT_SAVE_DOCUMENT_PREPARE 擋單測試' TYPE 'E'.
+
+    " 若只想警示不擋單，改用 TYPE 'I'；
+    " 若要用旗標控制後續流程，可自行設旗標（此變數需宣告在 MV45ATZZ／MV45ATOP）
+    " gf_exit_save_document_prepare = abap_true.
+    " EXIT.   " 訊息 E 已會終止，EXIT 可省略
+  ENDIF.
+
+ENDFORM.</code></pre>
+  <div class="warn"><b>MESSAGE 型別的坑（S/4HANA 尤其重要）</b>：這支出口不只被 VA01/VA02 呼叫，<b>BAPI_SALESORDER_CREATEFROMDAT2、IDOC、Fiori／OData、批次背景作業也都會走到</b>。在那些情境下：<br>
+  ・<b>TYPE 'I' / 'W'</b> 會試圖跳出對話框 → 背景或 RFC 會 <b>DUMP</b>（MESSAGE_TYPE_X / 無畫面可顯示）。<br>
+  ・<b>TYPE 'E'</b> 在 BAPI 中不會回到 RETURN 表，而是直接讓程式中斷。<br>
+  正確做法：先判斷 <span class="kw">sy-batch</span>／<span class="kw">sy-binpt</span>／呼叫來源，或把錯誤寫進不完整性紀錄（Incompletion Log）；教學測試完<b>務必把程式碼註解掉</b>。</div>
+
+  <h4>5-3．實務範例：搬客戶主檔欄位進 VBAP 的自訂欄位</h4>
+  <p>這是 USEREXIT_MOVE_FIELD_TO_VBAP 的標準用法（呼叫於 FORM VBAP_FUELLEN 結尾）。前提是先用 Append Structure 在 VBAP 加了 ZZ 欄位。</p>
+  <pre><code class="abap">FORM userexit_move_field_to_vbap.
+
+  " vbap / vbak 為呼叫程式的全域工作區，可直接使用
+  IF vbap-zzcustgrp IS INITIAL AND vbak-kunnr IS NOT INITIAL.
+
+    SELECT SINGLE kdgrp                     " 客戶群組
+      FROM knvv
+      WHERE kunnr = @vbak-kunnr
+        AND vkorg = @vbak-vkorg
+        AND vtweg = @vbak-vtweg
+        AND spart = @vbak-spart
+      INTO @vbap-zzcustgrp.
+
+    IF sy-subrc &lt;&gt; 0.
+      CLEAR vbap-zzcustgrp.
+    ENDIF.
+  ENDIF.
+
+ENDFORM.</code></pre>
+  <div class="warn">出口是<b>逐筆、逐畫面</b>被呼叫的（每個明細都會進來一次），千萬不要在裡面做整表 SELECT 或迴圈大量 DB 存取，否則 VA01 會慢到不能用。要查的資料請用<b>緩衝（在程式全域內表暫存）</b>或改到 USEREXIT_SAVE_DOCUMENT 一次處理。</div>
+
+  <h4>5-4．USEREXIT_NUMBER_RANGE：依銷售組織決定號碼範圍</h4>
+  <pre><code class="abap">FORM userexit_number_range USING us_range_intern.
+
+  " 依銷售組織（VKORG）／銷售辦公室（VKBUR）決定內部號碼範圍
+  us_range_intern = SWITCH #( vbak-vkorg
+                              WHEN '1000' THEN '02'
+                              WHEN '2000' THEN '03'
+                              ELSE us_range_intern ).   " 其餘沿用標準
+
+ENDFORM.</code></pre>
+
+  <h4>5-5．USEREXIT_SAVE_DOCUMENT：寫自建統計表</h4>
+  <pre><code class="abap">FORM userexit_save_document.
+
+  " 此出口在 FORM BELEG_SICHERN 的 COMMIT 之前被呼叫
+  " → 這裡的 DB 動作會和單據在同一個 LUW，不需要（也絕對不可以）自己 COMMIT WORK
+  DATA lt_log TYPE STANDARD TABLE OF zsd_order_log.
+
+  LOOP AT xvbap INTO DATA(ls_vbap) WHERE updkz &lt;&gt; 'D'.
+    APPEND VALUE #( mandt = sy-mandt
+                    vbeln = ls_vbap-vbeln
+                    posnr = ls_vbap-posnr
+                    matnr = ls_vbap-matnr
+                    kwmeng = ls_vbap-kwmeng
+                    ernam = sy-uname
+                    erdat = sy-datum
+                    erzet = sy-uzeit ) TO lt_log.
+  ENDLOOP.
+
+  IF lt_log IS NOT INITIAL.
+    MODIFY zsd_order_log FROM TABLE lt_log.
+  ENDIF.
+
+  " 若變更了標準欄位，必須設定 r185d-dataloss = 'X'，
+  " 系統在安全常式開頭會檢查此旗標，維護自建表時也要一併設定
+  " r185d-dataloss = 'X'.
+
+ENDFORM.</code></pre>
+  <div class="warn"><b>絕對不要在任何 User Exit / Customer Exit 裡下 <span class="kw">COMMIT WORK</span> 或 <span class="kw">ROLLBACK WORK</span></b>。出口是在標準交易的 LUW 中間被呼叫的，你一 COMMIT，SAP 標準的更新流程就被切成兩段，輕則單據不完整、重則資料不一致。要非同步處理請用 <span class="kw">CALL FUNCTION … IN UPDATE TASK</span> 或 <span class="kw">IN BACKGROUND UNIT</span>。</div>
+
+  <h3 id="ch03-3-06">6. SD 第一代出口大全（依 INCLUDE 分類）</h3>
+  <p>下表整理自 IMG 說明「User Exits In Sales Document Processing」。這是查閱型的表，實作時對照時機挑一支就好。</p>
+
+  <h4>6-1．涉及的程式元件</h4>
+  <table>
+    <thead><tr><th>INCLUDE</th><th>用途</th><th>命名規定</th></tr></thead>
+    <tbody>
+      <tr><td><b>MV45ATZZ</b></td><td>輸入銷售單據處理用的 metadata（全域資料宣告）</td><td>使用者自訂 metadata 必須以 <b>ZZ</b> 開頭</td></tr>
+      <tr><td><b>MV45AOZZ</b></td><td>額外的 <b>PBO</b> 模組（畫面輸出前執行）</td><td>模組名必須以 <b>ZZ</b> 開頭</td></tr>
+      <tr><td><b>MV45AIZZ</b></td><td>額外的 <b>PAI</b> 模組（資料輸入後執行，例如資料檢核）</td><td>模組名必須以 <b>ZZ</b> 開頭</td></tr>
+      <tr><td><b>MV45AFZZ</b> 與 <b>MV45EFZ1</b></td><td>輸入安裝特定的 FORM 常式與使用 user exit；這些元件由 MV45AOZZ／MV45AIZZ 的模組呼叫</td><td>—</td></tr>
+    </tbody>
+  </table>
+
+  <h4>6-2．MV45AFZZ 的出口（最常用）</h4>
+  <table>
+    <thead><tr><th>USEREXIT_*</th><th>用途</th><th>呼叫時機</th></tr></thead>
+    <tbody>
+      <tr><td>USEREXIT_DELETE_DOCUMENT</td><td>刪除單據時，一併刪掉建單時寫進自建表的資料（例如記錄 ERNAM 的表）</td><td>FORM BELEG_LOESCHEN 結尾，BELEG_SICHERN 之前</td></tr>
+      <tr><td>USEREXIT_FIELD_MODIFICATION</td><td>修改螢幕欄位屬性（可輸入／隱藏／必填）。欄位被分配到修改群組 1–4：群組 1＝交易 MFAW 自動修改；群組 2＝step loop 欄位含 'LOO'；群組 3＝依檢查表或固定資訊修改；群組 4＝未使用</td><td>每個螢幕欄位都會呼叫一次；由模組 FELDAUSWAHL 呼叫</td></tr>
+      <tr><td>USEREXIT_MOVE_FIELD_TO_VBAK</td><td>給抬頭層新欄位賦值（客戶主檔欄位帶入銷售單據）</td><td>FORM VBAK_FUELLEN 結尾</td></tr>
+      <tr><td>USEREXIT_MOVE_FIELD_TO_VBAP</td><td>給明細層新欄位賦值</td><td>FORM VBAP_FUELLEN 結尾</td></tr>
+      <tr><td>USEREXIT_MOVE_FIELD_TO_VBEP</td><td>給排程行（Schedule Line）新欄位賦值</td><td>FORM VBEP_FUELLEN 結尾</td></tr>
+      <tr><td>USEREXIT_MOVE_FIELD_TO_VBKD</td><td>給商業資料（VBKD）新欄位賦值</td><td>FORM VBKD_FUELLEN 結尾</td></tr>
+      <tr><td>USEREXIT_NUMBER_RANGE</td><td>依欄位（如 VKORG、VKBUR）決定內部單據號碼範圍</td><td>FORM BELEG_SICHERN 中</td></tr>
+      <tr><td>USEREXIT_PRICING_PREPARE_TKOMK</td><td>在定價用的通訊結構 <b>KOMK</b>（抬頭）加欄位／賦值</td><td>定價前準備</td></tr>
+      <tr><td>USEREXIT_PRICING_PREPARE_TKOMP</td><td>在定價用的通訊結構 <b>KOMP</b>（明細）加欄位／賦值</td><td>定價前準備</td></tr>
+      <tr><td>USEREXIT_READ_DOCUMENT</td><td>讀取（VA02／VA03）時要多讀自建表</td><td>FORM BELEG_LESEN 結尾</td></tr>
+      <tr><td>USEREXIT_SAVE_DOCUMENT</td><td>寫使用者自訂的統計更新表。若改動標準欄位，必須設 <b>r185d-dataloss = 'X'</b></td><td>FORM BELEG_SICHERN 中、<b>COMMIT 之前</b></td></tr>
+      <tr><td><b>USEREXIT_SAVE_DOCUMENT_PREPARE</b></td><td>存檔前做最後的變更或檢查——<b>這是存檔前最後一次改／檢查單據的機會</b></td><td>FORM BELEG_SICHERN <b>開頭</b></td></tr>
+    </tbody>
+  </table>
+
+  <h4>6-3．MV45AFZA 的出口</h4>
+  <table>
+    <thead><tr><th>USEREXIT_*</th><th>用途</th></tr></thead>
+    <tbody>
+      <tr><td>USEREXIT_MOVE_FIELD_TO_KOMKD / _KOMPD</td><td>物料判定（Material Determination）用的抬頭／明細通訊結構加欄位</td></tr>
+      <tr><td>USEREXIT_MOVE_FIELD_TO_KOMKG / _KOMPG</td><td>物料判定與物料列表（Listing／Exclusion）用的通訊結構加欄位</td></tr>
+      <tr><td>USEREXIT_REFRESH_DOCUMENT</td><td>單據處理結束、進入下一張單據前，重設客戶自訂欄位（例如上一位售達方的信用額度不可沿用到下一張）。以 F3／F15 離開時執行；呼叫於 FORM BELEG_INITIALISIEREN 結尾</td></tr>
+    </tbody>
+  </table>
+
+  <h4>6-4．MV45AFZB 的出口（檢查與判定類）</h4>
+  <table>
+    <thead><tr><th>USEREXIT_*</th><th>用途</th></tr></thead>
+    <tbody>
+      <tr><td>USEREXIT_CHECK_XVBAP_FOR_DELET</td><td>額外條件成立時「不刪除」明細（與標準相反）</td></tr>
+      <tr><td>USEREXIT_CHECK_XVBEP_FOR_DELET</td><td>額外條件成立時「不刪除」排程行</td></tr>
+      <tr><td>USEREXIT_CHECK_VBAK</td><td>抬頭層額外檢查（例如某客戶群組只允許某些出貨條件）</td></tr>
+      <tr><td>USEREXIT_CHECK_VBAP</td><td>明細層額外檢查</td></tr>
+      <tr><td>USEREXIT_CHECK_VBKD</td><td>商業資料額外檢查</td></tr>
+      <tr><td>USEREXIT_CHECK_VBEP</td><td>排程行額外檢查（BOM 展開時，把主項目欄位複製到子項目，如開票凍結）</td></tr>
+      <tr><td>USEREXIT_CHECK_VBSN / USEREXIT_CHECK_XVBSN_FOR_DELET</td><td>序號的額外檢查／不刪除條件</td></tr>
+      <tr><td>USEREXIT_FILL_VBAP_FROM_HVBAP</td><td>用主項目資料填子項目的額外欄位</td></tr>
+      <tr><td>USEREXIT_MOVE_FIELD_TO_TVCOM_H / _I</td><td>影響抬頭／明細<b>文字判定</b>（新增判定欄位或改值）</td></tr>
+      <tr><td>USEREXIT_MOVE_FIELD_TO_COBL</td><td>在 COBL（會計科目判定用）結構加新欄位</td></tr>
+      <tr><td>USEREXIT_COBL_RECEIVE_VBAK / _VBAP</td><td>把抬頭／明細的值指派給 COBL 新欄位</td></tr>
+      <tr><td>USEREXIT_COBL_SEND_ITEM / _HEADER</td><td>把 COBL 改過的欄位回寫到明細／抬頭（例如在帳戶指派區塊顯示某欄位）</td></tr>
+      <tr><td>USEREXIT_SOURCE_DETERMINATION</td><td>決定<b>出貨工廠</b>。標準是從客戶主檔或客戶物料資訊記錄取，要改規則就寫這裡</td></tr>
+      <tr><td>USEREXIT_MOVE_FIELD_TO_ME_REQ</td><td>為 <b>EBAN</b>（採購申請）／<b>EBKN</b>（採購申請帳戶指派）加欄位</td></tr>
+      <tr><td>USEREXIT_GET_FIELD_FROM_SDCOM</td><td>變式配置（Variant Configuration）：處理 SDCOM 結構中的新欄位再回傳訂單</td></tr>
+      <tr><td>USEREXIT_MOVE_WORKAREA_TO_SDWA</td><td>變式配置：格式化額外的工作區</td></tr>
+      <tr><td>USEREXIT_NEW_PRICING_VBAP / _VBKD</td><td>設定「什麼情況要重新定價」的前提條件（例如改了某明細欄位、改了客戶群組／價格群組就重跑定價）</td></tr>
+    </tbody>
+  </table>
+
+  <h4>6-5．首次資料轉檔（First Data Transfer）專用出口</h4>
+  <div class="note">下列出口<b>只能用於首次資料轉檔</b>，而且<b>只在名稱／欄位不同名時才需要用</b>（同名會自動搬）。</div>
+  <ul>
+    <li>USEREXIT_MOVE_FIELD_TO_VBAKKOM／VBAPKOM／VBEPKOM：在抬頭／明細／排程行的通訊結構加欄位。</li>
+    <li>USEREXIT_MOVE_FIELD_TO_VBSN：VBSN（排程協議相關變更狀態）加欄位。</li>
+    <li>USEREXIT_MOVE_FIELD_TO_KOMKH／KOMPH：批次判定（Batch Determination）抬頭／明細加欄位。</li>
+    <li>USEREXIT_CUST_MATERIAL_READ：在客戶物料資訊記錄中改用另一個客戶號（例如客戶階層情境）。</li>
+  </ul>
+
+  <h4>6-6．其他 SD 程式的出口</h4>
+  <table>
+    <thead><tr><th>程式</th><th>出口</th><th>用途</th></tr></thead>
+    <tbody>
+      <tr><td><b>MV45AFZD</b></td><td>USEREXIT_CONFIG_DATE_EXPLOSION</td><td>決定 BOM 用哪個日期展開（標準用輸入日期，可改成需求交貨日）</td></tr>
+      <tr><td><b>FV45EFZ1</b></td><td>USEREXIT_CHANGE_SALES_ORDER</td><td>採購申請被指派後，標準會自動改排程行的數量與確認日期；用這支出口設定條件，保護訂單不被自動改</td></tr>
+      <tr><td><b>RV45PFZA</b></td><td>USEREXIT_SET_STATUS_VBUK</td><td>設定 VBUK（抬頭狀態）保留欄位（如 UVK01 當額外訂單狀態）。可用工作區：VBUK、FXVBUP、FXVBUV</td></tr>
+      <tr><td><b>RV45PFZA</b></td><td>USEREXIT_SET_STATUS_VBUP</td><td>設定 VBUP（明細狀態）保留欄位。可用工作區：FXVBAP、FXVBAPF、FXVBUV</td></tr>
+      <tr><td><b>RV45PFZA</b></td><td>USEREXIT_STATUS_VBUK_INVOICE</td><td>影響抬頭層的開票狀態</td></tr>
+      <tr><td><b>MV45AFZ4</b></td><td>USEREXIT_MOVE_FIELD_TO_KOMK / _KOMP</td><td><b>免費商品判定（Free Goods）</b>用的抬頭／明細通訊結構加欄位</td></tr>
+      <tr><td><b>SAPFV45PF0E / SAPFV45PF0C</b></td><td>EXIT_SAPFV45P_001</td><td>跨公司代碼銷售時，決定獲利分析段（Profitability Segment）用公司間開票資料，還是用外部開票資料</td></tr>
+      <tr><td><b>MV50AFZ1</b></td><td>USEREXIT_SAVE_DOCUMENT_PREPARE、USEREXIT_SAVE_DOCUMENT、USEREXIT_MOVE_FIELD_TO_LIKP／LIPS…</td><td><b>交貨單（VL01N/VL02N）</b>的第一代出口。還有 MV50AFZ3（挑撿／過帳）、MV50AFZL（LIPS 相關）</td></tr>
+      <tr><td><b>RV60AFZZ</b></td><td>USEREXIT_NUMBER_RANGE、USEREXIT_FILL_VBRK_VBRP…</td><td><b>開立發票（VF01/VF04）</b>的第一代出口。搭配 RV60AFZC（會計文件）、RV60AFZD</td></tr>
+      <tr><td><b>MV45AFZH / RV61AFZA / RV61AFZB</b></td><td>USEREXIT_PRICING_PREPARE_TKOMK／TKOMP 等</td><td>定價通訊結構（開票端）</td></tr>
+    </tbody>
+  </table>
+
+  <h4>6-7．螢幕上的第一代出口</h4>
+  <p>SD 的抬頭附加資料在螢幕 <b>SAPMV45A 0309</b>，明細附加資料在 <b>SAPMV45A 0459</b>。這兩個螢幕分別內含 Include Screen <b>SAPMV45A 8309</b> 與 <b>SAPMV45A 8459</b>，就是給客戶用的螢幕出口。</p>
+  <ol>
+    <li>要在銷售單據中新增欄位（例如 <b>VBAK-ZZKUN</b>），先用 <span class="tcode">SE11</span> Append Structure 把欄位加進 VBAK。</li>
+    <li>如果檢核是用資料字典定義的（固定值或檢查表），只要用 Screen Painter 全螢幕編輯器把欄位放進 <b>SAPMV45A 8309</b>，<b>處理邏輯完全不用改</b>。</li>
+    <li>如果需要應用專屬的檢核模組，把模組寫在 <b>MV45AIZZ</b>（模組名以 ZZ 開頭），並在 Include Screen 的處理邏輯中呼叫。</li>
+    <li>欄位傳輸（Field Transport）不需要做任何調整。</li>
+  </ol>
+  <p><span class="src">（依講義步驟整理）</span></p>
+
+  <h3 id="ch03-3-07">7. VOFM 常式：SD 的另一種第一代增強</h3>
+  <p><span class="tcode">VOFM</span> 是 SD／定價／輸出控制專用的「常式維護器」。它產生的也是 FORM 子常式（第一代的親戚），但是由 VOFM 統一產生、統一啟用，並在 Customizing 中被<b>掛號</b>使用。</p>
+
+  <h4>7-1．VOFM 的四大類</h4>
+  <table>
+    <thead><tr><th>選單</th><th>中文</th><th>用途</th><th>產生的 FORM / 程式</th></tr></thead>
+    <tbody>
+      <tr><td><b>Requirements → Pricing</b></td><td>需求常式（定價）</td><td>決定<b>某個條件類型要不要被存取／計算</b>。掛在 <span class="tcode">V/08</span> 定價程序的 <b>Requirement</b> 欄</td><td>FORM <b>KOBED_9xx</b>（含明細檢查）與 <b>KOBEV_9xx</b>（前置檢查，不可用明細欄位）；程式 <b>LV61A9xx</b></td></tr>
+      <tr><td><b>Formulas → Condition value</b></td><td>條件值公式</td><td>自行計算條件的金額，結果放進 <b>XKWERT</b>。掛在 V/08 的 <b>CalType</b>（計算公式）欄</td><td>FORM <b>FRM_KONDI_WERT_9xx</b>；程式 <b>RV64A9xx</b></td></tr>
+      <tr><td><b>Formulas → Condition base value</b></td><td>條件基值公式</td><td>自行決定計算基礎（基數）。掛在 V/08 的 <b>BasType</b> 欄</td><td>FORM <b>FRM_KOND_BASIS_9xx</b>；程式 <b>RV64A9xx</b></td></tr>
+      <tr><td><b>Formulas → Scale base / Group key</b></td><td>級距基值／群組鍵</td><td>決定級距用什麼數量、群組條件如何彙總</td><td>FORM <b>FRM_STAFFELBAS_9xx</b>／<b>FRM_GRP_SCHL_9xx</b></td></tr>
+      <tr><td><b>Data Transfer</b></td><td>資料轉移</td><td><b>複製控制</b>（VTAA／VTLA／VTFA）中，決定來源單據的哪些欄位怎麼搬到目標單據</td><td>FORM <b>DATEN_KOPIEREN_9xx</b>（程式名依子選單而異，雙擊 VOFM 該列即可看到）</td></tr>
+      <tr><td><b>Copying requirements</b></td><td>複製需求</td><td>決定「這張單據可不可以被複製成下一張」（訂單→交貨→發票）</td><td>FORM <b>KOBED_9xx</b> 系列（複製控制專用編號段）</td></tr>
+    </tbody>
+  </table>
+  <div class="note"><b>客戶命名空間</b>：VOFM 常式編號 <b>600–999</b> 保留給客戶（定價相關實務上習慣用 <b>900–999</b>）；<b>001–599 是 SAP 標準，不要動</b>。條件類型的定價程序設定在 <span class="tcode">V/08</span>，條件類型本身在 <span class="tcode">V/06</span>——講義所說的「V/06 定價常式 RV64A9xx」就是指這條線：V/06 定條件類型 → V/08 掛上 RV64A9xx 產生的公式編號。</div>
+
+  <h4>7-2．需求常式範例（KOBED / KOBEV）</h4>
+  <pre><code class="abap">*&amp;--- VOFM → Requirements → Pricing → 901（程式 LV61A901）
+*     邏輯：只有銷售組織 1000 且料號以 DXTR 開頭時，這個條件類型才生效
+FORM kobed_901.
+
+  sy-subrc = 4.                     " 預設「不符合需求」→ 條件不被存取
+
+  CHECK komk-vkorg = '1000'.
+  CHECK komp-matnr(4) = 'DXTR'.
+
+  sy-subrc = 0.                     " 符合 → 條件生效
+
+ENDFORM.
+
+*     KOBEV 是「前置檢查」：在還沒有明細資料時被呼叫，
+*     因此 **絕對不可以** 存取 KOMP（明細）欄位，只能用 KOMK（抬頭）
+FORM kobev_901.
+
+  sy-subrc = 4.
+  CHECK komk-vkorg = '1000'.
+  sy-subrc = 0.
+
+ENDFORM.</code></pre>
+  <div class="warn"><b>KOBED 與 KOBEV 一定要成對維護且邏輯相容</b>。最經典的錯誤是：KOBEV 寫了 KOMP 的條件，結果前置檢查時 KOMP 還是空的，導致條件<b>時有時無</b>——症狀就是「同一張單，重跑定價結果不一樣」。這個「不穩定」的症頭和第 1 章講的 SELECT 無排序保證是同一類問題：<b>只要結果不穩定，先懷疑「輸入資料的順序／完整性」</b>。</div>
+
+  <h4>7-3．定價公式範例（FRM_KONDI_WERT_9xx）</h4>
+  <pre><code class="abap">*&amp;--- VOFM → Formulas → Condition value → 901（程式 RV64A901）
+*     邏輯：從自建表 ZSD_SPECIAL_PRICE 取特殊單價，找不到就沿用標準計算結果
+FORM frm_kondi_wert_901.
+
+  " XKWERT 是這類公式的回傳欄位；XKOMV 是目前處理中的條件行
+  SELECT SINGLE price
+    FROM zsd_special_price
+    WHERE kunnr = @komk-kunnr
+      AND matnr = @komp-matnr
+      AND datab &lt;= @komk-prsdt
+      AND datbi &gt;= @komk-prsdt
+    INTO @DATA(lv_price).
+
+  IF sy-subrc = 0.
+    " 單價 × 數量；注意幣別小數位，必要時用 CURRENCY_CONVERSION 類函數處理
+    xkwert = lv_price * komp-mgame / 1000.
+  ENDIF.
+
+ENDFORM.</code></pre>
+  <div class="note">VOFM 常式裡<b>只能使用定價通訊結構</b>（KOMK／KOMP／KOMT1／XKOMV／TKOMV…）。要多帶欄位進來，就得回頭用 <b>USEREXIT_PRICING_PREPARE_TKOMK / TKOMP</b> 把欄位塞進 KOMK／KOMP（先在 KOMKAZ／KOMPAZ 這兩個 include 結構裡 Append 欄位）。這就是第一代出口與 VOFM 的標準搭檔打法。</div>
+
+  <h4>7-4．VOFM 的存取碼（Access Key）問題</h4>
+  <ul>
+    <li>VOFM 產生的程式（LV61A9xx、RV64A9xx…）本質上是 <b>SAP 物件</b>，因此在許多系統上「新建／修改常式」時，會跳出要求輸入 <b>物件存取碼（SSCR Object Key / Access Key）</b> 的視窗。</li>
+    <li>正規解法：到 SAP Support Portal（原 OSS）用該系統的<b>安裝號碼</b>申請該物件的 Registration Key；有些版本改為只要開發者鑰匙即可。相關說明可查 SAP Note 關鍵字 <b>VOFM namespace / VOFM modification</b>（例如 Note 356737 一系列，實際 Note 號請以你系統上 <span class="tcode">SNOTE</span> 查到的為準）。</li>
+    <li><b>啟用旗標</b>：VOFM 畫面上每一列前面有「Active（啟用）」欄，<b>新建後必須把它打勾（選單「編輯 → 啟用」）</b>，否則常式不會被呼叫——這是最常見的「我明明寫了怎麼沒進來」的原因。</li>
+    <li><b>升級陷阱</b>：升級或 Support Package 之後，VOFM 常式的<b>啟用旗標可能遺失</b>，或產生程式 T-code 表（TFRM／TFRMT）與程式不同步，需重新啟用並重新產生。上線前的升級測試務必把所有客戶編號常式跑過一遍。</li>
+    <li><b>傳輸</b>：VOFM 常式和它的啟用登錄（TFRM/TFRMT）是分開的物件，傳輸時容易漏——傳完到目標系統再開一次 VOFM 確認狀態。</li>
+  </ul>
+
+  <h3 id="ch03-3-08">8. 第二代 Customer Exit：概念與四種類型</h3>
+  <p>第二代的原始碼增強<b>以函數模組形式發佈</b>：在 SAP 的發行版本中，用 <span class="kw">CALL CUSTOMER-FUNCTION 'nnn'</span> 呼叫這些函數模組，<b>它們在發佈時只有一句程式碼</b> <span class="kw">INCLUDE ZXxxxxxx.</span>。使用者增強時<b>無需申請物件鍵（Access Key）</b>，直接建立這個 INCLUDE、編寫相應的程式碼即可。</p>
+  <div class="warn"><b>第二代與第一代最大的差別</b>：這些函數模組中<b>只能使用介面（EXPORTING／IMPORTING／TABLES）中傳遞的參數，不能使用呼叫程式的全域變數</b>。這是優點（安全、不會破壞標準邏輯），也是限制（想要的資料沒傳進來就是拿不到，只能改用第一代或 BAdI）。</div>
+
+  <h4>8-1．標準程式裡長什麼樣</h4>
+  <pre><code class="abap">*--- SAP 標準程式 SAPMM06E 裡的一段（示意）
+  CALL CUSTOMER-FUNCTION '007'
+    EXPORTING
+      i_ekko = ekko                  " 只有這裡列出的東西，出口才拿得到
+    IMPORTING
+      e_ci_ekko = ci_ekko
+    EXCEPTIONS
+      OTHERS = 1.
+
+*--- 命名規則（背起來）：
+*    CALL CUSTOMER-FUNCTION 'nnn'  ⇒  函數名 = EXIT_&lt;主程式名&gt;_&lt;nnn&gt;
+*    SAPMM06E + '007'              ⇒  EXIT_SAPMM06E_007
+*    SAPMV45A + '003'              ⇒  EXIT_SAPMV45A_003
+
+*--- 而 EXIT_SAPMM06E_007 的原始碼裡「只有一行」：
+FUNCTION exit_sapmm06e_007.
+  INCLUDE zxm06u38.                  " ← 雙擊它，系統會問你要不要建立，這才是你寫碼的地方
+ENDFUNCTION.</code></pre>
+
+  <h4>8-2．第二代的四種類型（SMOD 元件的 TYP 欄位）</h4>
+  <table>
+    <thead><tr><th>TYP</th><th>類型</th><th>說明</th></tr></thead>
+    <tbody>
+      <tr><td><b>E</b></td><td>Function Exit（功能模組增強）</td><td>以 <b>EXIT_</b> 起頭的函數，可到 <span class="tcode">SE37</span> 查看，也可在資料字典的 <b>TFDIR</b>（函數表）中查詢 EXIT_ 開頭的函數</td></tr>
+      <tr><td><b>S</b></td><td>Screen Exit（子螢幕增強）</td><td>第一代是「螢幕編號先預留好，但內容是空」；<b>第二代要你自己建立螢幕</b>。採購訂單 ME2*、銷售訂單 VA0*、製令單 CO0* 都允許使用者自訂輸入介面並編寫相應的輸入輸出處理常式</td></tr>
+      <tr><td><b>C</b></td><td>Menu Exit（GUI 增強／功能碼）</td><td>GUI code：在標準的功能表／按鈕列加上自訂功能碼（以 <b>+</b> 開頭）與文字</td></tr>
+      <tr><td><b>T</b></td><td>Structure Exit（表結構增強）</td><td>Include structure。例如 <b>MM06E005</b> 中允許使用者維護的兩個結構 <b>CI_EKKODB</b> 與 <b>CI_EKPODB</b>（講義寫成 CL_ 是筆誤，實際是 CI_ 開頭的 Customer Include）</td></tr>
+    </tbody>
+  </table>
+
+  <h4>8-3．第二代背後的系統函數與資料表</h4>
+  <table>
+    <thead><tr><th>函數</th><th>用途</th></tr></thead>
+    <tbody>
+      <tr><td><b>MODX_FUNCTION_ACTIVE_CHECK</b></td><td>出口<b>函數</b>增強：檢查這個 EXIT_ 函數有沒有被啟用（本章第 12 節的「超級函數」）</td></tr>
+      <tr><td><b>MODX_SUBSCREEN_ACTIVE_CHECK</b></td><td><b>螢幕</b>增強：檢查子螢幕出口是否啟用</td></tr>
+      <tr><td><b>MODX_ALL_ACTIVE_MENUENTRIES</b></td><td><b>菜單</b>增強：取出所有啟用的菜單項目</td></tr>
+      <tr><td><b>MODX_MENUENTRY_ACTIVE_CHECK</b></td><td><b>菜單</b>增強：檢查單一菜單項目是否啟用</td></tr>
+      <tr><td><b>DYNP_VALUES_READ</b></td><td>讀取目前畫面上「還沒被 PAI 傳進來」的欄位值（做連動 F4、子螢幕互動時必備）</td></tr>
+    </tbody>
+  </table>
+  <table>
+    <thead><tr><th>資料表</th><th>內容</th><th>重要欄位</th></tr></thead>
+    <tbody>
+      <tr><td><b>MODSAP</b></td><td><b>SAP 增強表</b>：記錄了所有 enhancement 的增強內容，也就是<b>增強點與函數的對應關係表</b></td><td><b>NAME</b>（增強名，如 MM06E005）、<b>TYP</b>（元件類型 E／C／S／T）、<b>MEMBER</b>（元件函數模組名，如 EXIT_SAPMM06E_007）</td></tr>
+      <tr><td><b>MODSAPT</b></td><td>MODSAP 的文字表（增強說明）</td><td>SPRSL、NAME、MODTEXT</td></tr>
+      <tr><td><b>TFDIR</b></td><td>所有的函數表</td><td><b>FUNCNAME</b>（函數名）、<b>MAND</b>：值為 <b>'C'</b> 時才表示此出口函數<b>已被啟動</b></td></tr>
+      <tr><td><b>ENLFDIR</b></td><td>函數模組的額外屬性（可由函數反查所屬函數群組 AREA）</td><td>FUNCNAME、AREA</td></tr>
+      <tr><td><b>TSDIR</b></td><td>Dynpro Areas：<span class="kw">CALL CUSTOMER-SUBSCREEN</span> 的登錄（螢幕增強）</td><td>PROG、DYNNR、AREA</td></tr>
+      <tr><td><b>CUATEXTS</b></td><td>GUI Interface：Menu Texts Changed（GUI 功能表文字增強）</td><td>PROGRAM、FCODE、TEXT</td></tr>
+      <tr><td><b>MODACT</b></td><td>CMOD <b>專案</b>與增強組件的指派關係（哪個專案用了哪個 SMOD 增強）</td><td>NAME（專案）、MEMBER（增強）</td></tr>
+      <tr><td><b>TADIR</b></td><td>Repository 物件目錄；找出口靠它（OBJECT = <b>SMOD</b> 是第二代增強、<b>SXSD</b> 是 BAdI）</td><td>PGMID、OBJECT、OBJ_NAME、DEVCLASS</td></tr>
+    </tbody>
+  </table>
+
+  <h3 id="ch03-3-09">9. 怎麼找第二代出口：六種可操作的方法</h3>
+  <p>這一節是本章的核心。<b>照順序試，一定找得到。</b></p>
+
+  <h4>方法 A（首選）：用 Z_FIND_USEREXIT 依 TCODE 一次列出</h4>
+  <ol>
+    <li><span class="tcode">SE38</span> 執行 <b>Z_FIND_USEREXIT</b>（自建工具程式，見第 10 節）。</li>
+    <li>輸入交易碼（如 <b>ME21N</b>、<b>VA01</b>）或直接輸入程式名。</li>
+    <li>報表會分兩區列出：<b>Enhancement（SMOD，第二代）</b> 與 <b>Business Add-in（SXSD，第三／四代）</b>，並顯示筆數。</li>
+    <li>雙擊清單中的名稱可直接跳到 <span class="tcode">SMOD</span>（第二代）或 <span class="tcode">SE18</span>（BAdI）。</li>
+  </ol>
+  <div class="note">原理：由 TCODE → TSTC 找主程式 → TADIR 找該程式的<b>開發類別（Package / DEVCLASS）</b> → 再列出<b>同一個 Package 底下</b>所有 SMOD 與 SXSD 物件。所以它列出來的是「這個模組領域的所有出口」，不是「這個交易一定會呼叫的出口」——還是要靠 DEBUG 確認。</div>
+
+  <h4>方法 B：SE84 Repository Information System</h4>
+  <ol>
+    <li><span class="tcode">SE84</span> → 展開 <b>增強（Enhancements）</b>。</li>
+    <li><b>Customer Exits → Enhancements</b>：可用<b>增強名稱</b>（如 MM06E*）、<b>Package</b>、<b>元件名</b>（如 EXIT_SAPMM06E*）反查增強組件。</li>
+    <li><b>Customer Exits → Function Exits</b>：直接用 <b>EXIT_*</b> 樣式搜函數出口。</li>
+    <li><b>Enhancement Spots / BAdIs</b>：找第三、四代（第 3-4 章）。</li>
+  </ol>
+
+  <h4>方法 C：SE16N 查 MODSAP / MODSAPT</h4>
+  <ol>
+    <li><span class="tcode">SE16N</span> → 表名 <b>MODSAP</b>。</li>
+    <li><b>MEMBER</b> 欄位輸入 <b>EXIT_SAPMM06E*</b>（用你猜到的主程式名組出來的樣式）→ 執行，即可看到所有相關的增強名與類型。</li>
+    <li>反過來也行：知道增強名（如 <b>MM06E005</b>）填 <b>NAME</b>，就能看到它底下所有元件（E／S／C／T 各是什麼）。</li>
+    <li>要中文／英文說明就查 <b>MODSAPT</b>（SPRSL = 語言）。</li>
+  </ol>
+
+  <h4>方法 D：在標準程式中直接搜尋 CALL CUSTOMER-FUNCTION（最可靠）</h4>
+  <ol>
+    <li><span class="tcode">SE93</span> 由交易碼查出主程式（例：ME21N → SAPLMEGUI；ME21 → SAPMM06E；VA01 → SAPMV45A）。</li>
+    <li><span class="tcode">SE38</span> 開該程式 → 功能表「<b>其他功能 → 搜尋／取代</b>」（或 Ctrl+F）。</li>
+    <li>搜尋字串輸入 <b>CUSTOMER-FUNCTION</b>，範圍選 <b>「在所有 Include 中（In main program）」</b>、勾選「<b>所有出現位置</b>」。</li>
+    <li>結果每一行像 <span class="kw">CALL CUSTOMER-FUNCTION '007'</span>，把 <b>主程式名 + 編號</b> 組起來就是函數名：<b>EXIT_SAPMM06E_007</b>。</li>
+    <li>螢幕出口就搜 <b>CALL CUSTOMER-SUBSCREEN</b>；菜單出口搜 GUI Status 中以 <b>+</b> 開頭的功能碼。</li>
+    <li>拿函數名回到 <b>MODSAP</b>（方法 C）反查它屬於哪個<b>增強組件（NAME）</b>，才知道 CMOD 要掛哪一個。</li>
+  </ol>
+
+  <h4>方法 E：SE37 直接猜／查 EXIT_ 函數</h4>
+  <ol>
+    <li><span class="tcode">SE37</span> 函數名輸入 <b>EXIT_SAPMM06E*</b> → 按 F4，列出所有符合的出口函數。</li>
+    <li>雙擊進去看它的<b>介面參數</b>——這一步很關鍵：<b>介面裡沒有的資料，你在出口裡就拿不到</b>，決定了這支出口能不能用。</li>
+    <li>看它的原始碼（只有一行 INCLUDE ZX…），記下 INCLUDE 名稱。</li>
+  </ol>
+
+  <h4>方法 F：追不到時的 DEBUG／Trace 大絕</h4>
+  <ol>
+    <li><b>敘述中斷點</b>：進入交易 → <b>/h</b> 開 Debug → 功能表「<b>中斷點 → 中斷點於 → 敘述（Breakpoint at Statement）</b>」→ 輸入 <b>CALL CUSTOMER-FUNCTION</b>。之後每次標準碼呼叫任何出口都會停下來，<b>sy-repid 就是主程式、參數就是編號</b>。同理可設 <b>CALL CUSTOMER-SUBSCREEN</b>、<b>CALL BADI</b>、<b>CALL METHOD</b>。</li>
+    <li><b>函數中斷點</b>：「中斷點 → 中斷點於 → 函數模組」→ 輸入 <b>MODX_FUNCTION_ACTIVE_CHECK</b>。每次系統檢查「這個出口有沒有啟用」都會停，<b>在 Local 頁籤看參數就知道正在檢查哪一支出口</b>（第 12 節詳述）。</li>
+    <li><b>執行時期分析</b>：<span class="tcode">SAT</span>（舊版 <span class="tcode">SE30</span>）錄一次交易，在結果的「呼叫階層／Hit List」中用 <b>EXIT_</b> 或 <b>ZX</b> 過濾，可以看到<b>實際被執行過</b>的出口與先後順序——這是判斷「哪一支出口真的會跑」最省時間的方法。</li>
+    <li><b>SQL Trace</b>：<span class="tcode">ST05</span> 看標準程式讀了哪些表，反推該從哪個時點切入。</li>
+  </ol>
+  <div class="tip">老師的實戰忠告：<b>「畫面上的程式應是 EXIT_SAPMM06E_006，而且有可能會有多支增強，要耐心的 DEBUG。」</b> 找出口沒有一步到位的魔法，方法 A/C/E 先縮小範圍，方法 F 定生死。</div>
+
+  <h3 id="ch03-3-10">10. 工具程式 Z_FIND_USEREXIT（S/4HANA 現代化改寫）</h3>
+  <p>老師的教材附了經典版 Z_FIND_USEREXIT（TABLES + WRITE 清單）。下面是同樣邏輯的<b>現代化重寫版</b>：內嵌宣告、逸出主機變數、CL_SALV_TABLE 顯示、雙擊跳轉。上半段找第二代（SMOD），下半段找第三／四代（SXSD／BAdI）。</p>
+  <pre><code class="abap">REPORT z_find_userexit.
+
+TYPES: BEGIN OF ty_out,
+         kind     TYPE string,          " Enhancement / Business Add-in
+         obj_name TYPE tadir-obj_name,  " MM06E005 / ME_PROCESS_PO_CUST
+         object   TYPE tadir-object,    " SMOD / SXSD
+         descr    TYPE string,
+       END OF ty_out.
+
+PARAMETERS: p_tcode TYPE tstc-tcode,
+            p_pgmna TYPE tstc-pgmna.
+
+START-OF-SELECTION.
+
+  DATA(lv_pgmna) = p_pgmna.
+
+*--- 1) 由交易碼反查主程式
+  IF p_tcode IS NOT INITIAL.
+    SELECT SINGLE pgmna
+      FROM tstc
+      WHERE tcode = @p_tcode
+      INTO @lv_pgmna.
+    IF sy-subrc &lt;&gt; 0.
+      MESSAGE |交易碼 { p_tcode } 不存在| TYPE 'S' DISPLAY LIKE 'E'.
+      RETURN.
+    ENDIF.
+  ENDIF.
+
+  IF lv_pgmna IS INITIAL.
+    MESSAGE '請輸入交易碼或程式名' TYPE 'S' DISPLAY LIKE 'E'.
+    RETURN.
+  ENDIF.
+
+*--- 2) 由主程式找出它的開發類別（Package）
+  SELECT SINGLE devclass
+    FROM tadir
+    WHERE pgmid    = 'R3TR'
+      AND object   = 'PROG'
+      AND obj_name = @lv_pgmna
+    INTO @DATA(lv_devclass).
+
+  IF sy-subrc &lt;&gt; 0.
+    " 找不到 → 可能是函數群組的主程式（SAPLxxxx），改由 TFDIR → ENLFDIR → FUGR 反查
+    SELECT SINGLE subc FROM trdir WHERE name = @lv_pgmna INTO @DATA(lv_subc).
+    IF lv_subc = 'F'.                      " F = 函數群組
+      SELECT SINGLE t~funcname, e~area
+        FROM tfdir AS t
+        INNER JOIN enlfdir AS e ON e~funcname = t~funcname
+        WHERE t~pname = @lv_pgmna
+        INTO @DATA(ls_fu).
+      IF sy-subrc = 0.
+        SELECT SINGLE devclass
+          FROM tadir
+          WHERE pgmid = 'R3TR' AND object = 'FUGR' AND obj_name = @ls_fu-area
+          INTO @lv_devclass.
+      ENDIF.
+    ENDIF.
+  ENDIF.
+
+  IF lv_devclass IS INITIAL.
+    MESSAGE |找不到 { lv_pgmna } 的開發類別| TYPE 'S' DISPLAY LIKE 'E'.
+    RETURN.
+  ENDIF.
+
+*--- 3) 列出同一個 Package 底下的 SMOD（第二代增強）與 SXSD（BAdI）
+  SELECT object, obj_name
+    FROM tadir
+    WHERE pgmid  = 'R3TR'
+      AND object IN ( 'SMOD', 'SXSD' )
+      AND devclass = @lv_devclass
+    ORDER BY object, obj_name
+    INTO TABLE @DATA(lt_tadir).
+
+  IF lt_tadir IS INITIAL.
+    MESSAGE 'No userexits or BAdIs exist' TYPE 'S' DISPLAY LIKE 'W'.
+    RETURN.
+  ENDIF.
+
+*--- 4) 補說明文字
+  DATA lt_out TYPE STANDARD TABLE OF ty_out WITH EMPTY KEY.
+
+  LOOP AT lt_tadir INTO DATA(ls_tadir).
+    DATA(lv_txt) = VALUE string( ).
+
+    CASE ls_tadir-object.
+      WHEN 'SMOD'.
+        SELECT SINGLE modtext FROM modsapt
+          WHERE sprsl = @sy-langu AND name = @ls_tadir-obj_name
+          INTO @lv_txt.
+      WHEN 'SXSD'.
+        SELECT SINGLE text FROM sxs_attrt
+          WHERE sprsl = @sy-langu AND exit_name = @ls_tadir-obj_name
+          INTO @lv_txt.
+    ENDCASE.
+
+    APPEND VALUE #( kind     = COND #( WHEN ls_tadir-object = 'SMOD'
+                                       THEN 'Enhancement（第二代）'
+                                       ELSE 'Business Add-in（BAdI）' )
+                    object   = ls_tadir-object
+                    obj_name = ls_tadir-obj_name
+                    descr    = lv_txt ) TO lt_out.
+  ENDLOOP.
+
+  DATA(lv_smod) = REDUCE i( INIT n = 0 FOR &lt;o&gt; IN lt_out
+                            NEXT n = COND #( WHEN &lt;o&gt;-object = 'SMOD' THEN n + 1 ELSE n ) ).
+  DATA(lv_badi) = lines( lt_out ) - lv_smod.
+
+*--- 5) 用 CL_SALV_TABLE 顯示
+  TRY.
+      cl_salv_table=&gt;factory( IMPORTING r_salv_table = DATA(lo_alv)
+                              CHANGING  t_table      = lt_out ).
+
+      lo_alv-&gt;get_functions( )-&gt;set_all( abap_true ).
+      lo_alv-&gt;get_columns( )-&gt;set_optimize( abap_true ).
+      lo_alv-&gt;get_display_settings( )-&gt;set_list_header(
+        |{ lv_pgmna } / Package { lv_devclass }：Exits { lv_smod } 個，BAdIs { lv_badi } 個| ).
+
+      lo_alv-&gt;display( ).
+
+    CATCH cx_salv_msg INTO DATA(lx).
+      MESSAGE lx-&gt;get_text( ) TYPE 'S' DISPLAY LIKE 'E'.
+  ENDTRY.</code></pre>
+  <div class="tip">要做出原版「雙擊跳 SMOD／SE18」的效果，可以註冊 <span class="kw">lo_alv-&gt;get_event( )</span> 的 <b>double_click</b> 事件，然後 <span class="kw">SET PARAMETER ID 'MON' FIELD lv_name.</span> 後 <span class="kw">CALL TRANSACTION 'SMOD' AND SKIP FIRST SCREEN.</span>（BAdI 則用 Parameter ID <b>'EXN'</b> ＋ SE18）。</div>
+
+  <h4>10-1．直接用 SQL 查 MODSAP / TFDIR 的兩支小工具</h4>
+  <pre><code class="abap">*--- (1) 由函數名樣式反查「這支出口屬於哪個增強組件」
+SELECT m~name,                       " 增強名，例如 MM06E005
+       m~typ,                        " E=函數 S=螢幕 C=菜單 T=結構
+       m~member,                     " 元件名，例如 EXIT_SAPMM06E_007
+       t~modtext AS descr
+  FROM modsap AS m
+  LEFT OUTER JOIN modsapt AS t
+    ON  t~name  = m~name
+    AND t~sprsl = @sy-langu
+  WHERE m~member LIKE 'EXIT_SAPMM06E%'
+  ORDER BY m~name, m~member
+  INTO TABLE @DATA(lt_modsap).
+
+cl_demo_output=&gt;display( lt_modsap ).
+
+*--- (2) 檢查出口函數「有沒有被啟用」：TFDIR-MAND = 'C' 才是啟用
+SELECT funcname, mand
+  FROM tfdir
+  WHERE funcname LIKE 'EXIT_SAPMM06E%'
+  ORDER BY funcname
+  INTO TABLE @DATA(lt_tfdir).
+
+LOOP AT lt_tfdir INTO DATA(ls_tfdir).
+  WRITE: / ls_tfdir-funcname,
+           COND string( WHEN ls_tfdir-mand = 'C' THEN '已啟用' ELSE '未啟用' ).
+ENDLOOP.</code></pre>
+  <div class="warn"><b>絕對不要用 UPDATE 直接改 TFDIR。</b> 講義附了一支 <b>ZACTEXITFUN</b>，內容是 <span class="kw">UPDATE tfdir SET mand = 'C' WHERE funcname = 'EXIT_SAPMM06E_013'.</span>，用途是「一時查不到相關 Enhancement、無法用 SMOD/CMOD 啟用時強制啟動出口函數」。<b>這是反例，只用來理解 MAND 欄位的意義</b>：<br>
+  ・直接 UPDATE SAP 標準表繞過 CMOD，<b>不會產生傳輸請求</b>，DEV 改了 QAS／PRD 不會有，升級或重新產生時會被打回原形。<br>
+  ・沒有 CMOD 專案登錄，<b>下一個顧問完全看不出這裡有增強</b>，是稽核與交接的災難。<br>
+  ・正確做法永遠是：SMOD 查出增強組件 → CMOD 建專案 → 指派 → 寫碼 → <b>啟用專案</b>。</div>
+
+  <h3 id="ch03-3-11">11. SMOD 與 CMOD：查看與實現增強的完整操作</h3>
+  <p>兩個交易碼的分工，一句話記住：<b>SMOD 是「看有什麼出口」（SAP 交付的增強組件，唯讀）；CMOD 是「我要用哪些出口」（客戶專案，可寫可啟用）。</b></p>
+
+  <h4>11-1．SMOD：查看增強組件</h4>
+  <ol>
+    <li><span class="tcode">SMOD</span> → 增強名稱輸入（如 <b>MM06E005</b>、<b>V45A0003</b>），或按 F4 用<b>說明文字</b>模糊搜尋。</li>
+    <li>選 <b>Components（元件）</b> → 顯示。畫面分區列出：<b>Function exits</b>（EXIT_*）、<b>Screen areas</b>（螢幕出口的程式＋螢幕編號）、<b>Menu entries</b>、<b>Include structures</b>（CI_ 結構）。</li>
+    <li>按 <b>Documentation（文件）</b> 讀 SAP 的官方說明：這個增強什麼時候被呼叫、能改什麼、不能改什麼。<b>這一步千萬別跳過</b>。</li>
+    <li>雙擊某個 EXIT_ 函數即可進入 <span class="tcode">SE37</span> 看介面與 INCLUDE 名稱。</li>
+  </ol>
+  <p><span class="src">（依講義步驟整理）</span></p>
+  <div class="note">講義另外提到一個很實用的練習題：<b>「SAP 記錄 CO02 生產訂單修改日誌的增強」</b>——用 Z_FIND_USEREXIT 輸入 CO02，會列出 PP 模組的一整批 SMOD／BAdI，再用 SMOD 的文件逐一看說明，挑出能攔截「訂單修改」的那一支。這是練習「找出口」最好的自我訓練。</div>
+
+  <h4>11-2．CMOD：建立專案並實現增強（標準八步驟）</h4>
+  <ol>
+    <li><span class="tcode">CMOD</span> → 專案（Project）輸入自訂名稱（<b>Z 開頭</b>，例如 <b>ZPO</b>、<b>ZSD01</b>）→ 按<b>建立</b>。<br><i>命名策略</i>：老師的做法是<b>「ZPO 是指將所有的 PO 相關增強都放在此 PROJECT」</b>——<b>依模組／主題分專案</b>，不要一個出口開一個專案，否則以後沒人管得動。</li>
+    <li>輸入簡短說明 → 存檔 → 指定<b>套件與傳輸請求</b>。</li>
+    <li>按 <b>Enhancement assignments（增強指派）</b> → 在清單中<b>列舉由 SMOD 所找到的、想要增強的增強組件名稱</b>（可一次填多個）→ 存檔。</li>
+    <li>按 <b>Components（元件）</b> → 可看到<b>已經預設好的增強函數名稱</b>（例如 EXIT_SAPMM06E_007）。</li>
+    <li><b>雙擊該函數名</b> → 進入函數群組（例如 XM06）→ 函數原始碼中只有一行 <span class="kw">INCLUDE ZXM06U38.</span>。</li>
+    <li><b>雙擊 INCLUDE 名稱</b> → 系統詢問「此 Include 尚不存在，要建立嗎？」→ 按<b>是</b>，指定套件與請求 → <b>建立 ZXM06U38</b>，裡頭就可以自行新增程式碼了。</li>
+    <li>寫完程式碼 → <b>啟用（Ctrl+F3）</b> → 退出回到 CMOD。</li>
+    <li>在 CMOD 專案畫面按 <b>啟用（Activate，火柴人／閃電圖示）</b>。啟用成功後，回到 Components 會發現<b>增強函數名稱前面有一個綠色 ✔</b>。</li>
+  </ol>
+  <p><span class="src">（依講義步驟整理）</span></p>
+  <div class="warn"><b>老師的鐵律：「增強要生效必須啟動；增強要刪除必須取消啟動。」</b><br>
+  ・只寫程式碼、沒按 CMOD 的「啟用」＝<b>完全不會被呼叫</b>（TFDIR-MAND 不會變成 'C'）。這是初學者最常卡住的地方。<br>
+  ・要移除增強，順序是：<b>先 Deactivate 專案 → 再刪除指派／程式碼</b>。直接刪 Include 會讓函數變成語法錯誤，整個交易碼掛掉。<br>
+  ・<b>一個增強組件（SMOD name）只能被一個 CMOD 專案指派</b>。若已被別的專案佔用，系統會擋下來——這時要去談，把邏輯合併進既有專案，不要另開專案硬幹。</div>
+
+  <h4>11-3．第一代與第二代在「建程式」上的差別</h4>
+  <div class="tip">口訣：<b>「第一代程式會先建好，第二代則由自己新增。」</b> 第一代的 MV45AFZZ、USEREXIT_SAVE_DOCUMENT_PREPARE 已經存在，你打開就能寫；第二代的 ZXM06U38 一開始<b>不存在</b>，要你雙擊建立；螢幕出口的螢幕 0101 也<b>不存在</b>，要你自己到 SE38/SE80 建。</div>
+
+  <h3 id="ch03-3-12">12. 第二代實作（一）：採購單 MM06E005</h3>
+  <p>練習題：<b>在採購單上增加客制的欄位，並處理它。</b> 這個練習一次用到第二代的三種類型：<b>T（結構）→ S（螢幕）→ E（函數）</b>。</p>
+
+  <h4>12-1．步驟總覽</h4>
+  <ol>
+    <li><span class="tcode">SMOD</span> 查 <b>MM06E005</b>（Customer fields in purchasing document）→ 看 Components。</li>
+    <li><span class="tcode">CMOD</span> 建專案 <b>ZPO</b> → Enhancement assignment 填 <b>MM06E005</b>。</li>
+    <li><b>結構增強（T）</b>：SE11 維護 <b>CI_EKKODB</b>（抬頭）與 <b>CI_EKPODB</b>（明細），加上 <b>Z 開頭</b>的欄位並啟用。</li>
+    <li><b>螢幕增強（S）</b>：SE38／SE80 進 <b>SAPLXM06</b>，建立子螢幕 <b>0101</b>（抬頭）／<b>0111</b>（明細），畫上剛才的欄位。</li>
+    <li><b>函數增強（E）</b>：實作 EXIT_SAPMM06E_006／007／008 等，把資料在標準結構與子螢幕之間搬進搬出。</li>
+    <li>CMOD <b>啟用專案</b> → ME21N／ME21 測試。</li>
+  </ol>
+  <p><span class="src">（依講義步驟整理）</span></p>
+
+  <h4>12-2．欄位結構增強（EKKO）</h4>
+  <ol>
+    <li><span class="tcode">SE11</span> → 結構 <b>CI_EKKODB</b> → 若不存在則建立（它是 SAP 預留給客戶的 Customer Include，名稱固定，不要自己另取）。</li>
+    <li>加入欄位，<b>欄位名稱以 Z 起頭</b>（例如 ZZCONTRACT、ZZREMARK），指定資料元素。</li>
+    <li><b>啟用</b>——講義特別提醒：<b>「啟動要等待比較久」</b>（因為 EKKO 是大表，要做結構調整／轉換）。</li>
+    <li>啟用完成，回頭用 SE11 看 <b>EKKO</b>，就會發現表中已加入增強的欄位了。</li>
+  </ol>
+  <div class="warn">在正式系統上 Append 大表（EKKO／EKPO／VBAK／MARA）會觸發<b>資料庫表格轉換</b>，資料量大時可能鎖表數十分鐘。<b>一定要安排在停機視窗</b>，並先在 QAS 量測時間。S/4HANA on HANA 多數情況是「線上新增欄位」很快，但仍要以 SE14 的調整記錄為準。</div>
+
+  <h4>12-3．螢幕增強實作</h4>
+  <ol>
+    <li>用 <span class="tcode">SE38</span> 進入 <b>SAPMM06E</b>，搜尋 <b>CALL CUSTOMER-SUBSCREEN</b>，確認 SAP 預留的子螢幕區域名稱與呼叫的程式（<b>SAPLXM06</b>）。</li>
+    <li><b>第二代增強不會預先新增程式或螢幕</b>，因此要進入 <span class="tcode">SE38</span>／<span class="tcode">SE80</span> 開啟 <b>SAPLXM06</b>，<b>自行新增螢幕編號 0101</b>。</li>
+    <li>建立螢幕 0101 時，屬性中的<b>螢幕類型要設定成 Subscreen（子螢幕）</b>——設錯類型畫面不會出現。</li>
+    <li>進入 <b>Layout</b> 設計自己的子螢幕：用 Dict/Program fields 把 <b>EKKO-ZZxxx</b> 拉進來。</li>
+    <li>在該螢幕的 <b>Flow Logic</b> 寫 PBO／PAI 模組（模組要寫在函數群組 XM06 的客戶 include，例如 ZXM06O01／ZXM06I01）。</li>
+    <li>回到 CMOD 專案的 Components，在 Screen areas 那一列填上 <b>SAPLXM06 / 0101</b> → 存檔 → 啟用。</li>
+  </ol>
+  <p><span class="src">（依講義步驟整理）</span></p>
+
+  <pre><code class="abap">*--- SAPLXM06 子螢幕 0101 的 Flow Logic（在 SE51 的 Flow logic 頁籤）
+PROCESS BEFORE OUTPUT.
+  MODULE zzstatus_0101.          " 依採購單狀態決定欄位可否輸入
+
+PROCESS AFTER INPUT.
+  MODULE zzcheck_0101.           " 客制欄位的檢核
+
+*--- 對應的模組（寫在函數群組 XM06 的客戶 include，例如 ZXM06O01 / ZXM06I01）
+MODULE zzstatus_0101 OUTPUT.
+  " gs_ekko 是本函數群組的全域工作區，由 EXIT_SAPMM06E_006 填入
+  LOOP AT SCREEN.
+    IF screen-group1 = 'ZZ1' AND gs_ekko-loekz IS NOT INITIAL.
+      screen-input = 0.          " 已刪除的採購單 → 客制欄位變唯讀
+      MODIFY SCREEN.
+    ENDIF.
+  ENDLOOP.
+ENDMODULE.
+
+MODULE zzcheck_0101 INPUT.
+  IF ekko-zzcontract IS NOT INITIAL.
+    SELECT SINGLE @abap_true
+      FROM zmm_contract
+      WHERE contract_no = @ekko-zzcontract
+      INTO @DATA(lv_exists).
+    IF lv_exists = abap_false.
+      MESSAGE |合約號碼 { ekko-zzcontract } 不存在| TYPE 'E'.
+    ENDIF.
+  ENDIF.
+ENDMODULE.</code></pre>
+  <div class="note">子螢幕上的 <b>MESSAGE TYPE 'E'</b> 是安全的（有畫面、屬於 PAI），和第 5 節警告的「背景／BAPI 情境」不同。這也是為什麼<b>使用者互動的檢核放在螢幕出口，資料一致性的檢核放在存檔出口</b>。</div>
+
+  <h4>12-4．函數增強（資料搬進搬出）</h4>
+  <p>MM06E005 的函數出口是<b>成對</b>的：一支把標準資料<b>送到</b>子螢幕，一支把子螢幕的輸入<b>收回</b>標準結構。講義的實作以 <b>EXIT_SAPMM06E_007</b> 為例，雙擊後往下新增 <b>ZXM06U38</b> 程式。</p>
+  <pre><code class="abap">*--- INCLUDE ZXM06U38（由 EXIT_SAPMM06E_007 呼叫）
+*    只能使用介面參數！這裡的 i_ekko / e_ci_ekko 都是函數介面帶進來的
+
+" 把標準採購單抬頭資料送進子螢幕用的全域工作區
+gs_ekko = i_ekko.
+
+" 客制欄位的預設值：新建單據且合約號碼為空時，依供應商帶出預設合約
+IF gs_ekko-zzcontract IS INITIAL AND gs_ekko-lifnr IS NOT INITIAL.
+
+  SELECT SINGLE contract_no
+    FROM zmm_contract
+    WHERE lifnr  = @gs_ekko-lifnr
+      AND datbi &gt;= @sy-datum
+    INTO @gs_ekko-zzcontract.
+
+ENDIF.
+
+" 回傳客制欄位結構給標準程式
+e_ci_ekko = CORRESPONDING #( gs_ekko ).</code></pre>
+  <div class="tip">講義的重要提醒：<b>「EXIT_SAPMM06E_008 才可以更動 EKKO。」</b> 出口是有分工的——有的只能<b>讀</b>（送資料給畫面），有的才可以<b>寫</b>（把值回寫進標準結構）。<b>寫在錯誤的出口，值會在下一個 PBO 被沖掉</b>，症狀是「我明明有填，存檔後就不見了」。決定寫在哪一支的唯一可靠方法：<b>SMOD 的 Documentation ＋ 看函數的 IMPORTING/CHANGING 參數</b>。</div>
+
+  <h3 id="ch03-3-13">13. 超級函數 MODX_FUNCTION_ACTIVE_CHECK 與出口觸發順序</h3>
+  <p><b>MODX_FUNCTION_ACTIVE_CHECK 的參數是由功能模組名稱而來</b>——標準程式在真正呼叫 EXIT_ 之前，會先用這支函數問「這個出口啟用了沒」。所以<b>只要在它上面設一個中斷點，整個交易會呼叫哪些出口、以什麼順序呼叫，就全部無所遁形</b>。這就是老師說的「超級函數」。</p>
+
+  <h4>13-1．用它來反查出口（操作步驟）</h4>
+  <ol>
+    <li><span class="tcode">SE37</span> 開啟 <b>MODX_FUNCTION_ACTIVE_CHECK</b> → 在第一行可執行敘述設<b>外部中斷點（Session Breakpoint）</b>。<b>DEBUG 技巧：也可以直接由函數設定 DEBUG。</b></li>
+    <li>執行目標交易（例如 <span class="tcode">ME21N</span>）。</li>
+    <li>每次停下來時，切到 Debugger 的 <b>Locals（本地）頁籤</b>，看傳進來的<b>函數名參數</b>——那就是系統正在檢查的出口。</li>
+    <li>把每次停下來的函數名依序抄下來，就得到「這個交易的出口觸發時序表」。</li>
+    <li>找到目標出口後，把中斷點移到該出口的 ZX… include 上，取消 MODX 的中斷點。</li>
+  </ol>
+  <div class="tip">同理，螢幕出口用 <b>MODX_SUBSCREEN_ACTIVE_CHECK</b>、菜單出口用 <b>MODX_MENUENTRY_ACTIVE_CHECK</b> 或 <b>MODX_ALL_ACTIVE_MENUENTRIES</b>。這三支加上 MODX_FUNCTION_ACTIVE_CHECK，就是第二代增強的「四把萬能鑰匙」。</div>
+
+  <pre><code class="abap">*--- 在自己的程式裡也能判斷某個出口是否已啟用（少用，但除錯很好用）
+DATA(lv_active) = abap_true.
+
+CALL FUNCTION 'MODX_FUNCTION_ACTIVE_CHECK'
+  EXPORTING
+    funcname   = 'EXIT_SAPMM06E_007'
+  EXCEPTIONS
+    not_active = 1
+    OTHERS     = 2.
+
+IF sy-subrc &lt;&gt; 0.
+  lv_active = abap_false.
+ENDIF.
+
+" 介面參數名稱會因版本略有差異，請以你系統上 SE37 顯示的為準
+WRITE: / |EXIT_SAPMM06E_007 啟用狀態：{ COND string( WHEN lv_active = abap_true
+                                                     THEN '已啟用' ELSE '未啟用' ) }|.</code></pre>
+
+  <h4>13-2．ME21N 的出口觸發時序（老師實測結果）</h4>
+  <table>
+    <thead><tr><th>時機</th><th>被呼叫的出口</th></tr></thead>
+    <tbody>
+      <tr><td>一進入 ME21N 之後，立刻執行</td><td><b>EXIT_SAPMM06E_006</b></td></tr>
+      <tr><td>打完抬頭（檔頭）之後</td><td><b>EXIT_SAPMM06E_007</b> 與 <b>EXIT_SAPMM06E_008</b></td></tr>
+      <tr><td>點入 Material（物料）時</td><td><b>EXIT_SAPLOMCV</b> 系列</td></tr>
+      <tr><td>Material 輸入完成按下 ENTER 時</td><td><b>EXIT_SAPMM06E_016</b></td></tr>
+      <tr><td>整筆明細輸入完成之後</td><td><b>EXIT_SAPMM06E_018</b></td></tr>
+      <tr><td>按下存檔之後</td><td><b>EXIT_SAPLEBND_002</b></td></tr>
+    </tbody>
+  </table>
+  <div class="note">除錯螢幕增強的訣竅：<b>增強的 DEBUG 若是螢幕，就找 PBO / PAI 裡頭的 MODULE 設中斷點</b>。講義的實作是在 <b>CUSTSCR1_HEAD_SET_DATA</b> 設中斷點，然後建立一張 ME21N；輸入抬頭時就會停在斷點。</div>
+  <div class="warn">老師的老實話：<b>「這種增強的實作若沒有 BASIS 支援，很難有環境讓您試。」</b>「然後啟動全部，有些練習環境有可能無法啟動。」——結構增強要改大表、CMOD 專案是 client 層級全域生效，教學環境通常鎖住。<b>沒有環境時，把重點放在「看得懂別人寫的出口」與「找得到出口」</b>，這兩件事才是專案上真正天天在用的。</div>
+
+  <h3 id="ch03-3-14">14. 第二代實作（二）：客戶訂單 V45A0003</h3>
+  <p>這是本章最容易在教學環境完成的實作，強烈建議親手做一次。</p>
+
+  <h4>14-1．完整步驟</h4>
+  <ol>
+    <li><span class="tcode">SMOD</span> 輸入 <b>V45A0003</b> → 按 <b>Components</b>，看到元件 <b>EXIT_SAPMV45A_003</b>。</li>
+    <li><span class="tcode">CMOD</span> 建立專案 <b>ZSD01</b> → 輸入說明 → 存檔（指定套件與請求）。</li>
+    <li>按 <b>Enhancement assignment（增強指派）</b> → 填入 <b>V45A0003</b> → 存檔。</li>
+    <li>按 <b>Components</b> → 雙擊 <b>EXIT_SAPMV45A_003</b> → 進入 SE37。</li>
+    <li>函數原始碼只有一行 <span class="kw">INCLUDE ZXVVAU05.</span> → <b>雙擊 ZXVVAU05</b> → 建立它。</li>
+    <li>在 ZXVVAU05 中寫程式碼 → <b>啟用（要激活）</b>。</li>
+    <li>回到 <span class="tcode">CMOD</span>，<b>專案也要激活</b>（這步最常被忘記）。</li>
+    <li>執行 <span class="tcode">VA01</span> 測試。</li>
+  </ol>
+  <p><span class="src">（依講義步驟整理）</span></p>
+
+  <h4>14-2．案例程式碼</h4>
+  <pre><code class="abap">*--- INCLUDE ZXVVAU05（由 EXIT_SAPMV45A_003 呼叫，增強組件 V45A0003）
+*    案例一：確認出口真的被呼叫
+IF sy-uname = 'ERP000' AND sy-mandt = '540'.
+  MESSAGE '第二代增強的方法 EXIT_SAPMV45A_003 / ZXVVAU05' TYPE 'I'.
+ENDIF.</code></pre>
+
+  <pre><code class="abap">*--- INCLUDE ZXVVAU05
+*    案例二：加上日期條件，並把三個關鍵資訊都寫進訊息，方便日後辨識
+IF sy-uname = 'ERP000' AND sy-datum = '20250501'.
+
+  MESSAGE |這是第二代增強：函數 EXIT_SAPMV45A_003，| &amp;&amp;
+          |組件 V45A0003，INCLUDE ZXVVAU05| TYPE 'I'.
+
+ENDIF.</code></pre>
+  <div class="warn">老師三令五申：<b>「測試完之後，請記得要註釋掉，以免影響他人。」</b> CMOD 專案是<b>整個 client 生效</b>的，你留一個 MESSAGE 'I'，全公司開 VA01 都會跳視窗；如果那個 client 上有跑背景批次或介面程式，還會直接 DUMP。教學環境尤其容易翻車。</div>
+
+  <h3 id="ch03-3-15">15. 菜單出口與欄位出口</h3>
+
+  <h4>15-1．Menu Exit（菜單出口）</h4>
+  <ol>
+    <li>SAP 在標準的 GUI Status 中預留了功能碼，<b>以 <span class="kw">+</span> 開頭</b>（例如 +CUS、+C01）。</li>
+    <li>在 <span class="tcode">SMOD</span> 該增強的 Components 中，<b>Menu entries</b> 區塊會列出程式名、Status、功能碼。</li>
+    <li>在 <span class="tcode">CMOD</span> 的 Components 中<b>雙擊該功能碼</b>，填入功能表<b>文字</b>（多語系可分別維護，文字存在 <b>CUATEXTS</b>）。</li>
+    <li>功能碼被按下時，會經由對應的<b>函數出口</b>（通常是同一個增強裡的某支 EXIT_，介面帶有 <b>SY-UCOMM／FCODE</b>）交給你處理。</li>
+    <li>CMOD 專案啟用後，該功能表項目才會出現在交易畫面上。</li>
+  </ol>
+  <p><span class="src">（依講義步驟整理）</span></p>
+  <div class="note">系統背後是用 <b>MODX_ALL_ACTIVE_MENUENTRIES</b> / <b>MODX_MENUENTRY_ACTIVE_CHECK</b> 判斷菜單項目是否啟用，資料放在 <b>CUATEXTS</b>。菜單項目沒出現，先查這兩個地方。</div>
+
+  <h4>15-2．Field Exit（欄位出口）</h4>
+  <p>欄位出口是掛在<b>資料元素（Data Element）</b>上的檢核／轉換：只要畫面上任何欄位用了那個資料元素，離開欄位時就會呼叫你的函數。</p>
+  <ol>
+    <li><span class="tcode">CMOD</span> → 功能表 <b>Goto → Text enhancements → Field exits</b>（或直接執行程式 <b>RSMODPRF</b>）。</li>
+    <li>建立 → 輸入<b>資料元素</b>名稱 → 系統自動產生函數 <b>FIELD_EXIT_&lt;資料元素&gt;</b>（可加尾碼 _A、_B 產生多個版本）。</li>
+    <li>在函數中處理：介面固定為 <b>INPUT</b>（使用者輸入值）與 <b>OUTPUT</b>（要寫回畫面的值）。</li>
+    <li>可以指定只對某一個<b>程式／螢幕編號</b>生效（全域 vs 區域欄位出口）。</li>
+    <li><b>啟用欄位出口</b>，而且系統參數 <b>abap/fieldexit = YES</b> 必須設定（要 BASIS 改 profile 並重啟，這也是它很少被用的原因）。</li>
+  </ol>
+  <pre><code class="abap">FUNCTION field_exit_zzcontract.
+*"----------------------------------------------------------------------
+*"*"Local Interface:
+*"  IMPORTING
+*"     REFERENCE(INPUT)
+*"  EXPORTING
+*"     REFERENCE(OUTPUT)
+*"----------------------------------------------------------------------
+
+  " 典型用途：使用者不照規範打小寫 → 自動轉大寫並補零
+  output = to_upper( condense( CONV string( input ) ) ).
+
+ENDFUNCTION.</code></pre>
+  <div class="warn"><b>Field Exit 在新版本（ECC 6.0 之後、S/4HANA）已被 SAP 視為過時（obsolete）技術</b>，不再建議使用，且對 Web Dynpro／Fiori 畫面完全無效。要做欄位層級的轉換／檢核，改用：<b>資料元素的 Conversion Exit</b>（CONVERSION_EXIT_xxxxx_INPUT/OUTPUT）、<b>畫面 PAI 檢核</b>、或 <b>BAdI</b>。這裡列出來只是為了讓你看得懂舊系統。</div>
+
+  <h3 id="ch03-3-16">16. 傳輸、相依與版本管理</h3>
+  <table>
+    <thead><tr><th>物件</th><th>傳輸方式</th><th>常見漏傳的地雷</th></tr></thead>
+    <tbody>
+      <tr><td>第一代 include（MV45AFZZ…）</td><td>以 <b>PROG／INCLUDE</b> 物件進 Request（會被標為對 SAP 物件的修改）</td><td>宣告寫在 MV45ATZZ／MV45ATOP，但只傳了 MV45AFZZ → 目標系統語法錯誤</td></tr>
+      <tr><td>CMOD 專案</td><td>物件類型 <b>R3TR CMOD &lt;專案名&gt;</b></td><td><b>只傳了 ZX… include 卻沒傳 CMOD 專案</b> → 目標系統程式在、但沒啟用，完全沒作用</td></tr>
+      <tr><td>ZX… include</td><td><b>R3TR PROG</b>（或函數群組 <b>R3TR FUGR</b>）</td><td>只傳專案沒傳程式 → 目標系統啟用時語法錯誤</td></tr>
+      <tr><td>螢幕出口（SAPLXM06 0101）</td><td>隨函數群組 <b>FUGR XM06</b> 一起傳</td><td>螢幕（Dynpro）沒被加進 Request；PBO/PAI 模組寫在別的 include 卻沒傳</td></tr>
+      <tr><td>結構增強（CI_EKKODB／Append）</td><td><b>R3TR TABL</b>／<b>R3TR TTYP</b> 等字典物件</td><td>字典物件與程式在<b>同一個 Request</b> 但匯入順序造成短暫語法錯誤；建議<b>字典先行、程式隨後</b></td></tr>
+      <tr><td>VOFM 常式</td><td>產生的程式（LV61A9xx／RV64A9xx）＋<b>啟用登錄（TFRM／TFRMT）</b></td><td>啟用旗標沒跟著過去 → 目標系統常式在但不執行</td></tr>
+      <tr><td>Field Exit</td><td>函數群組＋登錄表</td><td>目標系統的 <b>abap/fieldexit</b> 參數沒開</td></tr>
+    </tbody>
+  </table>
+  <div class="tip"><b>傳輸前自檢清單</b>：<span class="tcode">SE09</span>／<span class="tcode">SE10</span> 打開 Request → 展開物件清單，確認四樣東西都在：<b>①CMOD 專案 ②ZX… include（或函數群組）③字典物件（CI_ 結構／Append）④螢幕</b>。四缺一，QAS 一定出事。</div>
+
+  <h3 id="ch03-3-17">17. S/4HANA 注意事項</h3>
+  <div class="warn"><b>17-1．第一、二代仍然存在且可用，但已停止擴充。</b> S/4HANA 1809 以後，SD／MM 的傳統交易（VA01、ME21、VF01）大多還在，MV45AFZZ、MM06E005 也都還在被呼叫。但 SAP <b>不再新增</b>第一、二代出口，所有新功能只提供 <b>BAdI / Enhancement Spot</b>。新開發一律優先找 BAdI（第 3-4 章）。</div>
+  <div class="warn"><b>17-2．走 Fiori / OData / BAPI / RAP 的路徑，出口不一定會被呼叫。</b> 例如：<br>
+  ・<b>ME21N（Enjoy 交易）不使用 MM06E005 的子螢幕出口</b>，客制欄位的畫面要改用 BAdI <b>ME_GUI_PO_CUST</b>，邏輯用 <b>ME_PROCESS_PO_CUST</b>。舊的 SAPLXM06 0101 只在舊式 ME21／ME22／ME23 有效。這正是講義所說「有些練習環境有可能無法啟動／很難有環境讓您試」的技術原因之一。<br>
+  ・銷售訂單若由 Fiori App 或 <b>API_SALES_ORDER_SRV</b>（OData）建立，走的是不同的服務層，第一代 SD user exit <b>不保證</b>被觸發。<br>
+  <b>做法</b>：導入前一定要把「所有建單通路」列出來（GUI／BAPI／IDoc／OData／CPI），逐一 DEBUG 驗證出口有沒有跑到。</div>
+  <div class="warn"><b>17-3．標準程式被改寫後，出口可能失效。</b> S/4HANA 的簡化清單（Simplification List）改寫了大量標準程式：MB5B／MSEG 相關邏輯改走 <b>MATDOC</b>、BSEG／BKPF 相關改走 <b>ACDOCA</b>、SD 的狀態表 VBUK／VBUP 已被<b>併入 VBAK／VBAP</b>。所以：<br>
+  ・<b>RV45PFZA 的 USEREXIT_SET_STATUS_VBUK / _VBUP</b> 在 S/4HANA 上因 VBUK/VBUP 被移除（改為 CDS 相容視圖），行為與 ECC 不同，升級專案必須逐一重測。<br>
+  ・出口裡若有 <span class="kw">SELECT … FROM vbuk</span>、<span class="kw">FROM bseg</span>、<span class="kw">FROM mseg</span>，升級時要改成新表或 CDS View。</div>
+  <div class="warn"><b>17-4．升級與 Note 的衝突處理。</b><br>
+  ・<span class="tcode">SPDD</span>：升級時處理<b>字典物件</b>的修改對帳（Append Structure、資料元素、Domain）。<b>在匯入階段就要做，錯過會遺失</b>。<br>
+  ・<span class="tcode">SPAU</span>：升級後處理 <b>Repository 物件</b>（程式、函數、螢幕）的修改對帳。第一代出口 include 若被 SAP 改版，會出現在這裡，要人工合併。<br>
+  ・<span class="tcode">SPAU_ENH</span>：專門處理<b>增強實作（第三、四代）</b>的調整。<br>
+  ・<span class="tcode">SNOTE</span> 套 Note 時，若 Note 改到你動過的 include，會要求 Access Key 或提示衝突——<b>先用 SE95（修改瀏覽器）確認自己動過哪些標準物件</b>。<br>
+  <b>治本建議</b>：把出口裡的邏輯<b>全部搬進自建的 Z 類別／Z 函數</b>，出口 include 裡只留一行呼叫。這樣升級時 SPAU 只要處理那一行，維護成本降到最低。</div>
+  <pre><code class="abap">*--- 建議的出口寫法：出口 include 內只留「一行呼叫」，邏輯全在自建類別中
+*    INCLUDE ZXVVAU05
+zcl_sd_order_exit=&gt;check_before_save( ).
+
+*--- 自建類別（可單元測試、可版本管理、升級時不受 SPAU 影響）
+CLASS zcl_sd_order_exit DEFINITION PUBLIC FINAL CREATE PUBLIC.
+  PUBLIC SECTION.
+    CLASS-METHODS check_before_save
+      RAISING cx_static_check.
+ENDCLASS.
+
+CLASS zcl_sd_order_exit IMPLEMENTATION.
+  METHOD check_before_save.
+
+    TRY.
+        " 真正的商業邏輯寫在這裡：可以寫 ABAP Unit、可以被別的程式重用
+        DATA(lo_checker) = NEW zcl_sd_credit_checker( ).
+        lo_checker-&gt;validate( ).
+
+      CATCH zcx_sd_check INTO DATA(lx).
+        " 統一的錯誤處理：介面情境寫 log，對話情境才丟訊息
+        IF sy-batch = abap_true OR sy-binpt = abap_true.
+          zcl_app_log=&gt;add( lx-&gt;get_text( ) ).
+        ELSE.
+          MESSAGE lx-&gt;get_text( ) TYPE 'E'.
+        ENDIF.
+    ENDTRY.
+
+  ENDMETHOD.
+ENDCLASS.</code></pre>
+  <div class="tip"><b>出口撰寫的七條軍規</b>（把它貼在你的螢幕邊）：<br>
+  ① 不下 COMMIT WORK / ROLLBACK WORK。<br>
+  ② 不改不屬於自己的全域變數。<br>
+  ③ 不在出口裡做大量 DB 存取或呼叫 RFC（會拖垮交易反應時間）。<br>
+  ④ 訊息型別要看情境：對話用 E／W，背景與 BAPI 用 log。<br>
+  ⑤ 一律先做 <b>IF</b> 條件縮小生效範圍（公司代碼／單據類型／工廠），不要對全公司生效。<br>
+  ⑥ 邏輯搬進 Z 類別，出口只留一行呼叫。<br>
+  ⑦ 每一段增強都要在程式開頭寫註解：<b>誰、哪一天、哪張需求單、為什麼</b>。</div>
+
+  <h3 id="ch03-3-qa">練習與自我檢核</h3>
+  <ol>
+    <li><b>四代對照</b>：不看筆記寫出四代增強的名稱、技術本質與對應的 TCODE。<br><i>要點</i>：第一代＝原始碼 FORM（SPRO/SE80 VMOD/SE38）；第二代＝函數 CALL CUSTOMER-FUNCTION（SMOD/CMOD）；第三代＝Classic BAdI，<b>執行時期</b>產生實體，用 CL_EXITHANDLER=&gt;GET_INSTANCE（SE18/SE19）；第四代＝Kernel BAdI（編譯時期實體化）＋ Enhancement-Point（顯式／隱式）。</li>
+    <li><b>找出口（第一代）</b>：用三種方法各找一次「VA01 存檔前檢查」的出口，寫下你走的每一步。<br><i>答案</i>：SPRO → SD → System Modifications → User Exits 的說明文件／SE80 Package <b>VMOD</b>／SE93 查出 <b>SAPMV45A</b> → MV45AFZZ → <b>USEREXIT_SAVE_DOCUMENT_PREPARE</b>。</li>
+    <li><b>第一代實作</b>：在 MV45AFZZ 的 USEREXIT_SAVE_DOCUMENT_PREPARE 寫一段「只有自己帳號 ＋ 自己 client 才生效」的訊息，用 VA01 驗證，再改成「訂單金額超過 100 萬且客戶信用凍結時擋單」。<b>測完務必註解掉。</b></li>
+    <li><b>為什麼 Z_FIND_USEREXIT 找不到第一代？</b><br><i>答案</i>：它掃的是 TADIR 中 OBJECT IN ('SMOD','SXSD') 的物件；第一代是 FORM 子常式，不是 Repository 物件，不在 TADIR 裡。</li>
+    <li><b>出口挑選</b>：需求是「訂單明細儲存時，把客戶主檔的客戶群組寫進 VBAP 的自訂欄位」。該用哪一支出口？為什麼不是 USEREXIT_SAVE_DOCUMENT？<br><i>要點</i>：<b>USEREXIT_MOVE_FIELD_TO_VBAP</b>（VBAP_FUELLEN 結尾，每筆明細都會呼叫）；SAVE_DOCUMENT 太晚且要自己 LOOP XVBAP。</li>
+    <li><b>第二代查表</b>：用 SE16N 查 <b>MODSAP</b>，找出 <b>MM06E005</b> 底下所有元件，並說明 TYP 欄位 E／S／C／T 各是什麼。再查 <b>TFDIR</b> 確認 EXIT_SAPMM06E_007 的 <b>MAND</b> 是不是 'C'。</li>
+    <li><b>CALL CUSTOMER-FUNCTION 命名規則</b>：某標準程式 <b>SAPMV45A</b> 中有一行 <span class="kw">CALL CUSTOMER-FUNCTION '003'</span>，請寫出函數名、要在 SMOD 查哪個增強、程式碼寫在哪個 INCLUDE。<br><i>答案</i>：<b>EXIT_SAPMV45A_003</b>／增強組件 <b>V45A0003</b>／INCLUDE <b>ZXVVAU05</b>。</li>
+    <li><b>第二代實作（必做）</b>：完成第 14 節的 CMOD <b>ZSD01</b> ＋ V45A0003 ＋ ZXVVAU05，用 VA01 測到訊息跳出來，然後<b>取消啟用</b>並確認訊息消失。說出「程式啟用」與「CMOD 專案啟用」的差別。</li>
+    <li><b>採購單三合一</b>：描述在採購單加一個客制欄位的完整步驟（結構 → 螢幕 → 函數 → 啟用），並回答：為什麼 <b>EXIT_SAPMM06E_008</b> 才可以更動 EKKO？<br><i>要點</i>：出口分「送資料給畫面」與「收資料回標準結構」，寫在只讀的出口會被下一個 PBO 覆蓋。</li>
+    <li><b>超級函數</b>：在 <b>MODX_FUNCTION_ACTIVE_CHECK</b> 設中斷點，跑一次 ME21N，把觸發到的出口依序記錄下來，和第 13-2 節的表比對。你的系統多了或少了哪幾支？為什麼？</li>
+    <li><b>CO02 練習</b>：用 Z_FIND_USEREXIT 輸入 <b>CO02</b>，找出「SAP 記錄生產訂單修改日誌」的增強，讀它的 SMOD 文件並寫出它的呼叫時機。</li>
+    <li><b>VOFM</b>：說明 <b>KOBED</b> 與 <b>KOBEV</b> 的差別，並解釋為什麼在 KOBEV 裡存取 KOMP 欄位會導致「定價結果不穩定」。再說出定價值公式 FRM_KONDI_WERT_9xx 的回傳欄位是什麼。<br><i>答案</i>：KOBEV 是前置檢查、此時沒有明細資料；回傳欄位是 <b>XKWERT</b>。</li>
+    <li><b>VOFM 存取碼</b>：新建一支 901 的定價公式，記錄系統是否要求 Access Key、常式編號的客戶命名空間是多少、以及「Active」旗標在哪裡打勾。</li>
+    <li><b>反例分析</b>：說明為什麼 ZACTEXITFUN（直接 <span class="kw">UPDATE tfdir SET mand = 'C'</span>）雖然「有效」卻絕對不能用在專案上，至少列出三個理由。</li>
+    <li><b>S/4HANA 檢核</b>：你接手一支 ECC 時代寫的 MV45AFZZ 出口，裡面有 <span class="kw">SELECT … FROM vbuk</span> 和 <span class="kw">MESSAGE … TYPE 'I'</span>。列出你在 S/4HANA 升級時要做的所有修改，並說明 SPDD／SPAU／SPAU_ENH 各在什麼時機用。</li>
+    <li><b>架構題</b>：把第 14 節的 ZXVVAU05 重構成「出口只留一行、邏輯放 Z 類別」的寫法，並替 Z 類別寫一支 ABAP Unit 測試。說明這樣做對<b>升級</b>與<b>多顧問協作</b>各有什麼好處。</li>
+    <li><b>銜接</b>：把本章找到的每一個需求，回頭到 <span class="tcode">SE18</span> 查查看有沒有對應的 BAdI 可以取代。這就是第 3-4 章的入口。</li>
+  </ol>
+</section>

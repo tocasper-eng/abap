@@ -1,0 +1,649 @@
+<section class="chapter" id="ch07-2" data-title="OOP 範例庫（二）：類別與物件（書第 4 章）">
+  <h2>第 7-2 章 OOP 範例庫（二）：類別與物件（書第 4 章）</h2>
+  <p class="lede">本章整理《SAP ABAP 面向对象程序设计 – 原则.模式.实践》第 4 章的 21 支隨書範例（4.1～4.21）：本地類別與全域類別、實例／靜態屬性、四種方法參數、方法呼叫寫法的演進、事件、建構子與靜態建構子、方法例外、三種可見性、NEW 鏈式呼叫、以及物件生命週期與垃圾回收。每支範例都依「觀念 → 改寫後範例 → 與原範例的差異 → 實務提醒」講解，程式碼一律改寫成 S/4HANA 1809+（ABAP 7.53）可直接使用的寫法；原廠觀念細節請搭配 <a href="#ch05-2">5-2 章 BC401 ABAP Objects</a>。</p>
+  <div class="meta">
+    <div><b>核心 TCODE</b><span class="tcode">SE24</span><span class="tcode">SE80</span><span class="tcode">SE38</span><span class="tcode">SE11</span><span class="tcode">ST22</span><span class="tcode">S_MEMORY_INSPECTOR</span></div>
+    <div><b>關鍵物件</b>ZLCL_CLASS_LOCAL、ZCL_CLASS_MATL、ZCL_INVENTORY、ZCL_CONSTRUCTOR、ZCL_EXCEPTION、ZCL_MASTER、CL_ABAP_MEMORY_UTILITIES、CX_ROOT、CX_STATIC_CHECK、CX_SY_ZERODIVIDE、MARA</div>
+    <div><b>素材</b>L36_ABAP_OOP_SAMPLE-master\ABAP_OOP_Sample_4.01～4.21.txt、勘誤表（2018/11/29）第 2 條</div>
+  </div>
+
+  <h3 id="ch07-2-01">1. 範例索引</h3>
+  <p>書中第 4 章的範例有一半是「完整報表」，另一半只是某個全域類別裡的單一方法片段（書本以 SE24 截圖呈現類別定義，資料夾裡沒有）。下表列出全部 21 支，片段型範例在講解時會補上完整、可編譯的類別定義。</p>
+  <table>
+    <thead><tr><th>編號</th><th>原 REPORT／類別．方法</th><th>主題</th><th>本章小節</th></tr></thead>
+    <tbody>
+      <tr><td>4.1</td><td>REPORT ZREP_CLASS_LOCAL_01／本地類別 ZLCL_CLASS_LOCAL</td><td>本地類別的定義與實作、實例屬性 vs 靜態屬性</td><td>§2</td></tr>
+      <tr><td>4.2</td><td>REPORT ZREP_CLS_002／全域類別 ZCL_CLASS_MATL=&gt;TEST_PARAMETER</td><td>IMPORTING／EXPORTING／CHANGING／RETURNING 四種參數</td><td>§3</td></tr>
+      <tr><td>4.3</td><td>片段：CALL METHOD lo_account_balance-&gt;deposit … RECEIVING</td><td>傳統 CALL METHOD 寫法</td><td>§4</td></tr>
+      <tr><td>4.4</td><td>片段：l_balance = lo_account_balance-&gt;deposit( p_deposit )</td><td>函數式呼叫、單一參數省略參數名</td><td>§4</td></tr>
+      <tr><td>4.5</td><td>片段：deposit( im_param1 = … im_param2 = … )</td><td>函數式呼叫、多個 IMPORTING 參數</td><td>§4</td></tr>
+      <tr><td>4.6</td><td>片段：deposit( EXPORTING … IMPORTING … CHANGING … )</td><td>函數式呼叫同時帶三種參數</td><td>§4</td></tr>
+      <tr><td>4.7</td><td>ZCL_INVENTORY=&gt;CHECK_MATERIAL</td><td>讀 MARA，查無資料時 RAISE EVENT</td><td>§5</td></tr>
+      <tr><td>4.8</td><td>REPORT ZREP_CLS_003</td><td>SET HANDLER 註冊事件處理方法並呼叫</td><td>§5</td></tr>
+      <tr><td>4.9</td><td>ZCL_CONSTRUCTOR=&gt;CONSTRUCTOR</td><td>實例建構子</td><td>§6</td></tr>
+      <tr><td>4.10</td><td>ZCL_CONSTRUCTOR=&gt;CLASS_CONSTRUCTOR</td><td>靜態建構子</td><td>§6</td></tr>
+      <tr><td>4.11</td><td>REPORT ZREP_CLS_004</td><td>建立物件時兩種建構子的執行順序</td><td>§6</td></tr>
+      <tr><td>4.12</td><td>ZCL_EXCEPTION=&gt;RAISE_EXCEPTION</td><td>傳統（非類別式）例外 RAISE</td><td>§7</td></tr>
+      <tr><td>4.13</td><td>ZCL_EXCEPTION=&gt;TEST_EXCEPTION</td><td>除以零產生執行期例外</td><td>§7</td></tr>
+      <tr><td>4.14</td><td>REPORT ZREP_CLS_005</td><td>TRY…CATCH 與 EXCEPTIONS／sy-subrc 兩種接法</td><td>§7</td></tr>
+      <tr><td>4.15</td><td>ZCL_MASTER=&gt;DISPLAY_PUBLIC</td><td>PUBLIC 屬性</td><td>§8</td></tr>
+      <tr><td>4.16</td><td>ZCL_MASTER=&gt;DISPLAY_PRIVATE</td><td>PRIVATE 屬性</td><td>§8</td></tr>
+      <tr><td>4.17</td><td>ZCL_MASTER=&gt;DISPLAY_PROTECTED</td><td>PROTECTED 屬性</td><td>§8</td></tr>
+      <tr><td>4.18</td><td>ZCL_MASTER=&gt;DISPLAY</td><td>類別內部可存取所有可見性區段</td><td>§8</td></tr>
+      <tr><td>4.19</td><td>REPORT ZREP_CLS_008</td><td>從類別外部呼叫：只看得到 PUBLIC；NEW 鏈式呼叫</td><td>§9</td></tr>
+      <tr><td>4.20</td><td>REPORT ZREP_CLS_009／本地類別 ZCL_MAIN_REPORT</td><td>用本地類別的靜態方法 RUN 當報表進入點</td><td>§10</td></tr>
+      <tr><td>4.21</td><td>REPORT ZREP_CLS_T01</td><td>FREE 物件參考與垃圾回收（CL_ABAP_MEMORY_UTILITIES）</td><td>§12</td></tr>
+    </tbody>
+  </table>
+  <div class="note">書本第 3 章是 UML，沒有範例程式；第 4 章的範例編號在資料夾裡是 <span class="kw">ABAP_OOP_Sample_4.01.txt</span>～<span class="kw">4.21.txt</span>，檔案內第一行註解寫的是「示例程序4.1」這種不補零的編號。本章 §11 的 Friend（友元）書中第 4 章沒有對應範例檔，依 SAP 標準語法補寫。</div>
+
+  <h3 id="ch07-2-02">2. 本地類別：定義、實作、實例屬性與靜態屬性（4.1）</h3>
+  <p><b>觀念</b>：類別分成「定義部分」（<span class="kw">CLASS … DEFINITION</span>，宣告屬性、方法、事件與可見性）與「實作部分」（<span class="kw">CLASS … IMPLEMENTATION</span>，寫方法本體）。寫在程式裡的叫<b>本地類別</b>（local class），只有這支程式看得到；用 <span class="tcode">SE24</span> 或 ADT 建的叫<b>全域類別</b>（global class），整個系統都能用。</p>
+  <ul>
+    <li><b>實例屬性</b>（<span class="kw">DATA</span>）：每個物件各一份，要先建立物件才能存取，寫法 <span class="kw">lo_obj-&gt;mv_value</span>。</li>
+    <li><b>靜態屬性</b>（<span class="kw">CLASS-DATA</span>）：整個類別只有一份，所有物件共用，不必建立物件即可存取，寫法 <span class="kw">zlcl_class_local=&gt;gv_cl_value</span>。</li>
+    <li>書中的命名慣例：實例屬性 <span class="kw">mv_</span>（member variable）、靜態屬性 <span class="kw">gv_</span>、參數 <span class="kw">iv_／ev_／cv_／rv_</span>、物件參考 <span class="kw">lo_／go_</span>。</li>
+  </ul>
+  <pre><code class="abap">REPORT zrep_class_local_01.
+
+"------------------------------------------------------------
+" 本地類別：定義部分
+"------------------------------------------------------------
+CLASS lcl_class_local DEFINITION FINAL.
+  PUBLIC SECTION.
+    DATA       mv_value    TYPE string READ-ONLY.   "實例屬性（外部唯讀）
+    CLASS-DATA gv_cl_value TYPE string.             "靜態屬性（全類別共用）
+    METHODS:
+      set_value     IMPORTING iv_value TYPE string,
+      display_value RETURNING VALUE(rv_text) TYPE string.
+ENDCLASS.
+
+"------------------------------------------------------------
+" 本地類別：實作部分
+"------------------------------------------------------------
+CLASS lcl_class_local IMPLEMENTATION.
+  METHOD set_value.
+    mv_value = iv_value.
+  ENDMETHOD.
+
+  METHOD display_value.
+    rv_text = |Class Instance Attribute: { mv_value } / | &amp;&amp;
+              |Class Static Attribute: { gv_cl_value }|.
+  ENDMETHOD.
+ENDCLASS.
+
+START-OF-SELECTION.
+  DATA(lo_a) = NEW lcl_class_local( ).
+  DATA(lo_b) = NEW lcl_class_local( ).
+
+  lo_a-&gt;set_value( '&lt;SAP ABAP OOP&gt;' ).
+  lo_b-&gt;set_value( 'another instance' ).
+
+  lcl_class_local=&gt;gv_cl_value = 'IT Book Press'.   "不需物件就能存取
+
+  cl_demo_output=&gt;write( lo_a-&gt;display_value( ) ).
+  cl_demo_output=&gt;write( lo_b-&gt;display_value( ) ).  "兩者的靜態屬性相同
+  cl_demo_output=&gt;display( ).</code></pre>
+  <p><b>與原範例的差異</b>：</p>
+  <ul>
+    <li>原範例用 <span class="kw">DATA … TYPE REF TO</span> 先宣告、再 <span class="kw">CREATE OBJECT</span>、再 <span class="kw">CALL METHOD … EXPORTING</span>；改寫為 <span class="kw">NEW</span> ＋內嵌宣告＋函數式呼叫，一行完成。</li>
+    <li>原範例本地類別取名 <span class="kw">ZLCL_CLASS_LOCAL</span>。本地類別不進 TADIR、不受客戶命名空間約束，SAP 慣例是 <span class="kw">LCL_</span> 開頭；加 Z 反而容易讓人誤以為是 SE24 全域類別，本章改為 <span class="kw">LCL_CLASS_LOCAL</span>。</li>
+    <li>原範例的 <span class="kw">display_value</span> 直接 <span class="kw">WRITE</span>；改成回傳字串，由呼叫端決定怎麼輸出（清單、ALV、Log），類別才能重用、也才能寫單元測試。</li>
+    <li>原範例只建一個物件，看不出「靜態屬性共用」的效果；改寫版建兩個物件對照。</li>
+  </ul>
+  <div class="tip">靜態屬性等於「披著類別外衣的全域變數」，在同一個內部階段（internal session）內所有物件都看得到、都改得到。只拿來放常數、快取（buffer）或計數器；業務資料放實例屬性。</div>
+
+  <h3 id="ch07-2-03">3. 全域類別（SE24）與四種方法參數（4.2）</h3>
+  <p><b>觀念</b>：方法參數的方向是<b>從方法的角度</b>命名的——<span class="kw">IMPORTING</span> 是方法收進來、<span class="kw">EXPORTING</span> 是方法送出去、<span class="kw">CHANGING</span> 是進來再出去、<span class="kw">RETURNING</span> 是唯一回傳值（必須 <span class="kw">VALUE( )</span> 傳值）。呼叫端的關鍵字方向剛好相反：傳入用 <span class="kw">EXPORTING</span>、接收用 <span class="kw">IMPORTING</span>、回傳值用 <span class="kw">RECEIVING</span>。</p>
+  <p>全域類別 <span class="kw">ZCL_CLASS_MATL</span> 在書中是用 <span class="tcode">SE24</span> 的表格式編輯器建的（<span class="src">（依講義步驟整理）</span>：SE24 → 輸入類別名 → Create → Class Type 選 Usual ABAP Class → Methods 頁籤新增 TEST_PARAMETER → Parameters 按鈕逐一輸入參數與 Type → 雙擊方法寫本體 → Activate）。下面是切到「Source Code-Based」或在 ADT 中看到的等價原始碼：</p>
+  <pre><code class="abap">CLASS zcl_class_matl DEFINITION PUBLIC FINAL CREATE PUBLIC.
+  PUBLIC SECTION.
+    METHODS test_parameter
+      IMPORTING iv_name        TYPE char30
+      EXPORTING ev_name        TYPE char30
+      CHANGING  cv_name        TYPE char30
+      RETURNING VALUE(rv_name) TYPE char30.
+ENDCLASS.
+
+CLASS zcl_class_matl IMPLEMENTATION.
+  METHOD test_parameter.
+    ev_name = |E:{ iv_name }|.          "送出去
+    cv_name = |C:{ cv_name }|.          "進來改過再出去
+    rv_name = |R:{ iv_name }|.          "唯一回傳值
+  ENDMETHOD.
+ENDCLASS.
+
+"------------------------------------------------------------
+" 呼叫端 REPORT zrep_cls_002
+"------------------------------------------------------------
+REPORT zrep_cls_002.
+
+START-OF-SELECTION.
+  DATA(lv_c_name) = CONV char30( 'changing in class' ).
+
+  DATA(lv_r_name) = NEW zcl_class_matl( )-&gt;test_parameter(
+    EXPORTING iv_name = 'importing into class'
+    IMPORTING ev_name = DATA(lv_e_name)
+    CHANGING  cv_name = lv_c_name ).
+
+  cl_demo_output=&gt;display( |E={ lv_e_name } / C={ lv_c_name } / R={ lv_r_name }| ).</code></pre>
+  <p><b>與原範例的差異</b>：原範例以 <span class="kw">CALL METHOD … EXPORTING / IMPORTING / CHANGING / RECEIVING</span> 四段一起呼叫，並用四個全域變數加 <span class="kw">WRITE</span> 印出；改寫成函數式呼叫，回傳值直接指派，<span class="kw">IMPORTING</span> 內嵌宣告 <span class="kw">DATA(lv_e_name)</span>。原範例把變數名 <span class="kw">gv_e_name</span> 預設為 'exporting from class' 再傳入，但 EXPORTING 參數在方法開始時<b>不會</b>帶入呼叫端的值（傳參考時可讀到但不該依賴），這個初值沒有意義。</p>
+  <div class="warn"><b>RETURNING 與 EXPORTING／CHANGING 並存</b>：早期（7.0 以前）函數式方法只能有 IMPORTING＋RETURNING；自 7.02 起放寬，1809 可用。但「一個方法同時有回傳值又有輸出參數」是設計異味——呼叫端看 <span class="kw">x = obj-&gt;m( )</span> 時不會意識到還有副作用。新寫的方法：要嘛只有 RETURNING，要嘛只用 EXPORTING。</div>
+  <div class="tip">參數預設是<b>傳參考</b>（by reference）；<span class="kw">IMPORTING</span> 傳參考時在方法內唯讀。需要在方法內修改輸入值的副本，宣告成 <span class="kw">IMPORTING VALUE(iv_x)</span>。RETURNING 一律傳值。</div>
+
+  <h3 id="ch07-2-04">4. 方法呼叫寫法的演進（4.3～4.6）</h3>
+  <p><b>觀念</b>：4.3～4.6 四個片段示範同一個存款方法 <span class="kw">deposit</span> 的不同呼叫寫法。書中的類別是銀行帳戶（<span class="kw">lo_account_balance</span>），片段沒有附類別定義，下面補一個最小可編譯版本。</p>
+  <pre><code class="abap">CLASS lcl_account DEFINITION FINAL.
+  PUBLIC SECTION.
+    METHODS deposit
+      IMPORTING im_deposit_amount       TYPE wrbtr
+      RETURNING VALUE(re_account_balance) TYPE wrbtr.
+  PRIVATE SECTION.
+    DATA mv_balance TYPE wrbtr.
+ENDCLASS.
+
+CLASS lcl_account IMPLEMENTATION.
+  METHOD deposit.
+    mv_balance = mv_balance + im_deposit_amount.   "7.54+ 可寫 mv_balance += im_deposit_amount.
+    re_account_balance = mv_balance.
+  ENDMETHOD.
+ENDCLASS.
+
+PARAMETERS p_dep TYPE wrbtr DEFAULT '1000'.
+
+START-OF-SELECTION.
+  DATA(lo_account_balance) = NEW lcl_account( ).
+
+  " 4.4：只有一個 IMPORTING 參數（或有 PREFERRED PARAMETER）→ 可省略參數名
+  DATA(lv_balance) = lo_account_balance-&gt;deposit( p_dep ).
+
+  " 4.5 的精神：多個參數時要寫名稱（此處單參數，寫名稱也合法）
+  lv_balance = lo_account_balance-&gt;deposit( im_deposit_amount = p_dep ).
+
+  " 直接嵌在運算式與字串範本裡
+  cl_demo_output=&gt;display( |餘額：{ lo_account_balance-&gt;deposit( p_dep ) }| ).</code></pre>
+  <div class="warn">註解中的 <span class="kw">+=</span> 是 <b>ABAP 7.54</b>（S/4HANA 1909）才有的運算子，S/4HANA 1809（7.53）不能用，所以範例本體寫成 <span class="kw">mv_balance = mv_balance + im_deposit_amount.</span>。</div>
+  <table>
+    <thead><tr><th>範例</th><th>原寫法</th><th>說明</th><th>建議</th></tr></thead>
+    <tbody>
+      <tr><td>4.3</td><td>CALL METHOD obj-&gt;deposit EXPORTING im_deposit_amount = … RECEIVING re_account_balance = …</td><td>最早的語法，RECEIVING 接回傳值</td><td>舊語法，新程式不用；改成 4.4</td></tr>
+      <tr><td>4.4</td><td>l_balance = obj-&gt;deposit( p_deposit ).</td><td>函數式呼叫；單一必要 IMPORTING 參數可省略名稱</td><td><b>標準寫法</b></td></tr>
+      <tr><td>4.5</td><td>obj-&gt;deposit( im_param1 = … im_param2 = … )</td><td>多個 IMPORTING 參數必須寫「名稱 = 值」</td><td>標準寫法</td></tr>
+      <tr><td>4.6</td><td>obj-&gt;deposit( EXPORTING … IMPORTING … CHANGING … )</td><td>括號內也能帶三種方向關鍵字</td><td>語法可行，但見下方說明</td></tr>
+    </tbody>
+  </table>
+  <p><b>與原範例的差異／範例錯誤</b>：</p>
+  <ul>
+    <li>4.3 的參數叫 <span class="kw">im_deposit_amount</span>、4.5 變成 <span class="kw">im_param1</span>／<span class="kw">im_param2</span>、4.6 又變成 <span class="kw">iv_name／ev_name／cv_name</span>（其實是 4.2 <span class="kw">test_parameter</span> 的參數名）。這三個片段是在說明「語法形式」，<b>不是同一個 deposit 方法</b>，照抄會編譯錯誤。</li>
+    <li>4.6 把同一個變數 <span class="kw">l_param</span> 同時傳給 IMPORTING、EXPORTING、CHANGING 三個參數。傳參考時三個形式參數指向同一塊記憶體，方法內改 <span class="kw">ev_name</span> 會連帶改到 <span class="kw">iv_name</span>，結果取決於方法內部的執行順序——這是示範語法時偷懶的寫法，實務上絕對不要這樣傳。</li>
+    <li>4.3、4.5、4.6 的片段縮排與收尾括號位置不一致（4.5／4.6 的右括號另起一行），不影響語法，但 Pretty Printer 會重排。</li>
+  </ul>
+  <div class="tip">呼叫方法時不寫 <span class="kw">CALL METHOD</span>，一律用 <span class="kw">obj-&gt;meth( … )</span>。<span class="kw">CALL METHOD</span> 只在動態呼叫（<span class="kw">CALL METHOD (lv_class)=&gt;(lv_method)</span>）時仍然必要。</div>
+
+  <h3 id="ch07-2-05">5. 事件：宣告、觸發與註冊處理方法（4.7、4.8）</h3>
+  <p><b>觀念</b>：事件是「物件對外廣播發生了什麼事」，觸發者不知道誰在聽。三個步驟：① 在類別中 <span class="kw">EVENTS</span> 宣告；② 在方法中 <span class="kw">RAISE EVENT</span> 觸發；③ 監聽者用 <span class="kw">METHODS … FOR EVENT … OF …</span> 宣告處理方法，並以 <span class="kw">SET HANDLER</span> 在執行期註冊。<b>沒有註冊，RAISE EVENT 就什麼也不會發生</b>（不會報錯）。</p>
+  <p>4.7 是 <span class="kw">ZCL_INVENTORY</span> 的 <span class="kw">CHECK_MATERIAL</span>：讀 MARA，查無資料就觸發 <span class="kw">MATERIAL_NOT_FOUND</span>；4.8 是呼叫端，把同一個物件的 <span class="kw">HANDLE_MATERIAL_NOT_FOUND</span> 註冊為處理方法。</p>
+  <pre><code class="abap">CLASS zcl_inventory DEFINITION PUBLIC FINAL CREATE PUBLIC.
+  PUBLIC SECTION.
+    TYPES: BEGIN OF ty_material,
+             matnr TYPE mara-matnr,
+             mtart TYPE mara-mtart,
+             meins TYPE mara-meins,
+             ersda TYPE mara-ersda,
+             ernam TYPE mara-ernam,
+             laeda TYPE mara-laeda,
+             aenam TYPE mara-aenam,
+           END OF ty_material,
+           tt_material TYPE STANDARD TABLE OF ty_material WITH EMPTY KEY,
+           tt_matnr    TYPE STANDARD TABLE OF matnr WITH EMPTY KEY.
+
+    EVENTS material_not_found
+      EXPORTING VALUE(ev_count) TYPE i OPTIONAL.   "事件參數只能 EXPORTING 傳值
+
+    METHODS check_material
+      IMPORTING it_matnr           TYPE tt_matnr
+      RETURNING VALUE(rt_material) TYPE tt_material.
+
+    METHODS handle_material_not_found
+      FOR EVENT material_not_found OF zcl_inventory
+      IMPORTING ev_count sender.
+ENDCLASS.
+
+CLASS zcl_inventory IMPLEMENTATION.
+  METHOD check_material.
+    CHECK it_matnr IS NOT INITIAL.        "FOR ALL ENTRIES 空表會讀全表，先擋
+    SELECT matnr, mtart, meins, ersda, ernam, laeda, aenam
+      FROM mara
+      FOR ALL ENTRIES IN @it_matnr
+      WHERE matnr = @it_matnr-table_line
+      INTO TABLE @rt_material.
+
+    IF rt_material IS INITIAL.
+      RAISE EVENT material_not_found EXPORTING ev_count = lines( it_matnr ).
+    ENDIF.
+    SORT rt_material BY matnr.            "HANA 沒有預設排序，要自己排
+  ENDMETHOD.
+
+  METHOD handle_material_not_found.
+    MESSAGE |查詢 { ev_count } 個料號，MARA 中皆不存在| TYPE 'S' DISPLAY LIKE 'W'.
+  ENDMETHOD.
+ENDCLASS.</code></pre>
+  <pre><code class="abap">REPORT zrep_cls_003.
+
+DATA gv_matnr TYPE mara-matnr.
+SELECT-OPTIONS s_matnr FOR gv_matnr NO INTERVALS.   "列舉，不開區間
+
+START-OF-SELECTION.
+  DATA(go_inventory) = NEW zcl_inventory( ).
+  SET HANDLER go_inventory-&gt;handle_material_not_found FOR go_inventory.
+
+  DATA(gt_matnr) = VALUE zcl_inventory=&gt;tt_matnr(
+    FOR ls_sel IN s_matnr[] WHERE ( sign = 'I' AND option = 'EQ' ) ( ls_sel-low ) ).
+
+  DATA(gt_mara) = go_inventory-&gt;check_material( gt_matnr ).
+
+  IF gt_mara IS NOT INITIAL.
+    TRY.
+        cl_salv_table=&gt;factory( IMPORTING r_salv_table = DATA(lo_alv)
+                                CHANGING  t_table      = gt_mara ).
+        lo_alv-&gt;display( ).
+      CATCH cx_salv_msg INTO DATA(lx_salv).
+        MESSAGE lx_salv-&gt;get_text( ) TYPE 'E'.
+    ENDTRY.
+  ENDIF.</code></pre>
+  <p><b>與原範例的差異／範例錯誤</b>：</p>
+  <ul>
+    <li><b>欄位不一致</b>：4.7 的 SELECT 只選了 mandt、matnr、ersda、ernam、laeda、aenam、mtart，但 4.8 輸出 <span class="kw">gs_mara-meins</span>——MEINS 從未被讀取，輸出永遠是空白。改寫版把 MEINS 加進選取欄位，並改用只含所需欄位的結構，不再 <span class="kw">INTO TABLE</span> 整個 MARA 結構。</li>
+    <li><b>命名錯誤</b>：4.8 的 <span class="kw">PARAMETERS p_mtart TYPE mara-matnr</span>，名字是物料類型（MTART），型別卻是料號（MATNR）。依程式用途（傳給 <span class="kw">iv_material_id</span>）應為料號。</li>
+    <li><b>LIKE 的陷阱</b>：原程式 <span class="kw">WHERE matnr LIKE iv_material_id</span>，使用者沒輸入 % 時等於 =，但輸入料號沒補前導零（ALPHA 轉換）就會查不到。PARAMETERS 參照 MARA-MATNR 會自動做轉換，改寫成內表傳入時也要確保值已是內部格式。</li>
+    <li>原程式 SELECT 沒有 <span class="kw">@</span>、欄位以空白分隔（舊 Open SQL）、沒有 ORDER BY；改成 ABAP SQL 新語法並在讀出後排序。</li>
+    <li>原程式把 <span class="kw">CREATE OBJECT</span> 與 <span class="kw">SET HANDLER</span> 寫在 <span class="kw">PARAMETERS</span> 前面、事件區塊外面，這些敘述其實會被併入 START-OF-SELECTION 執行，讀起來卻像宣告區；改寫版全部放進 START-OF-SELECTION。</li>
+    <li>原程式用 <span class="kw">LOOP … WRITE</span> 輸出；改用 <span class="kw">CL_SALV_TABLE</span>。</li>
+  </ul>
+  <div class="warn"><b>Casper 實務經驗 ① ②</b>：HANA 沒有預設排序，原範例「讀出來直接印」在 HANA 上每次順序可能不同，任何取第一筆、或要比對前後結果的邏輯都要先 SORT 或 ORDER BY。查詢條件用<b>列舉（多筆 EQ）</b>比用 LIKE／區間安全——區間比的是字典序，遇到前導零、號碼段不連續就會漏抓或多抓，所以改寫版的選擇畫面加了 <span class="kw">NO INTERVALS</span>。</div>
+  <div class="note">「查無資料」用事件通知只是書中為了示範事件語法。實務上，查無資料通常直接回傳空表由呼叫端判斷，或丟出類別式例外；事件適合「一對多、觸發者不在乎誰聽」的情境，例如 ALV 的 <span class="kw">DOUBLE_CLICK</span>、<span class="kw">TOOLBAR</span>（見 <a href="#ch03-2">3-2 章 OOALV</a>）。</div>
+
+  <h3 id="ch07-2-06">6. 建構子與靜態建構子（4.9～4.11）</h3>
+  <p><b>觀念</b>：</p>
+  <table>
+    <thead><tr><th></th><th>實例建構子 CONSTRUCTOR</th><th>靜態建構子 CLASS_CONSTRUCTOR</th></tr></thead>
+    <tbody>
+      <tr><td>宣告</td><td>METHODS constructor</td><td>CLASS-METHODS class_constructor</td></tr>
+      <tr><td>執行時機</td><td>每次 NEW／CREATE OBJECT 時執行一次</td><td>每個內部階段中，第一次存取該類別（建立物件、存取靜態元件等）之前執行一次</td></tr>
+      <tr><td>參數</td><td>只能有 IMPORTING（可 OPTIONAL），可宣告例外</td><td>不能有任何參數、不能宣告例外</td></tr>
+      <tr><td>可存取</td><td>實例與靜態元件</td><td><b>只能存取靜態元件</b></td></tr>
+      <tr><td>可見性</td><td>放在 PUBLIC SECTION（或以 CREATE PRIVATE 限制建立）</td><td>固定在 PUBLIC SECTION</td></tr>
+    </tbody>
+  </table>
+  <pre><code class="abap">CLASS zcl_constructor DEFINITION PUBLIC FINAL CREATE PUBLIC.
+  PUBLIC SECTION.
+    CLASS-DATA gv_init2 TYPE string READ-ONLY.     "靜態屬性
+    DATA       mv_init1 TYPE string READ-ONLY.     "實例屬性
+    CLASS-DATA gt_trace TYPE string_table READ-ONLY.
+
+    CLASS-METHODS class_constructor.
+    METHODS constructor IMPORTING iv_value TYPE string.
+ENDCLASS.
+
+CLASS zcl_constructor IMPLEMENTATION.
+  METHOD class_constructor.
+    gv_init2 = 'CLASS_CONSTRUCTOR'.
+    INSERT |1. { gv_init2 }| INTO TABLE gt_trace.
+  ENDMETHOD.
+
+  METHOD constructor.
+    mv_init1 = iv_value.
+    INSERT |2. CONSTRUCTOR：{ mv_init1 }| INTO TABLE gt_trace.
+  ENDMETHOD.
+ENDCLASS.
+
+"------------------------------------------------------------
+" REPORT zrep_cls_004
+"------------------------------------------------------------
+REPORT zrep_cls_004.
+
+START-OF-SELECTION.
+  DATA(go_first)  = NEW zcl_constructor( iv_value = 'FIRST' ).
+  DATA(go_second) = NEW zcl_constructor( 'SECOND' ).   "唯一參數可省略名稱
+
+  cl_demo_output=&gt;write( zcl_constructor=&gt;gt_trace ).   "READ-ONLY：外部只能讀
+  cl_demo_output=&gt;write( `3. CONSTRUCTOR TEST.` ).
+  cl_demo_output=&gt;display( ).</code></pre>
+  <div class="note">輸出為「1. CLASS_CONSTRUCTOR」「2. CONSTRUCTOR：FIRST」「2. CONSTRUCTOR：SECOND」「3. CONSTRUCTOR TEST.」——靜態建構子只跑一次，實例建構子每個物件各跑一次。<span class="kw">gt_trace</span> 宣告為 <span class="kw">READ-ONLY</span>，類別外部若嘗試 INSERT／APPEND 會編譯錯誤。</div>
+  <p><b>與原範例的差異／範例錯誤</b>：</p>
+  <ul>
+    <li><b>4.10 的命名與規則衝突</b>：<span class="kw">CLASS_CONSTRUCTOR</span> 內指派 <span class="kw">mv_init2</span>。靜態建構子只能存取靜態元件，所以 <span class="kw">mv_init2</span> 在 SE24 中必定是 Static Attribute，否則無法編譯；但 <span class="kw">mv_</span> 前綴依書中 4.1 自己的慣例是實例屬性（靜態應為 <span class="kw">gv_</span>）。改寫版更名為 <span class="kw">gv_init2</span>。</li>
+    <li>4.9／4.10 在建構子裡 <span class="kw">WRITE</span>。建構子（尤其靜態建構子）的執行時機不由呼叫端控制，在裡面輸出畫面或彈訊息，換到背景作業、RFC、OData 就會出問題。改寫版記錄到內表，由呼叫端決定顯示。</li>
+    <li>4.11 原本只建立一個物件，看不出「靜態建構子只跑一次」，改寫版建立兩個物件對照。原程式的輸出順序為 CLASS_CONSTRUCTOR → CONSTRUCTOR → CONSTRUCTOR TEST.。</li>
+    <li>原寫法 <span class="kw">CREATE OBJECT go_constructor EXPORTING iv_value = …</span> 改成 <span class="kw">NEW zcl_constructor( iv_value = … )</span>。</li>
+  </ul>
+  <div class="tip">建構子只做「讓物件處於可用狀態」的最少工作（檢查參數、設初值）。不要在建構子裡讀大量資料或呼叫 BAPI：建構子失敗時物件根本不存在，錯誤處理會很難寫。需要複雜的建立流程時，改用靜態工廠方法（<span class="kw">CREATE PRIVATE</span> ＋ <span class="kw">CLASS-METHODS create</span>），見 <a href="#ch05-2-19">5-2 章 Factory 與 Singleton</a>，以及本部 <a href="#ch07-5">7-5 章 設計模式</a>。</div>
+
+  <h3 id="ch07-2-07">7. 方法的例外：傳統例外與類別式例外（4.12～4.14）</h3>
+  <p><b>觀念</b>：方法有兩種例外機制，<b>同一個方法只能擇一</b>：</p>
+  <ul>
+    <li><b>傳統例外</b>（4.12）：方法簽章 <span class="kw">EXCEPTIONS</span> 宣告名稱，方法內 <span class="kw">RAISE name</span>，呼叫端用 <span class="kw">EXCEPTIONS name = n</span> 接、再判斷 <span class="kw">sy-subrc</span>。這是函數模組時代留下來的，只能傳一個數字、不能帶訊息與上下文。</li>
+    <li><b>類別式例外</b>（4.13）：方法簽章 <span class="kw">RAISING cx_…</span>，方法內 <span class="kw">RAISE EXCEPTION</span>，呼叫端 <span class="kw">TRY … CATCH</span>。例外是物件，可以帶文字、屬性與前一個例外（<span class="kw">previous</span>）。</li>
+  </ul>
+  <p>先定義一個例外類別（SE24 建立時 Class Type 選 Exception Class，勾 With Message Class 或用 OTR 文字皆可）：</p>
+  <pre><code class="abap">CLASS zcx_value_check DEFINITION PUBLIC
+  INHERITING FROM cx_static_check FINAL CREATE PUBLIC.
+  PUBLIC SECTION.
+    INTERFACES if_t100_message.
+    CONSTANTS:
+      BEGIN OF action_not_supported,
+        msgid TYPE symsgid VALUE 'ZOOP', msgno TYPE symsgno VALUE '001',
+        attr1 TYPE scx_attrname VALUE 'MV_VALUE', attr2 TYPE scx_attrname VALUE '',
+        attr3 TYPE scx_attrname VALUE '',         attr4 TYPE scx_attrname VALUE '',
+      END OF action_not_supported,
+      BEGIN OF cancelled,
+        msgid TYPE symsgid VALUE 'ZOOP', msgno TYPE symsgno VALUE '002',
+        attr1 TYPE scx_attrname VALUE 'MV_VALUE', attr2 TYPE scx_attrname VALUE '',
+        attr3 TYPE scx_attrname VALUE '',         attr4 TYPE scx_attrname VALUE '',
+      END OF cancelled,
+      BEGIN OF failed,
+        msgid TYPE symsgid VALUE 'ZOOP', msgno TYPE symsgno VALUE '003',
+        attr1 TYPE scx_attrname VALUE 'MV_VALUE', attr2 TYPE scx_attrname VALUE '',
+        attr3 TYPE scx_attrname VALUE '',         attr4 TYPE scx_attrname VALUE '',
+      END OF failed,
+      BEGIN OF get_result_failed,
+        msgid TYPE symsgid VALUE 'ZOOP', msgno TYPE symsgno VALUE '004',
+        attr1 TYPE scx_attrname VALUE 'MV_VALUE', attr2 TYPE scx_attrname VALUE '',
+        attr3 TYPE scx_attrname VALUE '',         attr4 TYPE scx_attrname VALUE '',
+      END OF get_result_failed.
+    DATA mv_value TYPE i READ-ONLY.
+    METHODS constructor
+      IMPORTING textid   LIKE if_t100_message=&gt;t100key OPTIONAL
+                previous LIKE previous OPTIONAL
+                iv_value TYPE i OPTIONAL.
+ENDCLASS.
+
+CLASS zcx_value_check IMPLEMENTATION.
+  METHOD constructor ##ADT_SUPPRESS_GENERATION.
+    super-&gt;constructor( previous = previous ).
+    mv_value = iv_value.
+    if_t100_message~t100key = COND #( WHEN textid IS INITIAL
+                                      THEN if_t100_message=&gt;default_textid
+                                      ELSE textid ).
+  ENDMETHOD.
+ENDCLASS.</code></pre>
+  <pre><code class="abap">CLASS zcl_exception DEFINITION PUBLIC FINAL CREATE PUBLIC.
+  PUBLIC SECTION.
+    METHODS raise_exception
+      IMPORTING iv_value TYPE i
+      RAISING   zcx_value_check.
+    METHODS test_exception
+      CHANGING  cv_value TYPE i
+      RAISING   cx_sy_zerodivide.
+ENDCLASS.
+
+CLASS zcl_exception IMPLEMENTATION.
+  METHOD raise_exception.
+    DATA(ls_textid) = SWITCH scx_t100key( iv_value
+      WHEN 1 THEN zcx_value_check=&gt;action_not_supported
+      WHEN 2 THEN zcx_value_check=&gt;cancelled
+      WHEN 3 THEN zcx_value_check=&gt;failed
+      ELSE        zcx_value_check=&gt;get_result_failed ).
+    RAISE EXCEPTION NEW zcx_value_check( textid   = ls_textid     "RAISE EXCEPTION NEW：7.52 起
+                                         iv_value = iv_value ).
+  ENDMETHOD.
+
+  METHOD test_exception.
+    cv_value = cv_value / 0.     "被除數非 0 時丟 CX_SY_ZERODIVIDE
+  ENDMETHOD.
+ENDCLASS.
+
+"------------------------------------------------------------
+" REPORT zrep_cls_005
+"------------------------------------------------------------
+REPORT zrep_cls_005.
+PARAMETERS p_ivalue TYPE i DEFAULT 1.
+
+START-OF-SELECTION.
+  DATA(go_exception) = NEW zcl_exception( ).
+  DATA(gv_value) = p_ivalue.
+
+  TRY.
+      go_exception-&gt;test_exception( CHANGING cv_value = gv_value ).
+      MESSAGE |{ p_ivalue } / 0 沒有丟例外，結果 = { gv_value }| TYPE 'I'.
+    CATCH cx_sy_zerodivide INTO DATA(lx_div).
+      MESSAGE lx_div-&gt;get_text( ) TYPE 'I'.
+  ENDTRY.
+
+  TRY.
+      go_exception-&gt;raise_exception( p_ivalue ).
+    CATCH zcx_value_check INTO DATA(lx_chk).
+      MESSAGE lx_chk-&gt;get_text( ) TYPE 'I'.      "訊息 ZOOP/001~004 的文字
+  ENDTRY.</code></pre>
+  <p><b>與原範例的差異／範例錯誤</b>：</p>
+  <ul>
+    <li><b>4.13 在輸入 0 時不會丟例外</b>。ABAP 規定被除數為 0 時，除以 0 的結果是 0、<b>不</b>觸發 <span class="kw">CX_SY_ZERODIVIDE</span>；而 4.14 的 <span class="kw">p_ivalue TYPE i</span> 沒給預設值，直接執行正好是 0，看不到書上要示範的例外。改寫版給 <span class="kw">DEFAULT 1</span> 並把兩種結果都顯示出來。</li>
+    <li>4.14 用 <span class="kw">CATCH cx_root</span>。cx_root 是所有例外的根，連程式錯誤都會被吞掉；應 CATCH 具體類別（此處 <span class="kw">CX_SY_ZERODIVIDE</span>），真的要兜底也放在最後一個 CATCH。</li>
+    <li>4.12 的傳統例外 <span class="kw">RAISE action_not_supported / cancelled / failed / get_result_failed</span>，4.14 呼叫端用 <span class="kw">EXCEPTIONS … OTHERS = 4</span> 接 GET_RESULT_FAILED，再以 <span class="kw">IF sy-subrc EQ 1 … ELSEIF</span> 四段判斷。改寫版改成一個例外類別加四個 T100 文字 ID，呼叫端一個 CATCH 就拿到正確訊息。</li>
+    <li>4.12 的參數是 <span class="kw">CHANGING cv_value</span> 但方法只讀不改，改為 IMPORTING。</li>
+  </ul>
+  <div class="warn"><span class="kw">RAISE EXCEPTION NEW cx_…( )</span> 需 ABAP 7.52 以上，S/4HANA 1809 可用；更舊的系統寫 <span class="kw">RAISE EXCEPTION TYPE zcx_value_check EXPORTING textid = … iv_value = …</span>。類別式例外的完整觀念（CX_STATIC_CHECK／CX_DYNAMIC_CHECK／CX_NO_CHECK、RESUMABLE、CLEANUP）見 <a href="#ch05-2-16">5-2 章 類別式例外</a> 與本部 <a href="#ch07-1">7-1 章</a>。</div>
+
+  <h3 id="ch07-2-08">8. 可見性：PUBLIC／PROTECTED／PRIVATE（4.15～4.18，勘誤第 2 條）</h3>
+  <p><b>觀念</b>：</p>
+  <table>
+    <thead><tr><th>區段</th><th>類別本身</th><th>子類別</th><th>Friend 類別</th><th>外部（其他程式／類別）</th></tr></thead>
+    <tbody>
+      <tr><td>PUBLIC SECTION</td><td>可</td><td>可</td><td>可</td><td>可</td></tr>
+      <tr><td>PROTECTED SECTION</td><td>可</td><td>可</td><td>可</td><td>不可</td></tr>
+      <tr><td>PRIVATE SECTION</td><td>可</td><td><b>不可</b></td><td>可</td><td>不可</td></tr>
+    </tbody>
+  </table>
+  <p>4.15～4.17 是 <span class="kw">ZCL_MASTER</span> 三個分別輸出三種屬性的方法，4.18 的 <span class="kw">DISPLAY</span> 在<b>類別內部</b>另外建立一個 ZCL_MASTER 物件，對它的三種屬性賦值並呼叫三個方法——全部合法，因為 ABAP 的可見性是<b>以類別為單位</b>，不是以物件為單位：同一類別的方法可以存取同類別<b>其他物件</b>的 PRIVATE 屬性。</p>
+  <pre><code class="abap">CLASS zcl_master DEFINITION PUBLIC CREATE PUBLIC.
+  PUBLIC SECTION.
+    DATA mv_public TYPE string VALUE 'PUBLIC'.
+    METHODS:
+      display_public    RETURNING VALUE(rv_text) TYPE string,
+      display_private   RETURNING VALUE(rv_text) TYPE string,
+      display_protected RETURNING VALUE(rv_text) TYPE string,
+      display           RETURNING VALUE(rt_text) TYPE string_table.
+  PROTECTED SECTION.
+    DATA mv_protected TYPE string VALUE 'PROTECTED'.
+  PRIVATE SECTION.
+    DATA mv_private   TYPE string VALUE 'PRIVATE'.   "勘誤表第 2 條：Initial Value 應為 'PRIVATE'
+ENDCLASS.
+
+CLASS zcl_master IMPLEMENTATION.
+  METHOD display_public.    rv_text = mv_public.    ENDMETHOD.   "4.15
+  METHOD display_private.   rv_text = mv_private.   ENDMETHOD.   "4.16
+  METHOD display_protected. rv_text = mv_protected. ENDMETHOD.   "4.17
+
+  METHOD display.                                                "4.18
+    DATA(lo_master) = NEW zcl_master( ).
+    lo_master-&gt;mv_public    = 'caller set value : public'.
+    lo_master-&gt;mv_private   = 'caller set value : private'.     "同類別：可存取別的物件的 PRIVATE
+    lo_master-&gt;mv_protected = 'caller set value : protected'.
+    rt_text = VALUE #( ( lo_master-&gt;display_public( ) )
+                       ( lo_master-&gt;display_private( ) )
+                       ( lo_master-&gt;display_protected( ) ) ).
+  ENDMETHOD.
+ENDCLASS.</code></pre>
+  <div class="warn"><b>勘誤表第 2 條（p114 圖 4-74「測試全局類 SE24」）</b>：圖中屬性的 Initial Value 應為 <span class="kw">'PRIVATE'</span>，後續程式碼也要一致。在 SE24 的 Attributes 頁籤中 Initial Value 欄位要連同單引號輸入 <span class="kw">'PRIVATE'</span>（它是一段 ABAP 常值，不是純文字）；對應到原始碼就是 <span class="kw">DATA mv_private TYPE string VALUE 'PRIVATE'.</span>。原書圖上的值與此不符，照圖做在 SE24 測試（F8）時看到的初值會和書中說明對不起來。</div>
+  <p><b>與原範例的差異</b>：原範例四個方法都 <span class="kw">WRITE</span>，4.18 以 <span class="kw">CREATE OBJECT</span>＋<span class="kw">CALL METHOD</span> 呼叫；改寫成回傳字串／字串表。資料夾裡沒有 ZCL_MASTER 的定義與 4.18 所在類別的說明，若把 DISPLAY 放在<b>子類別</b>，<span class="kw">lo_master-&gt;mv_private</span> 與 <span class="kw">lo_master-&gt;mv_protected</span> 兩行都會編譯錯誤（子類別只能存取「自己這個物件繼承來的」protected 元件，不能透過父類別型別的參考存取別的物件的 protected 元件），所以 4.18 必定是寫在 ZCL_MASTER 本身或其 Friend 類別中。</p>
+  <div class="tip">預設全部放 PRIVATE，確定要給子類別用才升 PROTECTED，確定是對外契約才升 PUBLIC。對外要讀的屬性用 <span class="kw">DATA … READ-ONLY</span>（只能用在 PUBLIC／PROTECTED 區段），比寫一堆 getter 簡潔，又不會被外部亂改。</div>
+
+  <h3 id="ch07-2-09">9. 從外部呼叫：只看得到 PUBLIC，以及 NEW 鏈式呼叫（4.19）</h3>
+  <p><b>觀念</b>：類別外部只能存取 PUBLIC 元件。4.19 把 <span class="kw">display_private( )</span>、<span class="kw">display_protected( )</span> 的呼叫註解掉——但注意，原範例的這兩個<b>方法本身</b>是宣告在哪個區段，資料夾中看不到；若照 4.15～4.17 的命名，方法是 PUBLIC、只有<b>屬性</b>分三區，那麼外部呼叫這兩個方法其實是合法的，會印出 private／protected 屬性的值——這正是封裝：外部拿不到屬性本身，但可以透過類別開放的方法間接取得。書中把它們註解掉，比較可能的原意是示範「若方法放在 PRIVATE／PROTECTED 區段，外部呼叫會編譯錯誤」。</p>
+  <pre><code class="abap">REPORT zrep_cls_008.
+
+START-OF-SELECTION.
+  DATA(go_master) = NEW zcl_master( ).
+
+  cl_demo_output=&gt;write( go_master-&gt;display_public( ) ).
+  cl_demo_output=&gt;write( go_master-&gt;display_private( ) ).  "方法是 PUBLIC → 合法，間接讀到 PRIVATE 值
+  cl_demo_output=&gt;write( go_master-&gt;mv_public ).            "PUBLIC 屬性可直接讀
+  " cl_demo_output=&gt;write( go_master-&gt;mv_private ).        "編譯錯誤：MV_PRIVATE 不可見
+
+  " 7.40 起：NEW 的結果可直接接方法呼叫（鏈式），不需要中間變數
+  cl_demo_output=&gt;write( NEW zcl_master( )-&gt;display_public( ) ).
+
+  cl_demo_output=&gt;display( ).</code></pre>
+  <p><b>與原範例的差異</b>：原範例宣告了 <span class="kw">go_master_new</span> 卻從未使用（多餘的宣告，Extended Check <span class="tcode">SLIN</span> 會警告），並以 <span class="kw">CREATE OBJECT</span> 建立 <span class="kw">go_master</span>。書中標註「SAP HANA 1610 版本」才有的 <span class="kw">NEW zcl_master( )-&gt;display_public( )</span>，其實是 ABAP 7.40 SP02 就有的語法，1809（7.53）當然可以用。</p>
+  <div class="note"><span class="kw">NEW zcl_x( )-&gt;m( )</span> 建出來的物件沒有被任何變數參考，方法執行完就成為垃圾回收的對象。適合「用一次就丟」的服務類別；要多次呼叫或保留狀態，就存進變數。</div>
+
+  <h3 id="ch07-2-10">10. 用本地類別組織報表：RUN 方法當進入點（4.20）</h3>
+  <p><b>觀念</b>：報表程式本身仍需要事件區塊（<span class="kw">START-OF-SELECTION</span>），但主邏輯可以全部搬進本地類別，事件區塊只留一行呼叫。好處：程式碼集中在方法裡、變數不再是全域的、可以替類別寫 ABAP Unit、將來要改成背景作業或 RFC 也只要換呼叫端。</p>
+  <pre><code class="abap">REPORT zrep_cls_009.
+
+CLASS lcl_main DEFINITION FINAL CREATE PRIVATE.
+  PUBLIC SECTION.
+    CLASS-METHODS run.
+  PRIVATE SECTION.
+    METHODS:
+      get_data RETURNING VALUE(rt_text) TYPE string_table,
+      show     IMPORTING it_text TYPE string_table.
+ENDCLASS.
+
+CLASS lcl_main IMPLEMENTATION.
+  METHOD run.
+    DATA(lo_main) = NEW lcl_main( ).        "CREATE PRIVATE：只有類別自己能建立
+    lo_main-&gt;show( lo_main-&gt;get_data( ) ).
+  ENDMETHOD.
+
+  METHOD get_data.
+    rt_text = NEW zcl_master( )-&gt;display( ).
+  ENDMETHOD.
+
+  METHOD show.
+    cl_demo_output=&gt;display( it_text ).
+  ENDMETHOD.
+ENDCLASS.
+
+START-OF-SELECTION.
+  lcl_main=&gt;run( ).</code></pre>
+  <p><b>與原範例的差異</b>：原範例本地類別名為 <span class="kw">ZCL_MAIN_REPORT</span>。這與全域類別的命名空間（ZCL_）撞在一起：如果系統裡剛好有同名全域類別，程式內會以本地類別為準，讀程式的人卻會以為在用 SE24 那一支。本地類別請一律 <span class="kw">LCL_</span> 開頭。原範例 RUN 內只有一行 <span class="kw">NEW zcl_master( )-&gt;display_public( )</span>，改寫版示範把「取資料」與「顯示」拆成兩個私有方法，這是本部 <a href="#ch07-4">7-4 章</a> 單一職責原則的最小實踐。</p>
+  <div class="tip">這個「START-OF-SELECTION 只放一行 <span class="kw">lcl_main=&gt;run( )</span>」的骨架，就是現代報表的標準寫法，取代舊報表裡一長串 <span class="kw">PERFORM</span>。選擇畫面的 <span class="kw">PARAMETERS</span>／<span class="kw">SELECT-OPTIONS</span> 仍留在程式層級，傳進 RUN 或在建構子中讀取即可（見 <a href="#ch03-1">3-1 章 選擇畫面</a>）。</div>
+
+  <h3 id="ch07-2-11">11. Friend（友元）：開放私有元件給指定類別</h3>
+  <p><b>觀念</b>：類別可以用 <span class="kw">FRIENDS</span> 指定信任的類別或介面，被指定者可以存取它的 PROTECTED 與 PRIVATE 元件（包括 CREATE PRIVATE 的建構子）。友元關係是<b>單向</b>、<b>不遞移</b>的：A 把 B 當朋友，不代表 B 把 A 當朋友；B 的朋友也不是 A 的朋友。但 B 的<b>子類別</b>會繼承「是 A 的朋友」這個身分。書中第 4 章範例資料夾沒有對應的 Friend 程式，以下依 SAP 標準語法補寫，最常見的實務用途是測試類別與工廠類別。</p>
+  <pre><code class="abap">CLASS lcl_factory DEFINITION DEFERRED.
+
+CLASS lcl_order DEFINITION FINAL CREATE PRIVATE FRIENDS lcl_factory.
+  PUBLIC SECTION.
+    METHODS get_id RETURNING VALUE(rv_id) TYPE vbeln_va.
+  PRIVATE SECTION.
+    DATA mv_id TYPE vbeln_va.
+ENDCLASS.
+
+CLASS lcl_order IMPLEMENTATION.
+  METHOD get_id.
+    rv_id = mv_id.
+  ENDMETHOD.
+ENDCLASS.
+
+CLASS lcl_factory DEFINITION FINAL.
+  PUBLIC SECTION.
+    CLASS-METHODS create IMPORTING iv_id           TYPE vbeln_va
+                         RETURNING VALUE(ro_order) TYPE REF TO lcl_order.
+ENDCLASS.
+
+CLASS lcl_factory IMPLEMENTATION.
+  METHOD create.
+    ro_order = NEW #( ).                  "Friend 可以呼叫 CREATE PRIVATE 的建構
+    ro_order-&gt;mv_id = |{ iv_id ALPHA = IN }|.   "Friend 可以寫 PRIVATE 屬性
+  ENDMETHOD.
+ENDCLASS.
+
+START-OF-SELECTION.
+  DATA(lo_order) = lcl_factory=&gt;create( '4711' ).
+  " DATA(lo_bad) = NEW lcl_order( ).     "編譯錯誤：LCL_ORDER 是 CREATE PRIVATE
+  cl_demo_output=&gt;display( lo_order-&gt;get_id( ) ).</code></pre>
+  <ul>
+    <li>全域類別在 <span class="tcode">SE24</span> 的 <b>Friends</b> 頁籤設定；原始碼是 <span class="kw">CLASS zcl_x DEFINITION … GLOBAL FRIENDS zcl_y</span>。</li>
+    <li>ABAP Unit 的測試類別常寫成被測類別的朋友：在被測全域類別的 Local Test Classes 中用 <span class="kw">CLASS zcl_x DEFINITION LOCAL FRIENDS ltc_test.</span> 讓測試類別能檢查私有狀態。</li>
+    <li>Friend 會打破封裝，只給「同一個元件內、本來就該緊密合作」的類別；若很多類別都要當朋友，代表公開介面設計不足。</li>
+  </ul>
+  <div class="note">Friendship 與 Factory、Singleton 的原廠觀念見 <a href="#ch05-2-19">5-2 章 Factory、Singleton 與 Friendship</a>；工廠模式的完整範例見本部 <a href="#ch07-5">7-5 章</a>。</div>
+
+  <h3 id="ch07-2-12">12. 物件生命週期與垃圾回收（4.21）</h3>
+  <p><b>觀念</b>：ABAP 沒有解構子（destructor）可供使用者程式呼叫；物件在「沒有任何參考變數指向它」之後，由垃圾回收器（Garbage Collector）在適當時機釋放。<span class="kw">FREE go_obj</span>／<span class="kw">CLEAR go_obj</span> 對參考變數的作用相同：只是讓這個變數不再指向物件，物件本身要等 GC 才真正回收。4.21 用 <span class="kw">CL_ABAP_MEMORY_UTILITIES</span> 量測建立並釋放 1000 個物件前後的記憶體用量，並手動呼叫 <span class="kw">do_garbage_collection( )</span> 比較差異。</p>
+  <pre><code class="abap">REPORT zrep_cls_t01.
+
+CLASS lcl_payload DEFINITION FINAL.
+  PUBLIC SECTION.
+    METHODS constructor.
+  PRIVATE SECTION.
+    DATA mt_data TYPE string_table.
+ENDCLASS.
+
+CLASS lcl_payload IMPLEMENTATION.
+  METHOD constructor.
+    mt_data = VALUE #( FOR i = 1 UNTIL i &gt; 100 ( |line { i }| ) ).   "讓每個物件有點份量
+  ENDMETHOD.
+ENDCLASS.
+
+START-OF-SELECTION.
+  DATA lo_obj TYPE REF TO lcl_payload.
+
+  cl_abap_memory_utilities=&gt;get_total_used_size( IMPORTING size = DATA(lv_init_size) ).
+
+  DO 1000 TIMES.
+    lo_obj = NEW #( ).
+    CLEAR lo_obj.                  "與 FREE lo_obj 相同：只斷開參考
+  ENDDO.
+
+  cl_abap_memory_utilities=&gt;get_total_used_size( IMPORTING size = DATA(lv_before_gc) ).
+  cl_abap_memory_utilities=&gt;do_garbage_collection( ).
+  cl_abap_memory_utilities=&gt;get_total_used_size( IMPORTING size = DATA(lv_after_gc) ).
+
+  cl_demo_output=&gt;display( VALUE string_table(
+    ( |記憶體初始用量：{ lv_init_size NUMBER = USER } Bytes| )
+    ( |建立並釋放 1000 個物件後：{ lv_before_gc NUMBER = USER } Bytes| )
+    ( |執行垃圾回收後：{ lv_after_gc NUMBER = USER } Bytes| ) ) ).</code></pre>
+  <p><b>與原範例的差異</b>：</p>
+  <ul>
+    <li>原範例建立的是 <span class="kw">CL_MATERIAL_DETAILS_LIST</span>，這是某個標準元件的類別，不一定每套系統都有、建構子也可能需要參數；改寫版用一個自訂的本地類別，保證可編譯且物件有一定大小，量測差異才明顯。</li>
+    <li>原範例用 <span class="kw">CREATE OBJECT go_obj</span>、<span class="kw">WRITE … COLOR COL_POSITIVE</span>，字串範本裡還有多餘的 <span class="kw">{ 'Bytes' }</span>（把常值再嵌一次，直接寫在範本文字裡即可）；改寫版用 <span class="kw">NEW #( )</span>、<span class="kw">NUMBER = USER</span> 格式化並以清單輸出。</li>
+    <li>原範例註解與輸出為簡體中文（内存、垃圾回收），改寫版轉為繁體。</li>
+  </ul>
+  <div class="warn"><span class="kw">do_garbage_collection( )</span> 只該在量測、除錯時使用，<b>不要寫進正式程式</b>——GC 會自動在需要時執行，手動觸發只會增加成本。真正的記憶體問題（例如把大量物件存進靜態內表、事件註冊後沒 <span class="kw">SET HANDLER … ACTIVATION abap_false</span> 導致物件永遠被參考）要用 <span class="tcode">S_MEMORY_INSPECTOR</span> 比對 Memory Snapshot，或在 Debugger 的 Memory Analysis 工具查看。</div>
+
+  <h3 id="ch07-2-13">13. 範例錯誤總整理與改寫原則</h3>
+  <table>
+    <thead><tr><th>範例</th><th>問題</th><th>本章處理</th></tr></thead>
+    <tbody>
+      <tr><td>4.1、4.20</td><td>本地類別以 ZLCL_／ZCL_ 開頭，與全域類別命名混淆</td><td>改為 LCL_ 開頭</td></tr>
+      <tr><td>4.2</td><td>對 EXPORTING 參數預先給值、方法同時有 RETURNING 與 EXPORTING</td><td>說明無意義初值；建議兩者擇一</td></tr>
+      <tr><td>4.3～4.6</td><td>同一 deposit 方法參數名三個片段各不相同；4.6 同一變數同時傳給三種參數</td><td>補可編譯的 deposit 定義，說明別名（aliasing）風險</td></tr>
+      <tr><td>4.7／4.8</td><td>SELECT 未選 MEINS 卻輸出 MEINS；p_mtart 型別是 MATNR；未排序；LIKE 查料號</td><td>補欄位、改名、SORT、改列舉查詢</td></tr>
+      <tr><td>4.10</td><td>靜態建構子存取 mv_init2，名稱暗示實例屬性</td><td>改名 gv_init2 並說明規則</td></tr>
+      <tr><td>4.9～4.11</td><td>建構子內 WRITE；只建一個物件看不出靜態建構子只跑一次</td><td>改記錄 trace、建兩個物件</td></tr>
+      <tr><td>4.13／4.14</td><td>p_ivalue 預設 0，0/0 = 0 不會丟例外；CATCH cx_root 過寬</td><td>DEFAULT 1、CATCH CX_SY_ZERODIVIDE</td></tr>
+      <tr><td>4.12／4.14</td><td>傳統例外＋sy-subrc 四段 IF</td><td>改為例外類別＋T100 文字</td></tr>
+      <tr><td>4.18</td><td>勘誤表第 2 條：圖 4-74 Initial Value 應為 'PRIVATE'</td><td>原始碼 VALUE 'PRIVATE'，並說明 SE24 輸入方式</td></tr>
+      <tr><td>4.19</td><td>go_master_new 宣告未使用</td><td>刪除</td></tr>
+      <tr><td>4.21</td><td>依賴不一定存在的 CL_MATERIAL_DETAILS_LIST；多餘的 { 'Bytes' }</td><td>改用自訂本地類別</td></tr>
+    </tbody>
+  </table>
+  <p>全章的改寫原則（與 <a href="#ap-01">附錄 舊語法對照</a> 一致）：</p>
+  <ul>
+    <li><span class="kw">CREATE OBJECT</span> → <span class="kw">NEW zcl_x( )</span>／<span class="kw">NEW #( )</span>；<span class="kw">CALL METHOD</span> → <span class="kw">obj-&gt;m( )</span>。</li>
+    <li>方法內不 <span class="kw">WRITE</span>、不 <span class="kw">MESSAGE</span>（事件處理方法、UI 層除外），改回傳資料。</li>
+    <li>傳統 <span class="kw">EXCEPTIONS</span>／<span class="kw">RAISE name</span> → 例外類別＋<span class="kw">RAISING</span>＋<span class="kw">TRY…CATCH</span>。</li>
+    <li>SELECT 明列欄位、加 <span class="kw">@</span>、讀完排序；輸出用 <span class="kw">CL_SALV_TABLE</span>。</li>
+  </ul>
+  <div class="tip"><b>Casper 實務經驗 ③：先找標準，再想客製。</b>寫一支新的 ZCL_ 之前，先在 <span class="tcode">SE24</span>／ADT 用關鍵字找標準類別（例如讀物料不必自己包 MARA，先看有沒有 released 的 CDS View 或 BAPI；輸出清單直接用 CL_SALV_TABLE）。第 4 章的範例是為了學語法才自己造輪子，專案上每多一個自建類別，就多一份維護與升級成本。</div>
+
+  <h3 id="ch07-2-qa">練習與自我檢核</h3>
+  <ol>
+    <li><b>實例屬性與靜態屬性</b>：4.1 建立兩個物件 lo_a、lo_b，lo_a 改了 gv_cl_value，lo_b 讀到的值是什麼？為什麼？<br><i>要點：相同。CLASS-DATA 整個類別（同一內部階段）只有一份，所有物件共用。</i></li>
+    <li><b>參數方向</b>：方法宣告 <span class="kw">EXPORTING ev_name</span>，呼叫端要用哪個關鍵字接？RETURNING 參數為什麼一定要 VALUE( )？<br><i>要點：呼叫端用 IMPORTING；RETURNING 的值要能在運算式中使用，必須傳值，方法結束後才複製給接收端。</i></li>
+    <li><b>呼叫寫法</b>：把 <span class="kw">CALL METHOD lo_acc-&gt;deposit EXPORTING im_deposit_amount = p_dep RECEIVING re_account_balance = l_bal.</span> 改成現代寫法。<br><i>要點：<span class="kw">DATA(l_bal) = lo_acc-&gt;deposit( p_dep ).</span></i></li>
+    <li><b>事件</b>：4.8 若拿掉 SET HANDLER，查無料號時會發生什麼？<br><i>要點：RAISE EVENT 照常執行，但沒有處理方法被呼叫，也不會報錯——畫面上什麼都沒有。</i></li>
+    <li><b>範例除錯</b>：4.8 輸出 MEINS 永遠是空白，原因與修法？<br><i>要點：4.7 的 SELECT 欄位清單沒有 MEINS；加入欄位，或改用只含需要欄位的結構。</i></li>
+    <li><b>建構子</b>：靜態建構子可以有參數嗎？可以存取實例屬性嗎？建立三個物件時兩種建構子各執行幾次？<br><i>要點：不可有參數；只能存取靜態元件；靜態建構子 1 次、實例建構子 3 次。</i></li>
+    <li><b>例外</b>：4.14 直接按 F8 執行（p_ivalue = 0），為什麼沒有看到除以零的例外訊息？<br><i>要點：ABAP 中被除數為 0 時 0/0 = 0，不觸發 CX_SY_ZERODIVIDE。</i></li>
+    <li><b>可見性</b>：4.18 的 DISPLAY 若放在 ZCL_MASTER 的子類別中，哪幾行會編譯錯誤？<br><i>要點：存取 lo_master-&gt;mv_private 與 lo_master-&gt;mv_protected 的行（透過父類別參考存取別的物件的 protected 也不行）。</i></li>
+    <li><b>勘誤</b>：勘誤表第 2 條說圖 4-74 的 Initial Value 應為什麼？在 SE24 要怎麼輸入？<br><i>要點：'PRIVATE'，連單引號一起輸入，等同 DATA mv_private TYPE string VALUE 'PRIVATE'.</i></li>
+    <li><b>Friend</b>：A 宣告 FRIENDS B，B 可以存取 A 的哪些元件？A 可以存取 B 的 PRIVATE 嗎？<br><i>要點：B 可存取 A 的所有元件（含 PROTECTED、PRIVATE、CREATE PRIVATE 建構）；關係單向，A 不能存取 B 的 PRIVATE。</i></li>
+    <li><b>垃圾回收</b>：<span class="kw">FREE lo_obj</span> 會立刻釋放物件佔用的記憶體嗎？<br><i>要點：不會。只是讓參考變數變成初始值；物件在沒有任何參考後，由 GC 擇時回收。</i></li>
+    <li><b>命名</b>：4.20 的本地類別 ZCL_MAIN_REPORT 有什麼問題？<br><i>要點：與全域類別命名空間混淆；本地類別應以 LCL_ 開頭。</i></li>
+    <li><b>實務</b>：為什麼 4.7 讀 MARA 後應該 SORT？查詢料號時為什麼建議用多筆 EQ 而不是區間？<br><i>要點：HANA 無預設排序，結果順序不穩定；區間比字典序，遇 ALPHA 前導零或號碼段不連續會漏抓或多抓。</i></li>
+  </ol>
+</section>

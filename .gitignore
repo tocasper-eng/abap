@@ -1,0 +1,26 @@
+# 建置暫存
+__pycache__/
+*.pyc
+out/
+.DS_Store
+Thumbs.db
+
+# 原始教材（版權素材，不入庫）
+*.pdf
+*.docx
+*.doc
+*.pptx
+*.ppt
+*.xlsx
+*.mp4
+*.avi
+*.wrf
+*.rar
+*.zip
+
+# 建置產物（由 CI 產生並部署到 Pages；本機建置後另複製到 Dropbox）
+/index.html
+_site/
+
+# 機密字串清單（公開 repo 不可入庫；CI 用 secret SECRETSCAN_DENY）
+src/secretscan-deny.txt

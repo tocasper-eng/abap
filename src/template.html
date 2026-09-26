@@ -1,0 +1,380 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ABAP 圖書館 · S/4HANA 版 — Casper</title>
+<style>
+:root{
+  --bg:#f6f7f9; --panel:#ffffff; --ink:#1c2024; --ink2:#5a6472; --line:#e2e6ec;
+  --accent:#0a6ed1; --accent2:#0854a0; --code-bg:#1e242e; --code-ink:#e6e9ef;
+  --warn-bg:#fdeeee; --warn-line:#d9534f; --tip-bg:#eaf7ee; --tip-line:#2e9e5b;
+  --note-bg:#eaf1fb; --note-line:#4a90d9; --mark:#ffe9a8;
+  --mono:"Cascadia Mono","JetBrains Mono","Consolas","Menlo","Noto Sans Mono CJK TC",monospace;
+  --sans:"Segoe UI","PingFang TC","Microsoft JhengHei","Noto Sans TC","Helvetica Neue",Arial,sans-serif;
+}
+html.dark{
+  --bg:#12161c; --panel:#1a1f27; --ink:#e4e8ee; --ink2:#9aa5b4; --line:#2a323d;
+  --accent:#4aa3f0; --accent2:#7cbdf7; --code-bg:#0f1319; --code-ink:#e6e9ef;
+  --warn-bg:#3a1f20; --warn-line:#e06c68; --tip-bg:#16301f; --tip-line:#4cc07d;
+  --note-bg:#152538; --note-line:#5aa0e0; --mark:#6b5a1e;
+}
+*{box-sizing:border-box}
+html,body{margin:0;padding:0}
+body{background:var(--bg);color:var(--ink);font-family:var(--sans);font-size:15.5px;line-height:1.75;-webkit-font-smoothing:antialiased}
+
+/* ---------- 版面 ---------- */
+#top{position:fixed;top:0;left:0;right:0;height:52px;background:var(--panel);border-bottom:1px solid var(--line);
+     display:flex;align-items:center;gap:12px;padding:0 14px;z-index:50}
+#brand{font-weight:700;font-size:15px;white-space:nowrap;letter-spacing:.3px}
+#brand span{color:var(--accent)}
+#q{flex:1;max-width:520px;padding:7px 12px;border:1px solid var(--line);border-radius:8px;background:var(--bg);
+   color:var(--ink);font-family:var(--sans);font-size:14px;outline:none}
+#q:focus{border-color:var(--accent)}
+.tbtn{border:1px solid var(--line);background:var(--bg);color:var(--ink2);border-radius:8px;padding:6px 10px;
+      cursor:pointer;font-size:13px;font-family:var(--sans);white-space:nowrap}
+.tbtn:hover{border-color:var(--accent);color:var(--accent)}
+#menubtn{display:none}
+
+#side{position:fixed;top:52px;left:0;bottom:0;width:310px;overflow-y:auto;background:var(--panel);
+      border-right:1px solid var(--line);padding:14px 8px 60px;z-index:40}
+#side .part{font-size:12px;font-weight:700;color:var(--ink2);letter-spacing:.6px;margin:16px 10px 6px;
+            text-transform:none;border-top:1px solid var(--line);padding-top:12px}
+#side .part:first-child{border-top:none;margin-top:2px;padding-top:0}
+#side a.ch{display:block;padding:6px 10px;border-radius:7px;color:var(--ink);text-decoration:none;font-size:14px}
+#side a.ch:hover{background:var(--bg);color:var(--accent)}
+#side a.ch.active{background:var(--accent);color:#fff;font-weight:600}
+#side .subs{margin:2px 0 8px 14px;border-left:2px solid var(--line);padding-left:8px;display:none}
+#side .subs.open{display:block}
+#side .subs a{display:block;padding:3px 8px;font-size:12.8px;color:var(--ink2);text-decoration:none;border-radius:6px;
+              overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+#side .subs a:hover{color:var(--accent);background:var(--bg)}
+
+#main{margin:52px 0 0 310px;padding:26px 40px 120px;max-width:1080px}
+#results{display:none}
+
+/* ---------- 內文 ---------- */
+.chapter{display:none}
+.chapter.show{display:block;animation:fade .18s ease}
+@keyframes fade{from{opacity:.4}to{opacity:1}}
+h2{font-size:26px;line-height:1.4;margin:0 0 6px;padding-bottom:12px;border-bottom:3px solid var(--accent)}
+h3{font-size:19px;margin:34px 0 10px;padding-left:11px;border-left:4px solid var(--accent);scroll-margin-top:70px}
+h4{font-size:16px;margin:22px 0 8px;color:var(--accent2);scroll-margin-top:70px}
+p{margin:10px 0}
+p.lede{color:var(--ink2);font-size:15px;background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:12px 15px}
+ul,ol{padding-left:24px;margin:10px 0}
+li{margin:5px 0}
+a{color:var(--accent)}
+table{border-collapse:collapse;width:100%;margin:14px 0;font-size:14px;background:var(--panel);
+      border:1px solid var(--line);border-radius:8px;overflow:hidden;display:table}
+th{background:var(--bg);text-align:left;font-weight:600;color:var(--ink2)}
+th,td{border:1px solid var(--line);padding:7px 10px;vertical-align:top}
+tbody tr:hover{background:var(--bg)}
+td code,th code,p code,li code{background:var(--bg);border:1px solid var(--line);border-radius:4px;
+      padding:1px 5px;font-family:var(--mono);font-size:12.8px;color:var(--accent2)}
+.meta{display:flex;flex-wrap:wrap;gap:10px 26px;background:var(--panel);border:1px solid var(--line);
+      border-radius:10px;padding:11px 15px;margin:14px 0;font-size:14px}
+.meta b{display:block;font-size:11.5px;color:var(--ink2);letter-spacing:.5px;margin-bottom:2px;font-weight:700}
+.note,.tip,.warn{border-radius:9px;padding:11px 15px;margin:14px 0;font-size:14.5px;border-left:4px solid}
+.note{background:var(--note-bg);border-left-color:var(--note-line)}
+.tip{background:var(--tip-bg);border-left-color:var(--tip-line)}
+.warn{background:var(--warn-bg);border-left-color:var(--warn-line)}
+.note::before{content:"補充　";font-weight:700;color:var(--note-line)}
+.tip::before{content:"技巧　";font-weight:700;color:var(--tip-line)}
+.warn::before{content:"注意　";font-weight:700;color:var(--warn-line)}
+.tcode{display:inline-block;background:var(--accent);color:#fff;border-radius:5px;padding:1px 8px;margin:0 4px 3px 0;
+       font-family:var(--mono);font-size:12.5px;font-weight:600;letter-spacing:.4px}
+.src{color:var(--ink2);font-size:12.5px}
+span.kw{font-family:var(--mono);color:var(--accent2);font-size:13px}
+
+/* ---------- 程式碼 ---------- */
+pre{position:relative;background:var(--code-bg);color:var(--code-ink);border-radius:10px;padding:15px 16px;
+    overflow-x:auto;margin:14px 0;border:1px solid #2b323c}
+pre code{font-family:var(--mono);font-size:13px;line-height:1.62;white-space:pre;display:block;tab-size:2}
+pre .cp{position:absolute;top:8px;right:8px;background:#2c3540;color:#c3ccda;border:1px solid #3c4756;
+        border-radius:6px;padding:3px 9px;font-size:11.5px;cursor:pointer;opacity:0;transition:.15s;font-family:var(--sans)}
+pre:hover .cp{opacity:1}
+pre .cp:hover{background:var(--accent);color:#fff;border-color:var(--accent)}
+.tk-k{color:#6cb6ff;font-weight:600}
+.tk-s{color:#f0a35e}
+.tk-c{color:#7d8b9c;font-style:italic}
+.tk-n{color:#c3a6ff}
+.tk-t{color:#5ed4a6}
+.tk-y{color:#e57ba0}
+
+/* ---------- 搜尋結果 ---------- */
+#results h3{border-left-color:#999}
+.hit{background:var(--panel);border:1px solid var(--line);border-left:3px solid var(--accent);border-radius:8px;
+     padding:9px 13px;margin:9px 0;cursor:pointer}
+.hit:hover{border-color:var(--accent)}
+.hit .hc{font-size:11.5px;color:var(--ink2);letter-spacing:.4px;margin-bottom:3px}
+.hit .ht{font-size:14px;line-height:1.6}
+.hit mark,mark.live{background:var(--mark);color:inherit;border-radius:3px;padding:0 2px}
+#nores{color:var(--ink2);padding:20px 0}
+
+#totop{position:fixed;right:22px;bottom:22px;width:42px;height:42px;border-radius:50%;background:var(--accent);
+       color:#fff;border:none;cursor:pointer;font-size:18px;display:none;z-index:45;box-shadow:0 3px 12px rgba(0,0,0,.25)}
+#chapnav{display:flex;justify-content:space-between;gap:12px;margin:46px 0 0;padding-top:18px;border-top:1px solid var(--line)}
+#chapnav button{flex:1;text-align:left;padding:11px 14px;border:1px solid var(--line);background:var(--panel);
+       color:var(--ink);border-radius:9px;cursor:pointer;font-family:var(--sans);font-size:13.5px}
+#chapnav button:hover{border-color:var(--accent);color:var(--accent)}
+#chapnav button:disabled{opacity:.35;cursor:default}
+#chapnav button.n{text-align:right}
+#foot{margin-top:26px;color:var(--ink2);font-size:12.5px;text-align:center}
+
+@media (max-width:980px){
+  #side{transform:translateX(-100%);transition:.2s;width:280px}
+  #side.open{transform:none;box-shadow:0 0 30px rgba(0,0,0,.25)}
+  #main{margin-left:0;padding:20px 16px 100px}
+  #menubtn{display:block}
+  #brand{font-size:13px}
+}
+@media print{
+  #top,#side,#totop,#chapnav,pre .cp{display:none!important}
+  #main{margin:0;padding:0;max-width:none}
+  pre{background:#f4f4f4;color:#111;border:1px solid #ccc}
+  .tk-k,.tk-s,.tk-c,.tk-n,.tk-t,.tk-y{color:#111}
+}
+</style>
+</head>
+<body>
+
+<div id="top">
+  <button class="tbtn" id="menubtn">☰</button>
+  <div id="brand">ABAP <span>圖書館</span> · S/4HANA</div>
+  <input id="q" type="search" placeholder="搜尋語法、TCODE、資料表、函數…（按 / 快速聚焦）" autocomplete="off">
+  <button class="tbtn" id="theme">深色</button>
+  <button class="tbtn" id="printb">列印本章</button>
+</div>
+
+<nav id="side"></nav>
+
+<main id="main">
+  <div id="results"></div>
+  <div id="content">
+<!--__BODY__-->
+  </div>
+  <div id="chapnav"><button id="prevb"></button><button id="nextb" class="n"></button></div>
+  <div id="foot">共 __STAT_CH__ 章 · __STAT_H3__ 個小節 · __STAT_CODE__ 段程式碼 ｜ 整理自 Casper 的 SAP ABAP 教材 ｜ 建置日期 __BUILT__</div>
+</main>
+
+<button id="totop" title="回到頂端">↑</button>
+
+<script>
+(function(){
+"use strict";
+var NAV = /*__NAV__*/null;
+
+/* ---------- 側欄 ---------- */
+var side=document.getElementById('side'), order=[];
+NAV.forEach(function(part){
+  var p=document.createElement('div'); p.className='part'; p.textContent=part.title; side.appendChild(p);
+  part.chapters.forEach(function(ch){
+    order.push(ch);
+    var a=document.createElement('a'); a.className='ch'; a.href='#'+ch.id; a.textContent=ch.t; a.dataset.id=ch.id;
+    side.appendChild(a);
+    var box=document.createElement('div'); box.className='subs'; box.dataset.for=ch.id;
+    ch.subs.forEach(function(s){
+      var sa=document.createElement('a'); sa.href='#'+s.id; sa.textContent=s.t; sa.title=s.t; box.appendChild(sa);
+    });
+    side.appendChild(box);
+  });
+});
+
+var current=null;
+function show(id, anchor){
+  var sec=document.getElementById(id); if(!sec) return;
+  document.querySelectorAll('.chapter.show').forEach(function(e){e.classList.remove('show');});
+  sec.classList.add('show');
+  document.getElementById('results').style.display='none';
+  document.getElementById('content').style.display='';
+  document.getElementById('chapnav').style.display='flex';
+  side.querySelectorAll('a.ch').forEach(function(a){a.classList.toggle('active', a.dataset.id===id);});
+  side.querySelectorAll('.subs').forEach(function(b){b.classList.toggle('open', b.dataset.for===id);});
+  current=id;
+  highlight(sec);
+  var i=order.findIndex(function(c){return c.id===id;});
+  var pb=document.getElementById('prevb'), nb=document.getElementById('nextb');
+  pb.disabled=(i<=0); nb.disabled=(i<0||i>=order.length-1);
+  pb.textContent = i>0 ? '← '+order[i-1].t : '';
+  nb.textContent = (i>=0&&i<order.length-1) ? order[i+1].t+' →' : '';
+  if(anchor){
+    var t=document.getElementById(anchor);
+    if(t){ t.scrollIntoView({block:'start'}); window.scrollBy(0,-64); return; }
+  }
+  window.scrollTo(0,0);
+}
+document.getElementById('prevb').onclick=function(){var i=order.findIndex(function(c){return c.id===current;});if(i>0)location.hash=order[i-1].id;};
+document.getElementById('nextb').onclick=function(){var i=order.findIndex(function(c){return c.id===current;});if(i<order.length-1)location.hash=order[i+1].id;};
+
+function route(){
+  var h=decodeURIComponent(location.hash.replace(/^#/,''));
+  if(!h){ show(order[0].id); return; }
+  if(document.getElementById(h) && document.getElementById(h).classList.contains('chapter')){ show(h); return; }
+  var el=document.getElementById(h);
+  if(el){ var sec=el.closest('.chapter'); if(sec) show(sec.id, h); return; }
+  show(order[0].id);
+}
+window.addEventListener('hashchange', route);
+
+/* ---------- ABAP 語法上色 ---------- */
+var KW=("REPORT PROGRAM TYPE-POOLS INCLUDE FUNCTION-POOL CLASS-POOL INTERFACE-POOL TABLES DATA TYPES CONSTANTS "+
+"STATICS FIELD-SYMBOLS PARAMETERS SELECT-OPTIONS SELECTION-SCREEN RANGES BEGIN END OF LINE BLOCK FRAME TITLE COMMENT "+
+"ULINE SKIP PUSHBUTTON TABBED SUBSCREEN DEFAULT OBLIGATORY LOWER CASE VISIBLE LENGTH MEMORY ID MODIF NO-DISPLAY "+
+"NO-EXTENSION INTERVALS MATCHCODE OBJECT RADIOBUTTON GROUP CHECKBOX LISTBOX AS "+
+"INITIALIZATION START-OF-SELECTION END-OF-SELECTION TOP-OF-PAGE END-OF-PAGE AT SELECTION-SCREEN OUTPUT "+
+"LOAD-OF-PROGRAM GET PUT PROVIDE "+
+"SELECT FROM INTO TABLE APPENDING CORRESPONDING FIELDS WHERE GROUP BY HAVING ORDER ASCENDING DESCENDING "+
+"SINGLE DISTINCT UP TO ROWS JOIN INNER LEFT RIGHT OUTER ON UNION ALL EXCEPT INTERSECT WITH BYPASSING BUFFER "+
+"CLIENT SPECIFIED FOR ENTRIES ENDSELECT INSERT UPDATE MODIFY DELETE SET COMMIT ROLLBACK WORK "+
+"IF ELSEIF ELSE ENDIF CASE WHEN OTHERS ENDCASE DO ENDDO WHILE ENDWHILE LOOP ENDLOOP EXIT CONTINUE CHECK "+
+"TIMES VARYING VARY NEW OLD FIRST LAST SUM "+
+"FORM ENDFORM PERFORM USING CHANGING VALUE REFERENCE FUNCTION ENDFUNCTION CALL METHOD EXPORTING IMPORTING "+
+"TABLES-PARAM EXCEPTIONS RAISING RAISE EXCEPTION MESSAGE TRY CATCH CLEANUP ENDTRY RESUMABLE "+
+"CLASS ENDCLASS DEFINITION IMPLEMENTATION PUBLIC PROTECTED PRIVATE SECTION METHODS CLASS-METHODS CLASS-DATA "+
+"INHERITING REDEFINITION ABSTRACT FINAL FRIENDS INTERFACES INTERFACE EVENTS EVENT HANDLER RETURNING "+
+"CREATE OBJECT RECEIVING SUPER ME CONSTRUCTOR CLASS-CONSTRUCTOR "+
+"MOVE CLEAR REFRESH FREE ADD SUBTRACT MULTIPLY DIVIDE COMPUTE CONCATENATE SPLIT CONDENSE TRANSLATE REPLACE "+
+"FIND SEARCH SHIFT OVERLAY WRITE FORMAT NEW-LINE NEW-PAGE POSITION HIDE READ "+
+"SORT COLLECT DESCRIBE ASSIGN UNASSIGN ADJACENT DUPLICATES COMPARING TRANSPORTING INDEX BINARY "+
+"OCCURS HEADER STANDARD SORTED HASHED KEY UNIQUE NON-UNIQUE EMPTY LIKE REF STRUCTURE "+
+"SUBMIT LEAVE RETURN STOP SCREEN TRANSACTION LIST-PROCESSING PROGRAM "+
+"OPEN DATASET CLOSE TRANSFER ENCODING UTF-8 BINARY MODE TEXT FILTER "+
+"AUTHORITY-CHECK EXPORT IMPORT MEMORY DATABASE SHARED "+
+"CONV EXACT COND SWITCH REDUCE LET IN BASE MAPPING DEFAULT-NULL OPTIONAL PREFERRED PARAMETER "+
+"ENHANCEMENT ENHANCEMENT-POINT ENHANCEMENT-SECTION ENDENHANCEMENT BADI DEFINE END-OF-DEFINITION "+
+"CONTROLS PROCESS BEFORE AFTER INPUT MODULE ENDMODULE CHAIN ENDCHAIN FIELD "+
+"AND OR NOT EQ NE GT GE LT LE CP NP BETWEEN IS INITIAL BOUND ASSIGNED SUPPLIED REQUESTED "+
+"ABAP SYSTEM-CALL NATIVE EXEC ENDEXEC MACRO STEP-LOOP SEPARATED CENTERED NO-GAP NO-ZERO CURRENCY UNIT "+
+"DECIMALS RADIX SIGN LEFT-JUSTIFIED RIGHT-JUSTIFIED UNDER").split(/\s+/);
+var KWS={}; KW.forEach(function(w){KWS[w]=1;});
+var TYP=("I INT8 F P C N D T X STRING XSTRING DECFLOAT16 DECFLOAT34 ANY ANY-TABLE INDEX-TABLE "+
+"ABAP_BOOL ABAP_TRUE ABAP_FALSE SPACE SY").split(/\s+/);
+var TYS={}; TYP.forEach(function(w){TYS[w]=1;});
+function esc(s){return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');}
+function hlLine(line){
+  if(/^\s*\*/.test(line)) return '<span class="tk-c">'+esc(line)+'</span>';
+  var out='', i=0, L=line.length;
+  while(i<L){
+    var ch=line[i];
+    if(ch==='"'){ out+='<span class="tk-c">'+esc(line.slice(i))+'</span>'; return out; }
+    if(ch==="'"){
+      var j=i+1;
+      while(j<L){ if(line[j]==="'"){ if(line[j+1]==="'"){ j+=2; continue;} j++; break;} j++; }
+      out+='<span class="tk-s">'+esc(line.slice(i,j))+'</span>'; i=j; continue;
+    }
+    if(ch==='|'){
+      var k=i+1; while(k<L && line[k]!=='|'){ if(line[k]==='\\') k++; k++; }
+      k=Math.min(k+1,L);
+      out+='<span class="tk-s">'+esc(line.slice(i,k))+'</span>'; i=k; continue;
+    }
+    var rest=line.slice(i);
+    var m=/^[A-Za-z_\/][A-Za-z0-9_\/]*(?:-[A-Za-z0-9_]+)*/.exec(rest);
+    if(m){
+      var w=m[0], u=w.toUpperCase(), cls='';
+      if(KWS[u]) cls='tk-k';
+      else if(/^SY-/.test(u)||TYS[u]) cls='tk-y';
+      else if(/^(CL_|CX_|IF_|ZCL_|ZIF_|LCL_|LIF_|ZCX_)/.test(u)) cls='tk-t';
+      out += cls ? '<span class="'+cls+'">'+esc(w)+'</span>' : esc(w);
+      i+=w.length; continue;
+    }
+    var n=/^\d+(\.\d+)?/.exec(rest);
+    if(n){ out+='<span class="tk-n">'+esc(n[0])+'</span>'; i+=n[0].length; continue; }
+    out+=esc(ch); i++;
+  }
+  return out;
+}
+function highlight(root){
+  root.querySelectorAll('pre > code:not([data-hl])').forEach(function(code){
+    var src=code.textContent;
+    code.innerHTML=src.split('\n').map(hlLine).join('\n');
+    code.setAttribute('data-hl','1');
+    var pre=code.parentNode;
+    if(!pre.querySelector('.cp')){
+      var b=document.createElement('button'); b.className='cp'; b.textContent='複製';
+      b.onclick=function(){
+        var t=src;
+        if(navigator.clipboard&&navigator.clipboard.writeText){ navigator.clipboard.writeText(t); }
+        else { var ta=document.createElement('textarea'); ta.value=t; document.body.appendChild(ta); ta.select();
+               try{document.execCommand('copy');}catch(e){} document.body.removeChild(ta); }
+        b.textContent='已複製'; setTimeout(function(){b.textContent='複製';},1400);
+      };
+      pre.appendChild(b);
+    }
+  });
+}
+
+/* ---------- 搜尋 ---------- */
+var IDX=null;
+function buildIndex(){
+  IDX=[];
+  document.querySelectorAll('.chapter').forEach(function(sec){
+    var ct=sec.getAttribute('data-title')||sec.id;
+    sec.querySelectorAll('h3,h4,p,li,td,pre>code,div.note,div.tip,div.warn').forEach(function(el,i){
+      var t=el.textContent.replace(/\s+/g,' ').trim();
+      if(t.length<4) return;
+      if(!el.id){ el.id = sec.id+'-x'+i; }
+      IDX.push({c:ct, cid:sec.id, id:el.id, t:t, low:t.toLowerCase(),
+                k:(el.tagName==='CODE'?'程式碼':(/^H[34]$/.test(el.tagName)?'標題':(el.className||el.tagName.toLowerCase())))});
+    });
+  });
+}
+function snip(t, q){
+  var i=t.toLowerCase().indexOf(q);
+  var s=Math.max(0,i-70), e=Math.min(t.length,i+q.length+130);
+  var pre=(s>0?'…':'')+t.slice(s,i), hit=t.slice(i,i+q.length), post=t.slice(i+q.length,e)+(e<t.length?'…':'');
+  function E(x){return x.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');}
+  return E(pre)+'<mark>'+E(hit)+'</mark>'+E(post);
+}
+var KIND={'note':'補充','tip':'技巧','warn':'注意'};
+function doSearch(){
+  var q=document.getElementById('q').value.trim().toLowerCase();
+  var res=document.getElementById('results');
+  if(q.length<2){ res.style.display='none'; document.getElementById('content').style.display=''; document.getElementById('chapnav').style.display='flex'; return; }
+  if(!IDX) buildIndex();
+  var hits=[]; for(var i=0;i<IDX.length && hits.length<160;i++){ if(IDX[i].low.indexOf(q)>=0) hits.push(IDX[i]); }
+  document.getElementById('content').style.display='none';
+  document.getElementById('chapnav').style.display='none';
+  res.style.display='block';
+  if(!hits.length){ res.innerHTML='<h2>搜尋結果</h2><div id="nores">找不到「'+q+'」。試試看較短的關鍵字，例如 SELECT、BAdI、MATDOC、CL_SALV。</div>'; return; }
+  var html='<h2>搜尋結果 ｜ '+hits.length+' 筆'+(hits.length>=160?'（僅顯示前 160 筆）':'')+'</h2>';
+  var lastc='';
+  hits.forEach(function(h){
+    if(h.c!==lastc){ html+='<h3>'+h.c+'</h3>'; lastc=h.c; }
+    html+='<div class="hit" data-cid="'+h.cid+'" data-id="'+h.id+'"><div class="hc">'+(KIND[h.k]||h.k)+'</div><div class="ht">'+snip(h.t,q)+'</div></div>';
+  });
+  res.innerHTML=html;
+  res.querySelectorAll('.hit').forEach(function(d){
+    d.onclick=function(){
+      document.getElementById('q').value='';
+      show(d.dataset.cid, d.dataset.id);
+      var el=document.getElementById(d.dataset.id);
+      if(el){ el.style.transition='background .4s'; var o=el.style.background; el.style.background='var(--mark)';
+              setTimeout(function(){el.style.background=o;},1600); }
+    };
+  });
+}
+var tmr=null;
+document.getElementById('q').addEventListener('input',function(){ clearTimeout(tmr); tmr=setTimeout(doSearch,180); });
+document.addEventListener('keydown',function(e){
+  if(e.key==='/' && document.activeElement.id!=='q'){ e.preventDefault(); document.getElementById('q').focus(); }
+  if(e.key==='Escape'){ var q=document.getElementById('q'); if(q.value){ q.value=''; doSearch(); } q.blur(); }
+});
+
+/* ---------- 其他控制 ---------- */
+document.getElementById('theme').onclick=function(){
+  var d=document.documentElement.classList.toggle('dark');
+  this.textContent=d?'淺色':'深色';
+};
+document.getElementById('printb').onclick=function(){window.print();};
+document.getElementById('menubtn').onclick=function(){side.classList.toggle('open');};
+side.addEventListener('click',function(e){ if(e.target.tagName==='A' && window.innerWidth<=980) side.classList.remove('open'); });
+var tt=document.getElementById('totop');
+tt.onclick=function(){window.scrollTo({top:0,behavior:'smooth'});};
+window.addEventListener('scroll',function(){ tt.style.display = window.scrollY>420 ? 'block':'none'; });
+
+route();
+})();
+</script>
+</body>
+</html>

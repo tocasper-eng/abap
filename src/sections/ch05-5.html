@@ -1,0 +1,1143 @@
+<section class="chapter" id="ch05-5" data-title="BC404 在 Eclipse（ADT）中開發 ABAP">
+  <h2>第 5-5 章 BC404 在 Eclipse（ADT）中開發 ABAP</h2>
+  <p class="lede">S/4HANA 時代，SE80 已經不是主要的開發工具了：CDS View、AMDP、RAP、ABAP Cloud 都<b>只能</b>在 Eclipse 的 ABAP Development Tools（ADT）裡寫。BC404 就是原廠的「ADT 上手課」。從安裝、ABAP 專案、Workbench 版面，到原始碼式的類別／函數／結構編輯器、CDS、重構、除錯、ATC、ABAP Unit、Profiler，一路教到 HANA 整合。這一章照原課程九個單元的順序整理，並把 2022 年版教材裡已經過時的地方（Eclipse 版本、External View、Web Dynpro）補上 S/4HANA 的現況。</p>
+
+  <div class="meta">
+    <div><b>核心 TCODE</b><span class="tcode">SE80</span><span class="tcode">SE38</span><span class="tcode">SE24</span><span class="tcode">SE37</span><span class="tcode">SE11</span><span class="tcode">SE09</span><span class="tcode">SE10</span><span class="tcode">SICF</span><span class="tcode">ATC</span><span class="tcode">SCI</span><span class="tcode">SAT</span><span class="tcode">SE30</span><span class="tcode">ST05</span><span class="tcode">ST22</span><span class="tcode">SM58</span><span class="tcode">SBGRFCMON</span><span class="tcode">SE91</span><span class="tcode">SE93</span></div>
+    <div><b>關鍵物件</b>ABAP Project、ABAP Perspective／Debug Perspective／ABAP Profiling Perspective、Project Explorer、Outline、Problems、Transport Organizer view、Feed Reader、ABAP Unit Runner、ABAP Coverage、ABAP Traces、CL_ABAP_UNIT_ASSERT、CX_STATIC_CHECK、IF_T100_MESSAGE、IF_OO_ADT_CLASSRUN、DDL Source、External View、Database Procedure Proxy、HANA Transport Container、SFLIGHT／SCARR／SPFLI（練習資料模型）</div>
+  </div>
+
+  <h3 id="ch05-5-01">1. 課程定位與教材對照</h3>
+  <p>本章素材只有一份：SAP 原廠英文講義 <b>BC404 ABAP Programming in Eclipse</b>（Course Version 18，3 天課，Material Number 50157449，版權 2022）。講義共 158 頁，九個單元。下表的「PDF 頁」是講義 PDF 的實際頁碼，「講義頁」是印在頁尾的頁碼（兩者差 8 頁），方便你對照原書。</p>
+  <table>
+    <thead><tr><th>本章小節</th><th>原廠 Unit / Lesson</th><th>PDF 頁（講義頁）</th></tr></thead>
+    <tbody>
+      <tr><td>2. SAP 為何用 Eclipse</td><td>Unit 1 Introduction to Eclipse / L1 Understanding How SAP Uses Eclipse</td><td>p11–13（3–5）</td></tr>
+      <tr><td>3. 安裝 ADT</td><td>Unit 1 / L2 Installing Eclipse</td><td>p15–16（7–8）</td></tr>
+      <tr><td>4. ABAP 專案與線上開發模型</td><td>Unit 1 / L3 Defining an ABAP Project</td><td>p17–23（9–15）</td></tr>
+      <tr><td>5. Workbench 版面</td><td>Unit 1 / L4 Organizing Work with the Eclipse Workbench</td><td>p25–30（17–22）；測驗 p31–34</td></tr>
+      <tr><td>6. 建立物件與傳輸</td><td>Unit 2 The ABAP Development Cycle in Eclipse / L1 Creating Repository Objects</td><td>p37–40（29–32）</td></tr>
+      <tr><td>7. 補全與程式碼範本</td><td>Unit 2 / L2 Editing a Repository Object</td><td>p41–45（33–37）</td></tr>
+      <tr><td>8. ADT 除錯器</td><td>Unit 2 / L3 Debugging ABAP in Eclipse</td><td>p47–51（39–43）；測驗 p53–54</td></tr>
+      <tr><td>9. 函數群組與函數模組</td><td>Unit 3 Function Groups and Function Modules / L1</td><td>p57–59（49–51）</td></tr>
+      <tr><td>10. 資料元素與結構</td><td>Unit 4 ABAP Dictionary Objects in Eclipse / L1 Data Elements、L2 Structures</td><td>p63–69（55–61）</td></tr>
+      <tr><td>11. CDS View</td><td>Unit 4 / L3 Modelling Views with ABAP Core Data Services</td><td>p71–73（63–65）；測驗 p75–76</td></tr>
+      <tr><td>12. 全域類別、Quick Fix、例外類別</td><td>Unit 5 ABAP Objects and Eclipse / L1 Creating a Global Class</td><td>p79–86（71–78）</td></tr>
+      <tr><td>13. 重構</td><td>Unit 5 / L2 Refactoring</td><td>p87–91（79–83）；測驗 p93–94</td></tr>
+      <tr><td>14. Web Dynpro</td><td>Unit 6 Web Dynpro Development / L1</td><td>p97–101（89–93）；測驗 p103–104</td></tr>
+      <tr><td>15. 導覽與搜尋</td><td>Unit 7 Utilities in Eclipse / L1 Navigating、L2 Searching</td><td>p107–113（99–105）</td></tr>
+      <tr><td>16. 版本比較、說明與 ABAP Doc</td><td>Unit 7 / L3 Version Control、L4 Help and Information</td><td>p115–123（107–115）；測驗 p125–127</td></tr>
+      <tr><td>17. 語法檢查與 ATC</td><td>Unit 8 Testing and Analysis / L1 Syntax Check、L2 ABAP Test Cockpit</td><td>p131–135（123–127）</td></tr>
+      <tr><td>18. ABAP Unit 與覆蓋率</td><td>Unit 8 / L3 Performing ABAP Unit Tests</td><td>p137–142（129–134）</td></tr>
+      <tr><td>19. ABAP Profiler</td><td>Unit 8 / L4 Analyzing Performance with the ABAP Profiler</td><td>p143–146（135–138）；測驗 p147–148</td></tr>
+      <tr><td>20. HANA 整合</td><td>Unit 9 Eclipse: An Extensible Toolkit / L1</td><td>p151–156（143–148）；測驗 p157–158</td></tr>
+      <tr><td>21. 快捷鍵總表</td><td>散見全書，本章彙整</td><td>—</td></tr>
+    </tbody>
+  </table>
+
+  <p><b>課程等級與前置知識：</b>BC404 屬於原廠 BC4xx「ABAP Workbench」系列，性質是<b>工具課</b>，不教語法本身；難度約在 200 級。前提是你已經會 BC400（<a href="#ch05-1">5-1 章</a>）的基本語法與 SE80 操作，最好也上過 BC401（<a href="#ch05-2">5-2 章</a>），因為 Unit 5 預設你懂類別與例外類別。</p>
+
+  <div class="warn"><b>課號重用：兩個不同的 BC404。</b>强晟 2007/2008 年筆記裡的 BC404 是「<b>ABAP Objects：物件導向程式設計</b>」（R/3 時代的 OO 課程），那份內容已經併入 <a href="#ch05-2">5-2 章 BC401 ABAP Objects</a>，本章不重複。ADT 推出後，原廠把 OO 課程整併進 BC401，<b>BC404 這個課號後來改給「ABAP Programming in Eclipse」使用</b>。所以查資料時看到 BC404，要先看年份：2010 年以前多半是 OO，之後才是 Eclipse。</div>
+
+  <div class="note"><b>Col18（2022）和現況的差異：</b>講義的系統需求還停在 NetWeaver 7.31～7.40，寫的是 Eclipse Kepler／Luna（2013–2014 年的版本），Unit 6 的 Web Dynpro 和 Unit 9 的 HANA Studio／External View 也是 Suite on HANA 時期的技術。新版 ADT 多了 RAP（<span class="kw">behavior definition</span>、Service Definition／Binding）、ABAP Cloud 的 released API 檢查、資料表與 CDS View Entity 的原始碼編輯器等等，講義都沒有。本章會在各節用 warn 方塊補充。原廠後續把 ADT 內容整合進 S/4HANA 的 ABAP 學習路徑（例如 S4D400 系列課程），實際課號以 SAP Learning 網站為準。</div>
+
+  <h3 id="ch05-5-02">2. SAP 為何用 Eclipse：ADT 的定位與好處</h3>
+  <p>ADT（ABAP Development Tools，早期也叫 ABAP in Eclipse）是在開放的 Eclipse 平台上加一組 SAP 外掛（plug-in），<b>後端仍然是 AS ABAP</b>。講義 Figure 1 的架構：Eclipse 用戶端透過 RFC／REST 通訊協定連到 ABAP 後端，Repository 的存取方式和 SE80 等傳統 ABAP Workbench <b>完全相同</b>（p13）。</p>
+  <p>講義列出的三大好處（p11–12）：</p>
+  <ul>
+    <li><b>全新的 ABAP 開發體驗</b>：建立在 Eclipse 平台上。</li>
+    <li><b>開放的工具平台</b>：可以在上面開發新的 ABAP 相關工具。</li>
+    <li><b>一組開放、與語言／平台無關的 API</b>（ADT 的 REST 服務），開發人員可以用它做自己的工具。</li>
+  </ul>
+  <p>生產力的來源：更好的<b>重構</b>、<b>程式碼補全</b>、自動插入（auto-insertion）、<b>程式碼範本</b>、非常好用的 <b>Quick Fix</b>，以及到處都能跳轉的導覽能力。另外，ADT 可以<b>同時連多套 ABAP 系統</b>，也有 <b>session failover</b>，斷線的影響比較小。ADT 還能和 SAP HANA Studio、SAPUI5 工具裝在同一個 IDE 裡做跨平台開發。</p>
+  <div class="tip">講義的測驗第 1 題：「Eclipse 是 SAP 開發的專有工具」，答案是<b>錯</b>，因為 Eclipse 是開源平台，SAP 只提供外掛。第 2 題問 SAP 對 Eclipse 的態度，答案是 <b>A</b>：Eclipse 是 SAP 開發工具策略的重要部分。到了 S/4HANA，這個「重要」已經變成「<b>必要</b>」：CDS、AMDP、RAP 在 SAP GUI 裡都<b>沒有</b>編輯器。</div>
+
+  <h3 id="ch05-5-03">3. 安裝 ADT 與系統需求</h3>
+  <p>講義寫的系統需求（p15–16），以及它們今天的狀況：</p>
+  <table>
+    <thead><tr><th>項目</th><th>講義寫法（Col18）</th><th>今日狀況／修正</th></tr></thead>
+    <tbody>
+      <tr><td>後端最低版本</td><td>NetWeaver 7.31（7.3 EhP1）SPS04 以上；7.40 起多了 HANA 整合、Web Dynpro、更強的測試工具</td><td>S/4HANA 1809 以上當然全都支援；CDS View Entity、RAP 需要更新的後端（見第 11 節）</td></tr>
+      <tr><td>除錯支援</td><td>7.31／7.03 且 <b>Kernel 7.21 以上</b></td><td>同左，S/4HANA 不用擔心</td></tr>
+      <tr><td>作業系統</td><td>Windows、Mac OS X、Linux；需要 Java 執行環境（JRE）</td><td>新版 Eclipse 安裝包大多已內建 JRE</td></tr>
+      <tr><td>Eclipse 版本</td><td>Luna（4.4）、Kepler（4.3）</td><td><b>已過時。</b>請裝 ADT 安裝指南列出的最新 Eclipse（例如 Eclipse IDE for Java Developers 的當期版本）</td></tr>
+      <tr><td>安裝來源</td><td>① 從 eclipse.org 下載 Eclipse；② 從 SAP Support Portal 搜尋「SAP ABAP IN ECLIPSE」下載；③ 或從更新站 <span class="kw">http://tools.hana.ondemand.com/[eclipse release]</span></td><td>目前通用的更新站是 <span class="kw">https://tools.hana.ondemand.com/latest</span>（Help → Install New Software）</td></tr>
+    </tbody>
+  </table>
+  <p>安裝步驟（<span class="src">（依講義步驟整理）</span>）：</p>
+  <ol>
+    <li>從 eclipse.org 下載 Eclipse 並解壓縮（ADT 外掛也可以裝在<b>現有的</b> Eclipse 上）。</li>
+    <li>Help → Install New Software → Add，填入更新站網址。</li>
+    <li>勾選 <b>ABAP Development Tools</b>，下一步 → 同意授權 → Finish，裝完重新啟動 Eclipse。</li>
+    <li>本機要裝好 <b>SAP GUI</b>（ADT 的「SAP GUI 型工具」要靠它在編輯區內開啟），並且 SAP Logon 裡已有要連的系統。</li>
+  </ol>
+  <div class="warn"><b>SNC／SSO 是前提。</b>講義特別註明：系統管理員必須先在 ABAP 系統設定 <b>Secure Network Communication（SNC）</b>，最好也設定 <b>Single Sign-On</b>，才能用 ADT 開發。實務上最常見的「ADT 連不上」，原因就是 SAP Logon 那個連線項目沒啟用 SNC。另外，第 16 節的 ABAP 關鍵字說明也需要 Basis 在 <span class="tcode">SICF</span> 啟用服務，安裝時可以一起請 Basis 處理。</div>
+
+  <h3 id="ch05-5-04">4. ABAP 專案、線上開發模型、偏好設定與我的最愛套件</h3>
+  <h4>4.1 ABAP 專案＝一次登入</h4>
+  <p>ADT 和 ABAP Workbench 一樣採用<b>線上開發模型（online development model）</b>：打開 Eclipse 後必須先登入 SAP 系統，才能看或改任何物件。每一個登入 session（由<b>系統＋用戶端＋使用者</b>識別）在 ADT 裡就是一個 <b>ABAP Project</b>（p17）。</p>
+  <p>建立方式：File → New → <b>ABAP Project</b> → Browse 選 SAP Logon 裡的系統 → Next → 輸入 Client、User、Logon Language、Password → Finish。之後這個專案會一直留在你的 workspace 裡。</p>
+  <p>ABAP 專案的內容（p19）：</p>
+  <ul>
+    <li>專案名稱（預設 <span class="kw">&lt;SID&gt;_&lt;Client&gt;_&lt;User&gt;_&lt;Lang&gt;</span>）。</li>
+    <li>系統資料：System ID、Client、User、Password。</li>
+    <li><b>預設語言</b>：這決定新建物件的<b>原始語言</b>，也決定訊息與 UI 文字的語言。</li>
+    <li>（選填）當作我的最愛顯示的套件清單。</li>
+  </ul>
+  <div class="warn"><b>登入語言就是物件的原始語言。</b>用 EN 登入建立的資料元素，原始語言就是 EN，之後中文標籤只能靠翻譯（<span class="tcode">SE63</span>）。Casper 的專案一律先約定好「開發一律用某一種語言登入」，不要一下 ZF、一下 EN。</div>
+
+  <h4>4.2 線上開發模型 vs. 分散式開發</h4>
+  <p>Java 開發者用 SAP NetWeaver Developer Studio 時，每個人本機都有自己的 runtime 與開發環境，最後才合併到中央系統。ADT <b>不是這樣</b>（p18–19）：</p>
+  <ul>
+    <li>物件<b>只存在後端</b>。用戶端只有一個小小的<b>唯讀快取</b>，用來提升效能、降低伺服器負載。</li>
+    <li>開啟物件編輯時，後端會對該物件設 <b>enqueue 鎖</b>，並取回最新版本；存檔或啟用時，變更直接寫回後端。</li>
+    <li><b>沒有</b> check-out／check-in，也不用建本機副本。</li>
+    <li>語法檢查、搜尋、where-used 全都在後端執行。</li>
+    <li>用戶端沒有 ABAP runtime，所以<b>不支援離線作業</b>。</li>
+  </ul>
+
+  <h4>4.3 一個 workspace 可以有多個專案</h4>
+  <p>一個 Eclipse workspace 可以同時放 DEV、QAS、PRD 的 ABAP 專案，一個 IDE session 就能跨系統工作。最常用的情境是<b>比較同一支程式在開發系統和正式系統的版本</b>（第 16 節的 Compare With）。Eclipse 本身由 plug-in 組成，一個 Eclipse 用戶端可以連不同版本的多個後端（p20）。</p>
+
+  <h4>4.4 偏好設定與專案屬性</h4>
+  <table>
+    <thead><tr><th>設定層級</th><th>進入方式</th><th>可調整的項目</th></tr></thead>
+    <tbody>
+      <tr><td>Eclipse Preferences（全域）</td><td>Window → Preferences → ABAP Development</td><td>編輯器頁籤是否顯示 System ID 及位置；除錯設定（是否除錯系統程式）；原始碼設定（自動補括號、自動語法檢查）；字型大小與顏色。有 <b>Restore Defaults</b> 可還原</td></tr>
+      <tr><td>Project Properties（單一專案）</td><td>在 Project Explorer 選專案按 <b>Alt + Enter</b>，或右鍵 → Properties</td><td>ABAP Development → Editors → Source Code Editors → <b>Formatter</b>：縮排、關鍵字／識別字大小寫（相當於 SAP GUI 的 Pretty Printer）；ATC 檢查變式（第 17 節）</td></tr>
+    </tbody>
+  </table>
+  <p>格式化設定好之後，在編輯器按 <b>Shift + F1</b> 就會套用（和 SAP GUI Pretty Printer 的按鍵相同）。講義測驗第 5 題問「偏好設定在哪裡設」，答案是 <b>C</b>：兩處都有。</p>
+  <div class="tip">Formatter 設定是<b>跟著專案（系統）走的</b>，而且新版 ADT 會存在後端，同一系統的團隊可以共用。建議團隊統一：關鍵字大寫或小寫、識別字小寫、縮排開啟。這樣 Compare With 比對時不會滿版都是大小寫差異。</div>
+
+  <h4>4.5 我的最愛套件</h4>
+  <p>SE80 的 Object Navigator 可以選物件類型、輸入名稱，直接把任何程式或類別顯示在導覽區。<b>ADT 的 Project Explorer 不能這樣做</b>（要開任意物件請用第 15 節的 Ctrl + Shift + A）。常用的套件可以加進 <b>Favorite Packages</b>：展開專案節點 → 在 Favorite Packages 上按右鍵 → <b>Add a Package</b> → 用搜尋對話框找套件（p22–23）。講義也提到，<b>7.52 起</b>樹狀結構可以更有彈性地重組（Project Explorer 的 tree configuration）。套件與傳輸的觀念請回顧 <a href="#ch01-1">1-1 章</a>。</p>
+
+  <h3 id="ch05-5-05">5. Eclipse Workbench：透視圖、編輯器、檢視、Trim Stack、Quick Access</h3>
+  <p><b>Workbench</b> 指的是 Eclipse 的整個桌面開發環境。一個 Workbench 視窗包含一或多個<b>透視圖（Perspective）</b>，透視圖裡有<b>編輯器（Editor）</b>和<b>檢視（View）</b>。桌面上可以同時開多個 Workbench 視窗，例如一個跑 ADT、一個跑 HANA Studio（p25–26）。</p>
+
+  <h4>5.1 透視圖</h4>
+  <p>透視圖決定初始要開哪些 view、怎麼排，也決定某些選單和工具列要顯示哪些動作。你自訂之後可以另存。ADT 提供三個透視圖：</p>
+  <table>
+    <thead><tr><th>透視圖</th><th>用途</th></tr></thead>
+    <tbody>
+      <tr><td><b>ABAP</b>（最重要）</td><td>一般開發。必須連著 ABAP 專案；可以同時使用 Eclipse 型與 SAP GUI 型工具</td></tr>
+      <tr><td><b>Debug</b></td><td>碰到中斷點時自動切換（第 8 節）</td></tr>
+      <tr><td><b>ABAP Profiling</b></td><td>效能分析（第 19 節）</td></tr>
+    </tbody>
+  </table>
+  <p>ABAP 透視圖預設的 view：<b>Project Explorer、Outline、Task Repositories、Task List、Problems、Templates、Properties、Feed Reader、Transport Organizer</b>（p26–27）。</p>
+  <div class="tip">測驗第 6 題「哪些是 ADT 的透視圖？」答案是 <b>A ABAP、C Debug</b>。Transport Organizer 是 <b>view</b>，Package 不是透視圖。這題很容易被 Transport Organizer 騙。</div>
+
+  <h4>5.2 編輯器</h4>
+  <ul>
+    <li>不同類型的物件有不同的編輯器，開啟物件時會自動選對應的編輯器。<b>沒有原生編輯器的物件，會在編輯區裡開 SAP GUI</b>。</li>
+    <li>可以同時開很多個編輯器，但同一時間只有一個是作用中（active）；主選單和工具列只顯示對作用中編輯器有效的動作。</li>
+    <li>頁籤上出現 <b>*</b> 表示有未存檔的變更。</li>
+    <li>左邊界的圖示會標出語法錯誤、書籤、中斷點、task；滑鼠移上去可以看細節。</li>
+    <li>拖曳頁籤可以左右或上下並排（出現綠框時放開）。編輯器<b>不能</b>拖進 view 區；最小化時整個編輯區會縮成 trim stack。</li>
+  </ul>
+  <div class="warn"><b>講義此處已過時。</b>p27 寫「Eclipse Workbench 沒有結構與資料表等 ABAP Dictionary 物件的編輯器，雙擊會開 SAP GUI」。這是很早期的說法，同一本講義的 Unit 4 就自相矛盾：<b>7.50 起</b>資料元素和結構已有 ADT 原生編輯器，<b>7.52 起</b>資料庫資料表也有原始碼式編輯器（第 10 節）。S/4HANA 1809 以上請直接在 ADT 裡維護。</div>
+
+  <h4>5.3 View、Trim Stack、Quick View、Pin、Quick Access</h4>
+  <ul>
+    <li><b>View</b>：輔助編輯器並提供導覽，例如 Project Explorer 顯示專案階層。每個 view 有自己的選單（標題列的三角形）和工具列。View 可以單獨出現，也可以疊成頁籤群組；拖到透視圖外會變成獨立視窗，拖回來就還原。View <b>不能</b>拖進編輯區。</li>
+    <li><b>Trim Stack</b>：頁籤群組最小化後，在視窗邊緣出現的小工具列。點裡面的圖示，view 會以覆蓋（overlay）方式暫時顯示；按 Restore 回到原位。</li>
+    <li><b>Quick View（Quick Outline）</b>：在編輯器按 <b>Ctrl + O</b>，會在原地彈出目前物件的大綱；<b>再按一次 Ctrl + O</b>，會連同所有父類別與實作介面的元件一起顯示（只適用於類別）。直接打字就能過濾。</li>
+    <li><b>Pin 住 View</b>：工具列有 Pin 圖示的 view（例如 Search、Properties）可以固定住，再開一個新實例並排比較。</li>
+    <li><b>Quick Access</b>（右上角，新版為 <b>Ctrl + 3</b>）：輸入 view、指令、偏好設定頁的名稱，直接開啟。</li>
+  </ul>
+
+  <h3 id="ch05-5-06">6. 建立儲存庫物件、語法檢查與啟用、SAP GUI 整合、傳輸</h3>
+  <h4>6.1 Repository 物件</h4>
+  <p>Repository 包含所有 ABAP 開發物件：程式、函數模組、資料表定義等等，有 SAP 交付的，也有客戶自建的。「repository object」和「development object」兩個詞常常混用。建立時<b>一定要指派套件</b>，除非是不傳輸的本機物件（<span class="kw">$TMP</span>）。有些物件有子物件（函數模組屬於函數群組），物件之間也會互相參照（p37）。</p>
+  <p>在 ADT 可以建立與編輯的物件：ABAP 程式、ABAP Dictionary 物件（資料表定義、資料型別）、Screen、Web Dynpro 元件、函數群組與函數模組、ABAP 類別與介面。其中一部分是 Eclipse 原生工具，另一部分仍然在 SAP GUI 裡編輯（p38）。</p>
+  <p>建立方式：在套件上按右鍵 → New → ABAP Program／ABAP Class…；或用 <b>Ctrl + N</b>（File → New → Other → ABAP Repository Object），在過濾欄打字篩選物件類型。</p>
+
+  <h4>6.2 兩個最基本的動作：檢查與啟用</h4>
+  <p>快捷鍵和 SAP GUI <b>完全相同</b>，只是圖示長得不一樣：<b>Ctrl + F2</b> 語法檢查、<b>Ctrl + F3</b> 啟用（<b>Ctrl + Shift + F3</b> 啟用所有未啟用物件）。啟用時如果有語法錯誤會跳出對話框，每一行錯誤的左邊界都有紅色叉叉，滑鼠移上去可以看訊息，錯誤也會列在 <b>Problems</b> view（p38–39）。</p>
+
+  <pre><code class="abap">*&amp;---------------------------------------------------------------------*
+*&amp; ZBC404_FIRST：在 ADT 建立的第一支報表（New → ABAP Program）
+*&amp; 用 SFLIGHT 練習資料模型；Ctrl+F2 檢查、Ctrl+F3 啟用、F8 執行
+*&amp;---------------------------------------------------------------------*
+REPORT zbc404_first.
+
+PARAMETERS p_carr TYPE s_carr_id DEFAULT 'LH'.
+
+START-OF-SELECTION.
+  " HANA 沒有預設排序：要「依日期列出」就一定要 ORDER BY
+  SELECT carrid, connid, fldate, price, currency, seatsmax, seatsocc
+    FROM sflight
+    WHERE carrid = @p_carr
+    ORDER BY fldate, connid
+    INTO TABLE @DATA(lt_flights).
+
+  IF lt_flights IS INITIAL.
+    MESSAGE |航空公司 { p_carr } 沒有航班資料| TYPE 'S' DISPLAY LIKE 'E'.
+    RETURN.
+  ENDIF.
+
+  TRY.
+      cl_salv_table=&gt;factory( IMPORTING r_salv_table = DATA(lo_alv)
+                              CHANGING  t_table      = lt_flights ).
+      lo_alv-&gt;get_functions( )-&gt;set_all( abap_true ).
+      lo_alv-&gt;display( ).
+    CATCH cx_salv_msg INTO DATA(lx_salv).
+      MESSAGE lx_salv-&gt;get_text( ) TYPE 'E'.
+  ENDTRY.</code></pre>
+
+  <h4>6.3 Eclipse 型工具與 SAP GUI 型工具</h4>
+  <p>ADT 整合了兩種工具（p39）：</p>
+  <ul>
+    <li><b>Eclipse 型</b>：各種 ABAP 原始碼編輯器、Outline、Tasks、Problems view。外觀和導覽方式一致。</li>
+    <li><b>SAP GUI 型</b>：SAP GUI 和 Eclipse 用戶端一起裝在本機，泛指傳統 ABAP Workbench 的工具，例如 <b>Package Builder</b>、部分 ABAP Dictionary、<b>文字元素（text elements）維護</b>。</li>
+  </ul>
+  <p>在 Project Explorer 開啟物件時，有 Eclipse 編輯器就用它，沒有就在編輯區開 SAP GUI；每個 SAP GUI 物件各佔一個頁籤。在 SAP GUI 頁籤裡可以輸入任何 TCODE 或 OK code，功能和傳統 Workbench 完全一樣。想單獨開一個 SAP GUI（例如改使用者設定）：按 <b>Ctrl + 6</b> 或工具列的 Open SAP GUI 按鈕 → 選 ABAP 專案 → OK。</p>
+  <div class="tip">測驗題「ADT 對哪些物件有原生 Eclipse 編輯器？」講義答案是 <b>A ABAP 程式、B 資料元素、C ABAP 類別</b>。在講義那個版本，套件（Package Builder）和文字元素仍走 SAP GUI。新版 ADT 已經陸續補上套件、訊息類別、文字元素等編輯器，實際以你的後端版本為準。</div>
+
+  <h4>6.4 傳輸：Transport Organizer view</h4>
+  <p>開發在開發系統進行，完成後透過<b>變更請求（change request，也叫 transport request）</b>傳到測試系統與正式系統。專案經理在開發開始時建立 request，每位開發人員在其中有自己的 <b>task</b>；建立或修改物件時，物件會記錄到該開發人員的 task 裡。除非物件屬於 <span class="kw">$TMP</span>，否則建立時一定要指定 request（p39–40）。</p>
+  <p>ADT 的 <b>Transport Organizer view</b> 提供 SAP GUI 版 Transport Organizer（<span class="tcode">SE09</span>／<span class="tcode">SE10</span>）的基本功能：</p>
+  <ul>
+    <li>檢視任何使用者的 request、task 與物件清單；過濾 request、task、物件。</li>
+    <li>建立、修改、刪除 request；變更 request 的擁有者。</li>
+    <li>執行一致性檢查；<b>釋放</b> request 與 task。</li>
+    <li>需要進階功能時，雙擊 request 或 task 會在 Eclipse 裡開 SAP GUI 版的 Transport Organizer。</li>
+  </ul>
+  <p>傳輸路徑、<span class="tcode">STMS</span> 匯入的完整流程見 <a href="#ch01-1">1-1 章</a>。</p>
+
+  <h3 id="ch05-5-07">7. 編輯物件：關鍵字補全、程式碼補全與程式碼範本</h3>
+  <h4>7.1 關鍵字補全（Keyword Completion）</h4>
+  <p>打出關鍵字或識別字的前幾個字元，建議會自動出現。第一個建議正確就按 <b>Tab</b> 接受；想看更多選項按 <b>Ctrl + Space</b>。這個功能預設開啟，可以在 Preferences 關掉（p41）。</p>
+  <h4>7.2 程式碼補全（Code Completion）</h4>
+  <p><b>Ctrl + Space</b> 不只補關鍵字，也能補：程式中宣告的資料物件；方法、屬性、事件；函數模組；類別名稱。列表會隨著你繼續打字而縮小。選中後按 <b>Enter</b>（或雙擊）只插入名稱；<b>按 Shift + Enter 會插入完整的呼叫介面／簽章</b>，函數模組和方法最好用這個（p41–42）。測驗題的答案就是 <b>A Shift + Enter</b>。</p>
+  <pre><code class="abap">" 輸入 cl_abap_unit_assert=&gt;assert_eq 後按 Ctrl+Space，選中方法按 Shift+Enter，
+" ADT 會插入完整簽章（選填參數會被註解掉，方便你挑用）：
+cl_abap_unit_assert=&gt;assert_equals(
+  act = lv_actual
+  exp = lv_expected
+*  ignore_hash_sequence =
+*  tol                  =
+  msg = |計算結果不符|
+*  level                = if_abap_unit_constant=&gt;severity-medium
+*  quit                 = if_abap_unit_constant=&gt;quit-test
+).
+
+" 函數模組同理：輸入 CONVERSION_EXIT_ALPHA_INPUT → Ctrl+Space → Shift+Enter
+CALL FUNCTION 'CONVERSION_EXIT_ALPHA_INPUT'
+  EXPORTING
+    input  = lv_matnr_ext
+  IMPORTING
+    output = lv_matnr_int.</code></pre>
+  <div class="note">ALPHA 轉換只是示範 Shift + Enter。新程式裡，字元型的前導零補齊可以直接用字串範本的 <span class="kw">|{ lv_x ALPHA = IN }|</span>，不必呼叫函數模組（<a href="#ch02-1">2-1 章</a>）。這也呼應 Casper 的第二條經驗：號碼有 ALPHA 前導零時，用 BT 區間比較很容易漏抓，<b>列舉（多筆 EQ）比較安全</b>。</div>
+
+  <h4>7.3 靜態程式碼範本（Code Templates）</h4>
+  <p>ABAP 程式碼範本是<b>結構化的程式樣式描述</b>，比單純的 snippet 強：它和程式碼補全整合，可以使用預定義變數和<b>自訂佔位符</b>。一樣用 <b>Ctrl + Space</b> 插入，也可以從 <b>Templates view</b> 直接拖進程式。管理位置：Window → Preferences → ABAP Development → Source Code Editors → Templates（p42–45）。</p>
+  <p>佔位符的寫法是 <span class="kw">${名稱}</span>。<b>同一個佔位符出現多次時，輸入一次就會全部替換</b>，可以避免「複製貼上後忘了改其中一個變數名」的錯誤。注意：範本編輯器<b>沒有語法檢查</b>。</p>
+  <table>
+    <thead><tr><th>標準變數</th><th>意義</th><th>ABAP 專用變數</th><th>意義</th></tr></thead>
+    <tbody>
+      <tr><td><span class="kw">${cursor}</span></td><td>離開範本編輯模式後游標的位置</td><td><span class="kw">${enclosing_object}</span></td><td>目前編輯器裡的物件名稱（類別、include…）</td></tr>
+      <tr><td><span class="kw">${date}</span></td><td>今天日期</td><td><span class="kw">${enclosing_package}</span></td><td>物件所屬套件</td></tr>
+      <tr><td><span class="kw">${dollar}</span></td><td>錢字號 $</td><td><span class="kw">${system_id}</span></td><td>ABAP System ID</td></tr>
+      <tr><td><span class="kw">${line_selection}</span></td><td>目前選取的所有行</td><td><span class="kw">${user}</span></td><td>目前登入的使用者</td></tr>
+      <tr><td><span class="kw">${time}</span></td><td>目前時間</td><td></td><td></td></tr>
+      <tr><td><span class="kw">${word_selection}</span></td><td>目前選取的文字</td><td></td><td></td></tr>
+      <tr><td><span class="kw">${year}</span></td><td>今年</td><td></td><td></td></tr>
+    </tbody>
+  </table>
+  <pre><code class="abap">" 自訂範本名稱：zsel_sorted（說明：SELECT 進內表並強制排序）
+" 在 Preferences → Templates 新增，Pattern 內容如下：
+SELECT ${fields}
+  FROM ${table}
+  WHERE ${condition}
+  ORDER BY ${order_by}             " HANA 沒有預設排序，範本直接逼自己寫
+  INTO TABLE @DATA(lt_${table}).
+IF sy-subrc &lt;&gt; 0.
+  ${cursor}
+ENDIF.
+
+" 自訂範本名稱：zheader（程式表頭）
+*&amp;---------------------------------------------------------------------*
+*&amp; Object  : ${enclosing_object}   Package: ${enclosing_package}
+*&amp; System  : ${system_id}          Author : ${user}   Date: ${date}
+*&amp;---------------------------------------------------------------------*</code></pre>
+  <div class="tip">把團隊的「規矩」做成範本最有效。例如 <span class="kw">zsel_sorted</span> 一開始就寫好 <span class="kw">ORDER BY</span>，新人就不會忘記。Casper 那個成本評價的案子，程式沒排序，結果一下抓到 item category H、一下抓到 cost component E，成本就不穩定。範本可以匯出成 XML 分享給全組。</div>
+
+  <h3 id="ch05-5-08">8. 在 Eclipse 中除錯：Debug 透視圖與例外跳轉</h3>
+  <p>ADT 有原生除錯器，但後端要 <b>Kernel 7.21 以上</b>，否則只能用 SAP GUI 除錯器（p47）。主要能力：</p>
+  <ul>
+    <li>用 step 功能和呼叫堆疊（call stack）導覽。</li>
+    <li>彈性顯示與修改變數；顯示內表；中斷點。</li>
+    <li>執行期錯誤（runtime error）後除錯；顯示例外物件的屬性；跳到除錯步驟中發生例外的位置。</li>
+    <li><b>在除錯器裡直接修改程式碼</b>：這是 SAP GUI 除錯器<b>沒有</b>的功能。</li>
+  </ul>
+  <table>
+    <thead><tr><th>功能</th><th>ADT 除錯器</th><th>SAP GUI 除錯器</th></tr></thead>
+    <tbody>
+      <tr><td>設中斷點、條件中斷點、逐步執行、顯示變數值、變更除錯設定</td><td>有</td><td>有</td></tr>
+      <tr><td>Watchpoint</td><td>有（依版本）</td><td>有</td></tr>
+      <tr><td>分析內表</td><td>ABAP Internal Table view 可顯示、編輯行，但<b>不能自訂</b>版面</td><td>有，可大量自訂</td></tr>
+      <tr><td>顯示結構</td><td>逐欄位顯示，不能自訂；要套版面請用 SAP GUI</td><td>有</td></tr>
+      <tr><td>顯示物件</td><td>有結構化顯示，但沒有 Objects 工具的自訂能力</td><td>有</td></tr>
+      <tr><td>比較資料物件</td><td>複雜物件不行，請用 SAP GUI 除錯器的 <b>Diff</b> 工具</td><td>有</td></tr>
+      <tr><td>記憶體分析</td><td><b>無</b></td><td>有</td></tr>
+      <tr><td>Debugger Scripting</td><td><b>無</b></td><td>有</td></tr>
+      <tr><td>在除錯器中直接改程式</td><td><b>有</b></td><td>無</td></tr>
+    </tbody>
+  </table>
+  <p><b>Debug 透視圖的組成</b>（p49–50）：遇到有效中斷點時，ADT 會從 ABAP 透視圖切換到 Debug 透視圖（第一次會詢問，可勾選以後自動切換）。</p>
+  <ul>
+    <li><b>Debug view</b>：導覽工具列（Step Into F5、Step Over F6、Step Return F7、Resume F8、Terminate），以及目前的呼叫堆疊，點任一層就開那一層的程式碼。</li>
+    <li><b>Variables／Breakpoints</b>：兩個頁籤共用一個 view。程式碼中雙擊變數，會在 Variables 顯示值與屬性；Breakpoints 列出啟用／停用的中斷點，勾選或取消即可開關，本次除錯 session 立即生效。</li>
+    <li><b>編輯器</b>：跟著執行位置走，滑鼠移到變數上會顯示值，<b>可以直接在這裡修正程式</b>，不用切回 ABAP 透視圖。</li>
+    <li><b>ABAP Internal Table view</b>：雙擊內表會同時在 Variables 和這個 view 開啟；也可以直接輸入內表名稱。能檢視、編輯資料行，也能拖曳重排欄位。</li>
+  </ul>
+  <h4>8.1 除錯器設定（Window → Preferences → ABAP Development → Debug，對所有專案生效）</h4>
+  <table>
+    <thead><tr><th>選項</th><th>說明</th></tr></thead>
+    <tbody>
+      <tr><td>Enable debugging of system programs</td><td>勾選後系統程式在除錯器中可見；沒勾選時系統程式照常執行，但不會顯示，也不會停在系統程式裡的中斷點</td></tr>
+      <tr><td><b>Always create exception object</b></td><td>即使 <span class="kw">CATCH</span> 沒有 <span class="kw">INTO</span>，除錯器也一律建立例外物件，讓你檢查它的屬性</td></tr>
+      <tr><td>Suspend sending of background RFC requests</td><td>bgRFC 呼叫只記錄、不執行，之後可以在內嵌 SAP GUI 用 <span class="tcode">SBGRFCMON</span> 除錯（這些呼叫執行完就會刪除，所以要先暫停）；舊版本對 tRFC 也有效，可在 <span class="tcode">SM58</span> 檢查（見 <a href="#ch04-1">4-1 章</a>）</td></tr>
+      <tr><td>Enable debugging of automatic construction of shared object areas</td><td>進入建立 shared objects 記憶體區的程序時就啟動除錯</td></tr>
+      <tr><td>Show message if breakpoint cannot be set</td><td>在不能設中斷點的敘述上（例如 <span class="kw">CLASS</span>、<span class="kw">PUBLIC SECTION</span>）設中斷點時，要不要跳警告</td></tr>
+    </tbody>
+  </table>
+  <h4>8.2 跳到例外發生的位置</h4>
+  <p>除錯時如果某個步驟引發例外，編輯器左邊界會出現紅色 <b>!</b>。在該行按右鍵：</p>
+  <ol>
+    <li><b>Go to Exception Raise Location</b>：跳到真正 RAISE 的地方。</li>
+    <li><b>Show Exception Variable</b>：顯示例外物件的屬性。</li>
+    <li>按 <b>Alt + ←</b> 回到 <span class="kw">CATCH</span> 敘述。</li>
+  </ol>
+  <pre><code class="abap">" 練習用：在 lv_ratio 那行設中斷點（左邊界雙擊，或 Ctrl+Shift+B），按 F8 執行
+CLASS lcl_demo DEFINITION.
+  PUBLIC SECTION.
+    CLASS-METHODS load_factor
+      IMPORTING iv_carrid       TYPE s_carr_id
+      RETURNING VALUE(rv_ratio) TYPE decfloat34
+      RAISING   cx_sy_zerodivide.
+ENDCLASS.
+
+CLASS lcl_demo IMPLEMENTATION.
+  METHOD load_factor.
+    SELECT SUM( seatsocc ) AS occ, SUM( seatsmax ) AS max
+      FROM sflight
+      WHERE carrid = @iv_carrid
+      INTO @DATA(ls_sum).
+    " 查無資料時 max = 0 → CX_SY_ZERODIVIDE，左邊界出現紅色 !
+    rv_ratio = ls_sum-occ / ls_sum-max.
+  ENDMETHOD.
+ENDCLASS.
+
+START-OF-SELECTION.
+  TRY.
+      DATA(lv_ratio) = lcl_demo=&gt;load_factor( 'XX' ).
+    CATCH cx_sy_zerodivide.            " 沒寫 INTO：勾選「Always create exception
+      MESSAGE '沒有座位資料' TYPE 'I'.  " object」後，除錯器仍可看例外屬性
+  ENDTRY.</code></pre>
+  <p>除錯的完整技巧（SAP GUI 新除錯器、watchpoint、debugger script、外部中斷點）見 <a href="#ch05-4">5-4 章 BC403</a>。</p>
+
+  <h3 id="ch05-5-09">9. 函數群組與函數模組：原始碼式函數編輯器</h3>
+  <p>SAP GUI 的 Function Builder（<span class="tcode">SE37</span>）是表單式的：Import、Export、Changing、Tables、Exceptions、Source code 各一個頁籤。ADT 的函數編輯器則把整個函數模組當成<b>一個原始碼單元</b>，上半部是定義、下半部是實作，並搭配 Outline view 與 Quick Outline 導覽（p57）。</p>
+  <p>建立步驟（<span class="src">（依講義步驟整理）</span>）：在套件上按右鍵 → New → ABAP Function Group（名稱如 <span class="kw">ZBC404_FG</span>）→ 在函數群組上按右鍵 → New → ABAP Function Module → 輸入名稱與說明 → 指定 request → Finish。</p>
+  <p>定義部分的規則（p57）：</p>
+  <ul>
+    <li>參數寫在 <span class="kw">FUNCTION</span> 敘述的 <span class="kw">IMPORTING</span>、<span class="kw">EXPORTING</span>、<span class="kw">CHANGING</span>、<span class="kw">RAISING</span>、<span class="kw">EXCEPTIONS</span> 附加項裡，用法和類別的 <span class="kw">METHODS</span> 一樣：參數之間用<b>空白</b>分隔，<b>不加逗號</b>。</li>
+    <li>為了清楚起見，<b>每個參數都必須指定型別</b>。</li>
+    <li>打開舊的函數模組時，若 IMPORTING／EXPORTING／CHANGING 參數當初沒有型別，編輯器會自動補上 <span class="kw">TYPE ANY</span>；沒有型別的 TABLES 參數會補上 <span class="kw">TYPE STANDARD TABLE</span>。</li>
+    <li><b>定義部分不能寫註解</b>，啟用後會消失。</li>
+    <li>定義部分和實作部分之間可能出現空行：編輯器會把實作的第一行對齊到和 SE37 相同的行號，這關係到導覽、語法檢查和錯誤標記的位置（p58）。</li>
+  </ul>
+  <pre><code class="abap">FUNCTION z_bc404_get_flights
+  IMPORTING
+    VALUE(iv_carrid) TYPE s_carr_id
+    VALUE(iv_from)   TYPE s_date DEFAULT sy-datum
+  EXPORTING
+    VALUE(et_flights) TYPE zbc404_t_flight
+    VALUE(ev_count)   TYPE i
+  RAISING
+    zcx_bc404_no_data.
+  " ↑ 定義部分：參數以空白分隔、不可寫註解（啟用後會被清掉）
+  " ↓ 實作部分：從這裡開始才能寫程式與註解
+
+  SELECT carrid, connid, fldate, price, currency
+    FROM sflight
+    WHERE carrid = @iv_carrid
+      AND fldate &gt;= @iv_from
+    ORDER BY fldate, connid
+    INTO CORRESPONDING FIELDS OF TABLE @et_flights.
+
+  ev_count = lines( et_flights ).
+  IF ev_count = 0.
+    RAISE EXCEPTION TYPE zcx_bc404_no_data
+      EXPORTING textid    = zcx_bc404_no_data=&gt;no_flights
+                mv_carrid = iv_carrid.
+  ENDIF.
+ENDFUNCTION.</code></pre>
+  <div class="note">要做成 RFC 函數時，在 Properties view 的 General 裡把 Processing Type 改成 <b>Remote-Enabled Module</b>；RFC 的參數必須傳值（<span class="kw">VALUE( )</span>）。RFC 與 BAPI 的完整說明見 <a href="#ch04-1">4-1 章</a> 與 <a href="#ch05-12">5-12 章</a>。新程式的業務邏輯建議寫在類別裡，函數模組只留給 RFC、更新函數（update task）這類必須用函數模組的場合（<a href="#ch02-4">2-4 章</a>）。測驗題答案：<b>A</b>，直接在 FUNCTION 敘述裡定義介面。</div>
+
+  <h3 id="ch05-5-10">10. ABAP Dictionary 物件：資料元素與結構編輯器</h3>
+  <h4>10.1 資料元素編輯器（後端 7.50 以上）</h4>
+  <p>New → ABAP Repository Object → Dictionary → <b>Data Element</b> → 輸入套件、名稱（遵守命名規則）→ Next → 指定 request（本機物件免）。在編輯器裡（p63–64）：</p>
+  <ul>
+    <li><b>Category</b>：通常是 Domain，也可以是內建 Dictionary 型別、參照 Dictionary 型別，或參照物件型別（類別／介面）。</li>
+    <li>Domain 名稱可以用 <b>Ctrl + Space</b> 叫出值說明；想新建 Domain，點欄位標籤 <b>Type Name</b>（超連結）即可。</li>
+    <li><b>Field Labels</b>：Short、Medium、Long、Heading，和 SAP GUI 相同。</li>
+    <li><b>Additional Properties</b>：Search Help、<b>Set/Get Parameter</b>（PID），同樣點標籤就能新建。</li>
+  </ul>
+
+  <h4>10.2 結構編輯器（後端 7.50 以上）：用 DDL 寫結構</h4>
+  <p>結構不再是表單，而是<b>原始碼</b>。它具備 SAP GUI 版的所有功能：元件可以參照資料元素、內建型別（CHAR、DEC、NUMC…）、參照型別、其他結構、內表型別；也可以定義外部鍵檢查、指派 search help。語意資訊（例如 enhancement category、外部鍵的語意）用 <b>@ 開頭的 annotation</b> 描述，一樣可以用 Ctrl + Space 補全（p65–66）。</p>
+  <p>語法規則：</p>
+  <ul>
+    <li>整個結構的 annotation 放在定義之前；單一元件的 annotation 放在該元件之前。</li>
+    <li>元件寫成 <span class="kw">名稱 : 型別;</span>，每個元件以<b>分號</b>結尾，全部放在大括號內。</li>
+    <li>內建型別用命名空間 <span class="kw">abap.</span>：<span class="kw">abap.char(10)</span>、<span class="kw">abap.numc(8)</span>；<span class="kw">dec</span> 要寫「位數,小數位」：<span class="kw">abap.dec(15,2)</span>。</li>
+    <li>結構的兩個 annotation：<span class="kw">@EndUserText.label</span>（短文字）與 <span class="kw">@AbapCatalog.enhancement.category</span>，可選值有 <span class="kw">#NOT_EXTENSIBLE</span>、<span class="kw">#EXTENSIBLE_CHARACTER</span>、<span class="kw">#EXTENSIBLE_CHARACTER_NUMERIC</span>、<span class="kw">#EXTENSIBLE_ANY</span>。</li>
+    <li>引入其他結構用 <span class="kw">include</span>，元件名稱必須唯一。</li>
+    <li>外部鍵：<span class="kw">with foreign key</span>，必要元素是<b>檢查表</b>（例如 <span class="kw">scarr</span>）和 <span class="kw">where</span> 條件的鍵值對應；選填的<b>基數</b>寫在中括號裡，<span class="kw">[0..*,1]</span> 表示「欄位值可以出現任意次（或不出現），且對應檢查表的一筆」，這是預設值，也最常見；外部鍵類型用 annotation 指定：<span class="kw">#KEY</span>、<span class="kw">#NON_KEY</span>、<span class="kw">#TEXT_KEY</span>。</li>
+    <li>值說明：有外部鍵的欄位自動會有值說明；其他欄位可以用 <span class="kw">with value help</span> 指派 search help，並用 <span class="kw">where</span> 把結構元件對應到 search help 參數，讓值說明只顯示符合已輸入值的選項。</li>
+    <li><b>CURR 欄位一定要連到 CUKY 欄位</b>（用 <span class="kw">@Semantics.amount.currencyCode</span>），否則系統無法決定小數位數，會直接<b>語法錯誤</b>。QUAN／UNIT 同理，用 <span class="kw">@Semantics.quantity.unitOfMeasure</span>。</li>
+  </ul>
+  <pre><code class="abap">@EndUserText.label : 'BC404 航班顯示結構'
+@AbapCatalog.enhancement.category : #NOT_EXTENSIBLE
+define structure zbc404_s_flight {
+
+  @AbapCatalog.foreignKey.keyType : #KEY
+  @AbapCatalog.foreignKey.screenCheck : true
+  carrid    : s_carr_id
+    with foreign key [0..*,1] scarr
+      where carrid = zbc404_s_flight.carrid;
+
+  connid    : s_conn_id
+    with value help zbc404_sh_conn
+      where carrid = zbc404_s_flight.carrid
+        and connid = zbc404_s_flight.connid;
+
+  fldate    : s_date;
+
+  @Semantics.amount.currencyCode : 'zbc404_s_flight.currency'
+  price     : s_price;
+  currency  : s_currcode;
+
+  load_pct  : abap.dec(5,2);          " 內建型別：abap.dec(位數,小數位)
+  remark    : abap.char(40);
+  include zbc404_s_audit;             " 引入另一個結構（元件名稱不可重複）
+}</code></pre>
+  <div class="warn"><b>教材勘誤：</b>講義 p66 說「結構定義以 <span class="kw">define type</span> 關鍵字開始」。ADT 產生的結構範本實際上是 <span class="kw">define structure &lt;名稱&gt; { … }</span>，照「define type」寫會語法錯誤。另外，p27「ADT 沒有資料表編輯器」的說法也已經過時：<b>7.52 起</b>透明資料表同樣用 DDL 原始碼維護（<span class="kw">define table</span>），如下。</div>
+  <pre><code class="abap">@EndUserText.label : 'BC404 航班備註（自建表）'
+@AbapCatalog.enhancement.category : #NOT_EXTENSIBLE
+@AbapCatalog.tableCategory : #TRANSPARENT
+@AbapCatalog.deliveryClass : #A
+@AbapCatalog.dataMaintenance : #RESTRICTED
+define table zbc404_note {        " 需後端 7.52 以上
+  key client : abap.clnt not null;
+  key carrid : s_carr_id not null;
+  key connid : s_conn_id not null;
+  key fldate : s_date not null;
+  note       : abap.char(80);
+  created_by : syuname;
+  created_at : timestampl;
+}</code></pre>
+  <p>資料字典的觀念（domain／data element、外部鍵、search help、技術設定、enhancement category）請看 <a href="#ch01-2">1-2 章</a> 與 <a href="#ch05-16">5-16 章 BC430</a>。</p>
+
+  <h3 id="ch05-5-11">11. 用 ABAP Core Data Services（CDS）建立 View</h3>
+  <p>CDS 是在 ABAP Dictionary 裡建模的新方式。不必在 ABAP 程式裡寫複雜的 join，而是用 <b>SQL 的資料定義語言（DDL）</b>描述 join 甚至整個實體，再用 <span class="kw">SELECT</span> 讀取。講義的比較表（p71）：</p>
+  <table>
+    <thead><tr><th>傳統資料庫 View（SE11 Database View）</th><th>CDS View</th></tr></thead>
+    <tbody>
+      <tr><td>只能 inner join</td><td>各種 join（left／right outer join），也能 union</td></tr>
+      <tr><td>沒有彙總函數</td><td>有彙總函數（SUM、COUNT…）、算術運算式、CASE</td></tr>
+      <tr><td>—</td><td>用 <b>association</b> 簡化關聯，以路徑運算式（path expression）存取相關資料表</td></tr>
+    </tbody>
+  </table>
+  <ul>
+    <li>CDS 屬於 <b>7.40（SP05 起）</b>新 Open SQL 的一部分，所有 SAP 支援的資料庫都能用，<b>不要和 HANA 專屬的 HANA view 混為一談</b>。</li>
+    <li>CDS 只能用 ADT 的 Eclipse 編輯器定義，<b>SAP GUI 沒有對應的編輯器</b>。</li>
+    <li>建立：New → ABAP Repository Object → Dictionary → <b>DDL Source</b>（新版 ADT 叫 Core Data Services → Data Definition）。</li>
+    <li><b>view 名稱也是一個 Dictionary 型別</b>，可以拿來宣告結構與內表。</li>
+    <li>讀取 CDS View 必須用<b>新的 Open SQL 語法</b>：select list、ORDER BY、GROUP BY 的欄位都用<b>逗號</b>分隔；ABAP 變數都要加跳脫字元 <b>@</b>。新語法同時支援算術運算式、CASE、right outer join。</li>
+  </ul>
+  <pre><code class="abap">" 講義 Figure 39 型態：單表投影 + 算術運算式（DDIC-based CDS view，7.40 SP05+）
+@AbapCatalog.sqlViewName: 'ZBC404VFLT'       " 會另外產生一個 SE11 看得到的 SQL view
+@AccessControl.authorizationCheck: #NOT_REQUIRED
+@EndUserText.label: 'BC404 航班載客率'
+define view ZBC404_I_FlightLoad
+  as select from sflight
+  association [1..1] to scarr as _Carrier
+    on $projection.carrid = _Carrier.carrid
+{
+  key carrid,
+  key connid,
+  key fldate,
+      seatsmax,
+      seatsocc,
+      seatsmax - seatsocc                         as seats_free,
+      division( seatsocc * 100, seatsmax, 2 )     as load_pct,
+      _Carrier                                    // 對外公開 association
+}</code></pre>
+  <pre><code class="abap">" S/4HANA 新寫法：CDS View Entity（需 ABAP 7.55 以上，即 S/4HANA 2020 起）
+" 不再產生 SQL view、不需要 sqlViewName，啟用更快、檢查更嚴格
+@AccessControl.authorizationCheck: #NOT_REQUIRED
+@EndUserText.label: 'BC404 航班載客率（view entity）'
+define view entity ZBC404_R_FlightLoad
+  as select from sflight
+  association [1..1] to scarr as _Carrier on $projection.carrid = _Carrier.carrid
+{
+  key carrid,
+  key connid,
+  key fldate,
+      seatsmax,
+      seatsocc,
+      division( seatsocc * 100, seatsmax, 2 ) as load_pct,
+      _Carrier.carrname                       as CarrierName,   // path expression
+      _Carrier
+}</code></pre>
+  <pre><code class="abap">" 在 ABAP 讀 CDS：逗號分隔、@ 主機變數、可用 path expression
+SELECT carrid, connid, fldate, load_pct,
+       \_carrier-carrname AS carrname
+  FROM zbc404_i_flightload
+  WHERE carrid IN ( 'LH', 'AA', 'UA' )       " 列舉比區間安全
+    AND load_pct &gt;= 80
+  ORDER BY load_pct DESCENDING, fldate      " CDS view 本身沒有順序，一定要排序
+  INTO TABLE @DATA(lt_busy)
+  UP TO 50 ROWS.
+
+" view 名稱本身就是 Dictionary 型別
+DATA lt_load TYPE STANDARD TABLE OF zbc404_i_flightload WITH EMPTY KEY.</code></pre>
+  <div class="warn"><b>CDS 在 S/4HANA 的現況：</b>① 講義教的 <span class="kw">define view</span>（DDIC-based view，要寫 <span class="kw">@AbapCatalog.sqlViewName</span>）在 7.55 之後已被標為過時，新開發請用 <span class="kw">define view entity</span>（<b>7.55／S/4HANA 2020 起</b>）；1809～1909 的系統只能用舊寫法。② 講義 p72 提到另一種寫法 <span class="kw">DEFINE VIEW zview AS SELECT c1, c2, c3 FROM dbtab</span>，看得懂就好，實務一律用「<span class="kw">select from … { 欄位清單 }</span>」的大括號寫法，association 也必須搭配這種寫法。③ <b>CDS view 沒有 ORDER BY</b>，順序完全由讀取端的 SELECT 決定。HANA 沒有預設排序，同一個 CDS 今天和明天回傳的順序可能不同，凡是「取第一筆」的邏輯都要先 ORDER BY。CDS 的完整教學（annotation、DCL 權限、參數、VDM 三層）見 <a href="#ch01-3">1-3 章</a> 與 <a href="#ch02-2">2-2 章</a>。</div>
+  <div class="tip">測驗題：「CDS View 只能做 inner join」，答案是<b>錯</b>。</div>
+
+  <h3 id="ch05-5-12">12. 全域類別：原始碼式類別編輯器、Quick Fix 與例外類別</h3>
+  <h4>12.1 原始碼式類別編輯器</h4>
+  <p>Java、C++ 的 Eclipse 類別編輯器都是原始碼式的，ADT 也一樣。它不用 SAP GUI 表單式的 Class Builder（<span class="tcode">SE24</span>），而是在一個編輯器裡顯示<b>整個類別</b>，再用 Outline、導覽功能和 Quick Fix 輔助（p79）。建立：套件右鍵 → New → <b>ABAP Class</b> → 輸入名稱（命名規則 <b>[Z|Y]CL_</b>）、說明、父類別（若有）→ 指定 request → Finish，編輯器會顯示產生好的骨架。</p>
+  <p>類別編輯器下方的頁籤（p80）：</p>
+  <table>
+    <thead><tr><th>頁籤</th><th>內容</th></tr></thead>
+    <tbody>
+      <tr><td>Global Class</td><td>存在中央 Repository 類別庫的全域類別本體</td></tr>
+      <tr><td>Class-relevant Local Types</td><td>被全域類別 <b>PRIVATE SECTION 參照</b>的區域定義。修改後所有子類別與 friend 都要重新編譯，因為它們可能依賴這些定義</td></tr>
+      <tr><td>Local Types</td><td>全域類別<b>沒有參照</b>的區域定義（區域輔助類別等）</td></tr>
+      <tr><td>Test Classes</td><td>ABAP Unit 測試類別（第 18 節）</td></tr>
+      <tr><td>Macros</td><td>巨集定義。<b>巨集是過時技術，類別裡不該再用</b></td></tr>
+    </tbody>
+  </table>
+  <p>類別宣告分成 <b>DEFINITION</b> 與 <b>IMPLEMENTATION</b> 兩部分。DEFINITION 可以在 PUBLIC／PROTECTED／PRIVATE 三個可見性區段宣告：型別、常數、實例與靜態屬性、實例與靜態方法、實例與靜態事件；要實作的<b>介面只能宣告在 PUBLIC SECTION</b>（p80–81）。</p>
+  <pre><code class="abap">"! &lt;p class="shorttext synchronized"&gt;BC404 航班服務&lt;/p&gt;
+"! 示範 ADT 產生的類別骨架 + ABAP Doc + Console 應用程式（F9 執行）
+CLASS zcl_bc404_flight DEFINITION
+  PUBLIC
+  FINAL
+  CREATE PUBLIC.
+
+  PUBLIC SECTION.
+    INTERFACES if_oo_adt_classrun.        " 介面只能宣告在 PUBLIC SECTION
+
+    TYPES tt_flights TYPE STANDARD TABLE OF sflight WITH EMPTY KEY.
+
+    "! 讀取某航空公司的航班，依日期排序
+    "! @parameter iv_carrid | 航空公司代碼
+    "! @parameter rt_flights | 航班清單（fldate, connid 排序）
+    "! @raising zcx_bc404_no_data | 查無資料
+    METHODS get_flights
+      IMPORTING iv_carrid         TYPE s_carr_id
+      RETURNING VALUE(rt_flights) TYPE tt_flights
+      RAISING   zcx_bc404_no_data.
+
+  PROTECTED SECTION.
+  PRIVATE SECTION.
+ENDCLASS.
+
+CLASS zcl_bc404_flight IMPLEMENTATION.
+
+  METHOD get_flights.
+    SELECT * FROM sflight
+      WHERE carrid = @iv_carrid
+      ORDER BY fldate, connid
+      INTO TABLE @rt_flights.
+    IF rt_flights IS INITIAL.
+      RAISE EXCEPTION TYPE zcx_bc404_no_data
+        EXPORTING textid    = zcx_bc404_no_data=&gt;no_flights
+                  mv_carrid = iv_carrid.
+    ENDIF.
+  ENDMETHOD.
+
+  METHOD if_oo_adt_classrun~main.
+    TRY.
+        DATA(lt_flights) = get_flights( 'LH' ).
+        out-&gt;write( |共 { lines( lt_flights ) } 筆航班| ).
+        out-&gt;write( lt_flights ).
+      CATCH zcx_bc404_no_data INTO DATA(lx).
+        out-&gt;write( lx-&gt;get_text( ) ).
+    ENDTRY.
+  ENDMETHOD.
+
+ENDCLASS.</code></pre>
+  <div class="note"><span class="kw">IF_OO_ADT_CLASSRUN</span> 不在講義裡，是 ADT 很實用的功能：類別實作這個介面後按 <b>F9</b>（Run As → ABAP Application (Console)），<span class="kw">out-&gt;write( )</span> 的內容會輸出到 Eclipse 的 Console view，不用寫選擇畫面也不用 ALV，拿來快速驗證 SQL 或邏輯很方便。S/4HANA 1809 的後端已可使用；在 ABAP Cloud 環境，這也是唯一的「執行程式」方式。</div>
+
+  <h4>12.2 Outline view</h4>
+  <p>在原始碼編輯器開啟類別時，ABAP 透視圖會同時開啟 Outline view，列出屬性、型別、方法等結構元素，概念類似 SE80 的物件清單。<b>即使還沒存檔，Outline 也會和編輯器內容同步</b>。右鍵選單的重點功能：Navigate to Declaration、Navigate to Implementation、Run As → ABAP Unit Test（選到測試方法時）（p81–83）。</p>
+
+  <h4>12.3 Quick Fix（Ctrl + 1）</h4>
+  <p>Quick Fix 是編輯器自動提出的快速修正，用來完成常見工作或修正錯誤（p83–84）。在類別中常見的有：</p>
+  <ul>
+    <li>為已宣告的方法<b>新增實作</b>（Add implementation）。</li>
+    <li><b>一次新增所有尚未實作的方法</b>（例如介面的全部方法）。</li>
+    <li>把方法<b>移到另一個可見性區段</b>。</li>
+    <li>（新版 ADT 另有）從未宣告的變數直接產生宣告、把區域變數升級成屬性、把字面值抽成常數等等。</li>
+  </ul>
+  <div class="tip">測驗題：在 PUBLIC SECTION 剛寫完方法定義後按 Ctrl + 1，可用的修正是 <b>A 新增方法實作、B 把定義移到 protected 或 private 區段</b>；Quick Fix 不提供「刪除方法」。實務上最常用的流程：先寫 <span class="kw">METHODS</span> 定義 → Ctrl + 1 → Enter，實作骨架就產生好了，不用再切去 IMPLEMENTATION 手打。</div>
+
+  <h4>12.4 特殊類別與例外類別</h4>
+  <p>在 SAP GUI 的 Class Builder 建立 ABAP Unit 測試類別或例外類別時，會自動產生額外的程式碼；<b>在 ADT 裡，這些程式碼要用程式碼範本加入</b>（p84）。</p>
+  <p>例外類別代表應用程式可能發生的錯誤，有些是 SAP 預先定義的系統例外（例如 <span class="kw">CX_SY_ZERODIVIDE</span>），有些是開發時自建的應用例外。自建例外類別的兩個特徵：</p>
+  <ul>
+    <li>是抽象類別 <span class="kw">CX_STATIC_CHECK</span>（或其他例外類別）的子類別；名稱前綴 <b>[Z|Y]CX_</b>。</li>
+    <li>包含一或多段描述錯誤的文字。<b>在 ADT 裡，這些文字必須是訊息類別（<span class="tcode">SE91</span>）裡的訊息</b>。SAP GUI 的 Class Builder 可以直接定義文字（OTR），ADT 不行。</li>
+  </ul>
+  <p>做法：建立類別時父類別填 <span class="kw">CX_STATIC_CHECK</span> → 在 PUBLIC SECTION 用 Ctrl + Space 插入範本 <b>textIdExceptionClass</b> → 範本會產生一個結構常數，把它的元件改成你的訊息：</p>
+  <table>
+    <thead><tr><th>元件</th><th>意義</th></tr></thead>
+    <tbody>
+      <tr><td>msgid</td><td>訊息類別</td></tr>
+      <tr><td>msgno</td><td>訊息號碼</td></tr>
+      <tr><td>attr1 ～ attr4</td><td>第 1～4 個佔位符（&amp;1～&amp;4），填的是例外類別<b>屬性的名稱</b></td></tr>
+    </tbody>
+  </table>
+  <p>之後在實例建構子裡，用這個常數取代預設的 <span class="kw">IF_T100_MESSAGE=&gt;DEFAULT_TEXTID</span>（p85–86）。</p>
+  <pre><code class="abap">CLASS zcx_bc404_no_data DEFINITION
+  PUBLIC
+  INHERITING FROM cx_static_check
+  CREATE PUBLIC.
+
+  PUBLIC SECTION.
+    INTERFACES if_t100_message.
+
+    " ↓ 由範本 textIdExceptionClass 插入後修改（訊息類別 ZBC404，SE91 維護）
+    CONSTANTS:
+      BEGIN OF no_flights,
+        msgid TYPE symsgid VALUE 'ZBC404',
+        msgno TYPE symsgno VALUE '001',      " 001：航空公司 &amp;1 沒有航班資料
+        attr1 TYPE scx_attrname VALUE 'MV_CARRID',
+        attr2 TYPE scx_attrname VALUE '',
+        attr3 TYPE scx_attrname VALUE '',
+        attr4 TYPE scx_attrname VALUE '',
+      END OF no_flights.
+
+    DATA mv_carrid TYPE s_carr_id READ-ONLY.
+
+    METHODS constructor
+      IMPORTING textid    LIKE if_t100_message=&gt;t100key OPTIONAL
+                previous  LIKE previous OPTIONAL
+                mv_carrid TYPE s_carr_id OPTIONAL.
+ENDCLASS.
+
+CLASS zcx_bc404_no_data IMPLEMENTATION.
+  METHOD constructor ##ADT_SUPPRESS_GENERATION.
+    super-&gt;constructor( previous = previous ).
+    me-&gt;mv_carrid = mv_carrid.
+    CLEAR me-&gt;textid.
+    IF textid IS INITIAL.
+      if_t100_message~t100key = no_flights.     " 取代 if_t100_message=&gt;default_textid
+    ELSE.
+      if_t100_message~t100key = textid.
+    ENDIF.
+  ENDMETHOD.
+ENDCLASS.</code></pre>
+  <div class="note">7.50 起另有 <span class="kw">IF_T100_DYN_MSG</span>，可以直接寫 <span class="kw">RAISE EXCEPTION TYPE zcx_… MESSAGE e001(zbc404) WITH iv_carrid.</span>，連常數都不用定義。三種例外父類別（<span class="kw">CX_STATIC_CHECK</span>／<span class="kw">CX_DYNAMIC_CHECK</span>／<span class="kw">CX_NO_CHECK</span>）的差異見 <a href="#ch05-2">5-2 章</a>。</div>
+
+  <h3 id="ch05-5-13">13. 重構（Refactoring）：改名、抽取方法、刪除未使用變數</h3>
+  <p>重整程式碼（讓它好懂、好擴充、更有效率）時，最怕連帶影響讓相依關係斷掉。<b>重構工具可以省掉手動修補這些斷點的麻煩</b>（p87）。講義列出的重構種類：</p>
+  <ul>
+    <li><b>改名</b>（Rename）、<b>抽取方法</b>（Extract Method）、<b>刪除未使用變數</b>。</li>
+    <li>把區域變數轉成類別屬性（讓所有方法都能用）；<b>抽取常數</b>取代字面值、<b>抽取變數</b>（7.40 以上）。</li>
+    <li>把元件定義在 public／protected／private 之間移動，也就是變更可見性。</li>
+    <li>實作尚未實作的方法。</li>
+  </ul>
+  <h4>13.1 改名（Alt + Shift + R）</h4>
+  <p>可以找出並改名變數、方法、副程式等元素，連 ABAP 類別與介面本身都能改名；範圍可以只在單一原始碼內，也可以<b>跨多個 Repository 物件</b>。講義的例子：類別 <span class="kw">ZCL_BC404_REFACTOR</span> 的方法 <span class="kw">METHODA</span>，DEFINITION、IMPLEMENTATION 和呼叫它的程式 <span class="kw">ZBC404_REFACTOR</span> 三處都要改。選取名稱 → <b>Alt + Shift + R</b> → 輸入新名稱 → 精靈列出所有受影響的物件 → 可勾選<b>改完自動啟用所有物件</b> → Finish（p87–89）。</p>
+  <h4>13.2 抽取方法（Alt + Shift + M）</h4>
+  <p>把一段程式搬到新方法，原處換成對新方法的呼叫。條件（p90）：</p>
+  <ul>
+    <li>必須在全域類別或區域類別中（class pool、程式或其他 ABAP 程式裡的類別）；<b>類別以外的程式碼不支援</b>，而且只能在另一個方法的 METHOD…ENDMETHOD 範圍內抽取。</li>
+    <li>程式碼必須<b>沒有語法錯誤</b>。</li>
+    <li>選取程式碼 → 右鍵 Source → Extract Method，或按 Alt + Shift + M。</li>
+  </ul>
+  <pre><code class="abap">" ── 抽取前：run 方法又長又雜 ──────────────────────────
+METHOD run.
+  SELECT carrid, connid, fldate, seatsmax, seatsocc
+    FROM sflight
+    WHERE carrid IN @mt_carrid_range
+    ORDER BY carrid, connid, fldate
+    INTO TABLE @DATA(lt_flights).
+  " ↓ 選取這一段，按 Alt+Shift+M
+  DATA(lv_total_free) = REDUCE i( INIT s = 0
+                                  FOR ls IN lt_flights
+                                  NEXT s = s + ls-seatsmax - ls-seatsocc ).
+  " ↑
+  display( lv_total_free ).
+ENDMETHOD.
+
+" ── 抽取後：ADT 自動產生方法定義、參數型別與呼叫 ────────
+METHOD run.
+  SELECT carrid, connid, fldate, seatsmax, seatsocc
+    FROM sflight
+    WHERE carrid IN @mt_carrid_range
+    ORDER BY carrid, connid, fldate
+    INTO TABLE @DATA(lt_flights).
+  DATA(lv_total_free) = calc_free_seats( lt_flights ).
+  display( lv_total_free ).
+ENDMETHOD.
+
+METHOD calc_free_seats.            " PRIVATE SECTION 也一併產生了定義
+  rv_total_free = REDUCE i( INIT s = 0
+                            FOR ls IN it_flights
+                            NEXT s = s + ls-seatsmax - ls-seatsocc ).
+ENDMETHOD.</code></pre>
+  <h4>13.3 刪除未使用變數</h4>
+  <p>未使用的變數會隨時間累積：程式刪了變數沒刪，或抽取方法後留下已不在範圍內的宣告。ADT 可以自動找出並刪除：方法、函數模組、副程式裡<b>未使用的區域變數</b>，以及類別、函數群組、報表裡<b>未使用的全域變數</b>。要先在編輯器開啟程式；刪除的地方都會加上標記，滑鼠移上去可以看刪了什麼。<b>PUBLIC 與 PROTECTED SECTION 宣告的變數不會被刪</b>，因為外部可能在用（p91）。</p>
+  <div class="tip">重構是 ADT 相對 SE80 最大的優勢之一。跨物件改名前，建議先按 Ctrl + Shift + G 看 where-used（第 15 節），確認影響範圍；改名時如果有物件被別人鎖住，精靈會失敗。也可以另外安裝 SAP 開源的 <b>ABAP Cleaner</b> 外掛，一鍵把舊語法整理成現代寫法（例如把 <span class="kw">MOVE</span> 改成 <span class="kw">=</span>、補上內嵌宣告），和 <a href="#ap-01">附錄 舊語法對照</a> 搭配使用。</div>
+
+  <h3 id="ch05-5-14">14. Web Dynpro 開發</h3>
+  <p>ADT 提供 Web Dynpro ABAP 的原生開發環境：Project Explorer 看得到所有 Web Dynpro 設計期物件，可以建立元件、視窗、視圖、控制器，也可以在 Eclipse 裡啟用、執行、除錯。後端需 <b>7.03／7.31 SP07 以上</b>（p97）。相對於 SE80 的優點：</p>
+  <ul>
+    <li><b>真正的 WYSIWYG 視圖編輯器</b>，比 SE80 更接近實際執行的畫面。</li>
+    <li>Eclipse 編輯器只在需要時才連後端，編輯更流暢。</li>
+    <li>Context mapping 更圖形化。</li>
+    <li>SE80 Wizard 的部分程式碼範本（讀寫 context）在 ADT 也有。</li>
+  </ul>
+  <p>建立 Web Dynpro 元件（p98）：</p>
+  <ol>
+    <li>Project Explorer → ABAP 專案右鍵 → New → Other → ABAP Repository Object。</li>
+    <li>過濾欄輸入 <span class="kw">web</span> → 選 Web Dynpro → Component → Next。</li>
+    <li>輸入 Name、Description、Package；勾 <b>Create Window</b> 並輸入視窗名、勾 <b>Create View</b> 並輸入視圖名 → Next。</li>
+    <li>指定 request → Finish → <b>Ctrl + F3</b> 啟用。</li>
+    <li>元件出現在套件的 Web Dynpro → Web Dynpro Components 資料夾。</li>
+  </ol>
+  <p>視圖編輯器（雙擊 view 開啟）：<b>Layout</b> 頁設計 UI，UI 元素顯示在 Outline view，可以新增、重排、刪除；屬性在 Properties view 修改，預覽區會即時更新。<b>Methods</b> 頁定義自訂方法、參數與 <b>action</b>。Action 是一種事件，由使用者操作觸發（按按鈕、選表格列），只存在於 view controller。建立 action 時，ADT 會自動產生事件處理方法 <span class="kw">ONACTION&lt;ACTION_NAME&gt;</span>；action 也可以在 UI 元素 Properties 的 Events 區建立。在 Methods 頁選方法按 <b>F3</b> 跳到實作；<b>Implementation</b> 頁只允許在 METHOD…ENDMETHOD 之間寫程式（p98–101）。</p>
+  <p>程式碼精靈：ADT 的選項不如 SE80 Web Dynpro Code Wizard 完整，但在 controller 方法的新行按 <b>Ctrl + Space</b>，可以叫出讀取／寫入／附加 context 的操作，精靈會為選取的 context node、recursion node 或 attribute 產生程式碼。<b>ADT 2.13 起</b>，Templates view 另有：實例化使用中的元件（Instantiate a Used Component）、觸發 Plug（Fire a Plug）、用 Message Manager 產生訊息、觸發控制器事件（Raise a Controller Event）。測驗題答案：<b>C Ctrl + Space</b>。</p>
+  <pre><code class="abap">" ONACTION_SEARCH：精靈（Ctrl+Space → Read Context）產生的讀取碼，已改成現代寫法
+METHOD onactionsearch.
+  DATA ls_search TYPE wd_this-&gt;element_search.
+
+  DATA(lo_nd_search) = wd_context-&gt;get_child_node( name = wd_this-&gt;wdctx_search ).
+  DATA(lo_el_search) = lo_nd_search-&gt;get_element( ).
+  lo_el_search-&gt;get_static_attributes( IMPORTING static_attributes = ls_search ).
+
+  SELECT carrid, connid, fldate, price, currency
+    FROM sflight
+    WHERE carrid = @ls_search-carrid
+    ORDER BY fldate
+    INTO TABLE @DATA(lt_flights).
+
+  wd_context-&gt;get_child_node( name = wd_this-&gt;wdctx_flights
+    )-&gt;bind_table( new_items = lt_flights set_initial_elements = abap_true ).
+
+  IF lt_flights IS INITIAL.
+    " Templates view：Generate a message using the Message Manager
+    wd_comp_controller-&gt;wd_get_api( )-&gt;get_message_manager(
+      )-&gt;report_warning( message_text = |{ ls_search-carrid } 查無航班| ).
+  ENDIF.
+ENDMETHOD.</code></pre>
+  <div class="warn"><b>S/4HANA 現況：</b>Web Dynpro ABAP 仍然可以執行，也仍有大量標準應用在用，但 SAP 已不再用它開發新的 UI。S/4HANA 新 UI 的主流是 <b>SAP Fiori</b>：以 CDS + RAP 做後端，用 Fiori Elements 產生畫面，或用 SAPUI5 自行開發，透過 OData 服務連接（<span class="tcode">/IWFND/MAINT_SERVICE</span>，或 RAP 的 Service Binding）。維護舊 Web Dynpro 時，ADT 的 WYSIWYG 編輯器很好用；新需求請不要再開 Web Dynpro。Web Dynpro 的完整架構見 <a href="#ch05-23">5-23 章 NET310</a>。</div>
+
+  <h3 id="ch05-5-15">15. 導覽與搜尋：F3、Quick View、Outline、物件搜尋、Where-used</h3>
+  <h4>15.1 原始碼內導覽</h4>
+  <ul>
+    <li><b>F3</b>（或按住 Ctrl 點名稱）：從方法定義（含參數、例外）跳到實作，反之亦然（p107–108）。</li>
+    <li><b>Ctrl + Shift + A</b>：Open ABAP Development Object，輸入名稱直接開啟任何物件。</li>
+    <li><b>Quick Outline（Ctrl + O）</b>：類別、程式、介面的內部結構。</li>
+    <li><b>Quick Type Hierarchy（Ctrl + T）</b>：類別或介面的型別階層。</li>
+    <li><b>Alt + ←／Alt + →</b>：上一個／下一個瀏覽位置（跳來跳去之後回原處）。</li>
+  </ul>
+  <h4>15.2 Outline view 右鍵功能</h4>
+  <table>
+    <thead><tr><th>功能</th><th>說明</th></tr></thead>
+    <tbody>
+      <tr><td>Navigate to Declaration／Implementation</td><td>跳到元素的定義／實作</td></tr>
+      <tr><td>Run As</td><td>直接執行程式、啟動類別測試環境或 ABAP Unit</td></tr>
+      <tr><td>Debug As</td><td>設好中斷點後以除錯模式啟動</td></tr>
+      <tr><td>Coverage As</td><td>啟動覆蓋率量測（ABAP Traces）</td></tr>
+      <tr><td>Profile As</td><td>啟動效能量測（第 19 節）</td></tr>
+    </tbody>
+  </table>
+  <p>Outline 工具列可以隱藏非 public 元件，或只顯示方法。Outline 和編輯器雙向同步：在 Outline 選元素會跳到程式碼，在程式碼選元素會在 Outline 反白，未存檔也照樣同步（p108–109）。</p>
+  <h4>15.3 物件搜尋（Ctrl + H）</h4>
+  <p>Search → Search（<b>Ctrl + H</b>）→ ABAP Object Search 頁 → Object Name 輸入名稱（可用 <b>*</b> 萬用字元）→ 範圍選 <b>Workspace</b> 或 <b>ABAP Project</b> → 可勾 <b>Restrict Search to Favorite Packages</b> → Search。結果顯示在 Search view，<b>依套件分組</b>。和 SAP GUI 不同，<b>ADT 不必先指定物件類型</b>，所有名稱相符的物件都會列出（p111）。</p>
+  <h4>15.4 Where-used（Ctrl + Shift + G）</h4>
+  <p>列出物件被用在哪裡，把相依關係弄清楚。適用對象（p111–112）：</p>
+  <ul>
+    <li>Project Explorer 第一層的主物件：類別、介面、資料庫表、訊息類別等。</li>
+    <li>子物件：類別元件、資料表欄位、特定訊息等。</li>
+    <li>其他識別字：區域變數、參數、巨集等。</li>
+  </ul>
+  <p>可以從 Project Explorer、Outline 或編輯器右鍵選 <b>Get Where-used List</b>，也可以按工具列圖示或 <b>Ctrl + Shift + G</b>，結果顯示在 Search view。</p>
+  <div class="tip"><b>先找標準，再想客製。</b>Where-used 是找增強點的利器：在標準交易的關鍵函數或類別上按 Ctrl + Shift + G，常常能順藤摸瓜找到 BAdI 呼叫（<span class="kw">GET BADI</span>／<span class="kw">CALL BADI</span>）或 Enhancement Spot。優先順序是：標準設定 → BAdI／Enhancement Spot → Enhancement Point → 修改標準，每往右一步，升級成本就高一個量級（<a href="#ch03-4">3-4 章</a>、<a href="#ch05-14">5-14 章</a>、<a href="#ch05-15">5-15 章</a>）。S/4HANA 還要看物件的 <b>API State</b>（Properties view 裡的 Released／Deprecated），優先使用 released API。</div>
+
+  <h3 id="ch05-5-16">16. 版本比較、ABAP 關鍵字說明、Feeds 與 ABAP Doc</h3>
+  <h4>16.1 三種版本比較（p115–117）</h4>
+  <table>
+    <thead><tr><th>情境</th><th>操作</th><th>用途</th></tr></thead>
+    <tbody>
+      <tr><td>本機變更歷史</td><td>編輯器右鍵 → Compare With → <b>Local History</b></td><td>比較 ADT 裡<b>每次存檔</b>之間的差異，最細</td></tr>
+      <tr><td>傳輸版本</td><td>Project Explorer 物件右鍵 → Compare With → <b>Revision History</b></td><td>比較不同傳輸 request 之間的版本。傳輸遠比存檔少，所以能看較長時間的變化</td></tr>
+      <tr><td>跨 ABAP 專案</td><td>右鍵 → Compare With → <b>&lt;另一個 ABAP 專案名&gt;</b></td><td>比較兩套系統的最新版本，例如確認開發系統的修正是否已經傳到測試／正式系統</td></tr>
+    </tbody>
+  </table>
+  <div class="note">跨專案比較只有在<b>不同系統</b>之間才有意義。ABAP 程式碼是跨用戶端（client-independent）的，同一系統的兩個 client 永遠是同一版。</div>
+  <h4>16.2 ABAP 關鍵字說明（F1）</h4>
+  <p>游標放在 ABAP 敘述上按 <b>F1</b>，會開 <b>ABAP Language Help</b> view，說明內容來自後端，只有英文或德文；在這個 view 裡還能進一步瀏覽 ABAP Glossary 和 ABAP Subject Directory。前提是 Basis 已在 <span class="tcode">SICF</span> 啟用 <span class="kw">/default_host/sap/bc/abap/docu</span> 與 <span class="kw">/default_host/sap/bc/abap/toolsdocu</span> 兩個服務（p119–120）。另外，<b>F2</b> 會顯示游標所在元素的 Code Element Information（含 ABAP Doc），和 F1 不同。</p>
+  <h4>16.3 Feeds（Feed Reader view）</h4>
+  <p>ADT 可以訂閱來自 ABAP Repository 的各種 feed。建立 ABAP 專案時會自動設好幾個：<b>系統訊息</b>、<b>自己產生的執行期錯誤</b>、<b>自己負責的物件發生的執行期錯誤</b>（等於不用開 <span class="tcode">ST22</span> 就會收到 dump 通知）。訂閱後 ADT 會定期更新，更新間隔可以在訂閱時調整。<b>只有開啟中的 ABAP 專案才會自動更新</b>，否則 feed 處於休眠狀態，在 Feed Reader 裡以灰字顯示（p120–121）。</p>
+  <p>執行期錯誤 feed 可以設規則過濾：發生錯誤的使用者、套件或套件階層（含子套件）、物件的名稱或負責人、錯誤名稱（例如 <span class="kw">SYNTAX_ERROR</span>，就是明細裡的 Runtime Error 標題）。多條規則之間是 <b>OR</b>；不設過濾就回報該專案的所有執行期錯誤。<b>ATC 結果也可以用 feed 接收</b>，雙擊 finding 會直接跳到有問題的程式碼。測驗題「feed 在專案開或關時都會自動更新」，答案是<b>錯</b>。</p>
+  <div class="tip">上線初期建議訂閱「套件 = 本專案的 Z 套件、錯誤不限」的 dump feed。正式系統一有 dump，Eclipse 右下角就會通知，比使用者打電話來還早知道。</div>
+  <h4>16.4 ABAP Doc 註解</h4>
+  <p>ADT 裡有兩種註解（p122–123）：</p>
+  <ul>
+    <li><b>一般註解</b>：行首 <span class="kw">*</span>，或行中任意位置的 <span class="kw">"</span>，執行期忽略。</li>
+    <li><b>ABAP Doc 註解</b>：以 <span class="kw">"!</span> 開頭，寫在<b>宣告敘述的上一行</b>；多行時<b>每一行都要以 "! 開頭</b>。內容會出現在 Code Element Information 彈出視窗（F2）、ABAP Element Info view，以及程式碼補全清單的 tooltip。7.40 起可以用在類別、介面、程式、函數群組中的類別、方法、區域變數等元素。</li>
+    <li>語法檢查時會一併驗證 ABAP Doc 的位置與結構，放錯位置或語法不對，Problems view 會出現警告。</li>
+    <li>ABAP Doc 在 ADT 與 SAP GUI 的<b>原始碼編輯器</b>都看得到，但在 SAP GUI 的<b>表單式編輯器</b>裡看不到。</li>
+  </ul>
+  <p>常用標記：<span class="kw">@parameter 名稱 | 說明</span>、<span class="kw">@raising 例外 | 說明</span>、<span class="kw">&lt;p class="shorttext synchronized"&gt;</span>（和物件短文字同步）。範例見第 12 節的類別程式碼。測驗題答案：<b>C "!</b>。</p>
+
+  <h3 id="ch05-5-17">17. 靜態測試：語法檢查與 ABAP Test Cockpit（ATC）</h3>
+  <h4>17.1 自動語法檢查</h4>
+  <p>ADT 會自動檢查正在編輯的物件：<b>停止打字時、開啟時、存檔時</b>都會觸發；<b>存檔會對所有已開啟的物件</b>做語法檢查。可以在 Window → Preferences → ABAP Development → Editors → Source Code Editors 取消勾選 <b>Automatic syntax check on all open ABAP source editors</b>，之後改用 Ctrl + F2 手動檢查。錯誤列在 Problems view，雙擊跳到該行；有問題的行在程式碼中加底線、左邊界也有標記（p131–132）。</p>
+  <h4>17.2 ATC</h4>
+  <p>ATC 用來檢查語法錯誤、潛在效能問題、是否遵守規範等，並且<b>和 Code Inspector（<span class="tcode">SCI</span>）相容</b>，原有的自訂檢查與檢查變式可以直接沿用（p133）。測驗題答案：<b>A Code Inspector</b>。主要功能：</p>
+  <ul>
+    <li>直接在 ADT 對自己的程式做本機品質檢查。</li>
+    <li>Findings、細節與說明直接顯示在 Problems view（新版另有 ATC Problems view）。</li>
+    <li>用 <span class="tcode">SE80</span> 的 ATC Browser 集中管理 findings（可以在內嵌 SAP GUI 開啟）。</li>
+    <li>品質經理通常在整合／合併系統做<b>集中式</b>檢查；ATC 本身在 SAP GUI 用 <span class="tcode">ATC</span> 交易設定。</li>
+  </ul>
+  <p>執行：在 Project Explorer 選物件（可多選或選整個套件），或在編輯器裡，右鍵 → <b>Run As → ABAP Test Cockpit</b>（Ctrl + Shift + F2）。Finding 就是描述問題的訊息，有<b>優先度</b>：1、2 通常是必須盡快修正的嚴重問題。每個 finding 都有情境說明，右鍵 → <b>Show ABAP Problem Help</b> 可以看檢查項目的文件。全部通過時，狀態列會顯示訊息（p134–135）。</p>
+  <div class="note">預設使用全域檢查變式 <b>DEFAULT</b>。要換變式：ABAP 專案右鍵 → Properties → ABAP Development → <b>ABAP Test Cockpit</b>。S/4HANA 轉換專案常用的是 <b>S4HANA_READINESS</b> 類的變式，用來找出使用了已簡化資料表或交易的客製程式（例如直接存取 <span class="kw">VBUK</span>／<span class="kw">VBUP</span>、<span class="kw">KONV</span>，或假設 <span class="kw">MATNR</span> 仍是 18 碼）。在 ABAP Cloud／Clean Core 的開發中，ATC 還會檢查是否只用了 released API。</div>
+  <pre><code class="abap">" ATC 常見 finding 與現代修法（左：被抓到的寫法，右：修正後）
+" ① SELECT * 讀大表、只用 2 個欄位       → 明列欄位
+" ② 迴圈內 SELECT SINGLE（N+1 次 DB 存取）→ 先整批讀，再 READ TABLE
+" ③ SELECT ... UP TO 1 ROWS 沒有 ORDER BY → HANA 無預設排序，結果不穩定
+
+" ── ③ 的反例（文字說明，不保留舊程式碼）：
+"    舊程式常見「SELECT … UP TO 1 ROWS」迴圈（舊式 SELECT 迴圈）且沒有 ORDER BY 去讀 KEKO，
+"    ATC／Code Inspector 會提示；在 HANA 上每次抓到的「第一筆」可能不同。
+
+" ── 修正：明確排序、單筆讀取用 SELECT SINGLE ──
+SELECT SINGLE kalnr, kadky, tvers, bwvar, kkzma
+  FROM keko
+  WHERE matnr = @lv_matnr
+    AND werks = @lv_werks
+    AND kkzma = @space
+  INTO @DATA(ls_keko).                        " 條件足以唯一時用 SELECT SINGLE
+
+SELECT kalnr, kadky, tvers, bwvar
+  FROM keko
+  WHERE matnr = @lv_matnr
+    AND werks = @lv_werks
+  ORDER BY kadky DESCENDING, kalnr DESCENDING " 要「最新一筆」就明確說出排序
+  INTO TABLE @DATA(lt_keko)
+  UP TO 1 ROWS.</code></pre>
+
+  <h3 id="ch05-5-18">18. ABAP Unit 單元測試與測試覆蓋率</h3>
+  <p><b>單元測試</b>：由開發人員驗證程式中最小的可測單元（例如方法），讓品質保證、重構、迴歸測試和測試驅動開發（TDD）都更容易，應該是開發階段的一部分。單元測試寫成<b>全域類別（class pool）主程式裡的區域測試類別</b>，扮演類別的「使用者」，所以<b>只能存取受測類別的 public 元件</b>。每個測試是測試類別的一個方法，<b>各自獨立執行</b>。正式系統的 load 版本會排除測試類別，以縮小 load（p137）。</p>
+  <p>ABAP Unit 是內建在 ABAP 語言裡的測試框架，特點（p138）：</p>
+  <ul>
+    <li>測試跟著被測物件一起<b>傳輸</b>，所以每套開發、測試系統都有。</li>
+    <li>開發時可以直接從 ADT 編輯器執行；<b>覆蓋率量測</b>已整合進來；也整合進 <b>ATC</b>，可以自動化、納入大量品質檢查。</li>
+    <li>結果顯示在 <b>ABAP Unit Runner</b> view。</li>
+    <li>測試方法<b>沒有參數</b>；不用特別的知識就能執行，任何人都可以跑，不限開發者本人。</li>
+    <li>測試程式碼不是產生出來的，<b>在正式系統中也不能執行</b>。</li>
+  </ul>
+  <p>寫法規則（p139–140）：</p>
+  <ul>
+    <li>測試類別的定義加 <span class="kw">FOR TESTING</span>；執行時系統會自動為每個測試類別建立實例，再執行測試方法。</li>
+    <li>測試方法是<b>沒有參數的實例方法</b>（最好是 private），同樣加 <span class="kw">FOR TESTING</span>。</li>
+    <li>檢查用 <span class="kw">CL_ABAP_UNIT_ASSERT</span> 的靜態方法，常見參數：<span class="kw">act</span>（實際值）、<span class="kw">exp</span>（期望值）、<span class="kw">msg</span>（不符時的訊息）、<span class="kw">level</span>（嚴重度：TOLERABLE／CRITICAL／FATAL）、<span class="kw">quit</span>（不符時中止範圍：NO／METHOD／CLASS／PROGRAM）；回傳參數 <span class="kw">assertion_failed</span>（'X'／空白）。</li>
+    <li>測試類別與正式程式碼界線分明：<b>編譯器不允許一般類別存取測試類別</b>；正式系統甚至不會產生測試類別。</li>
+  </ul>
+  <p><b>Fixture（特殊方法）</b>：名稱保留、由執行環境自動呼叫，用來建立標準化的測試環境（p141）：</p>
+  <table>
+    <thead><tr><th>方法</th><th>種類</th><th>何時執行</th></tr></thead>
+    <tbody>
+      <tr><td><span class="kw">CLASS_SETUP</span></td><td>靜態</td><td>整個測試類別開始前執行一次</td></tr>
+      <tr><td><span class="kw">SETUP</span></td><td>實例</td><td><b>每個</b>測試方法之前</td></tr>
+      <tr><td><span class="kw">TEARDOWN</span></td><td>實例</td><td><b>每個</b>測試方法之後</td></tr>
+      <tr><td><span class="kw">CLASS_TEARDOWN</span></td><td>靜態</td><td>整個測試類別結束後執行一次</td></tr>
+    </tbody>
+  </table>
+  <pre><code class="abap">*"* Test Classes 頁籤（本地測試類別）
+"! @testing zcl_bc404_price_calc
+CLASS ltcl_price_calc DEFINITION FINAL
+  FOR TESTING RISK LEVEL HARMLESS DURATION SHORT.
+
+  PRIVATE SECTION.
+    DATA mo_cut TYPE REF TO zcl_bc404_price_calc.   " class under test
+    CLASS-METHODS class_setup.
+    METHODS setup.
+    METHODS teardown.
+    METHODS discount_gold_10pct   FOR TESTING.
+    METHODS first_cost_is_type_h  FOR TESTING.
+    METHODS alpha_leading_zero    FOR TESTING.
+ENDCLASS.
+
+CLASS ltcl_price_calc IMPLEMENTATION.
+  METHOD class_setup.
+    " 整個類別只跑一次：例如準備 test double / SQL test environment
+  ENDMETHOD.
+
+  METHOD setup.
+    mo_cut = NEW #( ).                  " 每個測試前都重新建立，彼此獨立
+  ENDMETHOD.
+
+  METHOD teardown.
+    CLEAR mo_cut.
+  ENDMETHOD.
+
+  METHOD discount_gold_10pct.
+    cl_abap_unit_assert=&gt;assert_equals(
+      act = mo_cut-&gt;net_price( iv_gross = '1000.00' iv_tier = 'GOLD' )
+      exp = CONV netwr( '900.00' )
+      msg = 'GOLD 客戶應打 9 折' ).
+  ENDMETHOD.
+
+  METHOD first_cost_is_type_h.
+    " Casper 的教訓寫成測試：兩種角度同時存在時，「第一筆」必須固定是 H
+    DATA(lt_input) = VALUE zcl_bc404_price_calc=&gt;tt_cost(
+      ( category = 'E' amount = '12.00' )
+      ( category = 'H' amount = '10.00' ) ).
+    cl_abap_unit_assert=&gt;assert_equals(
+      act = mo_cut-&gt;pick_cost( lt_input )-category
+      exp = 'H'
+      msg = '取成本時必須固定抓 item category H，不可依資料庫回傳順序'
+      quit = if_abap_unit_constant=&gt;quit-no ).
+  ENDMETHOD.
+
+  METHOD alpha_leading_zero.
+    " 列舉比區間安全：'100' 與 '0000000100' 必須視為同一張單
+    cl_abap_unit_assert=&gt;assert_true(
+      act = mo_cut-&gt;is_in_scope( '100' )
+      msg = '外部格式號碼也要被列舉條件抓到' ).
+  ENDMETHOD.
+ENDCLASS.</code></pre>
+  <p>執行：從 Project Explorer 或 Outline 右鍵 → Run As → <b>ABAP Unit Test</b>（<b>Ctrl + Shift + F10</b>）。結果顯示在 ABAP Unit Runner view，可以在 view 裡直接重跑：<b>綠勾</b>是通過，<b>黑色 ×</b> 是失敗；點失敗的測試會開 <b>Failure Trace</b>，雙擊下方 Stack 清單的行就跳到出問題的程式碼（p140）。</p>
+  <h4>18.1 測試覆蓋率</h4>
+  <p>右鍵 → <b>Coverage As → ABAP Unit Test</b>，結果顯示在 <b>ABAP Coverage</b> view。在 view 的選單可以切換三種覆蓋率（p141–142）：</p>
+  <table>
+    <thead><tr><th>類型</th><th>顏色意義</th></tr></thead>
+    <tbody>
+      <tr><td>敘述覆蓋（Statement）</td><td>可執行的行：綠＝有執行、紅＝從未執行</td></tr>
+      <tr><td>分支覆蓋（Branch）</td><td>紅＝沒執行；綠＝執行過且 true／false 都走過；<b>黃＝執行過但只走過其中一種</b></td></tr>
+      <tr><td>程序覆蓋（Procedure）</td><td>各處理區塊的入口：綠＝有被呼叫、紅＝沒有</td></tr>
+    </tbody>
+  </table>
+  <p>在 Coverage view 點類別、方法或處理區塊會跳到程式碼；滑鼠停在程式行上會顯示執行次數（分支覆蓋則顯示 true／false 各幾次）。在覆蓋率顯示中用 F3 導覽，跳到的程式碼也會套上顏色。如果有 assertion 失敗，會先出現 ABAP Unit Runner，而不是 Coverage view。</p>
+  <div class="tip">測驗題：① SETUP 在每個測試方法前呼叫，答案<b>對</b>；② 關於 ABAP Unit 的正確敘述是 <b>A 正式系統不產生測試類別、D 每個測試方法彼此獨立執行</b>。B 錯，因為測試只能存取 public 元件（要測 private 需宣告 <span class="kw">FRIENDS</span>）；C 錯，受測類別不能存取測試類別。</div>
+
+  <h3 id="ch05-5-19">19. 用 ABAP Profiler 分析效能</h3>
+  <p>ADT 的 ABAP Profiler 相當於 SAP GUI 的 ABAP Trace（<span class="tcode">SAT</span>，舊版 <span class="tcode">SE30</span>）。它能找出效能熱點，決定重構要花力氣在哪裡；分析程式流程時，有時比除錯器還有效。可以量測的對象：<b>類別、程式、函數模組、Web Dynpro、交易</b>（p143）。</p>
+  <ol>
+    <li><b>先調設定</b>：Window → Preferences → ABAP Development → Profiling。最重要的是<b>要不要彙總（aggregate）</b>：彙總後 trace 檔較小，但細節較少；<b>要看 call tree 就必須關掉彙總</b>。</li>
+    <li><b>量測</b>：在編輯器開啟程式 → 右鍵 <b>Profile As</b> → 程式啟動後照常操作 → <b>完全關閉程式後</b>，Profiler 才會彙整 trace。</li>
+    <li><b>看結果</b>：<b>ABAP Traces</b> view（Window → Show View → Other → ABAP → ABAP Traces），依專案分組、依使用者過濾。剛量完要先 <b>Refresh</b> 才看得到。</li>
+  </ol>
+  <p>Trace 的幾種呈現（p145–146）：</p>
+  <ul>
+    <li><b>Hit List</b>：所有處理過的事件，包括報表事件（<span class="kw">START-OF-SELECTION</span> 等）、PBO／PAI、副程式／函數模組／方法呼叫、Native SQL 的 PREPARE／OPEN／FETCH。每項有 <b>Own time</b> 和 <b>Total time</b>；Own 小於 Total，表示它還呼叫了其他被量測的單元。</li>
+    <li><b>Call Tree</b>：呼叫關係。<b>Call Timeline</b> 是圖形版：時間由左往右，重點看兩件事：<b>資料庫存取次數</b>（預設<b>橘色</b>，一大堆細小尖峰代表 SQL 太多、應該合併成較少的敘述）和<b>呼叫堆疊深度</b>（方法呼叫是<b>綠色</b>，很深又重複出現，可能要合併幾個很小的方法，因為 ABAP 編譯器<b>不會做 inline</b>，一長串小方法相對沒效率）。</li>
+    <li><b>Database Accesses</b>：存取了哪些資料表、讀的是 DB 還是 buffer、各花多少時間。要看資料庫層的執行細節或找出重複的相同 SELECT，請用 <b>SQL Trace</b>（<span class="tcode">ST05</span>）。</li>
+  </ul>
+  <p>某些分析仍然要在內嵌 SAP GUI 用 <span class="tcode">SAT</span>：</p>
+  <table>
+    <thead><tr><th>SAT 工具</th><th>用途</th></tr></thead>
+    <tbody>
+      <tr><td>Profile</td><td>看 trace 的效能資料、找熱點</td></tr>
+      <tr><td>Statement Trace</td><td>依發生順序列出 trace 事件與階層，可以快速搜尋事件並定位到其他工具</td></tr>
+      <tr><td>Critical Processing Blocks（Module Tree）</td><td>快速掃出超過時間門檻的方法、函數模組等處理區塊</td></tr>
+      <tr><td>Database Tools</td><td>trace 期間存取的資料表，可以從資料表跳到使用它的程式位置</td></tr>
+      <tr><td>Times</td><td>依 trace 事件彙總執行時間</td></tr>
+    </tbody>
+  </table>
+  <pre><code class="abap">" Timeline 滿滿橘色細尖峰的典型原因：迴圈內逐筆 SELECT（N+1）
+" ── 反例：每張訂單各打一次 DB ──
+LOOP AT lt_orders INTO DATA(ls_order).
+  SELECT SINGLE name1 FROM kna1
+    WHERE kunnr = @ls_order-kunnr
+    INTO @DATA(lv_name).
+ENDLOOP.
+
+" ── 修正①：一次 JOIN 拿完 ──
+SELECT v~vbeln, v~kunnr, k~name1
+  FROM vbak AS v
+  INNER JOIN kna1 AS k ON k~kunnr = v~kunnr
+  WHERE v~vbeln IN @s_vbeln
+  ORDER BY v~vbeln
+  INTO TABLE @DATA(lt_result).
+
+" ── 修正②：先整批讀客戶，再用 sorted table 查 ──
+SELECT kunnr, name1 FROM kna1
+  FOR ALL ENTRIES IN @lt_orders            " 使用前務必確認 lt_orders 不是空的
+  WHERE kunnr = @lt_orders-kunnr
+  INTO TABLE @DATA(lt_kna1).
+DATA lt_kna1_s TYPE SORTED TABLE OF kna1 WITH UNIQUE KEY kunnr.
+lt_kna1_s = CORRESPONDING #( lt_kna1 ).
+LOOP AT lt_orders ASSIGNING FIELD-SYMBOL(&lt;ls_order&gt;).
+  DATA(lv_name1) = VALUE name1_gp( lt_kna1_s[ kunnr = &lt;ls_order&gt;-kunnr ]-name1 OPTIONAL ).
+ENDLOOP.</code></pre>
+  <p>效能調校的完整方法論（SQL Trace、索引、緩衝、FOR ALL ENTRIES 的陷阱）見 <a href="#ch05-21">5-21 章 BC490</a>。</p>
+
+  <h3 id="ch05-5-20">20. Eclipse 的擴充性：HANA Studio、External View、DB Procedure Proxy 與 HANA Transport Container</h3>
+  <p><b>Eclipse 架構</b>：整個平台由 <b>plug-in</b> 組成。plug-in 是一包程式碼或資料，提供程式庫、平台擴充甚至文件；plug-in 可以定義 <b>extension point</b>，讓其他 plug-in 在明確的位置加入功能。所以 ADT 可以和 <b>SAP HANA Studio</b> 裝在同一個 Eclipse 裡，開發「使用 HANA 物件的 ABAP 程式」更方便，跨平台開發也更有效率（p151–152）。</p>
+  <p><b>SAP HANA Studio</b> 隨 HANA Appliance 提供，用於管理、建模、開發與資料供應，有多個透視圖：<b>SAP HANA Administration Console</b> 給管理員監控引擎；最重要的是 <b>Modeler</b> 透視圖，給資料架構師建立 Information Model。Modeler 的 <b>Quick Launch</b> view 可以建立新的 Information Model、匯入／匯出 schema、模型與資料、設定伺服器、查 HANA 文件。左邊導覽樹每個系統連線有兩個主節點：<b>Catalog</b>（實體資料表、view…）和 <b>Content</b>（Attribute View、Analytic View、Calculation View、Analytic Privilege、Procedure、Decision Table）（p152）。</p>
+  <p>講義介紹三種<b>只能用 ADT 建立</b>、需要 HANA 作為主資料庫的物件（p153–155）：</p>
+  <table>
+    <thead><tr><th>物件</th><th>作用</th><th>重點</th></tr></thead>
+    <tbody>
+      <tr><td><b>External View</b></td><td>把 HANA view 公開到 ABAP Dictionary，讓 Open SQL 可以讀</td><td>欄位<b>沒有資料元素</b>，直接對應 Dictionary 型別；語法檢查<b>只確認 external view 存在</b>，不確認底層 HANA view 是否仍然有效</td></tr>
+      <tr><td><b>Database Procedure Proxy</b></td><td>把 HANA SQLScript procedure 包成 ABAP 層可以呼叫的代理</td><td>procedure 可以有任意輸入／輸出參數，可讀寫資料表</td></tr>
+      <tr><td><b>HANA Transport Container</b></td><td>讓 HANA 物件搭著 ABAP transport request 一起傳輸</td><td>指向 HANA 的 <b>Delivery Unit</b>；釋放 request 時匯出 DU 的<b>快照</b>，匯入時一併匯入</td></tr>
+    </tbody>
+  </table>
+  <p>HANA → ABAP Dictionary 型別對照（標 * 者在長度吻合時才使用）：</p>
+  <table>
+    <thead><tr><th>SAP HANA</th><th>ABAP Dictionary</th></tr></thead>
+    <tbody>
+      <tr><td>SMALLINT</td><td>INT2、INT1</td></tr>
+      <tr><td>INTEGER</td><td>INT4</td></tr>
+      <tr><td>SMALLDECIMAL、DECIMAL</td><td>DEC、CURR、QUAN</td></tr>
+      <tr><td>FLOAT</td><td>FLTP</td></tr>
+      <tr><td>NVARCHAR、VARCHAR</td><td>CHAR、NUMC、SSTR、CLNT*、DATS*、TIMS*、UNIT*、CUKY*</td></tr>
+      <tr><td>VARBINARY</td><td>RAW</td></tr>
+      <tr><td>BLOB</td><td>RAWSTRING</td></tr>
+      <tr><td>CLOB、NCLOB</td><td>STRING</td></tr>
+    </tbody>
+  </table>
+  <p>在 ABAP Dictionary 發布 HANA view 的步驟（p156）：Project Explorer → 專案右鍵 → New → Other ABAP Repository Object → Dictionary → <b>Dictionary View</b> → 輸入 Name、Description → 選 <b>External View</b> → 輸入已建立的 HANA view 名稱 → Next → 指定 request → Finish。</p>
+  <div class="warn"><b>S/4HANA 現況：這一整個單元基本上已被取代。</b>External View、Database Procedure Proxy、HANA Transport Container 是 Suite on HANA 時期「在 HANA 端建模、ABAP 端引用」的<b>自上而下（top-down）以外</b>做法，需要同時管理兩套傳輸，容易出現「ABAP 啟用成功、底層 HANA view 卻不見了」的問題（講義自己也提醒語法檢查不會發現）。HANA Studio 的 XS Classic Repository 模型（Attribute／Analytic View）也已停止發展。S/4HANA 請改用 ABAP 端的<b>程式碼下推（code pushdown）</b>：資料模型用 <b>CDS</b>（第 11 節），真正需要 SQLScript 時用 <b>AMDP</b>（ABAP Managed Database Procedure），<b>全部都是 ABAP 物件、走一般 transport request</b>。這也符合「先標準再客製」：SAP 交付的 VDM CDS（I_／C_ 開頭）多半已經有你要的資料。</div>
+  <pre><code class="abap">" AMDP：取代 Database Procedure Proxy 的現代做法（7.40 SP05+，只能在 ADT 編輯）
+CLASS zcl_bc404_amdp DEFINITION PUBLIC FINAL CREATE PUBLIC.
+  PUBLIC SECTION.
+    INTERFACES if_amdp_marker_hdb.            " 標記：這是 HANA 用的 AMDP 類別
+    TYPES: BEGIN OF ty_load,
+             carrid   TYPE s_carr_id,
+             connid   TYPE s_conn_id,
+             load_pct TYPE p LENGTH 5 DECIMALS 2,
+           END OF ty_load,
+           tt_load TYPE STANDARD TABLE OF ty_load WITH EMPTY KEY.
+    CLASS-METHODS get_load
+      IMPORTING VALUE(iv_client) TYPE mandt
+                VALUE(iv_carrid) TYPE s_carr_id
+      EXPORTING VALUE(et_load)   TYPE tt_load.
+ENDCLASS.
+
+CLASS zcl_bc404_amdp IMPLEMENTATION.
+  METHOD get_load BY DATABASE PROCEDURE FOR HDB
+                  LANGUAGE SQLSCRIPT
+                  OPTIONS READ-ONLY
+                  USING sflight.
+    et_load = SELECT carrid, connid,
+                     ROUND( SUM( seatsocc ) * 100.0 / SUM( seatsmax ), 2 ) AS load_pct
+                FROM sflight
+               WHERE mandt  = :iv_client
+                 AND carrid = :iv_carrid
+               GROUP BY carrid, connid
+               ORDER BY carrid, connid;      -- SQLScript 裡同樣要自己排序
+  ENDMETHOD.
+ENDCLASS.
+
+" 呼叫端：和一般靜態方法一樣
+zcl_bc404_amdp=&gt;get_load( EXPORTING iv_client = sy-mandt
+                                    iv_carrid = 'LH'
+                          IMPORTING et_load   = DATA(lt_load) ).</code></pre>
+  <div class="tip">測驗題：① External View 只能在 ADT 建立，不能在 SE80 建立，答案<b>對</b>；② 可以指派給 HANA Transport Container 的 HANA 物件是 <b>B Delivery Unit</b>（container 指向整個 DU，而不是個別的 view 或 procedure）。</div>
+
+  <h3 id="ch05-5-21">21. ADT 快捷鍵總表與 SE80 對照</h3>
+  <p>講義散在各單元的快捷鍵整理如下。「補充」欄標 ✓ 的是講義沒有、但實務常用的按鍵（以 Windows 預設鍵位為準，可在 Preferences → General → Keys 查詢或修改；<b>Ctrl + Shift + L</b> 可以隨時叫出全部快捷鍵）。</p>
+  <table>
+    <thead><tr><th>按鍵</th><th>功能</th><th>補充</th></tr></thead>
+    <tbody>
+      <tr><td>Ctrl + F2</td><td>語法檢查</td><td></td></tr>
+      <tr><td>Ctrl + F3／Ctrl + Shift + F3</td><td>啟用／啟用全部未啟用物件</td><td>✓（後者）</td></tr>
+      <tr><td>Ctrl + Space</td><td>關鍵字補全、程式碼補全、範本、Web Dynpro context 精靈</td><td></td></tr>
+      <tr><td>Tab</td><td>接受第一個關鍵字建議</td><td></td></tr>
+      <tr><td>Shift + Enter</td><td>補全時插入完整簽章</td><td></td></tr>
+      <tr><td>Ctrl + 1</td><td>Quick Fix</td><td></td></tr>
+      <tr><td>Shift + F1</td><td>格式化（Pretty Printer）</td><td></td></tr>
+      <tr><td>F1／F2</td><td>ABAP 關鍵字說明／元素資訊（含 ABAP Doc）</td><td></td></tr>
+      <tr><td>F3（Ctrl + 點擊）</td><td>定義 ↔ 實作導覽</td><td></td></tr>
+      <tr><td>Alt + ←／Alt + →</td><td>回上一個／下一個位置（除錯時從例外處回 CATCH）</td><td></td></tr>
+      <tr><td>Ctrl + O／Ctrl + T</td><td>Quick Outline／Quick Type Hierarchy</td><td></td></tr>
+      <tr><td>Ctrl + Shift + A</td><td>Open ABAP Development Object</td><td></td></tr>
+      <tr><td>Ctrl + H</td><td>搜尋</td><td></td></tr>
+      <tr><td>Ctrl + Shift + G</td><td>Where-used</td><td></td></tr>
+      <tr><td>Alt + Shift + R／Alt + Shift + M</td><td>改名／抽取方法</td><td></td></tr>
+      <tr><td>Ctrl + 6</td><td>開啟 SAP GUI</td><td></td></tr>
+      <tr><td>Alt + Enter</td><td>專案（物件）屬性</td><td></td></tr>
+      <tr><td>F8／F9</td><td>執行 ABAP 應用程式／以 Console 執行（IF_OO_ADT_CLASSRUN）</td><td>✓</td></tr>
+      <tr><td>Ctrl + Shift + F10</td><td>執行 ABAP Unit</td><td>✓</td></tr>
+      <tr><td>Ctrl + Shift + F2</td><td>以 ATC 檢查</td><td>✓</td></tr>
+      <tr><td>Ctrl + Shift + B</td><td>切換中斷點</td><td>✓</td></tr>
+      <tr><td>F5／F6／F7／F8（除錯中）</td><td>Step Into／Step Over／Step Return／Resume</td><td>✓</td></tr>
+      <tr><td>Ctrl + &lt;／Ctrl + &gt;</td><td>加上／移除註解</td><td>✓</td></tr>
+      <tr><td>Ctrl + 3</td><td>Quick Access</td><td>✓</td></tr>
+    </tbody>
+  </table>
+  <table>
+    <thead><tr><th>SAP GUI 工具</th><th>ADT 對應</th><th>備註</th></tr></thead>
+    <tbody>
+      <tr><td><span class="tcode">SE38</span> ABAP Editor</td><td>ABAP Program 原始碼編輯器</td><td>文字元素、選擇畫面文字在舊版仍走 SAP GUI</td></tr>
+      <tr><td><span class="tcode">SE24</span> Class Builder</td><td>原始碼式類別編輯器</td><td>例外類別的文字必須用訊息類別</td></tr>
+      <tr><td><span class="tcode">SE37</span> Function Builder</td><td>原始碼式函數編輯器</td><td>定義部分不能寫註解</td></tr>
+      <tr><td><span class="tcode">SE11</span> 資料元素／結構／資料表</td><td>DDIC 編輯器（7.50／7.52 起）</td><td>Domain、Search Help 視版本可能仍走 SAP GUI</td></tr>
+      <tr><td>—（SAP GUI 沒有）</td><td>CDS、AMDP、RAP、Service Definition／Binding</td><td><b>只能用 ADT</b></td></tr>
+      <tr><td><span class="tcode">SE80</span> Object Navigator</td><td>Project Explorer + Ctrl + Shift + A</td><td>用 Favorite Packages 取代「任意選物件」</td></tr>
+      <tr><td><span class="tcode">SE09</span>／<span class="tcode">SE10</span></td><td>Transport Organizer view</td><td>進階功能雙擊開 SAP GUI</td></tr>
+      <tr><td><span class="tcode">SCI</span>／<span class="tcode">ATC</span></td><td>Run As → ABAP Test Cockpit</td><td>變式在專案屬性設定</td></tr>
+      <tr><td><span class="tcode">SAT</span>（<span class="tcode">SE30</span>）</td><td>Profile As + ABAP Traces view</td><td>部分分析仍用 SAT</td></tr>
+      <tr><td><span class="tcode">ST22</span></td><td>Feed Reader 的 runtime error feed</td><td>只在專案開啟時更新</td></tr>
+      <tr><td>新除錯器</td><td>Debug 透視圖</td><td>記憶體分析、Debugger Scripting 仍要用 SAP GUI</td></tr>
+    </tbody>
+  </table>
+  <div class="warn">SE80 本身沒有被移除，舊的 Dynpro、SmartForms、SAPscript、GUI Status、Screen Painter 仍然要在 SAP GUI 裡維護（ADT 會在編輯區內開 SAP GUI 頁籤）。但 SAP 所有<b>新的</b>開發物件類型都只在 ADT 提供，S/4HANA 的開發人員應該以 ADT 為主要工具。</div>
+
+  <h3 id="ch05-5-qa">練習與自我檢核</h3>
+  <ol>
+    <li><b>（Unit 1）</b>判斷對錯：「ADT 採用和 ABAP Workbench 相同的線上開發模型，登入後整個 session 都保持連線；而且因為有本機快取，可以離線編輯。」
+      <br><i>參考答案要點：</i>前半句對（講義 Unit 1 測驗第 3、4 題都是 True）；後半句錯。本機只有提升效能用的<b>唯讀</b>快取，用戶端沒有 ABAP runtime，所以不支援離線。開啟物件時後端設 enqueue 鎖，存檔或啟用時直接寫回後端，沒有 check-out／check-in。</li>
+    <li><b>（Unit 1）</b>ABAP 專案由哪幾個要素識別？預設語言會影響什麼？
+      <br><i>參考答案要點：</i>系統＋用戶端＋使用者（再加上語言）。預設語言決定新建物件的<b>原始語言</b>，以及訊息與 UI 文字的語言。</li>
+    <li><b>（Unit 1）</b>哪些是 ADT 的透視圖？Transport Organizer 算嗎？
+      <br><i>參考答案要點：</i>ABAP、Debug、ABAP Profiling。Transport Organizer 是 <b>view</b>，不是透視圖。</li>
+    <li><b>（Unit 2）</b>用 Ctrl + Space 選中一個方法後，要按什麼鍵才會插入完整簽章？ADT 除錯器有、SAP GUI 除錯器沒有的功能是什麼？反過來呢？
+      <br><i>參考答案要點：</i>Shift + Enter。ADT 獨有的是<b>在除錯器裡直接改程式</b>；SAP GUI 獨有的是記憶體分析、Debugger Scripting，以及複雜物件的 Diff 比較。兩者都有的是動態設中斷點、顯示內表（講義測驗答案 A、D）。</li>
+    <li><b>（Unit 2）</b>寫一個自訂程式碼範本 <span class="kw">zloop</span>：對內表跑 <span class="kw">LOOP AT … ASSIGNING FIELD-SYMBOL( )</span>，內表名稱只輸入一次就套用到所有位置，結束後游標停在迴圈內。
+      <br><i>參考答案要點：</i><span class="kw">LOOP AT ${itab} ASSIGNING FIELD-SYMBOL(&lt;ls_${itab}&gt;). ${cursor} ENDLOOP.</span> 同名佔位符會一起替換；<span class="kw">${cursor}</span> 決定結束後的游標位置；範本編輯器沒有語法檢查，存檔前要自己確認。</li>
+    <li><b>（Unit 3）</b>在 ADT 裡要怎麼定義函數模組的介面？定義部分寫的註解會怎樣？舊函數模組沒有型別的參數會被怎麼處理？
+      <br><i>參考答案要點：</i>用 FUNCTION 敘述的 IMPORTING／EXPORTING／CHANGING／RAISING／EXCEPTIONS 附加項，參數以空白分隔、不加逗號（測驗答案 A）。定義部分的註解在啟用後會消失。沒有型別的參數補 <span class="kw">TYPE ANY</span>，TABLES 參數補 <span class="kw">TYPE STANDARD TABLE</span>。</li>
+    <li><b>（Unit 4）</b>用 ADT 結構編輯器寫一個含 CURR 欄位的結構，沒有連到 CUKY 會怎樣？講義說結構以什麼關鍵字開頭，對嗎？
+      <br><i>參考答案要點：</i>CURR 沒有用 <span class="kw">@Semantics.amount.currencyCode</span> 連到 CUKY 欄位會<b>語法錯誤</b>，因為系統無法決定小數位數。講義寫 <span class="kw">define type</span> 是錯的，正確的是 <span class="kw">define structure 名稱 { … }</span>。</li>
+    <li><b>（Unit 4）</b>CDS View 和傳統 Database View 有哪三個差異？在 S/4HANA 2020 以上，新 CDS 應該用什麼語法？讀 CDS 的 SELECT 有哪兩條新語法規則？
+      <br><i>參考答案要點：</i>各種 join（外部連接、union）、彙總函數、association／path expression；傳統 view 只能 inner join、沒有彙總。7.55 以上用 <span class="kw">define view entity</span>（不需 sqlViewName）。欄位清單用逗號分隔、ABAP 變數加 @。另外 CDS 本身沒有順序，讀取端要 ORDER BY。「CDS 只能 inner join」答案是<b>錯</b>。</li>
+    <li><b>（Unit 5）</b>在 ADT 建立一個會帶航空公司代碼的例外類別 <span class="kw">ZCX_BC404_NO_DATA</span>，步驟是什麼？文字從哪裡來？
+      <br><i>參考答案要點：</i>New ABAP Class，父類別 <span class="kw">CX_STATIC_CHECK</span> → PUBLIC SECTION 用 Ctrl + Space 插入 <b>textIdExceptionClass</b> → 把 msgid／msgno 改成訊息類別（<span class="tcode">SE91</span>）與號碼，attr1 填屬性名 <span class="kw">MV_CARRID</span> → 在建構子裡用這個常數取代 <span class="kw">IF_T100_MESSAGE=&gt;DEFAULT_TEXTID</span>。ADT 裡文字必須是訊息類別的訊息，不能像 SE24 那樣直接寫 OTR 文字。</li>
+    <li><b>（Unit 5）</b>Extract Method 有哪些前提？刪除未使用變數時，哪些變數不會被刪？
+      <br><i>參考答案要點：</i>程式碼必須在類別裡、在某個 METHOD…ENDMETHOD 範圍內，而且沒有語法錯誤；快捷鍵 Alt + Shift + M。PUBLIC 與 PROTECTED SECTION 的變數不會被刪。</li>
+    <li><b>（Unit 6）</b>在 ADT 建立 action 時，系統會自動產生什麼？要叫出讀寫 context 的精靈，按哪個鍵？S/4HANA 新 UI 還應該用 Web Dynpro 嗎？
+      <br><i>參考答案要點：</i>自動產生事件處理方法 <span class="kw">ONACTION&lt;ACTION_NAME&gt;</span>；精靈是 Ctrl + Space（測驗答案 C）。新 UI 應該走 Fiori（CDS + RAP + Fiori Elements／SAPUI5、OData），Web Dynpro 只做維護。</li>
+    <li><b>（Unit 7）</b>要確認開發系統的修正是否已經傳到正式系統，該用哪一種 Compare With？為什麼比較同一系統的兩個 client 沒有意義？
+      <br><i>參考答案要點：</i>Compare With → 另一個 ABAP 專案（PRD 的專案）。ABAP 程式碼跨用戶端，同一系統永遠是同一版。另外兩種是 Local History（存檔之間）和 Revision History（傳輸版本之間）。</li>
+    <li><b>（Unit 7）</b>F3、Ctrl + Shift + A、Ctrl + H、Ctrl + Shift + G 各是什麼？ABAP Doc 以什麼開頭？Feed 在專案關閉時會更新嗎？
+      <br><i>參考答案要點：</i>定義／實作導覽（測驗答案 B）、開啟開發物件（測驗答案 D）、物件搜尋（不必指定類型，可用 *）、Where-used。ABAP Doc 以 <span class="kw">"!</span> 開頭（答案 C），多行時每行都要。Feed 只在開啟的專案會更新（答案：錯）。</li>
+    <li><b>（Unit 8）</b>ATC 可以沿用哪個工具的檢查變式？預設變式是什麼、在哪裡改？ABAP Unit 的四個 fixture 各在何時執行？
+      <br><i>參考答案要點：</i>Code Inspector（<span class="tcode">SCI</span>）；預設 <b>DEFAULT</b>，在專案 Properties → ABAP Development → ABAP Test Cockpit 更改。CLASS_SETUP（類別開始前一次）、SETUP（每個測試前）、TEARDOWN（每個測試後）、CLASS_TEARDOWN（類別結束後一次）。</li>
+    <li><b>（Unit 8）</b>Profiler 的 Call Timeline 出現大量橘色細尖峰代表什麼？要看 call tree 時設定要注意什麼？
+      <br><i>參考答案要點：</i>SQL 次數太多（常見原因是迴圈內 SELECT），應該合併成 JOIN 或整批讀取；很深的綠色方法鏈則可能要合併小方法（ABAP 沒有 inline）。要看 call tree 必須<b>關掉彙總</b>。量測要等程式完全結束，並在 ABAP Traces view 按 Refresh。</li>
+    <li><b>（Unit 9）</b>External View 的語法檢查能保證什麼、不能保證什麼？在 S/4HANA 應該用什麼取代 External View 和 DB Procedure Proxy？
+      <br><i>參考答案要點：</i>只能保證 external view 存在，不能保證底層 HANA view 仍然有效；它只能在 ADT 建立（答案：對）；HANA Transport Container 指向 Delivery Unit（答案 B）。S/4HANA 改用 CDS（資料模型）與 AMDP（SQLScript），全部是 ABAP 物件，走一般傳輸。</li>
+    <li><b>（綜合・實務）</b>你接手一支舊程式，「抓成本時取第一筆」的結果時好時壞。請說明你會怎麼用 ADT 的工具定位並防止再發生。
+      <br><i>參考答案要點：</i>① 用 F3、Where-used 找到取值的 SELECT；② 用 Debug 透視圖或 Profiler 的 Database Accesses 確認 SQL；③ 發現沒有 ORDER BY：HANA 沒有預設排序，H 與 E 兩種角度的成本會隨機出現；④ 修正為明確排序或直接限定條件（固定抓 H）；⑤ 補上 ABAP Unit 測試（第 18 節的 <span class="kw">first_cost_is_type_h</span>），並用 ATC 找出其他「UP TO 1 ROWS 沒有 ORDER BY」的地方；⑥ 條件若有號碼範圍，優先改成列舉（多筆 EQ），不要用 BT 區間。</li>
+  </ol>
+</section>

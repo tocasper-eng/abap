@@ -1,0 +1,1770 @@
+<section class="chapter" id="ch03-2" data-title="OOALV 與物件導向初探、Screen 設計入門">
+  <h2 id="ch03-2">第 3-2 章 OOALV 與物件導向初探、Screen 設計入門</h2>
+  <p class="lede">這一章是從「會寫報表」跨到「會寫系統」的分水嶺。前半把 ABAP 物件導向的骨架講清楚——類別與物件、封裝的三道門（PUBLIC／PROTECTED／PRIVATE）、建構子、靜態成員、繼承與多型、介面、事件與 SET HANDLER；後半把這些觀念直接落地成 SAP 最經典的組合：<b>SE51 畫一個 Screen ＋ 放一個 Custom Control ＋ CL_GUI_CUSTOM_CONTAINER ＋ CL_GUI_ALV_GRID</b>。學完之後，你能自己做出一支可編輯、可雙擊、可自訂按鈕、上下兩塊分割視窗的互動式 ALV，也知道為什麼在 S/4HANA 時代「不學 OO 就沒有下一步」——ABAP Cloud 與 RAP 的入場券就是 OO。</p>
+
+  <div class="meta">
+    <div><b>核心 TCODE</b><span class="tcode">SE24</span><span class="tcode">SE51</span><span class="tcode">SE41</span><span class="tcode">SE80</span><span class="tcode">SE38</span><span class="tcode">SE11</span><span class="tcode">SE37</span><span class="tcode">SE93</span><span class="tcode">SE84</span><span class="tcode">ABAPDOCU</span><span class="tcode">SAT</span><span class="tcode">ST22</span></div>
+    <div><b>關鍵物件</b>CL_GUI_CUSTOM_CONTAINER、CL_GUI_ALV_GRID、CL_GUI_SPLITTER_CONTAINER、CL_GUI_DOCKING_CONTAINER、CL_GUI_DIALOGBOX_CONTAINER、CL_GUI_CONTAINER、CL_GUI_CFW、CL_SALV_TABLE、CL_SALV_EVENTS_TABLE、CL_SALV_FORM_LAYOUT_GRID、CL_SALV_FUNCTIONS_LIST、LVC_T_FCAT、LVC_S_LAYO、LVC_S_PRNT、LVC_S_SORT、LVC_S_FILT、LVC_FIELDCATALOG_MERGE、CX_ROOT、SFLIGHT、EKKO、MARA、MARC、ZVBAP_VBAK</div>
+  </div>
+
+  <h3 id="ch03-2-01">1. 為什麼一定要學 OO：ALV 三代演進與 S/4HANA 的現實</h3>
+
+  <p>老師在講義裡把 ALV 的三個世代並排比較，這張表其實就是 ABAP 三十年的縮影：</p>
+
+  <table>
+    <thead><tr><th>&nbsp;</th><th>Function ALV</th><th>GRID ALV（OOALV）</th><th>SALV（OOALV）</th></tr></thead>
+    <tbody>
+      <tr><td><b>年代</b></td><td>1996</td><td>2000</td><td>2004</td></tr>
+      <tr><td><b>平台</b></td><td>SAP R/3 3.1I</td><td>SAP R/3 4.5</td><td>SAP NetWeaver</td></tr>
+      <tr><td><b>主要 API</b></td><td>REUSE_ALV_LIST_DISPLAY<br>REUSE_ALV_GRID_DISPLAY</td><td>CL_GUI_ALV_GRID<br>REUSE_ALV_GRID_DISPLAY_LVC</td><td>CL_SALV_TABLE<br>CL_SALV_FUNCTIONS_LIST</td></tr>
+      <tr><td><b>要不要自己畫螢幕</b></td><td>不需要螢幕控制就能顯示</td><td><b>需要</b>螢幕控制（SE51 ＋ Custom Control）</td><td>不需要螢幕控制也能顯示（也可內嵌到 Container）</td></tr>
+      <tr><td><b>是不是 OO</b></td><td>非</td><td>是</td><td>是</td></tr>
+      <tr><td><b>功能</b></td><td>普通</td><td>豐富（可編輯、事件多）</td><td>豐富但受控（唯讀為主）</td></tr>
+      <tr><td><b>本圖書館案例</b></td><td>第 2-3 章整章</td><td>本章第 5～10 節</td><td>本章第 11～12 節</td></tr>
+    </tbody>
+  </table>
+
+  <div class="tip">老師的一句總結：<b>「OOALV 與 Function ALV 最大的差異就是——前者把程式放在各個物件中，不像後者一目了然。但更適合規畫複雜系統，需要更多的程式技巧。」</b></div>
+
+  <p>到了 S/4HANA，這已經不只是「哪個比較好用」的品味問題，而是硬性條件：</p>
+  <ul>
+    <li><b>ABAP Cloud 開發模型</b>只允許使用 released API（C1 contract）。絕大多數 <span class="kw">REUSE_ALV_*</span> 這類經典函數模組都<b>沒有釋出</b>給 Cloud，Function ALV 在 ABAP Cloud / BTP ABAP Environment 上根本編譯不過。</li>
+    <li><b>RAP（ABAP RESTful Application Programming Model）</b>的 Behavior Implementation 全部是 <span class="kw">CLASS ... IMPLEMENTATION</span> ＋ 介面 <span class="kw">IF_ABAP_BEHAVIOR_HANDLER</span>，不會 OO 就寫不出一行。</li>
+    <li><b>單元測試（ABAP Unit）</b>是類別導向的（<span class="kw">FOR TESTING</span>、<span class="kw">CL_ABAP_UNIT_ASSERT</span>），沒有類別就沒有測試。</li>
+    <li><b>Clean ABAP</b> 官方風格指南預設所有新程式都以類別為單位，<span class="kw">FORM/PERFORM</span> 已被標記為 obsolete。</li>
+  </ul>
+
+  <div class="warn">S/4HANA 上 <span class="kw">FORM / PERFORM</span>（Subroutine）與 <span class="kw">TABLES:</span>、<span class="kw">WITH HEADER LINE</span> 在 ABAP Cloud 語法檢查中直接是<b>語法錯誤</b>；在 On-Premise 的標準 ABAP 也只是「還能編譯的過時語法」。本章講義原文大量使用 FORM，我們保留它的教學順序，但範例一律改寫成<b>本地類別（Local Class）的方法</b>。</div>
+
+  <h3 id="ch03-2-02">2. OO 基本觀念：類別、物件、封裝</h3>
+
+  <p>講義開宗明義的定義，先背下來：</p>
+  <ul>
+    <li><b>類（Class）</b>：用來描述「具有相同屬性和方法的物件」的集合。它定義了該集合中每個物件所共有的屬性（Attributes）和方法（Methods）。類別是<b>藍圖</b>。</li>
+    <li><b>物件（Object）</b>：是類的<b>實例（Instance）</b>，是一個現實實體的抽象。一個物件可以被認為是「把資料（屬性）和程式（方法）封裝在一起」的實體。</li>
+    <li><b>方法（Methods）</b>：對物件的操作。</li>
+    <li><b>物件是動態的概念</b>：其中的屬性反映了物件<b>當前的狀態</b>。</li>
+    <li><b>OOALV 就是利用 ALV 的一個實例（Instance）來顯示的。</b></li>
+  </ul>
+
+  <p>ABAP 的類別分兩種存放位置，兩者語法完全相同，差別只在「誰看得到」：</p>
+
+  <table>
+    <thead><tr><th>&nbsp;</th><th>本地類別 Local Class</th><th>全域類別 Global Class</th></tr></thead>
+    <tbody>
+      <tr><td><b>建立工具</b></td><td>直接寫在程式（SE38／SE80）裡，或 Include <span class="kw">*_CL1</span></td><td><span class="tcode">SE24</span> 或 SE80 → Class/Interface；Eclipse ADT 建 Class</td></tr>
+      <tr><td><b>命名</b></td><td>習慣用 <span class="kw">LCL_</span> 開頭（Local CLass）</td><td>客製一律 <span class="kw">ZCL_</span> / <span class="kw">YCL_</span>；SAP 標準是 <span class="kw">CL_</span></td></tr>
+      <tr><td><b>可見範圍</b></td><td>只有該支程式看得到</td><td>整個系統都能用，可被別的程式、BAdI、RAP 引用</td></tr>
+      <tr><td><b>什麼時候用</b></td><td>ALV 事件 handler、只給這支程式用的小工具</td><td>共用邏輯、要被單元測試、要在 SE24 被 F4 找到</td></tr>
+      <tr><td><b>類比</b></td><td>程式內的 FORM</td><td>Function Module（SE37）</td></tr>
+    </tbody>
+  </table>
+
+  <div class="note">老師特別把「<b>SE24 vs SE37</b>」擺在一起講：SE37 的 Function Module 是「一包程序」，SE24 的 Class 是「一包狀態 ＋ 一包程序」。學 OO 的第一個練習，就是用 <span class="tcode">SE24</span> 打開 <b>CL_GUI_CUSTOM_CONTAINER</b>，觀察三個頁籤：<b>Attributes（屬性）／Methods（方法）／Events（事件）</b>——不必看懂全部，重點是建立「原來一個 SAP 標準物件長這樣」的直覺。</div>
+
+  <p>類別的完整宣告骨架（DEFINITION ／ IMPLEMENTATION 分離）：</p>
+
+<pre><code class="abap">"====================================================================
+" 本地類別：定義區（DEFINITION）——只宣告「有什麼」
+"====================================================================
+CLASS lcl_flight DEFINITION.
+
+  PUBLIC SECTION.
+    "-- 常數：全大寫，只能讀不能寫
+    CONSTANTS: c_currency TYPE waers VALUE 'TWD'.
+
+    "-- 靜態屬性（類別屬性）：所有物件共用同一份
+    CLASS-DATA: gv_count TYPE i.
+
+    "-- 實例屬性：每個物件各有一份
+    DATA: mv_carrid TYPE sflight-carrid READ-ONLY,
+          mv_connid TYPE sflight-connid READ-ONLY.
+
+    "-- 建構子：CREATE OBJECT / NEW #( ) 時自動執行
+    METHODS constructor
+      IMPORTING iv_carrid TYPE sflight-carrid
+                iv_connid TYPE sflight-connid.
+
+    "-- 一般實例方法
+    METHODS get_seats_free
+      RETURNING VALUE(rv_free) TYPE i.
+
+    METHODS describe
+      RETURNING VALUE(rv_text) TYPE string.
+
+    "-- 靜態方法：不需要物件就能呼叫，用 =&gt; 存取
+    CLASS-METHODS get_instance_count
+      RETURNING VALUE(rv_count) TYPE i.
+
+  PROTECTED SECTION.
+    "-- 只有自己和「子類別」看得到
+    METHODS read_db.
+
+  PRIVATE SECTION.
+    "-- 只有自己看得到（外面完全碰不到）
+    DATA: ms_flight TYPE sflight.
+
+ENDCLASS.
+
+"====================================================================
+" 本地類別：實作區（IMPLEMENTATION）——寫「怎麼做」
+"====================================================================
+CLASS lcl_flight IMPLEMENTATION.
+
+  METHOD constructor.
+    mv_carrid = iv_carrid.
+    mv_connid = iv_connid.
+    read_db( ).                    " 呼叫自己的 protected 方法，不必寫 me-&gt;
+    gv_count = gv_count + 1.       " 靜態屬性：每建一個物件就 +1
+  ENDMETHOD.
+
+  METHOD read_db.
+    "-- 明列欄位，主機變數一律加 @
+    SELECT SINGLE carrid, connid, fldate, seatsmax, seatsocc
+      FROM sflight
+      WHERE carrid = @mv_carrid
+        AND connid = @mv_connid
+      INTO CORRESPONDING FIELDS OF @ms_flight.
+  ENDMETHOD.
+
+  METHOD get_seats_free.
+    rv_free = ms_flight-seatsmax - ms_flight-seatsocc.
+  ENDMETHOD.
+
+  METHOD describe.
+    "-- 字串範本比 CONCATENATE 清楚得多
+    rv_text = |{ mv_carrid }-{ mv_connid } 剩餘座位 { get_seats_free( ) }|.
+  ENDMETHOD.
+
+  METHOD get_instance_count.
+    rv_count = gv_count.
+  ENDMETHOD.
+
+ENDCLASS.</code></pre>
+
+  <table>
+    <thead><tr><th>可見性區段</th><th>誰能存取</th><th>實務原則</th></tr></thead>
+    <tbody>
+      <tr><td><b>PUBLIC SECTION</b></td><td>任何人（外部程式、子類別、自己）</td><td>只放「對外承諾的介面」。屬性盡量不要放 public，要放就加 <span class="kw">READ-ONLY</span></td></tr>
+      <tr><td><b>PROTECTED SECTION</b></td><td>自己 ＋ 所有子類別</td><td>給繼承用的鉤子（hook）方法放這裡</td></tr>
+      <tr><td><b>PRIVATE SECTION</b></td><td>只有自己（同一個類別）</td><td><b>預設全部放這裡</b>，需要才往上開。這就是「封裝」</td></tr>
+    </tbody>
+  </table>
+
+  <div class="tip">口訣：<b>「屬性 private、方法 public、繼承用 protected」</b>。想改屬性就寫 <span class="kw">SET_</span> 方法，想讀就寫 <span class="kw">GET_</span> 方法或加 <span class="kw">READ-ONLY</span>——這樣未來欄位改型別，外部程式不必跟著改。</div>
+
+  <h3 id="ch03-2-03">3. 建立物件：CREATE OBJECT 與 NEW #( )、參照變數的生死</h3>
+
+  <p>ABAP 的物件變數叫做<b>參照變數（Reference Variable）</b>，宣告時用 <span class="kw">TYPE REF TO</span>。它本身<b>不是物件</b>，只是一根指向物件的指標；剛宣告時是 <span class="kw">INITIAL</span>（空指標），必須「建立物件」之後才指得到東西。</p>
+
+<pre><code class="abap">"====================================================================
+" 三種建立物件的寫法（結果相同，新程式一律用第三種）
+"====================================================================
+DATA lo_flight TYPE REF TO lcl_flight.
+
+"-- 舊：CREATE OBJECT（講義原文的寫法，S/4 仍可用但不推薦）
+CREATE OBJECT lo_flight
+  EXPORTING
+    iv_carrid = 'AA'
+    iv_connid = '0017'.
+
+"-- 中：NEW 建構式運算子，變數已宣告 → 型別可用 #
+lo_flight = NEW #( iv_carrid = 'AA' iv_connid = '0017' ).
+
+"-- 新（推薦）：內嵌宣告 ＋ NEW，一行搞定
+DATA(lo_flight2) = NEW lcl_flight( iv_carrid = 'AA' iv_connid = '0017' ).
+
+"-- 呼叫方法：實例用 -&gt;，靜態用 =&gt;
+DATA(lv_free) = lo_flight2-&gt;get_seats_free( ).
+DATA(lv_txt)  = lo_flight2-&gt;describe( ).
+DATA(lv_cnt)  = lcl_flight=&gt;get_instance_count( ).   " 靜態方法不需要物件
+
+"-- 判斷參照是否有效：用 IS BOUND，不要用 IS INITIAL 判斷「物件活著沒」
+IF lo_flight2 IS BOUND.
+  cl_demo_output=&gt;write( lv_txt ).
+ENDIF.
+
+"-- 解除參照（讓 Garbage Collector 有機會回收）
+CLEAR lo_flight2.        " 或 FREE lo_flight2.</code></pre>
+
+  <div class="note">講義提醒：<span class="kw">CREATE OBJECT</span> 這個關鍵字後面「<b>接冒號</b>」或「<b>不接冒號</b>」都可以——<span class="kw">CREATE OBJECT: a EXPORTING ...</span> 是鏈式寫法。混用時很容易漏掉句點，這是初學者第一個常見編譯錯誤。</div>
+
+  <div class="warn"><b>參照變數 ≠ 物件</b>。<span class="kw">lo_a = lo_b</span> 是把「指標」複製過去，兩個變數指向<b>同一個</b>物件，改 A 就會影響 B。要真正複製內容必須自己寫 copy 方法或用 <span class="kw">CORRESPONDING #( )</span> 搬結構。</div>
+
+  <h3 id="ch03-2-04">4. 建構子、靜態成員、繼承、多型、介面、FRIENDS</h3>
+
+  <h4>4-1 建構子 CONSTRUCTOR 與 CLASS_CONSTRUCTOR</h4>
+  <ul>
+    <li><span class="kw">CONSTRUCTOR</span>（實例建構子）：每次建立物件時自動執行一次，只能有 <span class="kw">IMPORTING</span> 參數與 <span class="kw">RAISING</span>，<b>不能有 RETURNING / EXPORTING</b>。</li>
+    <li><span class="kw">CLASS_CONSTRUCTOR</span>（靜態建構子）：整個程式執行期間，在<b>第一次用到這個類別之前</b>自動執行一次，沒有任何參數。適合載入設定檔、讀常數表。</li>
+    <li>子類別的 CONSTRUCTOR <b>必須</b>先呼叫 <span class="kw">super-&gt;constructor( )</span> 才能碰自己的屬性。</li>
+  </ul>
+
+<pre><code class="abap">CLASS lcl_config DEFINITION CREATE PRIVATE.
+  PUBLIC SECTION.
+    CLASS-METHODS class_constructor.          " 靜態建構子，無參數
+    CLASS-METHODS get_plant_name
+      IMPORTING iv_werks       TYPE werks_d
+      RETURNING VALUE(rv_name) TYPE name1.
+  PRIVATE SECTION.
+    CLASS-DATA gt_t001w TYPE SORTED TABLE OF t001w
+                        WITH UNIQUE KEY werks.
+ENDCLASS.
+
+CLASS lcl_config IMPLEMENTATION.
+
+  METHOD class_constructor.
+    "-- 全程式只會跑這一次：把工廠主檔一次讀進記憶體當快取
+    SELECT werks, name1
+      FROM t001w
+      INTO CORRESPONDING FIELDS OF TABLE @gt_t001w.
+  ENDMETHOD.
+
+  METHOD get_plant_name.
+    "-- 用 line_exists 判斷，比 READ TABLE + sy-subrc 乾淨
+    IF line_exists( gt_t001w[ werks = iv_werks ] ).
+      rv_name = gt_t001w[ werks = iv_werks ]-name1.
+    ELSE.
+      rv_name = |工廠 { iv_werks } 不存在|.
+    ENDIF.
+  ENDMETHOD.
+
+ENDCLASS.</code></pre>
+
+  <div class="tip"><span class="kw">CLASS ... DEFINITION CREATE PRIVATE</span> 表示「外面不准 NEW 我」，只能透過我提供的靜態工廠方法取得實例——這就是 <b>Singleton／Factory</b> 樣式。<span class="kw">CL_SALV_TABLE=&gt;FACTORY( )</span> 用的正是這一招，所以你永遠不會寫 <span class="kw">NEW cl_salv_table( )</span>。</div>
+
+  <h4>4-2 繼承 INHERITING FROM、多型、REDEFINITION</h4>
+
+<pre><code class="abap">"-- 父類別：抽象類別不能被實例化，只能被繼承
+CLASS lcl_doc DEFINITION ABSTRACT.
+  PUBLIC SECTION.
+    METHODS constructor IMPORTING iv_id TYPE char10.
+    "-- 抽象方法：只有簽章沒有實作，子類別「必須」實作
+    METHODS get_title ABSTRACT RETURNING VALUE(rv_title) TYPE string.
+    "-- 一般方法：子類別可以選擇性覆寫
+    METHODS print.
+  PROTECTED SECTION.
+    DATA mv_id TYPE char10.
+ENDCLASS.
+
+CLASS lcl_doc IMPLEMENTATION.
+  METHOD constructor.
+    mv_id = iv_id.
+  ENDMETHOD.
+  METHOD print.
+    cl_demo_output=&gt;write( |【{ get_title( ) }】{ mv_id }| ).
+  ENDMETHOD.
+ENDCLASS.
+
+"-- 子類別 1：銷售訂單
+CLASS lcl_so DEFINITION INHERITING FROM lcl_doc.
+  PUBLIC SECTION.
+    METHODS get_title REDEFINITION.
+ENDCLASS.
+CLASS lcl_so IMPLEMENTATION.
+  METHOD get_title.
+    rv_title = '銷售訂單'.
+  ENDMETHOD.
+ENDCLASS.
+
+"-- 子類別 2：採購單，FINAL 表示不准再被繼承
+CLASS lcl_po DEFINITION INHERITING FROM lcl_doc FINAL.
+  PUBLIC SECTION.
+    METHODS get_title REDEFINITION.
+    METHODS print     REDEFINITION.
+ENDCLASS.
+CLASS lcl_po IMPLEMENTATION.
+  METHOD get_title.
+    rv_title = '採購單'.
+  ENDMETHOD.
+  METHOD print.
+    super-&gt;print( ).                       " 先做父類別原本要做的事
+    cl_demo_output=&gt;write( '（需採購主管核准）' ).
+  ENDMETHOD.
+ENDCLASS.
+
+"-- 用父類別參照當內表行型別，才裝得下所有子類別的物件
+TYPES ty_doc_tab TYPE STANDARD TABLE OF REF TO lcl_doc WITH EMPTY KEY.
+
+START-OF-SELECTION.
+  "-- 多型（Polymorphism）：同一個父型別的參照，跑出不同行為
+  DATA(lt_docs) = VALUE ty_doc_tab(
+      ( NEW lcl_so( '4500001234' ) )
+      ( NEW lcl_po( '4700005678' ) ) ).
+
+  LOOP AT lt_docs INTO DATA(lo_doc).
+    lo_doc-&gt;print( ).      " 呼叫的是同一個 print，執行的卻是各自的版本
+  ENDLOOP.</code></pre>
+
+  <table>
+    <thead><tr><th>關鍵字</th><th>意思</th><th>常見用途</th></tr></thead>
+    <tbody>
+      <tr><td><span class="kw">INHERITING FROM</span></td><td>繼承（ABAP 只支援<b>單一繼承</b>）</td><td>共用邏輯放父類別</td></tr>
+      <tr><td><span class="kw">ABSTRACT</span>（類別）</td><td>不能被實例化</td><td>當共同基底</td></tr>
+      <tr><td><span class="kw">ABSTRACT</span>（方法）</td><td>只有簽章沒有實作，子類別必須 REDEFINITION</td><td>強制子類別填空</td></tr>
+      <tr><td><span class="kw">FINAL</span>（類別）</td><td>不能再被繼承</td><td>大部分實作類別都該加 FINAL</td></tr>
+      <tr><td><span class="kw">FINAL</span>（方法）</td><td>子類別不能再覆寫這個方法</td><td>保護關鍵演算法</td></tr>
+      <tr><td><span class="kw">REDEFINITION</span></td><td>覆寫父類別方法（<b>不可改簽章</b>）</td><td>多型的實作手段</td></tr>
+      <tr><td><span class="kw">super-&gt;</span></td><td>呼叫父類別的版本</td><td>擴充而非取代原行為</td></tr>
+      <tr><td><span class="kw">me-&gt;</span></td><td>指向自己這個物件</td><td>區分同名的區域變數與屬性</td></tr>
+    </tbody>
+  </table>
+
+  <div class="warn"><b>REDEFINITION 不能改參數</b>。想「多加一個參數」只能新增一個方法，或改用介面。另外 <span class="kw">PRIVATE</span> 的方法<b>不能</b>被 REDEFINITION——要讓子類別能覆寫，父類別至少要放 <span class="kw">PROTECTED</span>。</div>
+
+  <h4>4-3 介面 INTERFACE：ABAP 版的「多重繼承」</h4>
+
+<pre><code class="abap">"-- 介面：只有宣告，沒有實作；沒有可見性區段（一律 public）
+INTERFACE lif_printable.
+  METHODS to_line RETURNING VALUE(rv_line) TYPE string.
+  CONSTANTS c_sep TYPE c LENGTH 1 VALUE ';'.
+ENDINTERFACE.
+
+INTERFACE lif_checkable.
+  METHODS is_valid RETURNING VALUE(rv_ok) TYPE abap_bool.
+ENDINTERFACE.
+
+"-- 一個類別可以實作「多個」介面，這就是 ABAP 的多重繼承替代方案
+CLASS lcl_material DEFINITION FINAL.
+  PUBLIC SECTION.
+    INTERFACES: lif_printable,
+                lif_checkable.
+    METHODS constructor IMPORTING iv_matnr TYPE matnr.
+  PRIVATE SECTION.
+    DATA mv_matnr TYPE matnr.
+ENDCLASS.
+
+CLASS lcl_material IMPLEMENTATION.
+  METHOD constructor.
+    mv_matnr = iv_matnr.
+  ENDMETHOD.
+
+  "-- 實作介面方法時，名稱要用「介面名~方法名」（波浪號）
+  METHOD lif_printable~to_line.
+    rv_line = |MATNR{ lif_printable=&gt;c_sep }{ mv_matnr }|.
+  ENDMETHOD.
+
+  METHOD lif_checkable~is_valid.
+    SELECT SINGLE @abap_true
+      FROM mara
+      WHERE matnr = @mv_matnr
+      INTO @rv_ok.
+  ENDMETHOD.
+ENDCLASS.
+
+START-OF-SELECTION.
+  "-- 用介面型別的參照持有物件：呼叫端只認介面，不認實作類別
+  DATA(lo_p) = CAST lif_printable( NEW lcl_material( '000000000000001234' ) ).
+  cl_demo_output=&gt;write( lo_p-&gt;to_line( ) ).
+
+  "-- 想換回別的介面 / 檢查型別，用 CAST 搭配 TRY，或用 IS INSTANCE OF
+  DATA(lo_obj) = CAST object( lo_p ).
+  IF lo_obj IS INSTANCE OF lif_checkable.
+    DATA(lo_c) = CAST lif_checkable( lo_obj ).
+    cl_demo_output=&gt;write( COND string( WHEN lo_c-&gt;is_valid( ) THEN '料號存在'
+                                        ELSE '料號不存在' ) ).
+  ENDIF.</code></pre>
+
+  <div class="tip">介面在 SAP 標準隨處可見，而且是最好的「白名單」：<span class="kw">IF_SALV_C_SELECTION_MODE</span>、<span class="kw">IF_SALV_C_REFRESH</span>、<span class="kw">IF_ABAP_BEHAVIOR_HANDLER</span>（RAP）、<span class="kw">IF_OO_ADT_CLASSRUN</span>（Eclipse 的 main 方法）。看到 <span class="kw">IF_</span> 開頭就知道是介面。</div>
+
+  <h4>4-4 FRIENDS：把私有大門開一條縫</h4>
+
+<pre><code class="abap">"-- 讓 lcl_alv_handler 可以直接存取 lcl_report 的 PRIVATE 成員
+CLASS lcl_alv_handler DEFINITION DEFERRED.      " 前向宣告（尚未定義先報名）
+
+CLASS lcl_report DEFINITION FINAL
+  FRIENDS lcl_alv_handler.                      " 我把 private 開放給這位朋友
+  PUBLIC SECTION.
+    METHODS run.
+  PRIVATE SECTION.
+    DATA mt_data TYPE STANDARD TABLE OF sflight WITH EMPTY KEY.
+ENDCLASS.</code></pre>
+
+  <div class="warn"><b>FRIENDS 是單向的，而且會破壞封裝</b>。實務上只在兩個地方合理使用：(1) 單元測試類別要看被測類別的內部狀態（<span class="kw">LOCAL FRIENDS ltcl_test</span>）；(2) 同一支程式裡 ALV 事件 handler 需要直接改主程式的內表。除此之外請改用 public 方法。</div>
+
+  <h3 id="ch03-2-05">5. 事件 EVENTS：RAISE EVENT 與 SET HANDLER</h3>
+
+  <p>事件是 OOALV 的靈魂——「使用者雙擊了某一格」這件事，是 <span class="kw">CL_GUI_ALV_GRID</span> 物件<b>丟出來（RAISE）</b>的，你要事先<b>登記（SET HANDLER）</b>才收得到。先用自製類別把機制看懂：</p>
+
+<pre><code class="abap">"====================== 事件發送端 ======================
+CLASS lcl_stock DEFINITION.
+  PUBLIC SECTION.
+    "-- 宣告事件；EXPORTING 的參數一律是 VALUE( ) 傳值
+    EVENTS: below_safety
+              EXPORTING VALUE(ev_matnr) TYPE matnr
+                        VALUE(ev_qty)   TYPE menge_d.
+    METHODS issue IMPORTING iv_matnr TYPE matnr
+                            iv_qty   TYPE menge_d.
+  PRIVATE SECTION.
+    DATA mv_onhand TYPE menge_d VALUE 100.
+ENDCLASS.
+
+CLASS lcl_stock IMPLEMENTATION.
+  METHOD issue.
+    mv_onhand = mv_onhand - iv_qty.
+    IF mv_onhand &lt; 20.
+      "-- 丟出事件；有登記的 handler 才會被叫到，沒人登記就自動忽略
+      RAISE EVENT below_safety
+        EXPORTING ev_matnr = iv_matnr
+                  ev_qty   = mv_onhand.
+    ENDIF.
+  ENDMETHOD.
+ENDCLASS.
+
+"====================== 事件接收端 ======================
+CLASS lcl_alert DEFINITION.
+  PUBLIC SECTION.
+    "-- FOR EVENT 事件名 OF 類別名；IMPORTING 只列你想收的參數（名稱要一致）
+    METHODS on_low FOR EVENT below_safety OF lcl_stock
+      IMPORTING ev_matnr ev_qty sender.
+ENDCLASS.
+
+CLASS lcl_alert IMPLEMENTATION.
+  METHOD on_low.
+    "-- sender 是系統自動提供的：誰丟出這個事件
+    MESSAGE |料號 { ev_matnr } 低於安全庫存，剩 { ev_qty NUMBER = USER }| TYPE 'I'.
+  ENDMETHOD.
+ENDCLASS.
+
+START-OF-SELECTION.
+  DATA(lo_stock) = NEW lcl_stock( ).
+  DATA(lo_alert) = NEW lcl_alert( ).
+
+  "-- 登記：把 lo_alert 的 on_low 掛到 lo_stock 這個物件的事件上
+  SET HANDLER lo_alert-&gt;on_low FOR lo_stock.
+
+  "-- 想一次登記「所有同類別的物件」：FOR ALL INSTANCES
+  " SET HANDLER lo_alert-&gt;on_low FOR ALL INSTANCES.
+
+  lo_stock-&gt;issue( iv_matnr = '000000000000001234' iv_qty = 90 ).
+
+  "-- 取消登記
+  SET HANDLER lo_alert-&gt;on_low FOR lo_stock ACTIVATION space.</code></pre>
+
+  <table>
+    <thead><tr><th>語法</th><th>說明</th></tr></thead>
+    <tbody>
+      <tr><td><span class="kw">EVENTS ev EXPORTING VALUE(p) TYPE t</span></td><td>宣告實例事件（參數只能傳值）</td></tr>
+      <tr><td><span class="kw">CLASS-EVENTS</span></td><td>靜態事件，用 <span class="kw">FOR ALL INSTANCES</span> 或直接對類別登記</td></tr>
+      <tr><td><span class="kw">RAISE EVENT ev EXPORTING ...</span></td><td>發送事件；<b>同步</b>執行所有 handler，執行完才回到原處</td></tr>
+      <tr><td><span class="kw">FOR EVENT ev OF cls</span></td><td>宣告 handler 方法</td></tr>
+      <tr><td><span class="kw">IMPORTING ... sender</span></td><td>handler 可以額外收 <span class="kw">sender</span>（發送者參照）</td></tr>
+      <tr><td><span class="kw">SET HANDLER h FOR o</span></td><td>登記單一物件</td></tr>
+      <tr><td><span class="kw">SET HANDLER h FOR ALL INSTANCES</span></td><td>登記所有同類別物件（含未來建立的）</td></tr>
+      <tr><td><span class="kw">... ACTIVATION space</span></td><td>取消登記</td></tr>
+    </tbody>
+  </table>
+
+  <div class="warn"><b>SET HANDLER 會建立一個「強參照」</b>：只要事件發送者還活著，handler 物件就不會被回收。ALV 程式如果每次 PBO 都 <span class="kw">NEW</span> 一個 handler 又 SET HANDLER，記憶體會一路長上去（Memory Leak）。正解是：<b>handler 物件只建立一次</b>（用 <span class="kw">IF lo_handler IS NOT BOUND</span> 包起來），這也是本章第 8 節那個 <span class="kw">IF wcl_alv IS INITIAL</span> 判斷式真正的用意。</div>
+
+  <h3 id="ch03-2-06">6. 例外處理：TRY / CATCH cx_root</h3>
+
+  <p>講義第 15 節「從程式師的角度學 OOP」用的是最經典的例子：<b>除以零不再 short dump，而是被 catch 起來</b>。這正是 OO 帶來的最大實務好處之一——類別式例外（Class-based Exception）。</p>
+
+<pre><code class="abap">REPORT zrep_error_check_01.
+
+DATA: gv_result TYPE p LENGTH 8 DECIMALS 2.
+
+"-- 現代寫法：例外參照用內嵌宣告 DATA(lx)，型別由 CATCH 決定
+DATA: gv_dividend TYPE i VALUE 19,
+      gv_divisor  TYPE i VALUE 0.
+
+TRY.
+    "-- 除以零：舊時代直接 dump，現在會丟 CX_SY_ZERODIVIDE
+    gv_result = gv_dividend / gv_divisor.
+    cl_demo_output=&gt;write( |結果 = { gv_result }| ).
+
+  CATCH cx_sy_zerodivide INTO DATA(lx_zero).
+    "-- 抓「具體」的例外，訊息才有意義
+    cl_demo_output=&gt;write( |除數為零：{ lx_zero-&gt;get_text( ) }| ).
+
+  CATCH cx_root INTO DATA(lx_root).
+    "-- cx_root 是所有例外的共同祖先，放最後當保險絲
+    cl_demo_output=&gt;write( lx_root-&gt;get_text( ) ).
+
+  CLEANUP.
+    "-- 只有在例外「往外傳」時才會執行，用來釋放資源（關檔、解鎖）
+
+ENDTRY.
+
+"-- 另一個常見陷阱：字串取子字串超出長度 → CX_SY_RANGE_OUT_OF_BOUNDS
+TRY.
+    DATA(lv_s) = CONV string( '1234567890' ).
+    DATA(lv_c) = lv_s+11(1).           " 位置 11 超出範圍
+  CATCH cx_sy_range_out_of_bounds INTO DATA(lx_rng).
+    cl_demo_output=&gt;write( lx_rng-&gt;get_text( ) ).
+ENDTRY.</code></pre>
+
+  <table>
+    <thead><tr><th>例外類別</th><th>繼承自</th><th>意義</th></tr></thead>
+    <tbody>
+      <tr><td><span class="kw">CX_STATIC_CHECK</span></td><td>CX_ROOT</td><td>語法檢查會強制你 CATCH 或在方法上宣告 RAISING（自訂商業例外用這個）</td></tr>
+      <tr><td><span class="kw">CX_DYNAMIC_CHECK</span></td><td>CX_ROOT</td><td>執行期才檢查（例：CX_SY_CONVERSION_NO_NUMBER）</td></tr>
+      <tr><td><span class="kw">CX_NO_CHECK</span></td><td>CX_ROOT</td><td>不強制處理，一路往上傳（例：CX_SY_DYNAMIC_OSQL_SEMANTICS）</td></tr>
+    </tbody>
+  </table>
+
+  <div class="tip">自訂例外請在 <span class="tcode">SE24</span> 建 <span class="kw">ZCX_XXX</span>，繼承 <span class="kw">CX_STATIC_CHECK</span>，勾「with message class」就能把 T100 訊息掛進去，<span class="kw">get_text( )</span> 直接回傳中文訊息。</div>
+  <div class="warn">不要寫 <span class="kw">CATCH cx_root</span> 之後<b>什麼都不做</b>（空的 CATCH 區塊）。這是 SAP 程式碼審查最常被打槍的寫法，錯誤被吃掉之後線上問題完全查不到。至少要 <span class="kw">MESSAGE</span> 或寫 Application Log（BAL_*）。</div>
+
+  <h3 id="ch03-2-07">7. Screen 設計入門：SE51、PBO / PAI、MODULE</h3>
+
+  <p>OOALV 的第一步不是寫程式，而是<b>畫一個螢幕</b>。這一節把 Dialog 螢幕的基本結構講清楚，第 4-2 章會再深入 Tabstrip 與 Table Control。</p>
+
+  <h4>7-1 一個 Screen 由四個部分組成</h4>
+  <table>
+    <thead><tr><th>組成</th><th>SE51 頁籤 / 工具</th><th>內容</th></tr></thead>
+    <tbody>
+      <tr><td><b>Attributes（屬性）</b></td><td>Attributes</td><td>Screen number、Short description、<b>Screen type</b>（Normal／Subscreen／Modal dialog box）、<b>Next screen</b>、OK code 欄位名稱</td></tr>
+      <tr><td><b>Element list（元素清單）</b></td><td>Element list</td><td>畫面上每個欄位的名稱、型別、長度、輸入／輸出屬性</td></tr>
+      <tr><td><b>Layout（版面）</b></td><td>Layout（Screen Painter）</td><td>用滑鼠拉出 Text、I/O Field、Checkbox、Radio button、Pushbutton、Frame、<b>Custom Control</b>、Subscreen area、Tabstrip、Table Control</td></tr>
+      <tr><td><b>Flow logic（流程邏輯）</b></td><td>Flow logic</td><td><span class="kw">PROCESS BEFORE OUTPUT</span> / <span class="kw">PROCESS AFTER INPUT</span> / <span class="kw">PROCESS ON VALUE-REQUEST</span>（F4）/ <span class="kw">PROCESS ON HELP-REQUEST</span>（F1）</td></tr>
+    </tbody>
+  </table>
+
+  <h4>7-2 事件流程：PBO → 使用者操作 → PAI</h4>
+  <ul>
+    <li><b>PBO（Process Before Output）</b>：畫面<b>顯示之前</b>執行。負責：<span class="kw">SET PF-STATUS</span>、<span class="kw">SET TITLEBAR</span>、把內部變數的值搬到螢幕欄位、<span class="kw">LOOP AT SCREEN</span> 控制欄位顯示/唯讀、建立 ALV 物件。</li>
+    <li>畫面顯示，使用者輸入、按按鈕或選單。</li>
+    <li><b>PAI（Process After Input）</b>：使用者按下任何<b>功能鍵</b>之後執行。負責：檢核輸入、依 <span class="kw">OK_CODE</span> 決定下一步。</li>
+    <li>螢幕欄位與程式中<b>同名的全域變數</b>會自動雙向搬運（PBO 前程式→螢幕，PAI 前螢幕→程式）。這是 Dialog 程式最重要的潛規則。</li>
+  </ul>
+
+<pre><code class="abap">*-- SE51 → Flow logic（螢幕 8000）------------------------------------
+PROCESS BEFORE OUTPUT.
+  MODULE status_8000.          " 設狀態列與標題
+  MODULE display_alv.          " 建立 / 刷新 ALV
+
+PROCESS AFTER INPUT.
+  MODULE exit_8000 AT EXIT-COMMAND.   " 型別 E 的功能碼，跳過所有檢核先執行
+  MODULE user_command_8000.
+
+*-- 欄位層級檢核：CHAIN ... ENDCHAIN 讓整組欄位一起「亮起來」可重新輸入
+  CHAIN.
+    FIELD: p_werks, p_matnr.
+    MODULE check_material ON CHAIN-REQUEST.   " 只有值被改過才執行
+  ENDCHAIN.
+
+  FIELD p_menge MODULE check_qty ON REQUEST.  " 單一欄位檢核
+
+*-- F4（搜尋說明）與 F1（欄位說明）
+PROCESS ON VALUE-REQUEST.
+  FIELD p_matnr MODULE f4_matnr.
+
+PROCESS ON HELP-REQUEST.
+  FIELD p_matnr MODULE f1_matnr.</code></pre>
+
+  <div class="warn"><b>CHAIN / FIELD 的關鍵作用</b>：在 <span class="kw">FIELD</span> 或 <span class="kw">CHAIN</span> 區塊內的 MODULE 中發出 <span class="kw">MESSAGE ... TYPE 'E'</span>，只有<b>該欄位（或整個 CHAIN 內的欄位）會變成可輸入</b>，其他欄位鎖住；若 MODULE 沒有寫在 FIELD/CHAIN 裡就丟 E 訊息，整個畫面會全部鎖死，使用者只能按「取消」離開——這是 Dialog 程式最常見的災難。</div>
+
+  <h4>7-3 OK_CODE 的正確處理方式</h4>
+
+<pre><code class="abap">*-- 主程式宣告：兩個變數，一個接畫面、一個給邏輯用
+DATA: ok_code TYPE sy-ucomm,      " 螢幕 Attributes 的「OK code」欄位要填 OK_CODE
+      save_ok TYPE sy-ucomm.
+
+MODULE user_command_8000 INPUT.
+
+  save_ok = ok_code.
+  CLEAR ok_code.        "★★ 一定要清空！否則下一次進 PAI 會沿用舊功能碼
+
+  CASE save_ok.
+    WHEN 'BACK' OR 'EXIT' OR 'CANCEL'.
+      "-- LEAVE TO SCREEN 0：回到呼叫者（正常退出）
+      LEAVE TO SCREEN 0.
+
+    WHEN 'ERP300'.                      " 自訂按鈕（講義 Home Work 第 3 題）
+      MESSAGE 'ERP300' TYPE 'I'.
+      LEAVE PROGRAM.                    " 直接結束整支程式
+
+    WHEN 'REFRESH'.
+      PERFORM get_data.                 " 或呼叫方法重讀資料
+      go_grid-&gt;refresh_table_display(
+        EXPORTING is_stable = VALUE lvc_s_stbl( row = abap_true col = abap_true )
+        EXCEPTIONS finished = 1 OTHERS = 2 ).
+
+    WHEN OTHERS.
+  ENDCASE.
+
+ENDMODULE.
+
+*-- AT EXIT-COMMAND 專用模組（功能碼型別必須在 SE41 設成 E）
+MODULE exit_8000 INPUT.
+  CASE ok_code.
+    WHEN 'ECAN'.
+      LEAVE TO SCREEN 0.
+  ENDCASE.
+ENDMODULE.</code></pre>
+
+  <table>
+    <thead><tr><th>離開指令</th><th>行為</th><th>用在哪</th></tr></thead>
+    <tbody>
+      <tr><td><span class="kw">LEAVE TO SCREEN 0</span></td><td>結束目前螢幕，回到呼叫它的地方（呼叫堆疊往回一層）</td><td><b>最標準的退出方式</b></td></tr>
+      <tr><td><span class="kw">LEAVE TO SCREEN 9000</span></td><td>跳到指定螢幕（不回原處）</td><td>畫面串接</td></tr>
+      <tr><td><span class="kw">SET SCREEN 0. LEAVE SCREEN.</span></td><td>等同於 LEAVE TO SCREEN 0（舊寫法）</td><td>維護舊碼會看到</td></tr>
+      <tr><td><span class="kw">LEAVE PROGRAM</span></td><td>直接結束整支程式（不管堆疊）</td><td>講義範例用它；但若程式被 SUBMIT 呼叫會一起被砍，正式程式建議用 LEAVE TO SCREEN 0</td></tr>
+      <tr><td><span class="kw">LEAVE TO TRANSACTION 'VA03'</span></td><td>跳到別的交易碼</td><td>單據跳轉</td></tr>
+      <tr><td><span class="kw">CALL SCREEN 8100 STARTING AT 10 5 ENDING AT 80 20</span></td><td>彈出對話視窗（螢幕型別要設 Modal dialog box）</td><td>明細視窗</td></tr>
+    </tbody>
+  </table>
+
+  <div class="warn"><b>講義親身踩過的坑</b>：「測試時若無法返回，應是 <b>NEXT SCREEN 沒清空</b>。」<br>
+  ・SE51 的 <b>Next screen</b> 若留空 → 執行完 PAI 之後<b>停在原畫面</b>（自己叫自己），這是互動式畫面要的行為。<br>
+  ・若填 <b>0</b> → PAI 跑完就離開。<br>
+  ・老師 2024/12/27 的補充：「畫面上按自己追加的鈕才會結束（注意 SCREEN 的 <b>NEXT SCREEN 也要設 8000</b>）」——填自己的螢幕號 8000，效果等同留空，都是「留在原畫面」，這樣才有機會讓自訂按鈕決定何時退出。可參考程式 <b>Z2409_OO_300</b>。</div>
+
+  <h4>7-4 GUI 狀態列與標題列（SE41 Menu Painter）</h4>
+  <p>講義第 10 節的做法是<b>複製 SAP 標準狀態列</b>，這是最省事的一招：</p>
+  <ul>
+    <li><span class="tcode">SE41</span> → 功能表 Status → Copy Status。</li>
+    <li>來源程式：<b>SAPLSLVC_FULLSCREEN</b>，來源狀態：<b>STANDARD_FULLSCREEN</b>。</li>
+    <li>目標程式：你的程式（例：<b>Z202202_27</b>），目標狀態：<b>STANDARD</b>。</li>
+    <li>複製過來就有完整的 ALV 工具列（排序、篩選、Excel 下載、版面配置）與 BACK／EXIT／CANCEL 三個按鈕。</li>
+    <li><span class="src">（依講義步驟整理）</span>複製後回 SE41 打開 STANDARD，在 Application toolbar 空格填自己的功能碼（例 <b>ERP300</b>）、按 F6 設定圖示與文字，並確認 BACK/EXIT/CANCEL 的功能碼型別為 <b>E</b>（Exit command）。</li>
+  </ul>
+
+<pre><code class="abap">MODULE status_8000 OUTPUT.
+  SET PF-STATUS 'STANDARD'.
+  SET TITLEBAR  'T8000' WITH sy-uname.   " 標題列可帶參數 &amp;1 &amp;2 ...
+
+  "-- 講義 Home Work 第 4 題：在畫面上顯示您的帳號
+  gv_user = sy-uname.                    " 螢幕上放一個同名的輸出欄位即可
+
+  "-- 動態控制畫面元素（第 3-1 章的 LOOP AT SCREEN 在 Dialog 一樣能用）
+  LOOP AT SCREEN INTO DATA(ls_screen).
+    IF ls_screen-group1 = 'DSP'.
+      ls_screen-input = 0.               " 唯讀
+      MODIFY SCREEN FROM ls_screen.
+    ENDIF.
+  ENDLOOP.
+ENDMODULE.</code></pre>
+
+  <div class="tip">想「暫時拿掉某幾個按鈕」不必再複製一個狀態列，用 <span class="kw">SET PF-STATUS 'STANDARD' EXCLUDING lt_fcode.</span>，把不要的功能碼放進 <span class="kw">lt_fcode</span>（<span class="kw">TYPE TABLE OF sy-ucomm</span>）即可。</div>
+
+  <h3 id="ch03-2-08">8. OOALV 十大步驟：CL_GUI_CUSTOM_CONTAINER ＋ CL_GUI_ALV_GRID</h3>
+
+  <p>講義把整個流程拆成十個步驟，這是本章的主線。先看骨架，再看完整程式。</p>
+
+  <table>
+    <thead><tr><th>步驟</th><th>做什麼</th><th>關鍵</th></tr></thead>
+    <tbody>
+      <tr><td><b>1</b></td><td>SE51 建立螢幕 <b>8000</b></td><td>Screen type = Normal；<b>Next screen 留空或填 8000</b></td></tr>
+      <tr><td><b>2</b></td><td>Layout 上拉一個 <b>Custom Control</b>，命名 <b>CONTAINER</b></td><td>快捷鍵 <b>Ctrl＋Shift＋F5</b>（善用 C-S-F5）；同時建立 <b>OK_CODE</b> 欄位</td></tr>
+      <tr><td><b>3</b></td><td>主程式定義四個變數</td><td>Container、Grid、Fieldcat、Layout</td></tr>
+      <tr><td><b>4</b></td><td><span class="tcode">SE24</span> 觀察 <b>CL_GUI_CUSTOM_CONTAINER</b></td><td>看 Attributes／Methods／Events</td></tr>
+      <tr><td><b>5</b></td><td>建立三支 MODULE（STATUS_8000、DISPLAY_ALV、USER_COMMAND_8000）＋ 一支 FORM</td><td>雙擊名稱即可自動產生</td></tr>
+      <tr><td><b>6</b></td><td>核心：建立 Container 物件，再以它為 <b>I_PARENT</b> 建立 Grid</td><td>父子關係：Screen → Container → Grid</td></tr>
+      <tr><td><b>7</b></td><td>取得欄位目錄 FIELDCAT</td><td>手動填 vs <b>LVC_FIELDCATALOG_MERGE</b> 自動產生</td></tr>
+      <tr><td><b>8</b></td><td>設定 LAYOUT</td><td>zebra、grid_title、smalltitle、cwidth_opt</td></tr>
+      <tr><td><b>9</b></td><td>讀取資料到內表 → <b>SET_TABLE_FOR_FIRST_DISPLAY</b></td><td>第二次進來改呼叫 <b>REFRESH_TABLE_DISPLAY</b></td></tr>
+      <tr><td><b>10</b></td><td><span class="kw">CALL SCREEN 8000.</span> ＋ SE41 狀態列 ＋ PAI 事件</td><td>可以試跑了</td></tr>
+    </tbody>
+  </table>
+
+  <p><b>OO-ALV 的四大控制結構</b>（講義特別列出，全部是 <span class="kw">LVC_</span> 開頭的字典型別，可用 <span class="tcode">SE11</span> 查）：</p>
+  <table>
+    <thead><tr><th>控制項目</th><th>參考結構／型別</th><th>常用欄位</th></tr></thead>
+    <tbody>
+      <tr><td>欄位目錄 Field catalog</td><td><b>LVC_T_FCAT</b>（行結構 LVC_S_FCAT）</td><td>fieldname、ref_table、ref_field、coltext、seltext、outputlen、no_out、edit、hotspot、do_sum、just、checkbox</td></tr>
+      <tr><td>佈局控制 Layout</td><td><b>LVC_S_LAYO</b></td><td>zebra、grid_title、smalltitle、cwidth_opt、sel_mode、no_toolbar、excp_fname、info_fname、stylefname、ctab_fname</td></tr>
+      <tr><td>列印參數</td><td><b>LVC_S_PRNT</b></td><td>prntgrplst、no_colwopt、reservelns</td></tr>
+      <tr><td>排序參數</td><td><b>LVC_T_SORT</b>（行 LVC_S_SORT）</td><td>fieldname、spos、up、down、subtot、group</td></tr>
+      <tr><td>過濾參數</td><td><b>LVC_T_FILT</b>（行 LVC_S_FILT）</td><td>fieldname、sign、option、low、high</td></tr>
+    </tbody>
+  </table>
+
+  <div class="note"><b>LVC vs SLIS</b>：OOALV（CL_GUI_ALV_GRID）用的是 <b>LVC_*</b> 系列型別；舊的 Function ALV 用的是 <b>SLIS_*</b> 系列。兩者<b>不能互相指派</b>。要轉換可用函數 <span class="kw">LVC_TRANSFER_TO_SLIS</span> / <span class="kw">LVC_TRANSFER_FROM_SLIS</span>。老師的坑：從 2-3 章的範例把 fieldcat 直接複製過來會編不過，就是這個原因。</div>
+
+  <h4>8-1 講義原始骨架（保留教學脈絡，但已現代化）</h4>
+
+<pre><code class="abap">*-- 步驟 3：定義變數（名稱刻意與 Pattern 樣板一致，方便產碼）
+DATA: wcl_container TYPE REF TO cl_gui_custom_container,  " 存放 ALV 的容器（SE24）
+      wcl_alv       TYPE REF TO cl_gui_alv_grid,          " ALV 網格（SE24）
+      gt_fieldcat   TYPE lvc_t_fcat,                      " 欄位目錄（SE11）
+      gs_layout     TYPE lvc_s_layo.                      " 版面（SE11）
+
+*-- 要顯示的內表：不要再用 WITH HEADER LINE
+DATA: gt_list TYPE STANDARD TABLE OF sflight WITH EMPTY KEY.
+
+DATA: ok_code TYPE sy-ucomm,
+      save_ok TYPE sy-ucomm.
+
+*-- 步驟 6：核心——建立 Container，再以它為 parent 建立 Grid
+MODULE display_alv OUTPUT.
+
+  IF wcl_alv IS INITIAL.               " 第一次進來才建物件
+
+    wcl_container = NEW cl_gui_custom_container(
+                      container_name = 'CONTAINER' ).   " 對應 SE51 的元素名稱
+
+    IF wcl_container IS BOUND.
+      wcl_alv = NEW cl_gui_alv_grid( i_parent = wcl_container ).
+    ENDIF.
+
+    PERFORM prepare_field_catalog CHANGING gt_fieldcat.
+    PERFORM prepare_layout        CHANGING gs_layout.
+    PERFORM get_data.
+
+    wcl_alv-&gt;set_table_for_first_display(
+      EXPORTING
+        is_layout                     = gs_layout
+      CHANGING
+        it_outtab                     = gt_list
+        it_fieldcatalog               = gt_fieldcat
+      EXCEPTIONS
+        invalid_parameter_combination = 1
+        program_error                 = 2
+        too_many_lines                = 3
+        OTHERS                        = 4 ).
+    IF sy-subrc &lt;&gt; 0.
+      MESSAGE ID sy-msgid TYPE 'S' NUMBER sy-msgno
+              WITH sy-msgv1 sy-msgv2 sy-msgv3 sy-msgv4 DISPLAY LIKE 'E'.
+    ENDIF.
+
+  ELSE.                                " 之後每次 PBO 只要刷新
+    wcl_alv-&gt;refresh_table_display(
+      EXPORTING  is_stable = VALUE lvc_s_stbl( row = abap_true col = abap_true )
+      EXCEPTIONS finished  = 1
+                 OTHERS    = 2 ).
+  ENDIF.
+
+ENDMODULE.</code></pre>
+
+  <div class="tip">講義說「這段程式不是一行一行寫出來的，是利用 <b>Pattern（樣板）</b> 建立的」。做法：SE38 編輯畫面按 <b>Ctrl＋F6</b> → 選 <b>ABAP Objects Patterns</b> → 輸入類別 <b>CL_GUI_ALV_GRID</b>、方法 <b>SET_TABLE_FOR_FIRST_DISPLAY</b>，系統會自動把完整參數列印出來。同理 <b>LVC_FIELDCATALOG_MERGE</b> 也用 Ctrl＋F6 選 CALL FUNCTION。</div>
+
+  <h4>8-2 欄位目錄：手動 vs 自動</h4>
+
+<pre><code class="abap">*-- 方式 A：手動逐欄填（最靈活，但很冗長）——講義示範
+FORM prepare_field_catalog_manual CHANGING pt_fieldcat TYPE lvc_t_fcat.
+
+  "-- 用 VALUE #( ) 一次組完，比 APPEND 一行一行快也好讀
+  pt_fieldcat = VALUE #(
+    ( fieldname = 'CARRID' ref_table = 'SFLIGHT' ref_field = 'CARRID'
+      outputlen = 3  coltext = 'Carrier ID'    seltext = 'Carrier ID' )
+    ( fieldname = 'CONNID' ref_table = 'SFLIGHT' ref_field = 'CONNID'
+      outputlen = 3  coltext = 'Connection ID' seltext = 'Connection ID' )
+    ( fieldname = 'FLDATE' ref_table = 'SFLIGHT' ref_field = 'FLDATE'
+      coltext = '航班日期' )
+    ( fieldname = 'PRICE'  ref_table = 'SFLIGHT' ref_field = 'PRICE'
+      coltext = '票價' do_sum = abap_true just = 'R' )
+    ( fieldname = 'SEATSOCC' ref_table = 'SFLIGHT' ref_field = 'SEATSOCC'
+      coltext = '已訂位' edit = abap_true )      " 這一欄可編輯
+  ).
+
+ENDFORM.
+
+*-- 方式 B：依結構自動產生（本練習採用）
+FORM prepare_field_catalog CHANGING pt_fieldcat TYPE lvc_t_fcat.
+
+  CALL FUNCTION 'LVC_FIELDCATALOG_MERGE'
+    EXPORTING
+      i_structure_name       = 'SFLIGHT'
+    CHANGING
+      ct_fieldcat            = pt_fieldcat   "★ 用形參，不要直接寫全域 GT_FIELDCAT
+    EXCEPTIONS
+      inconsistent_interface = 1
+      program_error          = 2
+      OTHERS                 = 3.
+  IF sy-subrc &lt;&gt; 0.
+    MESSAGE '欄位目錄產生失敗' TYPE 'E'.
+  ENDIF.
+
+  "-- 產生之後再「微調」：這是最實用的組合技
+  LOOP AT pt_fieldcat ASSIGNING FIELD-SYMBOL(&lt;fs_fcat&gt;).
+    CASE &lt;fs_fcat&gt;-fieldname.
+      WHEN 'MANDT'.  &lt;fs_fcat&gt;-no_out  = abap_true.   " 隱藏
+      WHEN 'CARRID'. &lt;fs_fcat&gt;-hotspot = abap_true.   " 變成可單擊連結
+      WHEN 'PRICE'.  &lt;fs_fcat&gt;-do_sum  = abap_true.   " 自動加總
+      WHEN OTHERS.
+    ENDCASE.
+  ENDLOOP.
+
+ENDFORM.</code></pre>
+
+  <div class="warn">講義原文寫 <span class="kw">ct_fieldcat = GT_FIELDCAT[]</span>（直接用全域變數），後面又自己註記「<span class="kw">ct_fieldcat = P_GT_FIELDCAT</span> 這樣寫比較好」——<b>老師是對的</b>。方法／副程式裡直接讀寫全域變數，是最難除錯的寫法之一。改寫成方法時更要注意：一律用參數傳遞。</div>
+
+  <div class="warn"><b>S/4HANA 陷阱</b>：<span class="kw">LVC_FIELDCATALOG_MERGE</span> 的 <span class="kw">i_structure_name</span> 只吃 <b>DDIC 字典結構／資料表</b>。若你的內表是程式內用 <span class="kw">TYPES BEGIN OF</span> 自訂的，這個函數會失敗（或必須加 <span class="kw">i_internal_tabname</span> ＋ 讓內表是全域宣告）。現代解法是用 <b>CL_SALV_TABLE</b> 產生 fieldcat：<span class="kw">cl_salv_table=&gt;factory( ) → get_columns( )</span>，或用 <span class="kw">cl_abap_structdescr</span> 自己跑 RTTI。</div>
+
+  <h4>8-3 Layout 與資料讀取</h4>
+
+<pre><code class="abap">FORM prepare_layout CHANGING ps_layout TYPE lvc_s_layo.
+  ps_layout = VALUE lvc_s_layo(
+                zebra      = abap_true          " 斑馬紋
+                grid_title = 'Flights'          " 網格標題
+                smalltitle = abap_true          " 小字標題
+                cwidth_opt = abap_true          " 欄寬自動最佳化
+                sel_mode   = 'D'                " D = 多列 + 儲存格皆可選
+                no_rowmark = space ).
+ENDFORM.
+
+FORM get_data.
+  "-- 現代寫法：明列欄位、@ 主機變數、INTO TABLE @gt_list
+  SELECT carrid, connid, fldate, planetype,
+         seatsmax, seatsocc, price, currency
+    FROM sflight
+    UP TO 30 ROWS
+    INTO CORRESPONDING FIELDS OF TABLE @gt_list.
+
+  IF sy-subrc &lt;&gt; 0.
+    MESSAGE 'SFLIGHT 無資料' TYPE 'S' DISPLAY LIKE 'W'.
+  ENDIF.
+ENDFORM.</code></pre>
+
+  <div class="warn">講義親自標註的坑：<b>「注意，在 GBIKE 的主機，SFLIGHT 是空的。所以我們會換成 ZVBAP_VBAK。」</b> 很多教學系統的 SAP Flight Data Model 沒有跑過 <span class="tcode">SE38</span> → <b>SAPBC_DATA_GENERATOR</b> 產生資料，所以 SFLIGHT／SPFLI／SBOOK 都是空的。<b>先用 SE16N 確認有沒有資料再寫程式</b>，不然會誤以為程式寫錯。</div>
+
+  <h3 id="ch03-2-09">9. 一支完整可跑的 OOALV（現代化整合版）</h3>
+
+  <p>把上面所有片段組成一支正式程式。這是本章的核心產出：<b>TOP 宣告 ＋ 本地事件 handler 類別 ＋ PBO ＋ PAI</b>，並且加上選擇畫面條件（對應講義 Home Work 第 2 題）、自訂結束按鈕（第 3 題）、畫面顯示帳號（第 4 題）。</p>
+
+  <h4>9-1 主程式（TOP 區＋類別定義＋類別實作）</h4>
+
+<pre><code class="abap">*&amp;---------------------------------------------------------------------*
+*&amp; Report Z2409_OO300   OOALV 完整範例（S/4HANA 現代寫法）
+*&amp;---------------------------------------------------------------------*
+REPORT z2409_oo300.
+
+*----------------------------------------------------------------------*
+* 1. 型別與全域資料
+*----------------------------------------------------------------------*
+TYPES: BEGIN OF ty_out,
+         vbeln TYPE vbak-vbeln,          " 銷售訂單
+         posnr TYPE vbap-posnr,          " 項次
+         matnr TYPE vbap-matnr,          " 料號
+         pstyv TYPE vbap-pstyv,          " 項目類別
+         kwmeng TYPE vbap-kwmeng,        " 訂單數量
+         netwr  TYPE vbap-netwr,         " 淨值
+         waerk  TYPE vbak-waerk,
+         erdat  TYPE vbak-erdat,         " 建立日期
+         light  TYPE c LENGTH 1,         " 紅綠燈欄位
+       END OF ty_out,
+       tt_out TYPE STANDARD TABLE OF ty_out WITH EMPTY KEY.
+
+DATA: gt_out    TYPE tt_out,
+      gs_layout TYPE lvc_s_layo,
+      gt_fcat   TYPE lvc_t_fcat.
+
+DATA: go_container TYPE REF TO cl_gui_custom_container,
+      go_grid      TYPE REF TO cl_gui_alv_grid.
+
+DATA: ok_code TYPE sy-ucomm,
+      save_ok TYPE sy-ucomm,
+      gv_user TYPE sy-uname.              " 螢幕上顯示帳號（Home Work 4）
+
+*----------------------------------------------------------------------*
+* 2. 事件處理類別（Local Class）
+*    ALV 的雙擊、單擊、工具列、自訂指令都由它接手
+*----------------------------------------------------------------------*
+CLASS lcl_alv_event DEFINITION FINAL.
+  PUBLIC SECTION.
+    METHODS:
+      "-- 雙擊某一格
+      on_double_click  FOR EVENT double_click  OF cl_gui_alv_grid
+                         IMPORTING e_row e_column es_row_no,
+      "-- 單擊 hotspot 欄位
+      on_hotspot_click FOR EVENT hotspot_click OF cl_gui_alv_grid
+                         IMPORTING e_row_id e_column_id,
+      "-- 在 ALV 工具列上加自己的按鈕
+      on_toolbar       FOR EVENT toolbar       OF cl_gui_alv_grid
+                         IMPORTING e_object e_interactive,
+      "-- 按下自訂按鈕之後
+      on_user_command  FOR EVENT user_command  OF cl_gui_alv_grid
+                         IMPORTING e_ucomm,
+      "-- 儲存格被改動（可編輯 ALV 才需要）
+      on_data_changed  FOR EVENT data_changed  OF cl_gui_alv_grid
+                         IMPORTING er_data_changed.
+ENDCLASS.
+
+CLASS lcl_alv_event IMPLEMENTATION.
+
+  METHOD on_double_click.
+    "-- e_row-index 是「畫面上的列號」，es_row_no-row_id 是排序後的實際列號
+    READ TABLE gt_out INTO DATA(ls_out) INDEX e_row-index.
+    CHECK sy-subrc = 0.
+
+    CASE e_column-fieldname.
+      WHEN 'VBELN'.
+        "-- 跳到 VA03 顯示銷售訂單（用 SET PARAMETER ID 帶值）
+        SET PARAMETER ID 'AUN' FIELD ls_out-vbeln.
+        CALL TRANSACTION 'VA03' AND SKIP FIRST SCREEN.
+      WHEN 'MATNR'.
+        SET PARAMETER ID 'MAT' FIELD ls_out-matnr.
+        CALL TRANSACTION 'MM03' AND SKIP FIRST SCREEN.
+      WHEN OTHERS.
+        MESSAGE |您雙擊了 { e_column-fieldname }，第 { e_row-index } 列| TYPE 'I'.
+    ENDCASE.
+  ENDMETHOD.
+
+  METHOD on_hotspot_click.
+    READ TABLE gt_out INTO DATA(ls_out) INDEX e_row_id-index.
+    CHECK sy-subrc = 0.
+    MESSAGE |訂單 { ls_out-vbeln } 項次 { ls_out-posnr }| TYPE 'S'.
+  ENDMETHOD.
+
+  METHOD on_toolbar.
+    "-- 在工具列尾端插入分隔線與一顆自訂按鈕
+    APPEND VALUE stb_button( butn_type = 3 )                     " 3 = 分隔線
+           TO e_object-&gt;mt_toolbar.
+    APPEND VALUE stb_button( function  = 'ZEXPORT'
+                             icon      = '@49@'                  " Excel 圖示
+                             quickinfo = '匯出 Excel'
+                             text      = '匯出'
+                             butn_type = 0 )
+           TO e_object-&gt;mt_toolbar.
+    APPEND VALUE stb_button( function  = 'ZEND'
+                             icon      = '@0W@'
+                             quickinfo = '結束程式'
+                             text      = '結束'
+                             butn_type = 0 )
+           TO e_object-&gt;mt_toolbar.
+  ENDMETHOD.
+
+  METHOD on_user_command.
+    CASE e_ucomm.
+      WHEN 'ZEXPORT'.
+        MESSAGE '請改用工具列的 Excel 下載圖示' TYPE 'I'.
+      WHEN 'ZEND'.
+        "-- Home Work 第 3 題：按了自訂鈕才離開
+        LEAVE TO SCREEN 0.
+      WHEN OTHERS.
+    ENDCASE.
+  ENDMETHOD.
+
+  METHOD on_data_changed.
+    "-- 檢核使用者改過的每一格
+    LOOP AT er_data_changed-&gt;mt_good_cells INTO DATA(ls_cell).
+      IF ls_cell-fieldname = 'KWMENG' AND ls_cell-value CO ' 0'.
+        er_data_changed-&gt;add_protocol_entry(
+          i_msgid = '00' i_msgty = 'E' i_msgno = '001'
+          i_msgv1 = '數量不可為零'
+          i_fieldname = ls_cell-fieldname
+          i_row_id    = ls_cell-row_id ).
+      ENDIF.
+    ENDLOOP.
+  ENDMETHOD.
+
+ENDCLASS.
+
+DATA go_handler TYPE REF TO lcl_alv_event.
+
+*----------------------------------------------------------------------*
+* 3. 選擇畫面（Home Work 第 2 題：訂單日期區間）
+*----------------------------------------------------------------------*
+"-- SELECT-OPTIONS 的參照變數（不用 TABLES: vbak）
+DATA: gv_erdat TYPE vbak-erdat,
+      gv_vbeln TYPE vbak-vbeln.
+
+SELECTION-SCREEN BEGIN OF BLOCK b1 WITH FRAME TITLE TEXT-001.
+SELECT-OPTIONS: s_erdat FOR gv_erdat,               " 訂單建立日期（Home Work 2）
+                s_vbeln FOR gv_vbeln.               " 訂單號碼
+PARAMETERS:     p_edit  AS CHECKBOX.                " 勾選才允許編輯
+SELECTION-SCREEN END OF BLOCK b1.
+
+*----------------------------------------------------------------------*
+* 4. 主流程
+*----------------------------------------------------------------------*
+START-OF-SELECTION.
+  PERFORM get_data.
+  IF gt_out IS INITIAL.
+    MESSAGE '查無資料' TYPE 'S' DISPLAY LIKE 'E'.
+    RETURN.
+  ENDIF.
+  CALL SCREEN 8000.</code></pre>
+
+  <h4>9-2 資料讀取（JOIN ＋ 紅綠燈）</h4>
+
+<pre><code class="abap">FORM get_data.
+
+  CLEAR gt_out.
+
+  "-- 一次 JOIN 抬頭與明細；欄位明列、主機變數加 @
+  SELECT k~vbeln, p~posnr, p~matnr, p~pstyv,
+         p~kwmeng, p~netwr, k~waerk, k~erdat
+    FROM vbak AS k
+    INNER JOIN vbap AS p ON p~vbeln = k~vbeln
+    WHERE k~erdat IN @s_erdat
+      AND k~vbeln IN @s_vbeln
+    ORDER BY k~vbeln, p~posnr
+    INTO CORRESPONDING FIELDS OF TABLE @gt_out
+    UP TO 500 ROWS.
+
+  "-- 用 FIELD-SYMBOL 直接改內表，不必再 MODIFY
+  LOOP AT gt_out ASSIGNING FIELD-SYMBOL(&lt;ls&gt;).
+    &lt;ls&gt;-light = COND #( WHEN &lt;ls&gt;-netwr &gt;= 100000 THEN '1'    " 紅
+                         WHEN &lt;ls&gt;-netwr &gt;=  10000 THEN '2'    " 黃
+                         ELSE '3' ).                            " 綠
+  ENDLOOP.
+
+ENDFORM.</code></pre>
+
+  <div class="warn"><b>S/4HANA 提醒</b>：JOIN 之後如果只是要顯示，優先考慮直接建一個 <b>CDS View</b>（<span class="kw">DEFINE VIEW ENTITY</span>），把 JOIN 推到 HANA 資料庫層做，程式端只要 <span class="kw">SELECT FROM ZI_SalesOrderItem</span>。這也是「Code Push-Down」的基本功。另外 <span class="kw">SELECT ... UP TO n ROWS</span> 若沒有 <span class="kw">ORDER BY</span>，HANA <b>不保證回傳順序</b>——上面範例刻意加了 ORDER BY。</div>
+
+  <h4>9-3 PBO：建立容器、掛事件、顯示 ALV</h4>
+
+<pre><code class="abap">*&amp;---------------------------------------------------------------------*
+*&amp; Module STATUS_8000 OUTPUT
+*&amp;---------------------------------------------------------------------*
+MODULE status_8000 OUTPUT.
+  SET PF-STATUS 'STANDARD'.          " SE41 由 SAPLSLVC_FULLSCREEN/STANDARD_FULLSCREEN 複製
+  SET TITLEBAR  'T8000'.
+  gv_user = sy-uname.                " Home Work 4：畫面上顯示帳號
+ENDMODULE.
+
+*&amp;---------------------------------------------------------------------*
+*&amp; Module DISPLAY_ALV OUTPUT
+*&amp;---------------------------------------------------------------------*
+MODULE display_alv OUTPUT.
+
+  IF go_grid IS NOT BOUND.
+    "================ 第一次：建立所有物件 ================
+
+    "-- 1) 容器：container_name 必須與 SE51 Custom Control 的名稱完全一致
+    go_container = NEW cl_gui_custom_container(
+                     container_name = 'CONTAINER' ).
+
+    "-- 2) 網格：以容器為 parent
+    go_grid = NEW cl_gui_alv_grid( i_parent = go_container ).
+
+    "-- 3) 欄位目錄：自訂結構無法用 MERGE，這裡改用 SALV 產生再微調
+    PERFORM build_fieldcat CHANGING gt_fcat.
+
+    "-- 4) 版面：紅綠燈欄位用 excp_fname 指定
+    gs_layout = VALUE lvc_s_layo(
+                  zebra      = abap_true
+                  cwidth_opt = abap_true
+                  sel_mode   = 'D'
+                  grid_title = |訂單明細（{ lines( gt_out ) } 筆）|
+                  smalltitle = abap_true
+                  excp_fname = 'LIGHT' ).      " 紅綠燈
+
+    "-- 5) 事件 handler：★只建立一次，避免 memory leak / 事件重複觸發
+    go_handler = NEW lcl_alv_event( ).
+    SET HANDLER go_handler-&gt;on_double_click  FOR go_grid.
+    SET HANDLER go_handler-&gt;on_hotspot_click FOR go_grid.
+    SET HANDLER go_handler-&gt;on_toolbar       FOR go_grid.
+    SET HANDLER go_handler-&gt;on_user_command  FOR go_grid.
+    SET HANDLER go_handler-&gt;on_data_changed  FOR go_grid.
+
+    "-- 6) 可編輯模式（勾了 p_edit 才開）
+    IF p_edit = abap_true.
+      go_grid-&gt;set_ready_for_input( 1 ).
+      "-- 按 Enter 就觸發 data_changed，不必等按儲存
+      go_grid-&gt;register_edit_event(
+        i_event_id = cl_gui_alv_grid=&gt;mc_evt_modified ).
+    ENDIF.
+
+    "-- 7) 首次顯示
+    go_grid-&gt;set_table_for_first_display(
+      EXPORTING
+        is_layout                     = gs_layout
+        i_save                        = 'A'      " 允許存版面配置（Layout Variant）
+        i_default                     = abap_true
+      CHANGING
+        it_outtab                     = gt_out
+        it_fieldcatalog               = gt_fcat
+      EXCEPTIONS
+        invalid_parameter_combination = 1
+        program_error                 = 2
+        too_many_lines                = 3
+        OTHERS                        = 4 ).
+    IF sy-subrc &lt;&gt; 0.
+      MESSAGE ID sy-msgid TYPE 'S' NUMBER sy-msgno
+              WITH sy-msgv1 sy-msgv2 sy-msgv3 sy-msgv4 DISPLAY LIKE 'E'.
+    ENDIF.
+
+  ELSE.
+    "================ 之後每次 PBO：只刷新 ================
+    go_grid-&gt;refresh_table_display(
+      EXPORTING  is_stable = VALUE lvc_s_stbl( row = abap_true col = abap_true )
+      EXCEPTIONS finished  = 1
+                 OTHERS    = 2 ).
+  ENDIF.
+
+  "-- 讓所有 GUI 控制項的指令真正送到前端
+  cl_gui_cfw=&gt;flush( ).
+
+ENDMODULE.
+
+*&amp;---------------------------------------------------------------------*
+*&amp; Form BUILD_FIELDCAT（自訂結構也能產生 fieldcat）
+*&amp;---------------------------------------------------------------------*
+FORM build_fieldcat CHANGING pt_fcat TYPE lvc_t_fcat.
+
+  TRY.
+      "-- 借 SALV 幫我們做 RTTI 分析，再轉成 LVC 格式
+      cl_salv_table=&gt;factory(
+        IMPORTING r_salv_table = DATA(lo_salv)
+        CHANGING  t_table      = gt_out ).
+
+      pt_fcat = cl_salv_controller_metadata=&gt;get_lvc_fieldcatalog(
+                  r_columns      = lo_salv-&gt;get_columns( )
+                  r_aggregations = lo_salv-&gt;get_aggregations( ) ).
+
+    CATCH cx_salv_msg INTO DATA(lx_salv).
+      MESSAGE lx_salv-&gt;get_text( ) TYPE 'E'.
+  ENDTRY.
+
+  "-- 微調每一欄
+  LOOP AT pt_fcat ASSIGNING FIELD-SYMBOL(&lt;fc&gt;).
+    CASE &lt;fc&gt;-fieldname.
+      WHEN 'VBELN'.  &lt;fc&gt;-coltext = '銷售訂單'. &lt;fc&gt;-hotspot = abap_true.
+      WHEN 'POSNR'.  &lt;fc&gt;-coltext = '項次'.
+      WHEN 'MATNR'.  &lt;fc&gt;-coltext = '料號'.
+      WHEN 'PSTYV'.  &lt;fc&gt;-coltext = '項目類別'.
+      WHEN 'KWMENG'. &lt;fc&gt;-coltext = '訂單數量'. &lt;fc&gt;-edit = p_edit.
+      WHEN 'NETWR'.  &lt;fc&gt;-coltext = '淨值'.
+                     &lt;fc&gt;-do_sum = abap_true.
+                     &lt;fc&gt;-cfieldname = 'WAERK'.   " 幣別參照欄
+      WHEN 'ERDAT'.  &lt;fc&gt;-coltext = '建立日期'.
+      WHEN 'LIGHT'.  &lt;fc&gt;-no_out  = abap_true.    " 紅綠燈欄位本身不顯示
+      WHEN OTHERS.
+    ENDCASE.
+  ENDLOOP.
+
+ENDFORM.</code></pre>
+
+  <h4>9-4 PAI ＋ Screen Flow Logic</h4>
+
+<pre><code class="abap">*&amp;---------------------------------------------------------------------*
+*&amp; Module USER_COMMAND_8000 INPUT
+*&amp;---------------------------------------------------------------------*
+MODULE user_command_8000 INPUT.
+
+  save_ok = ok_code.
+  CLEAR ok_code.
+
+  "-- 編輯模式：先把使用者改的值收回內表（會觸發 data_changed 事件）
+  IF p_edit = abap_true AND go_grid IS BOUND.
+    go_grid-&gt;check_changed_data( ).
+  ENDIF.
+
+  CASE save_ok.
+    WHEN 'BACK' OR 'EXIT' OR 'CANCEL'.
+      PERFORM free_objects.
+      LEAVE TO SCREEN 0.
+
+    WHEN 'ERP300'.                    " 講義 Home Work 第 3 題的自訂按鈕
+      MESSAGE 'ERP300' TYPE 'I'.
+      PERFORM free_objects.
+      LEAVE PROGRAM.
+
+    WHEN 'REFRESH'.
+      PERFORM get_data.
+      go_grid-&gt;refresh_table_display(
+        EXPORTING  is_stable = VALUE lvc_s_stbl( row = abap_true col = abap_true )
+        EXCEPTIONS OTHERS = 0 ).
+
+    WHEN OTHERS.
+  ENDCASE.
+
+ENDMODULE.
+
+*&amp;---------------------------------------------------------------------*
+*&amp; Form FREE_OBJECTS —— 離開前釋放控制項，避免記憶體洩漏
+*&amp;---------------------------------------------------------------------*
+FORM free_objects.
+  IF go_grid IS BOUND.
+    go_grid-&gt;free( EXCEPTIONS OTHERS = 0 ).
+    CLEAR go_grid.
+  ENDIF.
+  IF go_container IS BOUND.
+    go_container-&gt;free( EXCEPTIONS OTHERS = 0 ).
+    CLEAR go_container.
+  ENDIF.
+  CLEAR go_handler.
+  cl_gui_cfw=&gt;flush( ).
+ENDFORM.</code></pre>
+
+  <p><b>SE51 螢幕 8000 的 Flow logic</b>（講義第 13 節「完整 Screen 代碼」）：</p>
+
+<pre><code class="abap">PROCESS BEFORE OUTPUT.
+  MODULE status_8000.
+  MODULE display_alv.        " 程式也放在 parent class（講義原註）
+
+PROCESS AFTER INPUT.
+  MODULE user_command_8000.</code></pre>
+
+  <div class="tip"><b>SE51 建立步驟速記</b><span class="src">（依講義步驟整理）</span>：SE38 程式編輯畫面 → 對著程式中的 <span class="kw">CALL SCREEN 8000</span> 的 <b>8000 雙擊</b> → 系統問要不要建立螢幕 → 填 Short description、Screen type 選 <b>Normal</b>、<b>Next screen 留空</b> → 進 <b>Layout</b>（Screen Painter）→ 左側工具箱點 <b>Custom Control</b>（或按 <b>Ctrl＋Shift＋F5</b>）→ 在畫面上拉出一塊矩形 → 雙擊它，Name 填 <b>CONTAINER</b> → 再拉一個 I/O Field 命名 <b>GV_USER</b> 並取消 Input（只輸出）→ 存檔啟動 → 回 Attributes 頁籤，<b>OK code</b> 欄填 <b>OK_CODE</b> → 進 <b>Flow logic</b> 把 MODULE 名稱寫上，對著模組名稱雙擊即可自動產生程式框架。</div>
+
+  <h3 id="ch03-2-10">10. CL_GUI_ALV_GRID 常用方法與事件速查</h3>
+
+  <table>
+    <thead><tr><th>方法</th><th>用途</th><th>備註</th></tr></thead>
+    <tbody>
+      <tr><td><b>SET_TABLE_FOR_FIRST_DISPLAY</b></td><td>首次顯示</td><td>只能呼叫一次；it_outtab 是 CHANGING（ALV 直接綁著你的內表）</td></tr>
+      <tr><td><b>REFRESH_TABLE_DISPLAY</b></td><td>資料變了要重畫</td><td>傳 <span class="kw">is_stable(row/col) = 'X'</span> 才能保留捲軸位置</td></tr>
+      <tr><td><b>SET_FRONTEND_FIELDCATALOG / GET_FRONTEND_FIELDCATALOG</b></td><td>執行中換欄位目錄</td><td>改完要 refresh</td></tr>
+      <tr><td><b>SET_FRONTEND_LAYOUT / GET_FRONTEND_LAYOUT</b></td><td>執行中換版面</td><td>改標題常用</td></tr>
+      <tr><td><b>GET_SELECTED_ROWS / GET_SELECTED_CELLS</b></td><td>取得使用者選了哪幾列／哪幾格</td><td>回傳 <span class="kw">lvc_t_row</span> / <span class="kw">lvc_t_cell</span></td></tr>
+      <tr><td><b>SET_SELECTED_ROWS</b></td><td>程式指定選取列</td><td>refresh 後要重設</td></tr>
+      <tr><td><b>SET_READY_FOR_INPUT( 1 / 0 )</b></td><td>整張表切換可編輯／唯讀</td><td>個別欄位用 fieldcat-edit</td></tr>
+      <tr><td><b>REGISTER_EDIT_EVENT</b></td><td>設定何時觸發 data_changed</td><td><span class="kw">mc_evt_enter</span>（按 Enter）／<span class="kw">mc_evt_modified</span>（離開欄位）</td></tr>
+      <tr><td><b>CHECK_CHANGED_DATA</b></td><td>把前端改的值同步回內表</td><td><b>PAI 一定要呼叫</b>，否則抓不到使用者輸入</td></tr>
+      <tr><td><b>SET_TOOLBAR_INTERACTIVE</b></td><td>強制重繪工具列</td><td>toolbar 事件加按鈕後使用</td></tr>
+      <tr><td><b>FREE</b></td><td>釋放控制項</td><td>離開前務必呼叫</td></tr>
+    </tbody>
+  </table>
+
+  <table>
+    <thead><tr><th>事件</th><th>觸發時機</th><th>常用 IMPORTING</th></tr></thead>
+    <tbody>
+      <tr><td><b>DOUBLE_CLICK</b></td><td>雙擊儲存格</td><td>e_row、e_column、es_row_no</td></tr>
+      <tr><td><b>HOTSPOT_CLICK</b></td><td>單擊 hotspot 欄位</td><td>e_row_id、e_column_id、es_row_no</td></tr>
+      <tr><td><b>TOOLBAR</b></td><td>工具列繪製時</td><td>e_object（-&gt;mt_toolbar）、e_interactive</td></tr>
+      <tr><td><b>USER_COMMAND</b></td><td>按下 ALV 工具列的按鈕</td><td>e_ucomm</td></tr>
+      <tr><td><b>AFTER_USER_COMMAND</b></td><td>標準功能執行完之後</td><td>e_ucomm、e_saved、e_not_processed</td></tr>
+      <tr><td><b>DATA_CHANGED</b></td><td>儲存格內容被改（前端檢核）</td><td>er_data_changed（-&gt;mt_good_cells、add_protocol_entry）</td></tr>
+      <tr><td><b>DATA_CHANGED_FINISHED</b></td><td>所有變更處理完</td><td>e_modified、et_good_cells</td></tr>
+      <tr><td><b>MENU_BUTTON</b></td><td>下拉式按鈕展開</td><td>e_object、e_ucomm</td></tr>
+      <tr><td><b>ONF4</b></td><td>自訂欄位的 F4</td><td>e_fieldname、es_row_no、er_event_data</td></tr>
+      <tr><td><b>PRINT_TOP_OF_PAGE</b></td><td>列印抬頭</td><td>—</td></tr>
+    </tbody>
+  </table>
+
+  <div class="warn"><b>DOUBLE_CLICK 的列號陷阱</b>：<span class="kw">e_row-index</span> 是「使用者看到的那一列」的索引。一旦使用者<b>排序或篩選</b>過，這個索引就<b>不等於</b>內表 <span class="kw">gt_out</span> 的索引！正確做法是用 <span class="kw">es_row_no-row_id</span>，或在內表放一個自己的 key 欄位（例如遞增流水號），READ 時用 key 比對而不是 INDEX。</div>
+
+  <h3 id="ch03-2-11">11. 其他容器：SPLITTER / DOCKING / DIALOGBOX / SCREEN0</h3>
+
+  <p>CL_GUI_CUSTOM_CONTAINER 只是容器家族的一員。所有容器都繼承自 <b>CL_GUI_CONTAINER</b>，所以任何一個都可以當 ALV 的 <span class="kw">i_parent</span>。</p>
+
+  <table>
+    <thead><tr><th>容器類別</th><th>特性</th><th>需要 SE51 螢幕嗎</th></tr></thead>
+    <tbody>
+      <tr><td><b>CL_GUI_CUSTOM_CONTAINER</b></td><td>放在螢幕上你畫的 Custom Control 區塊裡</td><td><b>要</b>（且要有 Custom Control 元素）</td></tr>
+      <tr><td><b>CL_GUI_DOCKING_CONTAINER</b></td><td>停靠在螢幕的上／下／左／右邊，可自動撐滿</td><td>要有螢幕，但<b>不必畫 Custom Control</b></td></tr>
+      <tr><td><b>CL_GUI_SPLITTER_CONTAINER</b></td><td>把一塊區域切成 rows × columns 的格子，每格再取出子容器</td><td>依 parent 而定</td></tr>
+      <tr><td><b>CL_GUI_EASY_SPLITTER_CONTAINER</b></td><td>簡化版分割器，只切兩塊，可拖曳</td><td>依 parent 而定</td></tr>
+      <tr><td><b>CL_GUI_DIALOGBOX_CONTAINER</b></td><td>獨立的浮動視窗（可移動、可關閉）</td><td>不必畫元素；要處理 CLOSE 事件</td></tr>
+      <tr><td><b>CL_GUI_CONTAINER=&gt;SCREEN0</b></td><td>「整個螢幕」這個現成容器（靜態屬性）</td><td>要有螢幕（如講義第 16 節的 ZREP_CLS_040）</td></tr>
+      <tr><td><b>CL_GUI_CONTAINER=&gt;DEFAULT_SCREEN</b></td><td>不必自己建螢幕，直接用系統的清單畫面當容器</td><td><b>不必</b>（講義第 17 節用的就是它）</td></tr>
+    </tbody>
+  </table>
+
+<pre><code class="abap">*-- A) DOCKING：連 Custom Control 都不必畫，最快做出全螢幕 ALV
+DATA(go_dock) = NEW cl_gui_docking_container(
+                  repid     = sy-repid
+                  dynnr     = sy-dynnr
+                  side      = cl_gui_docking_container=&gt;dock_at_left
+                  extension = 2000                 " 幾乎佔滿
+                  ratio     = 90 ).
+DATA(go_grid_d) = NEW cl_gui_alv_grid( i_parent = go_dock ).
+
+*-- B) SPLITTER：上下二塊（講義第 17 節的做法）
+DATA(go_split) = NEW cl_gui_splitter_container(
+                   parent  = cl_gui_container=&gt;default_screen
+                   no_autodef_progid_dynnr = abap_true
+                   rows    = 2
+                   columns = 1 ).
+go_split-&gt;set_row_height( id = 1 height = 40 ).      " 上方佔 40%
+DATA(go_top)    = go_split-&gt;get_container( row = 1 column = 1 ).
+DATA(go_bottom) = go_split-&gt;get_container( row = 2 column = 1 ).
+
+*-- C) DIALOGBOX：浮動視窗（記得處理 CLOSE 事件，否則按 X 沒反應）
+DATA(go_box) = NEW cl_gui_dialogbox_container(
+                 width   = 800
+                 height  = 400
+                 top     = 100
+                 left    = 100
+                 caption = '明細資料' ).
+
+*-- D) SCREEN0：整個螢幕當容器（講義第 16 節 ZREP_CLS_040 的寫法）
+DATA(go_grid_s) = NEW cl_gui_alv_grid( i_parent = cl_gui_container=&gt;screen0 ).</code></pre>
+
+  <div class="warn"><span class="kw">CL_GUI_DIALOGBOX_CONTAINER</span> 一定要 <span class="kw">SET HANDLER ... FOR EVENT close</span>，並在 handler 裡呼叫 <span class="kw">sender-&gt;free( )</span>，否則使用者按右上角 X 之後視窗只是隱藏、物件還活著，再開一次就會出現「Control already exists」的錯誤。</div>
+
+  <h3 id="ch03-2-12">12. CL_SALV_TABLE：三種顯示模式與內嵌到 Screen</h3>
+
+  <p>SALV（2004 年出的第三代）最大的價值是「<b>同一段程式碼，可以全螢幕顯示，也可以塞進容器</b>」。講義第 16 節的 ZREP_CLS_041 是最精簡的版本：</p>
+
+<pre><code class="abap">*&amp;---------------------------------------------------------------------*
+*&amp; Report ZREP_CLS_041（2004 年 SALV）—— 現代化改寫
+*&amp;---------------------------------------------------------------------*
+REPORT zrep_cls_041.
+
+SELECT ebeln, bukrs, bsart, lifnr, ekorg, ekgrp, waers, bedat
+  FROM ekko
+  UP TO 100 ROWS
+  ORDER BY ebeln
+  INTO TABLE @DATA(gt_ekko).
+
+TRY.
+    "-- 模式一：全螢幕（r_container 不傳）
+    cl_salv_table=&gt;factory(
+      IMPORTING r_salv_table = DATA(go_table)
+      CHANGING  t_table      = gt_ekko ).
+
+    "-- 打開全部標準功能鈕（排序、篩選、Excel、版面）
+    go_table-&gt;get_functions( )-&gt;set_all( abap_true ).
+    go_table-&gt;get_columns( )-&gt;set_optimize( abap_true ).
+    go_table-&gt;get_display_settings( )-&gt;set_striped_pattern( abap_true ).
+    go_table-&gt;get_display_settings( )-&gt;set_list_header( '採購單抬頭 EKKO' ).
+    go_table-&gt;get_selections( )-&gt;set_selection_mode(
+      if_salv_c_selection_mode=&gt;row_column ).
+
+    go_table-&gt;display( ).
+
+  CATCH cx_salv_msg INTO DATA(lx).
+    MESSAGE lx-&gt;get_text( ) TYPE 'E'.
+ENDTRY.</code></pre>
+
+  <p><b>模式二：內嵌到 SE51 螢幕的 Custom Control</b>——這是很多人不知道 SALV 也能做的事：</p>
+
+<pre><code class="abap">MODULE display_salv OUTPUT.
+
+  IF go_salv IS NOT BOUND.
+
+    TRY.
+        "-- 用 container_name 直接指定 SE51 的 Custom Control 名稱
+        cl_salv_table=&gt;factory(
+          EXPORTING
+            r_container    = CAST cl_gui_container(
+                               NEW cl_gui_custom_container(
+                                     container_name = 'CONTAINER' ) )
+            container_name = 'CONTAINER'
+          IMPORTING
+            r_salv_table   = go_salv
+          CHANGING
+            t_table        = gt_out ).
+
+        "★ 內嵌到自己的螢幕時，SALV 的工具列必須靠 set_screen_status 指定
+        "   否則畫面上不會有任何按鈕
+        go_salv-&gt;set_screen_status(
+          pfstatus      = 'SALV_TABLE_STANDARD'
+          report        = 'SAPLSALV_METADATA_STATUS'   " 借用標準狀態列
+          set_functions = cl_salv_table=&gt;c_functions_all ).
+
+        go_salv-&gt;get_columns( )-&gt;set_optimize( abap_true ).
+        go_salv-&gt;get_display_settings( )-&gt;set_striped_pattern( abap_true ).
+
+        "-- 抬頭區（TOP-OF-PAGE）用 CL_SALV_FORM_LAYOUT_GRID 排版
+        PERFORM build_header CHANGING go_salv.
+
+        "-- 掛雙擊事件
+        go_evt_handler = NEW lcl_salv_event( ).
+        SET HANDLER go_evt_handler-&gt;on_double_click FOR go_salv-&gt;get_event( ).
+
+        go_salv-&gt;display( ).
+
+      CATCH cx_salv_msg cx_salv_not_found INTO DATA(lx_salv).
+        MESSAGE lx_salv-&gt;get_text( ) TYPE 'E'.
+    ENDTRY.
+
+  ELSE.
+    go_salv-&gt;refresh( refresh_mode = if_salv_c_refresh=&gt;full ).
+  ENDIF.
+
+  cl_gui_cfw=&gt;flush( ).
+
+ENDMODULE.
+
+*&amp;---------------------------------------------------------------------*
+*&amp; Form BUILD_HEADER —— 用 SALV 表單物件做出漂亮的抬頭
+*&amp;---------------------------------------------------------------------*
+FORM build_header CHANGING po_salv TYPE REF TO cl_salv_table.
+
+  DATA(lo_grid) = NEW cl_salv_form_layout_grid( ).
+
+  "-- 第一列跨欄的大標題
+  lo_grid-&gt;create_header_information(
+    row     = 1
+    column  = 1
+    text    = '銷售訂單明細報表'
+    tooltip = 'Sales Order Item Report' ).
+
+  "-- 之後每一列一個「標籤 : 值」
+  lo_grid-&gt;create_label( row = 2 column = 1 text = '執行人員' ).
+  lo_grid-&gt;create_text ( row = 2 column = 2 text = CONV string( sy-uname ) ).
+
+  lo_grid-&gt;create_label( row = 3 column = 1 text = '執行日期' ).
+  lo_grid-&gt;create_text ( row = 3 column = 2
+                         text = |{ sy-datum DATE = USER } { sy-uzeit TIME = USER }| ).
+
+  lo_grid-&gt;create_label( row = 4 column = 1 text = '資料筆數' ).
+  lo_grid-&gt;create_text ( row = 4 column = 2 text = |{ lines( gt_out ) }| ).
+
+  po_salv-&gt;set_top_of_list( lo_grid ).        " 螢幕上的抬頭
+  po_salv-&gt;set_top_of_list_print( lo_grid ).  " 列印時的抬頭
+
+ENDFORM.</code></pre>
+
+  <div class="warn"><b>SALV 的三個限制</b>，決定了什麼時候該退回 CL_GUI_ALV_GRID：<br>
+  1. <b>不能編輯</b>（SALV 沒有官方 edit 模式）。要讓使用者改資料，就得用 CL_GUI_ALV_GRID。<br>
+  2. <b>事件較少</b>：只有 double_click、link_click、added_function、before_salv_function、after_salv_function 等，沒有 data_changed。<br>
+  3. <b>內嵌到容器時預設沒有工具列</b>，必須自己呼叫 <span class="kw">set_screen_status( )</span>；而且 <span class="kw">display( )</span> 之後<b>不能</b>再改欄位設定。</div>
+
+  <div class="tip">SALV 加自訂按鈕的做法：先在 SE41 複製 <b>SALV_TABLE_STANDARD</b>（來源程式 <b>SAPLSALV_METADATA_STATUS</b>）到自己的程式，加上功能碼；然後 <span class="kw">SET HANDLER on_added_function FOR go_salv-&gt;get_event( )</span>，在 <span class="kw">FOR EVENT added_function ... IMPORTING e_salv_function</span> 裡處理。</div>
+
+  <h3 id="ch03-2-13">13. 進階案例：兩個視窗的 ALV（主檔 → 明細連動）</h3>
+
+  <p>講義第 17 節 <b>ZOOALV_2_GRID_SIMPLE</b>：上方 MARA 物料主檔，雙擊料號後下方顯示該料號的 MARC 工廠資料。這個案例把 <b>SPLITTER 容器 ＋ SALV ＋ 事件</b>三件事串在一起。以下是完全現代化的改寫版（原文用 FORM 與全域變數，這裡改成一個本地類別，事件 handler 直接存取自己的屬性，不再依賴全域變數）。</p>
+
+<pre><code class="abap">*&amp;---------------------------------------------------------------------*
+*&amp; Report ZOOALV_2_GRID   雙視窗連動 ALV（S/4HANA 現代寫法）
+*&amp;---------------------------------------------------------------------*
+REPORT zooalv_2_grid.
+
+TYPES: BEGIN OF ty_mara,
+         matnr TYPE mara-matnr,
+         mtart TYPE mara-mtart,
+         matkl TYPE mara-matkl,
+         meins TYPE mara-meins,
+       END OF ty_mara,
+       BEGIN OF ty_marc,
+         matnr TYPE marc-matnr,
+         werks TYPE marc-werks,
+         ekgrp TYPE marc-ekgrp,
+         mmsta TYPE marc-mmsta,
+         dispo TYPE marc-dispo,
+       END OF ty_marc.
+
+"-- SELECT-OPTIONS 內表的型別（給方法參數用）
+TYPES ty_matnr_range TYPE RANGE OF mara-matnr.
+
+*----------------------------------------------------------------------*
+* 主控類別：把容器、兩個 SALV、資料、事件全部封裝起來
+*----------------------------------------------------------------------*
+CLASS lcl_app DEFINITION FINAL CREATE PUBLIC.
+
+  PUBLIC SECTION.
+    METHODS run IMPORTING it_matnr TYPE ty_matnr_range.
+
+    "-- 事件處理方法：SALV 的 double_click 帶 row / column
+    METHODS on_double_click FOR EVENT double_click OF cl_salv_events_table
+      IMPORTING row column.
+
+  PRIVATE SECTION.
+    DATA: mt_mara    TYPE STANDARD TABLE OF ty_mara WITH EMPTY KEY,
+          mt_marc    TYPE STANDARD TABLE OF ty_marc WITH EMPTY KEY,
+          mo_split   TYPE REF TO cl_gui_splitter_container,
+          mo_top     TYPE REF TO cl_gui_container,
+          mo_bottom  TYPE REF TO cl_gui_container,
+          mo_salv_up TYPE REF TO cl_salv_table,
+          mo_salv_dn TYPE REF TO cl_salv_table.
+
+    METHODS: get_mara      IMPORTING it_matnr TYPE ty_matnr_range,
+             build_screen,
+             show_marc     IMPORTING iv_matnr TYPE matnr.
+ENDCLASS.
+
+CLASS lcl_app IMPLEMENTATION.
+
+  METHOD run.
+    get_mara( it_matnr ).
+    IF mt_mara IS INITIAL.
+      MESSAGE '查無物料主檔' TYPE 'S' DISPLAY LIKE 'E'.
+      RETURN.
+    ENDIF.
+    build_screen( ).
+  ENDMETHOD.
+
+  METHOD get_mara.
+    SELECT matnr, mtart, matkl, meins
+      FROM mara
+      WHERE matnr IN @it_matnr
+      ORDER BY matnr
+      INTO TABLE @mt_mara
+      UP TO 200 ROWS.
+  ENDMETHOD.
+
+  METHOD build_screen.
+
+    "-- 用 DEFAULT_SCREEN 當 parent：不必去 SE51 畫任何螢幕
+    mo_split = NEW cl_gui_splitter_container(
+                 parent                  = cl_gui_container=&gt;default_screen
+                 no_autodef_progid_dynnr = abap_true
+                 rows                    = 2
+                 columns                 = 1 ).
+    mo_split-&gt;set_row_height( id = 1 height = 45 ).
+
+    mo_top    = mo_split-&gt;get_container( row = 1 column = 1 ).
+    mo_bottom = mo_split-&gt;get_container( row = 2 column = 1 ).
+
+    TRY.
+        cl_salv_table=&gt;factory(
+          EXPORTING r_container  = mo_top
+          IMPORTING r_salv_table = mo_salv_up
+          CHANGING  t_table      = mt_mara ).
+
+        mo_salv_up-&gt;get_functions( )-&gt;set_all( abap_true ).
+        mo_salv_up-&gt;get_columns( )-&gt;set_optimize( abap_true ).
+        mo_salv_up-&gt;get_display_settings( )-&gt;set_list_header( 'MARA 物料主檔（雙擊料號看工廠資料）' ).
+        mo_salv_up-&gt;get_display_settings( )-&gt;set_striped_pattern( abap_true ).
+        mo_salv_up-&gt;get_selections( )-&gt;set_selection_mode(
+          if_salv_c_selection_mode=&gt;row_column ).
+
+        "-- 掛事件：handler 就是自己（me），所以能直接改自己的內表
+        SET HANDLER me-&gt;on_double_click FOR mo_salv_up-&gt;get_event( ).
+
+        mo_salv_up-&gt;display( ).
+
+      CATCH cx_salv_msg INTO DATA(lx).
+        MESSAGE lx-&gt;get_text( ) TYPE 'E'.
+    ENDTRY.
+
+    cl_gui_cfw=&gt;flush( ).
+  ENDMETHOD.
+
+  METHOD on_double_click.
+    CHECK column = 'MATNR'.
+    "-- row 是列號；用 line_exists 之前先確認索引合法
+    CHECK row &gt;= 1 AND row &lt;= lines( mt_mara ).
+    show_marc( mt_mara[ row ]-matnr ).
+  ENDMETHOD.
+
+  METHOD show_marc.
+
+    CLEAR mt_marc.
+    SELECT matnr, werks, ekgrp, mmsta, dispo
+      FROM marc
+      WHERE matnr = @iv_matnr
+      ORDER BY werks
+      INTO TABLE @mt_marc.
+
+    IF sy-subrc &lt;&gt; 0.
+      MESSAGE |料號 { iv_matnr } 查無 MARC 工廠資料| TYPE 'S' DISPLAY LIKE 'W'.
+    ENDIF.
+
+    IF mo_salv_dn IS NOT BOUND.
+      "-- 第一次：建立下方 SALV
+      TRY.
+          cl_salv_table=&gt;factory(
+            EXPORTING r_container  = mo_bottom
+            IMPORTING r_salv_table = mo_salv_dn
+            CHANGING  t_table      = mt_marc ).
+
+          mo_salv_dn-&gt;get_functions( )-&gt;set_all( abap_true ).
+          mo_salv_dn-&gt;get_columns( )-&gt;set_optimize( abap_true ).
+          mo_salv_dn-&gt;get_display_settings( )-&gt;set_striped_pattern( abap_true ).
+          mo_salv_dn-&gt;get_display_settings( )-&gt;set_list_header(
+            |MARC 工廠資料：{ iv_matnr }| ).
+          mo_salv_dn-&gt;display( ).
+
+        CATCH cx_salv_msg INTO DATA(lx2).
+          MESSAGE lx2-&gt;get_text( ) TYPE 'E'.
+      ENDTRY.
+
+    ELSE.
+      "-- 之後：只換標題並 refresh（內表是同一個，SALV 會自動看到新內容）
+      mo_salv_dn-&gt;get_display_settings( )-&gt;set_list_header(
+        |MARC 工廠資料：{ iv_matnr }| ).
+      mo_salv_dn-&gt;refresh( refresh_mode = if_salv_c_refresh=&gt;full ).
+    ENDIF.
+
+    cl_gui_cfw=&gt;flush( ).
+  ENDMETHOD.
+
+ENDCLASS.
+
+*----------------------------------------------------------------------*
+"-- SELECT-OPTIONS 需要一個「已存在的資料物件」當參照，這裡用一個宣告變數
+"   （比 TABLES: mara 乾淨，S/4 也不建議再用 TABLES）
+DATA gv_matnr TYPE mara-matnr.
+
+SELECTION-SCREEN BEGIN OF BLOCK blk1 WITH FRAME TITLE TEXT-001.
+SELECT-OPTIONS s_matnr FOR gv_matnr.
+SELECTION-SCREEN END OF BLOCK blk1.
+
+START-OF-SELECTION.
+  NEW lcl_app( )-&gt;run( s_matnr[] ).
+
+  "★ 關鍵！用 DEFAULT_SCREEN 當容器時，一定要有這一行「產生清單畫面」
+  "   否則程式跑完就結束，什麼都看不到
+  WRITE space.</code></pre>
+
+  <div class="warn"><b>講義親自標註的「關鍵！觸發畫面顯示」</b>：用 <span class="kw">cl_gui_container=&gt;default_screen</span> 當 parent 時，控制項是掛在「清單處理程序（List Processor）」的畫面上。如果 <span class="kw">START-OF-SELECTION</span> 裡完全沒有輸出動作，SAP 不會產生清單畫面，你的 SPLITTER 就沒有地方顯示，程式一閃就結束。所以要補一行 <span class="kw">WRITE space.</span>（或 <span class="kw">WRITE: /.</span>）。這是雙視窗 ALV 最常見的「明明沒錯卻看不到畫面」。</div>
+
+  <div class="warn"><b>另一個常見錯誤</b>：<span class="kw">no_autodef_progid_dynnr = abap_true</span> 不能漏。不加這個參數時，SPLITTER 會嘗試把自己自動註冊到 <span class="kw">sy-repid / sy-dynnr</span>，在 DEFAULT_SCREEN 模式下會拋出 <span class="kw">CNTL_ERROR</span>。</div>
+
+  <div class="tip">講義的延伸作業：「將檔身換成 <b>VBAP-MATNR、VBAP-VBELN、VBAP-POSNR、VBAP-PSTYV</b>」，也就是上方 MARA、下方改成該料號出現在哪些銷售訂單。做法只要把 <span class="kw">show_marc</span> 改成查 VBAP，型別 <span class="kw">ty_marc</span> 換掉即可——這正是<b>封裝</b>的好處：改一個方法，其他都不動。老師說「往後可繼續朝三個視窗的 ALV 邁進」，作法是把 SPLITTER 改成 <span class="kw">rows = 3</span> 或巢狀 SPLITTER。</div>
+
+  <h3 id="ch03-2-14">14. 記憶體洩漏、物件釋放與 CL_GUI_CFW</h3>
+
+  <p>GUI 控制項（Container、Grid、Tree、Picture…）是<b>前端物件</b>：ABAP 這邊只有一個代理（proxy），真正的控制項活在 SAP GUI 裡。因此它們有一套自己的生命週期規則。</p>
+
+  <table>
+    <thead><tr><th>方法</th><th>做什麼</th><th>什麼時候呼叫</th></tr></thead>
+    <tbody>
+      <tr><td><span class="kw">cl_gui_cfw=&gt;flush( )</span></td><td>把累積的前端指令一次送到 SAP GUI 並等待回應</td><td>建立/修改控制項之後、需要立即看到效果時。<b>不要在迴圈裡呼叫</b>（每次都是一次網路往返）</td></tr>
+      <tr><td><span class="kw">cl_gui_cfw=&gt;dispatch( )</span></td><td>把前端事件分派給對應的 handler</td><td>PAI 中若事件沒被觸發時使用（多數情況 ALV 會自動處理）</td></tr>
+      <tr><td><span class="kw">lo_ctrl-&gt;free( )</span></td><td>銷毀前端控制項並釋放資源</td><td>離開螢幕前、或要重建控制項前</td></tr>
+      <tr><td><span class="kw">CLEAR lo_ctrl</span></td><td>清掉 ABAP 端的參照</td><td><span class="kw">free( )</span> 之後緊接著做</td></tr>
+    </tbody>
+  </table>
+
+<pre><code class="abap">*-- 標準的釋放順序：子先於父，handler 最後
+METHOD cleanup.
+
+  IF mo_grid IS BOUND.
+    "-- 先取消事件登記，切斷循環參照
+    SET HANDLER mo_handler-&gt;on_double_click FOR mo_grid ACTIVATION space.
+    SET HANDLER mo_handler-&gt;on_toolbar      FOR mo_grid ACTIVATION space.
+
+    mo_grid-&gt;free( EXCEPTIONS cntl_error = 1 cntl_system_error = 2 OTHERS = 3 ).
+    CLEAR mo_grid.
+  ENDIF.
+
+  IF mo_split IS BOUND.
+    mo_split-&gt;free( EXCEPTIONS OTHERS = 0 ).
+    CLEAR: mo_split, mo_top, mo_bottom.
+  ENDIF.
+
+  IF mo_container IS BOUND.
+    mo_container-&gt;free( EXCEPTIONS OTHERS = 0 ).
+    CLEAR mo_container.
+  ENDIF.
+
+  CLEAR mo_handler.
+  cl_gui_cfw=&gt;flush( ).
+
+ENDMETHOD.</code></pre>
+
+  <div class="warn"><b>三個真正會出事的記憶體陷阱</b><br>
+  1. <b>每次 PBO 都 NEW 容器</b>：第二次進 PBO 時前端已經有一個叫 CONTAINER 的控制項，會拋 <span class="kw">CNTL_ERROR</span>，或畫面上疊了兩層 ALV。所以一定要包 <span class="kw">IF ... IS NOT BOUND</span>。<br>
+  2. <b>SET HANDLER 沒解除的循環參照</b>：Grid 指向 handler、handler 指向 Grid，兩邊互相咬住，Garbage Collector 回收不了。長時間執行的 Dialog 交易會慢慢吃光 roll area。<br>
+  3. <b>ALV 內表是 CHANGING 綁定</b>：<span class="kw">set_table_for_first_display</span> 的 <span class="kw">it_outtab</span> 是 CHANGING，ALV 直接指向你的內表記憶體。<b>不要在顯示中 REFRESH 或重新指派那個內表變數</b>，會造成 dump 或顯示垃圾資料；要換資料就 <span class="kw">CLEAR</span> 後重新 APPEND，再 <span class="kw">refresh_table_display( )</span>。</div>
+
+  <div class="tip">除錯工具：<span class="tcode">ST22</span> 看 dump（找 <span class="kw">CNTL_ERROR</span>、<span class="kw">CNTL_SYSTEM_ERROR</span>）、<span class="tcode">SAT</span>（ABAP Trace）看是不是 flush 呼叫太多次、<span class="tcode">SM04</span> 看 session 記憶體。</div>
+
+  <h3 id="ch03-2-15">15. 三代 ALV 完整對照範例</h3>
+
+  <p>講義第 16 節用同一份 EKKO 資料，寫了三支程式來對照。以下把三支都現代化重寫，放在一起最能看出差別。</p>
+
+<pre><code class="abap">*&amp;=====================================================================*
+*&amp; 【1996】ZREP_CLS_039 — Function ALV：三行搞定，但功能最陽春
+*&amp;=====================================================================*
+REPORT zrep_cls_039.
+
+SELECT ebeln, bukrs, bsart, lifnr, waers, bedat
+  FROM ekko UP TO 10 ROWS ORDER BY ebeln
+  INTO TABLE @DATA(gt_ekko_1).
+
+"（僅供對照，正式程式請勿再用；S/4 ABAP Cloud 不可用）
+DATA gt_disp TYPE STANDARD TABLE OF ekko WITH EMPTY KEY.
+gt_disp = CORRESPONDING #( gt_ekko_1 ).
+
+CALL FUNCTION 'REUSE_ALV_LIST_DISPLAY'
+  EXPORTING i_structure_name = 'EKKO'
+  TABLES    t_outtab         = gt_disp.
+
+*&amp;=====================================================================*
+*&amp; 【2000】ZREP_CLS_040 — GRID ALV：要有螢幕，但可編輯、事件豐富
+*&amp;=====================================================================*
+REPORT zrep_cls_040.
+
+DATA: go_alv  TYPE REF TO cl_gui_alv_grid,
+      gt_ekko TYPE STANDARD TABLE OF ekko WITH EMPTY KEY.
+
+START-OF-SELECTION.
+  SELECT * FROM ekko UP TO 50 ROWS ORDER BY ebeln
+    INTO TABLE @gt_ekko.               " 這裡真的要整列，故用 *
+  CALL SCREEN 100.
+
+MODULE status_0100 OUTPUT.
+  SET PF-STATUS 'SCREEN0'.
+  SET TITLEBAR  'OO GRID ALV'.
+
+  IF go_alv IS NOT BOUND.
+    "-- 用系統現成的 SCREEN0 容器，不必畫 Custom Control
+    go_alv = NEW cl_gui_alv_grid( i_parent = cl_gui_container=&gt;screen0 ).
+    go_alv-&gt;set_table_for_first_display(
+      EXPORTING i_structure_name = 'EKKO'
+      CHANGING  it_outtab        = gt_ekko
+      EXCEPTIONS OTHERS = 4 ).
+  ENDIF.
+ENDMODULE.
+
+MODULE user_command_0100 INPUT.
+  CASE sy-ucomm.
+    WHEN 'BACK' OR 'EXIT' OR 'CANCEL'.
+      LEAVE TO SCREEN 0.
+  ENDCASE.
+ENDMODULE.
+
+*&amp;=====================================================================*
+*&amp; 【2004】ZREP_CLS_041 — SALV：不必螢幕，功能全開，程式最短
+*&amp;=====================================================================*
+REPORT zrep_cls_041.
+
+SELECT ebeln, bukrs, bsart, lifnr, waers, bedat
+  FROM ekko UP TO 50 ROWS ORDER BY ebeln
+  INTO TABLE @DATA(gt_salv).
+
+TRY.
+    cl_salv_table=&gt;factory( IMPORTING r_salv_table = DATA(go_table)
+                            CHANGING  t_table      = gt_salv ).
+    go_table-&gt;get_functions( )-&gt;set_all( abap_true ).
+    go_table-&gt;display( ).
+  CATCH cx_salv_msg INTO DATA(lx_msg).
+    MESSAGE lx_msg-&gt;get_text( ) TYPE 'E'.
+ENDTRY.</code></pre>
+
+  <div class="warn">講義第 16 節提到 <span class="kw">CALL SCREEN 100</span> 之後「對著程式中的 100 雙擊，出現畫面照填就好」，這裡兩個地方要注意：(1) 螢幕 100 的 <b>Next screen 要留空</b>；(2) 狀態列 <b>SCREEN0</b> 要在 SE41 建立，至少要有 BACK／EXIT／CANCEL 三個功能碼，否則使用者無法離開，只能關掉 SAP GUI。</div>
+
+  <div class="warn"><b>S/4HANA 選型建議</b>：<br>
+  ・純顯示、不編輯、要快 → <b>CL_SALV_TABLE</b>（首選）。<br>
+  ・要編輯、要 data_changed 檢核、要複雜工具列 → <b>CL_GUI_ALV_GRID</b>。<br>
+  ・要跑在 ABAP Cloud / BTP / Fiori → <b>都不能用</b>，改走 <b>RAP ＋ Fiori Elements</b>；ALV 只存在於 SAP GUI 世界。<br>
+  ・<span class="kw">REUSE_ALV_*</span> → 只維護舊碼時看得懂即可，不要寫新的。</div>
+
+  <h3 id="ch03-2-16">16. 常見錯誤與除錯清單</h3>
+
+  <table>
+    <thead><tr><th>症狀</th><th>原因</th><th>解法</th></tr></thead>
+    <tbody>
+      <tr><td>畫面一片空白，看不到 ALV</td><td>Custom Control 的名稱與 <span class="kw">container_name</span> 不一致（大小寫也算）</td><td>SE51 元素名稱與程式字串必須完全相同，一律用大寫</td></tr>
+      <tr><td>執行後閃一下就結束</td><td>用 DEFAULT_SCREEN 卻沒有任何清單輸出</td><td>加 <span class="kw">WRITE space.</span></td></tr>
+      <tr><td>按 BACK 沒反應／回不去</td><td>Next screen 沒清空；或狀態列沒有功能碼；或 PAI 沒接 OK_CODE</td><td>Next screen 留空、SE41 補功能碼、Attributes 的 OK code 欄填 OK_CODE</td></tr>
+      <tr><td>第二次進畫面出現 CNTL_ERROR</td><td>重複建立同名容器</td><td>包 <span class="kw">IF go_grid IS NOT BOUND</span>；離開時 <span class="kw">free( )</span></td></tr>
+      <tr><td>使用者改了值，程式抓不到</td><td>PAI 沒呼叫 <span class="kw">check_changed_data( )</span></td><td>PAI 一開始就呼叫</td></tr>
+      <tr><td>每按一次按鈕就重複執行上一次的動作</td><td>OK_CODE 沒有 CLEAR</td><td><span class="kw">save_ok = ok_code. CLEAR ok_code.</span></td></tr>
+      <tr><td>雙擊抓到錯的那一列</td><td>使用者排序過，<span class="kw">e_row-index</span> 與內表索引不同步</td><td>用 <span class="kw">es_row_no-row_id</span> 或自建 key 欄位</td></tr>
+      <tr><td>refresh 後捲軸跳回第一列</td><td>沒傳 <span class="kw">is_stable</span></td><td><span class="kw">is_stable = VALUE lvc_s_stbl( row = 'X' col = 'X' )</span></td></tr>
+      <tr><td>LVC_FIELDCATALOG_MERGE 失敗</td><td>傳的是程式內自訂結構，不是 DDIC 結構</td><td>改用 <span class="kw">cl_salv_controller_metadata=&gt;get_lvc_fieldcatalog</span>，或建一個 DDIC 結構</td></tr>
+      <tr><td>SFLIGHT 沒資料</td><td>教學系統未產生 Flight Data</td><td>執行 <b>SAPBC_DATA_GENERATOR</b>，或改用 EKKO／MARA／ZVBAP_VBAK</td></tr>
+      <tr><td>fieldcat 型別編譯不過</td><td>SLIS_* 與 LVC_* 混用</td><td>OOALV 一律用 LVC_*；必要時用 LVC_TRANSFER_FROM_SLIS 轉換</td></tr>
+      <tr><td>訊息一出現整個畫面鎖死</td><td>MODULE 沒寫在 FIELD/CHAIN 區塊裡卻丟 E 訊息</td><td>用 CHAIN ... FIELD ... MODULE ... ON CHAIN-REQUEST 包起來</td></tr>
+    </tbody>
+  </table>
+
+  <h3 id="ch03-2-qa">練習與自我檢核</h3>
+
+  <ol>
+    <li><b>十大步驟複習</b>：不看講義，說出從「SE51 建 8000 畫面」到「CALL SCREEN 8000 跑起來」的十個步驟，並指出哪一步是「原封不動貼上就好、但一定要懂」的核心程式（答案：第 5 節的 <span class="kw">DISPLAY_ALV</span>——建立 Container → 以它為 parent 建立 Grid → fieldcat → layout → 資料 → SET_TABLE_FOR_FIRST_DISPLAY）。</li>
+
+    <li><b>SE24 觀察</b>：用 SE24 打開 <b>CL_GUI_CUSTOM_CONTAINER</b> 與 <b>CL_GUI_ALV_GRID</b>，各找出三個 Attributes、三個 Methods、三個 Events，並說明 CL_GUI_ALV_GRID 繼承自哪個類別（提示：CL_GUI_CONTROL → CL_GUI_OBJECT）。</li>
+
+    <li><b>2024/09 Home Work（原題）</b>：把 Z202202_27 做四項改造——<br>
+      (1) 資料表由 <b>SFLIGHT</b> 改成 <b>ZVBAP_VBAK</b>（提示：找出程式中所有出現 sflight 的地方逐一修改，包含 fieldcat 的 <span class="kw">i_structure_name</span>）。<br>
+      (2) 加上查詢條件「訂單日期區間」：<span class="kw">SELECT-OPTIONS s_erdat FOR zvbap_vbak-erdat.</span> 放在 <span class="kw">CALL SCREEN 8000</span> 之前。<br>
+      (3) 設一個按鈕（功能碼 <b>ERP300</b>），按了才退出系統。<br>
+      (4) 在畫面上顯示你的帳號（<span class="kw">sy-uname</span>）。</li>
+
+    <li><b>2024/12/27 補充題</b>：把程式改成「只有按自己追加的按鈕才會結束」。注意 SE51 的 <b>Next screen 也要設 8000</b>（或留空），否則 PAI 跑完就自動離開。參考程式 <b>Z2409_OO_300</b>。</li>
+
+    <li><b>十項錯誤修正檢核表</b>（講義原文的 01～10，用來驗收 Z202202_27）：<br>
+      01 <b>兩個 ACTIVE</b>——程式與螢幕都要啟動；02 <b>8000</b>——螢幕編號一致；03 <b>MARA</b>——把列印內容換成 MARA；04 <b>CONTAINER</b>——Custom Control 名稱與程式字串一致（注意講義寫成 CONTAINTER 是筆誤，這正是最常見的錯字坑）；05 <b>BACK</b>——功能碼；06 <b>FIELD_CAT</b>——欄位目錄；07 <b>GUI_STATUS</b>——SE41 狀態列存在且已啟動；08 <b>LEAVE PROGRAM</b>——離開指令；09 <b>CALL SCREEN</b>——主程式要呼叫螢幕；10 <b>SCREEN DESIGN</b>——版面設計完成。逐項打勾。</li>
+
+    <li><b>OOP 基本功</b>：寫一個本地類別 <span class="kw">LCL_MATERIAL</span>，屬性 <span class="kw">MATNR</span> 放 PRIVATE，提供 <span class="kw">CONSTRUCTOR</span>、<span class="kw">GET_DESCRIPTION( )</span>（讀 MAKT）、靜態方法 <span class="kw">GET_COUNT( )</span>。再加一個子類別 <span class="kw">LCL_MATERIAL_FERT</span> 覆寫 <span class="kw">GET_DESCRIPTION</span>，在描述前加上「【成品】」。用一個 LOOP 展示多型。</li>
+
+    <li><b>介面練習</b>：定義 <span class="kw">LIF_EXPORTABLE</span>（方法 <span class="kw">TO_CSV</span>），讓 LCL_MATERIAL 與 LCL_ORDER 都實作它；寫一個接收 <span class="kw">TYPE REF TO lif_exportable</span> 的方法，證明「呼叫端不必知道實際類別」。</li>
+
+    <li><b>事件練習</b>：把第 5 節的 <span class="kw">LCL_STOCK</span> 範例改成——出貨時若庫存不足直接 <span class="kw">RAISE EXCEPTION TYPE zcx_no_stock</span>，低於安全庫存則 <span class="kw">RAISE EVENT</span>。說明「例外」與「事件」在語意上的差別（提示：例外是「我做不下去了」，事件是「我做完了，順便通知你」）。</li>
+
+    <li><b>ALV 事件實作</b>：在第 9 節的完整範例上加三件事——(a) 雙擊 VBELN 跳 VA03；(b) 工具列加一顆「全部展開」按鈕；(c) NETWR 大於 100,000 的列整列變紅色（提示：fieldcat 加 <span class="kw">stylefname</span> 或 layout 的 <span class="kw">info_fname</span> ＋ 內表加一個 <span class="kw">char 3</span> 的顏色欄位 <span class="kw">'C610'</span>）。</li>
+
+    <li><b>可編輯 ALV</b>：把 KWMENG 設成可編輯，在 <span class="kw">DATA_CHANGED</span> 事件檢核「不可為 0、不可小於已交貨量」，錯誤用 <span class="kw">add_protocol_entry</span> 回報；PAI 記得 <span class="kw">check_changed_data( )</span>。</li>
+
+    <li><b>SALV 內嵌</b>：把同一份資料改用 <b>CL_SALV_TABLE</b> 顯示在 SE51 的 Custom Control 裡，並用 <b>CL_SALV_FORM_LAYOUT_GRID</b> 做出四行抬頭（報表名稱、執行者、日期時間、筆數）。說明為什麼一定要 <span class="kw">set_screen_status( )</span>。</li>
+
+    <li><b>雙視窗連動</b>：完成講義第 17 節的作業——上方 MARA，下方改成 <b>VBAP-MATNR / VBAP-VBELN / VBAP-POSNR / VBAP-PSTYV</b>。再進階：改成<b>三個視窗</b>（MARA → VBAP → VBEP 交期），用 <span class="kw">rows = 3</span> 或巢狀 SPLITTER。</li>
+
+    <li><b>容器比一比</b>：同一支報表分別用 CUSTOM_CONTAINER、DOCKING_CONTAINER、DEFAULT_SCREEN 顯示，記錄三者在「要不要建螢幕、要不要畫元素、能不能和選擇畫面共存」上的差異。</li>
+
+    <li><b>記憶體檢核</b>：故意把 <span class="kw">SET HANDLER</span> 寫在 PBO 的 <span class="kw">IF</span> 判斷之外（每次 PBO 都掛一次），觀察雙擊一次會跳出幾個訊息；再修正回來。這是理解「事件登記會累加」最直接的實驗。</li>
+
+    <li><b>例外處理</b>：重現講義第 15 節的除以零範例，比較「不加 TRY 會 dump 到 ST22」與「加了 TRY 只印訊息」的差別；再加一個 <span class="kw">CLEANUP</span> 區塊，觀察它什麼時候才會被執行。</li>
+
+    <li><b>三代對照</b>：把同一份 EKKO 資料，分別用 REUSE_ALV_LIST_DISPLAY、CL_GUI_ALV_GRID、CL_SALV_TABLE 寫三支程式，比較程式行數、可用功能、是否需要螢幕。最後回答：<b>如果這支程式明年要搬到 ABAP Cloud，哪一支活得下來？</b></li>
+
+    <li><b>觀念總結題</b>：用自己的話說明——為什麼老師說「OOALV 的程式放在各個物件中，不像 Function ALV 一目了然，但更適合規畫複雜系統」？舉一個你自己專案裡「因為用了物件所以好改」或「因為沒用物件所以難改」的例子。</li>
+  </ol>
+
+</section>

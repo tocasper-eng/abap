@@ -1,0 +1,1626 @@
+<section class="chapter" id="ch05-2" data-title="BC401 ABAP Objects 物件導向程式設計">
+  <h2>第 5-2 章 BC401 ABAP Objects 物件導向程式設計</h2>
+  <p class="lede">BC401 是 SAP ABAP 開發路線上承先啟後的核心課：2007 年版（R/3 4.6～6.x）前半段還在補 BC400 沒講透的「資料型別、內表、程式呼叫與記憶體」，後半段才進入類別、繼承、轉型、介面、事件、全域類別、例外、動態程式設計；新版（Col18，2022）則整本聚焦 OO，另外加入 ADT、ABAP Unit、設計模式（Factory／Singleton／Friendship）、RTTI、持久化物件與 OO Transaction。本章把兩個版本對齊，程式碼全部改寫成 S/4HANA 1809（ABAP 7.53）可直接使用的現代寫法，並把 2007 版 BC404（OO 概論，21 頁）一併吸收。學完你應該能看懂 SAP 標準類別、自己寫出可測試的 OO 報表，並理解為什麼 BAdI、SALV、RAP 全都建立在這些觀念上。</p>
+
+  <div class="meta">
+    <div><b>核心 TCODE</b><span class="tcode">SE24</span><span class="tcode">SE80</span><span class="tcode">SE38</span><span class="tcode">SE18</span><span class="tcode">SE19</span><span class="tcode">SE84</span><span class="tcode">SE81</span><span class="tcode">SE93</span><span class="tcode">SPRO</span><span class="tcode">DWDM</span><span class="tcode">SCI</span><span class="tcode">ATC</span><span class="tcode">SAUNIT_CLIENT_SETUP</span><span class="tcode">ST22</span><span class="tcode">SE91</span></div>
+    <div><b>關鍵物件</b>CL_GUI_CUSTOM_CONTAINER、CL_GUI_ALV_GRID、CL_SALV_TABLE、CL_EXITHANDLER、CX_ROOT、CX_STATIC_CHECK、CX_DYNAMIC_CHECK、CX_NO_CHECK、CX_SY_MOVE_CAST_ERROR、CX_SY_ARITHMETIC_OVERFLOW、CX_SY_ZERODIVIDE、CX_SY_ILLEGAL_HANDLER、CX_OS_OBJECT_EXISTING、CX_OS_OBJECT_NOT_FOUND、IF_T100_MESSAGE、IF_T100_DYN_MSG、CL_ABAP_UNIT_ASSERT、CL_ABAP_TYPEDESCR、CL_ABAP_STRUCTDESCR、CL_ABAP_TABLEDESCR、CL_ABAP_CLASSDESCR、ABAP_PARMBIND_TAB、ABAP_EXCPBIND_TAB、BDCDATA、BDCMSGCOLL、RSPARAMS、SPFLI、SFLIGHT、SCARR、SCUSTOM、SAPLANE</div>
+    <div><b>系統變數</b>sy-subrc、sy-tabix、sy-tfill、sy-tleng、sy-index、sy-fdpos、sy-datum</div>
+  </div>
+
+    <div class="tip">本章是原廠 BC401 的 OO 觀念全貌。想看大量「可以直接抄去改」的範例與設計原則、設計模式的實作，請接著讀第七部 · 程式範例庫：<a href="#ch07-1">7-1</a> ～ <a href="#ch07-7">7-7</a>（134 支隨書範例，已改寫為現代語法）。</div>
+
+<h3 id="ch05-2-01">1. 課程定位與教材對照</h3>
+  <p><b>課程等級：</b>BC401 屬 <b>200 級</b>（Advanced）課程，前置為 BC400（見 <a href="#ch05-1">5-1 章</a>）與 SAPTEC；標準 5 天。强晟的筆記是依 2002 年 R/3 4.6A 版原廠教材自學整理（2007-06-23 完成，296 頁，15 個單元）；原廠英文教材為 Course Version 18（2022，Material Number 50148232，334 頁，14 個 Unit）。2007 版 BC404「ABAP Objects: Object-Oriented Programming in R/3」只有 21 頁筆記，作者自己也說「大部分內容跟 BC401 一樣，只記錄 BC401 未提及的部分」，所以本章把它併入對應小節。</p>
+
+  <table>
+    <thead><tr><th>本章小節</th><th>2007 版單元（强晟 BC401 筆記頁碼）</th><th>BC404 筆記（2007）</th><th>Col18 原廠教材 Unit / Lesson（PDF 頁）</th></tr></thead>
+    <tbody>
+      <tr><td>2. 資料型別與資料物件細節</td><td>第二單元 p8–p45</td><td>—</td><td>（新版移出，併入 BC400／BC402）</td></tr>
+      <tr><td>3. 內表進階</td><td>第三單元 p46–p88</td><td>—</td><td>（新版移出，見 BC400／BC402）</td></tr>
+      <tr><td>4. 呼叫程式與傳遞資料</td><td>第四單元 p89–p113</td><td>—</td><td>（新版移出，見 BC402）</td></tr>
+      <tr><td>5. 從程序式到物件導向</td><td>第五單元 p114–p128</td><td>第二單元 p5、第八單元 p14–p19</td><td>Unit 1 L1 p11–p22</td></tr>
+      <tr><td>6. 分析與設計：UML</td><td>第六單元 p129–p145</td><td>第三單元 p6–p8</td><td>Unit 1 L2 p23–p32</td></tr>
+      <tr><td>7. 區域類別：屬性、方法與可見性</td><td>第七單元 第一課 p149–p160</td><td>第四單元 p9–p10</td><td>Unit 2 L1 p43–p56</td></tr>
+      <tr><td>8. 建立物件、呼叫方法、建構子</td><td>第七單元 第二～五課 p161–p173</td><td>第四單元</td><td>Unit 2 L2–L5 p57–p84</td></tr>
+      <tr><td>9. 繼承與重定義</td><td>第八單元 p174–p184</td><td>第五單元 p11</td><td>Unit 3 L1 p87–p96</td></tr>
+      <tr><td>10. 轉型與多型</td><td>第九單元 p185–p198</td><td>第五單元</td><td>Unit 3 L2–L4 p97–p120</td></tr>
+      <tr><td>11. 介面</td><td>第十單元 p199–p213</td><td>第五單元</td><td>Unit 4 L1–L3 p123–p144</td></tr>
+      <tr><td>12. 事件</td><td>第十一單元 p214–p225</td><td>第六單元 p12</td><td>Unit 5 L1–L2 p147–p162</td></tr>
+      <tr><td>13. 全域類別、全域介面與 Class Builder</td><td>第十二單元 第一～二課 p226–p235</td><td>第七單元 p13</td><td>Unit 6 L1–L3 p165–p192</td></tr>
+      <tr><td>14. OO 應用實例：ALV Grid 與 BAdI</td><td>第十二單元 第三課 p236–p239</td><td>—</td><td>Unit 7 L1–L2 p195–p216</td></tr>
+      <tr><td>15. ABAP Development Tools（ADT）</td><td>—（2007 無）</td><td>—</td><td>Unit 8 L1 p219–p232</td></tr>
+      <tr><td>16. 類別式例外</td><td>第十四單元 p252–p269</td><td>—</td><td>Unit 9 L1–L3 p235–p264</td></tr>
+      <tr><td>17. ABAP Unit 單元測試</td><td>—（2007 無）</td><td>—</td><td>Unit 10 L1 p267–p278</td></tr>
+      <tr><td>18. 進階 OO 技巧</td><td>第十三單元 第一～二課 p240–p245</td><td>—</td><td>Unit 11 L1 p281–p290</td></tr>
+      <tr><td>19. Factory、Singleton 與 Friendship</td><td>第十三單元 第二～三課 p244–p247</td><td>—</td><td>Unit 11 L2–L3 p291–p304</td></tr>
+      <tr><td>20. 動態程式設計與 RTTI</td><td>第十五單元 p270–p295</td><td>—</td><td>Unit 12 L1 p307–p314</td></tr>
+      <tr><td>21. 持久化物件與 OO Transaction</td><td>第十三單元 第四課 p248–p251</td><td>—</td><td>Unit 13 L1 p317–p326</td></tr>
+      <tr><td>22. 綜合案例：航班候補名單</td><td>—</td><td>附錄（範例程式）p20</td><td>Unit 14 L1 p329–p334</td></tr>
+    </tbody>
+  </table>
+
+  <p><b>2007 版與新版的主要差異：</b></p>
+  <ul>
+    <li><b>範圍：</b>2007 版 15 單元中有 3 個單元（資料型別、內表、程式呼叫）是非 OO 主題；新版把它們移到 BC400／BC402，整本只談 OO。</li>
+    <li><b>新增：</b>ADT（Eclipse）、ABAP Unit、UML 自動產生（NW 7.0 EhP2）、<span class="kw">NEW</span> 運算子（7.40）、<span class="kw">IS INSTANCE OF</span> 與 <span class="kw">CASE TYPE OF</span>（7.50）、<span class="kw">RETRY</span>／<span class="kw">RESUME</span>（NW 7.0 EhP2）、例外文字改用訊息類別（6.40 起）、Factory／Singleton 設計模式獨立成課、OO Transaction。</li>
+    <li><b>術語：</b>2007 版稱「收縮轉型（Narrowing Cast）／擴展轉型（Widening Cast）」，新版改稱 <b>Up-Cast／Down-Cast</b>，意思相同但不再容易搞混（見第 10 節）。</li>
+    <li><b>BAdI：</b>兩版都示範 <b>Classic BAdI</b>（<span class="tcode">SE18</span>／<span class="tcode">SE19</span>、<span class="kw">CL_EXITHANDLER=&gt;GET_INSTANCE</span>），新版補一句 NW 7.0 起可搜尋 <span class="kw">GET BADI</span>；新式 BAdI 的完整說明在 <a href="#ch03-4">3-4 章</a>與 <a href="#ch05-15">5-15 章 BC427</a>。</li>
+  </ul>
+  <div class="note">本專區 <a href="#ch05-5">5-5 章</a>以 BC404 代號收錄 ADT/Eclipse 主題；2007 年版的 BC404 則是 OO 概論，與本課重疊太多，因此併入本章。强晟 BC404 筆記的單元對照：第二單元＝BC401 筆記 p114–p128、第三單元＝p135–p145（另補 UML 圖分類）、第四單元＝p146–p173（另補「雞蛋模型」）、第五單元＝p174–p213、第六單元＝p214–p225、第七單元＝p226–p239、第八單元「摘要和展望」為 BC401 所無。</div>
+
+  <h3 id="ch05-2-02">2. 資料型別與資料物件細節（2007 版第二單元）</h3>
+  <p>資料物件用 <span class="kw">DATA</span> 宣告，<span class="kw">TYPE</span> 後面的型別在編譯時就「靜態綁定」，執行期不能改。所有型別最後都建立在預定義 ABAP 型別上：</p>
+  <table>
+    <thead><tr><th>型別</th><th>是否完整指定</th><th>長度 / 值域</th><th>初始值</th><th>重點</th></tr></thead>
+    <tbody>
+      <tr><td><b>i</b></td><td>完整</td><td>4 bytes，-2147483648 ～ 2147483647</td><td>0</td><td>整數運算最快；除法自動<b>四捨五入</b>（4/10＝0、5/10＝1）</td></tr>
+      <tr><td><b>p</b></td><td>需 LENGTH／DECIMALS</td><td>1～16 bytes，預設 8 bytes（15 位數）、0 位小數；小數最多 14 位</td><td>0</td><td>每 byte 存 2 位數，最後半 byte 存正負號；<span class="kw">p LENGTH 2 DECIMALS 2</span> 值域為 -9.99～9.99；商業運算首選</td></tr>
+      <tr><td><b>f</b></td><td>完整</td><td>8 bytes，IEEE 雙精度，約 ±2.2E-308～1.8E+308</td><td>0</td><td>只能表示近似值，比較時用範圍或先四捨五入</td></tr>
+      <tr><td><b>c / n / x</b></td><td>需 LENGTH</td><td>1～65535 字元（x 為 byte）；未指定長度預設 1</td><td>空白 / '0…' / X'00'</td><td>n 只存數字，指定時忽略字母、右靠左補 0</td></tr>
+      <tr><td><b>d / t</b></td><td>完整</td><td>YYYYMMDD（8）／HHMMSS（6）</td><td>'00000000' / '000000'</td><td>只有畫面輸入時才檢查合法性；可做日期、時間加減</td></tr>
+      <tr><td><b>string / xstring</b></td><td>完整</td><td>執行期動態長度</td><td>空字串</td><td>長度不屬於型別的一部分</td></tr>
+      <tr><td><b>decfloat16 / decfloat34</b></td><td>完整</td><td>十進位浮點（7.02 起）</td><td>0</td><td>2007 版未提；需要大範圍又要十進位精確時的現代選擇</td></tr>
+    </tbody>
+  </table>
+  <p><b>運算型別規則</b>（原教材重點）：預設用定點（p）運算；只有全部運算元都是整數才用整數運算；只要有一個 f 就用浮點運算；所有運算元先轉成計算型別，算完再轉成結果欄位型別。所以「同一個式子，不同型別組合會得到不同結果」。數值文字若在 i 範圍內當整數，否則當 p：<span class="kw">1000000000 / 300000000 * 3</span> 得 9（整數運算，中間值 3 已四捨五入），<span class="kw">10000000000 / 3000000000 * 3</span> 得 10（超出 i 範圍改用 p）。程式屬性中的「定點運算（Fixed point arithmetic）」必須保持勾選，否則 DECIMALS 只影響輸出。</p>
+  <p>回傳 f 的內建函數：<span class="kw">cos acos sin asin tan atan tanh sinh cosh exp log log10 sqrt</span>。建議：只有整數用 i；商業小數用 p；極大極小的粗略運算才用 f（SELECT 的某些聚合函數也會回傳 f）。</p>
+
+  <pre><code class="abap">*&amp;---------------------------------------------------------------------*
+*&amp; 數值型別的陷阱：原教材 73050 × 72.7% 的例子，改寫為 7.52 語法
+*&amp;---------------------------------------------------------------------*
+CONSTANTS lc_rate TYPE p LENGTH 8 DECIMALS 4 VALUE '0.0727'.
+
+DATA lv_float TYPE f.
+DATA lv_pack  TYPE p LENGTH 8 DECIMALS 2.
+
+lv_float = 73050 * CONV f( lc_rate ).       "5.3107349999999997E+03
+lv_pack  = lv_float.                         "5310.73 ← 浮點誤差被四捨五入吃掉
+DATA lv_pack_ok TYPE p LENGTH 8 DECIMALS 2.
+lv_pack_ok = 73050 * lc_rate.                "5310.77 ← 定點運算才正確
+
+DATA(lv_int1) = 4 / 10.                      "0（整數運算，四捨五入）
+DATA(lv_int2) = 5 / 10.                      "1
+DATA(lv_div)  = 5 DIV 10.                    "0（要無條件捨去請用 DIV）
+DATA(lv_mod)  = 17 MOD 5.                    "2
+
+" 十進位浮點：範圍大又不失真（7.02+）
+DATA(lv_dec) = CONV decfloat34( '73050' ) * CONV decfloat34( '0.0727' ).
+
+cl_demo_output=&gt;display( |f→p：{ lv_pack }　p：{ lv_pack_ok }　decfloat：{ lv_dec }| ).</code></pre>
+
+  <p><b>字串處理：</b>原教材列出 <span class="kw">FIND</span>（找到 sy-subrc＝0，<span class="kw">MATCH OFFSET</span> 取位置）、<span class="kw">REPLACE</span>、<span class="kw">TRANSLATE</span>（大小寫或依範本逐字替換）、<span class="kw">SHIFT</span>、<span class="kw">CONDENSE</span>（去頭尾空白並把連續空白合成一個）、<span class="kw">OVERLAY</span>、<span class="kw">CONCATENATE</span>、<span class="kw">SPLIT … INTO TABLE</span>、<span class="kw">SEARCH</span>（設定 sy-fdpos，唯一不分大小寫者）與 <span class="kw">STRLEN( )</span>；比較運算子 <span class="kw">CO CN CA NA CS NS CP NP</span>；位元組版本加 <span class="kw">BYTE-</span> 前綴或 <span class="kw">IN BYTE MODE</span>。除 TRANSLATE、CONDENSE 外都會設定 sy-subrc。7.02 起建議改用字串函數與字串範本：</p>
+
+  <pre><code class="abap">DATA(lv_text) = `  SAP   S/4HANA   ABAP  `.
+
+DATA(lv_clean) = condense( lv_text ).                        "'SAP S/4HANA ABAP'
+DATA(lv_upper) = to_upper( lv_clean ).
+DATA(lv_pos)   = find( val = lv_clean sub = `ABAP` ).         "找不到回傳 -1
+DATA(lv_repl)  = replace( val = lv_clean sub = `S/4HANA` with = `ECC` ).
+DATA(lv_len)   = strlen( lv_clean ).                          "字元數（c 型別不含尾端空白）
+DATA(lv_part)  = substring( val = lv_clean off = 4 len = 7 ). "'S/4HANA'
+DATA(lv_2nd)   = segment( val = lv_clean index = 2 sep = ` ` ).
+
+SPLIT lv_clean AT ` ` INTO TABLE DATA(lt_words).
+
+" 原教材「取輸入日期所在月的第一天」：以前靠結構 year/month/day 轉換，現在一行
+PARAMETERS p_date TYPE sy-datum DEFAULT sy-datum.
+DATA(lv_first_day) = CONV d( |{ p_date(6) }01| ).
+
+IF lv_clean CS `hana`.        "CS 不分大小寫；sy-fdpos 得到位置
+  WRITE: / |包含 HANA，位置 { sy-fdpos }|.
+ENDIF.</code></pre>
+
+  <p><b>結構：</b>可用 <span class="kw">TYPES BEGIN OF … END OF</span> 先定義型別再宣告，也可直接 <span class="kw">DATA BEGIN OF</span>（隱含定義型別）；組件用 <span class="kw">struct-comp</span> 存取，因此變數名不能含連字號。結構可任意巢狀；包含 string、內表或參照的叫<b>深層結構（deep structure）</b>，限制包括：不能整個放在 SELECT 的 INTO 後面、不能做 offset 存取（SAP Note 176336）。需要「分組但仍是扁平結構」時用<b>具名 INCLUDE</b>：<span class="kw">INCLUDE TYPE … AS name [RENAMING WITH SUFFIX …]</span>，資料庫表與 ALV、Table Control 只接受扁平結構時特別好用。</p>
+  <p><b>型別群組（Type Group）：</b>名稱最長 5 字元，全域常數必須放在型別群組中，所有常數與型別名都要以群組名為前綴；R/3 4.5 以前這是定義複雜全域型別的唯一方法。</p>
+  <div class="warn"><b>S/4HANA 現況：</b>① S/4HANA 系統一定是 Unicode，原教材的「Unicode Checks Active」旗標、Unicode 片段視圖（fragment view）、對齊間隙（alignment gap）等規則你只會在舊程式轉換時遇到；現代程式請不要再用 offset/length 對結構做字元運算。② <span class="kw">TYPE-POOLS</span> 敘述已過時（7.02 起型別群組會自動載入），全域常數改放在介面或類別的 <span class="kw">CONSTANTS</span>，例如 <span class="kw">abap_true</span>／<span class="kw">abap_false</span>。③ 原教材的 <span class="kw">MOVE p_date TO s_date</span>、<span class="kw">COMPUTE</span>、<span class="kw">ADD</span> 等語法一律改成 <span class="kw">=</span> 與運算式。</div>
+  <div class="note"><b>相容與轉換：</b>兩個基本型別「型別與長度相同（p 還要小數位相同）」才相容；結構要「結構相同且組件相容」；表型別要「行型別相容、主鍵與表種類相同」。相容就不轉換；不相容但有轉換規則就先轉再算；沒有轉換規則時，靜態型別會語法錯誤（例如把 d 型 field symbol 指派給 t 型 field symbol），<span class="kw">TYPE any</span> 的泛型則要到執行期才 DUMP。完整轉換規則見關鍵字文件的 conversion rules（舊版寫在 MOVE 關鍵字下）。</div>
+
+  <h3 id="ch05-2-03">3. 內表進階（2007 版第三單元）</h3>
+  <p>內表是執行期可變長度的資料物件，行數只受系統記憶體限制。每個內表有三個屬性：<b>行型別</b>（有哪些欄）、<b>鍵</b>（唯一／非唯一）、<b>表種類</b>（決定能用哪些存取方式）。完整的內表與 ABAP SQL 現代語法見 <a href="#ch02-2">2-2 章</a>，這裡聚焦 BC401 強調的「表種類 × 存取方式 × 效能」。</p>
+  <table>
+    <thead><tr><th></th><th>STANDARD TABLE</th><th>SORTED TABLE</th><th>HASHED TABLE</th></tr></thead>
+    <tbody>
+      <tr><td>分類</td><td>索引表</td><td>索引表</td><td>雜湊表</td></tr>
+      <tr><td>索引存取</td><td>✔（最快的存取方式）</td><td>✔</td><td>✘</td></tr>
+      <tr><td>鍵</td><td>只能 NON-UNIQUE（或 DEFAULT KEY、EMPTY KEY）</td><td>UNIQUE 或 NON-UNIQUE</td><td>只能 UNIQUE</td></tr>
+      <tr><td>完整鍵讀取</td><td>表掃描（線性）</td><td>二分搜尋（對數）</td><td>雜湊演算法（與行數無關）</td></tr>
+      <tr><td>部分鍵（前 n 個鍵欄位用 = 連續指定）</td><td>表掃描</td><td>二分搜尋／最佳化 LOOP WHERE</td><td>表掃描</td></tr>
+      <tr><td>SORT</td><td>✔</td><td>✘（系統自動維持排序）</td><td>✔</td></tr>
+      <tr><td>主要用法</td><td>以索引為主</td><td>以鍵為主、需要範圍讀取</td><td>只用完整鍵讀單筆</td></tr>
+    </tbody>
+  </table>
+  <div class="warn"><b>教材錯誤修正（兩處）：</b>① 强晟筆記 p61 寫「可以對 SORTED 和 HASHED 表使用 SORT」，這是翻譯錯誤——排序表<b>不能</b>用 SORT（靜態可知時語法錯誤），筆記 p79 的總結「標準表和雜湊表可以 SORT」才是對的。② 筆記 p57 的範例 <span class="kw">TYPE STANDARD TABLE OF s_distance_ty WITH UNIQUE KEY distan distid</span> 會語法錯誤：<b>標準表不能有 UNIQUE 鍵</b>，必須寫 NON-UNIQUE（或改用 SORTED／HASHED）。</div>
+
+  <pre><code class="abap">*&amp;---------------------------------------------------------------------*
+*&amp; 三種表種類 + 次要鍵（7.02+）：原教材 s_distance_ty 範例改寫
+*&amp;---------------------------------------------------------------------*
+TYPES: BEGIN OF ty_distance,
+         carrid TYPE s_carr_id,
+         connid TYPE s_conn_id,
+         distan TYPE s_distance,
+         distid TYPE s_distid,
+       END OF ty_distance.
+
+TYPES tt_distance_std TYPE STANDARD TABLE OF ty_distance
+                      WITH NON-UNIQUE KEY distan distid.        "標準表只能 NON-UNIQUE
+TYPES tt_distance_srt TYPE SORTED TABLE OF ty_distance
+                      WITH NON-UNIQUE KEY distid distan.
+TYPES tt_distance_hsh TYPE HASHED TABLE OF ty_distance
+                      WITH UNIQUE KEY carrid connid
+                      WITH NON-UNIQUE SORTED KEY by_dist COMPONENTS distid.
+
+SELECT carrid, connid, distance AS distan, distid
+  FROM spfli
+  ORDER BY carrid, connid                     "HANA 沒有預設排序，要順序就明寫
+  INTO TABLE @DATA(lt_dummy).
+
+DATA(lt_buffer) = CORRESPONDING tt_distance_hsh( lt_dummy ).
+
+" 完整主鍵讀取（雜湊）：表運算式 + line_exists
+IF line_exists( lt_buffer[ carrid = 'LH' connid = '0400' ] ).
+  DATA(ls_lh) = lt_buffer[ carrid = 'LH' connid = '0400' ].
+ENDIF.
+
+" 走次要排序鍵的範圍 LOOP（部分鍵、前 n 欄用 =）
+LOOP AT lt_buffer ASSIGNING FIELD-SYMBOL(&lt;ls_d&gt;) USING KEY by_dist WHERE distid = 'KM'.
+  &lt;ls_d&gt;-distan = &lt;ls_d&gt;-distan * '0.621371'.     "改非鍵欄位 OK；改鍵欄位 → DUMP
+  &lt;ls_d&gt;-distid = 'MI'.                            "✘ 正用 by_dist 走迴圈，distid 受保護 → DUMP
+ENDLOOP.</code></pre>
+  <div class="note">上例最後一行是<b>刻意的反例</b>：透過 field symbol 或 MODIFY 修改 SORTED／HASHED 表的<b>主鍵</b>欄位一律產生執行期錯誤；次要鍵欄位則在「正用該鍵走 LOOP」時同樣受保護。正確做法是 DELETE 舊行再 INSERT 新行，或改用不含該欄位的鍵。</div>
+
+  <p><b>單筆與多筆操作（原教材語法 → 現代寫法）：</b></p>
+  <table>
+    <thead><tr><th>用途</th><th>原教材</th><th>7.40+ 建議</th><th>注意</th></tr></thead>
+    <tbody>
+      <tr><td>插入</td><td>INSERT wa INTO TABLE itab／INTO itab INDEX n／INSERT LINES OF</td><td>INSERT VALUE #( … ) INTO TABLE itab；itab = VALUE #( BASE itab ( … ) )</td><td>對排序表用 INDEX 插入，位置不對就 DUMP</td></tr>
+      <tr><td>讀單筆</td><td>READ TABLE itab INDEX n／WITH TABLE KEY／WITH KEY／FROM wa INTO wa</td><td>itab[ n ]、itab[ k = v ]、VALUE #( itab[ … ] OPTIONAL )</td><td>表運算式找不到會丟 CX_SY_ITAB_LINE_NOT_FOUND</td></tr>
+      <tr><td>只判斷存在</td><td>READ … TRANSPORTING NO FIELDS</td><td>line_exists( )、line_index( )</td><td></td></tr>
+      <tr><td>比對內容</td><td>READ … COMPARING f1 … fm／ALL FIELDS（sy-subrc＝2 表示找到但內容不同）</td><td>先讀出再用 = 比較</td><td></td></tr>
+      <tr><td>修改</td><td>MODIFY TABLE itab FROM wa [TRANSPORTING]；MODIFY itab FROM wa TRANSPORTING f WHERE</td><td>LOOP … ASSIGNING FIELD-SYMBOL( )；或表運算式直接指派 itab[ k = v ]-f = x</td><td>不能改排序表／雜湊表鍵欄位</td></tr>
+      <tr><td>刪除</td><td>DELETE TABLE itab FROM wa／WITH TABLE KEY；DELETE itab INDEX n／WHERE</td><td>同左；DELETE ADJACENT DUPLICATES 前先 SORT</td><td></td></tr>
+      <tr><td>整表</td><td>CLEAR（留記憶體）、FREE（釋放）、比較運算子（先比行數再逐行比）</td><td>同左；FILTER、REDUCE、FOR</td><td>FILTER 需排序／雜湊鍵或次要鍵</td></tr>
+    </tbody>
+  </table>
+  <p>LOOP 中的系統變數：<b>sy-tabix</b>＝目前行索引；<b>sy-tfill</b>＝LOOP 開始時的行數（迴圈中增刪不會更新）；<b>sy-tleng</b>＝行長度。索引表在 LOOP 內做單行操作可省略 INDEX，會作用在目前行。</p>
+
+  <pre><code class="abap">*&amp;---------------------------------------------------------------------*
+*&amp; 效能提示（原教材第五課）+ 列舉條件的 RANGE 內表
+*&amp;---------------------------------------------------------------------*
+SELECT carrid, connid, fldate, seatsmax, seatsocc
+  FROM sflight
+  WHERE carrid IN ( 'LH', 'AA', 'UA' )
+  ORDER BY carrid, connid, fldate
+  INTO TABLE @DATA(lt_flight).
+
+" ① 標準表要用 BINARY SEARCH，前提是「剛好依同樣欄位排過序」
+READ TABLE lt_flight WITH KEY carrid = 'LH' connid = '0400'
+     BINARY SEARCH TRANSPORTING NO FIELDS.
+IF sy-subrc = 0.
+  " ② 標準表的「部分循序 LOOP」：先二分找到起點，再從該索引往下讀到不符為止
+  LOOP AT lt_flight ASSIGNING FIELD-SYMBOL(&lt;ls_f&gt;) FROM sy-tabix.
+    IF &lt;ls_f&gt;-carrid &lt;&gt; 'LH' OR &lt;ls_f&gt;-connid &lt;&gt; '0400'.
+      EXIT.
+    ENDIF.
+    &lt;ls_f&gt;-seatsocc = &lt;ls_f&gt;-seatsocc + 1.      "ASSIGNING：不拷貝、直接改
+  ENDLOOP.
+ENDIF.
+
+" ③ 無結構行型別的單欄內表：鍵要用虛擬組件 table_line
+DATA lt_fcodes TYPE STANDARD TABLE OF sy-ucomm WITH NON-UNIQUE KEY table_line.
+lt_fcodes = VALUE #( ( 'DELE' ) ( 'SAVE' ) ).
+SET PF-STATUS 'MAIN' EXCLUDING lt_fcodes.
+IF line_exists( lt_fcodes[ table_line = 'SAVE' ] ).
+ENDIF.
+
+" ④ RANGE OF（4.6A 起取代 RANGES）：用「列舉 EQ」組條件，比 BT 區間安全
+DATA lt_carr_rng TYPE RANGE OF s_carr_id.
+lt_carr_rng = VALUE #( FOR lv_c IN VALUE string_table( ( `LH` ) ( `AA` ) ( `UA` ) )
+                       ( sign = 'I' option = 'EQ' low = lv_c ) ).
+DATA(lt_selected) = lt_flight.
+DELETE lt_selected WHERE carrid NOT IN lt_carr_rng.</code></pre>
+  <div class="warn">7.40 的 <span class="kw">FILTER #( )</span> 只能用在排序表／雜湊表或有次要鍵的內表；由 <span class="kw">@DATA( )</span> 內嵌宣告的 SELECT 結果是<b>空鍵標準表</b>，所以上例改用 DELETE … NOT IN。另外，READ … BINARY SEARCH 必須建立在<b>明確排序</b>之上：資料若直接來自 HANA 又沒寫 ORDER BY 或 SORT，二分搜尋會「偶爾找不到」，而且每次執行結果還不一樣——這正是 Casper 在成本評價專案遇到 H／E 兩種角度輪流被抓到的根因。<b>任何「取第一筆」或二分搜尋前，一定先排序。</b></div>
+  <div class="tip"><b>列舉優於區間：</b>組 RANGE 時請優先用多筆 <span class="kw">option = 'EQ'</span>，少用 <span class="kw">BT</span>。BT 比的是字典序不是業務語意：物料號碼段不連續、ALPHA 前導零（'0000001234' 與 '1234'）、編碼規則改過，都會讓區間多抓或漏抓。原教材的效能提示也支持這一點：排序表的鍵以 = 指定才能走二分搜尋。</div>
+  <p><b>Field symbol 效能要點：</b><span class="kw">READ … ASSIGNING</span> 與 <span class="kw">LOOP … ASSIGNING</span> 不拷貝資料，行寬大（原教材：純讀取約 1000 bytes 以上、讀後要修改則約 100 bytes 以上）或迴圈次數多（約 5 次以上）時比 INTO 快；巢狀內表時差距更大，因為 INTO 會把整個子表拷貝一次。限制：<span class="kw">LOOP … ASSIGNING</span> 中不能在控制層級處理用 <span class="kw">SUM</span>，也不能在迴圈內對該 field symbol 重新 <span class="kw">ASSIGN</span> 或 <span class="kw">UNASSIGN</span>；排序後 field symbol 仍指向原來那一行。</p>
+  <div class="warn"><b>表頭行（Header Line）已淘汰：</b>原教材列出 <span class="kw">WITH HEADER LINE</span>、<span class="kw">OCCURS 0</span>、<span class="kw">DATA BEGIN OF itab OCCURS 0</span> 三種寫法，並提醒 <span class="kw">CLEAR itab</span> 對有表頭的表只清表頭、要清表身得寫 <span class="kw">CLEAR itab[]</span> 或 <span class="kw">REFRESH</span>。<b>類別與介面中根本不能使用表頭行</b>，新程式一律不用。<span class="kw">SELECT-OPTIONS</span> 產生的選擇表本身仍帶表頭，這是唯一合法殘留，存取表身時請寫 <span class="kw">so_carr[]</span>。</div>
+
+  <h3 id="ch05-2-04">4. 呼叫程式與傳遞資料（2007 版第四單元）</h3>
+  <p>在同一個使用者交易中，完整的 ABAP 程式只能<b>循序執行</b>；要平行執行得用 <span class="kw">CALL FUNCTION … STARTING NEW TASK</span>（見 <a href="#ch04-1">4-1 章</a> aRFC 與 <a href="#ch05-12">5-12 章 BC415</a>）。呼叫程式分兩種模式：<b>插入（Insert）</b>——目前程式暫停、被呼叫程式跑完後回來；<b>重新開始（Restart）</b>——結束目前程式、改跑新程式。</p>
+  <table>
+    <thead><tr><th>敘述</th><th>模式</th><th>記憶體效果</th><th>結束後</th></tr></thead>
+    <tbody>
+      <tr><td><span class="kw">SUBMIT prog</span></td><td>重新開始（以程式名）</td><td>刪除堆疊頂端的內部 session，建立新的</td><td>回到初始畫面</td></tr>
+      <tr><td><span class="kw">SUBMIT prog AND RETURN</span></td><td>插入</td><td>新內部 session 疊在堆疊頂端，原程式保留但不啟用</td><td>回到呼叫點下一行</td></tr>
+      <tr><td><span class="kw">SUBMIT … VIA SELECTION-SCREEN</span></td><td>—</td><td>—</td><td>先顯示被呼叫程式的選擇畫面</td></tr>
+      <tr><td><span class="kw">LEAVE TO TRANSACTION 'T'</span></td><td>重新開始（以 TCODE）</td><td><b>整個堆疊的內部 session 全刪，ABAP Memory 被初始化</b></td><td>回到初始畫面；等同命令列輸入 /nT</td></tr>
+      <tr><td><span class="kw">CALL TRANSACTION 'T'</span></td><td>插入</td><td>新內部 session</td><td>回到呼叫點下一行</td></tr>
+      <tr><td><span class="kw">… AND SKIP FIRST SCREEN</span></td><td>—</td><td>—</td><td>用傳入參數填第一個畫面並自動送出</td></tr>
+      <tr><td><span class="kw">LEAVE PROGRAM</span></td><td>—</td><td>—</td><td>若本程式是被 CALL TRANSACTION／SUBMIT AND RETURN 叫起，回呼叫者；否則回應用選單</td></tr>
+    </tbody>
+  </table>
+  <p><b>邏輯記憶體模型：</b>一個使用者終端 session 最多開 <b>6 個外部 session</b>（視窗，用「系統 → 建立 session」或 <span class="tcode">/o</span>TCODE 開啟；新版系統可由參數 rdisp/max_alt_modes 調到 16）；每個外部 session 最多 <b>9 個內部 session</b>（以堆疊管理，每支執行中的程式佔一個）。程式資料只在自己的內部 session 可見。</p>
+  <table>
+    <thead><tr><th>傳遞方式</th><th>範圍</th><th>語法</th><th>典型用途</th></tr></thead>
+    <tbody>
+      <tr><td>程式介面（選擇畫面）</td><td>呼叫者 → 被呼叫程式</td><td>SUBMIT … WITH p EQ v／WITH so IN rng／USING SELECTION-SET 'VAR'／WITH SELECTION-TABLE</td><td>批次呼叫報表</td></tr>
+      <tr><td><b>ABAP Memory</b></td><td>同一<b>外部 session</b> 的所有內部 session；關視窗或 /i 即釋放</td><td>EXPORT … TO MEMORY ID（ID 最長 60 字元）／IMPORT … FROM MEMORY ID／FREE MEMORY ID</td><td>SUBMIT AND RETURN、CALL TRANSACTION 之間傳內表</td></tr>
+      <tr><td><b>SAP Memory</b></td><td>整個<b>使用者終端 session</b>（所有外部 session）</td><td>SET／GET PARAMETER ID 'PID' FIELD v；畫面欄位的 SET/GET Parameter 屬性（F1 → 技術資訊可查 Parameter ID）</td><td>畫面欄位預設值，如 MAT、WRK、BUK</td></tr>
+      <tr><td>資料庫表／共享緩衝區</td><td>跨使用者</td><td>EXPORT … TO DATABASE／SHARED BUFFER；Shared Objects</td><td>跨 session 快取</td></tr>
+      <tr><td>前端檔案</td><td>表示層</td><td>GUI_UPLOAD／GUI_DOWNLOAD（現代寫法 CL_GUI_FRONTEND_SERVICES）</td><td>檔案交換</td></tr>
+    </tbody>
+  </table>
+
+  <pre><code class="abap">*&amp;---------------------------------------------------------------------*
+*&amp; SUBMIT + ABAP Memory + SAP Memory（原教材 SPFLI 範例改寫）
+*&amp;---------------------------------------------------------------------*
+" 呼叫端
+SELECT carrid, connid, cityfrom, cityto
+  FROM spfli
+  WHERE carrid = 'LH'
+  ORDER BY carrid, connid
+  INTO TABLE @DATA(lt_spfli).
+
+EXPORT spfli_tab = lt_spfli TO MEMORY ID 'ZBC401_SPFLI'.   "同名同型別才 IMPORT 得回來
+
+DATA lt_carr_rng TYPE RANGE OF s_carr_id.
+lt_carr_rng = VALUE #( ( sign = 'I' option = 'EQ' low = 'LH' )
+                       ( sign = 'I' option = 'EQ' low = 'UA' ) ).  "列舉，不用 BT
+
+SUBMIT zbc401_flight_list
+  WITH p_date  EQ sy-datum
+  WITH so_carr IN lt_carr_rng
+  AND RETURN.                                              "插入模式，跑完回來
+
+SET PARAMETER ID 'CAR' FIELD 'LH'.                          "SAP Memory：之後的畫面預設帶 LH
+
+" 被呼叫端（ZBC401_FLIGHT_LIST）：接收端型別必須與 EXPORT 端相容
+TYPES: BEGIN OF ty_spfli,
+         carrid   TYPE s_carr_id,
+         connid   TYPE s_conn_id,
+         cityfrom TYPE s_from_cit,
+         cityto   TYPE s_to_city,
+       END OF ty_spfli.
+DATA lt_spfli_in TYPE STANDARD TABLE OF ty_spfli WITH EMPTY KEY.
+IMPORT spfli_tab = lt_spfli_in FROM MEMORY ID 'ZBC401_SPFLI'.
+IF sy-subrc = 0.
+  FREE MEMORY ID 'ZBC401_SPFLI'.                            "用完就清，避免殘留
+ENDIF.
+
+GET PARAMETER ID 'CAR' FIELD DATA(lv_carrid).</code></pre>
+  <div class="warn"><b>ABAP Memory 只在「插入」時有效：</b>以 TCODE 重新開始（LEAVE TO TRANSACTION）會刪除整個外部 session 的所有程式，連 ABAP Memory 一起清掉。另外 IMPORT 的目標必須與 EXPORT 時的型別相容（上例接收端自己宣告了同樣 4 欄的結構）；實務上最好雙方共用同一個全域表型別，否則 IMPORT 會 DUMP（CX_SY_IMPORT_MISMATCH_ERROR）。</div>
+
+  <p><b>用內表驅動交易（Batch Input 格式）：</b><span class="kw">CALL TRANSACTION 'T' USING bdc_tab</span> 會依內表內容逐畫面處理。BDCDATA 欄位：PROGRAM（40，程式名）、DYNPRO（4，畫面號）、DYNBEGIN（1，畫面起始記錄填 'X'）、FNAM（132，欄位名，區分大小寫）、FVAL（132，欄位值）。每個畫面先一筆「畫面標識記錄」（只填前三欄），之後每個欄位一筆；特殊欄位 <span class="kw">BDC_OKCODE</span>（功能碼）與 <span class="kw">BDC_CURSOR</span>（游標位置）。MODE：'A' 全部顯示（預設）、'E' 錯誤時顯示、'N' 不顯示；UPDATE：非同步（預設）、同步 'S'、本地 'L'（見 <a href="#ch05-11">5-11 章 BC414</a>）；訊息收到 BDCMSGCOLL 結構的內表。</p>
+
+  <pre><code class="abap">DATA(lt_bdc) = VALUE bdcdata_tab(
+  ( program = 'SAPMZBC401_CUST' dynpro = '0100' dynbegin = abap_true )
+  ( fnam = 'SCUSTOM-NAME' fval = lv_name )
+  ( fnam = 'SCUSTOM-CITY' fval = lv_city )
+  ( fnam = 'BDC_OKCODE'   fval = 'SAVE' ) ).
+
+DATA lt_msg TYPE tab_bdcmsgcoll.
+
+CALL TRANSACTION 'ZBC401_CUST' WITH AUTHORITY-CHECK
+     USING lt_bdc
+     MODE 'N'
+     UPDATE 'S'
+     MESSAGES INTO lt_msg.
+
+IF sy-subrc &lt;&gt; 0 OR line_exists( lt_msg[ msgtyp = 'E' ] ).
+  " 錯誤處理：MESSAGE_TEXT_BUILD 或 FORMAT_MESSAGE 組訊息
+ENDIF.</code></pre>
+  <div class="warn"><b>S/4HANA 注意：</b>新版語法檢查要求明確寫出 <span class="kw">WITH AUTHORITY-CHECK</span> 或 <span class="kw">WITHOUT AUTHORITY-CHECK</span>，否則擴充檢查會警告（安全稽核重點）。S/4HANA 很多交易已改版（例如 BP 取代 XD01/XK01、MIGO 取代 MB01），BDC 錄製極易失效；能用 BAPI 就不要用 BDC（見 <a href="#ch04-1">4-1 章</a>、<a href="#ch04-4">4-4 章</a>、<a href="#ch05-13">5-13 章 BC420</a>）。</div>
+
+  <h3 id="ch05-2-05">5. 從程序式到物件導向（Unit 1 L1／2007 第五單元／BC404 第二、八單元）</h3>
+  <p><b>ABAP 的演進：</b>ABAP 之前 SAP 用巨集組譯器；ABAP 是為了改進報表而開發的內部語言，受 COBOL 與 Pascal 影響；ABAP Objects 是 ABAP 的<b>相容擴充</b>，OO 部分吸收了 Java、C++、Smalltalk 的概念，並刻意不納入在其他語言證明失敗的設計。它與其他 OO 語言最大的差別在於開發環境：可以用整套 ABAP Workbench。</p>
+  <p><b>程序式模型的特徵：</b>資料與功能分離；可用模組化（副程式、函數模組）封裝功能；主程式的全域資料沒有任何保護，任何地方都能讀寫。原教材用函數群組 <b>S_VEHICLE</b> 示範：它提供 INC_SPEED、DEC_SPEED、GET_SPEED、STOP 四個服務，全域變數 speed 只能透過函數模組存取——函數群組其實已經是「資料＋管理資料的功能」的封裝單位，主程式是 client、函數群組是 server。<b>BAPI 正是這樣實作的：商業物件是函數群組，BAPI 是函數模組。</b></p>
+  <p>問題在於<b>多重實例</b>：函數群組被載入內部 session 後只有一份全域資料，同一時間只能代表一台車；想同時管理四台車就得自己寫陣列、索引與管理邏輯。能以同一個程式內容建立多個執行期實例，正是 OO 語言的核心特性。</p>
+
+  <pre><code class="abap">*&amp;---------------------------------------------------------------------*
+*&amp; 同一件事的兩種寫法：函數群組（單一實例） vs 類別（多重實例）
+*&amp;---------------------------------------------------------------------*
+" 程序式：函數群組 S_VEHICLE 只有一份 speed（示意）
+" FUNCTION-POOL s_vehicle.  DATA gv_speed TYPE i.
+" FUNCTION inc_speed.        gv_speed = gv_speed + iv_speed.  ENDFUNCTION.
+
+" 物件導向：每個實例各自持有 speed
+CLASS lcl_vehicle DEFINITION.
+  PUBLIC SECTION.
+    METHODS inc_speed IMPORTING iv_delta TYPE i.
+    METHODS get_speed RETURNING VALUE(rv_speed) TYPE i.
+  PRIVATE SECTION.
+    DATA mv_speed TYPE i.
+ENDCLASS.
+
+CLASS lcl_vehicle IMPLEMENTATION.
+  METHOD inc_speed.
+    mv_speed = mv_speed + iv_delta.
+  ENDMETHOD.
+  METHOD get_speed.
+    rv_speed = mv_speed.
+  ENDMETHOD.
+ENDCLASS.
+
+START-OF-SELECTION.
+  DATA lt_cars TYPE STANDARD TABLE OF REF TO lcl_vehicle WITH EMPTY KEY.
+  DO 4 TIMES.
+    DATA(lo_car) = NEW lcl_vehicle( ).
+    lo_car-&gt;inc_speed( sy-index * 10 ).
+    APPEND lo_car TO lt_cars.
+  ENDDO.
+  LOOP AT lt_cars INTO lo_car.
+    WRITE: / |第 { sy-tabix } 台車速：{ lo_car-&gt;get_speed( ) }|.   "10 20 30 40
+  ENDLOOP.</code></pre>
+
+  <p><b>OO 的技術概念：</b></p>
+  <ul>
+    <li><b>封裝（Encapsulation）：</b>物件的實作對系統其他部分隱藏，外界拿不到內部狀態，也就不會產生相依。</li>
+    <li><b>多型（Polymorphism）：</b>不同類別的物件對同一訊息有不同反應。</li>
+    <li><b>繼承（Inheritance）：</b>子類別共享父類別的結構與行為；<b>ABAP 只允許單一繼承</b>。</li>
+    <li><b>事件控制：</b>物件不直接呼叫對方，而是觸發事件，由有興趣的物件反應。</li>
+    <li><b>Client/Server 關係與委派（Delegation）：</b>物件呼叫他人方法時就成為 client，必須遵守 server 的協定，協定也必須清楚到 client 能照做；服務在物件間無重複地分配，自己不負責的就委派給別人。</li>
+  </ul>
+  <p><b>ABAP Objects 的相容性與設計目標：</b>不是新語言而是向上相容的擴充；OO 環境的型別檢查更嚴格（方法參數必須指定型別，呼叫時檢查）；SAP 趁機「清理」語言——<b>過時敘述在 OO 環境中直接語法錯誤</b>，在程序式環境則為了相容仍被允許，但原廠建議也不要用。這也是本圖書館「新程式一律用類別」的依據。</p>
+  <p><b>BC404 第八單元「摘要與展望」（BC401 沒有）：</b>70–80 年代的目標是「正確且健壯」；程式變大後重點轉向<b>擴充性</b>（在相同環境加功能）與<b>重用性</b>（把程式搬到別的環境做不同的事）。OO 對應：類別（資料與功能在獨立單元、簡單重用）、封裝（只透過介面溝通、不依賴實作）、多型（擴充時影響最小）、繼承（實作的繼承）。優點：擴充性（多型、繼承）、重用性（類別、封裝、繼承）、所有參與者在所有階段使用統一語言、軟體概念直接反映現實（物件→物件、狀態→屬性、功能→方法）。</p>
+  <div class="warn"><b>筆記錯誤修正：</b>强晟 BC404 筆記 p18 的標題寫「面向對象方法的優點」，但內容其實是<b>缺點</b>：① 第一個成果出現前需要更長的開發時間；② OO 程式與關聯式資料庫之間的典範斷裂（paradigm break）；③ OO 程式通常比程序式效率低。p19 的「展望」提到「業務物件知識庫（BOR）的 OO 視圖將整合進類別庫」，作者猜測「大概就是 ECC5 裡的 BAPI」——這只是推測；BOR 物件型別（<span class="tcode">SWO1</span>）與 BAPI 確實是當年的方向，但到了 S/4HANA，真正落實「商業物件即類別」的是 <b>RAP 商業物件</b>（CDS 行為定義＋行為實作類別）。</div>
+
+  <h3 id="ch05-2-06">6. 分析與設計：UML（Unit 1 L2／2007 第六單元／BC404 第三單元）</h3>
+  <p><b>類別與物件：</b>相似的物件歸成一個類別，類別只宣告一次，物件照藍圖建立。「類別是具有相同結構與行為的一組物件的描述」；物件（＝實例）有<b>身分</b>（兩個同高同色的杯子仍是兩個杯子）、<b>狀態</b>（屬性值集合）與<b>行為</b>（方法與事件）。<b>抽象</b>是把現實簡化成有意義的維度：同樣叫 lcl_vehicle，在汽車迷系統與廢車回收系統中是完全不同的抽象；課程範例的 lcl_vehicle 指四輪機動車。</p>
+  <p><b>UML</b> 由 OMG 於 1997 年 9 月發布為工業標準，SAP 以它為 OO 建模的公司標準。UML 不描述開發流程步驟，只定義圖。BC404 筆記列出的圖種類：</p>
+  <table>
+    <thead><tr><th>圖</th><th>視角</th><th>用途</th></tr></thead>
+    <tbody>
+      <tr><td>使用案例圖（Use Case）</td><td>外部</td><td>行為者與使用案例的關係，從使用者視角描述系統行為</td></tr>
+      <tr><td><b>類別圖（Class）</b></td><td>靜態</td><td>元素（類別、物件）、內部結構（屬性、方法）、關係（一般化/特殊化、關聯）</td></tr>
+      <tr><td>互動圖：<b>循序圖（Sequence）</b>／協作圖（Collaboration）</td><td>動態</td><td>循序圖強調方法呼叫的時間順序；協作圖著重物件關係與拓樸</td></tr>
+      <tr><td>狀態圖（Statechart）／活動圖</td><td>動態</td><td>物件生命週期中的狀態與觸發原因；活動圖是只含行為的特殊狀態圖</td></tr>
+      <tr><td>元件圖（Component）</td><td>實作</td><td>元件的組織與相依</td></tr>
+      <tr><td>部署圖（Deployment）</td><td>實作</td><td>軟體與硬體的相依</td></tr>
+    </tbody>
+  </table>
+  <p><b>類別圖的符號：</b>類別框分三格（名稱、屬性、方法，後兩格可省）；可見性以 <b>+</b>（public）、<b>#</b>（protected）、<b>-</b>（private）表示；<b>靜態成員加底線</b>；方法簽名可寫成 <span class="kw">method(參數) : 回傳型別</span>；ABAP 事件不畫在類別圖裡。關係：</p>
+  <ul>
+    <li><b>關聯（Association）：</b>兩類別間一條線，兩端標<b>多重性</b>（<span class="kw">1</span>、<span class="kw">0..1</span>、<span class="kw">1..*</span>、<span class="kw">*</span> 或 <span class="kw">0..*</span>），可加斜體名稱與閱讀方向箭頭；每個關聯有兩個角色。例：lcl_customer 1 —books— 0..* lcl_booking（一個客戶可訂多筆，一筆訂位只屬一位客戶）。關聯可遞迴（類別與自己關聯）。</li>
+    <li><b>聚合（Aggregation）：</b>「由…組成／是…的一部分」，整體端畫<b>空心菱形</b>，例：lcl_vehicle 1 ◇— 0..* lcl_wheel。</li>
+    <li><b>組合（Composition）：</b>更強的聚合，部分不能脫離整體存在，整體端畫<b>實心菱形</b>、多重性只能是 1，部分與整體同生共死，例：lcl_rental 1 ◆— 1..* lcl_booking。</li>
+    <li><b>一般化/特殊化：</b>子類別以<b>空心三角箭頭</b>指向父類別，多個箭頭可合成樹狀。</li>
+    <li><b>介面：</b>名稱上標 <span class="kw">&lt;&lt;interface&gt;&gt;</span>；使用關係為虛線箭頭，實作關係為虛線＋空心三角。</li>
+  </ul>
+  <p><b>循序圖：</b>物件生命線為垂直虛線；控制焦點（activation）是生命線上的長方形，表示物件正在執行（或間接等待子程序）；訊息是生命線之間的水平箭頭，寫成「方法(參數)」，回覆可用回傳箭頭；循序圖<b>沒有表示靜態方法的符號</b>。範例「委派」：司機 lcl_driver 呼叫汽車 lcl_car 的 get_fuel_level，汽車自己無法處理，轉呼叫油箱 lcl_tank 的 get_fuel_level。好處是執行期可以換油箱而不影響 client；好的封裝通常會「強迫」使用委派（油箱是汽車的 private 屬性，外界只能透過汽車）。</p>
+  <div class="tip">强晟在筆記裡吐槽：「既然使用者看不懂程式語言，也不要指望他看懂 UML……跟使用者談 UML，還不如請他吃頓飯。」實務上 UML 是給開發團隊的溝通工具；對業務顧問與使用者，流程圖與畫面雛形更有效。在 ADT 可用 <b>ABAP Class Diagram</b>（或 SE80 的 UML 產生功能，NW 7.0 EhP2 起）從既有程式碼反推類別圖，交接時很好用。</div>
+  <div class="note">新版教材強調：OO 的分析與設計決策對實作的影響比程序式大得多，因此需要建模語言或工具把分析設計階段標準化；開發是「需求 → 分析設計 → 實作 → 測試」的循環過程。</div>
+
+  <h3 id="ch05-2-07">7. 區域類別：屬性、方法與可見性（Unit 2 L1／2007 第七單元第一課）</h3>
+  <p>類別分<b>定義部分</b>（<span class="kw">CLASS … DEFINITION</span>，宣告所有組件）與<b>實作部分</b>（<span class="kw">CLASS … IMPLEMENTATION</span>，只放方法實作）。組件包括：屬性、方法、事件、型別、常數、介面、別名。<b>CLASS 敘述不能巢狀</b>（不能在類別裡定義類別）。區域類別只存在於定義它的程式中，就像 TYPES 定義區域資料型別一樣，CLASS 定義的是區域物件型別。</p>
+  <table>
+    <thead><tr><th>區段</th><th>誰看得到</th><th>UML</th><th>原則</th></tr></thead>
+    <tbody>
+      <tr><td><b>PUBLIC SECTION</b></td><td>所有使用者、子類別、自己</td><td>+</td><td>構成類別的「外殼」（對外介面），越少越好</td></tr>
+      <tr><td><b>PROTECTED SECTION</b></td><td>自己與所有子類別</td><td>#</td><td>繼承時才出現的中間層（第 9 節）</td></tr>
+      <tr><td><b>PRIVATE SECTION</b></td><td>只有類別自己（與 friend）</td><td>-</td><td>多數屬性都該放這裡，靠方法存取</td></tr>
+    </tbody>
+  </table>
+  <p>BC404 筆記的「<b>物件就像雞蛋</b>」比喻：外層蛋殼是公開組件（屬性、方法、事件），所有使用者都能直接存取，是物件的對外聯絡點；內層蛋黃是私有組件，只有物件自己看得到。為什麼要隱藏？這叫<b>資訊隱藏／封裝</b>：類別改了私有實作而介面不變，使用者完全不受影響；一旦改了公開組件，所有使用者都得跟著改。</p>
+  <ul>
+    <li><b>屬性型別</b>可以是：DDIC 型別（資料元素、結構、表型別）、ABAP 內建型別、物件參照、介面參照。類別中只能用 <span class="kw">TYPE</span> 指定型別；<span class="kw">LIKE</span> 只能參照區域資料物件，不能參照 DDIC 物件。</li>
+    <li><b>READ-ONLY：</b>只能用在 PUBLIC SECTION 與介面中，外界可讀、只有類別自己的方法能改。</li>
+    <li><b>實例屬性</b>（<span class="kw">DATA</span>）每個物件一份；<b>靜態屬性</b>（<span class="kw">CLASS-DATA</span>）整個類別一份，所有實例共用，常用於計數器等管理資訊。官方術語是「靜態」而非「類別屬性」。UML 以<b>底線</b>表示靜態成員。</li>
+    <li><b>方法簽名</b>：IMPORTING、EXPORTING、CHANGING、RETURNING 與例外；參數可傳值（<span class="kw">VALUE( )</span>）或傳參照（預設）。<span class="kw">RETURNING</span> 只能有一個且必須傳值，有它就不能再有 EXPORTING／CHANGING（7.40 SP02 起可與 EXPORTING/CHANGING 並存，但 BC401 仍建議功能性方法保持單純）。IMPORTING／CHANGING 可加 <span class="kw">OPTIONAL</span> 或 <span class="kw">DEFAULT</span>。</li>
+    <li><b>靜態方法</b>（<span class="kw">CLASS-METHODS</span>）只能存取靜態組件，不需要實例就能呼叫。</li>
+    <li><b>命名空間：</b>類別內屬性、方法、事件、常數、型別、別名共用一個命名空間；方法內的區域變數可遮蔽同名屬性（此時用 <span class="kw">me-&gt;</span> 取屬性）。</li>
+  </ul>
+  <div class="warn"><b>筆記更正：</b>强晟筆記 p156 寫「SAP R/3 Basis 6.10 以後不能為例外再使用 EXCEPTIONS 參數，而代之以 RAISING」。正確說法是：6.10 起多了類別式例外（<span class="kw">RAISING</span>），但傳統 <span class="kw">EXCEPTIONS</span> 仍然可用；限制是<b>同一個方法只能擇一</b>，不能混用兩種例外。新程式請一律用 RAISING。</div>
+
+  <pre><code class="abap">*&amp;---------------------------------------------------------------------*
+*&amp; 區域類別完整骨架：可見性、靜態/實例、READ-ONLY、功能性方法
+*&amp;---------------------------------------------------------------------*
+CLASS lcl_vehicle DEFINITION.
+  PUBLIC SECTION.
+    TYPES ty_make TYPE c LENGTH 20.
+    CONSTANTS c_max_speed TYPE i VALUE 250.
+
+    CLASS-DATA gv_count TYPE i READ-ONLY.            "靜態：全部實例共用的計數器
+    DATA mv_serial TYPE i READ-ONLY.                   "外界可讀不可寫
+
+    METHODS set_make IMPORTING iv_make TYPE ty_make.
+    METHODS get_make RETURNING VALUE(rv_make) TYPE ty_make.
+    METHODS estimate_fuel
+      IMPORTING iv_distance    TYPE i
+                iv_factor      TYPE decfloat16 DEFAULT '0.08'
+      RETURNING VALUE(rv_fuel) TYPE decfloat16.
+    CLASS-METHODS get_count RETURNING VALUE(rv_count) TYPE i.
+
+  PROTECTED SECTION.
+    DATA mv_weight TYPE i.
+
+  PRIVATE SECTION.
+    DATA mv_make TYPE ty_make.
+    METHODS init_make.                                 "私有方法：只能由公開方法呼叫
+ENDCLASS.
+
+CLASS lcl_vehicle IMPLEMENTATION.
+  METHOD set_make.
+    IF iv_make IS INITIAL.
+      init_make( ).                                    "類別內部呼叫可省略 me-&gt;
+    ELSE.
+      mv_make = iv_make.
+    ENDIF.
+  ENDMETHOD.
+
+  METHOD init_make.
+    mv_make = 'no make'.
+  ENDMETHOD.
+
+  METHOD get_make.
+    rv_make = mv_make.
+  ENDMETHOD.
+
+  METHOD estimate_fuel.
+    rv_fuel = iv_distance * iv_factor.
+  ENDMETHOD.
+
+  METHOD get_count.
+    rv_count = gv_count.                               "靜態方法只能碰靜態組件
+  ENDMETHOD.
+ENDCLASS.</code></pre>
+  <div class="tip">實務命名慣例（SAP 與多數專案通用）：區域類別 <span class="kw">lcl_</span>、區域介面 <span class="kw">lif_</span>、區域例外 <span class="kw">lcx_</span>；屬性 <span class="kw">mv_／mt_／ms_／mo_</span>（member），靜態屬性 <span class="kw">gv_／gt_</span>，參數 <span class="kw">iv_／ev_／cv_／rv_</span>。命名不是語法規則，但讓 code review 一眼看出「這是屬性還是區域變數」。</div>
+
+  <h3 id="ch05-2-08">8. 建立物件、呼叫方法、建構子與 ME（Unit 2 L2–L5／2007 第七單元第二～五課）</h3>
+  <p><b>實例化：</b>類別本身在執行期不是獨立物件；程式執行時才依類別在主記憶體建立實例。參照變數 <span class="kw">DATA lo_vehicle TYPE REF TO lcl_vehicle</span> 是指向物件的指標，<span class="kw">CREATE OBJECT</span>（7.40 起可用 <span class="kw">NEW</span>）向執行環境要記憶體並配給物件；參照變數之間可以互相指派，兩個變數會指向同一個物件。參照可以放進單欄內表，用 LOOP 逐一處理多個物件（原教材稱「緩衝參照」）。</p>
+  <p><b>垃圾回收器（Garbage Collector）：</b>當沒有任何參照指向某物件時，系統程式會自動把它從記憶體移除。流程：從全域記憶體的所有獨立參照出發標記活動物件，再沿類別參照與其他物件的實例屬性繼續標記，最後刪除所有未被標記的物件。注意：<b>註冊為事件處理者的物件，只要事件仍活著，就不會被回收</b>（第 12 節）。</p>
+  <table>
+    <thead><tr><th>呼叫類型</th><th>原教材寫法</th><th>現代寫法</th></tr></thead>
+    <tbody>
+      <tr><td>實例方法</td><td>CALL METHOD ref-&gt;meth EXPORTING … IMPORTING …</td><td>ref-&gt;meth( iv_a = 1 IMPORTING ev_b = lv_b )（6.10 起可省 CALL METHOD）</td></tr>
+      <tr><td>靜態方法</td><td>CALL METHOD class=&gt;meth</td><td>class=&gt;meth( )</td></tr>
+      <tr><td>只有一個 IMPORTING 參數</td><td>—</td><td>ref-&gt;meth( value )，可省形參名</td></tr>
+      <tr><td>功能性方法</td><td>CALL METHOD … RECEIVING re_fuel = avg_fuel</td><td>DATA(lv_avg) = ref-&gt;get_average_fuel( im_distance = 500 im_fuel = 50 ).</td></tr>
+      <tr><td>公開屬性</td><td colspan="2">實例：ref-&gt;attr；靜態：class=&gt;attr（-&gt; 與 =&gt; 稱為元件選擇器）</td></tr>
+    </tbody>
+  </table>
+  <p><b>功能性方法</b>（有 RETURNING 的方法）可直接用在運算式位置：邏輯運算式（IF、ELSEIF、WHILE、CHECK、WAIT）、CASE／WHEN、LOOP、算術運算式、位元運算式與指派右側；7.40 起幾乎所有運算元位置都可以。</p>
+  <p><b>實例建構子 CONSTRUCTOR：</b>每個類別只有一個；在 CREATE OBJECT／NEW 時由系統自動呼叫，不能顯式呼叫（子類別呼叫 <span class="kw">super-&gt;constructor( )</span> 除外）；<b>建構子中發生例外，物件就不會被建立</b>，也不佔記憶體。需要建構子的時機：要配置外部資源、要初始化無法用 VALUE 指定的屬性、要修改靜態屬性（例如計數器）。</p>
+  <p><b>靜態建構子 CLASS_CONSTRUCTOR：</b>每個程式（內部 session）只執行一次，在類別第一次被存取時自動呼叫，時機早於：建立實例、存取靜態屬性（class=&gt;attr）、呼叫靜態方法、以 SET HANDLER 註冊靜態事件處理方法。不能顯式呼叫、沒有參數、不能丟出例外。</p>
+  <div class="warn"><b>教材版本差異：</b>强晟筆記 p171 寫「必須在 PUBLIC SECTION 中定義建構子」，這是 NW 7.0 以前的規則。新版教材（Col18 p290）說明：自 SAP NetWeaver 7.0 起，建構子<b>可以</b>宣告在 PROTECTED 或 PRIVATE SECTION，只要不比 CLASS 敘述的 <span class="kw">CREATE</span> 附加更嚴格；真正決定「誰能實例化」的是 <span class="kw">CREATE PUBLIC／PROTECTED／PRIVATE</span>（第 18 節）。</div>
+
+  <pre><code class="abap">*&amp;---------------------------------------------------------------------*
+*&amp; 建構子、靜態建構子、ME、功能性方法串接
+*&amp;---------------------------------------------------------------------*
+CLASS lcx_invalid_planetype DEFINITION INHERITING FROM cx_static_check.
+ENDCLASS.                                          "最精簡的區域例外類別
+
+CLASS lcl_airplane DEFINITION.
+  PUBLIC SECTION.
+    METHODS constructor
+      IMPORTING iv_name      TYPE string
+                iv_planetype TYPE saplane-planetype
+      RAISING   lcx_invalid_planetype.
+    METHODS get_name RETURNING VALUE(rv_name) TYPE string.
+    CLASS-METHODS class_constructor.
+    CLASS-METHODS get_n_o_airplanes RETURNING VALUE(rv_count) TYPE i.
+  PRIVATE SECTION.
+    DATA mv_name      TYPE string.
+    DATA mv_planetype TYPE saplane-planetype.
+    DATA mv_weight    TYPE saplane-weight.
+    CLASS-DATA gv_n_o_airplanes TYPE i.
+    CLASS-DATA gt_planetypes    TYPE HASHED TABLE OF saplane
+                                WITH UNIQUE KEY planetype.
+ENDCLASS.
+
+CLASS lcl_airplane IMPLEMENTATION.
+  METHOD class_constructor.
+    " 整個內部 session 只跑一次：把機型主檔一次讀進緩衝
+    SELECT planetype, weight, tankcap
+      FROM saplane
+      INTO CORRESPONDING FIELDS OF TABLE @gt_planetypes.
+  ENDMETHOD.
+
+  METHOD constructor.
+    " 參數名與屬性同名時，用 me-&gt; 區分（原教材：建構子中實例屬性被區域變數遮蔽）
+    me-&gt;mv_name = iv_name.
+    me-&gt;mv_planetype = iv_planetype.
+    TRY.
+        me-&gt;mv_weight = gt_planetypes[ planetype = iv_planetype ]-weight.
+      CATCH cx_sy_itab_line_not_found.
+        RAISE EXCEPTION TYPE lcx_invalid_planetype. "丟例外 → 物件不會被建立
+    ENDTRY.
+    gv_n_o_airplanes = gv_n_o_airplanes + 1.
+  ENDMETHOD.
+
+  METHOD get_name.
+    rv_name = mv_name.
+  ENDMETHOD.
+
+  METHOD get_n_o_airplanes.
+    rv_count = gv_n_o_airplanes.
+  ENDMETHOD.
+ENDCLASS.
+
+START-OF-SELECTION.
+  TRY.
+      DATA(lo_plane) = NEW lcl_airplane( iv_name = `LH Berlin` iv_planetype = 'A321' ).
+      DATA(lo_same)  = lo_plane.                  "兩個參照指向同一物件
+      WRITE: / lo_same-&gt;get_name( ),
+             / |目前共 { lcl_airplane=&gt;get_n_o_airplanes( ) } 架|.
+    CATCH lcx_invalid_planetype INTO DATA(lx_err).
+      MESSAGE |機型不存在（{ lx_err-&gt;get_text( ) }）| TYPE 'I'.
+  ENDTRY.
+  CLEAR: lo_plane, lo_same.                       "兩個參照都清掉 → 可被 GC 回收</code></pre>
+  <div class="note">範例用最精簡的區域例外類別 <span class="kw">lcx_invalid_planetype</span>（沒有自訂文字，get_text 會回傳系統預設文字）；正式開發請建立帶訊息類別的 <span class="kw">ZCX_</span> 全域例外類別（第 16 節）。<span class="kw">SAPLANE</span>、<span class="kw">SFLIGHT</span> 等是 SAP 航班訓練資料模型（BC_DATA_GEN 產生資料），所有 BC 課程共用。</div>
+
+  <h3 id="ch05-2-09">9. 繼承與重定義（Unit 3 L1／2007 第八單元）</h3>
+  <p>繼承是「<b>是一種（is-a）</b>」關係：卡車是一種車輛。父類別是子類別的一般化，子類別是父類別的特殊化。重點規則：</p>
+  <ul>
+    <li><b>ABAP 只允許單一繼承</b>（一個直接父類別），但繼承樹可以任意多層；多重繼承用介面模擬。</li>
+    <li>繼承是<b>單向關係</b>：子類別知道直接父類別，父類別不知道自己有多少子類別。</li>
+    <li><b>只能增加，不能刪除</b>：父類別所有組件自動出現在子類別；子類別可加新組件、重定義繼承來的方法。</li>
+    <li><b>重定義（REDEFINITION）</b>：只能重定義 public／protected 的<b>實例方法</b>；REDEFINITION 必須寫在與原方法相同的區段（所以 private 方法不能重定義，子類別根本看不到）；不必重寫簽名、也不能改簽名。用 <span class="kw">super-&gt;method( )</span> 呼叫父類別實作，這個虛擬參照只能用在重定義的方法中。</li>
+    <li><b>ABAP 不支援多載（Overloading）</b>：同名方法不同簽名是不允許的；建構子是唯一「可以有不同簽名」的例外。</li>
+    <li><b>子類別建構子必須呼叫 <span class="kw">super-&gt;constructor( )</span></b>，因為只有類別自己能正確初始化自己的私有組件；靜態建構子則由系統自動確保父類別先執行。</li>
+    <li><b>實例化時該填哪些參數：</b>類別有自己的建構子就依它的簽名填；沒有就沿繼承樹往上找第一個有建構子的父類別，依那個簽名填；都沒有則不用填。</li>
+    <li><b>子類別看不到父類別的 private 組件</b>，包括屬性。這保護父類別：它可以自由修改私有實作而不讓子類別失效。</li>
+    <li><b>靜態組件在每個 roll area 只有一份</b>：父類別的 public/protected 靜態屬性由所有子類別共用，子類別不會各自得到副本。</li>
+    <li>區段順序慣例：PUBLIC → PROTECTED → PRIVATE。</li>
+  </ul>
+  <div class="warn"><b>筆記錯誤修正：</b>强晟筆記 p184 寫「在每個卷區僅有一個<b>靜態事件</b>」——應為「每個 roll area（卷區）只有一份<b>靜態組件</b>」，是翻譯把 component 看成 event。另外筆記 p179 的範例 <span class="kw">METHOD: estimate_fuel …</span> 應為 <span class="kw">METHODS</span>，類別名 <span class="kw">lcl_trcuk</span> 應為 <span class="kw">lcl_truck</span>，p192 的 <span class="kw">ENDMOTHOD</span>、<span class="kw">re_ruel</span> 也都是筆誤。</div>
+
+  <pre><code class="abap">*&amp;---------------------------------------------------------------------*
+*&amp; 繼承、REDEFINITION、super-&gt;、子類別建構子
+*&amp;---------------------------------------------------------------------*
+CLASS lcl_vehicle DEFINITION.
+  PUBLIC SECTION.
+    METHODS constructor IMPORTING iv_make TYPE string iv_weight TYPE i.
+    METHODS estimate_fuel IMPORTING iv_distance TYPE i
+                          RETURNING VALUE(rv_fuel) TYPE decfloat16.
+    METHODS display.
+  PROTECTED SECTION.
+    CONSTANTS c_factor TYPE decfloat16 VALUE '0.0001'.
+    DATA mv_weight TYPE i.
+  PRIVATE SECTION.
+    DATA mv_make TYPE string.
+ENDCLASS.
+
+CLASS lcl_vehicle IMPLEMENTATION.
+  METHOD constructor.
+    mv_make = iv_make.
+    mv_weight = iv_weight.
+  ENDMETHOD.
+  METHOD estimate_fuel.
+    rv_fuel = mv_weight * iv_distance * c_factor.
+  ENDMETHOD.
+  METHOD display.
+    WRITE: / |廠牌 { mv_make }，重量 { mv_weight }|.
+  ENDMETHOD.
+ENDCLASS.
+
+CLASS lcl_truck DEFINITION INHERITING FROM lcl_vehicle.
+  PUBLIC SECTION.
+    METHODS constructor IMPORTING iv_make TYPE string iv_weight TYPE i iv_cargo TYPE i.
+    METHODS estimate_fuel REDEFINITION.               "不寫簽名
+    METHODS display REDEFINITION.
+    METHODS get_cargo RETURNING VALUE(rv_cargo) TYPE i.  "子類別新增的方法
+  PRIVATE SECTION.
+    DATA mv_max_cargo TYPE i.
+ENDCLASS.
+
+CLASS lcl_truck IMPLEMENTATION.
+  METHOD constructor.
+    super-&gt;constructor( iv_make = iv_make iv_weight = iv_weight ).  "必須先呼叫
+    mv_max_cargo = iv_cargo.
+  ENDMETHOD.
+  METHOD estimate_fuel.
+    " 可用 protected 的 mv_weight、c_factor；看不到 private 的 mv_make
+    rv_fuel = ( mv_weight + mv_max_cargo ) * iv_distance * c_factor.
+  ENDMETHOD.
+  METHOD display.
+    super-&gt;display( ).                                   "先做父類別的事
+    WRITE: / |　最大載重 { mv_max_cargo }|.
+  ENDMETHOD.
+  METHOD get_cargo.
+    rv_cargo = mv_max_cargo.
+  ENDMETHOD.
+ENDCLASS.</code></pre>
+  <p><b>父子類別的緊密關係：</b>繼承提供很好的結構（共用組件只在父類別存一次），子類別也會從父類別的修改獲益——但也可能因此失效。子類別必須了解父類別的實作細節（尤其是重定義時），父類別開發者卻無法預知子類別的全部需求。這就是為什麼第 10 節會強調「避免為了重用程式碼而繼承」。</p>
+
+  <h3 id="ch05-2-10">10. 轉型與多型（Unit 3 L2–L4／2007 第九單元）</h3>
+  <p><b>靜態型別與動態型別：</b>參照變數有兩種型別——<b>靜態型別</b>由 <span class="kw">TYPE REF TO</span> 決定，永遠不變，決定「能存取哪些組件」；<b>動態型別</b>是目前實際指向的物件的類別，執行期可變，決定「重定義方法跑哪一份程式碼」。除錯時可以看 ME 或參照變數得知動態型別。</p>
+  <table>
+    <thead><tr><th></th><th>Up-Cast（2007 稱 Narrowing Cast，收縮轉型）</th><th>Down-Cast（2007 稱 Widening Cast，擴展轉型）</th></tr></thead>
+    <tbody>
+      <tr><td>方向</td><td>子類別參照 → 父類別（或介面）參照</td><td>父類別（或介面）參照 → 子類別參照</td></tr>
+      <tr><td>語法</td><td><span class="kw">lo_vehicle = lo_truck.</span></td><td><span class="kw">lo_truck ?= lo_vehicle.</span> 或 <span class="kw">lo_truck = CAST #( lo_vehicle ).</span>（7.40）</td></tr>
+      <tr><td>檢查時機</td><td>編譯期靜態檢查，永遠安全</td><td>只能在執行期檢查</td></tr>
+      <tr><td>失敗時</td><td>—</td><td>丟出 <span class="kw">CX_SY_MOVE_CAST_ERROR</span>（可捕捉），目標變數保持原值</td></tr>
+      <tr><td>可見組件</td><td>只剩父類別定義的組件（看不到 get_cargo）</td><td>恢復子類別的完整組件</td></tr>
+      <tr><td>用途</td><td>泛型存取、多型</td><td>在泛型清單中找出特定子類別做特殊處理</td></tr>
+    </tbody>
+  </table>
+  <div class="warn"><b>術語陷阱：</b>2007 版把 Up-Cast 叫「收縮（Narrowing）」，意思是「可見的組件變少」；把 Down-Cast 叫「擴展（Widening）」。强晟筆記 p195 寫擴展轉型「從一個具有較多細節的視角轉向了較少細節的視角」，<b>方向寫反了</b>——Down-Cast 是從「較少細節（父類別）」轉向「較多細節（子類別）」。新版教材改用 Up/Down-Cast 就是為了避免這種混淆，本圖書館統一使用新術語。另，原教材的 <span class="kw">MOVE … ?TO …</span> 等價語法已過時。</div>
+  <p><b>多型：</b>子類別實例可以用在任何需要父類別實例的地方（因為它繼承了全部組件、有相同介面）。當實例收到訊息，若自己的類別有實作就執行，否則沿繼承樹往上找——依據的是<b>動態型別</b>。好處：用單一呼叫取代 CASE／IF，可讀性更高，新增子類別（例如 lcl_motorbike）時既有程式<b>一行都不用改</b>。程序式寫法則必須每次調整 CASE 敘述。</p>
+
+  <pre><code class="abap">*&amp;---------------------------------------------------------------------*
+*&amp; 多型的租車公司：泛型清單 + Up-Cast + Down-Cast（三種寫法）
+*&amp;---------------------------------------------------------------------*
+CLASS lcl_rental DEFINITION.
+  PUBLIC SECTION.
+    METHODS add_vehicle IMPORTING io_vehicle TYPE REF TO lcl_vehicle.
+    METHODS calc_estimated_fuel IMPORTING iv_distance TYPE i
+                                RETURNING VALUE(rv_fuel) TYPE decfloat16.
+    METHODS get_max_cargo RETURNING VALUE(rv_cargo) TYPE i.
+  PRIVATE SECTION.
+    DATA mt_vehicles TYPE STANDARD TABLE OF REF TO lcl_vehicle WITH EMPTY KEY.
+ENDCLASS.
+
+CLASS lcl_rental IMPLEMENTATION.
+  METHOD add_vehicle.
+    APPEND io_vehicle TO mt_vehicles.          "呼叫端傳 lcl_truck 也行：隱含 Up-Cast
+  ENDMETHOD.
+
+  METHOD calc_estimated_fuel.
+    " 多型：同一行呼叫，依動態型別跑卡車版或巴士版的 estimate_fuel
+    rv_fuel = REDUCE #( INIT f = CONV decfloat16( 0 )
+                        FOR lo_v IN mt_vehicles
+                        NEXT f = f + lo_v-&gt;estimate_fuel( iv_distance ) ).
+  ENDMETHOD.
+
+  METHOD get_max_cargo.
+    LOOP AT mt_vehicles INTO DATA(lo_vehicle).
+      " 寫法 A（原教材）：?= 搭配 TRY/CATCH
+      TRY.
+          DATA(lo_truck) = CAST lcl_truck( lo_vehicle ).
+          rv_cargo = nmax( val1 = rv_cargo val2 = lo_truck-&gt;get_cargo( ) ).
+        CATCH cx_sy_move_cast_error.
+          CONTINUE.                               "不是卡車就跳過
+      ENDTRY.
+    ENDLOOP.
+
+    " 寫法 B（7.50+）：先用 IS INSTANCE OF 判斷，免例外
+    LOOP AT mt_vehicles INTO lo_vehicle.
+      IF lo_vehicle IS INSTANCE OF lcl_truck.
+        lo_truck ?= lo_vehicle.
+        rv_cargo = nmax( val1 = rv_cargo val2 = lo_truck-&gt;get_cargo( ) ).
+      ENDIF.
+    ENDLOOP.
+
+    " 寫法 C（7.50+）：CASE TYPE OF，WHEN TYPE … INTO 直接完成 Down-Cast
+    LOOP AT mt_vehicles INTO lo_vehicle.
+      CASE TYPE OF lo_vehicle.
+        WHEN TYPE lcl_truck INTO lo_truck.
+          rv_cargo = nmax( val1 = rv_cargo val2 = lo_truck-&gt;get_cargo( ) ).
+        WHEN OTHERS.
+          " 轎車、巴士：不處理
+      ENDCASE.
+    ENDLOOP.
+  ENDMETHOD.
+ENDCLASS.</code></pre>
+  <p><b>繼承的正確語意（原教材第九單元第三課）：</b>子類別實例出現在父類別的任何上下文時，使用者不知道也不在乎它是哪個子類別，因此<b>繼承來的組件必須保持原本語意</b>，重定義時不能改變方法的意義。常見誤用：</p>
+  <ul>
+    <li><b>為了重用程式碼而繼承（code inheritance）</b>：只因某類別已經實作了部分功能就去繼承它，是錯的。</li>
+    <li><b>用繼承取代屬性</b>：父類別 car 底下開 green_car、red_car 子類別——顏色應該是屬性。</li>
+    <li><b>角色會變的情境</b>：employee 底下分 full_time、part_time；兼職轉正職時，物件無法變更自己的類別，只能新建物件再搬資料，手上還握著舊參照的使用者就會處理一個「邏輯上已不存在」的兼職員工。應改用<b>角色（role）設計模式</b>，把「雇用型態」做成可替換的關聯物件。</li>
+    <li><b>正方形繼承長方形</b>：長方形有獨立設定寬、高的方法，正方形卻只該有邊長，繼承就破壞了父類別的語意（這就是 Liskov 替換原則）。</li>
+  </ul>
+  <div class="tip">實務判斷：先問「子類別能不能在所有使用父類別的地方完全替代它？」答案不是百分之百「能」，就改用介面＋組合（委派）。SAP 標準程式也愈來愈偏向「介面＋Factory」而不是深繼承樹，例如 SALV 與 RAP。</div>
+
+  <h3 id="ch05-2-11">11. 介面（Unit 4／2007 第十單元）</h3>
+  <p>介面是與類別無關的額外「協定」：只宣告與類別溝通的外部點，<b>不含任何實作</b>。通常由<b>使用者（client）</b>定義——它需要哪些服務（技術與語意），就寫進介面；使用者不知道提供者是誰，只透過介面溝通，因此能以相同方式處理不同類別。這就是<b>介面的多型</b>。範例：旅行社 lcl_travel_agency 透過介面 lif_partner 使用航空公司 lcl_carrier、飯店 lcl_hotel、租車 lcl_rental 的相同服務（display_partner、book、cancel_booking、check_availability）。</p>
+  <ul>
+    <li>介面可含屬性、方法、事件、型別、常數、別名，但<b>沒有可見性區段</b>——實作類別只能在 <b>PUBLIC SECTION</b> 用 <span class="kw">INTERFACES</span> 納入（否則父子類別可能各自私下實作同一介面）。</li>
+    <li>介面組件在類別中以 <span class="kw">介面名~組件名</span> 存取，<span class="kw">~</span> 稱為<b>介面解析運算子（interface component selector）</b>；可用 <span class="kw">ALIASES</span> 取短名（只能寫在類別定義部分或介面定義中）。</li>
+    <li>一個類別可實作任意多個介面、一個介面可被任意多類別實作——實作多個介面時，行為近似多重繼承。</li>
+    <li>全域介面若少實作或多實作方法只會警告；區域介面則必須全部實作（7.40 SP08 起介面方法可宣告 <span class="kw">DEFAULT IGNORE／DEFAULT FAIL</span> 讓實作變成可選）。</li>
+    <li><b>修改介面通常會讓所有實作它的類別失效</b>——介面一旦發布就要非常謹慎。</li>
+    <li>UML：介面上標 &lt;&lt;interface&gt;&gt;；「使用」畫虛線箭頭；「實作」畫虛線加空心三角，刻意與繼承相同——介面可視為類別實作的一般化。</li>
+    <li><b>介面參照：</b>物件參照指派給介面參照＝Up-Cast，只看得到介面定義的組件（且用短名存取）；介面參照轉回類別參照、或轉成另一個無關介面參照＝Down-Cast，必須用 <span class="kw">?=</span>／<span class="kw">CAST</span>，執行期失敗丟 CX_SY_MOVE_CAST_ERROR。注意：物件參照的類別本身沒實作該介面時，不能指派給介面參照——即使它的子類別有實作也不行。</li>
+    <li><b>複合介面（Compound Interface）：</b>介面內再 <span class="kw">INTERFACES</span> 其他介面（組件介面）；不含其他介面的叫基本介面。組件保持原名 <span class="kw">組件介面名~組件名</span>，全部在同一層級，不會加前綴；實作類別中每個介面組件也只存在一次。UML 上複合介面被視為組件介面的特殊化。</li>
+  </ul>
+
+  <pre><code class="abap">*&amp;---------------------------------------------------------------------*
+*&amp; 介面、複合介面、ALIASES、介面多型
+*&amp;---------------------------------------------------------------------*
+INTERFACE lif_partner.
+  METHODS display_partner.
+  METHODS check_availability IMPORTING iv_date TYPE d
+                             RETURNING VALUE(rv_ok) TYPE abap_bool.
+ENDINTERFACE.
+
+INTERFACE lif_license.
+  METHODS get_license_no RETURNING VALUE(rv_no) TYPE string.
+ENDINTERFACE.
+
+INTERFACE lif_partner_ext.                 "複合介面：包含 lif_partner
+  INTERFACES lif_partner.
+  METHODS get_rating RETURNING VALUE(rv_rating) TYPE i.
+ENDINTERFACE.
+
+CLASS lcl_hotel DEFINITION.
+  PUBLIC SECTION.
+    INTERFACES lif_partner_ext.            "連帶實作 lif_partner
+    INTERFACES lif_license.
+    ALIASES display FOR lif_partner~display_partner.
+    METHODS constructor IMPORTING iv_name TYPE string.
+  PRIVATE SECTION.
+    DATA mv_name TYPE string.
+ENDCLASS.
+
+CLASS lcl_hotel IMPLEMENTATION.
+  METHOD constructor.
+    mv_name = iv_name.
+  ENDMETHOD.
+  METHOD lif_partner~display_partner.      "名稱仍是 lif_partner~…，不是 lif_partner_ext~…
+    WRITE: / |飯店：{ mv_name }|.
+  ENDMETHOD.
+  METHOD lif_partner~check_availability.
+    rv_ok = xsdbool( iv_date &gt;= sy-datum ).
+  ENDMETHOD.
+  METHOD lif_partner_ext~get_rating.
+    rv_rating = 4.
+  ENDMETHOD.
+  METHOD lif_license~get_license_no.
+    rv_no = `H-2025-001`.
+  ENDMETHOD.
+ENDCLASS.
+
+CLASS lcl_travel_agency DEFINITION.
+  PUBLIC SECTION.
+    METHODS add_partner IMPORTING io_partner TYPE REF TO lif_partner.
+    METHODS display_agency_partners.
+  PRIVATE SECTION.
+    DATA mt_partners TYPE STANDARD TABLE OF REF TO lif_partner WITH EMPTY KEY.
+ENDCLASS.
+
+CLASS lcl_travel_agency IMPLEMENTATION.
+  METHOD add_partner.
+    APPEND io_partner TO mt_partners.
+  ENDMETHOD.
+  METHOD display_agency_partners.
+    LOOP AT mt_partners INTO DATA(lo_partner).
+      lo_partner-&gt;display_partner( ).        "介面多型：飯店、航空、租車各跑各的
+      IF lo_partner IS INSTANCE OF lif_license.
+        DATA(lo_lic) = CAST lif_license( lo_partner ).   "介面 → 介面的 Down-Cast
+        WRITE: |（執照 { lo_lic-&gt;get_license_no( ) }）|.
+      ENDIF.
+    ENDLOOP.
+  ENDMETHOD.
+ENDCLASS.
+
+START-OF-SELECTION.
+  DATA(lo_agency) = NEW lcl_travel_agency( ).
+  DATA(lo_hotel)  = NEW lcl_hotel( `Taipei Grand` ).
+  lo_agency-&gt;add_partner( lo_hotel ).         "類別參照 → 介面參照：Up-Cast
+  lo_hotel-&gt;display( ).                       "ALIASES 短名
+  lo_agency-&gt;display_agency_partners( ).</code></pre>
+  <div class="note">原教材強調：在 ABAP Objects 中，同樣的組件可以同時定義在介面與類別中，因此可以把類別既有的一部分公開組件「搬到介面」，再用 ALIASES 保留舊名，使用者完全察覺不到差異——這是重構既有類別的標準手法。</div>
+  <div class="tip">SAP 標準世界到處都是介面：BAdI 的本質就是一個介面（IF_EX_…／新式 BAdI 介面），SALV 用 IF_SALV_…，RAP 的行為實作、Unit Test 的 Test Double 也都靠介面。<b>會讀介面、會找實作類別</b>（SE24 → Interface → Where-used；ADT 按 Ctrl+T 看型別階層），是看懂 S/4HANA 標準程式的第一步。</div>
+
+  <h3 id="ch05-2-12">12. 事件（Unit 5／2007 第十一單元／BC404 第六單元）</h3>
+  <p>透過觸發事件，物件或類別宣告「狀態改變了」或「到達某個狀態」。範例：類別 lcl_car 在建立時觸發 car_created，租車公司、監理站等其他類別有興趣就處理它。<b>這裡的事件不是 ABAP 執行期事件</b>（INITIALIZATION、START-OF-SELECTION 等），也不是背景作業或工作流事件。</p>
+  <p><b>特性：</b>事件讓物件之間的耦合比直接呼叫方法更鬆——觸發者不需要知道誰會處理，處理者的反應也與觸發者無關。這很適合 GUI（例如 ALV 的 double_click）；COM、ActiveX 等其他物件模型也都支援事件。</p>
+  <table>
+    <thead><tr><th>步驟</th><th>語法</th><th>規則</th></tr></thead>
+    <tbody>
+      <tr><td>1. 定義事件</td><td>EVENTS evt EXPORTING VALUE(p) TYPE …／CLASS-EVENTS</td><td>事件<b>只能有 EXPORTING 參數，且必須傳值</b></td></tr>
+      <tr><td>2. 觸發事件</td><td>RAISE EVENT evt EXPORTING p = …</td><td>實例方法可觸發實例與靜態事件；靜態方法只能觸發靜態事件</td></tr>
+      <tr><td>3. 定義處理方法</td><td>METHODS on_evt FOR EVENT evt OF class IMPORTING p sender</td><td>只能 IMPORTING 事件定義中的參數（不能自己定型別）；實例事件另有隱含參數 <b>sender</b>（觸發物件的參照）</td></tr>
+      <tr><td>4. 註冊</td><td>SET HANDLER lo_h-&gt;on_evt FOR lo_sender／FOR ALL INSTANCES；靜態事件不加 FOR</td><td>只有註冊過的處理方法會被呼叫；註冊只在執行期有效（不持久）</td></tr>
+      <tr><td>5. 取消註冊</td><td>SET HANDLER … ACTIVATION space</td><td>預設 ACTIVATION 'X'（註冊）</td></tr>
+    </tbody>
+  </table>
+  <ul>
+    <li>RAISE EVENT 的效果：程式流程在該點中斷 → 依序呼叫所有已註冊處理方法 → 全部執行完才繼續；處理方法內再觸發事件就形成巢狀。</li>
+    <li>每個定義事件的物件都有一張<b>處理者表</b>（內部內表）；註冊時寫入、觸發時照表呼叫。</li>
+    <li>多個處理者的<b>呼叫順序沒有定義</b>，不能依賴順序。處理中途新註冊的處理者排到最後、輪到時會執行；中途取消註冊的會從序列中移除。</li>
+    <li><b>註冊給仍活著的事件的物件也會保持活著</b>，即使程式已沒有任何參照指向它——事件處理者表本身就是一個參照，GC 不會回收。忘記取消註冊是 OO 程式常見的記憶體洩漏。</li>
+    <li>可見性：事件本身可為 PUBLIC（所有使用者可處理）、PROTECTED（類別與子類別）、PRIVATE（只有類別內部）；處理方法的可見性要與事件相同或更嚴格，並決定 SET HANDLER 可以寫在哪裡。</li>
+    <li>處理方法也可以像一般方法一樣被直接呼叫。</li>
+    <li><b>介面中的事件（Unit 5 L2）：</b>事件也可以定義在介面中，實作類別以 <span class="kw">RAISE EVENT lif~evt</span> 觸發；處理方法寫 <span class="kw">FOR EVENT evt OF lif_xxx</span>，再以 <span class="kw">FOR ALL INSTANCES</span> 註冊，就能一次接收「所有實作該介面的類別」的事件。</li>
+  </ul>
+
+  <pre><code class="abap">*&amp;---------------------------------------------------------------------*
+*&amp; 事件：車輛建立 → 租車公司自動加入清單（sender 參數）
+*&amp;---------------------------------------------------------------------*
+CLASS lcl_car DEFINITION.
+  PUBLIC SECTION.
+    EVENTS car_created EXPORTING VALUE(ev_plate) TYPE string.
+    CLASS-EVENTS fleet_full.
+    METHODS constructor IMPORTING iv_plate TYPE string.
+  PRIVATE SECTION.
+    DATA mv_plate TYPE string.
+ENDCLASS.
+
+CLASS lcl_car IMPLEMENTATION.
+  METHOD constructor.
+    mv_plate = iv_plate.
+    RAISE EVENT car_created EXPORTING ev_plate = iv_plate.
+  ENDMETHOD.
+ENDCLASS.
+
+CLASS lcl_car_rental DEFINITION.
+  PUBLIC SECTION.
+    METHODS on_car_created FOR EVENT car_created OF lcl_car
+      IMPORTING ev_plate sender.               "sender：觸發事件的那台車
+    CLASS-METHODS on_fleet_full FOR EVENT fleet_full OF lcl_car.
+    METHODS count RETURNING VALUE(rv_n) TYPE i.
+  PRIVATE SECTION.
+    DATA mt_cars TYPE STANDARD TABLE OF REF TO lcl_car WITH EMPTY KEY.
+ENDCLASS.
+
+CLASS lcl_car_rental IMPLEMENTATION.
+  METHOD on_car_created.
+    APPEND sender TO mt_cars.
+    WRITE: / |新車 { ev_plate } 已加入車隊|.
+  ENDMETHOD.
+  METHOD on_fleet_full.
+    WRITE: / `車隊已滿`.
+  ENDMETHOD.
+  METHOD count.
+    rv_n = lines( mt_cars ).
+  ENDMETHOD.
+ENDCLASS.
+
+START-OF-SELECTION.
+  DATA(lo_rental) = NEW lcl_car_rental( ).
+  SET HANDLER lo_rental-&gt;on_car_created FOR ALL INSTANCES.   "必須在 NEW 之前註冊
+  SET HANDLER lcl_car_rental=&gt;on_fleet_full.                 "靜態事件：不寫 FOR
+
+  DATA(lo_car1) = NEW lcl_car( `ABC-1234` ).
+  DATA(lo_car2) = NEW lcl_car( `XYZ-5678` ).
+  WRITE: / |車隊數量：{ lo_rental-&gt;count( ) }|.                "2
+
+  SET HANDLER lo_rental-&gt;on_car_created FOR ALL INSTANCES ACTIVATION abap_false.</code></pre>
+  <div class="warn">上例的事件在建構子中觸發，所以只能用 <span class="kw">FOR ALL INSTANCES</span> 註冊——物件還沒建立，無法寫 <span class="kw">FOR lo_car1</span>。<span class="kw">FOR ALL INSTANCES</span> 對之後才建立的實例也有效，這正是它存在的理由。</div>
+
+  <h3 id="ch05-2-13">13. 全域類別、全域介面與 Class Builder（Unit 6／2007 第十二單元）</h3>
+  <p>區域類別/介面只在所屬程式中使用，不是 TADIR 項目，也無法被其他程式存取；<b>全域類別/介面</b>則是獨立的 Repository 物件，享有啟用、版本管理、傳輸等所有 Workbench 功能，命名空間與其他 Repository 物件相同（Y*、Z* 或客戶命名空間），<b>全域類別與全域介面共用同一個命名空間</b>。維護工具是 <span class="tcode">SE24</span> Class Builder（也可在 <span class="tcode">SE80</span> 導覽區按右鍵建立）；每個方法的實作存在自己的 include，因此<b>方法可以個別傳輸</b>。</p>
+  <p><b>建立類別時的選項</b>（2007 版對話框）：實例建立（Instantiation：Public／Protected／Private／Abstract，預設 Public）、例外類別、持久類別、Final（繼承樹末端）、Only Modeled（只為建模）。<b>Class Builder 各頁籤：</b>Properties（父類別、實例化、Final）、Interfaces、Friends、Attributes、Methods（Parameter 按鈕編簽名、Source Code 按鈕寫實作、Constructor 按鈕自動建立建構子）、Events、Types、Aliases。</p>
+  <ul>
+    <li><b>測試環境：</b>啟用後按 F8（Class → Run → In Test Environment），靜態組件直接可測，實例組件要先按 Create Instance；只列 public 組件；可註冊處理者測事件。</li>
+    <li><b>在程式中使用：</b>把類別名從導覽區拖到編輯區，自動產生 CREATE OBJECT 與建構子參數；拖方法名產生呼叫敘述。建議在 Utilities → Settings → Pattern 勾選 <b>Functional Writing Style for Call Method</b>，產生現代寫法。</li>
+    <li><b>全域介面：</b>命名 SAP 用 <span class="kw">IF_</span>、客戶用 <span class="kw">ZIF_／YIF_</span>；在類別的 Interfaces 頁籤加入後，介面方法以 <span class="kw">介面~方法</span> 自動列在 Methods 頁籤，雙擊實作。</li>
+    <li><b>把區域類別匯入成全域類別：</b><span class="tcode">SE24</span> → Object type → Import → Local classes in program（不能從 Object Navigator 執行），輸入主程式名（類別在 include 中時勾 Explode INCLUDEs）→ Display Classes/Interfaces → 輸入全域名稱（注意客戶命名空間）→ Import。</li>
+    <li><b>UML 產生：</b>NW 7.0 EhP2 起可對套件產生 UML 類別圖（選套件顯示全域類別；選程式則顯示區域類別與全域介面）。</li>
+    <li><b>全域類別的繼承：</b>Properties 頁籤按 Superclass 指定父類別；要重定義就選方法按 Redefine；子類別按 CONSTRUCTOR 時系統會建議沿用父類別建構子簽名並產生 super 呼叫。</li>
+    <li><b>全域類別中的區域型別：</b>兩個 include——<b>Class-Relevant Local Definitions</b>（舊稱 Local Types，放 private section 會用到的區域型別/類別，例如方法參數型別）與 <b>Local Definitions/Implementations</b>（舊稱 Local Class Implementations，放其他區域類別、區域介面）；另有 <b>Test Classes</b> include 放 ABAP Unit（第 17 節）。</li>
+    <li><b>顯示設定：</b>User-Specific Settings 的 Group by Classes and Interfaces 可把繼承/介面組件分組顯示；Sort 按鈕可依五種條件分三層排序。</li>
+  </ul>
+  <div class="note"><b>Class Pool 的結構</b>（在 ADT 或 SE24 → Source Code-Based 模式可直接看到）：一個全域類別就是一支 CLASS-POOL 程式，裡面有 <span class="kw">CLASS zcl_xxx DEFINITION PUBLIC</span> 與 IMPLEMENTATION。SE24 的 Form-Based 表格編輯與 Source Code-Based 編輯可切換；ADT 只有原始碼模式。</div>
+  <div class="warn"><b>S/4HANA 現況：</b>SAP 對新開發的建議工具是 <b>ADT（Eclipse）</b>，SE24 仍可用但不再新增功能；而且 CDS View、RAP 行為定義、ABAP Cloud 物件只能在 ADT 維護（見第 15 節、<a href="#ch05-5">5-5 章</a>）。全域類別的傳輸與套件規則見 <a href="#ch01-1">1-1 章</a>。</div>
+
+  <h3 id="ch05-2-14">14. OO 應用實例：ALV Grid Control 與 BAdI（Unit 7／2007 第十二單元第三課）</h3>
+  <p><b>SAP Control Framework</b> 是一組全域類別與介面，讓你在 ABAP Objects 程式中加入與平台無關的 SAP GUI 控制項。<b>ALV Grid Control</b> 用標準化表格顯示非階層式清單，內建排序、篩選、隱藏欄位、合計、列印、匯出等功能，開發者可隱藏標準功能或在工具列加自己的功能。<b>Container Control</b> 提供畫面與應用控制項（ALV Grid、Tree、Picture）之間的技術連結；容器本身也是控制項，可以巢狀，是其控制項的 parent。</p>
+  <p>原教材步驟：① 用 Screen Painter 全螢幕編輯器在畫面上畫 Custom Control 區（固定大小）；② 建立 <span class="kw">CL_GUI_CUSTOM_CONTAINER</span> 實例並傳入區域名稱；③ 建立 <span class="kw">CL_GUI_ALV_GRID</span> 實例並把容器參照傳給 <span class="kw">i_parent</span>（ALV 物件以私有屬性記住自己屬於哪個容器）；④ 呼叫 <span class="kw">SET_TABLE_FOR_FIRST_DISPLAY</span> 傳入內表（行型別是 DDIC 結構時可傳 <span class="kw">i_structure_name</span>，系統自動產生欄位目錄）；之後內容改變只要在該對話步驟呼叫 <span class="kw">REFRESH_TABLE_DISPLAY</span>。</p>
+  <div class="warn"><b>教材注意事項與錯字：</b>傳給 SET_TABLE_FOR_FIRST_DISPLAY 的內表<b>必須是全域的</b>（程式全域變數或類別的公開/私有屬性），因為控制項在之後的對話步驟仍會存取它；傳區域變數會出現空白或 DUMP。Col18 p198 寫的 <span class="kw">CL_GUI_GUI_ALV_GRID</span> 是錯字，正確為 <span class="kw">CL_GUI_ALV_GRID</span>。Enjoy 控制項示範程式可在 <span class="tcode">DWDM</span>（Development Workbench Demos）找到。</div>
+
+  <pre><code class="abap">*&amp;---------------------------------------------------------------------*
+*&amp; 雙擊事件：S/4HANA 首選 CL_SALV_TABLE（免畫面）；需編輯才用 CL_GUI_ALV_GRID
+*&amp;---------------------------------------------------------------------*
+CLASS lcl_report DEFINITION.
+  PUBLIC SECTION.
+    METHODS run.
+  PRIVATE SECTION.
+    DATA mt_flights TYPE STANDARD TABLE OF sflight WITH EMPTY KEY.   "屬性＝全域生命週期
+    DATA mo_salv    TYPE REF TO cl_salv_table.
+    METHODS on_double_click FOR EVENT double_click OF cl_salv_events_table
+      IMPORTING row column.
+ENDCLASS.
+
+CLASS lcl_report IMPLEMENTATION.
+  METHOD run.
+    SELECT carrid, connid, fldate, price, currency, planetype, seatsmax, seatsocc
+      FROM sflight
+      ORDER BY carrid, connid, fldate
+      INTO CORRESPONDING FIELDS OF TABLE @mt_flights.
+    TRY.
+        cl_salv_table=&gt;factory( IMPORTING r_salv_table = mo_salv
+                                CHANGING  t_table      = mt_flights ).
+        mo_salv-&gt;get_functions( )-&gt;set_all( abap_true ).
+        mo_salv-&gt;get_columns( )-&gt;set_optimize( abap_true ).
+        SET HANDLER on_double_click FOR mo_salv-&gt;get_event( ).
+        mo_salv-&gt;display( ).
+      CATCH cx_salv_msg INTO DATA(lx_salv).
+        MESSAGE lx_salv-&gt;get_text( ) TYPE 'E'.
+    ENDTRY.
+  ENDMETHOD.
+
+  METHOD on_double_click.
+    DATA(ls_flight) = mt_flights[ row ].
+    " 後續處理：例如顯示該航班的訂位（SBOOK）或機型（SAPLANE）
+    MESSAGE |第 { row } 列 { column }：{ ls_flight-carrid } { ls_flight-connid } { ls_flight-fldate DATE = USER }|
+      TYPE 'I'.
+  ENDMETHOD.
+ENDCLASS.
+
+START-OF-SELECTION.
+  NEW lcl_report( )-&gt;run( ).
+
+*&amp;---------------------------------------------------------------------*
+*&amp; 原教材的 Dynpro 版本（PBO 中執行）：CL_GUI_ALV_GRID + double_click
+*&amp;---------------------------------------------------------------------*
+" METHODS on_dbl FOR EVENT double_click OF cl_gui_alv_grid IMPORTING e_row e_column.
+" IF mo_grid IS NOT BOUND.
+"   mo_grid = NEW cl_gui_alv_grid( i_parent = NEW cl_gui_custom_container( container_name = 'CONTAINER_1' ) ).
+"   SET HANDLER on_dbl FOR mo_grid.
+"   mo_grid-&gt;set_table_for_first_display( EXPORTING i_structure_name = 'SAPLANE'
+"                                         CHANGING  it_outtab = mt_planes ).
+" ELSE.
+"   mo_grid-&gt;refresh_table_display( ).
+" ENDIF.</code></pre>
+  <div class="note">新版教材 p288 特別說明：巢狀 NEW 時內層不能用 <span class="kw">NEW #( )</span>，因為 i_parent 的型別是 <span class="kw">REF TO cl_gui_container</span>（抽象父類別），無法推導出要建立哪個容器，必須寫出 <span class="kw">NEW cl_gui_custom_container( … )</span>。完整 OOALV（欄位目錄、工具列、可編輯）見 <a href="#ch02-3">2-3 章</a>、<a href="#ch03-2">3-2 章</a>與 <a href="#ch05-10">5-10 章 BC412</a>。</div>
+
+  <p><b>BAdI（Business Add-In）：</b>與 Customer Exit 不同，BAdI 針對「多層交付鏈」最佳化：SAP → 夥伴（例如產業解決方案 IBU）→ 客戶都可能要擴充同一支程式。BAdI 以<b>介面＋實作該介面的 adapter 類別</b>提供擴充點；介面可被交付鏈中多方實作（多重實作），實作本身也可以再提供 BAdI。</p>
+  <ul>
+    <li><b>定義：</b>指定介面 <span class="kw">IF_EX_&lt;badi&gt;</span> 與方法；系統自動產生 adapter 類別 <span class="kw">CL_EX_&lt;badi&gt;</span>，負責呼叫所有啟用中的實作。<b>多個啟用實作之間沒有預定的執行順序</b>。</li>
+    <li><b>分析定義（<span class="tcode">SE18</span>）：</b>示範 BAdI <span class="kw">BADI_BC401</span>，看 Properties 的 Multiple Use、Interface 頁籤的 <span class="kw">IF_EX_BADI_BC401</span> 與方法 <span class="kw">ENHANCE_LIST</span>；對介面做 Where-used 會找到三處：adapter 類別 CL_EX_BADI_BC401、示範實作類別 CL_IM_BC401_IMPL、呼叫程式 SAPBC401_BAD_D1。</li>
+    <li><b>呼叫程式（Classic）：</b>宣告 BAdI 介面型別的參照變數 → 呼叫 <span class="kw">CL_EXITHANDLER=&gt;GET_INSTANCE</span> 取得 adapter 實例 → 透過參照呼叫介面方法。</li>
+    <li><b>找 BAdI 的方法：</b><span class="tcode">SE84</span> Repository Information System、<span class="tcode">SE81</span> 應用階層、<span class="tcode">SPRO</span> IMG、在應用程式原始碼搜尋 <span class="kw">CL_EXITHANDLER=&gt;GET_INSTANCE</span>、搜尋 <span class="kw">IF_EX_</span>、NW 7.0 起搜尋 <span class="kw">GET BADI</span>。原始碼搜尋技巧：在交易中按 F1 → Technical Information → 雙擊程式名 → 用 Edit → Find Next 全域搜尋，<b>不要用 Ctrl+F</b>（只搜尋目前 include）。</li>
+    <li><b>實作（<span class="tcode">SE19</span>）：</b>Create Implementation → Classic BAdI → 輸入 BAdI 名 → 實作名 Z&lt;impl&gt; → 系統產生實作類別，預設名 <span class="kw">ZCL_IM_&lt;impl&gt;</span>（Y/Z＋CL_＋IM_＋實作名）→ 雙擊方法寫程式（可另加輔助方法）→ 啟用類別 → <b>回到 SE19 啟用 BAdI 實作</b>（只啟用類別不會生效，這是示範的重點）。</li>
+  </ul>
+
+  <pre><code class="abap">*&amp;---------------------------------------------------------------------*
+*&amp; Classic BAdI（原教材）vs 新式 BAdI（NW 7.0+，S/4HANA 首選）
+*&amp;---------------------------------------------------------------------*
+" ① Classic：CL_EXITHANDLER 取得 adapter
+DATA lo_badi_classic TYPE REF TO if_ex_badi_bc401.
+CALL METHOD cl_exithandler=&gt;get_instance
+  CHANGING
+    instance = lo_badi_classic
+  EXCEPTIONS
+    OTHERS   = 1.
+IF sy-subrc = 0 AND lo_badi_classic IS BOUND.
+  lo_badi_classic-&gt;enhance_list( ).
+ENDIF.
+
+" ② 新式 BAdI：Enhancement Spot 內的 BAdI，GET BADI / CALL BADI
+DATA lo_badi TYPE REF TO zbadi_bc401_list.           "BAdI 定義名稱本身就是型別
+TRY.
+    GET BADI lo_badi
+      FILTERS land1 = 'TW'.                          "有定義過濾器時才寫
+    CALL BADI lo_badi-&gt;enhance_list
+      CHANGING ct_flights = lt_flights.
+  CATCH cx_badi_not_implemented.                     "單一使用且無實作時
+ENDTRY.</code></pre>
+  <div class="warn"><b>S/4HANA 現況：</b>Classic BAdI 仍可運作，但新開發請找 Enhancement Spot 下的<b>新式 BAdI</b>（Kernel BAdI，效能較好、支援過濾器與預設實作），實作在 <span class="tcode">SE19</span>「New BAdI」或 ADT；雲端（ABAP Cloud／Public Cloud）只允許<b>已發布</b>的 BAdI（Key User Extensibility 或 Developer Extensibility）。第一個 CALL METHOD cl_exithandler 保留 EXCEPTIONS 是因為該方法本身是傳統例外，這是呼叫 SAP 舊 API 時唯一允許的寫法。詳見 <a href="#ch03-4">3-4 章</a>、<a href="#ch05-14">5-14 章 BC425</a>、<a href="#ch05-15">5-15 章 BC427</a>。</div>
+  <div class="tip"><b>先找標準，再想客製：</b>標準設定（SPRO）→ BAdI／Enhancement Spot → Enhancement Point（隱含/顯式增強）→ 修改標準（Modification，需 SSCR 物件鍵），每往右一步，升級成本高一個量級。找 BAdI 時，除了原教材的方法，實務上最快的是在 <span class="tcode">SE80</span>／ADT 對標準程式搜尋 <span class="kw">GET BADI</span> 與 <span class="kw">cl_exithandler</span>，或在 <span class="kw">CL_EXITHANDLER=&gt;GET_INSTANCE</span> 設中斷點（Classic）、在除錯器對敘述 <span class="kw">GET BADI</span> 設中斷點（新式）後再跑一次交易（見 <a href="#ch05-4">5-4 章 BC403</a>）。</div>
+
+  <h3 id="ch05-2-15">15. ABAP Development Tools（ADT）與重構（Unit 8，2007 版無）</h3>
+  <p>ADT 是 ABAP Workbench 的替代開發環境，建立在 Eclipse 平台上，並提供一組開放、與語言及平台無關的 API 讓人開發新工具。重點：</p>
+  <ul>
+    <li><b>ABAP Perspective：</b>Window → Open Perspective → Other… → ABAP。</li>
+    <li><b>ABAP Project：</b>一個專案＝一個後端系統的連線（System、Client、User、Language）；登入後直接操作 Repository，<b>沒有 check-out／check-in</b>，開發流程與 Workbench 完全相同；可在專案下設定 Favorite Packages，System Library 節點可看全部套件。</li>
+    <li><b>兩種編輯器：</b>原生 Eclipse 編輯器（ABAP 程式、類別、CDS 等）與內嵌 SAP GUI 編輯器（例如交易碼維護、Dynpro）；Module Pool 與畫面仍以 Workbench 較適合。</li>
+    <li><b>Quick Fix（Ctrl+1）：</b>建立缺少的實作部分／方法實作（例如介面所有方法）、產生建構子、產生 Factory 方法、加類別文件；對屬性可改名、產生 Getter/Setter、改可見性；對區域變數可轉成屬性。</li>
+    <li><b>重構：</b>Extract Method（把選取程式碼搬成新方法並改成呼叫，須無語法錯誤、只能在類別的方法內）、Delete Unused Variables、Rename（全域改名並自動調整所有使用處）。</li>
+    <li>其他常用：F2 元素資訊、F3 導航、Ctrl+Shift+A 開啟物件、Shift+F1 格式化（Pretty Printer）、ABAP Unit 與 Coverage 內建整合。</li>
+    <li>安裝來源：SAP Development Tools 網站 tools.hana.ondemand.com（亦提供 SAP HANA Studio、UI5 工具）。</li>
+  </ul>
+  <div class="warn"><b>S/4HANA 現況：</b>ADT 已是 SAP 官方主力 IDE：CDS View Entity（7.55+ 的 <span class="kw">DEFINE VIEW ENTITY</span>）、AMDP、RAP 行為定義（BDEF）、Service Definition/Binding、ABAP Cloud 開發<b>只能</b>在 ADT 做。新進開發者建議直接從 ADT 起步，SE80 只在 Dynpro、舊式 Screen Painter、Smart Forms 等情境使用。ADT 完整操作見 <a href="#ch05-5">5-5 章</a>。</div>
+
+  <h3 id="ch05-2-16">16. 類別式例外（Unit 9／2007 第十四單元）</h3>
+  <p>例外是「程式已無法依正常流程繼續」的狀況。SAP NetWeaver AS 6.10 引入以類別為基礎的例外概念，與既有的 sy-subrc 機制並存。例外以<b>例外物件</b>（例外類別的實例）表示，屬性值描述錯誤狀況；「觸發」＝建立例外物件並設定屬性，「處理」＝評估例外物件。類別式例外<b>不限於 OO 環境</b>，任何處理區塊都能觸發與處理；以前「可捕捉的執行期錯誤」也都能當類別式例外處理。</p>
+  <table>
+    <thead><tr><th>父類別</th><th>語法檢查</th><th>未處理也未宣告時</th><th>典型成員</th></tr></thead>
+    <tbody>
+      <tr><td><b>CX_STATIC_CHECK</b>（預設）</td><td>必須處理或以 RAISING 宣告，否則語法檢查警告</td><td>執行期錯誤</td><td>應用程式自己定義的錯誤狀況</td></tr>
+      <tr><td><b>CX_DYNAMIC_CHECK</b></td><td>不檢查</td><td>執行期若發生卻未處理/未宣告 → 執行期錯誤</td><td>多數 CX_SY_…（除以零 CX_SY_ZERODIVIDE、溢位 CX_SY_ARITHMETIC_OVERFLOW、轉型 CX_SY_MOVE_CAST_ERROR）</td></tr>
+      <tr><td><b>CX_NO_CHECK</b></td><td>不能用 RAISING 宣告</td><td>自動往上傳遞到最頂層，仍未處理則執行期錯誤</td><td>資源不足等「隨時可能發生」的錯誤</td></tr>
+    </tbody>
+  </table>
+  <ul>
+    <li>所有例外類別都繼承自 <b>CX_ROOT</b>（可用 REF TO CX_ROOT 泛型接收），但<b>新例外類別不能直接繼承 CX_ROOT</b>，必須繼承上述三者之一。全域例外類別命名 <span class="kw">&lt;namespace&gt;CX_</span>（客戶 <span class="kw">ZCX_</span>），執行環境用的是 <span class="kw">CX_SY_</span>，區域例外建議 <span class="kw">LCX_</span>。</li>
+    <li>CX_ROOT 的方法：<span class="kw">GET_SOURCE_POSITION</span>（主程式/include 名與行號）、<span class="kw">GET_TEXT</span>（例外文字字串；新版教材指出它定義在 CX_ROOT 實作的介面 IF_MESSAGE 中）、<span class="kw">GET_LONGTEXT</span>；屬性 <span class="kw">TEXTID</span>、<span class="kw">PREVIOUS</span>、<span class="kw">IS_RESUMABLE</span>、<span class="kw">KERNEL_ERRID</span>（由執行環境觸發時存執行期錯誤名稱，例如除以零的 <span class="kw">COMPUTE_INT_ZERODIVIDE</span>）。</li>
+    <li><b>TRY 結構：</b>TRY 區塊放要保護的程式；CATCH 可列任意多個例外類別（含其子類別），<b>依序比對、執行第一個符合者</b>——所以子類別要寫在父類別前面；找不到就往外層 TRY、再往呼叫者傳遞；因此離開而由外層處理時，本層的 <b>CLEANUP</b> 區塊會先執行。TRY、CATCH、CLEANUP 區塊內都可再巢狀 TRY。</li>
+    <li><b>CATCH … INTO：</b>取得例外物件參照；參照型別決定能存取哪些組件（REF TO CX_ROOT 只能用 CX_ROOT 的組件）。沒有 INTO 時系統為了效能<b>不會真的建立例外物件</b>，除錯器的 Last Exception Object 按鈕也不會出現（可在除錯器設定中強制建立）。除錯時「Exception Raised」欄位顯示例外類別名。</li>
+    <li><b>傳遞（Propagation）：</b>區域類別方法與副程式直接在簽名寫 <span class="kw">RAISING cx_a cx_b</span>；全域類別方法在 Class Builder 的例外表勾選 Exception Class；函數模組在 Function Builder 的 Exceptions 頁籤勾選。<b>同一個程序只能用一種例外（類別式或傳統式）</b>。最高只能傳到「沒有區域資料的處理區塊」——事件區塊（START-OF-SELECTION 等）與對話模組，那裡一定要處理，否則執行期錯誤。</li>
+    <li><b>例外文字：</b>6.40 以前存在 <b>OTR</b>（Online Text Repository），6.40 起可勾選 <b>With Message Class</b>，重用 T100（<span class="tcode">SE91</span>）訊息；同一個例外類別不能混用兩者。文字可用 <span class="kw">&amp;屬性名&amp;</span> 帶參數；第一個文字一律用與類別同名的預設常數 ID，其他文字的 ID 由 Class Builder 產生同名 public 常數，觸發時傳給建構子參數 <span class="kw">TEXTID</span>。公開屬性會自動加到建構子成為同名可選 IMPORTING 參數。</li>
+    <li><b>觸發：</b><span class="kw">RAISE EXCEPTION TYPE cx [EXPORTING …]</span>（建立新物件）或 <span class="kw">RAISE EXCEPTION lx_obj</span>（重拋既有物件，通常來自前一個 CATCH INTO）。</li>
+  </ul>
+  <p><b>CATCH 之後可以怎麼做（Unit 9 L3）：</b>① 在 ENDTRY 之後繼續（忽略、發警告、寫日誌、修正狀況）；② 排除原因後重來——<span class="kw">RETRY</span> 回到 TRY 區塊開頭，或 <span class="kw">RESUME</span> 回到觸發點的下一行（兩者都是 NW 7.0 EhP2 起）；③ 再拋出同一個物件或新例外。<b>RETRY 要小心：沒真正排除原因就會無限迴圈。</b></p>
+  <p><b>可續行例外（Resumable）的三個前提：</b>① 以 <span class="kw">RAISE RESUMABLE EXCEPTION</span> 觸發；② 傳遞途經的每一層都以 <span class="kw">RAISING RESUMABLE( cx_… )</span> 宣告；③ 以 <span class="kw">CATCH BEFORE UNWIND</span> 捕捉，讓例外發生處的上下文在 CATCH 期間保持存活。處理者應先檢查 <span class="kw">IS_RESUMABLE</span>；對不可續行的例外 RESUME 會造成 <span class="kw">CX_SY_ILLEGAL_HANDLER</span> 執行期錯誤。</p>
+  <p><b>例外映射（Mapping）與串鏈：</b>離開 CATCH 區塊後例外物件就失效，最上層只能看到最後一個例外；把舊例外物件傳給新例外建構子的 <span class="kw">PREVIOUS</span> 參數，就能形成串鏈，最上層沿 PREVIOUS 逐層追溯整個呼叫階層的錯誤歷史。</p>
+
+  <pre><code class="abap">*&amp;---------------------------------------------------------------------*
+*&amp; 全域例外類別（ADT 原始碼模式；With Message Class，7.50+ 用 IF_T100_DYN_MSG）
+*&amp;---------------------------------------------------------------------*
+CLASS zcx_bc401_flight DEFINITION PUBLIC
+  INHERITING FROM cx_static_check FINAL CREATE PUBLIC.
+  PUBLIC SECTION.
+    INTERFACES if_t100_dyn_msg.
+    DATA mv_carrid TYPE s_carr_id READ-ONLY.       "公開屬性 → 建構子自動多一個同名參數
+    METHODS constructor
+      IMPORTING textid    LIKE if_t100_message=&gt;t100key OPTIONAL
+                previous  LIKE previous OPTIONAL
+                mv_carrid TYPE s_carr_id OPTIONAL.
+ENDCLASS.
+
+CLASS zcx_bc401_flight IMPLEMENTATION.
+  METHOD constructor ##ADT_SUPPRESS_GENERATION.
+    super-&gt;constructor( previous = previous ).
+    me-&gt;mv_carrid = mv_carrid.
+    CLEAR me-&gt;textid.
+    IF textid IS INITIAL.
+      if_t100_message~t100key = if_t100_message=&gt;default_textid.
+    ELSE.
+      if_t100_message~t100key = textid.
+    ENDIF.
+  ENDMETHOD.
+ENDCLASS.
+
+*&amp;---------------------------------------------------------------------*
+*&amp; 觸發、傳遞、串鏈、RETRY、CLEANUP
+*&amp;---------------------------------------------------------------------*
+CLASS lcl_flight_reader DEFINITION.
+  PUBLIC SECTION.
+    METHODS read_carrier IMPORTING iv_carrid TYPE s_carr_id
+                         RETURNING VALUE(rs_carr) TYPE scarr
+                         RAISING   zcx_bc401_flight.
+ENDCLASS.
+
+CLASS lcl_flight_reader IMPLEMENTATION.
+  METHOD read_carrier.
+    SELECT SINGLE carrid, carrname, currcode, url
+      FROM scarr
+      WHERE carrid = @iv_carrid
+      INTO CORRESPONDING FIELDS OF @rs_carr.
+    IF sy-subrc &lt;&gt; 0.
+      " 7.50+：直接帶 T100 訊息（ZBC401 訊息類別 001：「航空公司 &amp;1 不存在」）
+      RAISE EXCEPTION TYPE zcx_bc401_flight
+        MESSAGE e001(zbc401) WITH iv_carrid
+        EXPORTING mv_carrid = iv_carrid.
+    ENDIF.
+  ENDMETHOD.
+ENDCLASS.
+
+START-OF-SELECTION.
+  DATA(lv_carrid) = CONV s_carr_id( 'XX' ).
+  DATA(lv_tries)  = 0.
+  TRY.
+      lv_tries = lv_tries + 1.
+      DATA(ls_carr) = NEW lcl_flight_reader( )-&gt;read_carrier( lv_carrid ).
+      DATA(lv_ratio) = 100 / lines( VALUE string_table( ) ).   "刻意除以零
+    CATCH zcx_bc401_flight INTO DATA(lx_flight).
+      IF lv_tries &lt; 2.
+        lv_carrid = 'LH'.               "排除原因後
+        RETRY.                          "回到 TRY 開頭；沒排除原因會無限迴圈
+      ENDIF.
+      MESSAGE lx_flight TYPE 'I'.       "例外物件可直接給 MESSAGE（IF_T100_MESSAGE）
+    CATCH cx_sy_zerodivide INTO DATA(lx_div).
+      " 映射：包成應用例外並串鏈原因
+      DATA(lx_app) = NEW zcx_bc401_flight( previous = lx_div mv_carrid = lv_carrid ).
+      MESSAGE |{ lx_app-&gt;get_text( ) } ← 原因：{ lx_app-&gt;previous-&gt;get_text( ) }| TYPE 'I'.
+    CLEANUP.
+      " 只有在例外被「外層」處理而離開本 TRY 時才執行：釋放鎖、關檔
+  ENDTRY.</code></pre>
+  <div class="note">上例 <span class="kw">MESSAGE e001(zbc401) WITH …</span> 形式的 RAISE EXCEPTION 需 7.50 以上，且例外類別須實作 <span class="kw">IF_T100_DYN_MSG</span>；7.40 以前改用 <span class="kw">EXPORTING textid = zcx_bc401_flight=&gt;carrier_not_found</span>（Texts 頁籤產生的常數）。CATCH 的順序很重要：若把 <span class="kw">cx_root</span> 寫在最前面，後面的 CATCH 永遠輪不到。</div>
+
+  <pre><code class="abap">*&amp;---------------------------------------------------------------------*
+*&amp; 可續行例外：RAISE RESUMABLE + RAISING RESUMABLE( ) + CATCH BEFORE UNWIND
+*&amp;---------------------------------------------------------------------*
+TYPES ty_flight_tab TYPE STANDARD TABLE OF sflight WITH EMPTY KEY.
+
+CLASS lcx_missing_price DEFINITION INHERITING FROM cx_static_check.
+ENDCLASS.
+
+CLASS lcl_pricer DEFINITION.
+  PUBLIC SECTION.
+    METHODS sum_prices IMPORTING it_flights TYPE ty_flight_tab
+                       RETURNING VALUE(rv_sum) TYPE s_price
+                       RAISING   RESUMABLE(lcx_missing_price).
+ENDCLASS.
+
+CLASS lcl_pricer IMPLEMENTATION.
+  METHOD sum_prices.
+    LOOP AT it_flights INTO DATA(ls_f).
+      IF ls_f-price IS INITIAL.
+        RAISE RESUMABLE EXCEPTION TYPE lcx_missing_price.   "處理者 RESUME 後回到下一行
+        CONTINUE.
+      ENDIF.
+      rv_sum = rv_sum + ls_f-price.
+    ENDLOOP.
+  ENDMETHOD.
+ENDCLASS.
+
+" 呼叫端
+DATA lt_flights TYPE ty_flight_tab.
+SELECT * FROM sflight WHERE carrid = 'LH' ORDER BY PRIMARY KEY INTO TABLE @lt_flights.
+TRY.
+    DATA(lv_sum) = NEW lcl_pricer( )-&gt;sum_prices( lt_flights ).
+  CATCH BEFORE UNWIND lcx_missing_price INTO DATA(lx_price).
+    IF lx_price-&gt;is_resumable = abap_true.
+      RESUME.                                   "略過缺價的航班，繼續加總
+    ENDIF.
+ENDTRY.</code></pre>
+  <div class="warn"><b>筆記更正：</b>强晟筆記把 propagate 譯成「忽略」（p266 起「忽略異常」），容易誤解為「吞掉例外」。正確意思是<b>傳遞／往上拋</b>：自己不處理，交給呼叫者處理。筆記 p267 作者看不懂的那段英文，意思是「全域類別的方法要在 Class Builder 方法的例外表中列出要傳遞的例外類別，並勾選 Exception Class 旗標；函數模組則在 Function Builder 的 Exceptions 頁籤做同樣設定」。</div>
+
+  <h3 id="ch05-2-17">17. ABAP Unit 單元測試（Unit 10，2007 版無）</h3>
+  <p>單元測試是開發者驗證「最小可測單位」（例如方法）行為的流程，讓品質保證、重構、回歸測試與測試驅動開發（TDD）更容易。ABAP Unit 是內建於語言的測試框架：</p>
+  <ul>
+    <li>測試寫成<b>區域測試類別</b>（全域類別放在 Test Classes include），扮演使用者角色，只應存取受測類別的 public 組件；每個測試方法獨立執行。</li>
+    <li>測試類別加 <span class="kw">FOR TESTING</span>，並以 <span class="kw">RISK LEVEL</span>（HARMLESS／DANGEROUS／CRITICAL，例如會更新持久資料）與 <span class="kw">DURATION</span>（SHORT／MEDIUM／LONG）分類；測試方法是無參數的實例方法（建議 private）、同樣加 <span class="kw">FOR TESTING</span>。</li>
+    <li>測試碼隨 Repository 物件一起傳輸，但 profile 參數 <span class="kw">abap/test_generation</span> 決定哪些系統產生測試 load，<b>生產系統通常不產生</b>，不影響效能。一般程式碼不能存取測試類別（編譯器禁止）。</li>
+    <li><b>CL_ABAP_UNIT_ASSERT</b> 的靜態方法 ASSERT_EQUALS、ASSERT_DIFFERS、ASSERT_BOUND、ASSERT_NOT_BOUND、ASSERT_INITIAL、ASSERT_TRUE、ASSERT_SUBRC、FAIL 等；參數 <span class="kw">act</span>（實際值）、<span class="kw">exp</span>（期望值）、<span class="kw">msg</span>（訊息）、<span class="kw">level</span>（TOLERABLE／CRITICAL／FATAL）、<span class="kw">quit</span>（NO／METHOD／CLASS／PROGRAM）；回傳 assertion_failed。</li>
+    <li><b>Fixture 方法</b>（固定名稱、private、無參數）：SETUP（每個測試方法前）、TEARDOWN（每個後）、CLASS_SETUP（靜態，第一個測試前一次）、CLASS_TEARDOWN（靜態，最後一個測試後一次）。執行順序：建立測試類別內部 session → 類別建構 → CLASS_SETUP →〔每個測試方法：建立實例 → SETUP → 測試方法 → TEARDOWN〕→ CLASS_TEARDOWN。使用同一個 fixture 的測試必須放在同一個測試類別；有繼承時 setup 由父到子、teardown 由子到父。</li>
+    <li><b>執行：</b>Workbench：Program → Execute → Unit Tests（類別：Class → Run → Unit Tests）；ADT：Run As → ABAP Unit Test（Ctrl+Shift+F10）；大量測試：<span class="tcode">ATC</span> 檢查 BC_AUNIT／BC_AUNIT_M／BC_AUNIT_L，或 <span class="tcode">SCI</span> 檢查變式的 Dynamic Tests → ABAP Unit；可對整個套件執行。</li>
+    <li><b>覆蓋率：</b>Execute → Unit Tests With → Coverage（ADT：Coverage As → ABAP Unit Test）；Statement（綠/紅）、Branch（綠＝真假都跑過、黃＝只跑過一邊、紅＝沒跑）、Procedure 覆蓋率，ADT 直接在原始碼上標色。</li>
+  </ul>
+
+  <pre><code class="abap">*&amp;---------------------------------------------------------------------*
+*&amp; 測試第 10 節的 lcl_rental：多型計算與 Down-Cast 篩選
+*&amp;---------------------------------------------------------------------*
+CLASS ltc_rental DEFINITION FINAL FOR TESTING
+  RISK LEVEL HARMLESS
+  DURATION SHORT.
+  PRIVATE SECTION.
+    DATA mo_cut TYPE REF TO lcl_rental.           "cut = class under test
+    METHODS setup.
+    METHODS max_cargo_ignores_cars FOR TESTING.
+    METHODS fuel_is_sum_of_vehicles FOR TESTING.
+    METHODS empty_rental_has_no_fuel FOR TESTING.
+ENDCLASS.
+
+CLASS ltc_rental IMPLEMENTATION.
+  METHOD setup.                                   "每個測試方法前都重建，互不干擾
+    mo_cut = NEW #( ).
+    mo_cut-&gt;add_vehicle( NEW lcl_truck( iv_make = `MAN` iv_weight = 8000 iv_cargo = 12000 ) ).
+    mo_cut-&gt;add_vehicle( NEW lcl_truck( iv_make = `VOLVO` iv_weight = 9000 iv_cargo = 18000 ) ).
+    mo_cut-&gt;add_vehicle( NEW lcl_vehicle( iv_make = `VW` iv_weight = 1200 ) ).
+  ENDMETHOD.
+
+  METHOD max_cargo_ignores_cars.
+    cl_abap_unit_assert=&gt;assert_equals(
+      act = mo_cut-&gt;get_max_cargo( )
+      exp = 18000
+      msg = `最大載重應取卡車中的最大值` ).
+  ENDMETHOD.
+
+  METHOD fuel_is_sum_of_vehicles.
+    DATA(lv_fuel) = mo_cut-&gt;calc_estimated_fuel( 100 ).
+    cl_abap_unit_assert=&gt;assert_equals(
+      act = lv_fuel
+      exp = CONV decfloat16( 482 )                "(8000+12000 + 9000+18000 + 1200) × 100 × 0.0001
+      msg = `油耗應為各車輛 estimate_fuel 的總和`
+      quit = if_aunit_constants=&gt;quit-no ).
+  ENDMETHOD.
+
+  METHOD empty_rental_has_no_fuel.
+    cl_abap_unit_assert=&gt;assert_initial( NEW lcl_rental( )-&gt;calc_estimated_fuel( 500 ) ).
+  ENDMETHOD.
+ENDCLASS.</code></pre>
+  <div class="tip">要測含資料庫存取的類別，別讓測試真的讀寫資料庫：把 DB 存取抽成介面（例如 lif_flight_dao），正式程式注入真實實作、測試注入假物件（test double）；較新版本另有 <span class="kw">CL_OSQL_TEST_ENVIRONMENT</span>（ABAP SQL 測試替身框架）與 <span class="kw">CL_ABAP_TESTDOUBLE</span>。這正是第 11 節「介面讓 client 與實作脫鉤」在實務上最大的回報。</div>
+
+  <h3 id="ch05-2-18">18. 進階 OO 技巧（Unit 11 L1／2007 第十三單元第一～二課）</h3>
+  <p><b>抽象類別（ABSTRACT）：</b>有定義也可有實作，但<b>不能實例化</b>；典型用途是父類別——自己不被實例化，子類別才被實例化，並作為「不完整藍圖」統一介面。抽象類別中可定義<b>抽象方法</b>（只宣告、不實作），第一個非抽象子類別必須以 REDEFINITION 實作它。抽象類別的參照仍然非常有用，可多型地指向子類別實例（2007 版教材的 <span class="kw">CREATE OBJECT ref TYPE 子類別</span>，現代寫法為 <span class="kw">NEW 子類別( )</span>）。<b>靜態方法與建構子不能是抽象的</b>（無法重定義）。</p>
+  <div class="warn"><b>筆記更正：</b>强晟筆記 p243 寫「只要包含了一個抽象方法的類就是抽象類」，容易誤會成「系統會自動視為抽象」。實際上 ABAP 要求<b>明確</b>在 CLASS 敘述加 <span class="kw">ABSTRACT</span>，非抽象類別宣告抽象方法會語法錯誤。</div>
+  <p><b>Final：</b><span class="kw">CLASS … FINAL</span> 不能被繼承（避免失控的特殊化）；<span class="kw">METHODS … FINAL</span> 不能被重定義。Final 類別的方法隱含 final，<b>不能再重複寫 FINAL</b>；方法不能同時 FINAL 又 ABSTRACT；<b>同時 ABSTRACT 又 FINAL 的類別只應包含靜態組件</b>（工具類別的常見寫法）。在 Class Builder 中這些旗標在 Attributes／Properties 頁籤。</p>
+  <p><b>含物件參照的內表：</b>用內表存參照是實作關聯（association）的標準方式。要依條件找出某個物件，可以：① 在內表同時存鍵值與參照（造成資訊重複）；② 把鍵屬性設為 <b>PUBLIC READ-ONLY</b>，在 READ TABLE／LOOP 中用 <span class="kw">table_line-&gt;attr</span> 直接比對。原教材坦承：公開屬性違反 OO 原則，只因為 ABAP 不允許在 WHERE 與 WITH KEY 左側用功能性方法，所以只在唯讀的特殊情況使用。</p>
+  <p><b>導覽方法與方法串接：</b>回傳所關聯物件參照的方法稱為導覽方法（navigation method），例如 LCL_RENTAL 的 GET_VEHICLE；可直接串接 <span class="kw">lo_rental-&gt;get_vehicle( 1 )-&gt;display( )</span>，串接層數不限。</p>
+  <p><b>NEW 運算子（7.40）：</b>取代 CREATE OBJECT；<span class="kw">NEW #( )</span> 由目標變數推導類別，建立子類別實例時要明寫類別名；只能傳建構子的 IMPORTING 參數，<b>不能處理傳統 sy-subrc 例外</b>，類別式例外照樣用 TRY 包起來。NEW 可放在各種運算式位置（APPEND 的來源、方法實參、巢狀建立 ALV 容器）。<b>IS INSTANCE OF</b>（7.50）判斷參照是否指向某類別或其子類別的實例；<b>CASE TYPE OF</b>（7.50）依動態型別分支，<span class="kw">WHEN TYPE … INTO</span> 順便完成 Down-Cast（範例見第 10 節）。</p>
+  <p><b>實例建構子的可見性：</b>以 CLASS 敘述的 <span class="kw">CREATE</span> 附加（寫在 CLASS … DEFINITION 中）控制誰能建立實例：</p>
+  <table>
+    <thead><tr><th>附加</th><th>誰能建立實例</th><th>用途</th></tr></thead>
+    <tbody>
+      <tr><td>CREATE PUBLIC（預設）</td><td>任何地方（類別內、其他類別、非 OO 的主程式）</td><td>一般類別</td></tr>
+      <tr><td>CREATE PROTECTED</td><td>類別自己與所有子類別</td><td>讓子類別決定實例化方式</td></tr>
+      <tr><td>CREATE PRIVATE</td><td>只有類別自己（通常在靜態 factory 方法中）＋ friend</td><td>Factory、Singleton、持久化類別的前提（確保物件唯一）</td></tr>
+    </tbody>
+  </table>
+
+  <pre><code class="abap">*&amp;---------------------------------------------------------------------*
+*&amp; ABSTRACT / FINAL / table_line-&gt;attr / 方法串接 / NEW 在運算式位置
+*&amp;---------------------------------------------------------------------*
+CLASS lcl_shape DEFINITION ABSTRACT.
+  PUBLIC SECTION.
+    DATA mv_name TYPE string READ-ONLY.                "唯讀公開：供 table_line-&gt; 查找
+    METHODS constructor IMPORTING iv_name TYPE string.
+    METHODS area ABSTRACT RETURNING VALUE(rv_area) TYPE decfloat34.
+    METHODS describe FINAL RETURNING VALUE(rv_text) TYPE string.  "子類別不得改寫
+ENDCLASS.
+
+CLASS lcl_shape IMPLEMENTATION.
+  METHOD constructor.
+    mv_name = iv_name.
+  ENDMETHOD.
+  METHOD describe.
+    rv_text = |{ mv_name }：面積 { area( ) }|.       "樣板方法：呼叫子類別的實作
+  ENDMETHOD.
+ENDCLASS.
+
+CLASS lcl_circle DEFINITION INHERITING FROM lcl_shape FINAL.
+  PUBLIC SECTION.
+    METHODS constructor IMPORTING iv_radius TYPE decfloat34.
+    METHODS area REDEFINITION.
+  PRIVATE SECTION.
+    DATA mv_radius TYPE decfloat34.
+ENDCLASS.
+
+CLASS lcl_circle IMPLEMENTATION.
+  METHOD constructor.
+    super-&gt;constructor( `圓` ).
+    mv_radius = iv_radius.
+  ENDMETHOD.
+  METHOD area.
+    rv_area = mv_radius * mv_radius * '3.14159'.
+  ENDMETHOD.
+ENDCLASS.
+
+CLASS lcl_util DEFINITION ABSTRACT FINAL.             "只放靜態組件的工具類別
+  PUBLIC SECTION.
+    CLASS-METHODS today_text RETURNING VALUE(rv) TYPE string.
+ENDCLASS.
+
+CLASS lcl_util IMPLEMENTATION.
+  METHOD today_text.
+    rv = |{ sy-datum DATE = USER }|.
+  ENDMETHOD.
+ENDCLASS.
+
+START-OF-SELECTION.
+  DATA lt_shapes TYPE STANDARD TABLE OF REF TO lcl_shape WITH EMPTY KEY.
+  APPEND NEW lcl_circle( 2 ) TO lt_shapes.            "NEW 放在運算式位置
+  " DATA(lo_bad) = NEW lcl_shape( `x` ).              "✘ 抽象類別不能實例化（語法錯誤）
+
+  READ TABLE lt_shapes INTO DATA(lo_found) WITH KEY table_line-&gt;mv_name = `圓`.
+  IF sy-subrc = 0.
+    WRITE: / lo_found-&gt;describe( ), / lcl_util=&gt;today_text( ).
+  ENDIF.
+  LOOP AT lt_shapes INTO DATA(lo_shape) WHERE table_line-&gt;mv_name CP `圓*`.
+    WRITE: / lo_shape-&gt;area( ).
+  ENDLOOP.</code></pre>
+
+  <h3 id="ch05-2-19">19. Factory、Singleton 與 Friendship（Unit 11 L2–L3／2007 第十三單元第二～三課）</h3>
+  <p><b>Factory 方法：</b>限制建構子可見性之後，類別通常提供一個 public 靜態方法建立實例並回傳參照，這就是 factory 方法。相較於建構子的優點：</p>
+  <ul>
+    <li>實例化<b>之前</b>就能執行程式：檢查、讀資料庫、上鎖；出錯就不建立實例、不配記憶體。</li>
+    <li>可以有<b>多個</b> factory 方法，各有不同簽名與實作（例如一個傳全部屬性建立新實例、一個只傳鍵值再從資料庫讀其他屬性）——彌補 ABAP 不能多載的限制。</li>
+    <li>可以在類別內<b>管理實例</b>：把每個實例參照存在 private 靜態內表，呼叫時先查是否已有相同鍵的實例，有就回傳既有的，避免重複建立。因為 factory 在類別內，可直接讀私有屬性，不需要把鍵屬性公開。</li>
+    <li>可以依條件建立<b>子類別</b>實例，例如依機型決定建立貨機或客機。</li>
+  </ul>
+  <p><b>Singleton：</b>確保同一個程式上下文中類別只被實例化一次。三種寫法：① factory 方法 GET_INSTANCE 第一次呼叫時建立、之後回傳同一個；② 在<b>靜態建構子</b>中預先建立，GET_INSTANCE 只回傳；③ 把靜態屬性 GO_INSTANCE 設為 PUBLIC READ-ONLY，連 GET_INSTANCE 都不需要。</p>
+  <div class="warn"><b>筆記錯誤修正：</b>强晟筆記 p245 寫「如果<b>允許多次</b>實例化一個類（例如作為資料管理員或資料容器），可以使用單獨概念（Singleton）」，意思正好相反：Singleton 是「<b>只允許實例化一次</b>」，作法是類別宣告 <span class="kw">CREATE PRIVATE</span>＋<span class="kw">FINAL</span>，在靜態建構子中建立唯一實例，再以公開靜態組件提供給外界。</div>
+  <p><b>Friendship：</b>有些類別必須緊密合作，需要存取彼此的 protected／private 組件，或不受建構子可見性限制建立對方實例；為了不把這些能力開放給所有人，類別可以用 <span class="kw">FRIENDS</span> 附加（或 Class Builder 的 Friends 頁籤）把友誼授予其他類別與介面（進而授予所有實作該介面的類別）。規則：</p>
+  <ul>
+    <li><b>授予是單向的</b>：授予友誼的類別不會自動成為對方的朋友。</li>
+    <li><b>「朋友」身分會被繼承</b>：朋友的子類別、以及把朋友介面當組件介面的介面，也都成為朋友——所以授予友誼要極度謹慎，朋友在繼承樹越上層，能存取的子類別越多。</li>
+    <li><b>「授予」不會被繼承</b>：父類別的朋友不會自動成為其子類別的朋友。</li>
+    <li>典型應用是 <b>Factory 類別</b>：LCL_AIRPLANE 宣告 <span class="kw">CREATE PRIVATE FRIENDS lcl_factory</span>，只有 LCL_FACTORY 能建立飛機並讀私有屬性；把實例管理外包給專責類別，讓 LCL_AIRPLANE 更小、更好懂，也能由 factory 決定建立 LCL_CARGO_PLANE 或 LCL_PASSENGER_PLANE。持久化服務的類別代理（第 21 節）就是這個模式。</li>
+  </ul>
+
+  <pre><code class="abap">*&amp;---------------------------------------------------------------------*
+*&amp; Factory 方法（實例快取）＋ Singleton（靜態建構子）＋ Friendship Factory 類別
+*&amp;---------------------------------------------------------------------*
+CLASS lcl_factory DEFINITION DEFERRED.
+
+CLASS lcl_airplane DEFINITION CREATE PRIVATE FRIENDS lcl_factory.
+  PUBLIC SECTION.
+    CLASS-METHODS factory IMPORTING iv_name TYPE string iv_planetype TYPE saplane-planetype
+                          RETURNING VALUE(ro_plane) TYPE REF TO lcl_airplane.
+    METHODS get_name RETURNING VALUE(rv_name) TYPE string.
+  PRIVATE SECTION.
+    TYPES: BEGIN OF ty_inst,
+             name  TYPE string,
+             plane TYPE REF TO lcl_airplane,
+           END OF ty_inst.
+    CLASS-DATA gt_instances TYPE HASHED TABLE OF ty_inst WITH UNIQUE KEY name.
+    DATA mv_name      TYPE string.
+    DATA mv_planetype TYPE saplane-planetype.
+ENDCLASS.
+
+CLASS lcl_airplane IMPLEMENTATION.
+  METHOD factory.
+    " 已存在相同名稱的實例 → 直接回傳，不重複建立
+    ro_plane = VALUE #( gt_instances[ name = iv_name ]-plane OPTIONAL ).
+    IF ro_plane IS NOT BOUND.
+      ro_plane = NEW #( ).                                 "CREATE PRIVATE：只有類別內可 NEW
+      ro_plane-&gt;mv_name = iv_name.
+      ro_plane-&gt;mv_planetype = iv_planetype.
+      INSERT VALUE #( name = iv_name plane = ro_plane ) INTO TABLE gt_instances.
+    ENDIF.
+  ENDMETHOD.
+  METHOD get_name.
+    rv_name = mv_name.
+  ENDMETHOD.
+ENDCLASS.
+
+" Singleton：CREATE PRIVATE + FINAL + 靜態建構子
+CLASS lcl_config DEFINITION FINAL CREATE PRIVATE.
+  PUBLIC SECTION.
+    CLASS-METHODS class_constructor.
+    CLASS-METHODS get_instance RETURNING VALUE(ro_inst) TYPE REF TO lcl_config.
+    DATA mv_company TYPE bukrs READ-ONLY.
+  PRIVATE SECTION.
+    CLASS-DATA go_instance TYPE REF TO lcl_config.
+ENDCLASS.
+
+CLASS lcl_config IMPLEMENTATION.
+  METHOD class_constructor.
+    go_instance = NEW #( ).
+    go_instance-&gt;mv_company = '1000'.
+  ENDMETHOD.
+  METHOD get_instance.
+    ro_inst = go_instance.
+  ENDMETHOD.
+ENDCLASS.
+
+" Friendship：專責 Factory 類別可以 NEW 與讀寫 lcl_airplane 的私有組件
+CLASS lcl_factory DEFINITION.
+  PUBLIC SECTION.
+    CLASS-METHODS create_airplane IMPORTING iv_name TYPE string
+                                  RETURNING VALUE(ro_plane) TYPE REF TO lcl_airplane.
+ENDCLASS.
+
+CLASS lcl_factory IMPLEMENTATION.
+  METHOD create_airplane.
+    ro_plane = NEW #( ).                                   "因為是 friend 才合法
+    ro_plane-&gt;mv_name = iv_name.
+  ENDMETHOD.
+ENDCLASS.
+
+START-OF-SELECTION.
+  DATA(lo_a) = lcl_airplane=&gt;factory( iv_name = `LH-001` iv_planetype = 'A321' ).
+  DATA(lo_b) = lcl_airplane=&gt;factory( iv_name = `LH-001` iv_planetype = 'A321' ).
+  ASSERT lo_a = lo_b.                                      "同一個實例
+  ASSERT lcl_config=&gt;get_instance( ) = lcl_config=&gt;get_instance( ).
+  " DATA(lo_x) = NEW lcl_airplane( ).                      "✘ 語法錯誤：CREATE PRIVATE</code></pre>
+  <div class="tip">Factory 裡「先查快取、有就回傳」的邏輯若改成「從資料庫讀第一筆當預設值」，務必寫 <span class="kw">ORDER BY</span>：HANA 沒有預設排序，<span class="kw">SELECT … UP TO 1 ROWS</span> 或讀進內表後取 <span class="kw">[ 1 ]</span>，不排序就是隨機——Casper 成本評價專案 H／E 輪流被抓到的教訓，在 OO 程式裡一樣會發生，而且因為被 factory 快取住，更難重現。</div>
+
+  <h3 id="ch05-2-20">20. 動態程式設計與 RTTI（2007 第十五單元／Unit 12）</h3>
+  <p><b>Field symbol 細節：</b>用 <span class="kw">FIELD-SYMBOLS &lt;fs&gt;</span> 宣告（角括號是名稱的一部分），<span class="kw">ASSIGN do TO &lt;fs&gt;</span> 指向資料物件後，所有存取都作用在該資料物件上（值語意，類似被解參照的指標）；泛型 <span class="kw">TYPE any</span> 會採用資料物件的型別，指定具體型別則只能指派相容物件。<span class="kw">&lt;fs&gt; IS ASSIGNED</span> 檢查是否已指派，<span class="kw">UNASSIGN</span> 取消。<span class="kw">CASTING</span>／<span class="kw">CASTING TYPE t</span>／<span class="kw">CASTING TYPE (name)</span> 讓存取「好像資料物件是另一個型別」（原教材例：把 c 長度 65535 的 line 以透明表行型別存取；前面放一個 i 型 dummy 是為了對齊）。</p>
+  <p><b>動態指定語法元素：</b>靜態文字的地方換成變數（<span class="kw">CALL TRANSACTION lv_tcode</span>）；靜態識別字的地方換成<b>括號中的變數</b>，括號與變數之間不能有空白（<span class="kw">SUBMIT (lv_prog)</span>）；清單換成內表（<span class="kw">SET PF-STATUS … EXCLUDING lt_fcodes</span>）；文字內容必須大寫。ABAP SQL 的 WHERE、FROM（含 JOIN）、GROUP BY、HAVING、欄位清單都可動態指定。<b>動態方法呼叫</b>：<span class="kw">CALL METHOD lo-&gt;(lv_meth) PARAMETER-TABLE lt_ptab EXCEPTION-TABLE lt_etab</span>；參數表型別 <span class="kw">ABAP_PARMBIND_TAB</span>（NAME、KIND、VALUE＝REF TO data），例外表型別 <span class="kw">ABAP_EXCPBIND_TAB</span>（NAME、VALUE＝要給 sy-subrc 的整數）。</p>
+  <p><b>資料參照：</b><span class="kw">TYPE REF TO type</span> 或泛型 <span class="kw">TYPE REF TO data</span>；初始為空指標；以 <span class="kw">GET REFERENCE OF do INTO ref</span>（7.40 起 <span class="kw">REF #( do )</span>）取得參照，或以 <span class="kw">CREATE DATA ref TYPE (lv_type)</span>／<span class="kw">TYPE STANDARD TABLE OF (lv_tab)</span> 在執行期建立<b>匿名</b>資料物件（只能透過參照存取）。解參照：有完整型別可直接 <span class="kw">ref-&gt;comp</span>／<span class="kw">ref-&gt;*</span>；泛型參照要 <span class="kw">ASSIGN ref-&gt;* TO &lt;fs&gt;</span>（成功 sy-subrc＝0；參照為空或無效則 4，field symbol 不變）。</p>
+  <p><b>RTTI（Run Time Type Identification）：</b>以類別為基礎的型別描述系統，涵蓋所有 ABAP 型別，取代已過時的 <span class="kw">DESCRIBE FIELD</span>／<span class="kw">DESCRIBE TABLE</span>（6.10 起有內建函數 <span class="kw">lines( )</span>）。描述類別的階層對應 ABAP 型別階層：CL_ABAP_TYPEDESCR → CL_ABAP_DATADESCR（ELEMDESCR、STRUCTDESCR、TABLEDESCR、REFDESCR）／CL_ABAP_OBJECTDESCR（CLASSDESCR、INTFDESCR）。用 CL_ABAP_TYPEDESCR 的靜態方法 <span class="kw">DESCRIBE_BY_DATA</span>、<span class="kw">DESCRIBE_BY_NAME</span>、<span class="kw">DESCRIBE_BY_OBJECT_REF</span>、<span class="kw">DESCRIBE_BY_DATA_REF</span> 取得描述物件；回傳型別是父類別參照，所以要 <b>Down-Cast</b> 成具體描述類別。每個型別在執行期只有一個描述物件。結構描述的 <span class="kw">COMPONENTS</span> 屬性是內表；物件描述的 <span class="kw">GET_RELATIVE_NAME( )</span> 回傳類別名。</p>
+
+  <pre><code class="abap">*&amp;---------------------------------------------------------------------*
+*&amp; 任意資料表瀏覽器：CREATE DATA + ASSIGN + RTTI（原教材 SFLIGHT 範例改寫）
+*&amp;---------------------------------------------------------------------*
+PARAMETERS p_tab TYPE tabname DEFAULT 'SFLIGHT'.
+PARAMETERS p_max TYPE i DEFAULT 20.
+
+START-OF-SELECTION.
+  " 1) 安全檢查：動態表名一定要驗證（存在、是透明表、有權限），避免 SQL Injection 與越權
+  DATA(lv_tab) = CONV tabname( to_upper( p_tab ) ).
+  SELECT SINGLE tabname FROM dd02l
+    WHERE tabname = @lv_tab AND as4local = 'A' AND tabclass = 'TRANSP'
+    INTO @DATA(lv_exists).
+  IF sy-subrc &lt;&gt; 0.
+    MESSAGE |{ lv_tab } 不是可存取的透明表| TYPE 'E'.
+  ENDIF.
+  AUTHORITY-CHECK OBJECT 'S_TABU_NAM'
+    ID 'ACTVT' FIELD '03'
+    ID 'TABLE' FIELD lv_tab.
+  IF sy-subrc &lt;&gt; 0.
+    MESSAGE |沒有顯示 { lv_tab } 的權限| TYPE 'E'.
+  ENDIF.
+
+  " 2) 執行期建立內表（原教材的 CREATE DATA … TYPE STANDARD TABLE OF (pa_tab)）
+  DATA lr_tab TYPE REF TO data.
+  FIELD-SYMBOLS &lt;lt_data&gt; TYPE STANDARD TABLE.
+  CREATE DATA lr_tab TYPE STANDARD TABLE OF (lv_tab) WITH EMPTY KEY.
+  ASSIGN lr_tab-&gt;* TO &lt;lt_data&gt;.
+
+  " 3) 動態 FROM；一次讀成內表（原教材是 SELECT 迴圈，已改寫）
+  SELECT * FROM (lv_tab)
+    ORDER BY PRIMARY KEY                          "HANA 無預設排序，要穩定結果就明寫
+    INTO TABLE @&lt;lt_data&gt;
+    UP TO @p_max ROWS.
+
+  " 4) RTTI：取得欄位名當表頭（原教材 describe_by_data + ?= ）
+  DATA(lo_tabdescr)    = CAST cl_abap_tabledescr( cl_abap_typedescr=&gt;describe_by_data( &lt;lt_data&gt; ) ).
+  DATA(lo_structdescr) = CAST cl_abap_structdescr( lo_tabdescr-&gt;get_table_line_type( ) ).
+  LOOP AT lo_structdescr-&gt;components INTO DATA(ls_comp).
+    WRITE ls_comp-name(12).
+  ENDLOOP.
+  ULINE.
+
+  " 5) ASSIGN COMPONENT：不知道欄位名也能逐欄輸出
+  LOOP AT &lt;lt_data&gt; ASSIGNING FIELD-SYMBOL(&lt;ls_row&gt;).
+    NEW-LINE.
+    DO.
+      ASSIGN COMPONENT sy-index OF STRUCTURE &lt;ls_row&gt; TO FIELD-SYMBOL(&lt;lv_field&gt;).
+      IF sy-subrc &lt;&gt; 0.
+        EXIT.
+      ENDIF.
+      WRITE (12) &lt;lv_field&gt;.
+    ENDDO.
+  ENDLOOP.
+
+  " 6) 物件型別的 RTTI：問「你是哪個類別？」
+  DATA(lo_obj) = NEW lcl_circle( 1 ).
+  DATA(lo_classdescr) = CAST cl_abap_classdescr( cl_abap_typedescr=&gt;describe_by_object_ref( lo_obj ) ).
+  WRITE: / lo_classdescr-&gt;get_relative_name( ).    "LCL_CIRCLE</code></pre>
+
+  <pre><code class="abap">*&amp;---------------------------------------------------------------------*
+*&amp; 動態方法呼叫：PARAMETER-TABLE（原教材 get_make 範例）＋ RTTC 動態建型別
+*&amp;---------------------------------------------------------------------*
+" 原教材：lcl_vehicle 有 METHODS get_make EXPORTING ex_make TYPE string，lo_truck 指向其子類別實例
+DATA lv_make TYPE string.
+DATA(lv_meth) = `GET_MAKE`.
+
+" 形式參數 ex_make 是被呼叫方法的 EXPORTING → 從呼叫者看是 importing
+DATA(lt_ptab) = VALUE abap_parmbind_tab(
+  ( name  = 'EX_MAKE'
+    kind  = cl_abap_objectdescr=&gt;importing
+    value = REF #( lv_make ) ) ).
+
+TRY.
+    CALL METHOD lo_truck-&gt;(lv_meth) PARAMETER-TABLE lt_ptab.
+  CATCH cx_sy_dyn_call_error INTO DATA(lx_dyn).          "方法不存在、參數不符
+    MESSAGE lx_dyn-&gt;get_text( ) TYPE 'I'.
+ENDTRY.
+
+" RTTC（Run Time Type Creation）：執行期組出結構與表型別
+DATA(lo_struct) = cl_abap_structdescr=&gt;create( VALUE abap_component_tab(
+  ( name = 'MATNR' type = CAST #( cl_abap_typedescr=&gt;describe_by_name( 'MATNR' ) ) )
+  ( name = 'QTY'   type = cl_abap_elemdescr=&gt;get_p( p_length = 13 p_decimals = 3 ) ) ) ).
+DATA(lo_table) = cl_abap_tabledescr=&gt;create( p_line_type = lo_struct ).
+DATA lr_dyn TYPE REF TO data.
+CREATE DATA lr_dyn TYPE HANDLE lo_table.</code></pre>
+  <div class="warn"><b>S/4HANA 注意：</b>① 動態 SQL 的表名、欄位、WHERE 字串若來自使用者輸入，<b>一定要</b>用 <span class="kw">CL_ABAP_DYN_PRG</span> 驗證或跳脫，否則就是 SQL Injection（ATC 安全檢查會攔）；再加上權限檢查（S_TABU_DIS／S_TABU_NAM）。② 原教材 <span class="kw">DESCRIBE TABLE … LINES / OCCURS / KIND</span>（常數在型別群組 SYDES）與 <span class="kw">DESCRIBE FIELD</span> 都已過時，改用 <span class="kw">lines( )</span> 與 RTTI。③ 原教材用 SELECT 迴圈逐筆讀並 WRITE，本圖書館規範禁用 SELECT 迴圈，已改成一次讀入內表。④ 筆記 p289 寫「CREATE OBJECT 語句的 TYPE 附加包含了表名」應為 <span class="kw">CREATE DATA</span>；p272–p295 頁首的「第十四單元」應為第十五單元（筆記編號錯誤）。</div>
+
+  <h3 id="ch05-2-21">21. 持久化物件與 OO Transaction（Unit 13／2007 第十三單元第四課）</h3>
+  <p><b>持久化服務（Persistence Service）：</b>ABAP 程式執行期的資料與物件是暫時的（transient），程式結束就消失；要永久保存就得寫進資料庫。SAP R/3 6.10 起提供 ABAP Objects 的持久化服務：開發者可把物件目前的屬性值寫進對應的透明表，也能把表中的值讀回事先定義為持久的物件；底層使用 Open SQL。等於用關聯式資料庫＋ABAP Objects「模擬」物件導向資料庫。</p>
+  <ul>
+    <li>在 Class Builder 建立<b>持久類別（Persistent Class）</b>ZCL_&lt;name&gt;，表示其實例與狀態由持久化服務管理；實例必須有<b>鍵屬性</b>——全球唯一的 GUID 或語意鍵；Class Builder 自動產生各屬性的 GET/SET 方法。</li>
+    <li>同時產生<b>類別代理（Class Agent／Class Actor）ZCA_&lt;name&gt;</b> 與其抽象父類別 <b>ZCB_&lt;name&gt;</b>：程式必須透過代理的方法管理持久物件，代理也負責實際資料庫存取；代理從 CB 類別繼承方法、可重定義（例如擴充 DB 存取），<b>CB 類別不能修改</b>。代理是 <b>CREATE PRIVATE 的 Singleton</b>，並且是持久類別的 friend。</li>
+    <li>靜態屬性 <span class="kw">AGENT</span>：第一次存取時代理的靜態建構子建立唯一實例；全部程式只有一個代理物件，無法從外部 CREATE OBJECT。</li>
+    <li><b>建立：</b><span class="kw">agent-&gt;create_persistent( 鍵… )</span>；同鍵物件已存在於程式中則丟 <span class="kw">CX_OS_OBJECT_EXISTING</span>。預設以<b>非同步更新</b>寫入，必須 <span class="kw">COMMIT WORK</span> 之後才真正成為持久物件。</li>
+    <li><b>讀取單筆：</b><span class="kw">get_persistent( 鍵… )</span>，找不到丟 <span class="kw">CX_OS_OBJECT_NOT_FOUND</span>；多筆用 <b>Query Service</b>（可給類似 WHERE 的條件與排序）。</li>
+    <li><b>建立持久類別步驟：</b>① 建模；② 找或建一張透明表，每個屬性一個欄位（必要時調整屬性型別）——<b>表的每個主鍵欄位都要對應類別的鍵屬性</b>；③ 在 Class Builder 建立持久類別並定義 Persistence Mapping。</li>
+  </ul>
+
+  <pre><code class="abap">*&amp;---------------------------------------------------------------------*
+*&amp; 持久化物件（假設已建立持久類別 ZCL_BC401_FLIGHT，對應 SFLIGHT）
+*&amp;---------------------------------------------------------------------*
+DATA(lo_agent) = zca_bc401_flight=&gt;agent.             "Singleton 類別代理
+
+TRY.
+    " 建立新持久物件：參數名由鍵屬性產生
+    DATA(lo_new) = lo_agent-&gt;create_persistent(
+                     i_carrid = 'LH'
+                     i_connid = '0400'
+                     i_fldate = '20261231' ).
+    lo_new-&gt;set_price( '799.00' ).
+    lo_new-&gt;set_currency( 'EUR' ).
+    COMMIT WORK.                                       "沒有這行，資料不會寫入 SFLIGHT
+  CATCH cx_os_object_existing.
+    MESSAGE `此航班物件已存在` TYPE 'I'.
+ENDTRY.
+
+TRY.
+    " 讀回單筆
+    DATA(lo_flight) = lo_agent-&gt;get_persistent(
+                        i_carrid = 'LH' i_connid = '0400' i_fldate = '20261231' ).
+    WRITE: / lo_flight-&gt;get_price( ), lo_flight-&gt;get_currency( ).
+
+    " 多筆：Query Service
+    DATA(lo_query) = cl_os_system=&gt;get_query_manager( )-&gt;create_query(
+                       i_filter  = `CARRID = PAR1`
+                       i_ordering = `FLDATE ASCENDING` ).    "排序也要明寫
+    DATA(lt_objects) = lo_agent-&gt;if_os_ca_persistency~get_persistent_by_query(
+                         i_query = lo_query
+                         i_par1  = 'LH' ).
+  CATCH cx_os_object_not_found INTO DATA(lx_os).
+    MESSAGE lx_os-&gt;get_text( ) TYPE 'I'.
+  CATCH cx_root INTO DATA(lx_any).                   "查詢語法錯誤等其他 OS 例外
+    MESSAGE lx_any-&gt;get_text( ) TYPE 'I'.
+ENDTRY.</code></pre>
+  <p><b>OO Transaction：</b>在 <span class="tcode">SE93</span> 建立交易碼時，Initial Object 選 <b>Method of a Class (OO Transaction)</b>，把交易碼連到：① 勾選 <b>OO Transaction Model</b>＝連到持久物件的交易服務；② 不勾選＝連到全域類別或某程式區域類別（勾 Local in Program 並填程式名）的任意 public 方法。呼叫連到實例方法的 OO 交易時，系統會在自己的內部 session 自動建立該類別實例再執行方法。</p>
+  <div class="warn"><b>OO Transaction 的限制：</b>全域類別不能包含畫面定義，所以連到全域類別時：建構子<b>不能有 IMPORTING 參數</b>、<b>不能處理 ABAP 清單輸出</b>。違反時不會有語法錯誤或擴充檢查訊息，而是執行期錯誤或畫面一片空白——必要時改連到程式中的區域類別，就能用所有傳統對話技術；畫面欄位仍需要程序式的框架程式。</div>
+  <div class="warn"><b>S/4HANA 現況：</b>Object Services 持久化類別仍在系統中，但 SAP 已不再推廣，新專案幾乎不會用。現代替代方案是 <b>CDS View Entity ＋ RAP 商業物件</b>（Managed 情境由框架處理 CRUD、鎖、交易緩衝與 COMMIT；Unmanaged 情境自己寫儲存邏輯），前端用 Fiori Elements／OData V4。若只是想把 SQL 包進類別，直接寫 DAO 類別（ABAP SQL＋介面）即可，也更容易寫 ABAP Unit。資料庫更新、LUW 與鎖物件見 <a href="#ch05-11">5-11 章 BC414</a>。</div>
+
+  <h3 id="ch05-2-22">22. 綜合案例：航班候補名單（Unit 14）</h3>
+  <p>情境：客戶要訂的航班已客滿，旅行社讓客戶登記候補。每個 <span class="kw">SFLIGHT</span> 航班（鍵 CARRID、CONNID、FLDATE）都可以有一份候補名單；所有候補名單存在名為 <b>WAIT_LIST</b> 的緩衝區（技術上是內表）；每份名單除了航班資料，還有登記此航班的所有客戶。畫面與流程邏輯已提供，學員要用 OO 技術實作「程式的智慧」。教材的 UML 只是一種解法，學員可以自己設計。</p>
+  <table>
+    <thead><tr><th>按鈕</th><th>功能</th></tr></thead>
+    <tbody>
+      <tr><td>Display</td><td>顯示指定航班（CARRID、CONNID、FLDATE）的候補名單</td></tr>
+      <tr><td>Create</td><td>為指定航班建立候補名單</td></tr>
+      <tr><td>Delete</td><td>刪除指定航班的候補名單</td></tr>
+      <tr><td>Add</td><td>把右側選取的客戶加入左側選取的航班候補名單</td></tr>
+      <tr><td>Delete (Customer)</td><td>從左側航班的名單刪除右側選取的客戶</td></tr>
+      <tr><td>Position</td><td>顯示所選客戶在名單中的順位</td></tr>
+      <tr><td>Customer Type</td><td>顯示客戶是個人或企業客戶（<span class="kw">SCUSTOM-CUSTTYPE</span>）</td></tr>
+      <tr><td>Display customers Moved Up</td><td>顯示從候補成功遞補到座位的所有客戶</td></tr>
+      <tr><td>Status Log</td><td>顯示成功取得座位的客戶人數</td></tr>
+    </tbody>
+  </table>
+
+  <pre><code class="abap">*&amp;---------------------------------------------------------------------*
+*&amp; 一種設計：Singleton 緩衝 + 候補名單類別 + 事件通知遞補
+*&amp;---------------------------------------------------------------------*
+CLASS lcl_waitlist_buffer DEFINITION DEFERRED.
+
+CLASS lcl_waitlist DEFINITION CREATE PRIVATE FRIENDS lcl_waitlist_buffer.
+  PUBLIC SECTION.
+    TYPES: BEGIN OF ty_key,
+             carrid TYPE s_carr_id,
+             connid TYPE s_conn_id,
+             fldate TYPE s_date,
+           END OF ty_key.
+    EVENTS customer_moved_up EXPORTING VALUE(ev_customid) TYPE s_customer.
+    DATA ms_key TYPE ty_key READ-ONLY.
+    METHODS constructor IMPORTING is_key TYPE ty_key.   "CREATE PRIVATE：只有自己與 friend 能 NEW
+    METHODS add_customer    IMPORTING iv_customid TYPE s_customer
+                            RAISING   zcx_bc401_flight.
+    METHODS remove_customer IMPORTING iv_customid TYPE s_customer.
+    METHODS get_position    IMPORTING iv_customid TYPE s_customer
+                            RETURNING VALUE(rv_pos) TYPE i.
+    METHODS move_up_first.                                   "有空位時遞補第一位
+  PRIVATE SECTION.
+    DATA mt_customers TYPE STANDARD TABLE OF s_customer WITH EMPTY KEY.  "順序即順位
+ENDCLASS.
+
+CLASS lcl_waitlist_buffer DEFINITION FINAL CREATE PRIVATE.
+  PUBLIC SECTION.
+    CLASS-METHODS get_instance RETURNING VALUE(ro_buffer) TYPE REF TO lcl_waitlist_buffer.
+    METHODS get_or_create IMPORTING is_key TYPE lcl_waitlist=&gt;ty_key
+                          RETURNING VALUE(ro_list) TYPE REF TO lcl_waitlist.
+    METHODS delete_list   IMPORTING is_key TYPE lcl_waitlist=&gt;ty_key.
+  PRIVATE SECTION.
+    CLASS-DATA go_instance TYPE REF TO lcl_waitlist_buffer.
+    TYPES: BEGIN OF ty_entry,
+             key  TYPE lcl_waitlist=&gt;ty_key,
+             list TYPE REF TO lcl_waitlist,
+           END OF ty_entry.
+    DATA wait_list TYPE HASHED TABLE OF ty_entry WITH UNIQUE KEY key.   "教材的 WAIT_LIST
+ENDCLASS.
+
+CLASS lcl_waitlist IMPLEMENTATION.
+  METHOD constructor.
+    ms_key = is_key.
+  ENDMETHOD.
+  METHOD add_customer.
+    IF line_exists( mt_customers[ table_line = iv_customid ] ).
+      RAISE EXCEPTION TYPE zcx_bc401_flight.                 "同一客戶不可重複登記
+    ENDIF.
+    APPEND iv_customid TO mt_customers.
+  ENDMETHOD.
+  METHOD remove_customer.
+    DELETE mt_customers WHERE table_line = iv_customid.
+  ENDMETHOD.
+  METHOD get_position.
+    rv_pos = line_index( mt_customers[ table_line = iv_customid ] ).   "0＝不在名單
+  ENDMETHOD.
+  METHOD move_up_first.
+    CHECK mt_customers IS NOT INITIAL.
+    DATA(lv_first) = mt_customers[ 1 ].                      "內表順序由程式維護，不靠 DB 排序
+    DELETE mt_customers INDEX 1.
+    RAISE EVENT customer_moved_up EXPORTING ev_customid = lv_first.
+  ENDMETHOD.
+ENDCLASS.
+
+CLASS lcl_waitlist_buffer IMPLEMENTATION.
+  METHOD get_instance.
+    IF go_instance IS NOT BOUND.
+      go_instance = NEW #( ).
+    ENDIF.
+    ro_buffer = go_instance.
+  ENDMETHOD.
+  METHOD get_or_create.
+    ro_list = VALUE #( wait_list[ key = is_key ]-list OPTIONAL ).
+    IF ro_list IS NOT BOUND.
+      ro_list = NEW #( is_key ).                             "friend 才能 NEW
+      INSERT VALUE #( key = is_key list = ro_list ) INTO TABLE wait_list.
+    ENDIF.
+  ENDMETHOD.
+  METHOD delete_list.
+    DELETE TABLE wait_list WITH TABLE KEY key = is_key.
+  ENDMETHOD.
+ENDCLASS.</code></pre>
+  <div class="tip">客戶類型（Customer Type 按鈕）直接 <span class="kw">SELECT SINGLE custtype FROM scustom WHERE id = @iv_customid</span> 即可（'P' 個人、'B' 企業）；「Moved Up」清單與 Status Log 可由另一個 log 類別以 <span class="kw">SET HANDLER … FOR ALL INSTANCES</span> 接收 customer_moved_up 事件累計——這樣候補名單類別完全不必知道誰在記錄，正是第 12 節事件鬆耦合的示範。建議把這個案例當成本章的總複習：類別、可見性、Singleton、Friendship、例外、事件、內表鍵設計全部用上，再替它寫 ABAP Unit。</div>
+
+  <h3 id="ch05-2-qa">練習與自我檢核</h3>
+  <ol>
+    <li><b>型別題：</b><span class="kw">DATA lv TYPE i. lv = 5 / 10.</span> 結果是多少？為何原教材 73050×0.0727 的例子用 f 算會得到 5310.73？<br><i>要點：</i>1（整數運算四捨五入）；f 是二進位分數，0.0727 無法精確表示，結果 5310.7349999…，轉成 p 時四捨五入成 .73。商業運算用 p（或 decfloat34）。</li>
+    <li><b>內表題：</b>要以完整鍵讀單筆、且表有 10 萬筆，該選哪種表種類？只有部分鍵呢？標準表能宣告 UNIQUE KEY 嗎？<br><i>要點：</i>HASHED（與行數無關）；部分鍵選 SORTED（前 n 個鍵欄位用 = 可二分）；標準表只能 NON-UNIQUE。</li>
+    <li><b>記憶體題：</b>程式 A 以 <span class="kw">LEAVE TO TRANSACTION</span> 呼叫 B，B 能 IMPORT 到 A EXPORT TO MEMORY 的資料嗎？改成 <span class="kw">CALL TRANSACTION</span> 呢？<br><i>要點：</i>不能——以 TCODE 重新開始會清空整個外部 session 的 ABAP Memory；CALL TRANSACTION 是插入，可以。SAP Memory（SET/GET PARAMETER）兩種都可以。</li>
+    <li><b>建構子題：</b>說出實例建構子與靜態建構子各自何時被呼叫、各有哪些限制；建構子丟出例外時物件會怎樣？<br><i>要點：</i>實例：每次 NEW/CREATE OBJECT，可有 IMPORTING 與 RAISING；靜態：每個內部 session 第一次存取類別時一次，無參數；建構子例外 → 物件不建立。子類別建構子必須先 super-&gt;constructor( )。</li>
+    <li><b>轉型題：</b>2007 版的「Narrowing Cast」「Widening Cast」各對應新版哪個術語？哪一個需要 TRY/CATCH？7.50 以後有哪兩種免例外的寫法？<br><i>要點：</i>Narrowing＝Up-Cast（安全）、Widening＝Down-Cast（可能丟 CX_SY_MOVE_CAST_ERROR）；IS INSTANCE OF、CASE TYPE OF … WHEN TYPE … INTO。</li>
+    <li><b>多型題：</b>在 lcl_rental 新增 lcl_motorbike 子類別，calc_estimated_fuel 需要改幾行？為什麼？<br><i>要點：</i>0 行；呼叫依動態型別找實作，只要 lcl_motorbike 重定義 estimate_fuel。</li>
+    <li><b>介面題：</b>為什麼介面只能在 PUBLIC SECTION 實作？複合介面的組件在實作類別中叫什麼名字？<br><i>要點：</i>避免父子類別各自私下實作同一介面；組件保持原介面名 <span class="kw">lif_partner~display_partner</span>，不加複合介面前綴。</li>
+    <li><b>事件題：</b>事件處理方法沒被呼叫，列出三個可能原因；為什麼處理者物件沒被垃圾回收？<br><i>要點：</i>沒 SET HANDLER；在物件建立後才註冊但事件在建構子觸發（應 FOR ALL INSTANCES 且先註冊）；處理方法 FOR EVENT 指錯類別或可見性不足；處理者表持有參照，所以不會被回收，需 ACTIVATION space 取消註冊。</li>
+    <li><b>例外題：</b>CX_STATIC_CHECK／CX_DYNAMIC_CHECK／CX_NO_CHECK 的差別？RESUME 的三個前提？<br><i>要點：</i>見第 16 節表；RAISE RESUMABLE、每層 RAISING RESUMABLE( )、CATCH BEFORE UNWIND（再檢查 IS_RESUMABLE）。</li>
+    <li><b>設計模式題：</b>用 CREATE PRIVATE＋FINAL＋靜態建構子寫一個 Singleton；並說明 friend 關係「被繼承」與「不被繼承」各指什麼。<br><i>要點：</i>見第 19 節程式；朋友的子類別也是朋友（身分被繼承），父類別的朋友不是子類別的朋友（授予不被繼承）。</li>
+    <li><b>ABAP Unit 題：</b>SETUP 與 CLASS_SETUP 差在哪？為什麼生產系統跑不到測試類別？<br><i>要點：</i>每個測試方法前 vs 整個測試類別一次（靜態）；profile 參數 abap/test_generation 通常只在開發/測試系統產生測試 load。</li>
+    <li><b>動態題：</b>寫一支程式，讓使用者輸入表名後顯示前 20 筆，需要注意哪兩件安全問題與一件 HANA 問題？<br><i>要點：</i>CL_ABAP_DYN_PRG 驗證表名、S_TABU_DIS/S_TABU_NAM 權限；ORDER BY PRIMARY KEY 才有穩定順序。</li>
+    <li><b>找錯題：</b>指出以下原教材寫法在 S/4HANA 新程式中的問題：<span class="kw">DATA itab TYPE scarr OCCURS 0 WITH HEADER LINE</span>、<span class="kw">MOVE a ?TO b</span>、<span class="kw">DESCRIBE TABLE itab LINES n</span>、<span class="kw">CALL METHOD cl_exithandler=&gt;get_instance</span>、持久化類別。<br><i>要點：</i>表頭行/OCCURS 過時且類別中禁用；改用 ?= 或 CAST；改用 lines( )；新開發用新式 BAdI（GET BADI/CALL BADI）；持久化服務改用 CDS＋RAP 或 DAO 類別。</li>
+    <li><b>實務題：</b>客戶要在銷售訂單儲存時多檢查一個欄位，依 Casper「先標準再客製」原則，你的評估順序為何？<br><i>要點：</i>先查標準設定（不完整日誌、需求類型、SPRO）→ 找 BAdI／Enhancement Spot（SE18、搜尋 GET BADI）→ User Exit（MV45AFZZ）或隱含增強點 → 最後才考慮修改標準；每往後一步升級成本大增。</li>
+  </ol>
+</section>

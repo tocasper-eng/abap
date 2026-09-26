@@ -1,0 +1,993 @@
+<section class="chapter" id="ch05-24" data-title="SAP NetWeaver 與 HANA 平台概覽（SAPNW）">
+  <h2>第 5-24 章 SAP NetWeaver 與 HANA 平台概覽（SAPNW）</h2>
+  <p class="lede">SAPNW 是原廠的「全景地圖」課程：不教語法，而是告訴你 ABAP 程式到底跑在什麼平台上——AS ABAP／AS Java 的內部元件、HANA 記憶體資料庫與 Code Pushdown、PI／PO／HCI 的整合、SOA 與 Web Service、Workflow 與 BPM、Portal 與 Fiori、BW 與 BusinessObjects、MDG、Solution Manager、ILM，一路到安全與身分管理。ABAP 開發者讀這章的目的是<b>知道自己寫的東西在整個系統版圖裡站在哪裡、要跟誰對接、哪些技術已經退場</b>。本章依原課程 7 個 Unit 的順序整理，每段都補上「2026 年在 S/4HANA 的現況」與可以直接用的現代 ABAP 範例。</p>
+
+  <div class="meta">
+    <div><b>核心 TCODE</b><span class="tcode">SM50</span><span class="tcode">SM51</span><span class="tcode">SM66</span><span class="tcode">SMICM</span><span class="tcode">SMGW</span><span class="tcode">SM59</span><span class="tcode">SE80</span><span class="tcode">SICF</span><span class="tcode">STMS</span><span class="tcode">SE09</span><span class="tcode">SPROXY</span><span class="tcode">SOAMANAGER</span><span class="tcode">SXMB_MONI</span><span class="tcode">SRT_UTIL</span><span class="tcode">SFW5</span><span class="tcode">SWDD</span><span class="tcode">SWI1</span><span class="tcode">SWEL</span><span class="tcode">SBWP</span><span class="tcode">BRFPLUS</span><span class="tcode">/AIF/ERR</span><span class="tcode">SEGW</span><span class="tcode">/IWFND/MAINT_SERVICE</span><span class="tcode">/IWFND/ERROR_LOG</span><span class="tcode">/UI2/FLP</span><span class="tcode">/UI2/FLPD_CUST</span><span class="tcode">/UI5/THEME_DESIGNER</span><span class="tcode">/PERSONAS/ADMIN</span><span class="tcode">RSA1</span><span class="tcode">RSORBCT</span><span class="tcode">SARA</span><span class="tcode">IRMPOL</span><span class="tcode">SU01</span><span class="tcode">SU10</span><span class="tcode">PFCG</span><span class="tcode">SM19</span><span class="tcode">SM20</span><span class="tcode">RSAU_CONFIG</span><span class="tcode">RSAU_READ_LOG</span><span class="tcode">SECR</span><span class="tcode">STRUST</span><span class="tcode">SAML2</span></div>
+    <div><b>關鍵物件</b>CVERS、CL_ABAP_SYST、CL_ABAP_CONTEXT_INFO、CL_SQL_STATEMENT、TH_SERVER_LIST、TH_WPINFO、IF_HTTP_EXTENSION、CL_HTTP_CLIENT、CX_AI_SYSTEM_FAULT、CX_AI_APPLICATION_FAULT、CL_SWF_EVT_EVENT、CL_FDT_FUNCTION_PROCESS、IF_AMDP_MARKER_HDB、/IWBEP/IF_MGW_REQ_ENTITYSET、/UI2/CL_JSON、CL_ABAP_DYN_PRG、S_TCODE、S_RFC、V_VBAK_VKO、_SYS_BIC、_SYS_REPO、M_DATABASE</div>
+  </div>
+
+  <h3 id="ch05-24-01">1. 課程定位與教材對照</h3>
+  <p>SAPNW（SAP NetWeaver – Overview）是原廠的<b>100 等級概覽課程</b>，對象列得非常廣：開發者、技術顧問、系統管理員、架構師、專案經理、Help Desk 都在內。它<b>沒有程式練習</b>，每個 Unit 結尾只有是非題與選擇題（Learning Assessment）。本章使用的是 <b>Course Version 15（Material Number 50141639，版權頁 2022，內容主體約寫於 2014–2016 年 NetWeaver 7.4／Business Suite on HANA 時期）</b>，共 434 頁。强晟 2007/2008 筆記<b>沒有</b>這門課，所以下表只列原廠教材。</p>
+  <table>
+    <thead><tr><th>原課程 Unit</th><th>Lesson</th><th>原廠教材頁碼</th><th>本章小節</th></tr></thead>
+    <tbody>
+      <tr><td>Course Overview</td><td>對象與課程目標</td><td>p7</td><td>本節</td></tr>
+      <tr><td rowspan="4">Unit 1 SAP NetWeaver Application Server</td><td>L1 Exploring SAP HANA</td><td>p11–p25</td><td>2、3</td></tr>
+      <tr><td>L2 Exploring SAP NetWeaver</td><td>p27–p38</td><td>4、5</td></tr>
+      <tr><td>L3 Components of AS</td><td>p39–p42</td><td>6</td></tr>
+      <tr><td>L4 Developing with AS ABAP and AS Java</td><td>p43–p48</td><td>7</td></tr>
+      <tr><td rowspan="7">Unit 2 SAP Business Process Management</td><td>L1 SAP Process Integration（PI）</td><td>p51–p62</td><td>8</td></tr>
+      <tr><td>L2 Web Services 與 SOA</td><td>p63–p73</td><td>9</td></tr>
+      <tr><td>L3 SAP BPM（含 Business Workflow）</td><td>p75–p87</td><td>10</td></tr>
+      <tr><td>L4 SAP Process Orchestration（PO）</td><td>p89–p96</td><td>11</td></tr>
+      <tr><td>L5 HANA Cloud Integration（HCI）</td><td>p97–p119</td><td>11</td></tr>
+      <tr><td>L6 Business Rules Management（BRM）</td><td>p121–p124</td><td>12</td></tr>
+      <tr><td>L7 Application Interface Framework（AIF）</td><td>p125–p136</td><td>12</td></tr>
+      <tr><td rowspan="6">Unit 3 User Productivity</td><td>L1 SAP Enterprise Portal</td><td>p139–p170</td><td>13</td></tr>
+      <tr><td>L2 SAP 應用整合進 Portal（iView）</td><td>p171–p177</td><td>13</td></tr>
+      <tr><td>L3 Knowledge Management 與 Collaboration</td><td>p179–p208</td><td>13</td></tr>
+      <tr><td>L4 SAP HANA Cloud Portal</td><td>p209–p215</td><td>13</td></tr>
+      <tr><td>L5 SAP User Experience（Fiori、Screen Personas）</td><td>p217–p233</td><td>14、15</td></tr>
+      <tr><td>L6 SAP NetWeaver Mobile Platform</td><td>p235–p286</td><td>16</td></tr>
+      <tr><td rowspan="4">Unit 4 Business Analytics</td><td>L1 EDW Persistence（BW 架構）</td><td>p289–p306</td><td>17</td></tr>
+      <tr><td>L2 EDW Data Provisioning（BEx、ODP）</td><td>p307–p321</td><td>17</td></tr>
+      <tr><td>L3 BusinessObjects BI</td><td>p323–p326</td><td>18</td></tr>
+      <tr><td>L4 SAP In-Memory Computing（HANA 建模）</td><td>p327–p340</td><td>18</td></tr>
+      <tr><td>Unit 5 MDM 與 MDG</td><td>L1 SAP Master Data Governance</td><td>p343–p356</td><td>19</td></tr>
+      <tr><td rowspan="4">Unit 6 ALM 與 Solution Manager</td><td>L1 ALM 的挑戰</td><td>p359–p361</td><td>20</td></tr>
+      <tr><td>L2 Solution Manager 導入階段</td><td>p363–p373</td><td>20</td></tr>
+      <tr><td>L3 Solution Manager 維運</td><td>p375–p383</td><td>20</td></tr>
+      <tr><td>L4 Information Lifecycle Management（ILM）</td><td>p385–p396</td><td>20</td></tr>
+      <tr><td>Unit 7 Security Solutions</td><td>L1 NetWeaver 安全、SSO、IdM、Access Control</td><td>p399–p434</td><td>21</td></tr>
+      <tr><td>全課程</td><td>2015 教材 → 2026 現況總對照</td><td>—</td><td>22</td></tr>
+    </tbody>
+  </table>
+  <div class="note"><b>這份教材的「年代」要先心裡有數</b>：它寫在 SAP 從「NetWeaver 品牌」轉向「HANA／雲端品牌」的交界期。書中大量名稱今天已改名或退場：HANA Cloud Platform → <b>SAP BTP</b>；HANA Cloud Integration（HCI）→ <b>SAP Integration Suite（Cloud Integration）</b>；Enterprise Portal → <b>SAP Build Work Zone</b>；SAP Mobile Platform → <b>SAP Mobile Services</b>；BEx／BW Accelerator → <b>Analysis for Office、SAP Analytics Cloud、BW/4HANA、Datasphere</b>；Identity Management → <b>SAP Cloud Identity Services</b>。本章每一節都會用「2026 現況」提示方塊說明，第 22 節有總對照表。</div>
+  <div class="tip">對 ABAP 開發者真正「每天會用到」的是第 2～7 節（HANA、Code Pushdown、AS 元件、ABAP/Java 開發）、第 8～9 節（Proxy 與 Web Service）、第 14 節（Fiori／OData）、第 17～18 節（CDS 分析模型與 AMDP）、第 21 節（權限與安全程式設計）。其他小節當作「聽得懂顧問在講什麼」的背景知識即可。</div>
+
+  <h3 id="ch05-24-02">2. SAP HANA：記憶體運算、欄式儲存與 OLTP／OLAP 合一</h3>
+  <p>課程第一課開門見山問：「現有資料庫早就會把資料快取在記憶體，為什麼還需要一個 in-memory 平台？」答案分三層：</p>
+  <ul>
+    <li><b>硬體演進</b>：多核心 CPU 加大型快取、記憶體容量「幾乎無上限」且價格下跌，足以放下企業全部業務資料；<b>記憶體存取比磁碟快 100 萬～1,000 萬倍</b>（原文 1M–10M times）。</li>
+    <li><b>從三層到記憶體內</b>：過去 40 年的商業軟體（含 SAP Business Suite）都是 3-tier：用戶端／應用伺服器（RAM 小但快）／資料庫伺服器（磁碟大但慢）。資料庫只被當作「儲存機制」，大量查詢把資料搬回應用伺服器處理——這個分離如今反而變成效能障礙。</li>
+    <li><b>欄式儲存（Columnar Data Storage）</b>：因為在記憶體中，可以重新組織表格的儲存方式，帶來 ①高壓縮率 ②高速彙總 ③資料載入 CPU 最佳化。例：只想知道「每個國家的金額」時，欄式只需讀國家欄與金額欄；列式儲存（row store）則要讀每一筆 tuple。</li>
+  </ul>
+  <p><b>避開資料傳輸瓶頸</b>：把彙總計算下放到記憶體資料庫層執行，應用層負擔變輕。<b>OLTP 與 OLAP 回到同一個資料庫</b>：過去因為磁碟運算，交易與分析被迫分家（資料要搬去 BW、要預先彙總、要夜間批次），HANA 讓「在交易系統直接做即時分析」變得可行。課程用蜘蛛圖說明舊技術只能在「廣而深的分析」與「快而簡單的報表」之間取捨，而且兩者都做不到即時；HANA 可以<b>取消中間彙總表</b>、直接從交易資料分析。</p>
+  <p>SAP HANA 被定位為「<b>One Platform for Any Application</b>」：資料庫＋資料處理＋應用平台，附帶預測、規劃、文字處理、空間（spatial）、商業分析等函式庫。課程也提到當時的雲端版圖：<b>On Premise</b>、<b>HANA Enterprise Cloud</b>（HEC，SAP 代管的月租服務）、<b>HANA Cloud Platform</b>（PaaS）、以及 SaaS（SuccessFactors、Ariba、SAP Jam、Hybris）。</p>
+  <p>對 ABAP 開發者，這一課的結論只有一句：<b>把「資料密集」的運算交給資料庫（Code-to-Data），不要把資料搬回 ABAP 再 LOOP。</b></p>
+
+  <pre><code class="abap">*&amp;---------------------------------------------------------------------*
+*&amp; Code Pushdown 入門：把彙總交給 HANA
+*&amp; 舊寫法（文字說明，不要再寫）：SELECT * 全部訂單回 ABAP，
+*&amp;   LOOP + COLLECT 算每個銷售組織的金額 → 大量資料在網路上搬運
+*&amp;---------------------------------------------------------------------*
+REPORT zsapnw_pushdown.
+
+SELECT-OPTIONS s_erdat FOR sy-datum DEFAULT '20260101' TO '20261231'.
+
+START-OF-SELECTION.
+  " 1) 條件用「列舉」而不是區間：銷售組織明列，不寫 BETWEEN '1000' AND '1999'
+  " 2) 彙總（SUM／COUNT）與分組都在 DB 做，只回傳結果列
+  " 3) 一定要 ORDER BY：HANA 沒有預設排序
+  SELECT vkorg,
+         waerk,
+         SUM( netwr ) AS netwr_sum,
+         COUNT( * )   AS doc_cnt
+    FROM vbak
+    WHERE erdat IN @s_erdat
+      AND vkorg IN ( '1710', '1720', '2910' )
+    GROUP BY vkorg, waerk
+    ORDER BY vkorg, waerk
+    INTO TABLE @DATA(lt_sum).
+
+  cl_salv_table=&gt;factory( IMPORTING r_salv_table = DATA(lo_alv)
+                          CHANGING  t_table      = lt_sum ).
+  lo_alv-&gt;display( ).</code></pre>
+  <div class="warn"><b>HANA 沒有預設排序——這是 Casper 在成本評價專案真的踩過的坑。</b>成本估算同時存在 item category「H」與 cost component「E」兩種角度，兩者的成本構成欄位數量不同；程式沒排序時一下抓到 H、一下抓到 E，成本結果就會每天不同。在傳統資料庫上「好像每次都一樣」的順序，搬上 HANA（欄式、平行掃描）後就不保證了。任何「取第一筆」「SELECT SINGLE 多筆符合」「UP TO 1 ROWS」的邏輯，<b>都要明確 ORDER BY</b>（該案最後的結論是固定抓 H）。</div>
+
+  <h3 id="ch05-24-03">3. HANA 開發模型、與 AS ABAP 的整合情境、S/4HANA 概覽</h3>
+  <p><b>HANA 上的軟體開發三層</b>（p17）：</p>
+  <table>
+    <thead><tr><th>層</th><th>2015 教材寫法</th><th>2026 對應</th></tr></thead>
+    <tbody>
+      <tr><td>前端</td><td>完全在瀏覽器執行，JavaScript＋<b>SAPUI5</b> 控制項</td><td>SAPUI5／Fiori Elements</td></tr>
+      <tr><td>通訊服務</td><td>伺服器端，通常是 <b>OData</b>；進階需求可用 Server-side JavaScript（XSJS）</td><td>ABAP：SEGW／RAP；非 ABAP：CAP（Node.js／Java）</td></tr>
+      <tr><td>資料處理</td><td>資料建模與資料密集邏輯，語言是 <b>SQLScript</b>（為記憶體運算最佳化的 SQL 延伸）</td><td>ABAP 端用 CDS＋AMDP；HANA 原生用 HDI 容器的 Calculation View</td></tr>
+    </tbody>
+  </table>
+  <p>開發與管理工具是 <b>SAP HANA Studio</b>（Eclipse 為基礎）。</p>
+  <p><b>HANA 與 AS ABAP 的兩種整合情境</b>（p17–p18）：</p>
+  <ul>
+    <li><b>Side-by-Side</b>：HANA 裝在 Business Suite 旁邊（Suite 用任何資料庫），資料<b>複寫</b>到 HANA（例如 SLT）做分析加速。</li>
+    <li><b>HANA as Primary Persistence</b>：HANA 直接當 AS ABAP 的主資料庫。傳統 3-tier 應用可以與新的 2-tier 應用共存，並逐步用 HANA 能力強化（Business Suite on HANA 就是這樣演進的）。</li>
+  </ul>
+  <p><b>S/4HANA 名稱與定位</b>（p19–p24）：S 代表 <b>Simple</b> 也代表 <b>Suite</b>，4 代表<b>第四代</b>；全名 <b>SAP Business Suite 4 SAP HANA</b>；因為原生跑在 HANA 且高度最佳化而得名，被稱為 R/3 以來最大的創新。與「Business Suite powered by SAP HANA」的差別：後者只是把既有應用<b>移植</b>到 HANA 並最佳化程式（只需資料庫遷移，兩年內超過 1,850 家客戶採用）；S/4HANA 則是結合 HANA 與 Fiori UX 的<b>新一代套件</b>，簡化資料模型（例如財務的 Simple Finance）。</p>
+  <p>課程列出的特性：資料量更小、吞吐量更高、分析更快、流程步驟更少、ERP/CRM/SRM/SCM/PLM 共同部署、實際資料（25%）與歷史資料（75%）分層、預測／建議／模擬、HANA 多租戶、Fiori 支援任何裝置。部署選項：on-premise edition 與 cloud edition；<b>不支援不同 OS／資料庫平台的組合</b>（單一平台、單一程式碼線）。三種導入情境：</p>
+  <table>
+    <thead><tr><th>情境</th><th>路徑</th></tr></thead>
+    <tbody>
+      <tr><td>新客戶</td><td>全新安裝 S/4HANA，用導引設定與預設 Best Practices</td></tr>
+      <tr><td>Business Suite on any DB</td><td>升級到最新 EhP ＋ 資料庫遷移到 HANA ＋ 部署 exchange innovation code</td></tr>
+      <tr><td>Business Suite on HANA</td><td>只需部署 exchange innovation code，最快</td></tr>
+    </tbody>
+  </table>
+  <div class="note">教材 p22 有一條寫成「No locking or parallelism」，容易誤讀成「沒有鎖也沒有平行」。原意是 S/4HANA 的新資料模型（例如 ACDOCA 取代多張彙總表）<b>減少了寫入時對彙總表的鎖定競爭、提高平行度</b>，而不是不需要鎖——SAP 鎖物件與 ENQUEUE 在 S/4HANA 照樣存在（見 <a href="#ch05-11">5-11 章</a>）。</div>
+
+  <pre><code class="abap">*&amp;---------------------------------------------------------------------*
+*&amp; 我在哪一套系統？取系統資訊與軟體元件版本
+*&amp;---------------------------------------------------------------------*
+REPORT zsapnw_sysinfo.
+
+START-OF-SELECTION.
+  " ① 經典 sy- 欄位（ABAP Cloud 中多數不可用，要改 CL_ABAP_CONTEXT_INFO）
+  WRITE: / |系統 ID   ：{ sy-sysid }|,
+         / |用戶端    ：{ cl_abap_syst=&gt;get_client( ) }|,
+         / |使用者    ：{ cl_abap_syst=&gt;get_user_name( ) }|,
+         / |登入語言  ：{ cl_abap_syst=&gt;get_language( ) }|,
+         / |主機      ：{ sy-host }|,
+         / |資料庫    ：{ sy-dbsys }|,
+         / |作業系統  ：{ sy-opsys }|,
+         / |Kernel 版 ：{ sy-saprl }|.
+
+  " ② 軟體元件版本：CVERS 是元件主檔（SAP_BASIS、S4CORE…）
+  SELECT component, release, extrelease, comp_type
+    FROM cvers
+    ORDER BY component
+    INTO TABLE @DATA(lt_cvers).
+
+  IF line_exists( lt_cvers[ component = 'S4CORE' ] ).
+    DATA(lv_rel) = lt_cvers[ component = 'S4CORE' ]-release.
+    DATA(lv_s4) = SWITCH string( lv_rel
+                    WHEN '103' THEN `S/4HANA 1809（SAP_BASIS 753）`
+                    WHEN '104' THEN `S/4HANA 1909`
+                    WHEN '105' THEN `S/4HANA 2020`
+                    WHEN '106' THEN `S/4HANA 2021`
+                    WHEN '107' THEN `S/4HANA 2022`
+                    WHEN '108' THEN `S/4HANA 2023`
+                    ELSE |S4CORE { lv_rel }（請對照 SAP Note）| ).
+    WRITE: / |產品版本  ：{ lv_s4 }|.
+  ELSE.
+    WRITE: / `不是 S/4HANA（ECC 或其他 NetWeaver 產品）`.
+  ENDIF.
+
+  " ③ HANA 自己的版本：用 ADBC 查系統視圖（Native SQL 請用 ADBC 類別，不用舊式語句）
+  TRY.
+      DATA lv_hana_ver TYPE c LENGTH 64.
+      DATA(lo_rs) = NEW cl_sql_statement( )-&gt;execute_query(
+                      `SELECT VERSION FROM SYS.M_DATABASE` ).
+      lo_rs-&gt;set_param( REF #( lv_hana_ver ) ).
+      IF lo_rs-&gt;next( ) &gt; 0.
+        WRITE: / |HANA 版本 ：{ lv_hana_ver }|.
+      ENDIF.
+      lo_rs-&gt;close( ).
+    CATCH cx_sql_exception INTO DATA(lx_sql).
+      WRITE: / |非 HANA 或無權限：{ lx_sql-&gt;get_text( ) }|.
+  ENDTRY.</code></pre>
+  <div class="note">本圖書館以「S/4HANA 1809（ABAP Platform 1809，SAP_BASIS <b>7.53</b>）」為語法下限。ABAP Cloud／Tier 1 的程式不能用大部分 sy- 欄位與 CVERS，要改用 <span class="kw">cl_abap_context_info=&gt;get_system_date( )</span>、<span class="kw">get_user_technical_name( )</span> 等釋出 API。</div>
+
+  <h3 id="ch05-24-04">4. SAP NetWeaver 應用基礎架構與「NetWeaver on HANA」</h3>
+  <p>課程先列出客戶對 IT 的期待：<b>開發平台</b>（降低開發成本、採用開放標準與開源）、<b>使用者介面</b>（HTML5、個人化、行動裝置）、<b>生命週期管理</b>（最少停機）、<b>流程編排</b>（整合外部環境、可監控的治理規則）、<b>資訊管理</b>（易學的建模與即時分析）。NetWeaver 是 Business Suite 的基礎與整合平台，當時有超過 70,000 套生產系統 24x7 運作。主要創新領域：</p>
+  <table>
+    <thead><tr><th>領域</th><th>NetWeaver 元件（教材）</th><th>本章</th></tr></thead>
+    <tbody>
+      <tr><td>開發與執行平台</td><td>AS ABAP、AS Java，SCN 社群</td><td>6、7</td></tr>
+      <tr><td>連結人員、提升生產力</td><td>SAP Enterprise Portal</td><td>13</td></tr>
+      <tr><td>流程編排</td><td>SAP Process Integration、BPM</td><td>8～12</td></tr>
+      <tr><td>存取安全</td><td>SAP Identity Management、SAP Single Sign-On（憑證、SAML）</td><td>21</td></tr>
+      <tr><td>系統管理</td><td>Application Lifecycle Management＋Solution Manager</td><td>20</td></tr>
+      <tr><td>資訊管理</td><td>SAP Business Warehouse（OLAP）</td><td>17</td></tr>
+    </tbody>
+  </table>
+  <p><b>NetWeaver 7.4 on HANA</b>（p31–p32）：7.4 是 7.3x 的相容後續版，可跑在所有資料庫上，但<b>針對 HANA 大幅最佳化</b>。重點：</p>
+  <ul>
+    <li>HANA 產物（HANA View、Stored Procedure）可以在 <b>ABAP Dictionary 中定義並在 ABAP 程式中使用</b>——今天的形式就是 <b>CDS View</b> 與 <b>AMDP</b>（7.40 SP05 起）。</li>
+    <li>7.4 設計成一個符合 Enhancement Package 規則的版本，ABAP 端換了新 kernel，對既有程式完全相容。</li>
+    <li>主要使用案例：BW on HANA、在 HANA 上做 ABAP 客製開發（加速既有程式、開發預測類新應用）；Java 端的 Portal、BPM、PI 也逐步可跑在 HANA 上。</li>
+  </ul>
+  <p><b>Code Pushdown 原則</b>（p32 Figure 25/26）：傳統 ABAP 是「資料搬到 ABAP 層」，HANA 則是「<b>程式碼靠近資料執行</b>」，避免大量 I/O；同時 UI 程式碼也往瀏覽器（SAPUI5）移。但課程特別強調：<b>應用伺服器層不會消失</b>，它仍負責應用邏輯與編排、連線能力、輸出管理、客製層等；只是開發者需要額外學 DB 端與 UI 端的技能。</p>
+
+  <pre><code class="sql">// ① S/4HANA 1809 可用：經典 CDS View（DDIC-based，需要 sqlViewName）
+@AbapCatalog.sqlViewName: 'ZVSAPNWSOSUM'
+@AccessControl.authorizationCheck: #CHECK
+@EndUserText.label: '銷售訂單金額彙總（Code Pushdown 範例）'
+define view ZI_SapnwSalesSum
+  with parameters p_from : erdat
+  as select from vbak
+{
+  key vkorg,
+  key waerk,
+      @Semantics.amount.currencyCode: 'waerk'
+      sum( netwr ) as NetAmount,
+      count( * )   as DocCount
+}
+where erdat &gt;= $parameters.p_from
+group by vkorg, waerk
+
+// ② ABAP 7.55（S/4HANA 2020）以上：改用 View Entity，不再產生 SQL View
+// @AccessControl.authorizationCheck: #CHECK
+// define view entity ZI_SapnwSalesSumE
+//   with parameters p_from : erdat
+//   as select from vbak { ...同上... }</code></pre>
+  <div class="warn"><b>版本門檻</b>：<span class="kw">define view entity</span> 需要 ABAP 7.55（S/4HANA 2020）以上；1809／1909 只能用上面的 <span class="kw">define view</span>＋<span class="kw">@AbapCatalog.sqlViewName</span>。經典 CDS View 在新版已標為過時（obsolete），新系統請直接寫 View Entity。CDS 本身的完整語法見 <a href="#ch05-16">5-16 章</a>與 <a href="#ch05-5">5-5 章</a>（ADT）。</div>
+
+  <h3 id="ch05-24-05">5. NetWeaver 開發工具、UI 技術與混合雲情境</h3>
+  <p><b>Eclipse 是一切工具的共同底座</b>（p29、p33）：</p>
+  <ul>
+    <li><b>ABAP in Eclipse</b>（ABAP Development Tools，ADT）：NetWeaver <b>7.31 SP4</b> 起可在 Eclipse 開發 ABAP。行為類似 SE80：先建立與後端的線上連線，依偏好顯示 ABAP 套件，可同時連多套系統、多個物件各自一個分頁；Eclipse 不原生支援的物件就用<b>內嵌 SAP GUI</b> 開啟。詳見 <a href="#ch05-5">5-5 章</a>。</li>
+    <li><b>NetWeaver Developer Studio（NWDS）</b>：Java（AS Java）開發，也是 PI/BPM 建模工具移到 Eclipse 後的家。</li>
+    <li><b>SAP HANA Studio</b>、SAPUI5 設計時工具、HANA Cloud 工具，全部是 Eclipse 外掛——同質工具環境讓學習曲線平緩。</li>
+  </ul>
+  <p><b>UI 技術</b>（p33–p35）：交易型、給 power user 的 UI 用 <b>Web Dynpro</b> 與 <b>Floorplan Manager（FPM）</b>（見 <a href="#ch05-23">5-23 章</a>）；給偶爾使用者、行動與雲端的新 UI 用 <b>SAPUI5</b>——SAP 對 HTML5 標準的實作，平台獨立，可跑在 AS ABAP、AS Java、NetWeaver Cloud、HANA XS；資料經 <b>Gateway</b> 服務取得；7.4 起與 NetWeaver 整合。<b>SAP Visual Business</b>：用地圖、3D 場景直接呈現與操作業務物件（例如運輸管理），並提供 ABAP 介面讓開發者填資料、寫事件處理。</p>
+  <p><b>7.31 Java 的創新</b>：PI 與 BPM 可以部署在<b>單一 Java stack</b>（不再需要 dual stack），建模與設定工具移到 Eclipse；IDoc adapter 等新能力以 SP 方式交付；7.31 SP Java 與 7.4 Java 是同一條程式碼線。<b>SAP Cloud Appliance Library（CAL）</b>：自助服務，幾分鐘內在 Amazon 雲端佈出一套預設好的 NetWeaver 7.4 ABAP on HANA，適合訓練、Demo、PoC。</p>
+  <p><b>混合情境</b>（p35–p38）：SAPUI5 與 SAP Gateway 成為 7.4 平台的一部分；<b>SAP HANA Cloud</b> 是 SAP 的 Java PaaS（開源元件、每個應用獨立 VM 容器、OSGi 精簡 Java stack，提供身分、持久層、協作、整合服務；可存取 HANA 與 Sybase ASE schema），搭配 Mobile as a Service、Gateway as a Service，扮演連結地端與雲端的橋樑；範例是 <b>SAP Mobile Documents</b>（透過 CMIS 介面存取文件庫）。<b>SAP HANA Cloud Integration</b> 則負責地端與雲端之間的訊息交換（第 11 節）。</p>
+  <div class="warn"><b>2026 現況</b>：HANA Cloud Platform → <b>SAP Business Technology Platform（BTP）</b>；Neo 環境已退場，改為 Cloud Foundry／Kyma 與 <b>ABAP Environment（Steampunk）</b>；雲地連線用 <b>SAP Cloud Connector</b>；HANA XS Classic 與 XSJS 已過時，改用 XSA 或 <b>CAP</b>。在地端 S/4HANA 做擴充的建議順序是：Key User 擴充 → 開發者擴充（On-Stack，ABAP Cloud 規則）→ BTP Side-by-Side 擴充。</div>
+
+  <h3 id="ch05-24-06">6. AS 的元件：Instance、Dispatcher、Work Process、ICM、Gateway、Message Server</h3>
+  <p>SAP NetWeaver AS 是 NetWeaver 的應用平台：承載 SAP 應用、讓客戶與夥伴擴充 SAP 應用或開發自己的應用；它採<b>三層架構</b>，提供可靠的 ABAP 與 Java 執行環境。<b>安裝選項</b>：ABAP System、Java System、ABAP＋Java（<b>dual stack</b>）。一般而言 Business Suite 的應用（如 ECC）跑在 AS ABAP，技術型方案（如 Enterprise Portal）跑在 AS Java，有些方案（如 PI）是 dual stack。</p>
+  <table>
+    <thead><tr><th>元件</th><th>職責</th><th>ABAP 端觀察工具</th></tr></thead>
+    <tbody>
+      <tr><td><b>Database</b></td><td>一套 SAP 系統只有一個資料庫；dual stack 時分成 ABAP schema 與 Java schema，兩邊資料明確分開</td><td><span class="tcode">DBACOCKPIT</span></td></tr>
+      <tr><td><b>Instance（實例）</b></td><td>管理單位，把提供服務的元件組在一起；<b>每個 instance 恰有一個 dispatcher</b>。軟體觀點下 instance 也叫「application server」</td><td><span class="tcode">SM51</span></td></tr>
+      <tr><td><b>Dispatcher</b></td><td>把請求分派給空閒的 work process；全部忙碌時放進 <b>dispatcher queue</b></td><td><span class="tcode">SM50</span> / <span class="tcode">SM66</span></td></tr>
+      <tr><td><b>Work Process</b></td><td>實際執行應用邏輯（必要時存取資料庫），結果交回 dispatcher 再回給呼叫端。ABAP 程式執行時就在某個 work process 裡</td><td><span class="tcode">SM50</span></td></tr>
+      <tr><td><b>ICM</b>（Internet Communication Manager）</td><td>處理 HTTP(S)／SMTP 等網際網路協定；依 URL 判斷由 AS ABAP 或 AS Java 處理，並呼叫對應的 local handler</td><td><span class="tcode">SMICM</span></td></tr>
+      <tr><td><b>SAP Gateway</b></td><td>提供 instance 之間、系統之間的 <b>RFC 介面</b>（注意：不是 OData 的 SAP Gateway 產品，同名不同物）</td><td><span class="tcode">SMGW</span></td></tr>
+      <tr><td><b>Message Server</b></td><td>instance 之間交換訊息並做<b>負載平衡</b>；每套系統只有一個</td><td><span class="tcode">SMMS</span></td></tr>
+      <tr><td><b>Java Dispatcher／Server Process</b></td><td>大致等同 ABAP 的 dispatcher 與 work process</td><td>NWA</td></tr>
+      <tr><td><b>JCo</b>（Java Connector）</td><td>讓 ABAP 存取 Java 資料、Java 存取 ABAP 資料</td><td><span class="tcode">SM59</span>（T 型目的地）</td></tr>
+    </tbody>
+  </table>
+  <div class="note">教材 p41 自己加註：圖上畫的是 <b>AS 7.0 以前</b>（J2EE）的元件；<b>7.1 起（JEE）Java dispatcher 由 ICM 取代</b>，軟體部署由 AS Java 的 deploy controller 負責，不再是 SDM。另外 enqueue（鎖伺服器）在教材這頁沒列，但在第 7 節 Java Central Services 有提到：message 與 enqueue 服務每套系統各一份——ABAP 端的 SAP 鎖機制見 <a href="#ch05-11">5-11 章</a>。延伸課程：ABAP stack 看 SAPTEC、ADM100、ADM102、ADM106；Java stack 看 ADM200、ADM800。</div>
+
+  <pre><code class="abap">*&amp;---------------------------------------------------------------------*
+*&amp; 用程式看 SM51／SM50：列出 instance 與目前 instance 的 work process
+*&amp; 注意：TH_* 函數未釋出（not released），只適合管理小工具，
+*&amp;       ABAP Cloud 不可用；正式監控請用 SM50/SM66 或 Solution Manager
+*&amp;---------------------------------------------------------------------*
+REPORT zsapnw_instances.
+
+START-OF-SELECTION.
+  DATA lt_servers TYPE STANDARD TABLE OF msxxlist WITH EMPTY KEY.
+  DATA lt_wp      TYPE STANDARD TABLE OF wpinfo   WITH EMPTY KEY.
+
+  CALL FUNCTION 'TH_SERVER_LIST'
+    TABLES
+      list           = lt_servers
+    EXCEPTIONS
+      no_server_list = 1
+      OTHERS         = 2.
+  IF sy-subrc &lt;&gt; 0.
+    MESSAGE 'Message Server 沒有回應 instance 清單' TYPE 'E'.
+  ENDIF.
+
+  SORT lt_servers BY name.            " 別依賴回傳順序
+  LOOP AT lt_servers INTO DATA(ls_srv).
+    WRITE: / |Instance { ls_srv-name } @ { ls_srv-host }|.
+  ENDLOOP.
+
+  CALL FUNCTION 'TH_WPINFO'
+    TABLES
+      wplist = lt_wp
+    EXCEPTIONS
+      OTHERS = 1.
+  IF sy-subrc = 0.
+    " 以 REDUCE 統計各類 work process 的忙碌數
+    DATA(lv_busy) = REDUCE i( INIT n = 0
+                              FOR wp IN lt_wp WHERE ( wp_status = 'Running' )
+                              NEXT n = n + 1 ).
+    WRITE: / |本 instance work process 共 { lines( lt_wp ) } 個，執行中 { lv_busy } 個|.
+    LOOP AT lt_wp INTO DATA(ls_wp) WHERE wp_status = 'Running'.
+      WRITE: / ls_wp-wp_typ, ls_wp-wp_bname, ls_wp-wp_report.
+    ENDLOOP.
+  ENDIF.</code></pre>
+  <div class="warn"><b>2026 現況</b>：<b>NetWeaver 7.5 起不再支援 dual stack</b>，必須拆成獨立的 ABAP 與 Java 系統；S/4HANA 是純 ABAP stack。S/4HANA 1809 以後的 ABAP Platform 另有 <b>ABAP Platform 的 Central Services（ASCS）與 Enqueue Replication</b>，觀念與教材一致，只是由 Basis 管理。WP 類型：DIA（對話）、BTC（背景，見 <a href="#ch04-4">4-4 章</a>）、UPD／UP2（更新，見 <a href="#ch05-11">5-11 章</a>）、ENQ、SPO（列印）。</div>
+
+  <h3 id="ch05-24-07">7. 用 AS ABAP 與 AS Java 開發：Workbench、CTS、ICF、增強與修改、NWDI</h3>
+  <p><b>ABAP 開發</b>（p43–p44）：ABAP 是為商業應用最佳化的<b>第四代語言</b>，可寫物件導向也可寫程序式；透過 <b>Open SQL</b>（今稱 ABAP SQL）由 AS ABAP 的資料庫介面轉譯，因此<b>與資料庫、作業系統無關</b>。ABAP Workbench（<span class="tcode">SE80</span>）是整合開發環境——<b>開發環境與執行環境都在 AS ABAP 內</b>，這是 ABAP 與 Java 最大的差異。在任何應用中用 <b>System → Status</b> 可直接跳到它的程式設計（見 <a href="#ch01-1">1-1 章</a>）。</p>
+  <ul>
+    <li><b>集中式開發</b>：物件修改後在<b>啟用（activate）之前</b>，其他參照它的物件仍使用舊的 active 版本，互不干擾。</li>
+    <li><b>傳輸</b>：開發完成後由 <b>TMS</b>（<span class="tcode">STMS</span>）與 <b>CTS</b>（<span class="tcode">SE09</span>／<span class="tcode">SE10</span>）把物件從開發系統送到測試系統，測試後再送到正式系統。</li>
+    <li><b>ICF</b>（Internet Communication Framework）：ABAP 處理 HTTP 請求的框架。HTTP 請求呼叫 ICF 服務（<span class="tcode">SICF</span>），服務下掛一或多個 <b>HTTP request handler</b> 負責執行 ABAP 功能。</li>
+  </ul>
+
+  <pre><code class="abap">*&amp;---------------------------------------------------------------------*
+*&amp; ICF 請求處理器：在 SICF 建服務 /sap/bc/zsapnw_ping，Handler List 填本類別
+*&amp; 呼叫：https://&lt;host&gt;:&lt;port&gt;/sap/bc/zsapnw_ping?name=Casper
+*&amp;---------------------------------------------------------------------*
+CLASS zcl_sapnw_ping_handler DEFINITION PUBLIC FINAL CREATE PUBLIC.
+  PUBLIC SECTION.
+    INTERFACES if_http_extension.
+ENDCLASS.
+
+CLASS zcl_sapnw_ping_handler IMPLEMENTATION.
+  METHOD if_http_extension~handle_request.
+    " 只接受 GET
+    IF server-&gt;request-&gt;get_method( ) &lt;&gt; 'GET'.
+      server-&gt;response-&gt;set_status( code = 405 reason = 'Method Not Allowed' ).
+      RETURN.
+    ENDIF.
+
+    " 輸入一律要 escape，避免 JSON／HTML 注入
+    DATA(lv_name) = escape( val    = server-&gt;request-&gt;get_form_field( 'name' )
+                            format = cl_abap_format=&gt;e_json_string ).
+
+    " 字串範本中的大括號要用 \{ \} 跳脫
+    DATA(lv_json) = |\{"system":"{ sy-sysid }","client":"{ sy-mandt }",| &amp;&amp;
+                    |"host":"{ sy-host }","hello":"{ lv_name }"\}|.
+
+    server-&gt;response-&gt;set_content_type( 'application/json; charset=utf-8' ).
+    server-&gt;response-&gt;set_cdata( lv_json ).
+    server-&gt;response-&gt;set_status( code = 200 reason = 'OK' ).
+  ENDMETHOD.
+ENDCLASS.</code></pre>
+
+  <p><b>增強（Enhancement）與修改（Modification）</b>（p44–p45）：</p>
+  <table>
+    <thead><tr><th></th><th>增強</th><th>修改</th></tr></thead>
+    <tbody>
+      <tr><td>做法</td><td>在 user exit、customer exit、<b>BTE</b>、BAdI 實作或 Enhancement Framework 中加入自己的程式；必要時把原程式<b>複製到客戶命名空間</b>加程式碼，由新的或既有的事件觸發，原物件不動但不再使用</td><td>直接改 SAP 原始碼：向 SAP 申請該物件的 <b>object key（SSCR 修改金鑰）</b>後修改</td></tr>
+      <tr><td>支援</td><td>SAP 持續支援</td><td><b>SAP 不再對修改過的物件提供支援</b></td></tr>
+      <tr><td>升級</td><td>大多數自動保留</td><td>每次升級要在 SPAU／SPDD 手動調整</td></tr>
+    </tbody>
+  </table>
+  <div class="warn"><b>先找標準，再想客製（Casper 實務經驗第 3 條）。</b>標準設定 → BAdI／Enhancement Spot → Enhancement Point → 修改標準，每往右一步升級成本高一個量級。教材說的「複製到客戶命名空間」在 S/4HANA 也要謹慎：複製出來的 Z 程式<b>不會跟著 SAP 更新</b>，S/4 升級時簡化項目（Simplification Items）一變，Z 副本最容易出錯。增強技術細節見 <a href="#ch03-3">3-3 章</a>、<a href="#ch03-4">3-4 章</a>、<a href="#ch05-14">5-14 章</a>、<a href="#ch05-15">5-15 章</a>。</div>
+  <p><b>Java 開發</b>（p45–p46）：AS Java 是完整相容的 J2EE／JEE5 伺服器，用 <b>NWDS</b>（Eclipse 為基礎）開發，同樣透過 OpenSQL 與資料庫無關。但 Java 是<b>分散式開發</b>：程式寫在每位開發者本機，原則上沒有共用儲存與測試，人多就會出問題。解法是 <b>NWDI</b>（NetWeaver Development Infrastructure）：</p>
+  <ul>
+    <li><b>DTR</b>（Design Time Repository）：集中的原始碼管理與版本控制。</li>
+    <li><b>CBS</b>（Component Build Service）：集中建置。</li>
+    <li><b>CMS</b>（Change Management Service）：從開發系統傳輸到其他系統。</li>
+    <li><b>CTS+</b>：ABAP 的 CTS 擴充成能傳輸部分 Java 物件，對 dual stack（例如 PI）需要同步傳輸時特別重要；有了 CTS+ 不一定要用 NWDI。</li>
+  </ul>
+  <p><b>J2EE Engine</b>：AS Java 的核心執行環境。Java 有 server process（類似 ABAP work process），並從 6.40 起沿用 ABAP 的 message 與 enqueue 概念，稱為 <b>Central Services</b>（每套系統一份）。安裝 AS Java 會形成 <b>Java cluster</b>＝一或多個 Java instance＋central services（message service、enqueue service）＋資料庫；Java instance 可獨立啟停與監控。</p>
+  <div class="note"><b>Unit 1 自我檢核答案</b>（教材 p47–p48 的四題）：① Message Server 負責交換訊息與負載平衡——<b>對</b>；② Business Suite 應用大多基於 AS ABAP、技術型方案大多基於 AS Java——<b>對</b>；③ Java dispatcher／server process 大致等同 ABAP dispatcher／work process——<b>對</b>；④ Java cluster＝Java instances＋central services＋資料庫——<b>對</b>。</div>
+
+  <h3 id="ch05-24-08">8. SAP Process Integration（PI）：中央整合平台</h3>
+  <p><b>為什麼需要 PI</b>（p51）：異質系統之間各自點對點（point-to-point）連線，資料結構與協定都不同、需要大量 mapping 程式；流程改變或新增系統時，每條介面都要改。課程歸納的痛點：任意技術的點對點整合、拼湊式方案、<b>沒有集中的介面知識</b>、自製基礎架構難以調整且維護昂貴、升級成本高。PI 提供<b>共同技術、中央整合點</b>，集中掌握流程、系統、介面資訊。</p>
+  <p><b>PI 的關鍵能力</b>：<b>Connectivity</b>（多種協定）、<b>Routing</b>（公司內 A2A、夥伴間 B2B）、<b>Mapping</b>（訊息格式轉換）、<b>Stateful processing</b>（ccBPM）。以開放標準（XML、Java）為基礎。服務包括：介面設計的中央儲存庫、訊息流設定、內容轉換、訊息交換執行環境、流程建模與執行。</p>
+  <p><b>PI SOAP 訊息結構</b>：以 XML＋HTTP 的 SOAP 為核心，執行時由 <b>Integration Engine（IE）</b>傳遞。Integration Server 的處理是<b>無狀態（stateless）</b>的：訊息到達 → 決定接收者 → 立即轉送。訊息由 <b>message header</b>（寄件者等屬性，用來決定接收者）、<b>payload</b>（業務資料）、任意數量的 <b>attachments</b> 組成，header 與 payload 都是 XML。</p>
+  <table>
+    <thead><tr><th>元件</th><th>用途</th></tr></thead>
+    <tbody>
+      <tr><td><b>SLD</b>（System Landscape Directory）</td><td>系統版圖（technical system、business system）與軟體目錄（產品與軟體元件版本）；基於 DMTF 的 <b>CIM</b> 標準；ABAP 系統的<b>每個用戶端</b>對應一個 business system，再匯入 Integration Directory</td></tr>
+      <tr><td><b>ESR</b>（Enterprise Services Repository）</td><td>設計物件：介面、mapping、流程定義。物件唯一性＝<b>物件名稱＋軟體元件＋namespace</b>。可匯入 RFC、IDoc、XSD、WSDL 或手動建立；mapping 可用圖形工具、Java、ABAP、XSLT；另有 value mapping（例如物料群組 001 → abc）與 integration scenario</td></tr>
+      <tr><td><b>Services Registry</b></td><td>符合 <b>UDDI</b> 的註冊表，列出 WSDL 服務定義並有分類系統</td></tr>
+      <tr><td><b>Integration Directory（ID）</b></td><td>組態物件：sender／receiver（service）、adapter，以及 <b>Sender Agreement、Receiver Determination、Interface Determination、Receiver Agreement</b></td></tr>
+      <tr><td><b>BPE</b>（Business Process Engine）</td><td>ccBPM 的訊息關聯（correlation）與處理</td></tr>
+      <tr><td><b>Integration Engine</b></td><td>Integration Server 的一部分，依 ID 設定決定接收者並做 mapping</td></tr>
+      <tr><td><b>Advanced Adapter Engine（AAE）</b></td><td>各種 adapter 的基礎</td></tr>
+      <tr><td><b>Runtime Workbench</b></td><td>元件與訊息的集中監控</td></tr>
+    </tbody>
+  </table>
+  <p>存取工具：<b>Enterprise Services Builder</b>（ESR 的 Java GUI）、<b>Integration Builder</b>（ID 的 Java GUI，也管版本與鎖）、SAP GUI（PI 的 ABAP stack）、NWDS、瀏覽器（IE、BPE、AAE、SLD、RWB、NetWeaver Administrator）。</p>
+  <p>ABAP 開發者跟 PI 打交道的方式是 <b>ABAP Proxy</b>：在 ESR 定義 service interface，在 ABAP 系統用 <span class="tcode">SPROXY</span> 產生 proxy 類別。教材自我檢核第 2 題就是定義：「<b>proxy 物件是程式語言（ABAP 或 Java）中的類別與方法，能產生與處理 ESR 所定義格式的訊息</b>」——對。</p>
+
+  <pre><code class="abap">*&amp;---------------------------------------------------------------------*
+*&amp; 呼叫 ABAP Outbound Proxy（非同步）：SPROXY 由 ESR 介面產生
+*&amp;   ZCO_SI_PO_OUT      ：產生的 proxy 類別（consumer）
+*&amp;   ZMT_PO_OUT         ：產生的訊息型別
+*&amp;---------------------------------------------------------------------*
+DATA ls_output TYPE zmt_po_out.
+
+SELECT SINGLE ebeln, lifnr, bedat, waers
+  FROM ekko
+  WHERE ebeln = @p_ebeln
+  INTO @DATA(ls_ekko).
+IF sy-subrc &lt;&gt; 0.
+  MESSAGE |採購單 { p_ebeln } 不存在| TYPE 'E'.
+ENDIF.
+
+ls_output-mt_po_out = VALUE #( po_number = ls_ekko-ebeln
+                               vendor    = ls_ekko-lifnr
+                               doc_date  = ls_ekko-bedat
+                               currency  = ls_ekko-waers ).
+
+TRY.
+    NEW zco_si_po_out( )-&gt;si_po_out( output = ls_output ).
+    " 非同步（EO/EOIO）proxy 一定要 COMMIT WORK 才會真的送出
+    COMMIT WORK.
+  CATCH cx_ai_system_fault INTO DATA(lx_sys).
+    ROLLBACK WORK.
+    MESSAGE |Proxy 系統錯誤：{ lx_sys-&gt;get_text( ) }| TYPE 'E'.
+ENDTRY.
+" 監控：SXMB_MONI（PI 本地 Integration Engine）、SRT_MONI／SRT_UTIL（Web Service）</code></pre>
+  <div class="warn"><b>2026 現況</b>：dual stack PI 與 ccBPM 已退場，最後版本是 Java-only 的 <b>SAP PO 7.5</b>，主流維護到 2027 年底，SAP 已公告延長維護到 2030 年底；策略方向是遷移到 <b>SAP Integration Suite</b>（Cloud Integration）或 Edge Integration Cell（混合部署）。ABAP proxy、SPROXY、SXMB_MONI 在 S/4HANA 照樣可用，而且可直接接 Cloud Integration。</div>
+
+  <h3 id="ch05-24-09">9. Web Service 與 SOA、Enterprise Services、Switch Framework</h3>
+  <p><b>Web Service 範式</b>（p63–p64）：① 服務提供（provisioning）② 在服務註冊表建立參照（選擇性）③ 在應用中使用服務（consumption）。三個關鍵名詞一定要分清楚（這也是自我檢核第 4、5、9 題的陷阱）：</p>
+  <table>
+    <thead><tr><th>名詞</th><th>是什麼</th><th>常見錯誤說法</th></tr></thead>
+    <tbody>
+      <tr><td><b>WSDL</b></td><td>Web Service Description Language，<b>描述</b> web service 的文件，可存放於服務目錄</td><td>—</td></tr>
+      <tr><td><b>UDDI</b></td><td>Universal Description, Discovery, and Integration，網路上的<b>註冊表</b>，只存 WSDL 的參照，不存文件本身</td><td>「UDDI 是呼叫 web service 的協定」→ <b>錯</b>（那是 SOAP）</td></tr>
+      <tr><td><b>SOAP</b></td><td>在分散式環境中呼叫 web service 的<b>協定</b>，走 HTTP；訊息有 header（安全、交易資訊）與 body。原意 Simple Object Access Protocol，現已當專有名詞</td><td>「SOAP 是網路註冊表」→ <b>錯</b>（那是 UDDI）</td></tr>
+    </tbody>
+  </table>
+  <p>使用端流程：在 UDDI 找到服務、下載 WSDL → <b>proxy 產生</b>，得到一個可本機呼叫的函數（proxy）→ 呼叫 proxy 時在本機建立 SOAP request 送到服務 → 結果回到呼叫端。<b>NetWeaver AS 自 Basis 6.40 起</b>提供自己的 web service 基礎架構：可互通的 SOAP runtime（ABAP／Java）、SE80 中建立或引用 web service、NWDS、UDDI 註冊工具。</p>
+
+  <pre><code class="abap">*&amp;---------------------------------------------------------------------*
+*&amp; 使用外部 Web Service（同步 consumer proxy）
+*&amp; 步驟：SE80／ADT 以 WSDL 產生 Service Consumer → SOAMANAGER 建 Logical Port
+*&amp;---------------------------------------------------------------------*
+DATA ls_request  TYPE zexchange_rate_request.
+DATA ls_response TYPE zexchange_rate_response.
+
+ls_request-from_currency = 'USD'.
+ls_request-to_currency   = 'TWD'.
+ls_request-rate_date     = sy-datum.
+
+TRY.
+    " Logical Port 名稱在 SOAMANAGER 設定（URL、認證、逾時都在那裡）
+    DATA(lo_ws) = NEW zco_exchange_rate_service( logical_port_name = 'ZLP_FX_RATE' ).
+    lo_ws-&gt;get_exchange_rate( EXPORTING input  = ls_request
+                              IMPORTING output = ls_response ).
+    MESSAGE |1 USD = { ls_response-rate } TWD| TYPE 'S'.
+
+  CATCH cx_ai_system_fault INTO DATA(lx_sys).        " 連線、SOAP 層錯誤
+    MESSAGE |系統錯誤：{ lx_sys-&gt;get_text( ) }| TYPE 'E'.
+  CATCH cx_ai_application_fault INTO DATA(lx_app).   " 服務端回的業務錯誤
+    MESSAGE |應用錯誤：{ lx_app-&gt;get_text( ) }| TYPE 'E'.
+ENDTRY.
+" 除錯：SRT_UTIL 開啟 payload trace；SRT_MONI 看訊息狀態</code></pre>
+
+  <p><b>Enterprise Services</b>（p65–p67）：技術上就是 web service，但 SAP 另外交付「可直接執行的業務內容」——SAP 不只給 SOA 基礎架構，也給<b>ready-to-run SOA</b>。SAP 定義 Enterprise Service 的條件：依模型建模（business object、process component、interface pattern、<b>Global Data Types（GDT）</b>）、發佈於 ESR（metadata）、有文件且行為穩定、基於開放標準（WSDL、XML、SOAP）。GDT 依據 <b>ISO 15000-5 與 UN/CEFACT CCTS</b>，解決「介面欄位語意是否一致」的難題。範例服務：查客戶財務狀態、寄確認給客戶、查物料庫存、讀客戶資料、顯示銷售訂單。為了結構化搜尋，SAP 以 <b>process component</b> 作為 business object 與服務的分類傘（ERP、CRM、SRM、SCM、Financials），當時可在 ES Workplace 查詢。</p>
+  <p><b>Enhancement Package（EhP）</b>：Enterprise Services 隨 ERP 6.0 的 EhP 交付。EhP 是<b>選擇性安裝與啟用</b>的新功能、<b>累積式</b>（每包含前面所有內容），不是 Support Package；可以只裝需要的、只啟用想用的功能、成本更可預估、並提供 SAP 測試案例。<b>注意</b>：NetWeaver 也有 EhP，但 <b>NetWeaver EhP 匯入即生效</b>，switch 原則只適用業務應用（ERP、SRM、SCM）。</p>
+  <p><b>SOA 的關鍵元件</b>：建立服務的工具、儲存 metadata 與管理服務的工具（repository／registry）、訊息分派基礎架構、使用服務的工具、BPM 工具。PI 扮演 SOA middleware：設計時 metadata 放 ESR（ESR 是 PI 7.0 Integration Repository 的強化），執行時用 PI runtime 呼叫；也可以不經 PI，直接點對點呼叫後端。整個架構稱為 <b>Business Process Platform（BPP）</b>；Composite Application（xApps）分為 enterprise services 層、local services 層（本地持久）、UI 層、流程建模層，開發環境是 <b>Composition Environment（CE）</b>。</p>
+  <p><b>Switch Framework（SFW）</b>（p71–p73）：用 switch 從外部控制 repository 物件或其組件的可見度；產業解決方案與部分 repository 物件隨系統交付但處於<b>未啟用</b>狀態，套件指派 switch 後可啟用或隱藏其功能，switch 也可被上層 switch 控制。<span class="tcode">SFW5</span> 啟用 <b>business function</b> 並查文件（文件列出相依的 business function、軟體元件與使用到的 enterprise services）。教材例子：合約帳（FI-CA）的催收——擴充既有交易 <span class="tcode">FP03E</span>、<span class="tcode">FP03D</span>、<span class="tcode">FP03</span>，以及新交易 <span class="tcode">FKKCOL_MONI</span>、<span class="tcode">FP03I</span>、<span class="tcode">FP03P</span>；新交易在服務未啟用時會報「Enterprise Services not activate, function cannot be used」。</p>
+  <div class="warn"><b>Business function 啟用後多數不可逆</b>（reversible 的極少），在 S/4HANA 也一樣：<span class="tcode">SFW5</span> 按下去前務必確認文件與影響範圍、先在沙盒試。S/4HANA 的新介面方向是 <b>OData／REST API（SAP Business Accelerator Hub）</b>，SOAP Enterprise Services 仍大量存在（例如 BP、財務付款的 SOAP API），ABAP 端觀念與本節相同。</div>
+
+  <h3 id="ch05-24-10">10. 流程控制：Business Workflow、ccBPM、Guided Procedures、SAP BPM</h3>
+  <p>BPM 有兩種意思：<b>管理學科</b>（標準化並持續改善關鍵流程）與<b>技術產品</b>（建模、產生可執行版本、runtime 執行）。企業需求包括：端到端流程視野、流程內功能標準化、能彈性組合差異化新流程、併購或出售後的整合、法規要求、把系統交易擴展成含端到端監控的流程情境。NetWeaver 提供的流程控制元件：</p>
+  <table>
+    <thead><tr><th>元件</th><th>範圍</th><th>有無使用者</th><th>2026 現況</th></tr></thead>
+    <tbody>
+      <tr><td><b>SAP Business Workflow</b></td><td>單一系統內（屬 AS ABAP，<b>每套 SAP 系統都有</b>）</td><td>有，工作項目派給人</td><td>S/4HANA 照用，另有 <b>Flexible Workflow</b>（Fiori 設定）</td></tr>
+      <tr><td><b>ccBPM</b>（cross-component BPM）</td><td>跨系統、跨應用、跨企業；stateful 訊息處理</td><td>無（PI 7.1 起出錯時可讓人介入）</td><td>隨 dual stack PI 退場</td></tr>
+      <tr><td><b>Guided Procedures</b></td><td>NW 7.0 composite 應用的流程邏輯，整合在 Portal</td><td>有</td><td>已被 SAP BPM 取代</td></tr>
+      <tr><td><b>SAP BPM</b></td><td>跨系統且<b>整合使用者</b>；嵌在 CE 7.1 的 SOA 開發環境</td><td>有</td><td>PO 7.5 內；新專案用 SAP Build Process Automation</td></tr>
+    </tbody>
+  </table>
+  <p><b>Business Workflow 的精神</b>：「<b>right work, right time, right person</b>」。right work＝<b>work item</b>（使用者在 Business Workplace <span class="tcode">SBWP</span> 的收件匣看到，也可由系統背景執行）；right time＝由<b>事件（event）</b>觸發，事件可屬於 BOR 物件型別或 <b>ABAP 類別（AS 6.40 起）</b>，事件也可結束流程步驟；right person＝設計時用規則決定處理人（例：出差申請的核准者是申請人的主管）。教材範例是執行 BOR 物件 <b>TRAVELREQ</b> 的 <b>APPROVE</b> 方法。常見標準流程：HR 差旅與招募、財務發票、物流採購申請核准——<b>核准流程是 workflow 最常見的用途</b>。其他功能：workflow template、<b>deadline monitoring</b>、瓶頸分析報表、Portal UWL 裡的 <b>Ad-hoc Workflow</b>。延伸課程 BIT600／601／610。</p>
+
+  <pre><code class="abap">*&amp;---------------------------------------------------------------------*
+*&amp; 以 ABAP 類別事件啟動 Workflow（取代舊式 BOR + SWE_EVENT_CREATE）
+*&amp; 前提：ZCL_TRAVEL_REQ 實作 IF_WORKFLOW（含 BI_OBJECT／BI_PERSISTENT），
+*&amp;       並宣告 EVENTS created；SWDD 的 workflow 以此事件為觸發事件（SWETYPV）
+*&amp;---------------------------------------------------------------------*
+DATA(lv_objkey) = CONV sibfinstid( |{ lv_pernr }{ lv_reqid }| ).
+
+TRY.
+    cl_swf_evt_event=&gt;raise(
+      im_objcateg = cl_swf_evt_event=&gt;mc_objcateg_cl   " 'CL'＝ABAP 類別
+      im_objtype  = 'ZCL_TRAVEL_REQ'
+      im_event    = 'CREATED'
+      im_objkey   = lv_objkey ).
+    " 事件在 COMMIT WORK 時才真正發出；少了這行 workflow 不會啟動
+    COMMIT WORK.
+  CATCH cx_swf_evt_invalid_objtype
+        cx_swf_evt_invalid_event INTO DATA(lx_evt).
+    MESSAGE lx_evt-&gt;get_text( ) TYPE 'E'.
+ENDTRY.
+" 除錯：SWEL（事件追蹤，先用 SWELS 開啟）、SWI1（workflow 日誌）、SWU3（自動設定檢查）</code></pre>
+
+  <p><b>BPMN</b>（Business Process Model and Notation，OMG 規格）：讓業務與 IT 都看得懂的圖形化規格語言；模型本身不能執行，要轉成 XML 方言再由 process engine 執行。圖的種類：<b>Sequence</b>（最重要，描述活動、時機、順序與條件）、Collaboration、Choreography、Conversation（教材誤植為 Conversion）。<b>BPMN 2.0 五大核心元素</b>：Flow objects（activities、gateways、events）、Data（data objects）、Connecting objects（sequence flow、message flow；教材稱 Unifying Objects）、Pools（含 swim lanes）、Artifacts（文字註解）。連線種類：Sequence Flow、Data Flow、Association、Message Flow——<b>sequence flow 只用在單一 pool 內，pool 之間用 message flow</b>，token 沿 sequence flow 移動。建模三階段：策略模型（strategic）→ 營運模型（operational，加例外、替代分支、錯誤處理）→ 技術模型（executable）。</p>
+  <p><b>SAP BPM 三元件</b>：<b>Process Composer</b>（NWDS 內，CE 7.1.1 的 design time）、<b>Process Desk</b>（員工處理任務的介面）、<b>Process Server</b>（runtime，整合到 NetWeaver Administrator 可啟停、監控）。圖形流程可轉成 <b>BPEL4WS 1.1</b>；ccBPM 支援 BPEL 的流程定義部分。分工：流程專家用 BPMN 畫規格 → 開發者做成可執行流程。延伸課程：方法論 BPM100／130／300、WDEBPM；Workflow BIT600／601／610／611／603；ccBPM BIT430；SAP BPM BPM120／140。</p>
+  <div class="note"><b>Unit 2 BPM 題目答案要點</b>：第 16 題「Guided Procedures 能控制跨系統、跨企業的複雜流程」→ <b>錯</b>，那是 <b>ccBPM</b>（第 17 題為對）；第 19 題 SAP BPM 元件 → <b>Process Composer、Process Server</b>（另一個是 Process Desk；Guided Procedures 與 Rules Composer 不是）；第 20、21 題皆為對。</div>
+
+  <h3 id="ch05-24-11">11. SAP Process Orchestration（PO）與 HANA Cloud Integration（HCI）</h3>
+  <p><b>PO</b>（p89–p96）＝ PI 的 <b>Advanced Adapter Engine Extended（AEX）</b>整合能力 ＋ <b>BPM</b> 的流程建模、營運、監控 ＋ <b>BRM</b>。因為 AEX 是 Java-only，<b>PO 也是 Java-only</b>，建模用 NWDS 的 Process Composer；相對地 ccBPM 基於 dual stack，建模在 ESR（integration process 設計物件）。PO 的工作：基本設定（NWDS 設定）、流程建模（design time）、用 NW Administrator 監控 BPM 系統／流程／任務、用 Process Desk 管理流程。</p>
+  <ul>
+    <li>流程模型物件：<b>Activities</b>（步驟）、<b>Roles</b>（執行者，人或系統）、<b>Artifacts</b>（被處理的物件，如業務文件）。</li>
+    <li><b>Process Controlled Solutions</b>：重用既有技術能力而非介面；部門驅動、以使用者為中心、跨系統與企業邊界、分層架構。適用：公司特有流程或現有應用的缺口、高度溝通協調、需要可重用業務規則、人機混合活動、輕量 B2B（無大量 mapping）、自助服務（請假、出差、申請護照、損害申報）、經常變動或有即時需求的流程。</li>
+    <li>教材的<b>披薩訂單範例</b>：用 <b>REST</b> 服務依郵遞區號找外送地點，依訂單金額決定是否檢查，透過 <b>SOAP</b> 送給供應商並查天氣服務，最後 e-mail 確認。</li>
+    <li>例外處理：技術錯誤會終止活動，程式設定的例外不一定終止；分 terminating／non-terminating event；用 <b>event-based choice gateway</b>＋中介計時器避免流程死結（呼叫先到或逾時先到）。</li>
+    <li><b>AEX</b>：PI 的一種安裝選項，只裝在 Java stack；BPMN 流程的所有進出通訊都經過 AEX；支援 QoS <b>EO</b>（Exactly Once）與 <b>EOIO</b>（Exactly Once In Order）。BPM、BRM、AEX 裝在同一台 Java EE 伺服器上。訊息設定與監控在 <span class="kw">http://&lt;host&gt;:&lt;port&gt;/pimon</span>，系統設定在 <span class="kw">/nwa</span>（Availability and Performance → Process Monitoring／System Overview）。</li>
+  </ul>
+  <p><b>HCI</b>（p97–p119）：SAP 雲端整合服務，跑在 SAP HANA Cloud 上、<b>由 SAP 代營運</b>。策略重點：雲對雲（OD-OD）與地端對雲（OP-OD）整合、預包內容「Discover, Configure, Manage」、多租戶、滾動更新、水平擴充、訂閱制、資料隔離；是地端 PI 的<b>互補</b>方案，SuccessFactors、Ariba、FSN 都在用；也支援 Boomi、Cast Iron、MuleSoft 等夥伴。HCI 分 <b>Process Integration</b> 與 <b>Data Integration</b> 兩部分。</p>
+  <table>
+    <thead><tr><th>HCI 概念</th><th>說明</th></tr></thead>
+    <tbody>
+      <tr><td>Tenant／Tenant Owner／Tenant ID</td><td>每個客戶系統在雲端分到獨立資源（記憶體、CPU、檔案系統）；owner 核准其他使用者；ID 唯一識別 tenant</td></tr>
+      <tr><td>Tenant Ops server URL／Worker Node URL</td><td>進入營運環境（Web UI 或 Eclipse）／從不同用戶端存取執行環境</td></tr>
+      <tr><td><b>iFlow</b>（Integration Flow）</td><td>整合建模核心，是 BPMN 的延伸，<b>不需寫程式</b>；以 XML 設定抽象化</td></tr>
+      <tr><td>Eclipse 視角</td><td>Project Explorer（mappings、iFlows、WSDL、metadata、properties）、Node Explorer（Tenant Management Node、Runtime Node）</td></tr>
+      <tr><td>部署狀態</td><td>LIVE、LAUNCHING、STOPPING、FAILED、ERROR、UPDATING、INACTIVE</td></tr>
+      <tr><td>部署步驟</td><td>存檔 → Project Explorer 右鍵 <b>Execute checks</b> → 看 console → <b>Deploy Integration Content</b> → 看 console</td></tr>
+      <tr><td>連線</td><td>sFTP、SOAP、ALE IDoc</td></tr>
+      <tr><td>流程步驟</td><td>transient datastore（get、select）、events（Start、End、Terminate Message、Timer）、message digest、encoder／decoder、encryptor／decryptor、signer、verifier、XML signature verifier、filter、converter、mapping；可建 multiple routes、多個 sender、subflow</td></tr>
+      <tr><td>預包內容</td><td>Customer OnDemand ↔ CRM／ERP、SuccessFactors BizX ↔ HCM（Pay-for-Performance）、Financial Services Network（銀行 ↔ 企業 B2B）</td></tr>
+    </tbody>
+  </table>
+  <div class="warn"><b>2026 現況</b>：HCI → <b>SAP Integration Suite</b> 的 <b>Cloud Integration</b>（Web UI 為主，Eclipse 工具已淘汰），另有 API Management、Event Mesh、Integration Advisor、Edge Integration Cell。PO 7.5 主流維護 2027 年底、延長維護到 2030 年底。從 ABAP 端看，對接方式不變：<b>IDoc（見 <a href="#ch05-22">5-22 章</a>）、RFC（見 <a href="#ch05-12">5-12 章</a>、<a href="#ch04-1">4-1 章</a>）、ABAP Proxy、OData／SOAP API</b>。</div>
+
+  <h3 id="ch05-24-12">12. Business Rules Management（BRM）與 Application Interface Framework（AIF）</h3>
+  <p><b>SAP BRM</b>（p121–p124）：為組合式流程與應用建模關鍵業務規則、自動化規則式決策。三部分：</p>
+  <ul>
+    <li><b>Rules Composer</b>：design time，NWDS 內的獨立視角，給業務分析師建模、給規則開發者實作；也可在 Process Composer 中於流程情境建規則。</li>
+    <li><b>Rules Manager</b>：Web 工具，業務分析師維護規則；管理版本、儲存庫、權限、存取控制與治理，並可驗證、測試、產生報表。</li>
+    <li><b>Rules Engine</b>：runtime，以 <b>stateless session bean</b> 形式存在；BRM runtime 是獨立 Java 應用，<b>以 web service 溝通</b>，任何應用都能用。它讓規則集中管理，而不是寫死在程式裡。</li>
+  </ul>
+  <p>規則寫法：<b>If-Then</b> 與 <b>Decision Table</b>（表格式、可整合 Excel、可回傳多列、動態呼叫），另有 <b>Flow Rules</b>（gateway、rule script、if-then、decision table、其他 flow 組成，可迴圈）。<b>Condition</b>＝LHS（業務物件屬性）＋比較子＋RHS（比較值），例：保險公司自動檢查肇事駕駛是否在保單上。<b>Action</b> 類型：Assert、Assign、Execute、Re-evaluate、Retract、Evaluate Decision Table——其中 <b>Execute、Assign 作用於應用</b>；<b>Assert、Retract、Re-evaluate 影響其他規則如何評估</b>（控制 Rules Engine）。</p>
+  <p>ABAP 世界對應的規則引擎是 <b>BRFplus</b>（<span class="tcode">BRFPLUS</span>），S/4HANA 大量標準功能（輸出管理、稅務、MDG 規則）都用它：</p>
+
+  <pre><code class="abap">*&amp;---------------------------------------------------------------------*
+*&amp; 從 ABAP 呼叫 BRFplus function（Decision Table：依金額決定核准層級）
+*&amp; 實務上請在 BRFplus 工具按「Create Code Template」產生，再依此調整
+*&amp;---------------------------------------------------------------------*
+CONSTANTS lc_function_id TYPE if_fdt_types=&gt;id
+          VALUE '005056A1B2C31EDF9A8B7C6D5E4F3A21'.   " 範例 ID
+
+DATA lv_amount    TYPE netwr    VALUE '250000'.
+DATA lv_currency  TYPE waers    VALUE 'TWD'.
+DATA lv_level     TYPE char10.
+DATA lv_timestamp TYPE timestamp.
+
+GET TIME STAMP FIELD lv_timestamp.
+
+" context 參數：名稱必須與 BRFplus function 的 context 資料物件一致
+DATA(lt_context) = VALUE abap_parmbind_tab(
+  ( name = 'AMOUNT'   value = REF #( lv_amount ) )
+  ( name = 'CURRENCY' value = REF #( lv_currency ) ) ).
+
+TRY.
+    cl_fdt_function_process=&gt;process(
+      EXPORTING iv_function_id = lc_function_id
+                iv_timestamp   = lv_timestamp
+      IMPORTING ea_result      = lv_level
+      CHANGING  ct_name_value  = lt_context ).
+    MESSAGE |核准層級：{ lv_level }| TYPE 'S'.
+  CATCH cx_fdt INTO DATA(lx_fdt).
+    MESSAGE |BRFplus 錯誤：{ lx_fdt-&gt;get_text( ) }| TYPE 'E'.
+ENDTRY.</code></pre>
+  <div class="note">把「會常改的門檻」放進 BRFplus Decision Table，業務人員就能自己維護、不需改程式與傳輸（視系統設定，BRFplus 物件可設為可在正式系統維護）。但規則內的條件一樣要注意 <b>列舉優於區間</b>：Decision Table 中對代碼類欄位用「等於 A、等於 B」列舉，比寫「介於 A～Z」安全——區間比的是字典序，遇到號碼段不連續、ALPHA 前導零、編碼規則改過就會漏抓或多抓（Casper 實務經驗第 2 條）。</div>
+  <p><b>AIF</b>（p125–p126）：介面實作、<b>監控與錯誤處理</b>的框架，讓<b>業務使用者</b>自己監控負責的介面、處理業務錯誤。開發目標：最佳化介面開發、提供監控、提升合規與功能、避免依賴 IT 與重工、分離 IT 與業務的工作。優點：跑在 NetWeaver 上易整合、<b>為 HANA 最佳化</b>、以角色為基礎的錯誤警示與處理、可重用業務驗證、value mapping 與業務動作。支援的物件：<b>IDoc、Web services、CIF、qRFC、tRFC、Files、Batch input</b>。比較：<b>AIF</b>（附加工具）vs <b>SXMB_MONI</b>（proxy 訊息標準監控）vs <b>FEH／ECH</b>（Forward Error Handling／Error and Conflict Handler，enterprise service 錯誤處理）。</p>
+  <div class="warn"><b>2026 現況</b>：Java BRM 隨 PO 退場，ABAP 端用 <b>BRFplus</b>，雲端用 <b>SAP Build Process Automation 的 Decisions</b>。AIF 自 S/4HANA 1709 起<b>內建於 S/4HANA</b>（不必另買 add-on 授權的基本用法，進階功能視授權），錯誤監控 <span class="tcode">/AIF/ERR</span>，是 S/4 介面監控的首選（見 <a href="#ch04-1">4-1 章</a>）。</div>
+
+  <h3 id="ch05-24-13">13. SAP Enterprise Portal、iView、KM 與協作、HANA Cloud Portal</h3>
+  <p><b>為什麼要 Portal</b>（p139–p141）：主管要公司應用的集中總覽、員工找不到明明存在的資訊、多系統搜尋沒用。Portal 需求：多應用統一總覽、只給職務需要的內容與功能、清楚管理企業資訊、好用的搜尋、協作與專案資訊管理。產品線：<b>SAP Enterprise Portal 7.4</b>（NetWeaver Java 旗艦產品，已上市 12 年；7.4（2013）首度可跑在 HANA 上）、EP on HANA Enterprise Cloud、EP on SAP Cloud Appliance Library（Amazon／Azure）、以及 HANA Cloud Portal（PaaS）。</p>
+  <table>
+    <thead><tr><th>概念</th><th>說明</th></tr></thead>
+    <tbody>
+      <tr><td><b>iView</b></td><td>Portal 中顯示與編輯資料的小程式；SAP 提供範本，可自建。來源：公司應用、網站、文件、e-mail</td></tr>
+      <tr><td><b>Business Package</b></td><td>預先定義的 Portal 內容（交易／報表呼叫、Web Dynpro、Java 應用）；分給一般員工（ESS）、主管（<b>MSS</b>）、專家（財務、銷售、生產）；可在 SMP 下載</td></tr>
+      <tr><td><b>角色式使用者管理</b></td><td>群組→使用者→角色→內容；登入後只看到角色相關內容。可<b>從後端 PFCG 角色上傳</b>；角色編輯器有自由式與 <b>workcenter role</b> 兩種</td></tr>
+      <tr><td><b>Portal Desktop</b></td><td>Header Area、Page Title Bar、Navigation Pane、Content Area；7.4 SP8／7.31 SP13 起可用 <b>Fiori launchpad</b> 作為替代 UX</td></tr>
+      <tr><td>個人化</td><td>主題、密碼、語言、員工指派、使用者設定檔、WorkProtect、角色排序、搜尋、收藏、Tabset、協助工具（accessibility）與快捷鍵</td></tr>
+      <tr><td>技術架構</td><td>使用類型 <b>EP Core（EPC）</b>（精簡 portal，含 UWL、.NET PDK）與 <b>EP</b>（含 KM 與 Collaboration，前提是 EPC）；<b>PRT</b>（Portal Runtime）、<b>PCD</b>（Portal Content Directory）、<b>UME</b>（User Management Engine）；前端 <b>SAP Web Dispatcher</b> 做負載平衡</td></tr>
+      <tr><td>Enterprise Workspaces</td><td>個人與共享工作區；共享工作區權限 Public／Restricted／Private；生命週期 Draft → Publish → Close／Reopen → Delete</td></tr>
+      <tr><td><b>Portal Federation（FPN）</b></td><td>多 portal 間共享內容：portal federation（分散存取全域內容）與 content federation（集中存取多 portal 內容，用 <b>WSRP</b> 標準）；producer／consumer portal；可把多套 BW Java portal 接到中央 portal</td></tr>
+    </tbody>
+  </table>
+  <p><b>整合 SAP 應用</b>（p171–p177）：支援的應用類型——SAP 交易（SAP GUI for HTML／Java／Windows）、IAC（Internet Application Components，即 ITS 時代的應用，見 <a href="#ch05-17">5-17 章</a>）、<b>BSP</b>、<b>Web Dynpro（ABAP 與 Java）</b>、BEx Web 應用、Crystal Reports。<b>System object</b> 定義後端連線（含 ICF 應用根路徑、http／https），iView 以 <b>alias</b>（例如 SAP_CRM、SAP_HumanResources、SAP_Financials）參照系統，不必寫死連線資訊。SAP Transaction iView 預設 SAP GUI Type 為 <b>SAP GUI for HTML</b>，前提是設好 portal 到 ABAP 的 SSO。客製開發工具：Portal Content Studio、<b>Visual Composer</b>（拖拉建模、不寫程式、完全 Web 化）、NWDS。</p>
+  <p><b>Knowledge Management（KM）</b>（p179–p208）：Portal 的基本內容服務，管理<b>非結構化資訊</b>（文件、簡報、圖片、影片）的完整生命週期。元件：Content Management（建立、核准、發佈、閱讀、評論、封存；版本、有效期限、核准流程、訂閱）、<b>Search and Classification（TREX）</b>（全文、<span class="kw">?</span> 單字元與 <span class="kw">*</span> 萬用字元、taxonomy 分類）、repository manager 以「傘」的方式接既有文件庫、<b>Web Page Composer</b>（WYSIWYG 編輯網頁與輕量 mashup；角色：Administrator、Area Owner、Editor／Author；用 connection ID 把 page／area 接到角色）。協作：Collaboration Launch Pad、Virtual Rooms、論壇（舊版 discussion forums 與 Jive）、Wiki、RTC（即時協作，大量使用建議第三方，見 SAP Note 948298、1038125）。<b>教材明言 KM 不是也不會變成完整 ECM</b>，企業級 ECM 應考慮 OpenText（2012 推出 Portal Content Management by OpenText）。<b>NetWeaver Enterprise Search 7.3</b>：同時搜尋結構化（ERP、CRM）與非結構化資料，由 AS ABAP（管理、建模、UI）＋ BW Accelerator（索引與搜尋引擎）組成。</p>
+  <p><b>HANA Cloud Portal</b>（p209–p215）：基於 HANA Cloud Platform 的雲端建站方案，支援 CMIS、OpenSocial、SAPUI5 與 API；經 <b>SAP Cloud Connector</b> 安全通道存取地端；透過 IdP 做 SSO。選單：SITE DIRECTORY、MARKET PLACE、AUTHORIZATIONS、ANALYTICS；內容庫：widget、theme、document；以 <b>widget</b> 為建站基本積木，用 organization roles 控制網站與頁面存取。</p>
+  <div class="warn"><b>2026 現況</b>：Enterprise Portal 7.5 主流維護到 2027 年底；HANA Cloud Portal 已由 <b>SAP Build Work Zone</b>（standard／advanced edition）取代；TREX 與 BW Accelerator 在 HANA 時代已退場（搜尋改用 HANA 的 Enterprise Search／ESH）。Unit 3 第 1 題答案：Portal 的三個構成要素是 <b>collaboration、knowledge management、portal infrastructure</b>（不是 IT scenarios），故該題為<b>錯</b>。</div>
+
+  <h3 id="ch05-24-14">14. SAP UX 策略與 Fiori：launchpad、三種 app、架構與安全</h3>
+  <p><b>UX 策略「New, Renew, Enable」</b>（p217）：新應用提供消費級 UX（<b>New</b>）、改善最常用情境的既有應用（<b>Renew</b>）、提供工具讓客戶自己改善（<b>Enable</b>）。核心是 <b>SAP Fiori UX</b> 與 <b>SAP Screen Personas</b>，再加上 UX 設計顧問服務。</p>
+  <table>
+    <thead><tr><th>類別</th><th>技術</th><th>說明</th></tr></thead>
+    <tbody>
+      <tr><td>UI 技術</td><td><b>SAPUI5</b></td><td>用戶端 HTML5＋JavaScript 渲染函式庫，控制項豐富可擴充，任何裝置與平台</td></tr>
+      <tr><td>UI 技術</td><td><b>Floorplan Manager（FPM）</b></td><td>完全基於 Web Dynpro ABAP 的 UI 框架，確保符合 UI 與協助工具準則</td></tr>
+      <tr><td>UI 工具</td><td><b>UI Theme Designer</b></td><td>主題與品牌的單一 WYSIWYG 工具，支援 CSS3、LESS；可跑在 AS ABAP（<span class="tcode">/UI5/THEME_DESIGNER</span>）、Portal、一般 web server</td></tr>
+      <tr><td>UI 工具</td><td><b>Screen Personas</b></td><td>快速調整 Dynpro 畫面（第 15 節）</td></tr>
+      <tr><td>UI 用戶端</td><td><b>NetWeaver Business Client 4.0</b></td><td>整合 SAPUI5、Web Dynpro／FPM、SAP GUI 應用與任何 Web 內容；角色式單一入口（今名 SAP Business Client）</td></tr>
+    </tbody>
+  </table>
+  <p><b>Fiori 設計原則</b>：刻意打破「以交易為單位」的傳統，改以<b>人與目標</b>為中心——<b>Role-based、Responsive、Simple、Coherent、Delightful</b>。價值：提升生產力、滿意度（任選裝置）、縮短導入時間、降低風險與 TCO。<b>Fiori launchpad</b>：依角色組織、以 <b>tile</b> 即時進入 app；提供導覽、個人化、SSO、搜尋服務；可建 groups 與 catalogs、增刪分組 tile；設計工具是 <b>Launchpad Designer</b>（<span class="tcode">/UI2/FLPD_CUST</span>，S/4HANA 新版改用 Launchpad Content Manager <span class="tcode">/UI2/FLPCM_CUST</span>）。</p>
+  <table>
+    <thead><tr><th>App 類型（教材）</th><th>用途</th><th>基礎架構需求</th></tr></thead>
+    <tbody>
+      <tr><td><b>Transactional</b></td><td>執行交易任務（如建立請假單），是既有流程的簡化視圖</td><td>最適合 HANA，也可移植到其他資料庫；可從網際網路存取</td></tr>
+      <tr><td><b>Fact Sheet</b></td><td>顯示核心物件的關鍵資訊，可鑽取、在相關 fact sheet 間導覽、跳到交易或 SAP GUI／Web Dynpro</td><td><b>只能跑在 HANA</b>、需要 ABAP stack；不能移植到 HANA Live 2-tier 架構</td></tr>
+      <tr><td><b>Analytical</b></td><td>角色式即時 KPI 洞察；<b>SMART Business</b> 依 KPI 觸發行動</td><td>HANA＋<b>VDM</b>（Virtual Data Model）；教材時代走 HANA XS</td></tr>
+    </tbody>
+  </table>
+  <p><b>架構</b>（p223–p226）：<b>Reverse proxy</b>（接收並過濾 HTTP 請求，建議用 <b>SAP Web Dispatcher</b>）→ <b>ABAP front-end server</b>（所有 UI 元件＋SAP Gateway：Central UI add-on 含 SAPUI5 函式庫與 launchpad、各產品 UI add-on 如 ERP-FIN／SD／MM）→ <b>ABAP back-end server</b>（業務邏輯、資料、fact sheet 搜尋模型；OData 服務與資料模型隨 Business Suite EhP 交付）→ <b>HANA XS</b>（分析 app）。部署：<b>Central Hub</b>（UI 層與 Gateway 在獨立 front-end server）與 <b>Embedded</b>（Gateway 與 Business Suite 同一台）。SAP Gateway 基於 <b>Atom Publishing Protocol 與 OData</b> 的 REST 服務，降低存取 SAP 資料的技能門檻。</p>
+  <p><b>安全</b>：HTTP 用 <b>TLS</b>、RFC 用 <b>SNC</b>；DMZ 內放應用層閘道；reverse proxy 要允許 OData 用到的 HTTP 方法。使用者：Gateway 層與後端<b>使用者名稱必須相同</b>（用 CUA 或 IdM 同步）；每個 app 的權限由 SAP 交付的 <b>PFCG 角色</b>提供；最少需要 individual user 與 technical user。SSO：<b>SAML 2.0</b>（需 IdP，支援跨網域 SSO、SLO、身分聯合）、<b>logon ticket</b>（同網域）、<b>X.509 用戶端憑證</b>（TLS 層驗證）。NetWeaver 7.40 SP08 起可在 Portal 建 Fiori iView。</p>
+
+  <pre><code class="abap">*&amp;---------------------------------------------------------------------*
+*&amp; OData（SEGW）：在 DPC_EXT 重新定義 GET_ENTITYSET，支援 $top / $skip
+*&amp; 服務註冊：/IWFND/MAINT_SERVICE；錯誤：/IWFND/ERROR_LOG、/IWBEP/ERROR_LOG
+*&amp;---------------------------------------------------------------------*
+METHOD salesorderset_get_entityset.
+  " 分頁參數（字串 → 整數）；沒給 $top 時預設 100 筆，避免一次撈爆
+  DATA(lv_top)  = CONV i( io_tech_request_context-&gt;get_top( ) ).
+  DATA(lv_skip) = CONV i( io_tech_request_context-&gt;get_skip( ) ).
+  IF lv_top = 0.
+    lv_top = 100.
+  ENDIF.
+
+  " $filter 轉成 ABAP SQL 可用的 WHERE 條件（由框架產生、已處理跳脫）
+  DATA(lv_where) = io_tech_request_context-&gt;get_osql_where_clause_convert( ).
+
+  " 分頁必須搭配 ORDER BY：HANA 沒有預設排序，
+  " 不排序的話第 2 頁可能重複或漏掉第 1 頁的資料
+  SELECT vbeln, erdat, kunnr, vkorg, netwr, waerk
+    FROM vbak
+    WHERE (lv_where)
+    ORDER BY vbeln
+    INTO CORRESPONDING FIELDS OF TABLE @et_entityset
+    UP TO @lv_top ROWS
+    OFFSET @lv_skip.
+
+  " $inlinecount 需要時回傳總筆數
+  IF io_tech_request_context-&gt;has_inlinecount( ) = abap_true.
+    SELECT COUNT( * ) FROM vbak WHERE (lv_where) INTO @DATA(lv_count).
+    es_response_context-inlinecount = lv_count.
+  ENDIF.
+ENDMETHOD.</code></pre>
+  <pre><code class="sql">// 更省事的做法（S/4HANA 1809 可用）：CDS + @OData.publish 自動產生 OData 服務
+@AbapCatalog.sqlViewName: 'ZVSAPNWSOHEAD'
+@AccessControl.authorizationCheck: #CHECK
+@EndUserText.label: '銷售訂單表頭（Fiori 用）'
+@OData.publish: true
+define view ZC_SapnwSalesOrder
+  as select from vbak
+  association [0..1] to kna1 as _Customer on $projection.kunnr = _Customer.kunnr
+{
+  key vbeln,
+      erdat,
+      kunnr,
+      vkorg,
+      @Semantics.amount.currencyCode: 'waerk'
+      netwr,
+      @Semantics.currencyCode: true
+      waerk,
+      _Customer
+}
+// 產生的服務 ZC_SAPNWSALESORDER_CDS 仍要在 /IWFND/MAINT_SERVICE 註冊</code></pre>
+  <div class="warn"><b>版本門檻與現況</b>：<span class="kw">@OData.publish: true</span> 在 1809 可用，但新版已不建議；<b>S/4HANA 1909（ABAP 7.54）起</b>建議用 <b>RAP</b>（behavior definition＋service definition＋service binding，OData V2／V4），2020 以上搭配 View Entity。<span class="kw">OFFSET</span> 需 ABAP 7.51 以上（1809 可用）。Fiori 的 analytical app 在 S/4HANA 已不走 HANA XS，而是 ABAP CDS 分析查詢（第 17 節）。</div>
+
+  <h3 id="ch05-24-15">15. SAP Screen Personas：不寫程式改造 Dynpro 畫面</h3>
+  <p><b>定位</b>（p227–p233）：整合在 SAP GUI 家族的個人化框架，本質是<b>經典 Dynpro 畫面的瀏覽器渲染引擎</b>，讓企業<b>不寫程式</b>就能針對不同角色個人化 ERP 畫面；屬於 UX 策略的 <b>Enable</b>。好處：提升生產力與滿意度、減少訓練時間、讓 IT、key user 與終端使用者都能改畫面。功能：自動化步驟、改標籤、重新排列畫面（依角色建不同畫面）、<b>隱藏與合併</b>畫面與控制項、條件式格式。適用超過 10,000 支交易；<b>Fiori 與 Personas 是互補</b>的。</p>
+  <table>
+    <thead><tr><th>項目</th><th>內容</th></tr></thead>
+    <tbody>
+      <tr><td>元件</td><td>① NetWeaver ABAP Basis ② Kernel（內含 <b>Internet Transaction Server</b>，提供每支交易的畫面定義與 Web GUI 畫面）③ Personas Add-on（Admin UI、ABAP layer）④ Personas Client（瀏覽器中的 JavaScript，嵌在 SAP GUI for HTML）</td></tr>
+      <tr><td>3.0 前提</td><td>Basis 7.40 以上（HTML 版）、最新 kernel patch、SAP GUI for HTML；<b>只支援經典 Dynpro</b>，不適用 Web Dynpro、CRM／SRM Web UI；安裝見 SAP Note <b>2013453</b></td></tr>
+      <tr><td>安裝三步驟</td><td>裝 add-on → 套用 enablement note → 指派預設角色與使用者（不需額外伺服器）</td></tr>
+      <tr><td>四種模式</td><td>Runtime（Flavor Manager、Flavor Bar）、Theming（Tradeshow Plus、High Contrast Black、Corbu、Corbu Plus、Blue Crystal）、Scripting（JavaScript 附在 flavor、綁 onClick 等事件，可略過畫面、預填、執行 WebRFC）、Flavor Editor</td></tr>
+      <tr><td>管理</td><td><span class="tcode">/PERSONAS/ADMIN</span>：維護 flavor、resource、theme、使用者與角色、flavor 遷移、F4 Help 白名單、企業色；權限一律由 <span class="tcode">PFCG</span> 賦予</td></tr>
+    </tbody>
+  </table>
+  <div class="note"><b>Unit 3 第 4 題答案</b>：Personas 與 Fiori 的關鍵差異是 <b>A</b>——Personas 內建在基礎層（kernel），用來個人化以 Dynpro 框架寫成的既有 ABAP 交易；Fiori 則是全新設計的 app。對 ABAP 開發者的啟示：<b>自己寫的 Dynpro 程式也能被 Personas 改造</b>，所以畫面欄位 ID 不要亂改（flavor 靠它定位），Dynpro 設計見 <a href="#ch04-2">4-2 章</a>、<a href="#ch05-9">5-9 章</a>。</div>
+  <div class="warn"><b>2026 現況</b>：Screen Personas 3.0 仍在維護，支援 SAP GUI for Windows／HTML 與 Slipstream Engine（行動裝置）；Scripting 的「WebRFC」是舊稱，現在是 Personas 的 RFC 呼叫白名單機制。S/4HANA 上的 Dynpro 交易也可用 <b>Fiori 主題的 SAP GUI for HTML</b>直接掛進 launchpad。</div>
+
+  <h3 id="ch05-24-16">16. SAP NetWeaver Mobile Platform 與 Fiori Client</h3>
+  <p><b>行動化原則</b>（p235–p236）：行動業務讓員工隨時用最新資料、也能離線輸入，資料庫只偶爾同步。企業級行動方案要能：建 app、連接後端與資料來源、佈建並更新裝置上的 app、監控與保護裝置與資料。</p>
+  <ul>
+    <li><b>SAP Mobile Platform（SMP）3.0</b>：核心服務（任何 app 類型可用）＋專屬服務；<b>REST API</b> 是所有 SDK 的基礎。開發選項：<b>原生 app</b>（Android Java、iOS Objective-C／Xcode、Windows C#，每平台一套程式碼；OData 線上用 <b>ODataOnlineStore</b>、離線用 <b>ODataOfflineStore</b>）、<b>Hybrid app</b>（Apache Cordova，SMP SDK 3.0 SP06 支援到 Cordova 3.6；SAP 外掛合稱 <b>Kapsel</b>：logon、SSO、push、Barcode Scanner、Calendar、EncryptedStorage…）、<b>Agentry</b>（metadata 驅動，Agentry Editor 定義、server 讀定義、client 呈現；通訊用專屬協定 <b>ANGEL</b>，包在 WebSockets 上走 HTTPS；SDML、Agentry Test Environment）、<b>SMS Builder</b>、Portal Templates。</li>
+    <li><b>資料存取</b>：Business Suite 經 <b>SAP Gateway 的 OData</b>，或 Agentry SAP Framework Foundation（Syclo ABAP add-on）；其他 SAP 來源（HANA、BW、BI）；非 SAP 經 <b>Integration Gateway</b>（把 JDBC、JPA、SOAP 轉成 OData）。</li>
+    <li><b>SAP mCommerce（Mobilizer）</b>：行動金融（Banking、Payments、TopUp、Remittance Mobilizer）、Consumer／Administration Portal、JPA／Hibernate 持久層（Oracle、DB2、ASE、Derby）、安全遵循 OWASP。</li>
+    <li><b>管理與安全</b>：SAP Management Cockpit、Gateway Management Cockpit；元件安全、通訊安全、X.509 相互驗證；<b>Afaria</b>（MDM：裝置佈建、設定、監控；Afaria Server、Administration console、Enrollment Server、Package Server；master／farm servers）、<b>Mocana</b>（App Wrapping：資料只在包裝過的 app 間傳遞、靜態加密、位置遮罩、越獄／root 偵測）、Secure Enterprise Browser、<b>SAP Mobile Documents</b>（CMIS、線上／離線、地端／雲端）。</li>
+    <li><b>SAP Fiori Client</b>：原生容器，渲染 Fiori web app 並提供原生裝置能力；Fiori 行動 app 範本：Analytical、Approval、Change、Factsheets、News、Process、Shopping。</li>
+  </ul>
+  <pre><code class="abap">*&amp;---------------------------------------------------------------------*
+*&amp; 反過來：ABAP 當 OData／REST 的「使用端」（例如呼叫另一套系統的 API）
+*&amp; SM59 建 G 型目的地 Z_ODATA_EXT（主機、埠、TLS、認證都放在目的地）
+*&amp;---------------------------------------------------------------------*
+cl_http_client=&gt;create_by_destination(
+  EXPORTING  destination              = 'Z_ODATA_EXT'
+  IMPORTING  client                   = DATA(lo_client)
+  EXCEPTIONS argument_not_found       = 1
+             destination_not_found    = 2
+             destination_no_authority = 3
+             OTHERS                   = 4 ).
+IF sy-subrc &lt;&gt; 0.
+  MESSAGE |SM59 目的地錯誤（{ sy-subrc }）| TYPE 'E'.
+ENDIF.
+
+lo_client-&gt;request-&gt;set_method( if_http_request=&gt;co_request_method_get ).
+cl_http_utility=&gt;set_request_uri(
+  request = lo_client-&gt;request
+  uri     = `/sap/opu/odata/sap/API_BUSINESS_PARTNER/A_BusinessPartner` &amp;&amp;
+            `?$top=5&amp;$orderby=BusinessPartner&amp;$format=json` ).
+lo_client-&gt;request-&gt;set_header_field( name = 'Accept' value = 'application/json' ).
+
+lo_client-&gt;send( EXCEPTIONS OTHERS = 1 ).
+IF sy-subrc = 0.
+  lo_client-&gt;receive( EXCEPTIONS OTHERS = 1 ).
+ENDIF.
+IF sy-subrc &lt;&gt; 0.
+  lo_client-&gt;get_last_error( IMPORTING message = DATA(lv_err) ).
+  lo_client-&gt;close( ).
+  MESSAGE |HTTP 失敗：{ lv_err }| TYPE 'E'.
+ENDIF.
+
+lo_client-&gt;response-&gt;get_status( IMPORTING code = DATA(lv_code) ).
+DATA(lv_json) = lo_client-&gt;response-&gt;get_cdata( ).
+lo_client-&gt;close( ).
+
+IF lv_code = 200.
+  DATA lr_data TYPE REF TO data.
+  /ui2/cl_json=&gt;deserialize( EXPORTING json         = lv_json
+                                       pretty_name  = /ui2/cl_json=&gt;pretty_mode-camel_case
+                             CHANGING  data         = lr_data ).
+ENDIF.</code></pre>
+  <div class="warn"><b>2026 現況</b>：SMP 3.0 已終止，改為 BTP 上的 <b>SAP Mobile Services</b>；Kapsel／Cordova 路線與 <b>SAP Fiori Client 皆已退場</b>（Fiori 直接用行動瀏覽器或 <b>SAP Mobile Start</b>）；Agentry 產品轉為 <b>SAP Service and Asset Manager</b>（基於 MDK）；Afaria 已停售。ABAP 端的重點不變：<b>把 OData 服務做好</b>（第 14 節）。</div>
+
+  <h3 id="ch05-24-17">17. SAP BW：EDW 的持久層與資料供應</h3>
+  <p><b>為什麼要資料倉儲</b>（p289–p291）：每個 SAP 方案都有標準報表，也能用查詢工具或 ABAP 自寫報表讀正式系統（見 <a href="#ch05-6">5-6 章</a>、<a href="#ch01-4">1-4 章</a>）；但決策者要的是單一入口、涵蓋所有流程、跨系統跨流程、高品質且不需大量人工整理的資訊。教材當時已有超過 6,000 家客戶使用 BW。<b>OLTP 與資料倉儲的差異</b>：</p>
+  <table>
+    <thead><tr><th>面向</th><th>OLTP</th><th>資料倉儲（OLAP）</th></tr></thead>
+    <tbody>
+      <tr><td>明細程度</td><td>極細</td><td>彙總（壓縮）以求高效存取</td></tr>
+      <tr><td>歷史</td><td>封存後只留少量歷史</td><td>完整歷史</td></tr>
+      <tr><td>可變性</td><td>頻繁修改</td><td>某時點後「凍結」</td></tr>
+      <tr><td>整合</td><td>低</td><td>要求高度整合</td></tr>
+      <tr><td>正規化</td><td>高度正規化、表很多</td><td>為檢索效能降低正規化</td></tr>
+      <tr><td>存取最佳化</td><td>讀寫刪改都要快</td><td>讀取最佳化</td></tr>
+    </tbody>
+  </table>
+  <p><b>BW 架構</b>：底層來源系統 → BW server（metadata、主資料、交易資料；查詢時由 <b>Analytical Engine</b> 讀資料）→ 報表工具（BEx Analyzer 嵌在 Excel、BEx Web Analyzer）。<b>Data Warehousing Workbench</b>（<span class="tcode">RSA1</span>）建模與管理所有資料擷取流程、排程與監控；資料要先經 <b>ETL</b>。建模觀念：<b>Key figure</b>（值或數量：營收、固定成本、人數、訂單量）、<b>Characteristic</b>（key figure 的參照：客戶、產品）、<b>Dimension</b>（容納 characteristic），而且一定要加<b>時間</b>維度。BW 中的業務評估物件叫 <b>InfoObject</b>（最小資訊單元），分 characteristic 與 key figure，另有 unit、time、technical 三種特殊 characteristic；啟用後 characteristic 產生主資料表，key figure 成為 fact table 的一部分。實體模型是<b>星狀綱要（Star Schema）</b>，定義 <b>InfoCube</b> 時產生 fact table，另有固定的時間與單位兩張 dimension table。</p>
+  <ul>
+    <li><b>資料來源</b>：SAP Business Suite（預設擷取結構與程式，來源系統需裝 <b>PI_BASIS</b> plug-in）、多層 BW、經 PI 的 SOAP、市場研究資料（ACNielsen、Dun &amp; Bradstreet）、<b>DB Connect</b>、<b>UDI</b>（JDBC、XMLA）；7.0 起有圖形化 Transformation。</li>
+    <li><b>儲存區</b>：Data Marts（InfoCube＋主資料，長期彙總資料）、<b>Operational Data Store</b>（明細，DSO 與 RDA 物件）、Data Warehouse 層。</li>
+    <li><b>Business Content</b>：以 add-on 交付、基於資料模型可整批啟用（含資料流與預設查詢）；用 <span class="tcode">RSORBCT</span> 或 RSA1 的 Metadata Repository 查找；比對原則「自上而下」。</li>
+    <li><b>Nearline</b>：NW 7.0 起查詢可同時讀封存資料與線上資料。<b>RDA</b>（Real-time Data Acquisition）：只用於需要極即時資料的特定情境，<b>不取代 delta 載入</b>（BW350）。</li>
+    <li><b>BW Accelerator（BWA）</b>：把 InfoProvider 資料建成壓縮但<b>不彙總</b>的記憶體索引，查詢快 10～100 倍；<b>一套 BW 只能用一台 BWA，但一台 BWA 可給多套 BW 用</b>（以系統 ID 區分）；跑在刀鋒伺服器、基於 TREX 技術；7.20 起有 BWA-based InfoCube 與 DSO 索引。教材自己註明：<b>BW on HANA 後 BWA 基本上多餘</b>。</li>
+    <li><b>評估工具</b>（L2）：<b>BEx Query Designer</b>（在 InfoProvider 上定義查詢：Rows／Columns、Free Characteristics、Filter——Filter 區的值執行時不能動態改；多個 InfoProvider 要先合成 <b>MultiProvider</b>，因為一個查詢只能建在一個 provider 上）、<b>BEx Web Application Designer</b>（web item → web template → web application）、<b>BEx Analyzer</b>（Excel）、<b>BEx Report Designer</b>（格式化報表，經 Adobe server 轉 PDF；靜態與動態報表）、<b>Information Broadcasting</b>（排程、事件觸發、多格式、發佈到 Portal KM）。</li>
+    <li><b>ODP</b>（Operational Data Provisioning，NW 7 EhP3 起）：在營運系統直接做 OLAP 查詢與複寫的單一介面；兩層——<b>Analytic Query</b>（分析前端讀取介面）與 <b>BW Service API DataSource</b>（擷取介面）；ODP 層決定走 BWA 還是直接讀 extractor。BW 7.40 起 ODP 來源系統可依階層選取（例如依 HANA 套件）。</li>
+  </ul>
+  <pre><code class="sql">// S/4HANA 的「嵌入式分析」與「給 BW 的擷取」都用 CDS 分析模型（1809 可用）
+@AbapCatalog.sqlViewName: 'ZVSAPNWSOCUBE'
+@AccessControl.authorizationCheck: #CHECK
+@EndUserText.label: '銷售訂單 Cube（可供 ODP 擷取）'
+@VDM.viewType: #COMPOSITE
+@Analytics.dataCategory: #CUBE
+@Analytics.dataExtraction.enabled: true      // BW/4HANA、Datasphere 經 ODP 擷取
+define view ZI_SapnwSalesCube
+  as select from vbak
+{
+  key vbeln                 as SalesOrder,
+      vkorg                 as SalesOrganization,   // characteristic
+      kunnr                 as SoldToParty,         // characteristic
+      erdat                 as CreationDate,        // 時間維度
+      @Semantics.currencyCode: true
+      waerk                 as TransactionCurrency,
+      @DefaultAggregation: #SUM
+      @Semantics.amount.currencyCode: 'TransactionCurrency'
+      netwr                 as NetAmount           // key figure
+}
+// 再建一個 @Analytics.query: true 的 consumption view，
+// 就能在 Fiori「Query Browser」或 Analysis for Office 使用</code></pre>
+  <div class="warn"><b>2026 現況</b>：BW 7.5 主流維護至 2027 年底，後繼是 <b>BW/4HANA</b> 與 <b>SAP Datasphere</b>／Business Data Cloud；InfoCube、MultiProvider 在 BW/4HANA 已改為 <b>ADSO</b> 與 <b>CompositeProvider</b>；BEx 工具由 <b>Analysis for Office</b> 與 <b>SAP Analytics Cloud</b> 取代；BWA、TREX 已終止。S/4HANA 內的即時報表優先用 <b>CDS 分析模型（Embedded Analytics）</b>，這正是教材說的「OLTP 與 OLAP 回到同一個資料庫」。Unit 4 答案：第 1 題錯、第 2 題對、第 3 題 <b>C、D</b>（BO BI 平台儲存 BO 用戶端工具產生的文件、提供 BI 使用者集中入口）、第 4、5 題對。</div>
+
+  <h3 id="ch05-24-18">18. BusinessObjects BI 平台與 HANA 記憶體運算建模</h3>
+  <p><b>BusinessObjects BI 平台</b>（p303–p305、p323–p326）：SAP 收購 Business Objects 取得 BI 與資訊管理平台。概念分層：Web tier、管理 tier、儲存 tier（Input／Output File Repository Server、報表快取）、<b>Processing tier</b>（唯一直接存取報表資料庫的層）。工具：<b>CMC</b>（Central Management Console，管理使用者、內容、伺服器、安全）、<b>BI Launch Pad</b>（使用者檢視、排程、追蹤 BI 文件）、<b>Universe</b>（語意層，用 Information Design Tool 建；舊版用 Universe Design Tool）、<b>BICS</b>（BI Consumer Services，4.0 存取 BEx 查詢的最佳做法）。當時的產品策略：儀表板往 <b>Xcelsius</b>（後來 Dashboard Design、Design Studio）、企業報表往 <b>Crystal Reports</b>（BEx WAD 進入維護模式）、OLAP 分析往 Analysis。</p>
+  <p><b>HANA 系統架構</b>（p327–p330）：HANA 是<b>記憶體內、欄式、關聯式</b>資料庫。核心 <b>Index Server</b>：session 管理、授權、交易管理、指令處理，並管理記憶體映像、log 與永久儲存之間的持久化；內含 Connection and Session Management、<b>Transaction Manager</b>（交易隔離）、<b>Authorization Manager</b>（SAML、OAuth、Kerberos）、Request Processing and Execution Control（SQL；分析應用也支援 <b>MDX</b>）、SQL Processor 等。<b>HANA Studio 視角</b>：Modeler、Development（HANA XS）、Debug、Administration Console。資料夾：<b>Catalog</b>（字典；schema 分使用者定義、系統定義、SLT 產生）、Content（設計時儲存庫，依 package 組織）、Provisioning（<b>Smart Data Access</b>，遠端資料以 virtual table 呈現）、Security。系統 schema：</p>
+  <table>
+    <thead><tr><th>Schema</th><th>內容</th></tr></thead>
+    <tbody>
+      <tr><td><b>_SYS_BIC</b></td><td>已啟用物件的所有 column view</td></tr>
+      <tr><td><b>_SYS_BI</b></td><td>column view 的 metadata、變數表、時間資料、schema／content mapping</td></tr>
+      <tr><td><b>_SYS_REPO</b></td><td>已啟用與未啟用物件清單、package、runtime 物件資訊</td></tr>
+      <tr><td><b>_SYS_STATISTICS</b></td><td>系統設定與參數（統計服務）</td></tr>
+      <tr><td><b>_SYS_XS</b></td><td>HANA XS 使用</td></tr>
+    </tbody>
+  </table>
+  <p><b>HANA 建模三種 view</b>：<b>Attribute View</b>（提供情境，選主資料的欄與列，不做量值與彙總）、<b>Analytic View</b>（含量值，最快的彙總模型，像 cube，<b>只能有一張 fact table</b>，資料不存放、join 與計算量值在執行時求值）、<b>Calculation View</b>（圖形或腳本式；可 join 多張 fact table、做進階計算；存取時隱含執行一個 SQLScript 函數）。使用案例：財務（FICO）、銷售（CRM）、出貨（LE-SHP）、採購（P2P／SRM）即時報表。<b>報表介面</b>：ODBO（MDX）、ODBC（SQL）、JDBC、<b>BICS</b>（SAP 專屬、OLAP 比 MDX 有優勢）、Excel 樞紐分析（定義只在本機、受桌機效能限制）。資料整合：即時複寫 <b>SLT</b>（SAP Landscape Transformation Replication Server）、批次 ETL <b>SAP Data Services</b>。BO 工具與 HANA：Crystal Reports、Web Intelligence（SQL＋universe），Design Studio 走 BICS，架構師要決定語意層放 HANA 模型、universe 或兩者。</p>
+
+  <pre><code class="abap">*&amp;---------------------------------------------------------------------*
+*&amp; AMDP：ABAP 管理的 HANA 預存程序（取代教材時代「HANA Studio 建 procedure
+*&amp;       再從 ABAP 呼叫」的做法；ABAP 7.40 SP05 起，1809 可用）
+*&amp;---------------------------------------------------------------------*
+CLASS zcl_sapnw_amdp_sales DEFINITION PUBLIC FINAL CREATE PUBLIC.
+  PUBLIC SECTION.
+    INTERFACES if_amdp_marker_hdb.
+    TYPES: BEGIN OF ty_sales,
+             vkorg TYPE vbak-vkorg,
+             waerk TYPE vbak-waerk,
+             netwr TYPE vbak-netwr,
+             rnk   TYPE i,
+           END OF ty_sales,
+           tt_sales TYPE STANDARD TABLE OF ty_sales WITH EMPTY KEY.
+
+    CLASS-METHODS get_top_orgs
+      IMPORTING VALUE(iv_client) TYPE mandt
+                VALUE(iv_from)   TYPE erdat
+      EXPORTING VALUE(et_sales)  TYPE tt_sales.
+ENDCLASS.
+
+CLASS zcl_sapnw_amdp_sales IMPLEMENTATION.
+  METHOD get_top_orgs BY DATABASE PROCEDURE FOR HDB
+                      LANGUAGE SQLSCRIPT
+                      OPTIONS READ-ONLY
+                      USING vbak.
+    -- AMDP 不會自動處理用戶端，必須自己帶 MANDT 條件
+    lt_sum = SELECT vkorg, waerk, SUM( netwr ) AS netwr
+               FROM vbak
+              WHERE mandt = :iv_client
+                AND erdat &gt;= :iv_from
+              GROUP BY vkorg, waerk;
+
+    -- 視窗函數在 DB 端排名；最後一定要 ORDER BY（HANA 沒有預設排序）
+    et_sales = SELECT vkorg, waerk, netwr,
+                      RANK( ) OVER ( PARTITION BY waerk ORDER BY netwr DESC ) AS rnk
+                 FROM :lt_sum
+                ORDER BY waerk, rnk, vkorg;
+  ENDMETHOD.
+ENDCLASS.
+
+" 呼叫端
+zcl_sapnw_amdp_sales=&gt;get_top_orgs( EXPORTING iv_client = sy-mandt
+                                              iv_from   = '20260101'
+                                    IMPORTING et_sales  = DATA(lt_rank) ).</code></pre>
+  <div class="warn"><b>2026 現況</b>：HANA 的 Attribute View、Analytic View 已<b>過時</b>，官方要求轉成 <b>Calculation View</b>（HDI 容器、Web IDE／Business Application Studio 開發）；HANA Studio 也逐步由 <b>SAP HANA Cockpit</b> 與 Database Explorer 取代。S/4HANA 的 ABAP 開發原則：<b>先用 CDS（宣告式、可重用、有 DCL 權限），CDS 做不到的複雜程序邏輯才用 AMDP</b>；AMDP 繞過 ABAP 的用戶端處理與權限檢查，要自己負責。效能主題見 <a href="#ch05-21">5-21 章</a>。</div>
+
+  <h3 id="ch05-24-19">19. Master Data Management 與 Master Data Governance（MDG）</h3>
+  <p>主資料管理有兩種路線（p343–p344）：傳統做法是各系統各自建主資料，再<b>合併（consolidation）</b>成單一視圖供全球報表、同步與分析——這是 <b>SAP NetWeaver MDM</b>（aggregate、harmonize、enrich）；新做法是在業務流程<b>前端就把主資料建對</b>（正確、一致、完整）——這是 <b>MDG</b>，業界第一個以集中治理流程管理主資料的應用，涵蓋 business partner、客戶、供應商、物料、財務與自訂網域，並與 SAP Information Steward、Data Services 整合。兩者可單獨或一起部署。</p>
+  <table>
+    <thead><tr><th>MDG 概念</th><th>說明</th></tr></thead>
+    <tbody>
+      <tr><td>技術基礎</td><td>建在 <b>AS ABAP</b> 上、嵌入 ERP：部分元件在 ERP 下層可被 ERP 重用，部分在上層並重用 ERP 既有驗證；UI 是 <b>Web Dynpro ABAP</b>（經 Portal 或 NWBC）；用 EIM 的模糊搜尋、Data Services 驗證地址</td></tr>
+      <tr><td><b>Change Request</b></td><td>新增或變更請求會產生 change request——一個容器，把預定變更放在<b>暫存區（staging）</b>、與 active 主資料分開，<b>最終核准後才進正式</b>；可儲存不完整資料；依 workflow template 流轉</td></tr>
+      <tr><td>驗證</td><td>維護過程持續用既有業務邏輯與客製設定驗證，可加自訂規則（BRFplus）</td></tr>
+      <tr><td>Workflow</td><td>用 SAP Business Workflow；線性或<b>分散式</b>模型（各部門只維護、核准自己負責的資料）；角色如 Business User、Master Data Steward</td></tr>
+      <tr><td>重用與擴充</td><td>可直接把 Business Suite 既有的擴充欄位納入 MDG 資料模型</td></tr>
+      <tr><td>搜尋</td><td>建立前先全面搜尋避免重複：搜尋方法（含 fuzzy）、儲存搜尋、條件組合、結果排序</td></tr>
+      <tr><td><b>Edition</b></td><td>財務主資料用，控制核准資料的<b>生效日</b>：先建 edition → change request 指派到 edition → 全部核准或撤回後 release → release 後不能再加 → 複寫可由單一 CR 或整個 edition 觸發</td></tr>
+      <tr><td><b>DRF</b>（Data Replication Framework）</td><td>自動或手動複寫到 SAP 與非 SAP；技術：<b>ALE／IDoc</b>、SOA 服務、RFC、File、SCM 用 <b>CIF</b>、CRM／SRM 用 middleware；可用過濾條件只送部分資料</td></tr>
+      <tr><td><b>Key mapping</b></td><td>追蹤<b>既有</b>主資料在各分散系統中<b>不同</b>的歷史鍵值，確保中央只維護一份</td></tr>
+      <tr><td><b>Value mapping</b></td><td>接收系統對屬性值的理解不同時做轉換（例：物料類型 FERT 在另一系統叫別的代碼）</td></tr>
+      <tr><td>部署</td><td>① 全新專用的主資料 hub（完整 ERP 系統，只用 MDG 功能）② 裝在既有 ERP 上、針對特定網域（可與業務共存於同一系統，啟用 MDG business function）</td></tr>
+    </tbody>
+  </table>
+  <div class="note"><b>Unit 5 答案</b>：第 1 題 MDG 能做 <b>A 建立、C 維護、D 複寫</b>（B 合併是 NetWeaver MDM 的強項）；第 2 題「只能單獨部署」→ <b>錯</b>；第 3 題 key mapping → <b>D</b>（追蹤既有主資料的不同歷史鍵值）；第 4 題 → <b>對</b>。</div>
+  <div class="warn"><b>2026 現況</b>：NetWeaver MDM 已終止，MDG 改名 <b>SAP Master Data Governance on S/4HANA</b>（另有雲端版 MDG, cloud edition），UI 轉向 Fiori／RAP。S/4HANA 的客戶與供應商一律走 <b>Business Partner（BP）</b>，MDG 的 BP 網域就是治理 BUT000 系列與 CVI 同步出來的 KNA1／LFA1（見 <a href="#ch04-1">4-1 章</a>、<a href="#ch01-3">1-3 章</a>）。寫主資料介面時，<b>用列舉的代碼（物料類型、帳戶群組）比用區間篩選安全</b>——value mapping 的存在本身就說明「同一個值在不同系統意義不同」。</div>
+
+  <h3 id="ch05-24-20">20. Solution Manager（ALM）與 Information Lifecycle Management（ILM）</h3>
+  <p><b>ALM 的挑戰</b>（p359–p361）：流程與應用透明度、創新設計、異質環境的測試與驗證、跨技術堆疊的問題分析、升級、變更管理。SAP 的答案是 <b>SAP Enterprise Support</b>，在應用層由 <b>Solution Manager</b> 提供：裝在客戶端的中央平台，映射並文件化整個方案（SAP 與非 SAP），是設計、設定、測試的集中入口（Unit 6 第 1 題：對）。</p>
+  <ul>
+    <li><b>導入路線五階段</b>：<b>Project Preparation → Business Blueprint → Realization → Final Preparation → Go Live &amp; Support</b>（Unit 6 第 2 題答案）。路線圖中附加速器（白皮書、範本、程序、連結、交易）；訊息處理系統追蹤問題。</li>
+    <li><b>Business Blueprint</b>：階層式專案結構（業務情境→流程→步驟）與文件；此結構是設定與測試計畫的基礎。<b>Business Process Repository（BPR）</b>是<b>可重用</b>的預定義流程資訊集合（情境文件、交易指派、IMG 指派、設定指南、BC Sets、預設測試案例）——所以第 3 題「一次性、使用者預定義」是<b>錯</b>。7.1 可接 SAP BPM 做 Model-to-Execution。</li>
+    <li><b>Realization</b>：以流程為導向（非元件導向）設定與測試；<b>Customizing Distribution</b> 同步 ECC 與 CRM 等系統的 IMG 設定（銷售組織、公司代碼、夥伴角色…）；傳輸可同時處理 ABAP、Java、.NET、C++。</li>
+    <li><b>測試與轉換</b>：<b>SAP TDMS</b>（Test Data Migration Server）只取正式系統的部分資料建測試系統（例：只取某段期間或某公司代碼的交易資料）。</li>
+    <li><b>CDMC</b>（Custom Development Management Cockpit）：<b>Clearing Analysis</b>（找出沒在用、可刪的客製物件）與 <b>Upgrade／Change Impact Analysis</b>（升級會影響哪些客製）——對 ABAP 開發者最有感的功能。<b>Solution Documentation Assistant</b>：驗證既有方案文件、找出實際在跑的關鍵流程。</li>
+    <li><b>維運（ITIL）</b>：ITIL 說「要做什麼」，Solution Manager 說「怎麼做」。服務：GoingLive Check、<b>EarlyWatch</b>；<b>Root Cause Analysis</b> 四個跨元件診斷：<b>E2E Change Analysis</b>（「昨天好好的今天壞了，改了什麼？」）、<b>E2E Workload Analysis</b>、<b>E2E Exception Analysis</b>（log、dump）、<b>E2E Trace Analysis</b>——第 4 題答案 <b>A、B、D、E</b>（沒有「Error Analysis」）。Solution Monitoring、<b>BPMon</b>（Business Process &amp; Interface Monitoring）、Service Desk 事件管理（可轉 SAP Active Global Support）、<b>ChaRM</b>（Change Request Management）、7.0 EhP1 起的 <b>Quality Gate</b>、<b>CTS+</b>、RUN SAP 標準。</li>
+  </ul>
+  <p><b>ILM</b>（p385–p394）：ERP 6.0 EhP4 起、<b>需授權</b>、用 <span class="tcode">SFW5</span> 啟用、最低 NetWeaver 7.0 EhP1。驅動因素：法規與風險管理、系統整併、TCO。三大支柱：</p>
+  <table>
+    <thead><tr><th>支柱</th><th>內容</th></tr></thead>
+    <tbody>
+      <tr><td><b>Data Archiving</b></td><td>核心。用應用提供的<b>封存物件</b>（<span class="tcode">SARA</span>），寫出程式依業務條件判斷可否移出、寫入檔案後由刪除程式從線上資料庫刪除；檔案經 <b>ArchiveLink</b> 移到長期儲存。ILM 版的封存程式另支援資料銷毀與 snapshot</td></tr>
+      <tr><td><b>Retention Management</b></td><td><b>IRM</b>（Information Retention Manager，<span class="tcode">IRMPOL</span>）定義保存政策與規則（最短／最長保存期、單位、起算點、儲存位置），可涵蓋非 SAP 資料甚至紙本；ILM 相容儲存以 <b>WebDAV</b> 介面連接，建議用 SAP 認證的類 <b>WORM</b> 儲存（2008 年 4 月起有認證）；<b>Legal Case Management</b> 設 <b>legal hold</b>，被凍結的資料即使過了保存期也不會刪除；資料銷毀 <span class="tcode">ILM_DESTRUCTION</span></td></tr>
+      <tr><td><b>System Decommissioning</b></td><td>舊系統資料抽出放入 <b>Retention Warehouse</b>，系統休眠；稽核時把資料打包、在 BW 產生結構並載入供查詢，稽核結束後可再刪除；教材估計第五套以後每套 ROI 不到六個月</td></tr>
+    </tbody>
+  </table>
+  <div class="warn"><b>2026 現況</b>：Solution Manager 7.2 主流維護到 2027 年底（延長維護請以 SAP 最新公告為準），繼任者是雲端的 <b>SAP Cloud ALM</b>；Business Blueprint／BPR 早在 7.2 就改成 Solution Documentation 與 Process Management；ASAP 方法論換成 <b>SAP Activate</b>。CDMC 的精神在 S/4 轉換時由 <b>Custom Code Migration app、ATC、SCMON／SUSG（使用量統計）</b>延續——升級前先清掉沒人用的 Z 程式，是成本最低的升級準備。封存物件與 ILM 在 S/4HANA 仍是標準功能。</div>
+
+  <h3 id="ch05-24-21">21. NetWeaver 安全：認證與 SSO、授權、稽核、加密、身分管理</h3>
+  <p><b>認證與 SSO</b>（p400–p402）依用戶端分：</p>
+  <table>
+    <thead><tr><th>用戶端</th><th>機制</th></tr></thead>
+    <tbody>
+      <tr><td>SAP GUI for Windows</td><td>User ID＋密碼（RFC、DIAG 協定，建議用安全版本）、<b>SNC</b>、<b>Kerberos</b>（Windows 整合驗證）、X.509、<b>2-Factor</b>（知道的、擁有的、本身的三要素中取兩個以上）</td></tr>
+      <tr><td>瀏覽器／AS Java／Portal</td><td>密碼、X.509、<b>logon ticket</b>（MYSAPSSO2 cookie，登出或關瀏覽器即刪除）、JAAS login module＋<b>SAML 1.x</b>、Kerberos／<b>SPNego</b>、HTTP header 變數（外部 WAM 產品）、<b>SAML 2.0 身分聯合</b>（persistent name ID 自動對應帳號，可自動建帳號）、OpenID、OAuth（教材當時仍在開發中）</td></tr>
+      <tr><td>Web Services</td><td>User ID＋密碼、X.509、<b>SAML token</b></td></tr>
+    </tbody>
+  </table>
+  <p>使用 X.509 時 AS ABAP 必須啟用 SNC，並用本地或信任中心的 <b>PKI</b> 驗證、核發、更新、撤銷憑證（憑證管理 <span class="tcode">STRUST</span>）。<b>SNC Client Encryption</b>：SAP GUI for Windows 7.2 patch level 7 以上可免費加密 GUI 與 AS ABAP 之間的通訊（基於 Microsoft Kerberos，<b>不提供 SSO</b>，見 Note 1643878）。</p>
+  <p><b>授權</b>（p402–p404）：認證之後檢查授權，決定能用哪些交易與應用、能做什麼（保護業務資料）；可見資料依公司代碼、工廠等組織屬性。角色可直接指派（<span class="tcode">SU01</span>、<span class="tcode">SU10</span>、<span class="tcode">PFCG</span>），但人員異動時容易留下錯誤指派；解法是 <b>HR 組織規劃的間接角色指派</b>：角色掛在職位（position），員工透過組織規劃繼承，調職就自動換角色。</p>
+
+  <pre><code class="abap">*&amp;---------------------------------------------------------------------*
+*&amp; 安全程式設計三件事：① 明確 AUTHORITY-CHECK ② 動態 SQL 白名單＋跳脫
+*&amp; ③ 不要讓使用者輸入直接變成欄位名、表名或 WHERE 字串
+*&amp;---------------------------------------------------------------------*
+PARAMETERS: p_vkorg TYPE vbak-vkorg OBLIGATORY,
+            p_sort  TYPE string LOWER CASE DEFAULT `VBELN`,
+            p_kunnr TYPE string LOWER CASE.
+
+START-OF-SELECTION.
+  " ① 權限：銷售組織層級（顯示＝03）。沒有這段，任何人都能看全公司訂單
+  AUTHORITY-CHECK OBJECT 'V_VBAK_VKO'
+    ID 'VKORG' FIELD p_vkorg
+    ID 'VTWEG' DUMMY
+    ID 'SPART' DUMMY
+    ID 'ACTVT' FIELD '03'.
+  IF sy-subrc &lt;&gt; 0.
+    MESSAGE |沒有銷售組織 { p_vkorg } 的顯示權限（SU53 查缺什麼）| TYPE 'E'.
+  ENDIF.
+
+  TRY.
+      " ② 動態排序欄位：只允許白名單內的欄位名
+      DATA(lv_sort) = cl_abap_dyn_prg=&gt;check_whitelist_str(
+                        val       = to_upper( p_sort )
+                        whitelist = `VBELN,ERDAT,KUNNR,NETWR` ).
+
+      " ③ 動態條件中的值：用 quote( ) 加引號並跳脫單引號，防 SQL Injection
+      DATA(lv_where) = COND string(
+        WHEN p_kunnr IS INITIAL THEN `vkorg = @p_vkorg`
+        ELSE |vkorg = @p_vkorg AND kunnr = { cl_abap_dyn_prg=&gt;quote( to_upper( p_kunnr ) ) }| ).
+
+      SELECT vbeln, erdat, kunnr, netwr, waerk
+        FROM vbak
+        WHERE (lv_where)
+        ORDER BY (lv_sort)
+        INTO TABLE @DATA(lt_vbak)
+        UP TO 500 ROWS.
+
+      cl_salv_table=&gt;factory( IMPORTING r_salv_table = DATA(lo_alv)
+                              CHANGING  t_table      = lt_vbak ).
+      lo_alv-&gt;display( ).
+
+    CATCH cx_abap_not_in_whitelist.
+      MESSAGE |排序欄位 { p_sort } 不在允許清單| TYPE 'E'.
+    CATCH cx_sy_dynamic_osql_error cx_salv_msg INTO DATA(lx_err).
+      MESSAGE lx_err-&gt;get_text( ) TYPE 'E'.
+  ENDTRY.</code></pre>
+  <pre><code class="sql">// CDS 的權限要寫在 DCL（Access Control），@AccessControl.authorizationCheck: #CHECK 才有效
+@EndUserText.label: '銷售訂單依銷售組織授權'
+@MappingRole: true
+define role ZC_SapnwSalesOrder {
+  grant select on ZC_SapnwSalesOrder
+    where ( vkorg ) = aspect pfcg_auth( V_VBAK_VKO, VKORG, ACTVT = '03' );
+}</code></pre>
+  <p><b>網路拓撲與稽核</b>（p407–p408）：對外存取時外層 <b>DMZ</b> 放應用閘道或 proxy（常用 <b>SAP Web Dispatcher</b>），內層 DMZ 放 AS Java／Portal 等入口，最高安全區放資料庫、後端系統與使用者儲存庫。<b>Security Audit Log</b>：記錄成功／失敗登入、使用者／群組／角色的建立與修改、ABAP 交易啟動成敗（傳統 <span class="tcode">SM19</span> 設定、<span class="tcode">SM20</span> 查看；NetWeaver 7.50 起改用 <span class="tcode">RSAU_CONFIG</span>、<span class="tcode">RSAU_READ_LOG</span>）。<b>Audit Information System（AIS）</b>：稽核人員的工具箱，由一組單一角色與標準程式組成（舊版 <span class="tcode">SECR</span>，新版改為角色式）。</p>
+  <p><b>加密與簽章</b>（p408–p411）：網路傳輸不安全，敏感資料要加密；數位簽章確保文件真實。<b>SSF</b>（Secure Store and Forward）API 在儲存或傳輸前把資料包成安全格式，確保完整性、真實性、機密性；搭配 Secure Login Library。<b>開發安全</b>：SAP 以 <b>PIL</b>（Product Innovation Lifecycle）的 quality gate 管控安全開發；AS Java 7.02 SP03 與 AS ABAP 7.02 SP08 通過 <b>Common Criteria EAL 4+</b>。客製開發的安全設計：認證與身分傳遞、安全 session、通訊協定（HTTPS、SNC）、授權概念、日誌與稽核追蹤；程式規範見 help.sap.com 的 Security Programming Guide。</p>
+  <p><b>安全服務</b>（p414–p418）：<b>Security Patch Day</b>（<b>每月第二個星期二</b>發佈安全 Note）、<b>Security Optimization Service（SOS）</b>（內部：關鍵權限組合；外部：存取路徑與認證方式）、EarlyWatch Alert 安全檢查（Note 863362）、<b>System Recommendations</b>（依系統找出該打的 Note，可直接建變更請求）、<b>Configuration Validation</b>。安全問題回報：開客戶 ticket 或寄 secure@sap.com（用 PGP 加密）。</p>
+  <p><b>SAP Single Sign-On 產品</b>（p418–p423）：<b>Secure Login</b>（Secure Login Server 提供 X.509v3 憑證＝開箱即用 PKI 與 Web Client；Secure Login Library 為 ABAP 的加密函式庫，同時支援 X.509 與 Kerberos；Secure Login Client 提供安全 token）、<b>Enterprise SSO</b>（替舊系統自動填帳密）、<b>Identity Federation</b>（NetWeaver 7.02 起，跨網域 SSO；各公司只維護自己的身分，彼此信任 IdP；Business Suite 當 SAML Service Provider）。瀏覽器 SSO 架構：使用者被導向 <b>IdP</b> 驗證一次後，可存取所有 <b>Service Provider</b>（<span class="tcode">SAML2</span> 交易設定）。</p>
+  <p><b>身分管理</b>（p423–p430）：<b>SAP Identity Management 7.2</b>——集中佈建使用者，整合 Active Directory、Exchange、Lotus Notes 等；與 HCM 整合，依員工建立與狀態變更事件自動處理帳號；功能分 identity provisioning 與 identity federation；<b>Virtual Directory Server</b> 把多個目錄與資料庫邏輯呈現成一棵虛擬樹；業務角色概念。<b>SAP BusinessObjects Access Control</b>：<b>職責分離（SoD）</b>風險分析；與 IdM 組成 <b>Compliant Identity Management</b>——使用者申請 → 核准者核准 → IdM 詢問 Access Control 有無 SoD 風險 → 依結果核准或拒絕（可有覆核機制）。這也是 Unit 7 第 1 題的答案：Access Control 在 IdM 中的角色是<b>達成合規的身分管理</b>。<b>IdM 8.0 新功能</b>：Eclipse 為基礎的 <b>Developer Studio</b>（取代 Identity Center Management Console，多人同時開發 configuration package 互不覆蓋）、Provisioning Framework 以 package 發佈、<b>SuccessFactors connector</b>（雙向身分傳遞）。</p>
+  <div class="warn"><b>2026 現況</b>：SAP Identity Management 主流維護到 2027 年底、延長到 2030 年，SAP 建議遷移到 <b>SAP Cloud Identity Services</b>（Identity Authentication／Identity Provisioning）並與 <b>Microsoft Entra ID</b> 整合；Access Control 的現行版本是 <b>SAP GRC Access Control 12.0</b>，雲端有 SAP Cloud Identity Access Governance。ABAP 開發者的責任沒變：<b>每支報表與介面都要做 AUTHORITY-CHECK（或 CDS DCL）</b>，RFC 函數要注意 <b>S_RFC</b> 與 UCON（見 <a href="#ch05-12">5-12 章</a>）。Unit 7 第 2 題與 Unit 6 第 1 題重複（教材排版疏失），答案為對。</div>
+
+  <h3 id="ch05-24-22">22. 2015 教材 → 2026 現況：技術去留總對照</h3>
+  <p>把整本 SAPNW 的產品名稱對照到今天，方便讀顧問文件或舊專案文件時快速換算：</p>
+  <table>
+    <thead><tr><th>教材中的名稱</th><th>狀態</th><th>2026 對應／替代</th><th>ABAP 開發者要做的事</th></tr></thead>
+    <tbody>
+      <tr><td>AS ABAP＋AS Java dual stack</td><td>NW 7.5 起不支援</td><td>分離的 ABAP、Java 系統；S/4HANA 純 ABAP</td><td>—</td></tr>
+      <tr><td>Open SQL／HANA View／Stored Procedure</td><td>演進</td><td>ABAP SQL、<b>CDS View（Entity）</b>、<b>AMDP</b></td><td>Code pushdown；一定要 ORDER BY</td></tr>
+      <tr><td>SE80 為主</td><td>仍可用</td><td><b>ADT（Eclipse）</b>為主，CDS／RAP 只能在 ADT 寫</td><td>見 <a href="#ch05-5">5-5 章</a></td></tr>
+      <tr><td>PI dual stack、ccBPM</td><td>已退場</td><td>PO 7.5（至 2027／2030）→ <b>Integration Suite</b></td><td>Proxy、IDoc、OData API 照用</td></tr>
+      <tr><td>HCI、HANA Cloud Platform</td><td>改名</td><td>Cloud Integration、<b>SAP BTP</b></td><td>雲地連線用 Cloud Connector</td></tr>
+      <tr><td>Enterprise Services（SOAP）</td><td>仍存在</td><td>SOAP API＋OData／REST（Business Accelerator Hub）</td><td>SOAMANAGER、SRT_UTIL</td></tr>
+      <tr><td>Business Workflow</td><td>仍存在</td><td>Workflow＋Flexible Workflow；雲端 Build Process Automation</td><td>ABAP 類別事件（IF_WORKFLOW）</td></tr>
+      <tr><td>SAP BPM、BRM（Java）</td><td>隨 PO 退場</td><td>Build Process Automation；ABAP 用 <b>BRFplus</b></td><td>規則放 BRFplus，別寫死</td></tr>
+      <tr><td>AIF</td><td>仍存在、內建於 S/4</td><td>/AIF/ERR</td><td>介面錯誤給業務自己處理</td></tr>
+      <tr><td>Enterprise Portal、HANA Cloud Portal</td><td>EP 至 2027；HCP 已退</td><td><b>SAP Build Work Zone</b>、Fiori launchpad</td><td>—</td></tr>
+      <tr><td>Web Dynpro／FPM</td><td>維護中、不再是主流</td><td>Fiori Elements＋RAP</td><td>見 <a href="#ch05-23">5-23 章</a></td></tr>
+      <tr><td>SAP Gateway（SEGW）</td><td>仍可用</td><td><b>RAP</b>（1909／7.54 起）、OData V4</td><td>新服務優先 RAP</td></tr>
+      <tr><td>Fiori（教材時 1.0，三種 app）</td><td>演進</td><td>Fiori 3／Horizon、Fiori Elements、分析用 CDS Query</td><td>—</td></tr>
+      <tr><td>Screen Personas 3.0</td><td>仍存在</td><td>同左（Slipstream Engine）</td><td>Dynpro 欄位 ID 別亂改</td></tr>
+      <tr><td>SMP、Kapsel、Fiori Client、Afaria</td><td>已退場</td><td>SAP Mobile Services、Mobile Start、MDK</td><td>—</td></tr>
+      <tr><td>BW、BEx、BWA、TREX</td><td>BW 7.5 至 2027；BWA／TREX 已退</td><td>BW/4HANA、Datasphere、SAC、Analysis for Office</td><td>CDS 分析模型＋ODP 擷取</td></tr>
+      <tr><td>HANA Attribute／Analytic View、XS Classic</td><td>過時</td><td>Calculation View（HDI）、XSA／CAP</td><td>—</td></tr>
+      <tr><td>NetWeaver MDM</td><td>已退場</td><td><b>MDG</b>（S/4HANA、cloud edition）</td><td>主資料一律 BP</td></tr>
+      <tr><td>Solution Manager 7.1／7.2</td><td>7.2 至 2027</td><td><b>SAP Cloud ALM</b>、SAP Activate</td><td>ATC、SCMON 清理 Z 程式</td></tr>
+      <tr><td>ILM、Data Archiving</td><td>仍存在</td><td>同左</td><td>自建 Z 表要考慮封存與保存期</td></tr>
+      <tr><td>SAP IdM、BO Access Control</td><td>IdM 至 2027／2030</td><td>Cloud Identity Services、GRC 12</td><td>AUTHORITY-CHECK／DCL 不可少</td></tr>
+      <tr><td>SM19／SM20</td><td>7.50 起改</td><td>RSAU_CONFIG／RSAU_READ_LOG</td><td>—</td></tr>
+    </tbody>
+  </table>
+  <div class="tip">讀舊專案文件時的判斷法：只要看到 <b>dual stack、ccBPM、BEx、BWA、TREX、HCI、HCP、SMP、Guided Procedures</b>，就代表那份設計至少是 2016 年以前的，重新評估時先問「今天在 S/4HANA 的標準功能或 BTP 服務能不能直接做」——<b>先標準、再客製</b>。</div>
+
+  <h3 id="ch05-24-qa">練習與自我檢核</h3>
+  <ol>
+    <li><b>欄式儲存</b>：為什麼「每個國家的總金額」這種查詢在欄式儲存特別快？列式儲存要多做什麼？<br><i>要點：欄式只讀國家與金額兩欄，且同欄資料型別一致、易壓縮、易向量化彙總；列式要逐列讀完整 tuple。延伸：這也是 SELECT 一定要明列欄位、不要 SELECT * 的理由。</i></li>
+    <li><b>Code Pushdown</b>：把「SELECT * 回 ABAP 再 LOOP + COLLECT」改寫成 pushdown 版本，並說明至少三個好處。<br><i>要點：用 ABAP SQL 的 SUM／COUNT／GROUP BY（或 CDS、AMDP）；好處：傳輸資料量少、DB 平行運算、應用伺服器記憶體與 CPU 負擔低；記得 ORDER BY。</i></li>
+    <li><b>不穩定的結果</b>：一支報表在 Oracle 上每次結果一樣，搬到 HANA 後「取第一筆」的欄位值時好時壞，原因與解法？<br><i>要點：HANA 沒有預設排序（欄式、平行掃描）；任何取第一筆、SELECT SINGLE 多筆符合、UP TO 1 ROWS 都要明確 ORDER BY。Casper 的成本評價案例：H（item category）與 E（cost component）兩種角度欄位數不同，沒排序就一下抓 H 一下抓 E，結論是固定抓 H。</i></li>
+    <li><b>AS 元件</b>：請說明 dispatcher、work process、ICM、SAP Gateway、Message Server 各自的職責，以及觀察它們的 TCODE。<br><i>要點：dispatcher 分派請求（每 instance 一個，忙時排 queue）；WP 執行邏輯（SM50／SM66）；ICM 處理 HTTP 等協定並判斷送 ABAP 或 Java（SMICM）；Gateway 提供 RFC（SMGW）；Message Server 負載平衡與 instance 間訊息，每系統一個（SM51、SMMS）。</i></li>
+    <li><b>ABAP vs Java 開發</b>：為什麼說 ABAP 是「集中式」而 Java 是「分散式」開發？NWDI 的 DTR、CBS、CMS 各解決什麼？<br><i>要點：ABAP 的開發與執行環境都在 AS ABAP、未啟用前不影響他人、CTS/TMS 傳輸；Java 在本機開發無共用儲存。DTR 版本控制、CBS 集中建置、CMS 傳輸；CTS+ 讓 CTS 也能傳部分 Java 物件。</i></li>
+    <li><b>增強 vs 修改</b>：客戶要求在標準交易加一個檢查，請依成本由低到高列出可選方案；為何不建議「複製標準程式到 Z」？<br><i>要點：標準設定 → BAdI／Enhancement Spot → Enhancement Point → 修改（需 object key，SAP 不再支援、每次升級要 SPAU）。Z 副本不會跟著 SAP 更新，S/4 簡化項目一變就壞。</i></li>
+    <li><b>WSDL／UDDI／SOAP</b>：判斷真假——「UDDI 是呼叫 web service 的協定」「SOAP 是網路註冊表」「WSDL 描述 web service」。<br><i>要點：前兩句錯（UDDI 是註冊表、SOAP 是協定），第三句對。</i></li>
+    <li><b>Proxy</b>：非同步 outbound proxy 呼叫後資料沒送出，SXMB_MONI 也看不到，最可能漏了什麼？同步 web service consumer 要捕捉哪兩種例外？<br><i>要點：漏了 COMMIT WORK。例外：CX_AI_SYSTEM_FAULT（系統、連線層）與 CX_AI_APPLICATION_FAULT（服務端業務錯誤）；連線設定在 SOAMANAGER 的 logical port。</i></li>
+    <li><b>Enhancement Package 與 Switch Framework</b>：ERP 的 EhP 與 NetWeaver 的 EhP 在啟用上有何不同？在 SFW5 啟用 business function 前要注意什麼？<br><i>要點：ERP EhP 要用 SFW5 開 business function 才生效；NetWeaver EhP 匯入即生效。多數 business function 不可逆，先讀文件（相依與使用的 enterprise services）並在沙盒測試。</i></li>
+    <li><b>流程工具選型</b>：「單一系統內的採購申請核准」「跨系統、無人工介入的訊息編排」「跨系統且需要人工任務的流程」分別對應教材的哪個工具？今天呢？<br><i>要點：Business Workflow（今日照用＋Flexible Workflow）；ccBPM（已退場→Integration Suite）；SAP BPM（→ SAP Build Process Automation）。Guided Procedures 已被 BPM 取代。</i></li>
+    <li><b>BPMN</b>：sequence flow 與 message flow 的使用範圍差在哪？BPMN 2.0 的五大核心元素？<br><i>要點：sequence flow 只在單一 pool 內，pool 之間用 message flow；五大元素：Flow objects、Data、Connecting objects、Pools（swim lanes）、Artifacts。</i></li>
+    <li><b>BRM 動作</b>：Assert、Assign、Execute、Retract、Re-evaluate 中，哪些作用於應用、哪些影響規則評估？ABAP 端對應的規則引擎是什麼？<br><i>要點：Execute、Assign 作用於應用；Assert、Retract、Re-evaluate 控制規則引擎。ABAP 端用 BRFplus（CL_FDT_FUNCTION_PROCESS=&gt;PROCESS）。</i></li>
+    <li><b>Fiori 架構</b>：Central Hub 與 Embedded 部署差在哪？為什麼 Gateway 與後端的使用者名稱必須相同？<br><i>要點：Hub 是 UI 層＋Gateway 在獨立 front-end server；Embedded 是 Gateway 與業務系統同一台（S/4HANA 常見）。OData 請求以同一身分在後端執行授權檢查，名稱不同就對不上 PFCG 角色（用 CUA／IdM 同步）。</i></li>
+    <li><b>OData 分頁</b>：在 GET_ENTITYSET 實作 $top／$skip 時，最容易漏掉哪一個子句？後果是什麼？<br><i>要點：ORDER BY。沒有排序時 HANA 每次回傳順序可能不同，第 2 頁會重複或漏掉第 1 頁資料；OFFSET 也需要 ORDER BY。</i></li>
+    <li><b>Screen Personas</b>：Personas 與 Fiori 的關鍵差異？它能不能改 Web Dynpro 畫面？<br><i>要點：Personas 內建於 kernel（ITS），個人化既有 Dynpro 交易，不寫程式；Fiori 是重新設計的 app。Personas 只支援經典 Dynpro，不支援 Web Dynpro、CRM/SRM Web UI。</i></li>
+    <li><b>BW 基本觀念</b>：key figure、characteristic、InfoObject、InfoCube、DSO、MultiProvider 各是什麼？一台 BWA 可以給幾套 BW 用？<br><i>要點：量值／參照值／最小資訊單元／星狀綱要的彙總提供者／文件層明細提供者／合併多個 provider 供單一查詢使用。一套 BW 只能用一台 BWA，但一台 BWA 可服務多套 BW。</i></li>
+    <li><b>HANA 建模</b>：Attribute、Analytic、Calculation View 的差別？今天在 S/4HANA 的 ABAP 專案該用什麼？<br><i>要點：Attribute＝主資料情境、不彙總；Analytic＝量值、單一 fact table；Calculation＝多 fact table、進階計算。前兩者已過時；ABAP 專案用 CDS（分析用 @Analytics 註解），複雜程序邏輯才用 AMDP（自己處理 MANDT 與權限）。</i></li>
+    <li><b>MDG</b>：change request 與 edition 各解決什麼問題？key mapping 與 value mapping 有何不同？<br><i>要點：CR 把變更放在 staging、核准後才進 active；edition 控制財務主資料的生效日。key mapping 追蹤既有主資料在各系統的不同鍵值；value mapping 轉換屬性值（如物料類型代碼）。</i></li>
+    <li><b>Solution Manager</b>：導入五階段？Root Cause Analysis 的四個 E2E 診斷？CDMC 的兩個分析對 ABAP 團隊有什麼用？<br><i>要點：Project Preparation、Business Blueprint、Realization、Final Preparation、Go Live &amp; Support；E2E Change、Workload、Exception、Trace（沒有 Error Analysis）；Clearing Analysis 找可刪的 Z 物件、Upgrade/Change Impact Analysis 找升級受影響的客製——今日用 SCMON／SUSG＋ATC 延續。</i></li>
+    <li><b>ILM</b>：三大支柱是什麼？legal hold 與保存期衝突時以何者為準？<br><i>要點：Data Archiving、Retention Management、System Decommissioning。legal hold 優先，被凍結的資料即使過了保存期也不會被銷毀，直到解除 hold。</i></li>
+    <li><b>安全程式設計</b>：一支報表讓使用者輸入排序欄位與客戶號碼組成動態 SQL，請列出至少三個安全措施。<br><i>要點：AUTHORITY-CHECK（或 CDS DCL）；欄位名用 CL_ABAP_DYN_PRG=&gt;CHECK_WHITELIST_STR 白名單；值用 QUOTE( ) 跳脫或改用主機變數 @；限制筆數；捕捉 CX_SY_DYNAMIC_OSQL_ERROR；SU53 協助使用者查缺少的權限。</i></li>
+    <li><b>列舉 vs 區間</b>：在 BRFplus decision table、MDG 複寫過濾條件、或報表選擇條件中，為什麼 Casper 建議用多筆 EQ 列舉而不是 BT 區間？<br><i>要點：區間比的是字典序而不是業務語意；遇到號碼段不連續、ALPHA 前導零（'0000001000' vs '1000'）、編碼規則改過，就會漏抓或多抓。列舉明確、可稽核。</i></li>
+    <li><b>技術去留</b>：舊文件寫「用 HCI 把 SuccessFactors 員工資料送進 HCM，Portal 用 MSS business package，報表在 BEx」，請改寫成 2026 年的說法。<br><i>要點：SAP Integration Suite（Cloud Integration）的預包 iFlow；Build Work Zone／Fiori launchpad 上的 MSS Fiori app；報表改 SAC 或 Analysis for Office（資料來自 BW/4HANA 或 S/4 的 CDS 分析查詢）。</i></li>
+  </ol>
+</section>

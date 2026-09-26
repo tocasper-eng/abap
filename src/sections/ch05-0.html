@@ -1,0 +1,527 @@
+<section class="chapter" id="ch05-0" data-title="原廠教材專區導覽：强晟 19 本筆記 × SAP 原廠教材">
+  <h2>第 5-0 章 原廠教材專區導覽：强晟 19 本筆記 × SAP 原廠教材</h2>
+  <p class="lede">第五部把 <span class="src">L28_强晟_19本原廠教材筆記_含原廠教材</span> 資料夾裡的 38 個檔案——强晟 2007／2008 年的 19 本簡體中文自學筆記，加上 19 份 SAP 原廠英文教材與說明文件——逐課整理成 24 章。這一章是專區的「目錄與地圖」：告訴你每個檔案是什麼、對應哪一章、BC4xx 課程之間的先修關係、三條依職能設計的閱讀路線，以及哪些 2007 年的技術到了 S/4HANA 已經過時、該改用什麼。</p>
+
+  <div class="meta">
+    <div><b>涵蓋課程</b>BC400、BC401、BC402、BC403、BC404、BC405、BC406、BC407、BC410、BC412、BC414、BC415、BC420、BC425、BC427、BC430、BC440、BC460、BC470、BC480、BC490、BIT750、NET310、SAPNW、IDoc Interface（4.6B 說明文件）</div>
+    <div><b>認證與組合課</b>TAW10（Part I／Part II）、TAW11e、TAW12、C_TAW12、C_ABAPD</div>
+    <div><b>版本座標</b>R/3 4.6A／4.6C → ECC 6.0（NetWeaver 7.0）→ S/4HANA 1809（ABAP Platform 1809，SAP_BASIS 7.53）</div>
+  </div>
+
+  <h3 id="ch05-0-01">1. 專區緣起：强晟是誰，這批筆記為什麼值得留</h3>
+  <p><b>强晟</b>（筆記署名 qiangsheng，部落格 qiangsheng.cnblogs.com）是 2006 年前後進入 SAP 領域的中國大陸企業內部開發人員。他在 BC400 筆記前言中說明了寫這套筆記的原因，重點整理如下（原文為簡體，已轉為台灣用語）：</p>
+  <ul>
+    <li>他從「去年 5 月」開始接觸 SAP，一年多下來發現網路上的資料很少，中文資料更少；最好的學習來源是 <b>SAP Help</b> 與 <b>標準教材</b>。</li>
+    <li>SAP Help 是隨軟體發布的完整線上說明，但太龐大，讓人望而卻步；<b>標準教材</b>則是以教學為目的編寫，分 <b>Level 100、200、300</b> 三個難度等級（100 最基礎、200 較深入、300 最進階），反而更適合學習。</li>
+    <li>SAP 自稱標準教材不適合自學，主因是課堂示範要在 SAP 專用訓練伺服器上進行、教材本身不附範例原始碼；但他認為教材本身寫得清楚易懂。</li>
+    <li>「假如一開始顧問公司就提供標準教材的訓練，我們內部團隊的實力會強得多。」——為了讓後來的入門者不重蹈覆轍，他把自學筆記公開分享。</li>
+  </ul>
+  <p>從各本前言的日期可以還原他的學習節奏：2007 年 5 月 29 日完成 BC400，接著 BC401（6/23）、BC402（6/23）、BC404（7/1）、BC405（7/2）、BC406（7/9）、BC407（7/13）、BC410（7/19）、BC412 與 BC414（9/19）、BC415（11/9）、BC430（12/9）、BC470（12/17）、BC480（12/23），2008 年再完成 BC420（3/18）、BC425（4/6）、BC490（5/5）、BC440（6/18）、BC427（6/23）。<b>一年多、19 本、約 3,900 頁</b>。他在 BC402 前言自承：原廠教材一半篇幅是原始碼，筆記不可能全抄，實際教學內容約佔一半，一本大約 5～8 天讀完。</p>
+  <p>這批筆記的<b>時代背景</b>是 R/3 4.6C／R/3 Enterprise 4.7 過渡到 <b>ECC 6.0（SAP NetWeaver 7.0）</b>的時期：他手上的 BC401 是 2002 年針對 R/3 4.6A 的版本，BC402 是 2001 年針對 4.6C 的版本；BC427 前言則說明 Enhancement Framework 是「SAP NetWeaver 7.0 平台新增」。所以筆記裡的程式碼大量使用 <span class="kw">TABLES</span>、<span class="kw">WITH HEADER LINE</span>、<span class="kw">SELECT … ENDSELECT</span>、<span class="kw">REUSE_ALV_*</span> 這類寫法——本專區各章一律改寫成 S/4HANA 可用的現代 ABAP，舊寫法只在對照表中以文字說明。</p>
+  <p>資料夾中另附 SAP 原廠英文 <b>Participant Handbook</b>：版次標示為 <b>Col15～Col19</b>（Course Version 15～19，BIT750 為 03），版權年多為 2022（BC425 為 2023）。Col 版次是原廠教材的改版序號，數字越大越新；這批 Col18 教材的內容已經是 NetWeaver 7.5x／S/4HANA 時代的觀點——例如 Col18 BC402 第一單元就在講「從敘述句走向運算式與函數」、inline declaration 與新版 Open SQL 語法，BC404 已改教 Eclipse（ADT），SAPNW 概覽第一課就是 SAP HANA 與 S/4HANA。<b>一邊是 2007 年的中文入門視角，一邊是 2022 年的原廠現況</b>，兩者對照，正好看得出 ABAP 十五年來變了什麼、沒變什麼。</p>
+  <div class="note">筆記的價值不在語法（語法已經過時），而在<b>觀念的完整度</b>：LUW 與 SAP 鎖、PBO/PAI、資料字典的相依關係、增強的層級、效能分析的方法論——這些原理從 R/3 到 S/4HANA 幾乎沒變。强晟在 BC406 前言引用中國 SAP 圈前輩 w39〈自學 SAP 三道坎〉的一句話：「堅持！就這樣堅持下去！給自己兩年的時間。」這句話今天一樣適用。</div>
+
+  <h3 id="ch05-0-02">2. 完整檔案清冊：L28 的 38 個檔案 ＋ L29 的 9 個檔案對應到哪一章</h3>
+  <p>原始檔全部位於 <span class="src">Dropbox\09_SAP_AB_ABAP編程\L28_强晟_19本原廠教材筆記_含原廠教材\</span>。强晟筆記的檔名格式是「强晟_SAP_課號_年份_頁數_暱稱」；原廠教材的檔名格式是「序號_課號_EN_Col版次_主題_頁數」。頁數即 PDF 總頁數。</p>
+
+  <h4>2.1 强晟中文自學筆記（19 本，2007～2008）</h4>
+  <table>
+    <thead><tr><th>課號</th><th>筆記上的英文課名</th><th>中文課名</th><th>頁數</th><th>完成日期</th><th>本專區章</th></tr></thead>
+    <tbody>
+      <tr><td>BC400</td><td>ABAP Workbench Foundations and Concepts</td><td>ABAP 工作台基礎與概念</td><td>224</td><td>2007-05-29</td><td><a href="#ch05-1">5-1 章</a></td></tr>
+      <tr><td>BC401</td><td>ABAP Objects</td><td>ABAP 物件（含資料型別、內表、呼叫程式）</td><td>296</td><td>2007-06-23</td><td><a href="#ch05-2">5-2 章</a></td></tr>
+      <tr><td>BC402</td><td>ABAP Programming Techniques</td><td>ABAP 程式設計技術</td><td>199</td><td>2007-06-23</td><td><a href="#ch05-3">5-3 章</a></td></tr>
+      <tr><td>BC404</td><td>ABAP Objects: Object-Oriented Programming in R/3</td><td>R/3 物件導向程式設計</td><td>21</td><td>2007-07-01</td><td><a href="#ch05-2">5-2 章</a>（併入）</td></tr>
+      <tr><td>BC405</td><td>Techniques of List Creation</td><td>清單建立技術（含 ALV Grid）</td><td>140</td><td>2007-07-02</td><td><a href="#ch05-6">5-6 章</a></td></tr>
+      <tr><td>BC406</td><td>Advanced Techniques of List Processing</td><td>進階清單處理技術</td><td>102</td><td>2007-07-09</td><td><a href="#ch05-7">5-7 章</a></td></tr>
+      <tr><td>BC407</td><td>Reporting: QuickViews, InfoSet Query, and SAP Query</td><td>報表工具：QuickViewer／InfoSet Query／SAP Query</td><td>151</td><td>2007-07-13</td><td><a href="#ch05-8">5-8 章</a></td></tr>
+      <tr><td>BC410</td><td>Developing User Dialogs</td><td>使用者對話程式開發（Dynpro）</td><td>169</td><td>2007-07-19</td><td><a href="#ch05-9">5-9 章</a></td></tr>
+      <tr><td>BC412</td><td>ABAP Dialog Programming Using Enjoy SAP Controls</td><td>使用 EnjoySAP 控制項的對話程式</td><td>300</td><td>2007-09-19</td><td><a href="#ch05-10">5-10 章</a></td></tr>
+      <tr><td>BC414</td><td>Programming Database Update</td><td>資料庫更新程式設計</td><td>121</td><td>2007-09-19</td><td><a href="#ch05-11">5-11 章</a></td></tr>
+      <tr><td>BC415</td><td>Remote Function Calls in ABAP</td><td>ABAP 遠端函數呼叫</td><td>123</td><td>2007-11-09</td><td><a href="#ch05-12">5-12 章</a></td></tr>
+      <tr><td>BC420</td><td>Data Transfer</td><td>資料傳輸（Batch Input、LSMW、Direct Input…）</td><td>354</td><td>2008-03-18</td><td><a href="#ch05-13">5-13 章</a></td></tr>
+      <tr><td>BC425</td><td>Enhancements and Modifications</td><td>增強與修改</td><td>257</td><td>2008-04-06</td><td><a href="#ch05-14">5-14 章</a></td></tr>
+      <tr><td>BC427</td><td>Enhancement Framework</td><td>增強框架</td><td>54</td><td>2008-06-23</td><td><a href="#ch05-15">5-15 章</a></td></tr>
+      <tr><td>BC430</td><td>ABAP Dictionary</td><td>ABAP 資料字典</td><td>159</td><td>2007-12-09</td><td><a href="#ch05-16">5-16 章</a></td></tr>
+      <tr><td>BC440</td><td>Developing Internet Application Components</td><td>網際網路應用元件（ITS、WebRFC）</td><td>159</td><td>2008-06-18</td><td><a href="#ch05-17">5-17 章</a></td></tr>
+      <tr><td>BC470</td><td>Form Printing With SAP Smart Forms</td><td>SAP Smart Forms 表單列印</td><td>195</td><td>2007-12-17</td><td><a href="#ch05-19">5-19 章</a></td></tr>
+      <tr><td>BC480</td><td>Creating PDF-based Print Forms</td><td>PDF 列印表單（Interactive Forms by Adobe）</td><td>291</td><td>2007-12-23</td><td><a href="#ch05-20">5-20 章</a></td></tr>
+      <tr><td>BC490</td><td>ABAP Performance Tuning</td><td>ABAP 效能調校</td><td>318</td><td>2008-05-05</td><td><a href="#ch05-21">5-21 章</a></td></tr>
+    </tbody>
+  </table>
+  <div class="note">「完成日期」取筆記封面日期；前言署名日期通常早幾天到幾週（例如 BC401 前言 2007-05-30、封面 2007-06-23）。BC420 封面寫 2008-03-18，前言卻署名「2007 年 1 月 21 日」，而强晟 2007 年 5 月才完成 BC400，前言日期應是 <b>2008 年 1 月</b>的筆誤。</div>
+
+  <h4>2.2 SAP 原廠英文教材與文件（19 份）</h4>
+  <table>
+    <thead><tr><th>課號</th><th>英文課名（Col 版）</th><th>中文課名</th><th>頁數</th><th>版次／版權年</th><th>本專區章</th></tr></thead>
+    <tbody>
+      <tr><td>BC400</td><td>ABAP Workbench Foundations</td><td>ABAP 工作台基礎（5 天）</td><td>407</td><td>Col18／2022</td><td><a href="#ch05-1">5-1 章</a></td></tr>
+      <tr><td>BC401</td><td>ABAP Objects</td><td>ABAP 物件導向（5 天）</td><td>334</td><td>Col18／2022</td><td><a href="#ch05-2">5-2 章</a></td></tr>
+      <tr><td>BC402</td><td>Advanced ABAP</td><td>進階 ABAP（5 天）</td><td>367</td><td>Col18／2022</td><td><a href="#ch05-3">5-3 章</a></td></tr>
+      <tr><td>BC403</td><td>Advanced ABAP Debugging</td><td>進階 ABAP 除錯</td><td>146</td><td>Col15／2022</td><td><a href="#ch05-4">5-4 章</a></td></tr>
+      <tr><td>BC404</td><td>ABAP Programming in Eclipse</td><td>在 Eclipse（ADT）中開發 ABAP（3 天）</td><td>158</td><td>Col18／2022</td><td><a href="#ch05-5">5-5 章</a></td></tr>
+      <tr><td>BC405</td><td>Programming ABAP Reports</td><td>ABAP 報表程式設計（5 天）</td><td>288</td><td>Col18／2022</td><td><a href="#ch05-6">5-6 章</a></td></tr>
+      <tr><td>BC407</td><td>Reporting: QuickViewer, InfoSet Query and SAP Query</td><td>報表工具（2 天）</td><td>138</td><td>Col18／2022</td><td><a href="#ch05-8">5-8 章</a></td></tr>
+      <tr><td>BC410</td><td>Programming User Dialogs with Classical Screens (Dynpros)</td><td>經典畫面使用者對話程式（3 天）</td><td>216</td><td>Col18／2022</td><td><a href="#ch05-9">5-9 章</a></td></tr>
+      <tr><td>BC414</td><td>Programming Database Updates</td><td>資料庫更新程式設計</td><td>212</td><td>Col18／2022</td><td><a href="#ch05-11">5-11 章</a></td></tr>
+      <tr><td>BC425</td><td>Enhancements and Modifications</td><td>增強與修改（5 天）</td><td>346</td><td>Col18／2023</td><td><a href="#ch05-14">5-14 章</a></td></tr>
+      <tr><td>BC430</td><td>ABAP Dictionary</td><td>ABAP 資料字典（3 天）</td><td>214</td><td>Col18／2022</td><td><a href="#ch05-16">5-16 章</a></td></tr>
+      <tr><td>BC460</td><td>SAPscript: Form Design and Text Management</td><td>SAPscript 表單設計與文字管理（3 天）</td><td>147</td><td>Col18／2022</td><td><a href="#ch05-18">5-18 章</a></td></tr>
+      <tr><td>BC470</td><td>Form Printing with SAP Smart Forms</td><td>Smart Forms 表單列印（2 天）</td><td>209</td><td>Col18／2022</td><td><a href="#ch05-19">5-19 章</a></td></tr>
+      <tr><td>BC480</td><td>PDF-Based Print Forms</td><td>PDF 列印表單</td><td>230</td><td>Col18／2022</td><td><a href="#ch05-20">5-20 章</a></td></tr>
+      <tr><td>BC490</td><td>ABAP Performance Tuning</td><td>ABAP 效能調校</td><td>556</td><td>Col19／2022</td><td><a href="#ch05-21">5-21 章</a></td></tr>
+      <tr><td>BIT750</td><td>SAP Application Interface Framework</td><td>SAP 應用介面框架 AIF（5 天）</td><td>214</td><td>Col03／2022</td><td><a href="#ch05-22">5-22 章</a></td></tr>
+      <tr><td>NET310</td><td>Fundamentals of Web Dynpro for ABAP</td><td>Web Dynpro ABAP 基礎（5 天）</td><td>372</td><td>Col18／2022</td><td><a href="#ch05-23">5-23 章</a></td></tr>
+      <tr><td>SAPNW</td><td>SAP NetWeaver - Overview</td><td>SAP NetWeaver 概覽</td><td>434</td><td>Col15／2022</td><td><a href="#ch05-24">5-24 章</a></td></tr>
+      <tr><td>（說明文件）</td><td>IDoc Interface / Electronic Data Interchange（HELP.BCSRVEDI）</td><td>IDoc 介面與 EDI 線上說明</td><td>267</td><td>Release 4.6B／1999（版權 2000）</td><td><a href="#ch05-22">5-22 章</a></td></tr>
+    </tbody>
+  </table>
+  <div class="tip">原廠教材的版次、天數與教材編號（Material Number）都印在封面：例如 BC400 Col18 是 50148766、BC414 Col18 是 50148229。天數欄空白的（BC403、BC414、BC480、BC490、SAPNW）是封面本來就沒填，不是漏抄。想跟 SAP 教育訓練中心對課時，報<b>課號＋Col 版次</b>最不會雞同鴨講。</div>
+
+  <p><b>L29_原廠教材</b>（9 個檔案，2026-09 併入）多半是同一門課的其他版本，因此不另開章，而是在對應章節加上「L29 版本對照」表與「L29 補充」小節；只有 BC100 是新課程，獨立成 <a href="#ch05-25">5-25 章</a>。</p>
+  <table>
+    <thead><tr><th>L29 檔名</th><th>課號</th><th>版本／語言</th><th>頁數</th><th>併入章節</th><th>備註</th></tr></thead>
+    <tbody>
+      <tr><td>01_BC100_EN_Col18_introduction_135.pdf</td><td>BC100</td><td>Col18／英文</td><td>135</td><td><a href="#ch05-25">5-25 章</a></td><td>新課程：程式設計入門，BC400 的先修課</td></tr>
+      <tr><td>e-book BC100_EN_Col15_2018_120_英文_不清楚.pdf</td><td>BC100</td><td>Col15（2018）／英文</td><td>120</td><td><a href="#ch05-25">5-25 章</a></td><td>掃描檔、無文字層，只對照單元目錄</td></tr>
+      <tr><td>BC400_WorkBench_Fundation_2018_371.pdf</td><td>BC400</td><td>Col16（2018，e-book）／英文</td><td>373</td><td><a href="#ch05-1">5-1 章</a></td><td>單元與 Col18 相同，無練習題</td></tr>
+      <tr><td>BC400_ZH_Col63_FV_Part_A4_2009_469_工作台.pdf</td><td>BC400</td><td>Col63（2009）／SAP 官方簡中</td><td>469</td><td><a href="#ch05-1">5-1 章</a></td><td>附官方中文術語對照表</td></tr>
+      <tr><td>BC410_ZH_Col63_FV_Part_A4_2009_265_中文_對話.pdf</td><td>BC410</td><td>Col63（2009）／SAP 官方簡中</td><td>265</td><td><a href="#ch05-9">5-9 章</a></td><td>附官方中文術語對照表與 SHD0 畫面變式專題</td></tr>
+      <tr><td>BC425_EN_Col92 Enhancements and Modifications_2010_328_英文.pdf</td><td>BC425</td><td>Col92（2010）／英文</td><td>328</td><td><a href="#ch05-14">5-14 章</a></td><td>New BAdI 三版對照（2008 → 2010 → Col18）</td></tr>
+      <tr><td>BC470+-+SMART+FORMS_2006_287_英文.pdf</td><td>BC470</td><td>2006（Web AS 6.20）／英文</td><td>287</td><td><a href="#ch05-19">5-19 章</a></td><td>唯一附 7 組練習題與解答全文的版本</td></tr>
+      <tr><td>BC490 ABAP Performance Tuning_2001_354_英文.pdf</td><td>BC490</td><td>2001／英文</td><td>354</td><td><a href="#ch05-21">5-21 章</a></td><td>歷史對照（SE30、舊 ST05）</td></tr>
+      <tr><td>e-book BC490_EN_Col10_2017_687_性能調適_英文.pdf</td><td>BC490</td><td>Col10（2017）／英文</td><td>687</td><td><a href="#ch05-21">5-21 章</a></td><td>掃描檔、無文字層；單元結構同 Col19、仍無 HANA／CDS／AMDP 內容，補上 SQLM 與 SCI 細節的原廠出處</td></tr>
+    </tbody>
+  </table>
+
+  <h3 id="ch05-0-03">3. 版本座標：從 R/3 4.6 到 S/4HANA 1809 以上</h3>
+  <p>讀舊教材最常見的誤會，是把「當年的限制」當成「現在的限制」。下表把本專區會碰到的版本放在同一條時間軸上：</p>
+  <table>
+    <thead><tr><th>產品版本</th><th>技術底層（SAP_BASIS）</th><th>大約年份</th><th>本專區相關素材與重點</th></tr></thead>
+    <tbody>
+      <tr><td>R/3 4.6A／4.6B／4.6C</td><td>4.6</td><td>1999～2001</td><td>强晟手上的 BC401（4.6A）、BC402（4.6C）；IDoc 說明文件（4.6B）；EnjoySAP 控制項從 4.6 開始提供</td></tr>
+      <tr><td>R/3 Enterprise 4.7</td><td>Web AS 6.20</td><td>2003</td><td>BC440 的 ITS 仍是獨立伺服器</td></tr>
+      <tr><td>ECC 5.0</td><td>Web AS 6.40</td><td>2004</td><td>ITS 整合進應用伺服器（integrated ITS）</td></tr>
+      <tr><td>ECC 6.0</td><td>NetWeaver 7.0（700）</td><td>2005～2006</td><td>强晟筆記的主要時代；Enhancement Framework、新版 Debugger、新版 ABAP Editor 皆於 7.0 登場</td></tr>
+      <tr><td>ECC 6.0 EhP7／EhP8</td><td>7.40／7.50</td><td>2013～2015</td><td>7.40 帶來 inline declaration、<span class="kw">VALUE</span>／<span class="kw">CORRESPONDING</span>、新 Open SQL（<span class="kw">@</span> 主機變數）、CDS；7.50 是 NetWeaver 最後一個主版本</td></tr>
+      <tr><td>S/4HANA 1709</td><td>7.52</td><td>2017</td><td>本圖書館程式碼的語法下限</td></tr>
+      <tr><td><b>S/4HANA 1809</b></td><td><b>ABAP Platform 1809（SAP_BASIS 7.53）</b></td><td>2018</td><td>本圖書館的基準版本；從這版起底層改稱 ABAP Platform</td></tr>
+      <tr><td>S/4HANA 1909 起</td><td>7.54 以上</td><td>2019～</td><td><span class="kw">+=</span> 等運算子（7.54）、CDS View Entity（7.55，S/4HANA 2020）、RAP 逐版成熟</td></tr>
+    </tbody>
+  </table>
+  <p>在系統裡確認版本，不要憑印象。以下程式讀取軟體元件版本表 CVERS（也可用 SAP GUI 選單「系統 → 狀態」看元件清單）：</p>
+<pre><code class="abap">REPORT zr_show_release.
+
+" 讀取關鍵軟體元件版本：SAP_BASIS 決定可用的 ABAP 語法，S4CORE 表示 S/4HANA
+SELECT component, release, extrelease, comp_type
+  FROM cvers
+  WHERE component IN ( 'SAP_BASIS', 'SAP_ABA', 'SAP_GWFND', 'S4CORE' )
+  ORDER BY component
+  INTO TABLE @DATA(lt_comp).
+
+IF lt_comp IS INITIAL.
+  MESSAGE '讀不到 CVERS，請確認權限' TYPE 'I'.
+  RETURN.
+ENDIF.
+
+DATA lv_basis TYPE cvers-release.
+lv_basis = VALUE #( lt_comp[ component = 'SAP_BASIS' ]-release OPTIONAL ).
+DATA(lv_is_s4) = xsdbool( line_exists( lt_comp[ component = 'S4CORE' ] ) ).
+
+cl_demo_output=&gt;write( lt_comp ).
+cl_demo_output=&gt;write( |SAP_BASIS = { lv_basis }；S/4HANA = { COND string( WHEN lv_is_s4 = abap_true THEN '是' ELSE '否' ) }| ).
+cl_demo_output=&gt;display( ).</code></pre>
+  <div class="warn">SAP_BASIS 的 release 欄位是「753」這種三位數字串，而不是「7.53」。程式裡若要依版本走不同邏輯，比較的是字串，也就是「字典序」：三位數時還看不出問題，一旦遇到支援套件字串或格式不同的元件版本就會出錯。版本判斷請寫明確的列舉清單（例如 '753'、'754'、'755'），不要寫「大於等於某值」的區間。這就是 Casper 第二條經驗的縮小版（見 §12）。</div>
+
+  <h3 id="ch05-0-04">4. SAP ABAP 課程體系：等級與先修關係</h3>
+  <p>强晟筆記前言所說的 Level 100／200／300，是 SAP 舊版課程目錄的難度分級；新版 Col18 教材封面已不再印等級，只列目標對象（Developer、Development Consultant…）。下表的等級是<b>本專區依課程內容與先修要求整理的相對分級</b>，方便排順序，並非原廠正式標示：</p>
+  <table>
+    <thead><tr><th>等級</th><th>課程</th><th>定位</th><th>建議先修</th></tr></thead>
+    <tbody>
+      <tr><td>100（概覽）</td><td>SAPNW、（舊）SAPTEC</td><td>平台架構、三層式 Client/Server、HANA 與 S/4HANA 概念</td><td>無</td></tr>
+      <tr><td>200（基礎必修）</td><td>BC400、BC430</td><td>工作台、ABAP 語言基本元素、資料字典；强晟 BC430 前言：「在 SAP 標準訓練計畫中緊接在 BC400 之後」</td><td>SAPNW／SAPTEC</td></tr>
+      <tr><td>200（語言深化）</td><td>BC401、BC402、BC404（ADT）</td><td>物件導向、語言進階、Eclipse 開發環境；强晟 BC401 前言：需有 ABAP 經驗，最好學過 SAPTEC 與 BC400</td><td>BC400</td></tr>
+      <tr><td>200～300（應用開發）</td><td>BC405、BC406、BC407、BC410、BC412、BC414、BC415、BC420</td><td>報表、清單、Query、Dynpro、控制項、資料庫更新、RFC/BAPI、資料傳輸</td><td>BC400、BC430；BC412 另需 BC401、BC410；BC406 需 BC405</td></tr>
+      <tr><td>200～300（表單）</td><td>BC460、BC470、BC480</td><td>SAPscript → Smart Forms → Adobe PDF 表單；强晟 BC470 前言：「從 BC460 我們知道，Smart Forms 是取代 SAPscript 的下一代表單技術」</td><td>BC400；BC480 需懂 BC470 的介面觀念</td></tr>
+      <tr><td>300（進階專題）</td><td>BC403、BC425、BC427、BC490、NET310、BIT750、BC440</td><td>除錯、增強與修改、Enhancement Framework、效能、Web Dynpro、AIF、Web 應用</td><td>BC400＋BC401／BC402；BC427 需 BC425</td></tr>
+    </tbody>
+  </table>
+  <div class="note">强晟在 BC404 前言提出一個觀察：他手上的 BC404（R/3 物件導向）大部分內容與 BC401 重複，而 SAP 學習路線圖裡又沒有 BC401，BC401 的版本卻比 BC402、BC404 新，所以他懷疑「BC401 是 BC402 與 BC404 的綜合版」。這個推測在 2007 年的課程目錄下合理；到了 Col18，BC401 已是純物件導向課程、BC402 是語言進階、BC404 則換成 Eclipse 開發——三者分工清楚，不再重疊（詳見 §10）。</div>
+
+  <h3 id="ch05-0-05">5. TAW 組合課與 ABAP 認證</h3>
+  <p><b>TAW</b> 系列是 SAP 把多門 BC 課程濃縮成「學院（Academy）」形式的組合課，專為準備開發者認證而設計。本資料夾沒有 TAW 教材本身，但 Col18 各課的測驗解答會註明「本題內容請參閱 <i>BCxxx</i> 或 <i>TAWxx</i> 的哪一單元」，從這些交叉引用可以還原對應關係（以下皆為教材中實際出現的標註）：</p>
+  <table>
+    <thead><tr><th>組合課</th><th>教材中出現的對應 BC 課程</th><th>主題範圍</th></tr></thead>
+    <tbody>
+      <tr><td>TAW10 Part I</td><td>BC400、BC402（部分單元）</td><td>工作台基礎、ABAP 語言、資料型別與 Open SQL</td></tr>
+      <tr><td>TAW10 Part II</td><td>BC405、BC410、BC430</td><td>報表與選擇畫面、Dynpro、資料字典</td></tr>
+      <tr><td>TAW11e</td><td>BC402、BC405、BC414</td><td>語言細節、報表進階、資料庫更新與 LUW</td></tr>
+      <tr><td>TAW12</td><td>BC425、NET310</td><td>增強與修改、Web Dynpro ABAP</td></tr>
+    </tbody>
+  </table>
+  <p>BC401、BC403、BC404、BC407、BC460、BC470、BC480、BC490、BIT750、SAPNW 的測驗解答沒有 TAW 標註，本專區不臆測它們屬於哪一門 TAW。</p>
+  <p><b>認證考試</b>：</p>
+  <ul>
+    <li><b>C_TAW12</b>（例如 C_TAW12_750，SAP Certified Development Associate – ABAP with SAP NetWeaver 7.50）：傳統 ABAP 開發者認證，範圍對應上表 TAW10／TAW11e／TAW12，也就是工作台、字典、報表、Dynpro、OO、增強、Web Dynpro 這一整套「經典 ABAP」。</li>
+    <li><b>C_ABAPD</b>（SAP Certified Associate – Back-End Developer – ABAP Cloud，考試代碼後綴為版本年月）：新一代認證，重點轉向 <b>ABAP Cloud 開發模型</b>——ABAP SQL、CDS、RAP（RESTful ABAP Programming Model）、物件導向與 ADT，已不考 Dynpro、SAPscript 這類經典技術。</li>
+  </ul>
+  <div class="warn">認證的考試代碼、題數、及格分數與是否停考，SAP 每年都會調整。本節只描述兩者的定位差異；實際報名前請以 SAP Learning 官方網站當下公告為準，不要依本頁或任何舊講義的數字備考。</div>
+
+  <h3 id="ch05-0-06">6. 學習路線 A：報表開發者</h3>
+  <p><b>目標</b>：接到「幫我出一張報表」的需求時，能判斷該用標準報表、Query、CDS 還是自寫程式，寫出來的程式正確、夠快、使用者看得懂。這是大多數 ABAPer 的第一份工作，也是 Casper 課程的主軸。</p>
+  <table>
+    <thead><tr><th>順序</th><th>第五部（原廠觀點）</th><th>搭配第一～四部（實作）</th><th>讀完要會什麼</th></tr></thead>
+    <tbody>
+      <tr><td>1</td><td><a href="#ch05-1">5-1 BC400</a></td><td><a href="#ch01-1">1-1 第一支程式</a>、<a href="#ch02-1">2-1 基本語法</a></td><td>套件、傳輸、事件區塊、除錯入門</td></tr>
+      <tr><td>2</td><td><a href="#ch05-16">5-16 BC430</a></td><td><a href="#ch01-2">1-2 資料字典</a>、<a href="#ch01-3">1-3 三層 VIEW 與主數據</a></td><td>看懂表的關聯、外來鍵、檢查表、View</td></tr>
+      <tr><td>3</td><td><a href="#ch05-8">5-8 BC407</a></td><td><a href="#ch01-4">1-4 SQVI／SQ01</a></td><td>「不寫程式」能做到哪裡；先標準再客製</td></tr>
+      <tr><td>4</td><td><a href="#ch05-3">5-3 BC402</a></td><td><a href="#ch02-2">2-2 內表與 ABAP SQL</a></td><td>內表種類、7.40+ 運算式、新 SQL 語法</td></tr>
+      <tr><td>5</td><td><a href="#ch05-6">5-6 BC405</a>、<a href="#ch05-7">5-7 BC406</a></td><td><a href="#ch03-1">3-1 選擇畫面</a>、<a href="#ch02-3">2-3 ALV</a></td><td>選擇畫面、事件、ALV 輸出、背景執行</td></tr>
+      <tr><td>6</td><td><a href="#ch05-2">5-2 BC401</a></td><td><a href="#ch03-2">3-2 OOALV</a>、<a href="#ch02-4">2-4 模組化</a></td><td>用類別組織報表邏輯</td></tr>
+      <tr><td>7</td><td><a href="#ch05-4">5-4 BC403</a>、<a href="#ch05-21">5-21 BC490</a></td><td>—</td><td>除錯、SQL Trace、找出慢在哪裡</td></tr>
+    </tbody>
+  </table>
+  <p>路線 A 的終點形態是這樣的程式：選擇畫面 → 一次 SQL 取回 → <span class="kw">CL_SALV_TABLE</span> 輸出。它取代了强晟筆記中「邏輯資料庫＋<span class="kw">GET</span> 事件＋<span class="kw">WRITE</span> 清單」的寫法：</p>
+<pre><code class="abap">REPORT zr_flight_occupancy.
+
+DATA gv_fldate TYPE sflight-fldate.
+PARAMETERS     p_carr TYPE s_carr_id OBLIGATORY DEFAULT 'LH'.
+SELECT-OPTIONS s_date FOR gv_fldate.
+
+START-OF-SELECTION.
+  " 明列欄位、主機變數加 @、明確 ORDER BY（HANA 沒有預設排序）
+  SELECT f~carrid, f~connid, f~fldate, p~cityfrom, p~cityto,
+         f~seatsmax, f~seatsocc
+    FROM sflight AS f
+    INNER JOIN spfli AS p ON p~carrid = f~carrid
+                         AND p~connid = f~connid
+    WHERE f~carrid = @p_carr
+      AND f~fldate IN @s_date
+    ORDER BY f~carrid, f~connid, f~fldate
+    INTO TABLE @DATA(gt_flight).
+
+  IF gt_flight IS INITIAL.
+    MESSAGE '查無資料' TYPE 'S' DISPLAY LIKE 'W'.
+    RETURN.
+  ENDIF.
+
+  TRY.
+      cl_salv_table=&gt;factory( IMPORTING r_salv_table = DATA(go_alv)
+                              CHANGING  t_table      = gt_flight ).
+      go_alv-&gt;get_functions( )-&gt;set_all( abap_true ).
+      go_alv-&gt;get_columns( )-&gt;set_optimize( abap_true ).
+      go_alv-&gt;get_display_settings( )-&gt;set_striped_pattern( abap_true ).
+      go_alv-&gt;display( ).
+    CATCH cx_salv_msg INTO DATA(gx_salv).
+      MESSAGE gx_salv TYPE 'I' DISPLAY LIKE 'E'.
+  ENDTRY.</code></pre>
+  <div class="note">報表若要加「載客率」這類計算欄位，可在 SQL 中用 <span class="kw">division( )</span> 等 SQL 函數（7.50 以上）推給資料庫算。資料量大到 SALV 吃不下時，改用 ALV with IDA（<span class="kw">CL_SALV_GUI_TABLE_IDA</span>），把分頁與彙總推給 HANA，詳見 <a href="#ch05-6">5-6 章</a> 與 <a href="#ch05-21">5-21 章</a>。</div>
+
+  <h3 id="ch05-0-07">7. 學習路線 B：介面與資料整合開發者</h3>
+  <p><b>目標</b>：負責 SAP 與 MES、EEP、電商、其他 SAP 系統之間的資料交換——期初資料轉入、每日拋轉、即時查詢、錯誤監控。這條路線的關鍵字是 <b>LUW、鎖、BAPI、IDoc、監控</b>。</p>
+  <table>
+    <thead><tr><th>順序</th><th>第五部（原廠觀點）</th><th>搭配第一～四部（實作）</th><th>讀完要會什麼</th></tr></thead>
+    <tbody>
+      <tr><td>1</td><td><a href="#ch05-1">5-1 BC400</a>、<a href="#ch05-16">5-16 BC430</a></td><td><a href="#ch01-2">1-2 資料字典</a></td><td>基本功</td></tr>
+      <tr><td>2</td><td><a href="#ch05-11">5-11 BC414</a></td><td>—</td><td>SAP LUW、鎖物件（<span class="tcode">SE11</span> Lock Object）、Update Task——介面「只寫一半」的根源都在這裡</td></tr>
+      <tr><td>3</td><td><a href="#ch05-12">5-12 BC415</a></td><td><a href="#ch04-1">4-1 RFC/BAPI</a></td><td>sRFC／tRFC／qRFC／bgRFC、<span class="tcode">SM59</span>、BAPI 與 BAPIRET2</td></tr>
+      <tr><td>4</td><td><a href="#ch05-13">5-13 BC420</a></td><td><a href="#ch04-4">4-4 BDC／MAIL／FTP／背景作業</a></td><td>Batch Input、Call Transaction、LSMW 與現代的 Migration Cockpit</td></tr>
+      <tr><td>5</td><td><a href="#ch05-22">5-22 BIT750＋IDoc</a></td><td><a href="#ch04-1">4-1 RFC/BAPI</a>（IDoc 出入站四步驟）</td><td>IDoc 結構、ALE、AIF 錯誤處理與監控</td></tr>
+      <tr><td>6</td><td><a href="#ch05-17">5-17 BC440</a>、<a href="#ch05-24">5-24 SAPNW</a></td><td>—</td><td>理解 Web 化的演進：ITS → ICF → OData／RAP</td></tr>
+    </tbody>
+  </table>
+  <p>路線 B 最核心的一段程式：呼叫 BAPI、<b>完整判讀 BAPIRET2</b>、成功才 commit、失敗一定 rollback。這個骨架從 BC415 到 S/4HANA 都沒變：</p>
+<pre><code class="abap">DATA lt_return  TYPE STANDARD TABLE OF bapiret2 WITH EMPTY KEY.
+DATA lt_item    TYPE STANDARD TABLE OF bapimereqitemimp WITH EMPTY KEY.
+DATA lt_itemx   TYPE STANDARD TABLE OF bapimereqitemx WITH EMPTY KEY.
+DATA lv_banfn   TYPE banfn.
+
+DATA(ls_header)  = VALUE bapimereqheader( pr_type = 'NB' ).
+DATA(ls_headerx) = VALUE bapimereqheaderx( pr_type = abap_true ).
+
+lt_item  = VALUE #( ( preq_item = '00010' material = 'RM-1001' plant = '1000'
+                      quantity = '10' unit = 'EA' deliv_date = sy-datum + 14 ) ).
+lt_itemx = VALUE #( ( preq_item = '00010' preq_itemx = abap_true material = abap_true
+                      plant = abap_true quantity = abap_true unit = abap_true
+                      deliv_date = abap_true ) ).
+
+CALL FUNCTION 'BAPI_PR_CREATE'
+  EXPORTING
+    prheader  = ls_header
+    prheaderx = ls_headerx
+  IMPORTING
+    number    = lv_banfn
+  TABLES
+    return    = lt_return
+    pritem    = lt_item
+    pritemx   = lt_itemx.
+
+" E（錯誤）與 A（中止）都算失敗；只看 sy-subrc 是新手最常見的錯
+IF line_exists( lt_return[ type = 'E' ] ) OR line_exists( lt_return[ type = 'A' ] ).
+  CALL FUNCTION 'BAPI_TRANSACTION_ROLLBACK'.
+  LOOP AT lt_return INTO DATA(ls_ret) WHERE type CA 'EA'.
+    WRITE / |{ ls_ret-id }-{ ls_ret-number }: { ls_ret-message }|.
+  ENDLOOP.
+ELSE.
+  CALL FUNCTION 'BAPI_TRANSACTION_COMMIT'
+    EXPORTING
+      wait = abap_true.
+  WRITE / |請購單 { lv_banfn } 已建立|.
+ENDIF.</code></pre>
+  <div class="tip">介面程式的條件請一律用<b>列舉</b>：要拋轉哪些工廠、哪些單據類型，就在設定表裡一筆一筆列出來（多筆 EQ），不要寫「工廠 1000～1999」這種區間。號碼段有缺口、編碼規則改過、ALPHA 前導零，區間都會悄悄多抓或漏抓——而介面多抓一筆，對方系統就多一張單。</div>
+
+  <h3 id="ch05-0-08">8. 學習路線 C：表單與列印開發者</h3>
+  <p><b>目標</b>：負責採購單、出貨單、發票、標籤等列印輸出。這條路線的難點不是版面，而是「<b>列印程式（驅動程式）與表單之間的介面</b>」以及「輸出由誰觸發」（NACE 輸出條件 vs S/4HANA Output Management）。</p>
+  <table>
+    <thead><tr><th>順序</th><th>第五部（原廠觀點）</th><th>搭配第一～四部（實作）</th><th>讀完要會什麼</th></tr></thead>
+    <tbody>
+      <tr><td>1</td><td><a href="#ch05-1">5-1 BC400</a>、<a href="#ch05-16">5-16 BC430</a></td><td><a href="#ch02-2">2-2 內表與 ABAP SQL</a></td><td>把表單要的資料一次整理成結構＋內表</td></tr>
+      <tr><td>2</td><td><a href="#ch05-18">5-18 BC460</a></td><td>—</td><td>SAPscript：看得懂、改得動標準表單就好，不再新建</td></tr>
+      <tr><td>3</td><td><a href="#ch05-19">5-19 BC470</a></td><td><a href="#ch04-3">4-3 SmartForms</a></td><td>Form Builder、表格與範本、Smart Styles、條碼、<span class="kw">SSF_FUNCTION_MODULE_NAME</span></td></tr>
+      <tr><td>4</td><td><a href="#ch05-20">5-20 BC480</a></td><td>—</td><td><span class="tcode">SFP</span> 介面與 Context、Adobe LiveCycle Designer、表單腳本</td></tr>
+      <tr><td>5</td><td><a href="#ch05-14">5-14 BC425</a></td><td><a href="#ch03-3">3-3 User/Customer Exit</a>、<a href="#ch03-4">3-4 BAdI</a></td><td>複製標準列印程式 vs 用增強加欄位的取捨</td></tr>
+    </tbody>
+  </table>
+  <p>三代表單技術的呼叫方式各不同。以 Adobe 表單（BC480）為例，列印程式的標準骨架是「開工作 → 取產生的函數名 → 呼叫 → 關工作」：</p>
+<pre><code class="abap">DATA lv_fm        TYPE funcname.
+DATA ls_docparams TYPE sfpdocparams.
+DATA ls_output    TYPE fpformoutput.
+
+DATA(ls_outparams) = VALUE sfpoutputparams( nodialog = abap_true
+                                            preview  = abap_true
+                                            dest     = 'LP01' ).
+ls_docparams-langu   = sy-langu.
+ls_docparams-country = 'TW'.
+
+CALL FUNCTION 'FP_JOB_OPEN'
+  CHANGING
+    ie_outputparams = ls_outparams
+  EXCEPTIONS
+    cancel          = 1
+    usage_error     = 2
+    system_error    = 3
+    internal_error  = 4
+    OTHERS          = 5.
+IF sy-subrc &lt;&gt; 0.
+  MESSAGE '無法開啟列印工作' TYPE 'E'.
+ENDIF.
+
+TRY.
+    " 表單啟用後系統產生的函數名稱每個系統不同，一定要動態取得
+    CALL FUNCTION 'FP_FUNCTION_MODULE_NAME'
+      EXPORTING
+        i_name     = 'ZAF_PO_PRINT'
+      IMPORTING
+        e_funcname = lv_fm.
+  CATCH cx_fp_api INTO DATA(lx_fp).
+    MESSAGE lx_fp TYPE 'E'.
+ENDTRY.
+
+CALL FUNCTION lv_fm
+  EXPORTING
+    /1bcdwb/docparams  = ls_docparams
+    is_header          = ls_po_header      " 表單介面自訂參數（依 SFP 介面而定）
+    it_items           = lt_po_items
+  IMPORTING
+    /1bcdwb/formoutput = ls_output
+  EXCEPTIONS
+    usage_error        = 1
+    system_error       = 2
+    internal_error     = 3
+    OTHERS             = 4.
+
+CALL FUNCTION 'FP_JOB_CLOSE'
+  EXCEPTIONS
+    usage_error    = 1
+    system_error   = 2
+    internal_error = 3
+    OTHERS         = 4.</code></pre>
+  <div class="note">上例的 <i>ls_po_header</i>、<i>lt_po_items</i> 代表你在 <span class="tcode">SFP</span> 表單介面中自訂的匯入參數，名稱與型別依你的介面而定。Adobe 表單需要 ADS（Adobe Document Services）才能產生 PDF；Smart Forms 的對應寫法（<span class="kw">SSF_FUNCTION_MODULE_NAME</span>）見 <a href="#ch04-3">4-3 章</a>。</div>
+  <div class="tip">除了這三條路線，還有一條「<b>增強與品質</b>」的必修支線，任何職能都該讀：<a href="#ch05-14">5-14 BC425</a> → <a href="#ch05-15">5-15 BC427</a>（接 <a href="#ch03-3">3-3</a>、<a href="#ch03-4">3-4 章</a>）→ <a href="#ch05-4">5-4 BC403</a> → <a href="#ch05-21">5-21 BC490</a> → <a href="#ch05-5">5-5 BC404 ADT</a>。想走 UI 的人則加讀 <a href="#ch05-9">5-9 BC410</a> → <a href="#ch05-10">5-10 BC412</a>（接 <a href="#ch04-2">4-2 Dialog</a>）→ <a href="#ch05-23">5-23 NET310</a>，再往 Fiori／RAP 前進。</div>
+
+  <h3 id="ch05-0-09">9. 已過時技術與 S/4HANA 替代對照總表</h3>
+  <p>强晟筆記與部分原廠教材教的技術，有不少在 S/4HANA 已經「還能跑、但不該再新寫」，少數則已完全退場。下表是全專區的總對照，各章另有詳細說明：</p>
+  <table>
+    <thead><tr><th>舊技術</th><th>出處</th><th>S/4HANA 現況</th><th>新開發建議</th></tr></thead>
+    <tbody>
+      <tr><td>邏輯資料庫 LDB（<span class="tcode">SE36</span>、<span class="kw">GET</span> 事件、<span class="kw">NODES</span>）</td><td>BC405 第四單元、BC407</td><td>官方已列為過時（obsolete），既有標準 LDB 仍在，部分已停止維護</td><td>ABAP SQL JOIN／CDS View＋選擇畫面＋SALV</td></tr>
+      <tr><td>WRITE 清單、互動式清單（<span class="kw">AT LINE-SELECTION</span>、<span class="kw">HIDE</span>）</td><td>BC405、BC406</td><td>仍可執行，Col18 BC410 明言 <i>In modern reports, lists are defined using ALV</i></td><td>SALV／ALV IDA；鑽取改用 ALV 事件</td></tr>
+      <tr><td><span class="kw">REUSE_ALV_*</span> 函數</td><td>BC405（2007）</td><td>仍存在但不再發展</td><td><span class="kw">CL_SALV_TABLE</span>；需編輯才用 <span class="kw">CL_GUI_ALV_GRID</span></td></tr>
+      <tr><td>獨立 ITS、WebTransaction、HTML Business 範本</td><td>BC440</td><td>獨立 ITS 已由 6.40 起的整合式 ITS 取代；WebTransaction 開發模式已淘汰</td><td>SAP Fiori（UI5）＋OData（<span class="tcode">SEGW</span> 或 RAP）；舊交易可用 SAP GUI for HTML 開啟</td></tr>
+      <tr><td>WebRFC（<span class="kw">WWW_*</span> 函數）</td><td>BC440 第七單元</td><td>淘汰</td><td>ICF（<span class="tcode">SICF</span>）HTTP 處理類別、OData、REST</td></tr>
+      <tr><td>SAPscript（<span class="tcode">SE71</span>）</td><td>BC460</td><td>仍支援，許多標準輸出仍用它</td><td>新表單用 Adobe Forms（<span class="tcode">SFP</span>），搭配 S/4HANA Output Management</td></tr>
+      <tr><td>Smart Forms（<span class="tcode">SMARTFORMS</span>）</td><td>BC470</td><td>仍支援，但 SAP 新功能集中在 Adobe Forms</td><td>既有表單可維護；新專案優先評估 Adobe Forms</td></tr>
+      <tr><td>Classic BAdI（<span class="kw">CL_EXITHANDLER</span>）</td><td>BC425 第七單元</td><td>仍可執行</td><td>New BAdI（Enhancement Spot、<span class="kw">GET BADI</span>／<span class="kw">CALL BADI</span>）</td></tr>
+      <tr><td>Customer Exit（<span class="tcode">SMOD</span>／<span class="tcode">CMOD</span>）</td><td>BC425 第五單元</td><td>仍可執行，很多模組仍只有它</td><td>有 BAdI 就先用 BAdI；先標準再客製</td></tr>
+      <tr><td>Business Transaction Events（<span class="tcode">FIBF</span>）</td><td>BC425 第六單元</td><td>仍用於 FI</td><td>維持原用法；新需求先找 BAdI</td></tr>
+      <tr><td>LSMW、Direct Input</td><td>BC420</td><td>SAP 已表明 LSMW 在 S/4HANA 不再建議使用、需自負風險</td><td>S/4HANA Migration Cockpit（Fiori「Migrate Your Data」、<span class="tcode">LTMOM</span>）、BAPI</td></tr>
+      <tr><td>Batch Input／Call Transaction</td><td>BC420</td><td>仍可執行，但 Fiori 化交易與新 GUI 畫面常使錄製失效</td><td>優先 BAPI／API；BDC 只作最後手段</td></tr>
+      <tr><td>Pool／Cluster 表</td><td>BC430</td><td>S/4HANA 多已轉為透明表（如 BSEG）</td><td>直接以 ABAP SQL 或 CDS 讀取</td></tr>
+      <tr><td>SE11 資料庫 View</td><td>BC430</td><td>仍可用</td><td>CDS View（1809 用 DDIC-based；7.55 起建議 View Entity）</td></tr>
+      <tr><td><span class="tcode">SE30</span> 執行時間分析</td><td>BC490（2008）</td><td>已由 <span class="tcode">SAT</span> 取代</td><td><span class="tcode">SAT</span>、<span class="tcode">ST05</span>、<span class="tcode">SQLM</span>／<span class="tcode">SWLT</span>、ATC</td></tr>
+      <tr><td>經典 Debugger</td><td>BC400、BC403</td><td>7.0 起預設新版 Debugger</td><td>新版 Debugger 或 ADT Debugger</td></tr>
+      <tr><td>Web Dynpro ABAP</td><td>NET310</td><td>仍支援，部分標準應用（FPM）仍使用</td><td>新 UI 走 Fiori Elements＋CDS 註解＋RAP</td></tr>
+      <tr><td><span class="kw">EXEC SQL</span>、Native SQL</td><td>BC490、BC414</td><td>禁用於新程式</td><td>AMDP、CDS Table Function</td></tr>
+      <tr><td>SE80 Form-based 開發</td><td>BC400～BC402（2007）</td><td>仍可用</td><td>ADT（Eclipse），CDS／RAP 只能在 ADT 開發</td></tr>
+    </tbody>
+  </table>
+  <p>以 BC405／BC407 常用的航班邏輯資料庫 F1S（SPFLI → SFLIGHT → SBOOK）為例，S/4HANA 的替代是一支 CDS View。以 1809 為基準寫 DDIC-based 版本：</p>
+<pre><code class="sql">@AbapCatalog.sqlViewName: 'ZVFLTBOOK'
+@AbapCatalog.compiler.compareFilter: true
+@AccessControl.authorizationCheck: #NOT_REQUIRED
+@EndUserText.label: '航班訂位（取代 LDB F1S 的 GET 巢狀讀取）'
+define view Z_I_FlightBooking
+  as select from spfli   as p
+    inner join   sflight as f on  f.carrid = p.carrid
+                              and f.connid = p.connid
+    inner join   sbook   as b on  b.carrid = f.carrid
+                              and b.connid = f.connid
+                              and b.fldate = f.fldate
+{
+  key p.carrid,
+  key p.connid,
+  key f.fldate,
+  key b.bookid,
+      p.cityfrom,
+      p.cityto,
+      b.customid,
+      b.forcuram,
+      b.forcurkey
+}</code></pre>
+  <div class="warn">版本門檻：<span class="kw">define view entity</span>（不需 <span class="kw">@AbapCatalog.sqlViewName</span>）要 <b>ABAP 7.55（S/4HANA 2020）</b>以上；在 1809 請用上面的 DDIC-based 寫法。實務上正式環境請把 <span class="kw">authorizationCheck</span> 設為 <span class="kw">#CHECK</span> 並建立 DCL 權限；此處示範資料為訓練用航班模型，所以設 <span class="kw">#NOT_REQUIRED</span>。</div>
+  <p>Classic BAdI 到 New BAdI 的呼叫差異只有幾行，但背後是整個 Enhancement Framework（BC427）：</p>
+<pre><code class="abap">" New BAdI：BAdI 定義在 Enhancement Spot（SE18），實作在 Enhancement Implementation（SE19）
+DATA lo_badi TYPE REF TO zbadi_po_check.        " BAdI 定義名稱即型別
+
+TRY.
+    GET BADI lo_badi
+      FILTERS
+        bukrs = ls_po-bukrs.                    " 有過濾器時在此指定
+
+    CALL BADI lo_badi-&gt;check_item
+      EXPORTING
+        is_item     = ls_po_item
+      CHANGING
+        ct_messages = lt_messages.
+  CATCH cx_badi_not_implemented.
+    " 單一使用（single-use）BAdI 沒有任何實作又無 fallback class 時才會進來
+    RETURN.
+ENDTRY.</code></pre>
+  <p>BC440 的 WebRFC 在今天由 ICF 服務取代。最小可用的 HTTP 處理類別如下（在 <span class="tcode">SICF</span> 建立服務節點並指定此類別）：</p>
+<pre><code class="abap">CLASS zcl_http_connections DEFINITION PUBLIC FINAL CREATE PUBLIC.
+  PUBLIC SECTION.
+    INTERFACES if_http_extension.
+ENDCLASS.
+
+CLASS zcl_http_connections IMPLEMENTATION.
+  METHOD if_http_extension~handle_request.
+    DATA(lv_carrid) = CONV s_carr_id( to_upper( server-&gt;request-&gt;get_form_field( 'carrid' ) ) ).
+
+    SELECT carrid, connid, cityfrom, cityto, deptime
+      FROM spfli
+      WHERE carrid = @lv_carrid
+      ORDER BY connid
+      INTO TABLE @DATA(lt_conn).
+
+    DATA(lv_json) = /ui2/cl_json=&gt;serialize(
+                      data        = lt_conn
+                      pretty_name = /ui2/cl_json=&gt;pretty_mode-camel_case ).
+
+    server-&gt;response-&gt;set_content_type( 'application/json; charset=utf-8' ).
+    server-&gt;response-&gt;set_cdata( lv_json ).
+    server-&gt;response-&gt;set_status( code = 200 reason = 'OK' ).
+  ENDMETHOD.
+ENDCLASS.</code></pre>
+  <div class="warn">自寫 ICF 處理類別適合小型、內部的整合。正式對外的 API 在 S/4HANA 請優先用 OData（<span class="tcode">SEGW</span>，或 7.54 以上以 RAP 的 Service Definition／Binding 發布），權限、CSRF 防護、分頁與中繼資料都由框架處理。詳見 <a href="#ch05-17">5-17 章</a>。</div>
+
+  <h3 id="ch05-0-10">10. 課號變動與重名注意事項</h3>
+  <p>同一個課號在不同年代可能是完全不同的課。依本資料夾的版本，要特別注意以下幾組：</p>
+  <table>
+    <thead><tr><th>課號</th><th>强晟筆記（2007／2008）</th><th>原廠教材（本資料夾 Col 版）</th><th>本專區處理方式</th></tr></thead>
+    <tbody>
+      <tr><td><b>BC404</b></td><td>ABAP Objects: Object-Oriented Programming in R/3（物件導向，21 頁，大部分與 BC401 重複）</td><td>ABAP Programming in Eclipse（ADT 開發環境，Col18）</td><td>舊 BC404 併入 <a href="#ch05-2">5-2 章</a>；新 BC404 獨立為 <a href="#ch05-5">5-5 章</a></td></tr>
+      <tr><td><b>BC401</b></td><td>ABAP Objects，15 單元，前 4 單元講資料型別、內表、呼叫程式（2002／4.6A 版）</td><td>ABAP Objects，純物件導向（Col18）</td><td><a href="#ch05-2">5-2 章</a>；內表與呼叫程式的細節可同時對照 <a href="#ch05-3">5-3 章</a></td></tr>
+      <tr><td><b>BC402</b></td><td>ABAP Programming Techniques（2001／4.6C 版）</td><td>Advanced ABAP（Col18，新增運算式、新 Open SQL、記憶體管理）</td><td><a href="#ch05-3">5-3 章</a></td></tr>
+      <tr><td><b>BC405</b></td><td>Techniques of List Creation（WRITE 清單＋LDB＋Grid）</td><td>Programming ABAP Reports（Col18，以 ALV 為主）</td><td><a href="#ch05-6">5-6 章</a></td></tr>
+      <tr><td><b>BC410</b></td><td>Developing User Dialogs</td><td>Programming User Dialogs with Classical Screens (Dynpros)</td><td><a href="#ch05-9">5-9 章</a></td></tr>
+      <tr><td><b>BC406、BC412、BC415、BC420、BC427、BC440</b></td><td>有筆記</td><td><b>本資料夾無對應新版教材</b></td><td>以筆記為主，補上 S/4HANA 現況；這些課目前是否停開或併入其他課，請以 SAP Learning 目錄為準</td></tr>
+      <tr><td><b>BC403、BC404（新）、BC460、BIT750、NET310、SAPNW</b></td><td>無筆記</td><td>只有原廠英文教材</td><td>本專區直接依原廠教材整理成繁體中文</td></tr>
+      <tr><td><b>BIT750</b></td><td>—</td><td>SAP Application Interface Framework（AIF），不是 IDoc 課程</td><td>與 IDoc 說明文件（4.6B）合併為 <a href="#ch05-22">5-22 章</a>，因為 AIF 最常監控的正是 IDoc 與 Proxy 介面</td></tr>
+    </tbody>
+  </table>
+  <div class="warn"><b>檔名暱稱會誤導</b>：資料夾整理時替强晟筆記加了中文暱稱，但部分暱稱不代表課程主題。例如 BC404 標「接口」其實是物件導向的<b>介面（Interface）</b>單元、BC415 標「接口」才是 RFC 介面；BC406 標「訊息」實際是進階清單處理；BC407 標「基礎」實際是 Query 報表工具；BC490 標「高級」是效能調校。找資料請看本頁清冊的課名，不要看暱稱。</div>
+  <div class="note">舊教材裡常出現的訓練用資料模型——航班（SPFLI、SFLIGHT、SBOOK、SCARR、SAPLANE）與旅行社情境（BC425「專業旅行社」、BC470「fly &amp; smile 旅行社」）——在 Col18 新教材中依然沿用。只要系統有安裝訓練資料（可用報表 <span class="kw">SAPBC_DATA_GENERATOR</span> 產生），本專區所有範例都能在自己的沙箱重現。</div>
+
+  <h3 id="ch05-0-11">11. 如何使用本專區</h3>
+  <ol>
+    <li><b>先讀每章 §1「課程定位與教材對照」</b>：每一章第一節都有一張對照表，列出「單元 ↔ 强晟筆記頁碼 ↔ 原廠教材 Unit／Lesson 與頁碼 ↔ 本章小節」。想看原文圖表或完整練習題，照頁碼打開原始 PDF 即可。</li>
+    <li><b>頁碼是 PDF 頁碼</b>：表中的「p27」是 PDF 閱讀器裡的第 27 頁（含封面），不是教材印刷頁碼（原廠教材前幾頁用羅馬數字 i、ii…，因此兩者會差幾頁）。</li>
+    <li><b>先查第一～四部，再查第五部</b>：第一～四部是 Casper 課程的實作路線（照著做就能跑）；第五部是原廠課程的規則全集（為什麼、有哪些限制、面試會問什麼）。兩邊互相連結，建議兩者對照看。</li>
+    <li><b>用搜尋框找課號或 TCODE</b>：輸入「BC414」「SM13」「ENQUEUE」都能直接跳到相關小節。</li>
+    <li><b>程式碼都已現代化</b>：專區內所有程式都是 S/4HANA 1809 以上能直接用的寫法；原教材的舊語法只在各章的對照表中以文字說明。要把舊程式翻新，請搭配 <a href="#ap-01">附錄 舊語法速查</a>。</li>
+    <li><b>每章最後的「練習與自我檢核」</b>附有參考答案要點，可當作讀書會或新人訓練的題庫。</li>
+  </ol>
+  <div class="tip">建議的查閱姿勢：遇到專案問題 → 先在第一～四部找「怎麼做」→ 做不出來或結果怪怪的 → 到第五部對應章找「原廠怎麼規定」→ 還不夠 → 依 §1 對照表的頁碼翻原始 PDF。三層由淺到深，通常第二層就能解決。</div>
+
+  <h3 id="ch05-0-12">12. 貫穿全專區的三條實務經驗</h3>
+  <p>原廠教材教的是「規則」，但專案上真正出事的往往是規則之間的縫隙。Casper 在專案上踩過的三個坑，會在第五部各章反覆出現：</p>
+  <ul>
+    <li><b>HANA 沒有預設排序</b>（BC400、BC402、BC490、BC414）：舊資料庫常「剛好」照主鍵回傳，HANA 不會。成本評價同時存在 item category「H」與 cost component「E」兩種角度，兩者的成本構成欄位數量不同；程式沒排序時一下抓到 H、一下抓到 E，成本就不穩定——該案最後的結論是固定抓 H。任何「取第一筆」都必須先明確 <span class="kw">ORDER BY</span>，或乾脆在 WHERE 條件中鎖定唯一值。</li>
+    <li><b>條件用列舉（多筆 EQ）比用區間（BT）安全</b>（BC405、BC407、BC415、BC420）：區間比的是字典序，不是業務語意。</li>
+    <li><b>先找標準，再想客製</b>（BC407、BC425、BC427）：標準設定 → BAdI／Enhancement Spot → Enhancement Point → 修改標準，每往右一步，升級成本高一個量級。</li>
+  </ul>
+<pre><code class="abap">" (1) 取「最新一筆」成本估算：先明確排序，再取第一筆
+SELECT matnr, werks, kalka, kadky, tvers, kalnr
+  FROM keko
+  WHERE matnr = @lv_matnr
+    AND werks = @lv_werks
+    AND kalka = @lv_kalka                 " 鎖定成本估算類型，不要讓系統「隨便挑」
+  ORDER BY kadky DESCENDING, tvers DESCENDING, kalnr DESCENDING
+  INTO TABLE @DATA(lt_keko)
+  UP TO 1 ROWS.
+
+IF lt_keko IS NOT INITIAL.
+  DATA(ls_latest) = lt_keko[ 1 ].
+ENDIF.
+
+" (2) 條件用列舉：每個公司代碼明確列出，而不是 BT '1000' AND '1999'
+DATA lt_bukrs TYPE RANGE OF bukrs.
+lt_bukrs = VALUE #( sign = 'I' option = 'EQ'
+                    ( low = '1000' )
+                    ( low = '1100' )
+                    ( low = '1300' ) ).
+
+SELECT bukrs, butxt, waers
+  FROM t001
+  WHERE bukrs IN @lt_bukrs
+  ORDER BY bukrs
+  INTO TABLE @DATA(lt_company).</code></pre>
+  <div class="warn"><span class="kw">SELECT SINGLE</span> 在條件不足以唯一定位一筆時，回傳哪一筆是「未定義」的——HANA 上真的會每次不同。<span class="kw">SELECT SINGLE</span> 只用在 WHERE 已涵蓋完整主鍵的情況；其他「取一筆」一律寫 <span class="kw">ORDER BY … UP TO 1 ROWS</span>。</div>
+
+  <h3 id="ch05-0-qa">練習與自我檢核</h3>
+  <ol>
+    <li>强晟筆記與原廠 Col18 教材分別對應哪個時代的系統？為什麼讀筆記時要特別留意程式碼？</li>
+    <li>2007 年的 BC404 與本資料夾的 BC404 Col18 各是什麼課？在本專區分別收在哪一章？</li>
+    <li>S/4HANA 1809 的技術底層叫什麼？SAP_BASIS 是多少？本圖書館的程式碼以哪個語法版本為下限？</li>
+    <li>依原廠測驗解答的交叉引用，BC410、BC414、BC425 分別對應哪一門 TAW 組合課？</li>
+    <li>C_TAW12 與 C_ABAPD 兩種認證的主要差異是什麼？</li>
+    <li>一位新人主要工作是寫 MM 報表，請替他排出第五部的閱讀順序，並說明每一站搭配哪一章實作。</li>
+    <li>請列出至少五項已過時技術，並寫出各自在 S/4HANA 的替代方案。</li>
+    <li>為什麼 BIT750 與 IDoc 說明文件被放在同一章？BIT750 的主題到底是什麼？</li>
+    <li>本專區對照表中的「p27」指的是什麼頁碼？和教材印刷頁碼有何不同？</li>
+    <li>寫一段 ABAP SQL，從 KEKO 取某物料在某工廠「最新的一筆」成本估算，並說明為什麼不能用 <span class="kw">SELECT SINGLE</span>。</li>
+  </ol>
+  <p><b>參考答案要點</b></p>
+  <ol>
+    <li>筆記：2007～2008，R/3 4.6～ECC 6.0（NetWeaver 7.0）時代，手上教材有 2001／2002 的 4.6C／4.6A 版；Col18：2022 年版，NetWeaver 7.5x／S/4HANA 觀點。筆記程式大量使用 TABLES、HEADER LINE、SELECT…ENDSELECT、REUSE_ALV，不可直接照抄。</li>
+    <li>2007 BC404：R/3 物件導向（內容多與 BC401 重複）→ 併入 5-2 章；Col18 BC404：ABAP Programming in Eclipse（ADT）→ 5-5 章。</li>
+    <li>ABAP Platform 1809，SAP_BASIS 7.53；程式碼以 ABAP 7.52 語法為下限，7.54 以上的語法（如 <span class="kw">+=</span>、View Entity）會另標版本門檻。</li>
+    <li>BC410 → TAW10 Part II；BC414 → TAW11e；BC425 → TAW12。</li>
+    <li>C_TAW12：經典 ABAP（工作台、字典、報表、Dynpro、OO、增強、Web Dynpro）；C_ABAPD：ABAP Cloud 開發模型（ABAP SQL、CDS、RAP、ADT）。代碼與規則以 SAP Learning 官網為準。</li>
+    <li>5-1 BC400（配 1-1、2-1）→ 5-16 BC430（配 1-2、1-3）→ 5-8 BC407（配 1-4）→ 5-3 BC402（配 2-2）→ 5-6／5-7（配 3-1、2-3）→ 5-2（配 3-2、2-4）→ 5-4、5-21（除錯與效能）。</li>
+    <li>LDB → SQL／CDS＋SALV；WebRFC → ICF／OData；SAPscript → Adobe Forms；Classic BAdI → New BAdI；LSMW → Migration Cockpit；SE30 → SAT；REUSE_ALV → CL_SALV_TABLE；ITS WebTransaction → Fiori＋OData；Web Dynpro → Fiori Elements＋RAP；EXEC SQL → AMDP。</li>
+    <li>BIT750 是 SAP Application Interface Framework（AIF），講介面的錯誤處理、映射與監控；AIF 最常監控的就是 IDoc 與 Proxy 介面，而 IDoc 說明文件（4.6B）提供 IDoc 的底層觀念，兩者合讀才完整，故合為 5-22 章。</li>
+    <li>PDF 閱讀器裡的頁碼（含封面與目錄頁），不是教材印刷頁碼；原廠教材前段以羅馬數字編頁，因此兩者會有落差。</li>
+    <li>寫法見 §12 範例 (1)：WHERE 鎖定物料、工廠、成本估算類型，<span class="kw">ORDER BY kadky DESCENDING …</span> 後 <span class="kw">UP TO 1 ROWS</span>。<span class="kw">SELECT SINGLE</span> 在條件未涵蓋完整主鍵時回傳哪筆未定義，HANA 又沒有預設排序，結果會不穩定（成本 H／E 案例）。</li>
+  </ol>
+</section>

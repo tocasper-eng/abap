@@ -1,0 +1,1133 @@
+<section class="chapter" id="ch08-7" data-title="實戰源碼庫（七）：主資料與生產資料批導">
+  <h2>第 8-7 章 實戰源碼庫（七）：主資料與生產資料批導——物料、客戶、固定資產、BOM、工作中心、途程</h2>
+  <p class="lede">導入專案上線前一個月，顧問最常聽到的一句話是：「這幾千筆物料、客戶、資產、BOM、途程，給我一支程式讓我用 Excel 丟進去。」本章拆解某醫療器材公司實際上線的六支批導程式（物料、客戶 BP、固定資產、BOM、工作中心、工藝路線），看它們怎麼讀 Excel、怎麼呼叫 BAPI／BDC、錯誤怎麼回報，以及哪裡埋了地雷；再把關鍵段落改寫成 S/4HANA 1809+ 的現代寫法，最後討論「到底該自己寫，還是用 Migration Cockpit」，並附上一份 PP 常用資料表速查。</p>
+  <div class="meta">
+    <div><b>核心 TCODE</b><span class="tcode">SMW0</span><span class="tcode">SE37</span><span class="tcode">MM01</span><span class="tcode">MM17</span><span class="tcode">BP</span><span class="tcode">AS91</span><span class="tcode">ABLDT</span><span class="tcode">CS01</span><span class="tcode">CS20</span><span class="tcode">CR01</span><span class="tcode">CA01</span><span class="tcode">CA85</span><span class="tcode">SHDB</span><span class="tcode">SLG1</span><span class="tcode">LTMC</span><span class="tcode">LTMOM</span><span class="tcode">SE16N</span></div>
+    <div><b>關鍵物件</b>ALSM_EXCEL_TO_INTERNAL_TABLE、TEXT_CONVERT_XLS_TO_SAP、CL_FDT_XL_SPREADSHEET、DOWNLOAD_WEB_OBJECT、BAPI_MATERIAL_SAVEDATA、BAPI_BUPA_CREATE_FROM_DATA、BAPI_BUPA_ROLE_ADD_2、CMD_EI_API、CL_MD_BP_MAINTAIN、CVIS_EI_EXTERN、BAPI_FIXEDASSET_OVRTAKE_CREATE、BAPI_MATERIAL_BOM_GROUP_CREATE、CSAP_MAT_BOM_CREATE、CRAP_WORKCENTER_CREATE、BAPI_ROUTING_CREATE、BAL_LOG_CREATE、MAST／STKO／STPO、CRHD／CRCO、MAPL／PLKO／PLPO</div>
+  </div>
+
+  <h3 id="ch08-7-01">1. 案例索引</h3>
+  <p>本章負責的六支批導程式與一份參考文件如下。六支程式出自同一個 S/4HANA 導入專案（程式表頭與修改註解的日期落在 2020～2022 年），共用同一種「SMW0 模板下載 → 選檔 → 讀 Excel → 呼叫 BAPI／BDC → 顯示結果」的骨架，但出自不同開發者，品質落差很大——這正好讓我們比較「同一件事的好寫法與壞寫法」。</p>
+  <table>
+    <thead><tr><th>程式</th><th>功能</th><th>模組</th><th>原始檔構成</th><th>規模</th><th>截圖／範本</th><th>本章小節</th></tr></thead>
+    <tbody>
+      <tr><td><b>ZMMU012</b> 原材料批導</td><td>物料主資料批導；兩套模板：①原材料／半成品／成品（67 欄）②設備類／工裝工具／低值易耗品／辦公用品／無價值類（7 欄）</td><td>MM（表頭誤標 WM）</td><td>主程式＋ZMMU012_TOP／_S01／_F01；<b>素材只有選擇畫面與模板下載，缺主處理邏輯</b></td><td>約 220 行</td><td>選擇畫面 1 張；xlsx 模板 2 份</td><td>4、5</td></tr>
+      <tr><td><b>ZSDU009</b> 客戶主資料批導</td><td>以 BP 建立／修改客戶：一般資料、地址、角色、公司代碼、銷售範圍、合作夥伴功能、稅號、銀行</td><td>SD</td><td>主程式＋ZSDU009_TOP／_MAIN／_F01／_F02；另有 Dynpro 9000（訊息明細）</td><td>約 4,150 行</td><td>選擇畫面 1 張；xlsx 資料蒐集模板（42 欄、4 列表頭）</td><td>6、7</td></tr>
+      <tr><td><b>ZFIU018</b> 固定資產批導</td><td>舊資產移轉：主資料＋以往年度累計值＋本年交易</td><td>FI-AA</td><td>單一 REPORT（表頭註解誤寫成另一支報表名）</td><td>約 690 行</td><td>選擇畫面 1 張；XLS 模板（實為 xlsx，34 欄＋樞紐分析工具表）</td><td>8</td></tr>
+      <tr><td><b>ZPPU002</b> BOM 批導</td><td>物料 BOM 建立（表頭＋組件＋替代項目組）</td><td>PP</td><td>單一 REPORT</td><td>約 615 行</td><td>選擇畫面 1 張；xlsx 模板（20 欄、4 列表頭）</td><td>9</td></tr>
+      <tr><td><b>ZPPU004</b> 工作中心批導</td><td>以 CR01 BDC 建立工作中心（另有一段未完成的 CRAP_WORKCENTER_CREATE 試作）</td><td>PP／CO</td><td>單一 REPORT＋Dynpro 2000（結果 ALV）</td><td>約 870 行</td><td>選擇畫面 1 張；模板 35 欄＋「工作中心與設備對應關係」頁籤</td><td>10</td></tr>
+      <tr><td><b>ZPPU003</b> 工藝路線批導</td><td>以 BAPI_ROUTING_CREATE 建立物料途程</td><td>PP</td><td>單一 REPORT＋自建函數 ZALSM_EXCEL_TO_INTERNAL_TABLE（函數群 ZPPFG1）</td><td>約 780 行</td><td>選擇畫面＋函數模組屬性／參數／原始碼截圖共 6 張；模板 35 欄</td><td>3、11</td></tr>
+      <tr><td>SAP PP Tables.docx／SAP PP Tables(1).docx</td><td>PP 常用資料表清單＋生產訂單資料表關聯圖</td><td>PP</td><td>兩個檔案 <b>MD5 完全相同</b>，是重複檔</td><td>84 段、1 張圖</td><td>關聯圖 1 張</td><td>15</td></tr>
+    </tbody>
+  </table>
+  <p>共通主題另外拆成：第 2 節（批導程式的共通骨架與 SMW0 模板）、第 3 節（Excel 上傳三種做法）、第 12 節（錯誤收集與回報）、第 13 節（先模擬後提交）、第 14 節（與 Migration Cockpit 的選擇）、第 16 節（上線檢查清單）。BDC 的基本功請先讀 <a href="#ch04-4">4-4 章</a>，BAPI 與 BP 的觀念請讀 <a href="#ch04-1">4-1 章</a>，LSMW／資料傳輸理論請讀 <a href="#ch05-13">5-13 章</a>；本章只談「實戰程式長什麼樣、該怎麼改」。</p>
+  <div class="warn"><b>資安提醒</b>：原始碼表頭留有開發者帳號、程式中有寫死的使用者名稱判斷（<span class="kw">IF sy-uname NE '某開發者帳號'</span> 才開放欄位編輯）與 <span class="kw">BREAK 某帳號</span>，模板檔名含公司品牌縮寫，工作中心範例含真實成本中心號碼。本章一律改用佔位符或泛用值（工廠 1000、公司代碼 1000、客戶 C000001），請讀者在自己的程式裡也不要把帳號、成本中心等資訊寫死在原始碼或範例資料中。</div>
+
+  <h3 id="ch08-7-02">2. 批導程式的共通骨架：SMW0 模板、選擇畫面與五段流程</h3>
+  <p>六支程式的選擇畫面長得幾乎一樣（依截圖整理）：</p>
+  <table>
+    <thead><tr><th>程式</th><th>應用工具列按鈕（FUNCTION KEY）</th><th>參數</th><th>備註</th></tr></thead>
+    <tbody>
+      <tr><td>ZMMU012 物料主數據批導</td><td>FC01「原材料／半成品／產成品導入模板下載」、FC02「設備類／工裝工／低值易耗品／辦公用品／無價值類導入模板下載」</td><td>單選鈕 P_MOBAN1／P_MOBAN2（選擇導入模板）；P_FILE 預設 <span class="kw">C:\</span></td><td>AT SELECTION-SCREEN 的 ONLI 分支用 <span class="kw">file_exist</span> 檢查檔案是否存在</td></tr>
+      <tr><td>ZSDU009 客戶主數據批導</td><td>FC01「下載模板」</td><td>P_FILE、P_MODIFY（修改）、P_SHEET1（Excel Sheet 名稱，預設 Sheet1）</td><td>可指定工作表名稱，是六支中唯一支援多工作表的</td></tr>
+      <tr><td>ZFIU018 固定資產批導</td><td>FC01「下載模版」</td><td>P_FILE、P_RUN（測試運行，預設勾選）</td><td>唯一真正把「測試運行」傳給 BAPI 的程式</td></tr>
+      <tr><td>ZPPU002 BOM 批導</td><td>FC01「模板下載」</td><td>P_FILE</td><td>沒有測試模式</td></tr>
+      <tr><td>ZPPU004 工作中心批導</td><td>FC01「下載模版」</td><td>P_FILE、P_RUN（測試，預設勾選）</td><td><b>P_RUN 在 BDC 路徑中完全沒被使用</b>（第 10 節）</td></tr>
+      <tr><td>ZPPU003 工藝路線批導</td><td>FC01「模板下載」</td><td>P_FILE</td><td>先顯示 ALV，按工具列 START 才建立</td></tr>
+    </tbody>
+  </table>
+  <p><b>模板放在 SMW0</b>：Excel 範本以「二進位資料」上傳到 <span class="tcode">SMW0</span>（存在表 WWWDATA，RELID = 'MI'），程式以 <span class="kw">DOWNLOAD_WEB_OBJECT</span> 下載到使用者電腦。這樣模板跟程式一起走傳輸（物件類型 R3TR W3MI），不會出現「每個人電腦裡的模板版本不同」的問題。素材中有三個值得注意的小錯：固定資產程式下載的 SMW0 物件名與程式名不一致、ZMMU012 的訊息類別用自建 ZMSG 而另一支用標準訊息 <span class="kw">899(MM)</span> 拼字串、BOM／途程程式呼叫 <span class="kw">DOWNLOAD_WEB_OBJECT</span> 時不檢查回傳碼。</p>
+  <p><b>五段流程</b>（每支批導都該有，缺一段就會出事）：</p>
+  <ol>
+    <li><b>讀檔</b>：Excel → 字串內表（第 3 節）。</li>
+    <li><b>轉換</b>：補前導零（ALPHA）、單位轉內碼（CUNIT）、日期格式、大小寫；保留 Excel 原始列號。</li>
+    <li><b>檢核</b>：必填、主檔存在（物料、工廠、成本中心、工作中心）、重複（檔內重複與系統已存在）。</li>
+    <li><b>模擬 → 提交</b>：能 TESTRUN 就先全部 TESTRUN，全部通過才真的寫入（第 13 節）。</li>
+    <li><b>回報</b>：每一列一個狀態燈與完整訊息，並存進應用日誌 <span class="tcode">SLG1</span>（第 12 節）。</li>
+  </ol>
+  <p>模板下載的現代寫法（取代六支程式各自複製貼上的 FORM）：</p>
+  <pre><code class="abap">CLASS lcl_template DEFINITION FINAL.
+  PUBLIC SECTION.
+    "! 從 SMW0 下載 Excel 模板到使用者選的路徑
+    CLASS-METHODS download
+      IMPORTING iv_objid TYPE wwwdata-objid
+                iv_title TYPE string.
+ENDCLASS.
+
+CLASS lcl_template IMPLEMENTATION.
+  METHOD download.
+    DATA: lv_file   TYPE string,
+          lv_path   TYPE string,
+          lv_full   TYPE string,
+          lv_action TYPE i.
+
+    cl_gui_frontend_services=&gt;file_save_dialog(
+      EXPORTING default_file_name = |{ iv_title }_{ sy-datum }.xlsx|
+                default_extension = 'xlsx'
+                file_filter       = cl_gui_frontend_services=&gt;filetype_excel
+      CHANGING  filename    = lv_file
+                path        = lv_path
+                fullpath    = lv_full
+                user_action = lv_action
+      EXCEPTIONS OTHERS = 1 ).
+    IF sy-subrc &lt;&gt; 0 OR lv_action &lt;&gt; cl_gui_frontend_services=&gt;action_ok.
+      RETURN.                                   "使用者取消
+    ENDIF.
+
+    SELECT SINGLE relid, objid
+      FROM wwwdata
+      WHERE relid = 'MI'
+        AND objid = @iv_objid
+        AND srtf2 = 0
+      INTO @DATA(ls_key).
+    IF sy-subrc &lt;&gt; 0.
+      MESSAGE |SMW0 找不到模板 { iv_objid }| TYPE 'S' DISPLAY LIKE 'E'.
+      RETURN.
+    ENDIF.
+
+    DATA(ls_wwwkey) = CORRESPONDING wwwdatatab( ls_key ).
+    DATA(lv_dest)   = CONV rlgrap-filename( lv_full ).
+    DATA lv_rc TYPE sy-subrc.
+    CALL FUNCTION 'DOWNLOAD_WEB_OBJECT'
+      EXPORTING key         = ls_wwwkey
+                destination = lv_dest
+      IMPORTING rc          = lv_rc.
+    IF lv_rc = 0.
+      MESSAGE |模板已下載：{ lv_full }| TYPE 'S'.
+    ELSE.
+      MESSAGE |模板 { iv_objid } 下載失敗| TYPE 'S' DISPLAY LIKE 'E'.
+    ENDIF.
+  ENDMETHOD.
+ENDCLASS.
+
+" 選擇畫面事件中只剩一行
+AT SELECTION-SCREEN.
+  CASE sscrfields-ucomm.
+    WHEN 'FC01'.
+      lcl_template=&gt;download( iv_objid = 'ZPPU002' iv_title = 'BOM批導模板' ).
+  ENDCASE.</code></pre>
+  <div class="note">選擇畫面的 <span class="kw">SELECTION-SCREEN FUNCTION KEY 1</span> 需要 <span class="kw">sscrfields</span>。它是名為 SSCRFIELDS 的介面工作區，框架只認這個名字，改用 DATA 宣告同型別變數無效。因此這是本圖書館「禁用 TABLES」規則的唯一例外：<span class="kw">TABLES sscrfields</span> 是選擇畫面的介面宣告，不是拿來讀資料庫表，詳見 <a href="#ch03-1">3-1 章</a>。</div>
+
+  <h3 id="ch08-7-03">3. Excel 上傳三選一：ALSM／TEXT_CONVERT_XLS_TO_SAP／CL_FDT_XL_SPREADSHEET</h3>
+  <p>六支程式用了三種讀 Excel 的方式：固定資產與工作中心用標準 <span class="kw">ALSM_EXCEL_TO_INTERNAL_TABLE</span>；BOM 與途程用自建的 <span class="kw">ZALSM_EXCEL_TO_INTERNAL_TABLE</span>；客戶用自建的 <span class="kw">ZFM_EXCEL_SHEET_UPLOAD</span>（可指定工作表，原始碼不在素材中）。途程程式的 docx 附了 ZALSM 的截圖：函數群 ZPPFG1「PP 模組函數組」，短文「excel to internal table 擴充字段長度」，匯入參數 FILENAME（LIKE RLGRAP-FILENAME）、I_BEGIN_COL／I_BEGIN_ROW／I_END_COL／I_END_ROW（TYPE I），表格參數 INTERN LIKE ZALSMEX_TABLINE，例外 INCONSISTENT_PARAMETERS、UPLOAD_OLE。原始碼與標準版完全相同，只把輸出結構換成欄位更長的 ZALSMEX_TABLINE。</p>
+  <p><b>為什麼要複製一份？</b>因為標準結構 ALSMEX_TABLINE 的 VALUE 只有 <b>CHAR 50</b>，物料長描述（200 字）、客戶地址（255 字）、規格型號（255 字）會被截斷。這是最常見的「批導後資料少一截」原因。</p>
+  <table>
+    <thead><tr><th>做法</th><th>原理</th><th>優點</th><th>限制</th><th>建議</th></tr></thead>
+    <tbody>
+      <tr><td><b>ALSM_EXCEL_TO_INTERNAL_TABLE</b></td><td>OLE 開啟使用者電腦上的 Excel → 選取範圍 → 複製到剪貼簿 → <span class="kw">clipboard_import</span> 讀回，以 TAB 切欄</td><td>任何版本都有；輸出為 ROW／COL／VALUE 三欄，容易寫成通用程式</td><td>需 SAP GUI for Windows＋已安裝 Excel；不能背景執行；VALUE 只有 50 字；會覆蓋使用者剪貼簿；大量資料很慢；Excel 行程偶爾殘留</td><td>只適合小量、臨時工具</td></tr>
+      <tr><td><b>TEXT_CONVERT_XLS_TO_SAP</b>（TRUX 函數群）</td><td>同樣經由前端 Excel，直接依欄位順序轉成你給的結構化內表</td><td>一行就轉成型別化內表；I_LINE_HEADER 可略過表頭</td><td>同樣依賴前端 Excel／OLE；欄位順序必須與結構完全一致；型別轉換失敗整批報 CONVERSION_FAILED，看不出是哪一列</td><td>結構固定的簡單模板可用</td></tr>
+      <tr><td><b>CL_FDT_XL_SPREADSHEET</b></td><td>把 xlsx 以二進位上傳（<span class="kw">GUI_UPLOAD</span> BIN），在<b>應用伺服器端</b>解析 Office Open XML</td><td>不需要前端安裝 Excel；可讀多個工作表；無 50 字限制；也可讀 AL11 上的檔案 → 可排背景</td><td>只支援 xlsx（不支援舊 xls）；所有儲存格回傳為字串，<b>日期會變成 Excel 序號</b>（例如 45108）要自己換算</td><td><b>S/4HANA 首選</b>（也可考慮開源 abap2xlsx）</td></tr>
+    </tbody>
+  </table>
+  <p>通用讀檔類別：回傳「列號＋欄號＋值」的中立格式，後續再依模板對應到型別化結構。保留 Excel 列號，錯誤回報才找得到是哪一列。</p>
+  <pre><code class="abap">CLASS lcl_xlsx DEFINITION FINAL.
+  PUBLIC SECTION.
+    TYPES: BEGIN OF ty_cell,
+             row   TYPE i,
+             col   TYPE i,
+             value TYPE string,
+           END OF ty_cell,
+           tt_cell TYPE SORTED TABLE OF ty_cell WITH UNIQUE KEY row col.
+
+    CLASS-METHODS read
+      IMPORTING iv_file         TYPE string
+                iv_sheet        TYPE string OPTIONAL   "空白＝第一個工作表
+                iv_first_row    TYPE i DEFAULT 2       "資料起始列（跳過表頭）
+      RETURNING VALUE(rt_cells) TYPE tt_cell
+      RAISING   cx_fdt_excel_core.
+
+    "! Excel 日期序號（1900 系統）轉 ABAP 日期；已是 YYYYMMDD 則原樣回傳
+    CLASS-METHODS to_date
+      IMPORTING iv_cell        TYPE string
+      RETURNING VALUE(rv_date) TYPE d.
+ENDCLASS.
+
+CLASS lcl_xlsx IMPLEMENTATION.
+  METHOD read.
+    DATA lt_bin TYPE solix_tab.
+    cl_gui_frontend_services=&gt;gui_upload(
+      EXPORTING filename   = iv_file
+                filetype   = 'BIN'
+      IMPORTING filelength = DATA(lv_len)
+      CHANGING  data_tab   = lt_bin
+      EXCEPTIONS OTHERS    = 1 ).
+    IF sy-subrc &lt;&gt; 0.
+      MESSAGE |檔案 { iv_file } 讀取失敗| TYPE 'E'.
+    ENDIF.
+
+    DATA(lv_xstr) = cl_bcs_convert=&gt;solix_to_xstring( it_solix = lt_bin
+                                                      iv_size  = lv_len ).
+    DATA(lo_xl) = NEW cl_fdt_xl_spreadsheet( document_name = iv_file
+                                             xdocument     = lv_xstr ).
+
+    lo_xl-&gt;if_fdt_doc_spreadsheet~get_worksheet_names(
+      IMPORTING worksheet_names = DATA(lt_sheets) ).
+    DATA(lv_sheet) = COND string( WHEN iv_sheet IS NOT INITIAL THEN iv_sheet
+                                  ELSE lt_sheets[ 1 ] ).
+
+    DATA(lr_tab) = lo_xl-&gt;if_fdt_doc_spreadsheet~get_itab_from_worksheet( lv_sheet ).
+    FIELD-SYMBOLS &lt;lt_sheet&gt; TYPE STANDARD TABLE.
+    ASSIGN lr_tab-&gt;* TO &lt;lt_sheet&gt;.
+
+    LOOP AT &lt;lt_sheet&gt; ASSIGNING FIELD-SYMBOL(&lt;ls_line&gt;) FROM iv_first_row.
+      DATA(lv_row) = sy-tabix.                   "＝Excel 列號
+      DO.
+        ASSIGN COMPONENT sy-index OF STRUCTURE &lt;ls_line&gt; TO FIELD-SYMBOL(&lt;lv_cell&gt;).
+        IF sy-subrc &lt;&gt; 0.
+          EXIT.
+        ENDIF.
+        IF &lt;lv_cell&gt; IS NOT INITIAL.
+          INSERT VALUE #( row = lv_row col = sy-index
+                          value = condense( CONV string( &lt;lv_cell&gt; ) ) )
+                 INTO TABLE rt_cells.
+        ENDIF.
+      ENDDO.
+    ENDLOOP.
+  ENDMETHOD.
+
+  METHOD to_date.
+    IF strlen( iv_cell ) = 8 AND iv_cell CO '0123456789'.
+      rv_date = iv_cell.                          "使用者輸入文字 20240101
+    ELSEIF iv_cell CO '0123456789. '.
+      rv_date = CONV d( '18991230' ) + CONV i( iv_cell ).  "Excel 序號
+    ENDIF.
+  ENDMETHOD.
+ENDCLASS.</code></pre>
+  <div class="tip">讀進來後，<b>一律先轉成「全部是 STRING 的上傳結構」</b>，檢核通過再轉成 BAPI 用的型別。原程式把 Excel 值直接 <span class="kw">ASSIGN COMPONENT l_col OF STRUCTURE gs_data</span> 塞進 TYPE P／DATS 欄位，遇到「1,200.00」「2024/1/1」就短傾或變成 0，而且只有固定資產程式包了 TRY，工作中心程式連 TRY 都註解掉了。</div>
+
+  <h3 id="ch08-7-04">4. ZMMU012 物料主資料批導：業務情境、兩套模板與欄位對照</h3>
+  <p><b>業務情境</b>：上線前要把舊系統的原材料、半成品、成品一次建進 SAP，而且一次要開齊基本、採購、MRP1～4、工作計畫、工廠、倉儲、會計視圖；另外設備、工裝、低值易耗品、辦公用品這些「不跑 MRP、不計成本」的物料，只需要基本資料。所以程式提供兩套模板，用單選鈕切換。</p>
+  <p><b>素材狀況</b>：本案例只附了 TOP（常數 GC_M1＝'ZMMU012_M1'、GC_M2＝'ZMMU012_M2'、GC_RELID＝'MI'）、S01（選擇畫面）與 F01（開檔對話框、模板下載、檔案存在檢查）；<b>真正讀 Excel 與呼叫 BAPI 的主處理邏輯不在素材中</b>（沒有 START-OF-SELECTION）。以下的欄位對照依兩份 xlsx 模板的前 4 列整理，第 5 節再依模板補寫 S/4HANA 版的處理程式。<span class="src">（依模板欄位整理）</span></p>
+  <p>模板一共 4 列表頭：第 1 列是視圖分組（基本數據、銷售、工廠、採購、MRP1～3、工作計劃、倉庫、會計 1／2），第 2 列是技術欄位名（含長度），第 3 列是中文欄名，第 4 列是填寫說明。主要欄位如下：</p>
+  <table>
+    <thead><tr><th>模板欄位</th><th>中文</th><th>資料表</th><th>BAPI_MATERIAL_SAVEDATA 結構</th><th>模板填寫規則（原文重點）</th></tr></thead>
+    <tbody>
+      <tr><td>MATNR(40)</td><td>SAP 物料編碼</td><td>MARA</td><td>HEADDATA-MATERIAL_LONG</td><td>內控號；S/4 物料號 40 碼</td></tr>
+      <tr><td>MTART／WERKS</td><td>物料類型／工廠</td><td>MARA／MARC</td><td>HEADDATA-MATL_TYPE／PLANTDATA-PLANT</td><td>工廠預設 1000</td></tr>
+      <tr><td>BISMT(40)</td><td>REF 號（舊物料號）</td><td>MARA</td><td>CLIENTDATA</td><td>成品必填</td></tr>
+      <tr><td>MAKTX(40)／TEXT01(200)</td><td>中文短描述／長描述</td><td>MAKT／長文本</td><td>MATERIALDESCRIPTION／MATERIALLONGTEXT</td><td>短描述能表達完整就不用長描述</td></tr>
+      <tr><td>MEINS／MATKL</td><td>基本單位／物料組</td><td>MARA</td><td>CLIENTDATA-BASE_UOM／MATL_GROUP</td><td>參考分頁籤</td></tr>
+      <tr><td>ZEINR ～ ZNKFZM</td><td>工程圖號、規格型號、材料牌號、財務一／二級分類、物料分類等級、是否留樣、註冊證大類、內外銷標誌、許可合同序號、專利有效日期、內／中／外／特殊包裝數量、條碼存貨編碼、廠商識別碼、內控輔助編碼…</td><td>MARA（ZEINR 為標準欄位，其餘約 20 個為 MARA 客製 Append）</td><td>ZEINR 在 CLIENTDATA；Z 欄位走 EXTENSIONIN（BAPI_TE_MARA／BAPI_TE_MARAX）</td><td>內銷填 1、外銷填 0；財務分類見頁籤</td></tr>
+      <tr><td>MVGR1～3</td><td>一級分類、二級分類、存貨合同分類</td><td>MVKE（銷售組織層）</td><td>SALESDATA</td><td>模板第 1 列標成「工廠層銷售資料」，其實是銷售範圍層</td></tr>
+      <tr><td>MHDHB</td><td>總貨架壽命</td><td>MARA</td><td>CLIENTDATA</td><td>保質期</td></tr>
+      <tr><td>EKGRP／PLIFZ</td><td>採購組／計畫交貨時間</td><td>MARC</td><td>PLANTDATA-PUR_GROUP／PLND_DELRY</td><td>原材料必填</td></tr>
+      <tr><td>DISMM／DISPO／DISLS</td><td>MRP 類型／MRP 控制者／批量程序</td><td>MARC</td><td>PLANTDATA-MRP_TYPE／MRP_CTRLER／LOTSIZEKEY</td><td>VB 再訂貨點、PD MRP、ND 不跑、M0 MPS；EX／WB／MB／FX</td></tr>
+      <tr><td>BSTMI／AUSSS／BSTRF／MINBE／BSTFE</td><td>最小批量／裝配報廢%／捨入值／再訂貨點／固定批量</td><td>MARC</td><td>PLANTDATA-MINLOTSIZE／ASSY_SCRAP／ROUND_VAL／REORDER_PT／FIXED_LOT</td><td>固定批量有值則最小批量不填；VB 必填再訂貨點；FX 必填固定批量</td></tr>
+      <tr><td>BESKZ／SOBSL</td><td>採購類型／特殊採購</td><td>MARC</td><td>PLANTDATA-PROC_TYPE／SPPROCTYPE</td><td>E 自製、F 外購；30 外協、50 虛擬件</td></tr>
+      <tr><td>LGPRO／LGFSB</td><td>生產倉儲地點／外購倉儲地點</td><td>MARC</td><td>PLANTDATA-ISS_ST_LOC／SLOC_EXPRC</td><td>見庫存地點頁籤</td></tr>
+      <tr><td>DZEIT／WEBAZ／EISBE</td><td>自製生產天數／收貨處理時間／安全庫存</td><td>MARC</td><td>PLANTDATA-INHSEPRODT／GR_PR_TIME／SAFETY_STK</td><td>成品／半成品必填自製天數</td></tr>
+      <tr><td>STRGR</td><td>策略組</td><td>MARC</td><td>PLANTDATA-PLAN_STRGP</td><td>成品必填：20 按單、11 按庫、40 預測＋訂單</td></tr>
+      <tr><td>FEVOR／SFCPF</td><td>生產管理員／生產計畫參數檔</td><td>MARC</td><td>PLANTDATA-PRODUCTION_SCHEDULER／PRODPROF</td><td>高值 A01、大宗 A02；自製必填 000001</td></tr>
+      <tr><td>AUSME／UMREN／MEINS／UMREZ</td><td>發貨單位／分母／基本單位／分子</td><td>MARC／MARM</td><td>UNITSOFMEASURE（ALT_UNIT、DENOMINATR、NUMERATOR）</td><td>例：1 瓶＝1000 克，發貨單位克 → 分母 1000、分子 1</td></tr>
+      <tr><td>LGNUM／LGPLA</td><td>倉庫號／倉位</td><td>MLGN／MLGT</td><td>WAREHOUSENUMBERDATA／STORAGETYPEDATA</td><td>C01 原材料倉…C05 研發原料倉</td></tr>
+      <tr><td>ABWKZ／PEINH／ZPLP1／ZPLP2</td><td>貶值標識／價格單位／計畫價格 1／計畫價格 2（專利號比例）</td><td>MBEW</td><td>VALUATIONDATA</td><td>主材 1、非主材 0；「和財務顧問溝通放財務視圖」</td></tr>
+    </tbody>
+  </table>
+  <p>第二套模板（設備類）只有 MATNR、MTART、WERKS、MAKTX、TEXT01、MEINS、MATKL 七欄，也就是只開基本視圖。</p>
+  <div class="warn"><b>模板本身的坑</b>：① 計量單位分子分母方向常被填反：MARM 的 <b>UMREZ／UMREN＝基本單位數量／替代單位數量</b>，模板的「1 瓶＝1000 克」例子是對的，但使用者很容易照直覺填成分子 1000。② 把 20 多個客製欄位直接 Append 在 MARA，S/4HANA 的物料（Product）主檔應優先考慮用分類（Classification，<span class="tcode">CL20N</span>）或 Product 擴充，Append 過多會讓 Fiori 的 Product 應用程式看不到這些欄位，還得另外做 CDS 擴充。③ 物料號是「內控號」由使用者給號（外部給號），請確認物料類型的號碼範圍允許外部號、且 ALPHA 轉換一致——這正是 Casper 第二條經驗「列舉比區間安全」的來源：號碼段一旦混用純數字與英數，用 BT 撈物料就會漏抓。</div>
+
+  <h3 id="ch08-7-05">5. ZMMU012 現代改寫：BAPI_MATERIAL_SAVEDATA＋X 結構自動化</h3>
+  <p>BAPI_MATERIAL_SAVEDATA 的觀念（每個資料結構都有同名 X 結構、鍵值欄位填真值、資料欄位填 'X'）已在 <a href="#ch04-1">4-1 章第 10 節</a>說明。批導時最痛苦的是：PLANTDATA 一次要填二十幾個欄位，PLANTDATAX 就要對應寫二十幾行 'X'，漏一行那個欄位就靜悄悄地沒寫進去。下面用 RTTI 寫一個通用的 <span class="kw">fill_x</span>：資料欄位有值就在 X 結構打勾，鍵值欄位（X 結構中型別不是 BAPIUPDATE 的欄位）則照抄值。</p>
+  <pre><code class="abap">CLASS lcl_bapi_x DEFINITION FINAL.
+  PUBLIC SECTION.
+    "! 依資料結構自動產生 BAPI 的 X 結構
+    CLASS-METHODS fill_x
+      IMPORTING is_data  TYPE any
+      CHANGING  cs_datax TYPE any.
+ENDCLASS.
+
+CLASS lcl_bapi_x IMPLEMENTATION.
+  METHOD fill_x.
+    DATA(lo_x) = CAST cl_abap_structdescr(
+                   cl_abap_typedescr=&gt;describe_by_data( cs_datax ) ).
+    LOOP AT lo_x-&gt;get_components( ) INTO DATA(ls_comp).
+      ASSIGN COMPONENT ls_comp-name OF STRUCTURE is_data  TO FIELD-SYMBOL(&lt;lv_val&gt;).
+      CHECK sy-subrc = 0.
+      ASSIGN COMPONENT ls_comp-name OF STRUCTURE cs_datax TO FIELD-SYMBOL(&lt;lv_x&gt;).
+      IF ls_comp-type-&gt;absolute_name = '\TYPE=BAPIUPDATE'.
+        &lt;lv_x&gt; = xsdbool( &lt;lv_val&gt; IS NOT INITIAL ).  "資料欄位：有值才打勾
+      ELSE.
+        &lt;lv_x&gt; = &lt;lv_val&gt;.                              "鍵值欄位：照抄（PLANT…）
+      ENDIF.
+    ENDLOOP.
+  ENDMETHOD.
+ENDCLASS.</code></pre>
+  <p>主處理：一列 Excel＝一次 BAPI 呼叫＝一次 COMMIT。模板中的「是否開某個視圖」由欄位是否有值推導。</p>
+  <pre><code class="abap">METHOD create_material.   "IMPORTING is_row TYPE ty_mat_row  CHANGING cs_status TYPE ty_status
+  DATA: ls_plantx  TYPE bapi_marcx,
+        ls_clientx TYPE bapi_marax,
+        ls_return  TYPE bapiret2,
+        lt_msgs    TYPE STANDARD TABLE OF bapi_matreturn2 WITH EMPTY KEY.
+
+  DATA(ls_head) = VALUE bapimathead(
+    material_long   = is_row-matnr
+    ind_sector      = 'M'                       "行業別：依公司設定
+    matl_type       = is_row-mtart
+    basic_view      = abap_true
+    purchase_view   = xsdbool( is_row-ekgrp IS NOT INITIAL )
+    mrp_view        = xsdbool( is_row-dismm IS NOT INITIAL )
+    work_sched_view = xsdbool( is_row-fevor IS NOT INITIAL )
+    storage_view    = abap_true
+    account_view    = xsdbool( is_row-peinh IS NOT INITIAL ) ).
+
+  DATA(ls_client) = VALUE bapi_mara( base_uom   = is_row-meins
+                                     matl_group = is_row-matkl ).
+  lcl_bapi_x=&gt;fill_x( EXPORTING is_data = ls_client CHANGING cs_datax = ls_clientx ).
+
+  DATA(ls_plant) = VALUE bapi_marc(
+    plant      = is_row-werks        pur_group  = is_row-ekgrp
+    plnd_delry = is_row-plifz        mrp_type   = is_row-dismm
+    mrp_ctrler = is_row-dispo        lotsizekey = is_row-disls
+    minlotsize = is_row-bstmi        round_val  = is_row-bstrf
+    reorder_pt = is_row-minbe        fixed_lot  = is_row-bstfe
+    proc_type  = is_row-beskz        spproctype = is_row-sobsl
+    iss_st_loc = is_row-lgpro        sloc_exprc = is_row-lgfsb
+    inhseprodt = is_row-dzeit        gr_pr_time = is_row-webaz
+    safety_stk = is_row-eisbe        plan_strgp = is_row-strgr
+    production_scheduler = is_row-fevor
+    prodprof   = is_row-sfcpf ).
+  lcl_bapi_x=&gt;fill_x( EXPORTING is_data = ls_plant CHANGING cs_datax = ls_plantx ).
+
+  DATA(lt_desc) = VALUE bapi_makt_tt( ( langu_iso = 'ZH' matl_desc = is_row-maktx ) ).
+
+  DATA(lt_uom) = COND bapi_marm_tt(
+    WHEN is_row-ausme IS NOT INITIAL
+    THEN VALUE #( ( alt_unit   = is_row-ausme
+                               numerator  = is_row-umrez     "基本單位數量
+                               denominatr = is_row-umren ) ) ). "替代單位數量
+  DATA(lt_uomx) = VALUE bapi_marmx_tt( FOR ls_u IN lt_uom
+                    ( alt_unit = ls_u-alt_unit numerator = abap_true denominatr = abap_true ) ).
+
+  CALL FUNCTION 'BAPI_MATERIAL_SAVEDATA'
+    EXPORTING
+      headdata            = ls_head
+      clientdata          = ls_client
+      clientdatax         = ls_clientx
+      plantdata           = ls_plant
+      plantdatax          = ls_plantx
+    IMPORTING
+      return              = ls_return
+    TABLES
+      materialdescription = lt_desc
+      unitsofmeasure      = lt_uom
+      unitsofmeasurex     = lt_uomx
+      returnmessages      = lt_msgs.
+
+  IF ls_return-type CA 'EA' OR line_exists( lt_msgs[ type = 'E' ] )
+                            OR line_exists( lt_msgs[ type = 'A' ] ).
+    CALL FUNCTION 'BAPI_TRANSACTION_ROLLBACK'.
+    cs_status-light = '1'.
+    cs_status-text  = REDUCE string( INIT t = ls_return-message
+                        FOR m IN lt_msgs WHERE ( type CA 'EA' )
+                        NEXT t = |{ t } / { m-message }| ).
+  ELSE.
+    CALL FUNCTION 'BAPI_TRANSACTION_COMMIT' EXPORTING wait = abap_true.
+    cs_status-light = '3'.
+    cs_status-text  = |物料 { is_row-matnr } 已建立／更新|.
+  ENDIF.
+ENDMETHOD.</code></pre>
+  <div class="note">表型別 <span class="kw">bapi_makt_tt</span>、<span class="kw">bapi_marm_tt</span> 等若在你的系統不存在，改用 <span class="kw">STANDARD TABLE OF bapi_makt WITH EMPTY KEY</span> 即可。長描述（TEXT01）放 TABLES 參數 MATERIALLONGTEXT（TEXT_ID = 'GRUN' 基本資料文字）；MARA 的 Z 欄位用 EXTENSIONIN／EXTENSIONINX，結構名分別填 BAPI_TE_MARA／BAPI_TE_MARAX，兩個結構都要先在 SE11 用 Append 加上與 MARA 相同的 Z 欄位，否則 BAPI 會忽略。</div>
+  <div class="warn">BAPI_MATERIAL_SAVEDATA <b>沒有 TESTRUN 參數</b>。要「先模擬」只能：① 自己做完整的主檔檢核（第 13 節）；② 在測試機先跑一次；③ 呼叫後一律 ROLLBACK 做乾跑（但外部給號不會消耗號碼、內部給號會）。另外，此 BAPI 對「已存在的物料」是<b>修改</b>而不是報錯，重跑同一個檔案會覆蓋既有資料——批導前一定要先比對 MARA 是否已存在，決定是建立還是跳過。</div>
+
+  <h3 id="ch08-7-06">6. ZSDU009 客戶主資料批導：業務情境、模板與原程式架構</h3>
+  <p><b>業務情境</b>：S/4HANA 已經沒有 XD01／VD01，客戶一律以商業夥伴（BP）建立，再經 CVI（Customer Vendor Integration）同步出 KNA1／KNB1／KNVV。這支程式要一次完成：BP 一般資料與地址 → BP 角色 → 公司代碼視圖（統馭科目）→ 銀行 → 銷售範圍視圖（依內外貿自動展開到多個配銷通路）→ 合作夥伴功能（售達、送達、付款、收票＋最多 5 組自訂）→ 稅分類 → 稅號。</p>
+  <p><b>選擇畫面</b>（依截圖）：區塊「文件名」只有 P_FILE；區塊「選項」有 P_MODIFY（修改）與「Excel 文件 Sheet1 名稱」（預設 Sheet1）；工具列 FC01「下載模板」。</p>
+  <p><b>模板</b>：資料夾裡的 xlsx 是雙語（中文／英文）的資料蒐集模板，4 列表頭（視圖分組、中文欄名、英文欄名、欄位長度），42 個欄位：舊客戶編碼、SAP 客戶編碼、分組、稱謂、名稱 1～3、國際版名稱 1～3、搜尋項、國家、地區、城市、街道 1～3、國際版街道 1～3、郵遞區號、語言、電話、行動電話、傳真、電子郵件、銀行國家、銀行代碼、銀行名稱、銀行帳號、參考細節、SWIFT、稅類別、稅號、銷售組織、配銷通路、產品組、客戶組、客戶定價程序。<b>但程式實際讀的是另一份 SMW0 模板</b>：從第 2 列、第 1～45 欄讀進 TY_SHEET1，欄位順序是內外貿標識（XFLAG）、BP 編號、BP 類別、分組、名稱 1～3、語言、搜尋項、地址 ×2 組、國家、聯絡人、電話、法人、稅號、銀行代碼／帳號／參考、統馭科目、銷售地區、銷售辦公室、幣別、價格組、付款條件、科目分配組、國貿條件 ×2、稅分類、合作夥伴功能 ×3 組、付款方、收票方、合作夥伴功能 ×2 組。兩者欄位不一致——這是現場常見的「業務填的模板」與「程式吃的模板」脫節。<span class="src">（依模板與原始碼比對整理）</span></p>
+  <p><b>原程式架構</b>（F02 的 FRM_CREATE_CUSTOMER1，逐列處理勾選且無錯誤燈號的資料）：</p>
+  <table>
+    <thead><tr><th>步驟</th><th>原程式用的 API</th><th>何時 COMMIT</th><th>問題</th></tr></thead>
+    <tbody>
+      <tr><td>① 建 BP（名稱、地址、電話）</td><td>BAPI_BUPA_CREATE_FROM_DATA（BP 分組由 TBD001 以客戶帳戶群組反查）</td><td>之後 BUPA_CENTRAL_CI_CHANGE 再 COMMIT</td><td>電話與行動電話填同一個欄位值；Email、傳真整段註解掉</td></tr>
+      <tr><td>② 修改（P_MODIFY 或 BP 已存在）</td><td>BAPI_BUPA_CENTRAL_CHANGE、BAPI_BUPA_ADDRESS_CHANGE（先 ADDRESS_GETDETAIL）</td><td>各自 COMMIT</td><td>—</td></tr>
+      <tr><td>③ 加角色</td><td>BAPI_BUPA_ROLE_ADD_2 兩次（角色類別 FLCU00／FLCU01，客製角色 Z 開頭）</td><td>每個角色各 COMMIT 一次</td><td><b>內部給號時根本沒呼叫加角色</b>（只在外部給號分支）</td></tr>
+      <tr><td>④ 公司代碼視圖</td><td><b>SD_CUSTOMER_MAINTAIN_ALL</b>（只傳 KNB1）</td><td>COMMIT</td><td>繞過 CVI 的舊函數，S/4 不建議</td></tr>
+      <tr><td>⑤ 銀行</td><td>BAPI_BANK_CREATE／CHANGE（BNKA 不存在就建銀行主檔）＋BAPI_BUPA_BANKDETAIL_ADD／CHANGE</td><td>各自 COMMIT</td><td>在客戶批導裡順手建銀行主檔，權責不清</td></tr>
+      <tr><td>⑥ 銷售範圍＋合作夥伴功能＋稅分類</td><td>CMD_EI_API=&gt;MAINTAIN_BAPI（每個銷售範圍呼叫一次）</td><td>每個銷售範圍一次</td><td>內貿固定展開 4 個配銷通路、外貿 3 個，寫死在程式</td></tr>
+      <tr><td>⑦ 稅號</td><td>BAPI_BUPA_TAX_GETDETAILS → BUPA_TAX_ADD／BUPA_TAX_CHANGE</td><td>COMMIT</td><td>原註解指出中國稅號類別由 CN0 被強制轉成 CN5（程式註解引用 SAP Note 2865204，請以 Note 原文為準）</td></tr>
+      <tr><td>（另有）信用段</td><td>CL_UKM_FACADE → 業務夥伴工廠 → set_bp_cms／set_bp_cms_sgm → save_all</td><td>COMMIT</td><td>寫好了但主流程沒呼叫</td></tr>
+    </tbody>
+  </table>
+  <p>結果以 <span class="kw">REUSE_ALV_GRID_DISPLAY_LVC</span> 顯示，每列有勾選框、燈號與訊息；雙擊 BP 號以 BDC 跳到 <span class="tcode">BUP3</span>；雙擊訊息欄把以「/」串接的訊息拆行，彈出 Dynpro 9000 用 CL_GUI_TEXTEDIT 顯示——這個「訊息明細彈窗」的設計值得學。</p>
+
+  <h3 id="ch08-7-07">7. ZSDU009 的問題與 S/4HANA 正解：CL_MD_BP_MAINTAIN 一次到位</h3>
+  <p>原程式最大的問題是<b>一個客戶拆成七、八次 COMMIT</b>。只要中間任何一步失敗（例如銷售範圍的付款條件打錯），前面的 BP、角色、公司代碼早已寫進資料庫，留下一個「半成品客戶」：有 BP 沒銷售視圖、有銷售視圖沒稅號。業務第二次重跑又因為「BP 已存在」走修改分支，情況更亂。其他問題：</p>
+  <ul>
+    <li><b>合作夥伴功能被做了 ALPHA 轉換</b>：<span class="kw">PARVW1 = |{ PARVW1 ALPHA = IN }|</span>。PARVW 的轉換常式是 <b>PARVW</b>（外碼 SP／SH／BP／PY ↔ 內碼 AG／WE／RE／RG），不是 ALPHA；應該用 <span class="kw">CONVERSION_EXIT_PARVW_INPUT</span>，否則使用者照畫面填 SH 會失敗。</li>
+    <li>重複檢查只用 <span class="kw">KNA1-NAME1 = 名稱</span>，找到了也只在訊息加一個「/」，並沒有擋下。</li>
+    <li>地址長度切片：<span class="kw">street+35(40)</span>、<span class="kw">+75(40)</span>… 把 255 字的街道硬切成 5 段塞進 STREET、STR_SUPPL1～3、LOCATION，會把中文字從中間切開。</li>
+    <li>ALV 欄位目錄以巨集 INIT_FIELDCAT 定義；「BP 編號欄可編輯」只對寫死的某一個開發者帳號開放，且 HANDLE_CHANGE 中留有 <span class="kw">BREAK 開發者帳號</span>——正式機的權限必須用權限物件控管，不能寫死帳號。</li>
+    <li>程式表頭與 include 註解還是從別的程式複製來的名字，Tabstrip 的 PROG 常數也指向另一支程式——複製貼上開發的典型後遺症。</li>
+  </ul>
+  <p><b>S/4HANA 正解</b>：把 BP 一般資料、地址、角色、稅號、銀行、客戶的公司代碼、銷售範圍、合作夥伴功能、稅分類<b>全部組進一個 CVIS_EI_EXTERN</b>，呼叫一次 <span class="kw">CL_MD_BP_MAINTAIN=&gt;MAINTAIN</span>，檢查訊息後<b>只 COMMIT 一次</b>。要嘛整個客戶建好，要嘛什麼都沒留下。</p>
+  <pre><code class="abap">METHOD build_customer.   "IMPORTING is_row TYPE ty_cust_row  RETURNING VALUE(rs_data) TYPE cvis_ei_extern
+  " 內外貿決定要展開的銷售範圍（改成讀自建設定表，不要寫死在程式）
+  SELECT vkorg, vtweg, spart
+    FROM zsd_cust_area                          "自建：XFLAG → 銷售範圍對照
+    WHERE xflag = @is_row-xflag
+    ORDER BY vkorg, vtweg, spart                "HANA 無預設排序，明確排序
+    INTO TABLE @DATA(lt_area).
+
+  TRY.
+      DATA(lv_guid) = cl_system_uuid=&gt;create_uuid_c32_static( ).
+    CATCH cx_uuid_error.
+      RETURN.
+  ENDTRY.
+
+  rs_data-partner-header = VALUE #(
+    object_task     = 'I'
+    object_instance = VALUE #( bpartner     = is_row-partner   "空白＝內部給號
+                               bpartnerguid = lv_guid ) ).
+
+  rs_data-partner-central_data-common = VALUE #(
+    data  = VALUE #( bp_control      = VALUE #( category = '2' grouping = is_row-bu_group )
+                     bp_centraldata  = VALUE #( searchterm1 = is_row-bu_sort1 )
+                     bp_organization = VALUE #( name1 = is_row-name_org1
+                                                name2 = is_row-name_org2
+                                                legalorg = is_row-legal_org ) )
+    datax = VALUE #( bp_centraldata  = VALUE #( searchterm1 = abap_true )
+                     bp_organization = VALUE #( name1 = abap_true name2 = abap_true
+                                                legalorg = abap_true ) ) ).
+
+  rs_data-partner-central_data-role-roles = VALUE #(
+    ( task = 'I' data_key = 'FLCU00' )          "客戶（財務）
+    ( task = 'I' data_key = 'FLCU01' ) ).       "客戶（銷售）
+
+  rs_data-partner-central_data-address-addresses = VALUE #( (
+    task = 'I'
+    data-postal-data  = VALUE #( street = is_row-street  postl_cod1 = is_row-post_code1
+                                 city   = is_row-city1   country    = is_row-country
+                                 languiso = is_row-langu )
+    data-postal-datax = VALUE #( street = abap_true postl_cod1 = abap_true city = abap_true
+                                 country = abap_true languiso = abap_true )
+    data-communication-phone-phone = VALUE #(
+      ( contact = VALUE #( data-telephone = is_row-tel_number
+                           datax-telephone = abap_true ) ) ) ) ).
+
+  IF is_row-taxnum IS NOT INITIAL.
+    rs_data-partner-central_data-taxnumber-taxnumbers = VALUE #(
+      ( task = 'I' data_key = VALUE #( taxtype = 'CN5' taxnumber = is_row-taxnum ) ) ).
+  ENDIF.
+
+  " ── 客戶部分（CVI 會以同一號碼建立 KNA1/KNB1/KNVV）──
+  rs_data-ensure_create-create_customer = abap_true.
+  rs_data-customer-header-object_task   = 'I'.
+
+  rs_data-customer-company_data-company = VALUE #(
+    ( task = 'I' data_key-bukrs = '1000'
+      data-akont = is_row-akont  datax-akont = abap_true ) ).
+
+  rs_data-customer-sales_data-sales = VALUE #( FOR a IN lt_area (
+    task     = 'I'
+    data_key = VALUE #( vkorg = a-vkorg vtweg = a-vtweg spart = a-spart )
+    data     = VALUE #( waers = is_row-waers  zterm = is_row-zterm_v
+                        kalks = '1'           ktgrd = is_row-ktgrd )
+    datax    = VALUE #( waers = abap_true zterm = abap_true
+                        kalks = abap_true ktgrd = abap_true )
+    functions-functions = VALUE #(
+      ( task = 'I' data_key-parvw = 'RG' data-partner = is_row-kunnrrg datax-partner = abap_true )
+      ( task = 'I' data_key-parvw = 'RE' data-partner = is_row-kunnrre datax-partner = abap_true ) ) ) ).
+
+  rs_data-customer-central_data-tax_ind-tax_ind = VALUE #(
+    ( task = 'I' data_key = VALUE #( aland = 'CN' tatyp = 'MWST' )
+      data-taxkd = is_row-taxkd  datax-taxkd = abap_true ) ).
+ENDMETHOD.
+
+METHOD save_customer.    "IMPORTING is_data TYPE cvis_ei_extern  iv_test TYPE abap_bool
+  cl_md_bp_maintain=&gt;maintain(
+    EXPORTING i_data    = VALUE cvis_ei_extern_t( ( is_data ) )
+    IMPORTING et_return = DATA(lt_return) ).         "bapiretm：每個 BP 一組訊息
+
+  DATA(lt_err) = VALUE bapiret2_t(
+    FOR ls_obj IN lt_return
+    FOR ls_msg IN ls_obj-object_msg WHERE ( type CA 'EA' ) ( ls_msg ) ).
+
+  IF lt_err IS INITIAL AND iv_test = abap_false.
+    CALL FUNCTION 'BAPI_TRANSACTION_COMMIT' EXPORTING wait = abap_true.
+  ELSE.
+    CALL FUNCTION 'BAPI_TRANSACTION_ROLLBACK'.       "測試模式或有錯：全部回滾
+  ENDIF.
+  mt_log = VALUE #( BASE mt_log FOR e IN lt_err ( e ) ).
+ENDMETHOD.</code></pre>
+  <div class="note">CVIS_EI_EXTERN 的巢狀層次很深，組結構時請在 <span class="tcode">SE11</span> 對照實際元件名（不同支援包偶有差異）。長度超過 20 碼的稅號需放 TAXNUMXL。修改既有 BP 時，BP 與客戶的 OBJECT_TASK 改為 'U'，BP 需帶 BPARTNERGUID（可由 BUT000 取得），銷售範圍若可能已存在則用 'M'。信用管理（FSCM Credit Management，UKM）不在 CVIS_EI_EXTERN 內，仍需另外以 CL_UKM_* 或 BP 的信用段維護，且應在客戶建好並 COMMIT 之後才做。</div>
+  <div class="warn"><b>S/4HANA 注意</b>：① <span class="kw">SD_CUSTOMER_MAINTAIN_ALL</span>、<span class="kw">BAPI_CUSTOMER_CREATE</span>、<span class="tcode">XD01</span> 在 S/4 都不該再用來建客戶，它們繞過 BP／CVI，會造成 BP 與客戶資料不同步。② 測試模式用「MAINTAIN 後 ROLLBACK」時，內部給號會消耗號碼範圍；若號碼必須連號，請改用外部給號或只在測試機模擬。③ 付款方、收票方若是<b>別的客戶</b>，該客戶必須已存在且已擴充到相同銷售範圍，因此批導時要先建「被參照的客戶」——依相依關係排序，而不是依 Excel 列序。</div>
+
+  <h3 id="ch08-7-08">8. ZFIU018 固定資產批導：舊資產移轉與兩階段執行</h3>
+  <p><b>業務情境</b>：上線時把舊系統的在用資產搬進 SAP，每筆資產要帶主資料（分類、描述、序號、存貨號、成本中心、評估組）、折舊參數（折舊碼、使用年限與期間、殘值），以及「截至移轉日」的原值與累計折舊；若資本化日期在移轉年度內，改以本年度取得交易（異動類型 100）帶入。</p>
+  <p><b>模板</b>（XLS 副檔名但實為 xlsx）：「導入模板」頁 34 欄，第 1 列欄名、第 2 列必輸／可選、第 3 列是範例資料；另一頁「工具表 1」是依資產分類彙總原值、本年折舊、以往累計折舊的樞紐分析表，用來跟舊系統對帳——<b>批導資產一定要有對帳表</b>，這個設計值得學。</p>
+  <table>
+    <thead><tr><th>模板欄位</th><th>必輸</th><th>BAPI 結構</th><th>模板欄位</th><th>必輸</th><th>BAPI 結構</th></tr></thead>
+    <tbody>
+      <tr><td>資產分類 ANLKL</td><td>必輸</td><td>GENERALDATA-ASSETCLASS</td><td>評估組 1～4（含事業部、取得方式、使用狀態）／評估組 5</td><td>可選</td><td>ALLOCATIONS-EVALGROUP1～5</td></tr>
+      <tr><td>公司代碼 BUKRS</td><td>必輸</td><td>KEY-COMPANYCODE</td><td>供應商科目編號／名稱</td><td>可選</td><td>ORIGIN-VENDOR_NO／VENDOR</td></tr>
+      <tr><td>描述／附加描述（不能有特殊字元）</td><td>必輸／可選</td><td>GENERALDATA-DESCRIPT／DESCRIPT2</td><td>製造商／類型名</td><td>可選</td><td>ORIGIN-MANUFACTURER／TYPE_NAME</td></tr>
+      <tr><td>規格型號 ANLHTXT</td><td>可選</td><td>GENERALDATA-MAIN_DESCRIPT</td><td>折舊範圍 AFABE</td><td>必輸</td><td>DEPRECIATIONAREAS-AREA</td></tr>
+      <tr><td>序列號（標籤編號）／存貨號（舊資產編號）</td><td>可選</td><td>GENERALDATA-SERIAL_NO／INVENT_NO</td><td>折舊碼／使用年限（年）／期間／殘值</td><td>可選</td><td>DEPRECIATIONAREAS-DEP_KEY／ULIFE_YRS／ULIFE_PRDS／SCRAPVALUE</td></tr>
+      <tr><td>資本化日期 AKTIV</td><td>必輸</td><td>POSTINGINFORMATION-CAP_DATE</td><td>原值 KANSW</td><td>必輸</td><td>CUMULATEDVALUES-ACQ_VALUE 或 TRANSACTIONS-AMOUNT</td></tr>
+      <tr><td>不活動日期（報廢）DEAKT</td><td>可選</td><td>POSTINGINFORMATION-DEACT_DATE</td><td>累計折舊（以往年度）KNAFA</td><td>可選</td><td>CUMULATEDVALUES-ORD_DEP（負數）</td></tr>
+      <tr><td>數量／單位</td><td>可選</td><td>GENERALDATA-QUANTITY／BASE_UOM</td><td>本年折舊 KNAFA2</td><td>必輸</td><td>POSTEDVALUES-ORD_DEP（負數）</td></tr>
+      <tr><td>成本中心／房間</td><td>必輸／可選</td><td>TIMEDEPENDENTDATA-COSTCENTER／ROOM</td><td>幣別 WAERS</td><td>必輸</td><td>各值表的 CURRENCY</td></tr>
+    </tbody>
+  </table>
+  <p><b>原程式的問題</b>：</p>
+  <ul>
+    <li><b>移轉年度寫死 '2021'</b>（<span class="kw">fisc_year = '2021'</span>，旁邊註解掉的是 SY-DATUM）——換一年上線或補導資產就全錯。移轉年度應讀資產會計設定的移轉日期，或至少做成選擇畫面參數。</li>
+    <li><b>每筆資產都被塞了日本減損資料</b>：<span class="kw">ls_impair-impair_apc = 10000</span>（GLO_JP_IMPTD 是日本本地化結構），明顯是測試殘留。</li>
+    <li>讀 Excel 從第 3 列開始，<b>模板第 3 列正好是範例資料</b>，使用者沒刪範例就會多建一筆測試資產。</li>
+    <li>錯誤判斷 <span class="kw">READ TABLE lt_return WITH KEY type = 'E'</span> 漏了 'A'；發現錯誤就 <span class="kw">STOP</span>——但前面的資產已經 COMMIT 了，結果是「一半進去、一半沒進去」，而且使用者不知道停在哪一列。</li>
+    <li>測試運行也呼叫 BAPI_TRANSACTION_COMMIT（雖然 TESTRUN 下不會寫資料，但語意錯誤）；應用日誌只顯示、沒有 BAL_DB_SAVE，關掉畫面就沒了。</li>
+    <li>訊息前綴用序列號（<span class="kw">sernr &amp;&amp; ':'</span>），序列號是可選欄位，空白時完全看不出哪一筆。</li>
+  </ul>
+  <p><b>現代改寫：兩階段執行</b>——第一階段對所有列跑 TESTRUN，全部通過才進第二階段正式建立，每筆資產各自 COMMIT，錯誤以 Excel 列號回報。</p>
+  <pre><code class="abap">METHOD run.   "IMPORTING iv_test TYPE abap_bool  iv_fyear TYPE gjahr（移轉年度，不寫死）
+  " 第一階段：全部 TESTRUN
+  LOOP AT mt_rows ASSIGNING FIELD-SYMBOL(&lt;ls_row&gt;).
+    call_bapi( EXPORTING is_row = &lt;ls_row&gt; iv_testrun = abap_true iv_fyear = iv_fyear
+               CHANGING  cs_row = &lt;ls_row&gt; ).
+    CALL FUNCTION 'BAPI_TRANSACTION_ROLLBACK'.       "清掉 BAPI 緩衝
+  ENDLOOP.
+
+  IF line_exists( mt_rows[ light = '1' ] ).
+    MESSAGE |模擬有 { REDUCE i( INIT n = 0 FOR r IN mt_rows WHERE ( light = '1' ) NEXT n = n + 1 ) } 筆錯誤，未建立任何資產|
+      TYPE 'S' DISPLAY LIKE 'E'.
+    RETURN.
+  ENDIF.
+  IF iv_test = abap_true.
+    RETURN.                                          "只模擬
+  ENDIF.
+
+  " 第二階段：正式建立，一筆一 COMMIT
+  LOOP AT mt_rows ASSIGNING &lt;ls_row&gt;.
+    call_bapi( EXPORTING is_row = &lt;ls_row&gt; iv_testrun = abap_false iv_fyear = iv_fyear
+               CHANGING  cs_row = &lt;ls_row&gt; ).
+    IF &lt;ls_row&gt;-light = '1'.
+      CALL FUNCTION 'BAPI_TRANSACTION_ROLLBACK'.
+    ELSE.
+      CALL FUNCTION 'BAPI_TRANSACTION_COMMIT' EXPORTING wait = abap_true.
+    ENDIF.
+  ENDLOOP.
+ENDMETHOD.
+
+METHOD call_bapi.
+  DATA: lv_asset  TYPE bapi1022_1-assetmaino,
+        lv_subno  TYPE bapi1022_1-assetsubno,
+        lt_return TYPE STANDARD TABLE OF bapiret2 WITH EMPTY KEY.
+
+  DATA(ls_general)  = VALUE bapi1022_feglg001(
+                        assetclass = |{ is_row-anlkl ALPHA = IN }|
+                        descript   = is_row-txt50  descript2 = is_row-txa50
+                        invent_no  = is_row-invnr  serial_no = is_row-sernr ).
+  DATA(ls_generalx) = VALUE bapi1022_feglg001x(
+                        assetclass = abap_true descript = abap_true descript2 = abap_true
+                        invent_no  = abap_true serial_no = xsdbool( is_row-sernr IS NOT INITIAL ) ).
+  DATA(ls_posting)  = VALUE bapi1022_feglg002( cap_date = is_row-aktiv ).
+  DATA(ls_postingx) = VALUE bapi1022_feglg002x( cap_date = abap_true ).
+  DATA(ls_time)     = VALUE bapi1022_feglg003( costcenter = |{ is_row-kostl ALPHA = IN }| ).
+  DATA(ls_timex)    = VALUE bapi1022_feglg003x( costcenter = abap_true ).
+
+  DATA(lt_area)  = VALUE bapi1022_dep_areas_t( ( area = is_row-afabe dep_key = is_row-afasl
+                                                ulife_yrs = is_row-ndjar ulife_prds = is_row-ndper ) ).
+  DATA(lt_areax) = VALUE bapi1022_dep_areasx_t( ( area = is_row-afabe dep_key = abap_true
+                                                  ulife_yrs = abap_true ulife_prds = abap_true ) ).
+
+  " 資本化日期早於移轉年度 → 累計值；在移轉年度內 → 本年取得交易
+  DATA(lt_cum) = COND bapi1022_cumval_t(
+    WHEN is_row-aktiv(4) &lt; iv_fyear
+    THEN VALUE #( ( fisc_year = iv_fyear area = is_row-afabe
+                    acq_value = is_row-kansw ord_dep = is_row-knafa currency = is_row-waers ) ) ).
+  DATA(lt_trans) = COND bapi1022_trtype_t(
+    WHEN is_row-aktiv(4) &gt;= iv_fyear
+    THEN VALUE #( ( fisc_year = iv_fyear current_no = 1 area = is_row-afabe
+                    valuedate = is_row-aktiv assettrtyp = '100'
+                    amount = is_row-kansw currency = is_row-waers ) ) ).
+  DATA(lt_posted) = COND bapi1022_postval_t(
+    WHEN is_row-knafa2 &lt;&gt; 0
+    THEN VALUE #( ( fisc_year = iv_fyear area = is_row-afabe
+                    ord_dep = is_row-knafa2 currency = is_row-waers ) ) ).
+
+  DATA(ls_key) = VALUE bapi1022_key( companycode = is_row-bukrs ).
+
+  CALL FUNCTION 'BAPI_FIXEDASSET_OVRTAKE_CREATE'
+    EXPORTING
+      key                 = ls_key
+      testrun             = iv_testrun
+      generaldata         = ls_general
+      generaldatax        = ls_generalx
+      postinginformation  = ls_posting
+      postinginformationx = ls_postingx
+      timedependentdata   = ls_time
+      timedependentdatax  = ls_timex
+    IMPORTING
+      asset               = lv_asset
+      subnumber           = lv_subno
+    TABLES
+      depreciationareas   = lt_area
+      depreciationareasx  = lt_areax
+      cumulatedvalues     = lt_cum
+      postedvalues        = lt_posted
+      transactions        = lt_trans
+      return              = lt_return.
+
+  cs_row-light = COND #( WHEN line_exists( lt_return[ type = 'E' ] )
+                           OR line_exists( lt_return[ type = 'A' ] ) THEN '1' ELSE '3' ).
+  cs_row-msg   = REDUCE string( INIT t = |第 { is_row-excel_row } 列：|
+                   FOR r IN lt_return WHERE ( type CA 'EAW' ) NEXT t = |{ t }{ r-message }；| ).
+  IF iv_testrun = abap_false AND cs_row-light = '3'.
+    cs_row-msg = |{ cs_row-msg }已建立資產 { lv_asset }-{ lv_subno }|.
+  ENDIF.
+ENDMETHOD.</code></pre>
+  <div class="note">表型別名稱（bapi1022_dep_areas_t 等）請以 SE11 為準，不存在就用 <span class="kw">STANDARD TABLE OF … WITH EMPTY KEY</span>。<b>只建主資料、不帶價值</b>的新資產用 <span class="kw">BAPI_FIXEDASSET_CREATE1</span>（見 <a href="#ch05-13">5-13 章第 17 節</a>）；<b>帶舊值的移轉資產</b>才用 OVRTAKE_CREATE。S/4HANA 新資產會計下，移轉日期與最後結帳年度要先在後台設定好，手動對應交易是 <span class="tcode">AS91</span>（主資料）與 <span class="tcode">ABLDT</span>（移轉價值），價值會直接進 ACDOCA 的移轉分錄。模板中的累計折舊是負數（-190、-1045），符合 AS91 的輸入慣例，換算時不要自作聰明取絕對值。</div>
+
+  <h3 id="ch08-7-09">9. ZPPU002 BOM 批導：BAPI_MATERIAL_BOM_GROUP_CREATE 與分組控制</h3>
+  <p><b>業務情境</b>：研發把 BOM 整理在 Excel，一個父件一個 Sheet 太麻煩，於是約定「一列一個組件、父件資訊每列重複」，程式依父件分組建立。</p>
+  <p><b>模板</b>（4 列表頭，第 5 列起為資料）：表頭部分 MAST-MATNR 物料、物料描述、MAST-WERKS 工廠（固定 1000）、MAST-STLAL 備選 BOM、MAST-STLAN 用途（固定 1）、STKO-BMENG 基本數量、STKO-BMEIN 單位、STKO-STLST 狀態（固定 1）、STKO-DATUV 有效期自；組件部分 STPO-POSNR 項目、STPO-POSTP 項目類別（固定 L）、STPO-IDNRK 組件、組件描述、STPO-MENGE 數量、基本計量單位（模板誤寫成「STOP-MEINS」）、STPO-SORTF 排序字串、替代項目的 ALPGR 組／ALPST 策略／ALPRF 優先級／EWAHR 使用可能性。第 1 列還有一段說明「標記相同數值」，意指同一父件的表頭欄位要填相同值。</p>
+  <p><b>原程式架構</b>：F4 選檔的 FORM 裡<b>順便讀了 Excel</b>（使用者按 F4 選完檔就已讀檔，直接在欄位輸入路徑則讀不到任何資料）→ END-OF-SELECTION 逐列處理，<span class="kw">AT END OF stlan</span> 時呼叫 BAPI_MATERIAL_BOM_GROUP_CREATE（BOMGROUP／VARIANTS／ITEMS／MATERIALRELATIONS／ITEMASSIGNMENTS 五張表以同一個 BOM_GROUP_IDENTIFICATION 串起來）→ 以 REUSE_ALV_GRID_DISPLAY_LVC 顯示訊息。</p>
+  <p><b>原程式的問題</b>：</p>
+  <ul>
+    <li><b>一次撈整張 MAST、MARA、MARC</b>：<span class="kw">SELECT * INTO TABLE @DATA(lt_mara) FROM mara</span>，數十萬筆物料全部進記憶體，只為了查幾百個組件的單位。</li>
+    <li><b>控制層級（AT END OF）依賴結構欄位順序與排序</b>：結構是 matnr、maktx1、werks、stlal、stlan…，AT END OF stlan 會把左邊所有欄位（含物料描述）都算進分組鍵；Excel 若沒照父件排序、或同一父件描述打得不一致，BOM 就被拆成好幾次建立（第二次報「BOM 已存在」）。</li>
+    <li>工廠、用途、狀態、項目類別在程式中被寫死（模板填什麼都沒用）；組件單位若與發貨單位（MARC-AUSME）不同就改用基本單位，靜悄悄地改掉使用者的輸入。</li>
+    <li>成功與否的判斷用「LOOP 錯誤訊息後 sy-subrc」，然後又呼叫沒有配對 OPEN 的 <span class="kw">CSAP_MAT_BOM_CLOSE</span> 再 COMMIT 一次；錯誤訊息的「行次」欄位被註解掉，使用者不知道是哪一列錯。</li>
+  </ul>
+  <p><b>現代改寫</b>：用 <span class="kw">LOOP AT … GROUP BY</span> 明確以（物料、工廠、用途、備選）分組，不受欄位順序影響；主檔檢核只查檔案裡出現的物料。</p>
+  <pre><code class="abap">METHOD create_boms.
+  " 只查檔案中出現的物料（父件＋組件），不要整表撈
+  DATA(lt_matnr) = VALUE ty_matnr_range(
+    FOR r IN mt_rows ( sign = 'I' option = 'EQ' low = r-matnr )
+                     ( sign = 'I' option = 'EQ' low = r-idnrk ) ).
+  SORT lt_matnr BY low.
+  DELETE ADJACENT DUPLICATES FROM lt_matnr COMPARING low.
+
+  SELECT matnr, werks FROM marc
+    WHERE matnr IN @lt_matnr AND werks = @p_werks
+    INTO TABLE @DATA(lt_marc).                 "注意 IN 範圍筆數上限，量大時分批
+  SELECT matnr, werks, stlan, stlal FROM mast
+    WHERE matnr IN @lt_matnr AND werks = @p_werks
+    INTO TABLE @DATA(lt_mast).
+
+  LOOP AT mt_rows INTO DATA(ls_row)
+       GROUP BY ( matnr = ls_row-matnr werks = ls_row-werks
+                  stlan = ls_row-stlan stlal = ls_row-stlal )
+       ASSIGNING FIELD-SYMBOL(&lt;grp&gt;).
+
+    IF line_exists( lt_mast[ matnr = &lt;grp&gt;-matnr werks = &lt;grp&gt;-werks
+                             stlan = &lt;grp&gt;-stlan stlal = &lt;grp&gt;-stlal ] ).
+      set_group_status( is_grp = &lt;grp&gt; iv_light = '1' iv_text = 'BOM 已存在，略過' ).
+      CONTINUE.
+    ENDIF.
+
+    DATA(lt_items) = VALUE ty_bom_items( ).
+    LOOP AT GROUP &lt;grp&gt; INTO DATA(ls_item).
+      IF NOT line_exists( lt_marc[ matnr = ls_item-idnrk werks = ls_item-werks ] ).
+        set_row_status( iv_row = ls_item-excel_row iv_light = '1'
+                        iv_text = |組件 { ls_item-idnrk } 未建立工廠 { ls_item-werks } 視圖| ).
+        CONTINUE.
+      ENDIF.
+      APPEND VALUE #( bom_group_identification = 'G1'
+                      object_type = 'ITM' object_id = 'SIMPLE1'
+                      item_no = |{ ls_item-posnr ALPHA = IN }|
+                      item_cat = ls_item-postp
+                      component_long = ls_item-idnrk
+                      comp_qty = ls_item-menge  comp_unit = ls_item-meins
+                      sort_string = ls_item-sortf
+                      alt_item_group = ls_item-alpgr alt_item_strategy = ls_item-alpst
+                      alt_item_prio = ls_item-alprf usage_prob = ls_item-ewahr
+                      prod_rel = abap_true cost_rel = abap_true ) TO lt_items.
+    ENDLOOP.
+
+    DATA(ls_first) = VALUE ty_bom_row( mt_rows[ matnr = &lt;grp&gt;-matnr werks = &lt;grp&gt;-werks
+                                       stlan = &lt;grp&gt;-stlan stlal = &lt;grp&gt;-stlal ] OPTIONAL ).
+    DATA(lt_return) = VALUE bapiret2_t( ).
+    DATA(lt_bomgrp) = VALUE ty_bgr( ( bom_group_identification = 'G1' object_type = 'BGR'
+                                      object_id = 'SIMPLE1' bom_usage = &lt;grp&gt;-stlan
+                                      created_in_plant = &lt;grp&gt;-werks ) ).
+    DATA(lt_variant) = VALUE ty_bom( ( bom_group_identification = 'G1' object_type = 'BOM'
+                                       object_id = 'SIMPLE1' alternative_bom = &lt;grp&gt;-stlal
+                                       bom_status = ls_first-stlst base_qty = ls_first-bmeng
+                                       base_unit = ls_first-bmein
+                                       valid_from_date = ls_first-datuv function = 'NEW' ) ).
+    DATA(lt_matrel) = VALUE ty_mbm( ( bom_group_identification = 'G1'
+                                      material_long = &lt;grp&gt;-matnr plant = &lt;grp&gt;-werks
+                                      bom_usage = &lt;grp&gt;-stlan alternative_bom = &lt;grp&gt;-stlal ) ).
+    DATA(lt_assign) = VALUE ty_rel( ( bom_group_identification = 'G1'
+                                      sub_object_type = 'ITM' sub_object_id = 'SIMPLE1'
+                                      super_object_type = 'BOM' super_object_id = 'SIMPLE1'
+                                      valid_from_date = ls_first-datuv function = 'NEW' ) ).
+
+    CALL FUNCTION 'BAPI_MATERIAL_BOM_GROUP_CREATE'
+      EXPORTING
+        testrun           = p_test              "先模擬（參數名以 SE37 為準）
+        all_error         = abap_true           "回傳所有錯誤，而不是遇到第一個就停
+      TABLES
+        bomgroup          = lt_bomgrp
+        variants          = lt_variant
+        items             = lt_items
+        materialrelations = lt_matrel
+        itemassignments   = lt_assign
+        return            = lt_return.
+
+    IF line_exists( lt_return[ type = 'E' ] ) OR line_exists( lt_return[ type = 'A' ] )
+       OR p_test = abap_true.
+      CALL FUNCTION 'BAPI_TRANSACTION_ROLLBACK'.
+    ELSE.
+      CALL FUNCTION 'BAPI_TRANSACTION_COMMIT' EXPORTING wait = abap_true.
+    ENDIF.
+    set_group_status_from_return( is_grp = &lt;grp&gt; it_return = lt_return ).
+  ENDLOOP.
+ENDMETHOD.</code></pre>
+  <div class="note">上例的 <span class="kw">ty_bgr</span>、<span class="kw">ty_bom</span>、<span class="kw">ty_bom_items</span>、<span class="kw">ty_mbm</span>、<span class="kw">ty_rel</span> 分別是 BAPI1080_BGR_C、BAPI1080_BOM_C、BAPI1080_ITM_C、BAPI1080_MBM_C、BAPI1080_REL_ITM_BOM_C 的標準表型別，請自行宣告。另一個常見選擇是 <span class="kw">CSAP_MAT_BOM_CREATE</span>（表頭 STKO_API01＋組件 STPO_API01，一次建一張物料 BOM，參數較直觀；錯誤訊息要先 <span class="kw">CALO_INIT_API</span>，再以 <span class="kw">CALO_LOG_READ_MESSAGES</span> 讀回）；修改既有 BOM 用 CSAP_MAT_BOM_OPEN／CSAP_BOM_ITEM_MAINTAIN／CSAP_MAT_BOM_CLOSE。大量「換料」（把某組件全面替換）不要寫程式，用標準 <span class="tcode">CS20</span>。</div>
+
+  <h3 id="ch08-7-10">10. ZPPU004 工作中心批導：CR01 BDC 與 CRAP_WORKCENTER_CREATE</h3>
+  <p><b>業務情境</b>：新廠上線要建數百個工作中心（機台），每個工作中心要有基本資料（類別、負責人、任務清單用途、標準值碼）、預設值（控制碼、六個標準值的計量單位）以及成本核算頁籤（有效期間、成本中心、六組作業類型／單位／公式）。</p>
+  <p><b>模板</b>：「工作中心」頁 35 欄：工廠、工作中心、工作中心類別（預設 0001 機器）、描述、負責人（預設 001）、任務清單使用碼（預設 009 所有任務清單類型）、標準值碼、控制碼（預設 ZP01）、標準值計量單位 1～6、開始日期、結束日期、成本中心、作業類型 1～6＋單位 1～6＋公式碼 1～6。另一頁「工作中心與設備對應關係」（工作中心 → 多個設備編碼）程式完全沒用到——應該另外以 PM 的設備主檔／工作中心分配處理。</p>
+  <p><b>原程式架構</b>：以 SHDB 錄製的 CR01 畫面序列（SAPLCRA0 0101 → 4000 反覆以 OK 碼 =VORA、/00、=VK11、=UPD 切頁籤）組 BDCDATA，<span class="kw">CALL TRANSACTION 'CR01' … MODE 'N' UPDATE 'S'</span>，成功／失敗寫進結果表，最後 CALL SCREEN 2000 以 CL_GUI_ALV_GRID 顯示。程式底部另有一段 <span class="kw">SUB_CREATE_WORKCENTER_TEST</span>：用寫死的工廠、成本中心、作業類型測試 <span class="kw">CRAP_WORKCENTER_CREATE</span>，但 API03（預設值）與 CRCO（成本中心分配）參數都被註解掉，顯然沒試成功就改回 BDC；而且它的 DATA 區還整段複製了固定資產 BAPI 的變數宣告。</p>
+  <p><b>原程式的問題</b>：</p>
+  <ul>
+    <li><b>作業類型的單位填錯欄</b>：BDC 把 <span class="kw">RC68A-LEINH(01)～(06)</span> 填成「標準值計量單位 VGE01～06」，而不是模板的「單位 1～6（LEINH1～6）」。範例資料剛好兩者相同所以沒被發現，一旦作業單位與標準值單位不同（例如標準值 MIN、作業單位 H）就錯。</li>
+    <li><b>「測試」勾選框沒作用</b>：P_RUN 預設勾選，但 BDC 路徑完全沒讀它，使用者以為是模擬，其實已經建立。</li>
+    <li>錯誤訊息：CALL TRANSACTION 沒有 <span class="kw">MESSAGES INTO</span>，事後用 sy-msgid／sy-msgno 呼叫 MESSAGE_TEXT_BUILD 又沒帶 MSGV1～4，得到的是「&amp; 不存在」這種殘缺訊息；而且只保留最後一則。</li>
+    <li>日期欄位以 CHAR10 直接丟進畫面，依賴使用者的日期格式設定（SU3）；權限檢查（C_ARPL_WRK）被註解掉。</li>
+  </ul>
+  <p><b>現代改寫一：保留 BDC 時的正確寫法</b>（CR01 沒有對應的 BAPI 時，BDC 仍是合法選擇，觀念見 <a href="#ch04-4">4-4 章第 3～8 節</a>）：</p>
+  <pre><code class="abap">METHOD call_cr01.   "IMPORTING is_row TYPE ty_wc_row  RETURNING VALUE(rs_result) TYPE ty_result
+  DATA lt_msg TYPE STANDARD TABLE OF bdcmsgcoll WITH EMPTY KEY.
+
+  " 日期依執行者的格式轉成畫面格式，不要假設 YYYY.MM.DD
+  DATA lv_begda TYPE char10.
+  DATA lv_endda TYPE char10.
+  WRITE is_row-begda TO lv_begda.
+  WRITE is_row-endda TO lv_endda.
+
+  DATA(lt_bdc) = VALUE bdcdata_tab(
+    ( program = 'SAPLCRA0' dynpro = '0101' dynbegin = abap_true )
+    ( fnam = 'BDC_OKCODE'  fval = '=NEXT' )
+    ( fnam = 'RC68A-WERKS' fval = is_row-werks )
+    ( fnam = 'RC68A-ARBPL' fval = is_row-arbpl )
+    ( fnam = 'RC68A-VERWE' fval = is_row-verwe )
+    ( program = 'SAPLCRA0' dynpro = '4000' dynbegin = abap_true )
+    ( fnam = 'BDC_OKCODE'  fval = '=VORA' )
+    ( fnam = 'P1000-STEXT' fval = is_row-stext )
+    ( fnam = 'P3000-VERAN' fval = is_row-veran )
+    ( fnam = 'P3000-PLANV' fval = is_row-planv )
+    ( fnam = 'P3000-VGWTS' fval = is_row-vgwts ) ).
+  " …預設值頁籤、成本核算頁籤依 SHDB 錄製結果依序附加；
+  "   作業類型單位要用 is_row-leinh1～6，不是 vge01～06
+  lt_bdc = VALUE #( BASE lt_bdc
+    ( program = 'SAPLCRA0' dynpro = '4000' dynbegin = abap_true )
+    ( fnam = 'BDC_OKCODE'      fval = '=UPD' )
+    ( fnam = 'P1001-BEGDA'     fval = lv_begda )
+    ( fnam = 'P1001-ENDDA'     fval = lv_endda )
+    ( fnam = 'CRKEYK-KOSTL'    fval = is_row-kostl )
+    ( fnam = 'RC68A-LARXX(01)' fval = is_row-lstar1 )
+    ( fnam = 'RC68A-LEINH(01)' fval = is_row-leinh1 ) ).
+
+  DATA(ls_opt) = VALUE ctu_params( dismode  = 'N'      "背景不顯示畫面
+                                   updmode  = 'S'      "同步更新，才拿得到結果
+                                   defsize  = abap_true
+                                   racommit = abap_false ).
+  CALL TRANSACTION 'CR01' WITH AUTHORITY-CHECK
+       USING lt_bdc OPTIONS FROM ls_opt MESSAGES INTO lt_msg.
+
+  rs_result-ok   = xsdbool( sy-subrc = 0 AND NOT line_exists( lt_msg[ msgtyp = 'E' ] )
+                                          AND NOT line_exists( lt_msg[ msgtyp = 'A' ] ) ).
+  rs_result-text = REDUCE string( INIT t = ``
+                     FOR m IN lt_msg WHERE ( msgtyp CA 'EAW' )
+                     NEXT t = t &amp;&amp; message_text( m ) &amp;&amp; `；` ).
+ENDMETHOD.
+
+METHOD message_text.   "IMPORTING is_msg TYPE bdcmsgcoll  RETURNING VALUE(rv_text) TYPE string
+  MESSAGE ID is_msg-msgid TYPE 'I' NUMBER is_msg-msgnr
+          WITH is_msg-msgv1 is_msg-msgv2 is_msg-msgv3 is_msg-msgv4
+          INTO rv_text.
+ENDMETHOD.</code></pre>
+  <p><b>現代改寫二：改用 CRAP_WORKCENTER_CREATE</b>（有 TEST 參數，可真正做模擬；參數結構與原程式試作一致：IN_CRHD_API01 基本鍵與描述、IN_CRHD_API02 負責人／任務清單用途／標準值碼、IN_CRHD_API03 控制碼與標準值單位、TABLES IN_CRCO_API01 成本中心與作業類型、IN_KAPA_API01 產能）：</p>
+  <pre><code class="abap">DATA(ls_api01) = VALUE crhd_api01( werks = is_row-werks  arbpl = is_row-arbpl
+                                   verwe = is_row-verwe  ktext = is_row-stext ).
+DATA(ls_api02) = VALUE crhd_api02( planv = is_row-planv  vgwts = is_row-vgwts
+                                   veran = is_row-veran ).
+DATA(ls_api03) = VALUE crhd_api03( steus = is_row-steus
+                                   vge01 = is_row-vge01  vge02 = is_row-vge02
+                                   vge03 = is_row-vge03  vge04 = is_row-vge04
+                                   vge05 = is_row-vge05  vge06 = is_row-vge06 ).
+DATA lt_crco TYPE STANDARD TABLE OF crco_api01 WITH EMPTY KEY.
+lt_crco = VALUE #(
+  ( kokrs  = p_kokrs  kostl = |{ is_row-kostl ALPHA = IN }|
+    begda  = is_row-begda  endda = is_row-endda
+    lstar1 = is_row-lstar1 lstar_ref1 = abap_true forml1 = is_row-forml1
+    lstar2 = is_row-lstar2 lstar_ref2 = abap_true forml2 = is_row-forml2 ) ).
+
+CALL FUNCTION 'CRAP_WORKCENTER_CREATE'
+  EXPORTING
+    in_crhd_api01 = ls_api01
+    in_crhd_api02 = ls_api02
+    in_crhd_api03 = ls_api03
+    test          = p_test                 "abap_true＝只檢查不寫入
+  TABLES
+    in_crco_api01 = lt_crco
+  EXCEPTIONS
+    OTHERS        = 1.
+IF sy-subrc &lt;&gt; 0.
+  MESSAGE ID sy-msgid TYPE 'I' NUMBER sy-msgno
+          WITH sy-msgv1 sy-msgv2 sy-msgv3 sy-msgv4 INTO DATA(lv_err).
+  " 記錄 lv_err 到該列狀態
+ENDIF.</code></pre>
+  <div class="warn">CRAP_WORKCENTER_CREATE <b>不是 SAP 正式發布（Released）的 BAPI</b>，參數與行為可能隨版本改變，使用前請在 <span class="tcode">SE37</span> 確認介面、並在測試機完整驗證「成本中心分配」與「產能」是否正確寫入 CRCO／KAKO。S/4HANA 的資料移轉優先使用 Migration Cockpit 的「Work center」物件；日常少量新增則直接用 <span class="tcode">CR01</span>。</div>
+
+  <h3 id="ch08-7-11">11. ZPPU003 工藝路線批導：BAPI_ROUTING_CREATE</h3>
+  <p><b>業務情境</b>：每個自製物料一條途程（任務清單類型 N），一列 Excel 一道工序，工序帶工作中心、控制碼、工序短文、標準文本碼、基本數量與六個標準值（作業類型／標準值／單位）。</p>
+  <p><b>模板</b>（4 列表頭）：MAPL-WERKS 工廠（預設 1000）、MAPL-MATNR 物料（內控號）、物料描述、MAPL-PLNNR 任務清單組碼（<b>不填</b>，由系統給號）、DATUV 生效日期、MAPL-PLNAL 組計數器、PLKO-KTEXT 途程描述、PLKO-VERWE 用途、PLKO-STATU 狀態、PLKO-PLNME 批量單位、PLPO-ARBPL 工作中心、PLPO-VORNR 工序號、PLPO-STEUS 控制碼、PLPO-LTXA1 工序短文本、PLPO-KTSCH 標準文本碼、PLPO-BMSCH 基本數量、PLPO-MEINH 計量單位、PLPO-LAR01～06／VGW01～06／VGE01～06。</p>
+  <p><b>原程式架構</b>：F4 時以 ZALSM 讀 Excel（第 5 列起、35 欄）→ FRM_DEAL 做檢核並補物料描述與單位（批量單位、工序單位一律用 MARA-MEINS，模板填的值被忽略）→ 先顯示 ALV → 使用者按 START → 依（物料、工廠、組計數器）排序，<span class="kw">AT END OF plnal</span> 時呼叫 BAPI_ROUTING_CREATE（TASK、MATERIALTASKALLOCATION、OPERATION 三張表），成功 COMMIT 並把系統給的 PLNNR 回寫到 ALV。「先看再建」的兩段式互動很好，值得保留。</p>
+  <p><b>原程式的問題</b>：</p>
+  <ul>
+    <li><b>一列檢核失敗就整支程式中止</b>：FRM_DEAL 在 END-OF-SELECTION 中用 <span class="kw">MESSAGE e001(00)</span> 報「物料未建立工廠視圖」，使用者只看到第一個錯誤，改完一個再跑一次，改完一個再跑一次。</li>
+    <li>同樣整表撈 MARC、MAKT、MARA 與所有 N 類型的 MAPL。</li>
+    <li>排序是 matnr、werks、plnal，但結構欄位順序是 werks、matnr、maktx、plnnr、datuv、plnal——AT END OF plnal 的分組鍵包含描述與生效日，同一條途程若生效日填得不一致就被拆開。</li>
+    <li>錯誤時在「訊息迴圈內」每則訊息呼叫一次 ROLLBACK；有一段註解掉的程式直接 <span class="kw">UPDATE mapl SET loekz = 'X'</span>（直接改標準表刪途程），絕對不可恢復使用。</li>
+  </ul>
+  <pre><code class="abap">METHOD create_routings.
+  LOOP AT mt_rows INTO DATA(ls_row)
+       GROUP BY ( matnr = ls_row-matnr werks = ls_row-werks plnal = ls_row-plnal )
+       ASSIGNING FIELD-SYMBOL(&lt;grp&gt;).
+
+    DATA(ls_h) = VALUE ty_rt_row( mt_rows[ matnr = &lt;grp&gt;-matnr werks = &lt;grp&gt;-werks
+                                   plnal = &lt;grp&gt;-plnal ] OPTIONAL ).
+    DATA(lv_from) = COND d( WHEN ls_h-datuv IS INITIAL THEN sy-datum ELSE ls_h-datuv ).
+
+    DATA(lt_task) = VALUE ty_task_tab( (
+      group_counter     = ls_h-plnal     valid_from    = lv_from
+      valid_to_date     = '99991231'     task_list_usage = ls_h-verwe
+      plant             = ls_h-werks     task_list_status = ls_h-statu
+      task_measure_unit = ls_h-plnme     description   = ls_h-ktext ) ).
+
+    DATA(lt_mtk) = VALUE ty_mtk_tab( (
+      material_long = ls_h-matnr  plant = ls_h-werks  group_counter = ls_h-plnal
+      valid_from    = lv_from     valid_to_date = '99991231' ) ).
+
+    DATA(lt_opr) = VALUE ty_opr_tab( FOR o IN GROUP &lt;grp&gt; (
+      group_counter = o-plnal      valid_from = lv_from   valid_to_date = '99991231'
+      activity      = |{ o-vornr ALPHA = IN }|
+      control_key   = o-steus      work_cntr  = o-arbpl   plant = o-werks
+      standard_text_key = o-ktsch  description = o-ltxa1
+      operation_measure_unit = o-meinh
+      base_quantity = o-bmsch      denominator = 1        nominator = 1
+      acttype_01 = o-lar01  std_value_01 = o-vgw01  std_unit_01 = o-vge01
+      acttype_02 = o-lar02  std_value_02 = o-vgw02  std_unit_02 = o-vge02
+      acttype_03 = o-lar03  std_value_03 = o-vgw03  std_unit_03 = o-vge03
+      cost_relevant = abap_true ) ).
+
+    DATA: lv_group   TYPE bapi1012_tsk_c-task_list_group,
+          lv_counter TYPE bapi1012_tsk_c-group_counter,
+          lt_return  TYPE STANDARD TABLE OF bapiret2 WITH EMPTY KEY.
+    CLEAR: lv_group, lv_counter, lt_return.
+
+    CALL FUNCTION 'BAPI_ROUTING_CREATE'
+      EXPORTING
+        testrun                = p_test
+      IMPORTING
+        group                  = lv_group
+        groupcounter           = lv_counter
+      TABLES
+        task                   = lt_task
+        materialtaskallocation = lt_mtk
+        operation              = lt_opr
+        return                 = lt_return.
+
+    DATA(lv_err) = xsdbool( line_exists( lt_return[ type = 'E' ] )
+                         OR line_exists( lt_return[ type = 'A' ] ) ).
+    IF lv_err = abap_true OR p_test = abap_true.
+      CALL FUNCTION 'BAPI_TRANSACTION_ROLLBACK'.      "只呼叫一次
+    ELSE.
+      CALL FUNCTION 'BAPI_TRANSACTION_COMMIT' EXPORTING wait = abap_true.
+    ENDIF.
+
+    " 回寫同組所有列的狀態與系統給的任務清單組碼
+    LOOP AT mt_rows ASSIGNING FIELD-SYMBOL(&lt;ls_out&gt;)
+         WHERE matnr = &lt;grp&gt;-matnr AND werks = &lt;grp&gt;-werks AND plnal = &lt;grp&gt;-plnal.
+      &lt;ls_out&gt;-light = COND #( WHEN lv_err = abap_true THEN '1' ELSE '3' ).
+      &lt;ls_out&gt;-plnnr = lv_group.
+      &lt;ls_out&gt;-msg   = REDUCE string( INIT t = `` FOR r IN lt_return
+                         WHERE ( type CA 'EAW' ) NEXT t = |{ t }{ r-message }；| ).
+    ENDLOOP.
+  ENDLOOP.
+ENDMETHOD.</code></pre>
+  <div class="tip">工序號 VORNR 要補零到 4 碼（0010、0020）；六個標準值要與工作中心的「標準值碼」（VGWTS）定義的順序一致，否則成本估算會把人工工時算成機器工時。途程建好後請用 <span class="tcode">CA03</span> 抽查幾筆，並用 <span class="tcode">CK11N</span> 做一次成本估算驗證作業類型與公式；大量更換工作中心用標準 <span class="tcode">CA85</span>，不要再寫程式。</div>
+
+  <h3 id="ch08-7-12">12. 錯誤收集與回報：每列一個燈號，並存進 SLG1</h3>
+  <p>六支程式的回報方式各不相同：物料（素材未含）、客戶用 LVC ALV＋彈窗、資產用 BAL 日誌（未存檔）、BOM 用訊息表 ALV（行次欄被註解掉）、工作中心用 Dynpro＋CL_GUI_ALV_GRID、途程在原資料 ALV 上加旗標。建議統一成一個標準：</p>
+  <ul>
+    <li><b>每列必有</b>：Excel 列號、業務鍵（物料／客戶／資產號）、燈號（1 紅 2 黃 3 綠）、訊息全文、建立出的單號。</li>
+    <li><b>訊息全部收集</b>，不要只取第一則或最後一則；BAPIRET2 的 W 類也要保留（例如「物料已存在，已更新」）。</li>
+    <li><b>存進應用日誌</b>（<span class="tcode">SLG0</span> 定義物件／子物件，<span class="tcode">SLG1</span> 查詢），外部識別碼放檔名＋執行時間，事後稽核才查得到誰在什麼時候導了什麼。</li>
+    <li>結果可以下載回 Excel（SALV 內建），業務改完錯誤列再上傳。</li>
+  </ul>
+  <pre><code class="abap">CLASS lcl_upload_log DEFINITION FINAL.
+  PUBLIC SECTION.
+    TYPES: BEGIN OF ty_status,
+             excel_row TYPE i,
+             objkey    TYPE char40,       "物料、客戶、資產…
+             light     TYPE char1,        "1 紅 / 2 黃 / 3 綠
+             msg       TYPE string,
+             docno     TYPE char40,       "建立出的號碼
+           END OF ty_status,
+           tt_status TYPE STANDARD TABLE OF ty_status WITH EMPTY KEY.
+
+    METHODS constructor IMPORTING iv_extnumber TYPE balnrext.
+    METHODS add_bapiret IMPORTING iv_row TYPE i it_return TYPE bapiret2_t.
+    METHODS save_and_show CHANGING ct_status TYPE tt_status.
+  PRIVATE SECTION.
+    DATA mv_handle TYPE balloghndl.
+ENDCLASS.
+
+CLASS lcl_upload_log IMPLEMENTATION.
+  METHOD constructor.
+    DATA(ls_log) = VALUE bal_s_log( object     = 'ZUPLOAD'     "SLG0 自建物件
+                                    subobject  = 'MASTER'
+                                    extnumber  = iv_extnumber
+                                    aldate_del = sy-datum + 180 ).
+    CALL FUNCTION 'BAL_LOG_CREATE'
+      EXPORTING i_s_log      = ls_log
+      IMPORTING e_log_handle = mv_handle
+      EXCEPTIONS OTHERS      = 1.
+  ENDMETHOD.
+
+  METHOD add_bapiret.
+    " 先記一則「第 n 列」的標題訊息，BAPI 原訊息的四個變數保持原樣
+    DATA(lv_head) = CONV char200( |第 { iv_row } 列|  ).
+    CALL FUNCTION 'BAL_LOG_MSG_ADD_FREE_TEXT'
+      EXPORTING i_log_handle = mv_handle
+                i_msgty      = 'I'
+                i_text       = lv_head
+      EXCEPTIONS OTHERS      = 1.
+
+    LOOP AT it_return INTO DATA(ls_ret).
+      DATA(ls_msg) = VALUE bal_s_msg( msgty = ls_ret-type
+                                      msgid = ls_ret-id
+                                      msgno = ls_ret-number
+                                      msgv1 = ls_ret-message_v1
+                                      msgv2 = ls_ret-message_v2
+                                      msgv3 = ls_ret-message_v3
+                                      msgv4 = ls_ret-message_v4 ).
+      CALL FUNCTION 'BAL_LOG_MSG_ADD'
+        EXPORTING i_log_handle = mv_handle
+                  i_s_msg      = ls_msg
+        EXCEPTIONS OTHERS      = 1.
+    ENDLOOP.
+  ENDMETHOD.
+
+  METHOD save_and_show.
+    DATA(lt_handle) = VALUE bal_t_logh( ( mv_handle ) ).
+    CALL FUNCTION 'BAL_DB_SAVE'
+      EXPORTING i_t_log_handle = lt_handle
+      EXCEPTIONS OTHERS        = 1.
+
+    SORT ct_status BY light excel_row.                   "紅燈排前面
+    TRY.
+        cl_salv_table=&gt;factory( IMPORTING r_salv_table = DATA(lo_alv)
+                                CHANGING  t_table      = ct_status ).
+        lo_alv-&gt;get_columns( )-&gt;set_exception_column( 'LIGHT' ).
+        lo_alv-&gt;get_columns( )-&gt;set_optimize( abap_true ).
+        lo_alv-&gt;get_functions( )-&gt;set_all( abap_true ).     "含匯出 Excel
+        lo_alv-&gt;display( ).
+      CATCH cx_salv_msg INTO DATA(lx).
+        MESSAGE lx TYPE 'S' DISPLAY LIKE 'E'.
+    ENDTRY.
+  ENDMETHOD.
+ENDCLASS.</code></pre>
+  <div class="note">每列先加一則自由文字訊息「第 n 列」、再原封不動加入 BAPI 訊息，才不會破壞訊息的四個變數。更講究的做法是在 BAL_S_MSG 的 CONTEXT 放自建結構（含列號與業務鍵），SLG1 就能依列號篩選。應用日誌物件／子物件要先在 <span class="tcode">SLG0</span> 建立。SALV 的詳細用法見 <a href="#ch02-3">2-3 章</a>。</div>
+
+  <h3 id="ch08-7-13">13. 先模擬後提交：各 API 的模擬能力一覽</h3>
+  <p>「先模擬」是批導程式跟「一般報表」最大的差別。原則是：<b>能用 API 的 TESTRUN 就全部先跑一遍 TESTRUN；不能的，自己做完整主檔檢核；全部通過才進正式寫入。</b>本章涉及的 API 模擬能力如下（參數名稱請以 <span class="tcode">SE37</span>／<span class="tcode">SE24</span> 實際介面為準）：</p>
+  <table>
+    <thead><tr><th>主資料</th><th>原程式用的 API</th><th>建議 API</th><th>模擬方式</th><th>注意</th></tr></thead>
+    <tbody>
+      <tr><td>物料</td><td>（素材缺）</td><td>BAPI_MATERIAL_SAVEDATA</td><td>無 TESTRUN；自行檢核 T134（物料類型）、T023（物料組）、T006（單位）、T001W（工廠）、T024（採購組）、T024D（MRP 控制者）、T001L（倉儲地點）</td><td>已存在的物料會被「修改」</td></tr>
+      <tr><td>客戶（BP）</td><td>BAPI_BUPA_*、SD_CUSTOMER_MAINTAIN_ALL、CMD_EI_API</td><td>CL_MD_BP_MAINTAIN（或 CMD_EI_API／CVI_EI_INBOUND_MAIN）</td><td>MAINTAIN 後 ROLLBACK</td><td>內部給號會消耗號碼</td></tr>
+      <tr><td>固定資產（移轉）</td><td>BAPI_FIXEDASSET_OVRTAKE_CREATE</td><td>同左</td><td>TESTRUN 參數</td><td>移轉年度不可寫死</td></tr>
+      <tr><td>BOM</td><td>BAPI_MATERIAL_BOM_GROUP_CREATE</td><td>同左，或 CSAP_MAT_BOM_CREATE</td><td>GROUP_CREATE 有 TESTRUN；CSAP 系列無，需自行檢核</td><td>檢查 MAST 是否已存在</td></tr>
+      <tr><td>工作中心</td><td>CR01 BDC</td><td>CRAP_WORKCENTER_CREATE（非正式 BAPI）或 Migration Cockpit</td><td>CRAP 有 TEST 參數；BDC 只能在測試機試</td><td>BDC 畫面隨版本變動</td></tr>
+      <tr><td>途程</td><td>BAPI_ROUTING_CREATE</td><td>同左</td><td>TESTRUN 參數</td><td>工作中心必須先存在</td></tr>
+    </tbody>
+  </table>
+  <p>主檔檢核的現代寫法：一次把檔案中所有值收成集合、一次查回，再以 <span class="kw">line_exists</span> 逐列比對，<b>一次回報所有錯誤</b>而不是遇到第一個就 MESSAGE E 結束。</p>
+  <pre><code class="abap">METHOD validate.
+  " 1) 收集檔案中出現的值，組成「列舉」範圍表（去重，每個值一筆 EQ）
+  TYPES: ty_r_mtart TYPE RANGE OF mtart,
+         ty_r_werks TYPE RANGE OF werks_d,
+         ty_r_matnr TYPE RANGE OF matnr.
+  DATA(lr_mtart) = VALUE ty_r_mtart( FOR GROUPS g OF r IN mt_rows GROUP BY r-mtart
+                                     ( sign = 'I' option = 'EQ' low = g ) ).
+  DATA(lr_werks) = VALUE ty_r_werks( FOR GROUPS g OF r IN mt_rows GROUP BY r-werks
+                                     ( sign = 'I' option = 'EQ' low = g ) ).
+  DATA(lr_matnr) = VALUE ty_r_matnr( FOR GROUPS g OF r IN mt_rows GROUP BY r-matnr
+                                     ( sign = 'I' option = 'EQ' low = g ) ).
+
+  " 2) 一次查回（以列舉 IN 查，不用 BETWEEN）
+  SELECT mtart FROM t134  WHERE mtart IN @lr_mtart INTO TABLE @DATA(lt_t134).
+  SELECT werks FROM t001w WHERE werks IN @lr_werks INTO TABLE @DATA(lt_t001w).
+  SELECT matnr FROM mara  WHERE matnr IN @lr_matnr INTO TABLE @DATA(lt_exist).
+
+  " 3) 逐列比對，收集全部錯誤
+  LOOP AT mt_rows ASSIGNING FIELD-SYMBOL(&lt;r&gt;).
+    DATA(lt_err) = VALUE string_table(
+      ( COND #( WHEN &lt;r&gt;-matnr IS INITIAL THEN `物料號必填` ) )
+      ( COND #( WHEN NOT line_exists( lt_t134[ mtart = &lt;r&gt;-mtart ] )
+                THEN |物料類型 { &lt;r&gt;-mtart } 不存在| ) )
+      ( COND #( WHEN NOT line_exists( lt_t001w[ werks = &lt;r&gt;-werks ] )
+                THEN |工廠 { &lt;r&gt;-werks } 不存在| ) )
+      ( COND #( WHEN line_exists( lt_exist[ matnr = &lt;r&gt;-matnr ] )
+                THEN |物料 { &lt;r&gt;-matnr } 已存在（將略過）| ) )
+      ( COND #( WHEN &lt;r&gt;-dismm = 'VB' AND &lt;r&gt;-minbe IS INITIAL
+                THEN `MRP 類型 VB 必須填再訂貨點` ) )
+      ( COND #( WHEN &lt;r&gt;-disls = 'FX' AND &lt;r&gt;-bstfe IS INITIAL
+                THEN `批量程序 FX 必須填固定批量` ) ) ).
+    DELETE lt_err WHERE table_line IS INITIAL.
+    IF lt_err IS NOT INITIAL.
+      &lt;r&gt;-light = '1'.
+      &lt;r&gt;-msg   = concat_lines_of( table = lt_err sep = `；` ).
+    ENDIF.
+  ENDLOOP.
+ENDMETHOD.</code></pre>
+  <div class="note">範圍表會被展開成 SQL 的 IN 清單，數千個值以上可能超過資料庫陳述式長度限制（執行期錯誤），量大時請分批（例如每 1,000 筆一批），或改用 FOR ALL ENTRIES（記得先判斷內表非空，空表會變成「全表」）。ABAP 7.52 起也可以把內表當資料來源（<span class="kw">SELECT … FROM @itab AS f</span>）與資料庫表 JOIN，S/4HANA 1809 可用。</div>
+  <div class="tip"><b>Casper 的第二條經驗</b>在批導檢核裡特別重要：驗證「物料是否存在」要用<b>列舉</b>（IN 值清單／子查詢），不要偷懶寫「物料號 BETWEEN 檔案最小值 AND 最大值」——物料號是字元欄位，比的是字典序，混合純數字與英數、或前導零處理不一致時，區間會把不相干的物料抓進來、也會漏掉該有的。</div>
+
+  <h3 id="ch08-7-14">14. 自寫批導 vs Migration Cockpit：怎麼選</h3>
+  <p>這六支程式都是 2020～2022 年間在 S/4HANA 導入專案中寫的。當時 SAP 已經提供 Migration Cockpit（1809 為交易 <span class="tcode">LTMC</span>，自訂物件用 <span class="tcode">LTMOM</span>；2020 起改為 Fiori「Migrate Your Data」），它對物料（Product）、客戶／BP、固定資產（含餘額與交易）、BOM、工作中心、途程都有現成的遷移物件，模板、值對應（Mapping）、模擬、錯誤報告全部內建。那為什麼還要自己寫？工具細節見 <a href="#ch05-13">5-13 章第 24 節</a>，這裡只談選擇：</p>
+  <table>
+    <thead><tr><th>考量</th><th>Migration Cockpit</th><th>自寫批導程式</th></tr></thead>
+    <tbody>
+      <tr><td>用途</td><td><b>一次性</b>的初始移轉（上線前、切換期）</td><td><b>常態性</b>業務作業（每週新料、每月新客戶、新產線途程）</td></tr>
+      <tr><td>模板</td><td>SAP 產生、版本受控，欄位多且固定</td><td>可貼合業務語言（中文欄名、填寫說明、下拉選單）</td></tr>
+      <tr><td>值對應（舊碼 → 新碼）</td><td>內建 Mapping Task，可重複使用</td><td>要自己做對照表</td></tr>
+      <tr><td>模擬</td><td>內建 Simulate 步驟</td><td>要自己寫（第 13 節）</td></tr>
+      <tr><td>客製欄位與特殊邏輯</td><td>用 LTMOM 擴充，學習成本高</td><td>完全自由（例如依內外貿自動展開銷售範圍）</td></tr>
+      <tr><td>執行者與權限</td><td>通常只給移轉團隊</td><td>可以開給關鍵使用者，用 TCODE＋權限物件控管</td></tr>
+      <tr><td>維護成本</td><td>SAP 隨版本維護</td><td>自己維護；S/4 升級時 BDC 類最容易壞</td></tr>
+    </tbody>
+  </table>
+  <p><b>結論</b>：初始移轉一律先評估 Migration Cockpit 的標準物件——這就是 Casper 第三條經驗「<b>先找標準，再想客製</b>」。只有兩種情況值得自己寫：① 上線後會被業務<b>反覆使用</b>的批次建檔（此時就是一支正式的業務程式，要有權限、日誌、模擬）；② 標準物件確實不支援、且 LTMOM 擴充成本高於自寫。另外，「批次修改既有主資料」通常也不用寫程式：物料用 <span class="tcode">MM17</span>／<span class="tcode">MASS</span>，BOM 用 <span class="tcode">CS20</span>，途程換工作中心用 <span class="tcode">CA85</span>。</p>
+  <div class="warn"><b>LSMW 與錄製 BDC</b>：SAP Note 2287723 說明 LSMW 在 S/4HANA 技術上仍可執行但不建議用於資料移轉；錄製 XD01／XK01 的 LSMW 與 BDC 在 S/4 已完全不可行（交易會導向 BP）。本章的工作中心 BDC 是「沒有正式 BAPI 時」的退而求其次，新專案請優先用 Migration Cockpit 的工作中心物件。</div>
+
+  <h3 id="ch08-7-15">15. PP 常用資料表速查</h3>
+  <p>素材根目錄的 <b>SAP PP Tables.docx</b> 與 <b>SAP PP Tables(1).docx</b> 經比對 MD5 完全相同，是同一份文件的重複下載。內容是依主題分組的 PP 資料表清單與一張「生產訂單資料表關聯圖」。以下整理並補上 S/4HANA 說明；原文有誤或易誤解之處直接在備註欄修正。<span class="src">（依文件整理）</span></p>
+  <table>
+    <thead><tr><th>主題</th><th>資料表</th><th>說明</th><th>備註（含修正與 S/4 說明）</th></tr></thead>
+    <tbody>
+      <tr><td rowspan="8"><b>工作中心</b></td><td>CRHD</td><td>工作中心表頭</td><td>鍵 OBJTY＝'A'＋OBJID；ARBPL 是外部名稱</td></tr>
+      <tr><td>CRTX</td><td>工作中心／生產資源工具的文字</td><td>以 OBJTY、OBJID、SPRAS 串 CRHD</td></tr>
+      <tr><td>CRCO</td><td>工作中心分配成本中心</td><td>含作業類型 LSTAR1～6、公式 FORML1～6、有效期間（第 10 節的成本核算頁籤）</td></tr>
+      <tr><td>CRHH／CRHS</td><td>工作中心層級／層級結構</td><td>—</td></tr>
+      <tr><td>KAKO</td><td>產能表頭</td><td>—</td></tr>
+      <tr><td>CRCA</td><td>工作中心產能分配</td><td>串 CRHD 與 KAKO</td></tr>
+      <tr><td>TC24</td><td>工作中心負責人</td><td>設定表（第 10 節 VERAN）</td></tr>
+      <tr><td>CRC</td><td>原文寫成「Logical DB for Work centers」</td><td><b>CRC 是邏輯資料庫，不是資料表</b>；S/4 新程式不要用 LDB，直接以 ABAP SQL／CDS 讀</td></tr>
+      <tr><td rowspan="9"><b>途程／工序</b></td><td>MAPL</td><td>任務清單分配給物料</td><td>物料＋工廠 → PLNTY／PLNNR／PLNAL</td></tr>
+      <tr><td>PLKO</td><td>任務清單表頭</td><td>描述 KTEXT、用途 VERWE、狀態 STATU</td></tr>
+      <tr><td>PLKZ</td><td>任務清單主表頭</td><td>—</td></tr>
+      <tr><td>PLAS</td><td>任務清單：工序選擇</td><td>表頭（PLNAL）與工序（PLNKN）之間的連結表</td></tr>
+      <tr><td>PLPO</td><td>任務清單工序／活動</td><td>VORNR、STEUS、ARBID（→CRHD-OBJID）、LAR01～06、VGW01～06</td></tr>
+      <tr><td>PLFL</td><td>任務清單：順序（Sequence）</td><td>—</td></tr>
+      <tr><td>PLPH</td><td>階段／子工序</td><td>—</td></tr>
+      <tr><td>PLFH</td><td>任務清單：生產資源工具（PRT）</td><td>—</td></tr>
+      <tr><td>PLMZ／PLPR</td><td>BOM 項目分配到工序／任務清單日誌收集器</td><td>PLMZ 在 BOM 段也列了一次</td></tr>
+      <tr><td rowspan="6"><b>BOM</b></td><td>MAST</td><td>物料與 BOM 的連結</td><td>物料＋工廠＋用途 STLAN＋備選 STLAL → STLNR</td></tr>
+      <tr><td>STKO</td><td>BOM 表頭</td><td>基本數量 BMENG、狀態 STLST</td></tr>
+      <tr><td>STPO</td><td>BOM 項目</td><td>組件 IDNRK、數量 MENGE、項目類別 POSTP</td></tr>
+      <tr><td>STAS</td><td>BOM 項目選擇</td><td>表頭與項目的連結（含變更歷史）</td></tr>
+      <tr><td>STPN／STPU／STZU</td><td>後續控制／子項目／永久 BOM 資料</td><td>—</td></tr>
+      <tr><td>KDST</td><td>銷售訂單與 BOM 的連結</td><td>訂單 BOM</td></tr>
+      <tr><td rowspan="9"><b>生產訂單</b></td><td>AUFK</td><td>訂單主檔（表頭）</td><td>所有訂單類型共用（PP、PM、CO 內部訂單）</td></tr>
+      <tr><td>AFKO</td><td>PP 訂單表頭資料</td><td>AUFPL 串工序</td></tr>
+      <tr><td>AFPO</td><td>訂單項目</td><td>物料、數量、收貨</td></tr>
+      <tr><td>AFVC／AFVV／AFVU</td><td>訂單工序／工序數量日期值／工序使用者欄位</td><td>AFVC-ARBID＝CRHD-OBJID</td></tr>
+      <tr><td>AFFL</td><td>訂單順序</td><td>—</td></tr>
+      <tr><td>RESB</td><td>訂單組件（預留）</td><td>以 AUFPL／APLZL 對到工序</td></tr>
+      <tr><td>AFRU</td><td>訂單確認</td><td>以 AUFPL／APLZL 對到工序</td></tr>
+      <tr><td>AUFM</td><td>生產訂單的貨物移動</td><td><b>S/4HANA 的物料憑證以 MATDOC 為準</b>，查訂單的投料／入庫建議直接查 MATDOC（依 AUFNR）或其 CDS 視圖</td></tr>
+      <tr><td>AFIH</td><td>原文列在生產訂單段</td><td><b>AFIH 是 PM 維護訂單表頭</b>，不屬於 PP 生產訂單</td></tr>
+      <tr><td><b>計畫訂單</b></td><td>PLAF</td><td>計畫訂單</td><td>MRP 結果；S/4 的 MRP Live（<span class="tcode">MD01N</span>）同樣寫 PLAF</td></tr>
+      <tr><td><b>產能規劃</b></td><td>KBKO／KBED</td><td>產能需求表頭／產能需求記錄</td><td>—</td></tr>
+      <tr><td><b>看板</b></td><td>PKHD／PKPS／PKER</td><td>看板控制循環表頭／看板識別與控制循環／看板容器錯誤日誌</td><td>—</td></tr>
+      <tr><td><b>預留</b></td><td>RESB／RKPF</td><td>預留項目／預留表頭</td><td>原文只寫「header」，指的是預留單表頭</td></tr>
+      <tr><td rowspan="2"><b>狀態</b></td><td>JEST／JSTO</td><td>物件狀態／狀態參數檔資訊</td><td>以 OBJNR 串（訂單的 OBJNR＝'OR'＋AUFNR）</td></tr>
+      <tr><td>TJ02／TJ02T、TJ30／TJ31</td><td>系統狀態／系統狀態文字；使用者狀態碼／流程控制</td><td>TJ30、TJ31 出現在關聯圖中</td></tr>
+      <tr><td><b>預測</b></td><td>MAPR／PROP／DBPR</td><td>預測用物料索引／預測參數／預測用 MRP 區域物料索引</td><td>依原文</td></tr>
+    </tbody>
+  </table>
+  <p><b>生產訂單關聯圖</b>（依文件圖示整理）：</p>
+  <table>
+    <thead><tr><th>從</th><th>到</th><th>串接欄位</th></tr></thead>
+    <tbody>
+      <tr><td>AFKO（訂單表頭）</td><td>AUFK（訂單主檔）</td><td>AUFNR</td></tr>
+      <tr><td>AFKO</td><td>AFVC（訂單途程）</td><td>AUFPL</td></tr>
+      <tr><td>AFVC</td><td>CRHD（工作中心）→ CRTX</td><td>AFVC-ARBID＝CRHD-OBJID；CRTX 以 OBJTY＝'A'、OBJID</td></tr>
+      <tr><td>AFVC</td><td>AFRU（確認）、RESB（預留）</td><td>AUFPL、APLZL（另有 PLNFL、VORNR）</td></tr>
+      <tr><td>AFVC</td><td>AFFH（訂單 PRT 分配）→ CRVD_B → DRAW</td><td>AUFPL；OBJID；DOKAR／DOKNR／DOKVR／DOKTL</td></tr>
+      <tr><td>AFKO</td><td>DRAD_PORDER（訂單連結文件）→ DRAW</td><td>AUFNR；文件鍵</td></tr>
+      <tr><td>AUFK</td><td>AFPO（訂單項目）→ PRPS（WBS）→ PROJ（專案定義）</td><td>AUFNR；AFPO-PROJN＝PRPS-PSPNR；PRPS-PSPHI＝PROJ-PSPNR</td></tr>
+      <tr><td>AUFK</td><td>JEST（有效狀態）、JSTO</td><td>OBJNR</td></tr>
+      <tr><td>JEST</td><td>TJ30（使用者狀態碼）、TJ31</td><td>STSMA、ESTAT</td></tr>
+    </tbody>
+  </table>
+  <p>實務上最常用的查詢是「物料的途程工序與工作中心」。注意 PLKO／PLAS／PLPO 都有變更歷史（計數器 ZAEHL、有效日、刪除旗標），以下為簡化版（只取未刪除、以關鍵日期有效者）：</p>
+  <pre><code class="abap">SELECT FROM mapl AS m
+  INNER JOIN plko AS k ON k~plnty = m~plnty AND k~plnnr = m~plnnr AND k~plnal = m~plnal
+  INNER JOIN plas AS a ON a~plnty = m~plnty AND a~plnnr = m~plnnr AND a~plnal = m~plnal
+  INNER JOIN plpo AS p ON p~plnty = a~plnty AND p~plnnr = a~plnnr AND p~plnkn = a~plnkn
+  LEFT OUTER JOIN crhd AS c ON c~objty = 'A' AND c~objid = p~arbid
+  LEFT OUTER JOIN crtx AS t ON t~objty = c~objty AND t~objid = c~objid AND t~spras = @sy-langu
+  FIELDS m~matnr, m~werks, m~plnnr, m~plnal, k~ktext,
+         p~vornr, p~steus, p~ltxa1, c~arbpl, t~ktext AS wc_text,
+         p~lar01, p~vgw01, p~vge01, p~lar02, p~vgw02, p~vge02
+  WHERE m~matnr IN @s_matnr                     "列舉，不要用區間湊
+    AND m~werks = @p_werks
+    AND m~plnty = 'N'
+    AND m~loekz = @space AND a~loekz = @space AND p~loekz = @space
+    AND k~datuv &lt;= @p_date AND a~datuv &lt;= @p_date AND p~datuv &lt;= @p_date
+  ORDER BY m~matnr, m~plnal, p~vornr            "HANA 無預設排序：工序一定要排
+  INTO TABLE @DATA(lt_routing).</code></pre>
+  <div class="warn"><b>Casper 的第一條經驗</b>：HANA 沒有預設排序。途程工序不排序，列印出來的工序卡可能 0030 在 0010 前面；同一物料有多個組計數器（PLNAL）或多個備選 BOM（STLAL）時，「取第一筆」的邏輯如果沒有 ORDER BY，今天抓到備選 01、明天抓到 02，成本估算與領料就會不穩定。要取「主要」途程或 BOM，請以明確規則選（例如生產版本 MKAL、或固定取最小的 PLNAL／STLAL），並寫 ORDER BY。多階 BOM 展開不要自己寫遞迴 JOIN，用標準函數 <span class="kw">CS_BOM_EXPL_MAT_V2</span>。</div>
+
+  <h3 id="ch08-7-16">16. 上線檢查清單與總結</h3>
+  <p>把本章六支程式的教訓濃縮成一份上線前檢查清單：</p>
+  <table>
+    <thead><tr><th>類別</th><th>檢查項目</th><th>本章反例</th></tr></thead>
+    <tbody>
+      <tr><td rowspan="3">模板</td><td>業務用的模板與程式讀的模板是同一份（放 SMW0、隨傳輸走）</td><td>ZSDU009 模板 42 欄 vs 程式 45 欄</td></tr>
+      <tr><td>讀檔起始列與模板表頭列數一致；範例列不會被匯入</td><td>ZFIU018 從第 3 列（範例列）開始讀</td></tr>
+      <tr><td>模板上的欄位真的有被程式使用（不寫死覆蓋）</td><td>ZPPU002 工廠／用途／狀態寫死；ZPPU003 單位忽略模板</td></tr>
+      <tr><td rowspan="3">讀檔與轉換</td><td>長文字不被 50 字截斷；xlsx 在伺服器端解析</td><td>ALSMEX_TABLINE 50 字</td></tr>
+      <tr><td>轉換常式用對（ALPHA、MATN1、CUNIT、PARVW）</td><td>ZSDU009 對 PARVW 用 ALPHA</td></tr>
+      <tr><td>日期、數字格式不依賴使用者設定</td><td>ZPPU004 CHAR10 日期直接進 BDC</td></tr>
+      <tr><td rowspan="3">檢核與模擬</td><td>一次回報所有錯誤，不以 MESSAGE E 中止</td><td>ZPPU003 第一個錯誤就停</td></tr>
+      <tr><td>「測試」選項真的有作用</td><td>ZPPU004 P_RUN 未使用</td></tr>
+      <tr><td>只查檔案中出現的主檔，不整表 SELECT *</td><td>ZPPU002／ZPPU003 整表撈 MARA／MARC</td></tr>
+      <tr><td rowspan="3">寫入</td><td>一個業務物件一個 LUW，失敗不留半成品</td><td>ZSDU009 一個客戶 7～8 次 COMMIT</td></tr>
+      <tr><td>錯誤時不 STOP 整批；已完成的有紀錄</td><td>ZFIU018 STOP</td></tr>
+      <tr><td>不寫死年度、帳號、組織</td><td>ZFIU018 '2021'；ZSDU009 寫死帳號</td></tr>
+      <tr><td rowspan="2">回報與稽核</td><td>每列有 Excel 列號、燈號、完整訊息、建立的號碼</td><td>ZPPU002 行次欄被註解</td></tr>
+      <tr><td>日誌存入 SLG1；程式有 TCODE 與權限檢查</td><td>ZFIU018 日誌未存檔；ZPPU004 權限檢查被註解</td></tr>
+    </tbody>
+  </table>
+  <p><b>三條實務經驗在批導上的對應</b>：</p>
+  <ol>
+    <li><b>HANA 沒有預設排序</b>：分組建立（BOM、途程）用 GROUP BY 而非依賴排序的 AT END OF；讀既有主檔「取第一筆」一定要 ORDER BY；多個備選 BOM／途程要有明確的選取規則。</li>
+    <li><b>列舉比區間安全</b>：檢核主檔存在用 IN 列舉／子查詢；物料號、客戶號的轉換（ALPHA、MATN1）要一致，否則列舉也會失準。</li>
+    <li><b>先找標準，再想客製</b>：初始移轉先用 Migration Cockpit；大量修改先找 MM17／MASS／CS20／CA85；非寫程式不可時，優先正式 BAPI（MATERIAL_SAVEDATA、CL_MD_BP_MAINTAIN、OVRTAKE_CREATE、ROUTING_CREATE），其次非正式 API（CRAP、CSAP），最後才是 BDC。</li>
+  </ol>
+  <p>延伸閱讀：主資料的三層 VIEW 觀念見 <a href="#ch01-3">1-3 章</a>；BAPI／BP 見 <a href="#ch04-1">4-1 章</a>；BDC、檔案、背景作業見 <a href="#ch04-4">4-4 章</a>；LSMW、BAPI 資料傳輸與 Migration Cockpit 見 <a href="#ch05-13">5-13 章</a>；把本章的類別拆成「讀檔／檢核／寫入／回報」可重用元件的設計手法見 <a href="#ch07-5">7-5 章</a>。</p>
+
+  <h3 id="ch08-7-qa">練習與自我檢核</h3>
+  <ol>
+    <li><b>ALSM_EXCEL_TO_INTERNAL_TABLE 為什麼會讓物料長描述少一截？有哪兩種解法？</b><br><i>要點：輸出結構 ALSMEX_TABLINE-VALUE 只有 CHAR 50。解法一是像原專案複製成 Z 函數並擴充結構長度（ZALSMEX_TABLINE）；解法二（建議）是改用 CL_FDT_XL_SPREADSHEET 在伺服器端解析 xlsx，沒有長度限制也不需要前端 Excel。</i></li>
+    <li><b>用 CL_FDT_XL_SPREADSHEET 讀到的日期欄位變成「45108」，怎麼轉？</b><br><i>要點：那是 Excel 1900 日期系統的序號，ABAP 日期＝'18991230'＋序號（第 3 節 to_date）。或要求模板日期欄設為文字格式、填 YYYYMMDD。</i></li>
+    <li><b>ZSDU009 一個客戶要 COMMIT 七、八次，會發生什麼事？S/4 的正解是什麼？</b><br><i>要點：中途失敗會留下半成品客戶（有 BP 無銷售視圖等），重跑又走修改分支。正解是把 BP、角色、地址、稅號、銀行、公司代碼、銷售範圍、合作夥伴功能、稅分類組成一個 CVIS_EI_EXTERN，一次 CL_MD_BP_MAINTAIN=&gt;MAINTAIN，檢查 BAPIRETM 後只 COMMIT 一次。</i></li>
+    <li><b>合作夥伴功能欄位（PARVW）該用什麼轉換常式？使用者填 SH 會轉成什麼？</b><br><i>要點：CONVERSION_EXIT_PARVW_INPUT；SH（送達方）→ 內碼 WE，SP → AG，BP → RE，PY → RG。不能用 ALPHA。</i></li>
+    <li><b>ZFIU018 為什麼要分成「全部 TESTRUN」與「正式建立」兩階段？原程式遇錯就 STOP 有什麼後果？</b><br><i>要點：兩階段可確保「要嘛全部通過才寫、要嘛一筆都不寫」，避免移轉資料一半進一半沒進；原程式 STOP 前的資產已 COMMIT，使用者不知道停在哪一列，重跑還會重複建立。</i></li>
+    <li><b>資本化日期早於移轉年度與在移轉年度內的資產，分別用 BAPI_FIXEDASSET_OVRTAKE_CREATE 的哪個表格參數帶值？</b><br><i>要點：早於移轉年度 → CUMULATEDVALUES（原值 ACQ_VALUE、以往累計折舊 ORD_DEP）；年度內 → TRANSACTIONS（異動類型 100，含 VALUEDATE）；本年已提折舊 → POSTEDVALUES。移轉年度不可寫死。</i></li>
+    <li><b>BOM 批導用 AT END OF stlan 分組有什麼風險？現代寫法是什麼？</b><br><i>要點：AT END OF 以結構中該欄位「左邊所有欄位」為分組鍵，且依賴內表已正確排序；描述不一致或未排序就會把一張 BOM 拆成多次建立。改用 LOOP AT … GROUP BY ( matnr werks stlan stlal )，明確指定分組鍵。</i></li>
+    <li><b>找出 ZPPU004 工作中心 BDC 的兩個邏輯錯誤。</b><br><i>要點：① 作業類型單位 RC68A-LEINH 填成標準值單位 VGE01～06，而非模板的 LEINH1～6；② 「測試」勾選框 P_RUN 在 BDC 路徑中完全沒使用。另可提：沒有 MESSAGES INTO、MESSAGE_TEXT_BUILD 未帶變數、權限檢查被註解。</i></li>
+    <li><b>哪些 API 有 TESTRUN？沒有 TESTRUN 的物料 BAPI 要怎麼「先模擬」？</b><br><i>要點：BAPI_FIXEDASSET_OVRTAKE_CREATE、BAPI_ROUTING_CREATE、BAPI_MATERIAL_BOM_GROUP_CREATE 有 TESTRUN，CRAP_WORKCENTER_CREATE 有 TEST；BAPI_MATERIAL_SAVEDATA 沒有，需自行做主檔檢核（T134、T023、T006、T001W、T024D…）、先在測試機跑，或呼叫後 ROLLBACK 乾跑。參數名以 SE37 為準。</i></li>
+    <li><b>主管問：「上線要搬 8,000 筆物料和 300 張 BOM，要不要寫程式？」你怎麼回答？</b><br><i>要點：初始移轉先用 Migration Cockpit（1809 為 LTMC／LTMOM）的 Product 與 BOM 物件，內建模板、值對應、模擬與錯誤報告；只有上線後會被反覆使用、或標準物件無法滿足時才自寫批導，且要具備模擬、日誌、權限。這是「先找標準，再想客製」。</i></li>
+    <li><b>寫一段 ABAP SQL，查某工廠一批物料的途程工序與工作中心名稱，並說明為什麼一定要 ORDER BY。</b><br><i>要點：MAPL → PLKO → PLAS → PLPO → CRHD（OBJTY='A'、OBJID=ARBID）→ CRTX；過濾刪除旗標與有效日；ORDER BY 物料、PLNAL、VORNR。HANA 沒有預設排序，不排序時工序順序與「第一筆」都不穩定。</i></li>
+    <li><b>SAP PP Tables 文件中的 CRC、AFIH、AUFM 三項，放在 S/4HANA 新程式時各要注意什麼？</b><br><i>要點：CRC 是邏輯資料庫不是表，新程式不用 LDB；AFIH 是 PM 維護訂單表頭，不屬 PP 生產訂單；物料移動在 S/4 以 MATDOC 為準，查訂單貨物移動建議直接查 MATDOC 或其 CDS 視圖。</i></li>
+  </ol>
+</section>

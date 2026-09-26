@@ -1,0 +1,605 @@
+<section class="chapter" id="ch07-1" data-title="OOP 範例庫（一）：例外處理與程序式 ABAP 基礎回顧">
+  <h2>第 7-1 章 OOP 範例庫（一）：例外處理與程序式 ABAP 基礎回顧（書第 1–2 章）</h2>
+  <p class="lede">第七部以《SAP ABAP 面向对象程序设计 – 原则.模式.实践》（SAP ABAP Object Oriented Programming – Principles, Patterns and Practices）的隨書範例為骨幹。本章對應書的第 1、2 章：先用類別式例外（class-based exception）把「不要讓程式 short dump」這件事講清楚，再回頭檢查程序式 ABAP 裡最容易出錯的地方，包括迴圈中宣告變數、命名與作用域、STATICS、動態賦值、內表建立、HANA 內嵌宣告 SQL、跨 client 的 Native SQL 和 ADBC 動態 SQL。這些都是學 OO 之前要先弄懂的基本功。9 支範例全部改寫成 S/4HANA 1809（ABAP 7.53）可以直接執行的現代寫法。</p>
+  <div class="meta">
+    <div><b>核心 TCODE</b><span class="tcode">SE38</span><span class="tcode">SE80</span><span class="tcode">SE24</span><span class="tcode">ST22</span><span class="tcode">DBACOCKPIT</span><span class="tcode">SCC4</span></div>
+    <div><b>關鍵物件</b>CX_ROOT、CX_STATIC_CHECK、CX_DYNAMIC_CHECK、CX_NO_CHECK、CX_SY_ZERODIVIDE、CX_SY_RANGE_OUT_OF_BOUNDS、CX_SY_ARITHMETIC_ERROR、CX_SY_OPEN_SQL_DB、CX_SY_DYNAMIC_OSQL_ERROR、CL_SQL_CONNECTION、CL_SQL_STATEMENT、CL_SQL_RESULT_SET、CX_SQL_EXCEPTION、CL_ABAP_DYN_PRG、CL_DEMO_OUTPUT、CL_SALV_TABLE、SCARR、T001、T000</div>
+    <div><b>書中章節</b>第 1 章（ABAP 程式的錯誤處理）、第 2 章（程序式 ABAP 程式設計回顧）；第 3 章是 UML，書中沒有範例程式</div>
+  </div>
+
+  <h3 id="ch07-1-01">1. 範例索引</h3>
+  <p>隨書範例放在 <span class="src">L36_ABAP_OOP_SAMPLE-master\ABAP_OOP_SAMPLE-master\ABAP_OOP_Sample_X.Y.txt</span>，每支檔案的第一行是 <span class="kw">"示例程序X.Y</span>。書的內文不在資料夾裡，本章的講解是根據範例程式和程式內的註解整理的，章節名稱依範例內容命名，不代表書中實際的節名。本章負責的 9 支範例如下：</p>
+  <table>
+    <thead><tr><th>編號</th><th>原 REPORT</th><th>主題（一句話）</th><th>本章講解</th></tr></thead>
+    <tbody>
+      <tr><td>1.01</td><td>ZREP_ERROR_CHECK_01</td><td>用 TRY…CATCH 攔下「除以零」與「字串位移超出範圍」兩種執行期錯誤，避免 short dump</td><td><a href="#ch07-1-02">第 2 節</a>、<a href="#ch07-1-03">第 3 節</a></td></tr>
+      <tr><td>2.01</td><td>ZREP_CLS_07</td><td>在 DO 迴圈中用 <span class="kw">DATA … VALUE</span> 宣告變數，這個初值不會每圈重設</td><td><a href="#ch07-1-04">第 4 節</a></td></tr>
+      <tr><td>2.02</td><td>ZREP_CLS_08</td><td>全域與區域的同名常數互相遮蔽，說明命名規則為什麼能避免這種值替代</td><td><a href="#ch07-1-05">第 5 節</a></td></tr>
+      <tr><td>2.03</td><td>ZREP_CLS_09</td><td>比較區域變數與 <span class="kw">STATICS</span> 靜態區域變數的生命週期</td><td><a href="#ch07-1-06">第 6 節</a></td></tr>
+      <tr><td>2.04</td><td>ZREP_CLS_10</td><td>用括號運算子 <span class="kw">(name)</span> 和 <span class="kw">ASSIGN</span> 依變數名稱動態取值；變數名稱不分大小寫</td><td><a href="#ch07-1-07">第 7 節</a></td></tr>
+      <tr><td>2.05</td><td>ZREP_CLS_22</td><td>建立內表的四個步驟：結構型別、表型別、內表變數、工作區</td><td><a href="#ch07-1-08">第 8 節</a></td></tr>
+      <tr><td>2.06</td><td>ZREP_CLS_HANA01</td><td>（HANA 1610）ABAP SQL 內嵌宣告 <span class="kw">@DATA( )</span> 加上 <span class="kw">line_exists</span> 與表運算式</td><td><a href="#ch07-1-09">第 9 節</a></td></tr>
+      <tr><td>2.07</td><td>ZREP_CLS_27</td><td>用 Native SQL（EXEC … ENDEXEC）搭配 PERFORMING 逐筆回呼，跨 client 讀 T001</td><td><a href="#ch07-1-10">第 10 節</a></td></tr>
+      <tr><td>2.08</td><td>ZREP_CLS_HANA03</td><td>（HANA 1610）用 ADBC（CL_SQL_CONNECTION／CL_SQL_STATEMENT）執行動態組出的 HANA Native SQL</td><td><a href="#ch07-1-11">第 11 節</a>、<a href="#ch07-1-12">第 12 節</a></td></tr>
+    </tbody>
+  </table>
+  <div class="note">範例裡標「本程序為SAP HANA 1610版本」的兩支（2.06、2.08），S/4HANA 1610 的底層是 ABAP 7.51，用到的語法有 <span class="kw">@DATA( )</span>（7.40 SP08）、<span class="kw">line_exists</span>（7.40 SP02）、字串範本和 ADBC，在 1809（7.53）上都能直接用。本章改寫時沒有用到 7.54 以上的語法，少數地方提到 7.54 以上的寫法會另外標明版本門檻。勘誤表（2018/11/29）列出的 10 項都不在第 1、2 章；本章的修正都是閱讀程式時自己發現的，整理在<a href="#ch07-1-13">第 13 節</a>。</div>
+  <p>本章與既有章節的分工：基本語法細節見 <a href="#ch02-1">2-1 章</a>，內表與 ABAP SQL 見 <a href="#ch02-2">2-2 章</a>，原廠 BC402 的動態程式與欄位符號見 <a href="#ch05-3">5-3 章</a>，BC401 的類別式例外理論見 <a href="#ch05-2-16">5-2 章第 16 節</a>。本章只講<b>書中範例本身</b>，以及範例背後的設計觀念。下一章 <a href="#ch07-2">7-2 章</a> 開始進入類別與物件。</p>
+
+  <h3 id="ch07-1-02">2. 類別式例外入門：不要讓程式 short dump（範例 1.01）</h3>
+  <p><b>觀念。</b>書的第一支範例想說明的是：執行期錯誤（runtime error）不一定會 short dump。只要錯誤屬於「可捕捉」的類型，用 <span class="kw">TRY … CATCH … ENDTRY</span> 包起來，程式就會拿到一個例外物件，可以繼續往下執行。範例示範了兩種最常見的情況：</p>
+  <ul>
+    <li><b>整數除以零</b>：<span class="kw">19 / 0</span> 會觸發 <span class="kw">CX_SY_ZERODIVIDE</span>，沒有處理時的執行期錯誤名稱是 COMPUTE_INT_ZERODIVIDE。注意 <span class="kw">0 / 0</span> 在 ABAP 中的結果是 0，不會觸發例外。</li>
+    <li><b>位移／長度存取超出字串範圍</b>：<span class="kw">'1234567890'</span> 只有 10 個字元，取前 11 個字元會觸發 <span class="kw">CX_SY_RANGE_OUT_OF_BOUNDS</span>。長度寫成字面值時，編譯器對固定長度的 C 欄位就能直接擋下；範例刻意用變數 <span class="kw">gv_position_11</span> 當長度，錯誤才會延到執行期發生。</li>
+  </ul>
+  <p><b>範例（改寫後）。</b>現代寫法會捕捉<b>具體的例外類別</b>，用內嵌宣告接例外物件，並改用 <span class="kw">substring( )</span> 函數，不再用位移語法：</p>
+<pre><code class="abap">REPORT zrep_error_check_01.
+
+" 範例 1.01 改寫：S/4HANA 1809（7.53）
+DATA(lv_dividend) = 19.
+DATA(lv_divisor)  = 0.
+DATA(lv_numbers)  = `1234567890`.
+DATA(lv_len)      = 11.
+DATA(lo_out)      = cl_demo_output=&gt;new( ).
+
+" ① 除以零：捕捉具體類別，不要直接抓 CX_ROOT
+TRY.
+    DATA(lv_result) = CONV decfloat34( lv_dividend / lv_divisor ).
+    lo_out-&gt;write( |結果 = { lv_result }| ).
+  CATCH cx_sy_zerodivide INTO DATA(lx_zero).
+    lo_out-&gt;write( |① { lx_zero-&gt;get_text( ) }| ).
+ENDTRY.
+
+" ② 取子字串超出範圍：substring( ) 同樣觸發 CX_SY_RANGE_OUT_OF_BOUNDS
+TRY.
+    lv_numbers = substring( val = lv_numbers len = lv_len ).
+  CATCH cx_sy_range_out_of_bounds INTO DATA(lx_range).
+    lo_out-&gt;write( |② { lx_range-&gt;get_text( ) }| ).
+    " 需要除錯資訊時，取得發生位置
+    lx_range-&gt;get_source_position(
+      IMPORTING program_name = DATA(lv_prog)
+                source_line  = DATA(lv_line) ).
+    lo_out-&gt;write( |   發生於 { lv_prog } 第 { lv_line } 行| ).
+ENDTRY.
+
+lo_out-&gt;display( ).</code></pre>
+  <p><b>與原範例的差異。</b></p>
+  <ul>
+    <li>原範例兩段都寫 <span class="kw">CATCH cx_root</span>。這樣寫雖然能執行，但會把所有錯誤（包括 CX_NO_CHECK 類的資源不足）一起吞掉，等於沒有區分錯誤類型。改寫後分別捕捉 CX_SY_ZERODIVIDE 和 CX_SY_RANGE_OUT_OF_BOUNDS。</li>
+    <li>原範例的兩段 TRY 都有空的 <span class="kw">CLEANUP.</span>，沒有任何作用，改寫時已刪除。CLEANUP 的正確用途見下一節。</li>
+    <li>原範例宣告了 <span class="kw">gv_cuotient</span>，但從頭到尾沒有用到，而且拼錯了，應為 quotient。改寫時已刪除。</li>
+    <li>原範例用 <span class="kw">DATA gv_exref TYPE REF TO cx_root</span> 先宣告再 <span class="kw">INTO gv_exref</span>；7.40 起可以直接寫 <span class="kw">INTO DATA(lx_…)</span>，型別自動取 CATCH 的類別。</li>
+    <li>原範例用 <span class="kw">WRITE</span> 清單輸出，改寫時改成 <span class="kw">CL_DEMO_OUTPUT</span>。</li>
+  </ul>
+  <div class="warn"><b>CL_DEMO_OUTPUT 只適合示範。</b>本章為了讓範例短一點，用 CL_DEMO_OUTPUT 顯示結果。正式程式請改用 <span class="kw">CL_SALV_TABLE</span>（見 <a href="#ch02-3">2-3 章</a>）或應用程式自己的訊息機制，例如 BAPIRET2 或應用日誌 <span class="tcode">SLG1</span>。CL_DEMO_OUTPUT 是 SAP 的示範類別，不保證對客戶程式向下相容。</div>
+
+  <h3 id="ch07-1-03">3. 例外類別體系、CATCH 順序與 CLEANUP（範例 1.01 延伸）</h3>
+  <p><b>觀念。</b>所有例外類別都繼承自 <span class="kw">CX_ROOT</span>，下面分成三個抽象分支。自己定義例外時，只能繼承這三個分支之一，不能直接繼承 CX_ROOT：</p>
+  <table>
+    <thead><tr><th>分支</th><th>語法檢查</th><th>範例 1.01 的兩個例外</th><th>自訂時的用途</th></tr></thead>
+    <tbody>
+      <tr><td>CX_STATIC_CHECK</td><td>必須 CATCH，或在方法簽章中以 RAISING 宣告，否則語法檢查會警告</td><td>－</td><td>業務錯誤（例如找不到物料、單據狀態不允許），呼叫端一定要處理的情況</td></tr>
+      <tr><td>CX_DYNAMIC_CHECK</td><td>不檢查，執行期才確認有沒有處理</td><td>CX_SY_ZERODIVIDE → CX_SY_ARITHMETIC_ERROR<br>CX_SY_RANGE_OUT_OF_BOUNDS → CX_SY_DATA_ACCESS_ERROR</td><td>呼叫端能事先檢查、可以避免的錯誤（例如先判斷除數是否為 0）</td></tr>
+      <tr><td>CX_NO_CHECK</td><td>不能用 RAISING 宣告，會自動往外傳</td><td>－</td><td>隨時可能發生、呼叫端無法預防的錯誤</td></tr>
+    </tbody>
+  </table>
+  <p><b>範例（CATCH 順序、CLEANUP 與自訂例外）。</b></p>
+<pre><code class="abap">CLASS lcx_invalid_divisor DEFINITION INHERITING FROM cx_static_check.
+ENDCLASS.
+
+CLASS lcl_calc DEFINITION.
+  PUBLIC SECTION.
+    CLASS-METHODS divide
+      IMPORTING iv_a        TYPE i
+                iv_b        TYPE i
+      RETURNING VALUE(rv_q) TYPE decfloat34
+      RAISING   lcx_invalid_divisor.
+ENDCLASS.
+
+CLASS lcl_calc IMPLEMENTATION.
+  METHOD divide.
+    IF iv_b = 0.
+      " 7.52 起可寫 RAISE EXCEPTION NEW；7.50/7.51 請用 RAISE EXCEPTION TYPE lcx_invalid_divisor.
+      RAISE EXCEPTION NEW lcx_invalid_divisor( ).
+    ENDIF.
+    rv_q = iv_a / iv_b.
+  ENDMETHOD.
+ENDCLASS.
+
+START-OF-SELECTION.
+  TRY.
+      TRY.
+          DATA(lv_q) = lcl_calc=&gt;divide( iv_a = 19 iv_b = 0 ).
+        CLEANUP.
+          " 例外沒有被這個 TRY 攔下、要往外層傳時才會執行：用來還原狀態
+          CLEAR lv_q.
+      ENDTRY.
+    " 子類別要寫在父類別之前，否則後面的 CATCH 永遠不會執行
+    CATCH cx_sy_zerodivide INTO DATA(lx_zero).
+      MESSAGE lx_zero-&gt;get_text( ) TYPE 'I'.
+    CATCH cx_sy_arithmetic_error INTO DATA(lx_arith).
+      MESSAGE lx_arith-&gt;get_text( ) TYPE 'I'.
+    CATCH lcx_invalid_divisor.
+      MESSAGE '除數不可為 0' TYPE 'I'.
+  ENDTRY.</code></pre>
+  <ul>
+    <li><b>CATCH 順序</b>：先寫子類別，再寫父類別。反過來寫時，語法檢查會提示後面的 CATCH 永遠不會執行。</li>
+    <li><b>CLEANUP 的真正用途</b>：只有在例外<b>沒有</b>被同一個 TRY 捕捉、要傳到外層時才會執行，用途是還原這一層已經改動的狀態。像範例 1.01 那樣在會捕捉例外的 TRY 裡寫空的 CLEANUP，永遠不會執行。</li>
+    <li>CX_ROOT 常用的方法：<span class="kw">get_text( )</span>、<span class="kw">get_longtext( )</span>、<span class="kw">get_source_position( )</span>；屬性 <span class="kw">previous</span> 可以串起例外鏈，包裝底層例外時請傳 <span class="kw">previous = lx_…</span>。</li>
+  </ul>
+  <div class="tip"><b>實務提醒。</b>「不要 short dump」不等於「把錯誤吞掉」。CATCH 之後至少要做一件事：告訴使用者、寫進 SLG1，或包成業務例外往上拋。只寫 <span class="kw">CATCH cx_root.</span> 什麼都不做，是 code review 最常退件的原因之一。更完整的例外理論（RESUMABLE、RETRY、訊息類別當例外文字）見 <a href="#ch05-2-16">5-2 章第 16 節</a>。</div>
+
+  <h3 id="ch07-1-04">4. 在迴圈中宣告變數的陷阱（範例 2.01）</h3>
+  <p><b>觀念。</b><span class="kw">DATA … VALUE</span> 是<b>宣告敘述，不是可執行的敘述</b>。寫在 DO 迴圈裡也不會每圈重新初始化，初值只在程式（或程序）開始時設定一次。範例 2.01 在 <span class="kw">DO 6 TIMES</span> 裡寫了 <span class="kw">DATA gv_elevation TYPE i VALUE 6688</span>，第 3 圈改成 8848 之後，第 4～6 圈仍然是 8848：</p>
+  <table>
+    <thead><tr><th>sy-index</th><th>1</th><th>2</th><th>3</th><th>4</th><th>5</th><th>6</th></tr></thead>
+    <tbody>
+      <tr><td>gv_elevation</td><td>6688</td><td>6688</td><td>8848</td><td>8848</td><td>8848</td><td>8848</td></tr>
+      <tr><td>輸出文字</td><td colspan="2">Because it is there</td><td colspan="4">Top of the World</td></tr>
+    </tbody>
+  </table>
+  <p>作者原本的意思可能是「只有第 3 圈登頂」，但實際執行時第 4～6 圈都印出「Top of the World」。這正是作者要示範的陷阱。</p>
+  <p><b>範例（改寫後）。</b></p>
+<pre><code class="abap">REPORT zrep_cls_07.
+
+CONSTANTS:
+  gc_top        TYPE string VALUE `Top of the World`,
+  gc_on_the_way TYPE string VALUE `Because it is there`.
+
+TYPES: BEGIN OF ty_row,
+         idx       TYPE i,
+         elevation TYPE i,
+         text      TYPE string,
+       END OF ty_row.
+DATA lt_rows TYPE STANDARD TABLE OF ty_row WITH EMPTY KEY.
+
+DO 6 TIMES.
+  " 內嵌宣告 = 宣告 + 可執行的指派，每圈都會重新設為 6688
+  DATA(lv_elevation) = 6688.
+  IF sy-index = 3.
+    lv_elevation = 8848.
+  ENDIF.
+  APPEND VALUE #( idx       = sy-index
+                  elevation = lv_elevation
+                  text      = COND #( WHEN lv_elevation = 8848 THEN gc_top
+                                      ELSE gc_on_the_way ) ) TO lt_rows.
+ENDDO.
+
+cl_demo_output=&gt;display( lt_rows ).   " 只有第 3 列是 Top of the World</code></pre>
+  <p><b>與原範例的差異。</b></p>
+  <ul>
+    <li>原範例中 <span class="kw">DATA … VALUE 6688</span> 寫在迴圈裡，初值只設定一次。作者在註解中已提示可以改寫成 <span class="kw">gv_elevation = 6688.</span>；改寫版用內嵌宣告 <span class="kw">DATA(lv_elevation) = 6688.</span>，它其實是「宣告 ＋ 指派」，指派的部分每圈都會執行。</li>
+    <li>原範例的 <span class="kw">gv_char</span>、<span class="kw">gv_float</span>、<span class="kw">gv_float_origin</span>、<span class="kw">gv_float_new</span> 四個變數宣告了卻沒有用到，應該是書中其他段落留下的，改寫時已刪除。</li>
+    <li>兩段固定文字原本是 <span class="kw">DATA … VALUE</span>，改成 <span class="kw">CONSTANTS</span>（gc_ 前綴）；<span class="kw">(20) TYPE c</span> 的長度寫法改成 <span class="kw">TYPE string</span>；WRITE ／ NEW-LINE 清單改成內表加 <span class="kw">COND</span>。</li>
+  </ul>
+  <div class="warn"><b>內嵌宣告也有陷阱。</b>ABAP 沒有區塊作用域（block scope）。迴圈內的 <span class="kw">DATA(x)</span> 在整個程序（方法、FORM、事件區塊）內都看得到，而且同一個程序內<b>不能再宣告一次同名變數</b>。最好的做法是：宣告放在程序開頭，或使用內嵌宣告（每次執行都會重新指派）；不要在迴圈中寫帶 VALUE 的 DATA。宣告四種方式的比較見 <a href="#ch02-1-02">2-1 章第 2 節</a>。</div>
+
+  <h3 id="ch07-1-05">5. 命名規則與作用域：區域名稱會遮蔽全域名稱（範例 2.02）</h3>
+  <p><b>觀念。</b>在 FORM 或方法裡宣告和全域同名的資料物件時，<b>區域名稱會遮蔽（hide）全域名稱</b>。範例 2.02 在全域和 FORM 裡各宣告了一組名稱都是 <span class="kw">team1</span>、<span class="kw">team2</span> 的常數：FORM 裡印出的是 76ers／Bulls，FORM 外印出的是 Hawks／Celtics。作者在註解中指出，如果照命名規則把全域的叫 <span class="kw">gc_team1</span>、區域的叫 <span class="kw">lc_team1</span>，這種遮蔽就不會發生。</p>
+  <p>原範例的執行結果：第 1 列 <span class="kw">0 0 Atlanta Hawks Boston Celtics</span>（中間的 0 是字面值，不是變數）；FORM 執行 5 次，gv_counter 從 1 印到 5，lv_counter <b>每次都是 1</b>（每次呼叫都重新初始化）；最後一列 <span class="kw">5 0 Atlanta Hawks Boston Celtics</span>。</p>
+  <p><b>範例（改寫後，FORM 改為區域類別的方法）。</b></p>
+<pre><code class="abap">REPORT zrep_cls_08.
+
+" g = global、l = local、m = member（屬性）、c = constant、v = 變數、t = 表、s = 結構
+CONSTANTS: gc_team1 TYPE string VALUE `Atlanta Hawks`,
+           gc_team2 TYPE string VALUE `Boston Celtics`.
+DATA gv_counter TYPE i.
+
+CLASS lcl_game DEFINITION.
+  PUBLIC SECTION.
+    CLASS-METHODS add_value RETURNING VALUE(rv_line) TYPE string.
+ENDCLASS.
+
+CLASS lcl_game IMPLEMENTATION.
+  METHOD add_value.
+    " 區域常數用 lc_ 前綴，不會意外遮蔽全域的 gc_team1
+    CONSTANTS: lc_team1 TYPE string VALUE `Philadelphia 76ers`,
+               lc_team2 TYPE string VALUE `Chicago Bulls`.
+    DATA lv_counter TYPE i.            " 每次呼叫都重新初始化為 0
+    gv_counter = gv_counter + 1.       " += 要 7.54 才有，1809 請用這種寫法
+    lv_counter = lv_counter + 1.
+    rv_line = |{ gv_counter } { lv_counter } { lc_team1 } { lc_team2 } / 全域：{ gc_team1 }|.
+  ENDMETHOD.
+ENDCLASS.
+
+START-OF-SELECTION.
+  DATA(lo_out) = cl_demo_output=&gt;new( ).
+  lo_out-&gt;write( |{ gv_counter } { gc_team1 } { gc_team2 }| ).
+  DO 5 TIMES.
+    lo_out-&gt;write( lcl_game=&gt;add_value( ) ).
+  ENDDO.
+  lo_out-&gt;write( |{ gv_counter } { gc_team1 } { gc_team2 }| ).
+  lo_out-&gt;display( ).</code></pre>
+  <p><b>與原範例的差異。</b>原範例用 FORM 子程式，新程式不再使用 FORM，改成區域類別的靜態方法；常數依命名規則改名為 gc_／lc_；<span class="kw">team2 LIKE team1</span> 改成直接指定型別；WRITE 清單改成 CL_DEMO_OUTPUT。原範例 <span class="kw">WRITE: / gv_counter, 0, …</span> 中間的 <span class="kw">0</span> 只是為了對齊欄位的字面值，改寫版直接省略。</p>
+  <div class="tip"><b>實務提醒：在方法裡，遮蔽更容易發生。</b>方法裡的區域變數可以和類別屬性同名，這時屬性被遮蔽，要寫 <span class="kw">me-&gt;attr</span> 才能存取屬性。常見的命名慣例是：屬性用 <span class="kw">mv_ ／ mt_ ／ mo_</span>，參數用 <span class="kw">iv_ ／ ev_ ／ cv_ ／ rv_</span>，區域變數用 <span class="kw">lv_ ／ lt_ ／ ls_ ／ lo_</span>，名稱一看就知道作用域，自然不會撞名。第七部後續章節都依照這個慣例。Clean ABAP 另外主張「不要用前綴，靠好名字」，團隊選一種慣例並全員遵守即可，最糟的是兩種混用。</div>
+
+  <h3 id="ch07-1-06">6. STATICS：跨呼叫保留值的區域變數（範例 2.03）</h3>
+  <p><b>觀念。</b>一般區域變數（<span class="kw">DATA</span>）每次進入程序都會重新初始化；用 <span class="kw">STATICS</span> 宣告的區域變數，<b>作用域是區域的，生命週期卻和整支程式一樣</b>，值會保留到下一次呼叫。範例 2.03 的 add_value 和 sub_value 各有一個 <span class="kw">lv_static</span>，兩者互不相干：</p>
+  <table>
+    <thead><tr><th>第幾圈</th><th>add+ ：gv / lv / static</th><th>sub- ：gv / lv / static</th></tr></thead>
+    <tbody>
+      <tr><td>1</td><td>1 / 2 / 1</td><td>0 / 0 / 8</td></tr>
+      <tr><td>2</td><td>1 / 2 / 2</td><td>0 / 0 / 7</td></tr>
+      <tr><td>3</td><td>1 / 2 / 3</td><td>0 / 0 / 6</td></tr>
+    </tbody>
+  </table>
+  <p>lv_counter 的初值是 1，每次呼叫都重設，所以 add+ 永遠印 2、sub- 永遠印 0；gv_counter 一加一減，最後印出 0。</p>
+  <p><b>範例（改寫後）。</b><span class="kw">STATICS</span> 只能用在子程式、函數模組和<b>靜態方法</b>中，<b>不能用在實例方法</b>。在 OO 裡，對應的做法是把值存成類別屬性：</p>
+<pre><code class="abap">CLASS lcl_counter DEFINITION.
+  PUBLIC SECTION.
+    CLASS-METHODS add_value RETURNING VALUE(rv_line) TYPE string.
+    CLASS-METHODS sub_value RETURNING VALUE(rv_line) TYPE string.
+    CLASS-DATA gv_counter TYPE i READ-ONLY.
+ENDCLASS.
+
+CLASS lcl_counter IMPLEMENTATION.
+  METHOD add_value.
+    DATA lv_counter TYPE i VALUE 1.       " 每次呼叫都重設為 1
+    STATICS sv_static TYPE i VALUE 0.     " 靜態方法可以用 STATICS，值會保留
+    gv_counter = gv_counter + 1.
+    lv_counter = lv_counter + 1.
+    sv_static  = sv_static + 1.
+    rv_line = |add+ { gv_counter } { lv_counter } { sv_static }|.
+  ENDMETHOD.
+  METHOD sub_value.
+    DATA lv_counter TYPE i VALUE 1.
+    STATICS sv_static TYPE i VALUE 9.     " 和 add_value 的 sv_static 是兩個不同的變數
+    gv_counter = gv_counter - 1.
+    lv_counter = lv_counter - 1.
+    sv_static  = sv_static - 1.
+    rv_line = |sub- { gv_counter } { lv_counter } { sv_static }|.
+  ENDMETHOD.
+ENDCLASS.
+
+START-OF-SELECTION.
+  DATA(lt_log) = VALUE string_table( ).
+  DO 3 TIMES.
+    APPEND lcl_counter=&gt;add_value( ) TO lt_log.
+    APPEND lcl_counter=&gt;sub_value( ) TO lt_log.
+  ENDDO.
+  APPEND |gv_counter { lcl_counter=&gt;gv_counter }| TO lt_log.
+  cl_demo_output=&gt;display( lt_log ).</code></pre>
+  <p><b>與原範例的差異。</b>FORM 改成靜態方法；全域變數 gv_counter 改成 <span class="kw">CLASS-DATA … READ-ONLY</span>，外部只能讀、不能改；靜態變數用 <span class="kw">sv_</span> 前綴，一看就知道是 STATICS；WRITE 表頭改成 string_table 逐列記錄。</p>
+  <div class="warn"><b>實務提醒。</b>STATICS 是看不見的全域狀態。在 FORM 或函數模組裡用它做快取（例如「第一次讀 DB，之後直接用」）很方便，但同一個內部工作階段中，所有呼叫都共用這個值，除錯時很難發現。新程式請改用 <b>類別屬性</b>，需要可測試性時再搭配 Singleton（見 <a href="#ch07-5">7-5 章</a>）。拿 STATICS 當快取時，也要考慮資料在一次執行中是否會變動。</div>
+
+  <h3 id="ch07-1-07">7. 動態賦值：括號運算子與 ASSIGN（範例 2.04）</h3>
+  <p><b>觀念。</b>變數名稱放在另一個變數裡，執行時才知道要讀哪一個，這叫做動態記號（dynamic token）。範例 2.04 示範了三件事：</p>
+  <ol>
+    <li><span class="kw">WRITE (gv_var_name) TO gv_book_name</span>：括號裡放的是「變數名稱」，會取出該變數的內容。</li>
+    <li><span class="kw">ASSIGN (gv_var_name) TO &lt;fs&gt;</span>：依名稱把欄位符號指向該變數。</li>
+    <li><span class="kw">ASSIGN gv_var_name TO &lt;fs&gt;</span>（<b>沒有括號</b>）：欄位符號指向的是 gv_var_name 本身，所以印出來的是字串 <span class="kw">gv_var_value2</span>，不是書名。這是作者刻意放的對照組。</li>
+  </ol>
+  <p>範例最後用 <span class="kw">'GV_var_VALUE3'</span> 說明：這兩個<b>字串</b>大小寫不同，所以並不相等；但拿來當<b>變數名稱</b>時，ABAP 名稱不分大小寫（系統內部會轉成大寫），所以仍然找得到 gv_var_value3。</p>
+  <p><b>範例（改寫後）。</b></p>
+<pre><code class="abap">REPORT zrep_cls_10.
+
+DATA: gv_var_value1 TYPE string VALUE `Pedro Paramo`,
+      gv_var_value2 TYPE string VALUE `The Burning Plain and other Stories`,
+      gv_var_value3 TYPE string VALUE `One Hundred Years of Solitude`.
+
+START-OF-SELECTION.
+  DATA(lo_out) = cl_demo_output=&gt;new( ).
+
+  " ① 括號 = 動態名稱：把名稱為 gv_var_value1 的變數指派給欄位符號
+  DATA(lv_var_name) = `gv_var_value1`.
+  ASSIGN (lv_var_name) TO FIELD-SYMBOL(&lt;lv_book&gt;).
+  IF sy-subrc = 0.
+    lo_out-&gt;write( |① { &lt;lv_book&gt; }| ).
+  ENDIF.
+
+  " ② 沒有括號 = 靜態：指向 lv_var_name 本身，內容是字串 'gv_var_value2'
+  lv_var_name = `gv_var_value2`.
+  ASSIGN lv_var_name TO &lt;lv_book&gt;.
+  lo_out-&gt;write( |② { &lt;lv_book&gt; }| ).
+
+  " ③ 名稱不分大小寫：'GV_var_VALUE3' 仍可找到 gv_var_value3
+  lv_var_name = `GV_var_VALUE3`.
+  ASSIGN (lv_var_name) TO &lt;lv_book&gt;.
+  IF sy-subrc = 0.
+    lo_out-&gt;write( |③ { &lt;lv_book&gt; }| ).
+  ENDIF.
+
+  " ④ 名稱不存在：動態 ASSIGN 不會 dump，而是 sy-subrc = 4 且欄位符號維持原狀
+  lv_var_name = `gv_no_such_var`.
+  ASSIGN (lv_var_name) TO &lt;lv_book&gt;.
+  lo_out-&gt;write( COND string( WHEN sy-subrc &lt;&gt; 0 THEN |④ 找不到 { lv_var_name }| ) ).
+
+  lo_out-&gt;display( ).</code></pre>
+  <p><b>與原範例的差異。</b></p>
+  <ul>
+    <li>原範例的第一段用 <span class="kw">WRITE (name) TO target</span>。<b>WRITE TO 的動態來源是過時語法</b>，而且 WRITE TO 會套用輸出格式（例如千分位、日期格式），不是單純的複製。改寫時統一用 <span class="kw">ASSIGN (name) TO FIELD-SYMBOL(&lt;…&gt;)</span>。</li>
+    <li>原範例宣告 <span class="kw">FIELD-SYMBOLS &lt;fs_book_name&gt;.</span> 時沒有指定型別（隱含 TYPE ANY），改寫時用內嵌宣告 <span class="kw">FIELD-SYMBOL( )</span>，型別由第一次 ASSIGN 決定。</li>
+    <li>原範例沒有檢查 sy-subrc。如果名稱拼錯，欄位符號仍然是未指派狀態，後面一存取就會觸發執行期錯誤 GETWA_NOT_ASSIGNED。改寫時補上檢查，並加了第 ④ 段示範找不到名稱的情況。</li>
+  </ul>
+  <div class="warn"><b>動態名稱的風險。</b>① 名稱只在執行期檢查，改名、重構時編譯器幫不上忙，where-used 也找不到。② 不要讓使用者的輸入直接變成名稱，尤其是 <span class="kw">'(PROGRAM)VAR'</span> 這種跨程式存取寫法（這是舊式 exit 常見的「偷看主程式變數」技巧，只在沒有正式介面時才勉強使用）。③ 能用 <span class="kw">ASSIGN COMPONENT … OF STRUCTURE</span> 或 RTTI 解決的，就不要用變數名稱。欄位符號與資料參考的完整說明見 <a href="#ch02-1-04">2-1 章第 4 節</a>、<a href="#ch05-3-13">5-3 章第 13 節</a>，動態記號見 <a href="#ch05-3-18">5-3 章第 18 節</a>。</div>
+
+  <h3 id="ch07-1-08">8. 內表的建立：結構 → 表型別 → 內表 → 工作區（範例 2.05）</h3>
+  <p><b>觀念。</b>範例 2.05 是一支只有宣告的片段，示範建立內表的標準步驟：① 用 <span class="kw">TYPES BEGIN OF</span> 定義列結構；② 用 <span class="kw">TYPE STANDARD TABLE OF … WITH NON-UNIQUE KEY airline_id</span> 定義表型別（允許鍵值重複）；③ 用表型別宣告內表變數；④ 宣告工作區；⑤⑥ 用 CLEAR／REFRESH 初始化。</p>
+  <p><b>範例（改寫後）。</b></p>
+<pre><code class="abap">REPORT zrep_cls_22.
+
+" 1. 列結構：用字典型別，不要自己猜長度
+TYPES: BEGIN OF ty_flight,
+         airline_id    TYPE s_carr_id,     " SCARR-CARRID，CHAR 3
+         airline_name  TYPE s_carrname,    " SCARR-CARRNAME
+         flight_number TYPE s_conn_id,     " SPFLI-CONNID，NUMC 4
+       END OF ty_flight.
+
+" 2. 表型別：依用途選 STANDARD / SORTED / HASHED
+TYPES ty_tab_flight  TYPE STANDARD TABLE OF ty_flight WITH NON-UNIQUE KEY airline_id.
+TYPES ty_sort_flight TYPE SORTED TABLE OF ty_flight
+                     WITH UNIQUE KEY airline_id flight_number.
+TYPES ty_list_flight TYPE STANDARD TABLE OF ty_flight WITH EMPTY KEY.   " 只是清單，不需要鍵
+
+" 3. 內表 + 4. 直接用 VALUE 填初值，不需要另外宣告工作區
+DATA(lt_flight) = VALUE ty_tab_flight(
+  ( airline_id = 'LH' airline_name = 'Lufthansa'         flight_number = '0400' )
+  ( airline_id = 'AA' airline_name = 'American Airlines' flight_number = '0017' ) ).
+
+" 需要工作區時，也用內嵌宣告
+LOOP AT lt_flight INTO DATA(ls_flight).
+  ...
+ENDLOOP.
+
+" 5./6. 初始化：CLEAR 清內容（保留記憶體），FREE 連記憶體一起釋放
+CLEAR lt_flight.
+FREE  lt_flight.</code></pre>
+  <p><b>與原範例的差異。</b></p>
+  <ul>
+    <li><span class="kw">REFRESH</span> 是過時語法，改用 <span class="kw">CLEAR</span>（大表用完後要釋放記憶體時用 <span class="kw">FREE</span>）。</li>
+    <li>原範例的 <span class="kw">airline_id TYPE i</span>、<span class="kw">flight_number TYPE i</span> 和業務語意不符：航空公司代碼是 CHAR 3（例如 LH），航班號碼是 NUMC 4。書的範例 2.08 又把 airline_id 定義為 <span class="kw">scarr-carrid</span>，前後不一致。改寫時一律參照字典資料元素 S_CARR_ID、S_CONN_ID。</li>
+    <li>原範例宣告完就把剛宣告的工作區和內表 CLEAR ／ REFRESH 一次。剛宣告的資料物件本來就是初始值，這兩行其實沒有作用，這裡保留是為了說明語法。</li>
+  </ul>
+  <div class="tip"><b>實務提醒：鍵的選擇就是效能的選擇。</b>STANDARD 表的鍵只影響 SORT 和 READ … WITH TABLE KEY 的語意，並不會建立索引；經常依鍵讀取的表請用 SORTED 或 HASHED，或加次要鍵。三種表類的完整比較見 <a href="#ch02-2-02">2-2 章第 2 節</a>、宣告寫法見 <a href="#ch02-2-03">2-2 章第 3 節</a>。</div>
+
+  <h3 id="ch07-1-09">9. HANA 1610：ABAP SQL 內嵌宣告與表運算式（範例 2.06）</h3>
+  <p><b>觀念。</b>範例 2.06 是書中第一支標明「SAP HANA 1610 版本」的程式，示範 7.40 SP08 之後 ABAP SQL 的新語法：主機變數前加 <span class="kw">@</span>、目標內表用 <span class="kw">@DATA( )</span> 內嵌宣告，再用 <span class="kw">line_exists( )</span> 和表運算式 <span class="kw">gt_scarr[ 1 ]-carrname</span> 讀第一筆。</p>
+  <p><b>範例（改寫後）。</b></p>
+<pre><code class="abap">REPORT zrep_cls_hana01.
+
+PARAMETERS p_carrid TYPE scarr-carrid DEFAULT 'LH'.
+
+START-OF-SELECTION.
+  " 明列欄位；@ 是主機變數的跳脫符號，DATA( ) 才是內嵌宣告
+  SELECT carrid, carrname, currcode, url
+    FROM scarr
+    WHERE carrid = @p_carrid
+    ORDER BY carrid                      " HANA 沒有預設排序：要「第一筆」就必須先排序
+    INTO TABLE @DATA(lt_scarr).
+
+  IF lt_scarr IS INITIAL.
+    MESSAGE |找不到航空公司 { p_carrid }| TYPE 'S' DISPLAY LIKE 'E'.
+    RETURN.
+  ENDIF.
+
+  " 表運算式讀不到時會觸發 CX_SY_ITAB_LINE_NOT_FOUND；
+  " 用 VALUE #( … OPTIONAL ) 可以在讀不到時直接回傳初始值
+  DATA(lv_name) = VALUE #( lt_scarr[ 1 ]-carrname OPTIONAL ).
+
+  TRY.
+      cl_salv_table=&gt;factory( IMPORTING r_salv_table = DATA(lo_alv)
+                              CHANGING  t_table      = lt_scarr ).
+      lo_alv-&gt;get_display_settings( )-&gt;set_list_header( |{ p_carrid } { lv_name }| ).
+      lo_alv-&gt;display( ).
+    CATCH cx_salv_msg INTO DATA(lx_salv).
+      MESSAGE lx_salv-&gt;get_text( ) TYPE 'E'.
+  ENDTRY.</code></pre>
+  <p><b>與原範例的差異。</b></p>
+  <ul>
+    <li><b>修正註解錯誤：</b>原範例的註解寫「前面标以@号表示为内联定义」，這是錯的。<span class="kw">@</span> 是<b>主機變數的跳脫符號</b>（host variable escape），用來告訴編譯器這是 ABAP 變數，不是資料庫欄位；<b>內嵌宣告是 DATA( )</b>。兩者經常同時出現，但意義不同：<span class="kw">WHERE carrid = @gv_carrid</span> 裡沒有 DATA，一樣要加 @。</li>
+    <li><span class="kw">SELECT *</span> 改成明列欄位（S/4HANA 的巨表若用 SELECT *，會把用不到的欄位全部搬回應用伺服器）；寫死的 <span class="kw">'LH'</span> 改成 PARAMETERS；兩次 <span class="kw">cl_demo_output=&gt;display_data</span> 改成 CL_SALV_TABLE。</li>
+    <li><span class="kw">IF line_exists( gt_scarr[ 1 ] )</span> 本身沒有錯，改寫版改成 <span class="kw">VALUE #( … OPTIONAL )</span>，一行就能完成「讀不到就給初始值」。這個寫法在 7.40 SP08 起可用。</li>
+  </ul>
+  <div class="warn"><b>Casper 實務經驗：HANA 沒有預設排序。</b>這支範例用 carrid 等於條件查詢，最多只會有一筆，所以 <span class="kw">[ 1 ]</span> 沒問題。但只要把條件放寬成範圍或多值，「第一筆」就是隨機的。曾經有成本評價專案，同一張表同時存在 item category「H」與 cost component「E」兩種角度的資料，兩者的成本構成欄位數量不同；程式沒有排序，一下抓到 H、一下抓到 E，成本結果就不穩定，最後的結論是明確排序並固定抓 H。任何「取第一筆」的邏輯（<span class="kw">[ 1 ]</span>、<span class="kw">UP TO 1 ROWS</span>、<span class="kw">SELECT SINGLE</span> 搭配不完整的鍵）都要先寫 <span class="kw">ORDER BY</span>。詳見 <a href="#ch02-2-18">2-2 章第 18 節</a>。</div>
+
+  <h3 id="ch07-1-10">10. Native SQL 跨 client 讀取：從 EXEC SQL 到 USING CLIENT（範例 2.07）</h3>
+  <p><b>觀念。</b>ABAP SQL 讀取 client 相關的表（第一個鍵欄位是 MANDT，例如 T001）時，會<b>自動加上目前 client 的條件</b>。Native SQL 直接把 SQL 字串交給資料庫，不經過 ABAP 的資料庫介面，所以<b>不會自動加 client 條件</b>，也不會用 SAP 表緩衝。範例 2.07 利用這個特性，以 <span class="kw">EXEC … ENDEXEC</span> 讀取所有 client 的公司代碼，並用 <span class="kw">PERFORMING print_record</span> 讓每讀到一筆就呼叫一次 FORM。</p>
+  <p>原範例的做法（文字說明，不列程式碼）：宣告結構 ty_t001（client_id／company_code／company_name／city），在 EXEC 區塊中寫 <span class="kw">SELECT MANDT, BUKRS, BUTXT, ORT01 INTO :gs_t001 FROM ECC.ecc.T001 WHERE BUKRS = :p_bukrs</span>，主機變數用冒號 <span class="kw">:</span> 標示。</p>
+  <p><b>範例（改寫後）一：純 ABAP SQL，逐一指定 client（7.51+）。</b></p>
+<pre><code class="abap">REPORT zrep_cls_27.
+
+PARAMETERS p_bukrs TYPE t001-bukrs OBLIGATORY.
+
+START-OF-SELECTION.
+  TYPES: BEGIN OF ty_t001,
+           client_id    TYPE mandt,
+           company_code TYPE bukrs,
+           company_name TYPE butxt,
+           city         TYPE ort01,
+         END OF ty_t001.
+  DATA lt_t001 TYPE STANDARD TABLE OF ty_t001 WITH EMPTY KEY.
+
+  " 先從 T000 取得系統中的所有 client（T000 本身不分 client）
+  SELECT mandt FROM t000 ORDER BY mandt INTO TABLE @DATA(lt_clients).
+
+  LOOP AT lt_clients INTO DATA(ls_client).
+    " USING CLIENT：7.51 起取代過時的 CLIENT SPECIFIED
+    SELECT mandt AS client_id, bukrs AS company_code,
+           butxt AS company_name, ort01 AS city
+      FROM t001 USING CLIENT @ls_client-mandt
+      WHERE bukrs = @p_bukrs
+      APPENDING CORRESPONDING FIELDS OF TABLE @lt_t001.
+  ENDLOOP.
+
+  " 7.54 起可以一次讀完：FROM t001 USING ALL CLIENTS（1809 / 7.53 尚不支援）
+  cl_demo_output=&gt;display( lt_t001 ).</code></pre>
+  <p><b>範例（改寫後）二：若非用 Native SQL 不可，改用 ADBC。</b>ADBC 也不會自動加 client 條件，所以省略 MANDT 條件就能讀到所有 client；表名直接寫 T001，由預設連線的 schema 決定，<b>不要把 schema 寫死</b>。</p>
+<pre><code class="abap">TYPES: BEGIN OF ty_t001,
+         client_id    TYPE mandt,
+         company_code TYPE bukrs,
+         company_name TYPE butxt,
+         city         TYPE ort01,
+       END OF ty_t001.
+DATA lt_t001 TYPE STANDARD TABLE OF ty_t001 WITH EMPTY KEY.
+
+TRY.
+    DATA(lo_stmt) = cl_sql_connection=&gt;get_connection( )-&gt;create_statement( ).
+    " ? 是參數佔位符號，值用 set_param 綁定，不要用字串串接
+    lo_stmt-&gt;set_param( REF #( p_bukrs ) ).
+    DATA(lo_result) = lo_stmt-&gt;execute_query(
+      `SELECT MANDT, BUKRS, BUTXT, ORT01 FROM T001 WHERE BUKRS = ? ORDER BY MANDT` ).
+    lo_result-&gt;set_param_table( REF #( lt_t001 ) ).   " 欄位依「位置」對應到內表元件
+    lo_result-&gt;next_package( ).
+    lo_result-&gt;close( ).
+  CATCH cx_sql_exception INTO DATA(lx_sql).
+    MESSAGE lx_sql-&gt;get_text( ) TYPE 'I'.
+ENDTRY.</code></pre>
+  <p><b>與原範例的差異。</b></p>
+  <ul>
+    <li><b>EXEC SQL 改成 ABAP SQL（首選）或 ADBC（次選）</b>。EXEC SQL 是靜態 Native SQL，語法檢查不看 SQL 內容，錯誤要到執行期才會發現；PERFORMING 回呼又必須搭配 FORM，兩者都不符合本書「新程式不用 FORM」的原則。</li>
+    <li><b>移除寫死的 <span class="kw">ECC.ecc.T001</span></b>：這是 SQL Server 的三段式名稱（資料庫.schema.表），只在作者當時的系統有效。換成 HANA 後，schema 名稱通常是 SAPHANADB 或 SAPABAP1 之類，原程式搬過去就會失敗。</li>
+    <li>原範例的 FORM 名稱，EXEC 中寫 <span class="kw">print_Record</span>、定義時寫 <span class="kw">print_record</span>。ABAP 名稱不分大小寫，所以可以執行，但命名大小寫不一致，改寫時已統一。</li>
+    <li>原範例的註解寫「打印内表数据」，其實 FORM 是逐筆 INSERT 進內表並 WRITE 出來；內表 gt_t001 填完之後沒有再被使用。</li>
+  </ul>
+  <div class="warn"><b>S/4HANA 注意事項。</b>① EXEC SQL 在 S/4HANA 仍可執行，但 ATC 會提示，<b>ABAP Cloud／Tier-1 開發模型完全禁用</b>，ADBC 也一樣。② 跨 client 讀取是少見的需求，常見的情況是稽核、系統管理或 client 比對工具。一般業務報表請留在登入的 client，否則可能讀到測試 client 的資料，造成權限與稽核問題。③ Native SQL 直接存取資料庫，<b>不經過 SAP 表緩衝</b>，也不做 ABAP 權限檢查（AUTHORITY-CHECK 仍要自己寫）。④ 範例一的 <span class="kw">USING CLIENT</span> 需要 7.51；<span class="kw">USING ALL CLIENTS ／ USING CLIENTS IN</span> 需要 7.54（S/4HANA 1909）。三者的關係與 ABAP SQL 全貌見 <a href="#ch02-2-13">2-2 章第 13 節</a>、<a href="#ch02-2-21">2-2 章第 21 節</a>。</div>
+
+  <h3 id="ch07-1-11">11. ADBC 與 HANA Native SQL（範例 2.08）</h3>
+  <p><b>觀念。</b>ADBC（ABAP Database Connectivity）是 Native SQL 的物件導向 API，也是書中第一次在「程序式」程式裡用到類別。它的三個核心類別分工明確：</p>
+  <table>
+    <thead><tr><th>類別</th><th>角色</th><th>常用方法</th></tr></thead>
+    <tbody>
+      <tr><td>CL_SQL_CONNECTION</td><td>資料庫連線（預設連線或 <span class="tcode">DBACOCKPIT</span> 中設定的次要連線）</td><td>get_connection( )、create_statement( )、commit( )、rollback( )</td></tr>
+      <tr><td>CL_SQL_STATEMENT</td><td>一段 SQL 敘述</td><td>set_param( )、execute_query( )、execute_update( )、execute_ddl( )</td></tr>
+      <tr><td>CL_SQL_RESULT_SET</td><td>查詢結果集</td><td>set_param_table( )、next_package( )、close( )</td></tr>
+      <tr><td>CX_SQL_EXCEPTION</td><td>SQL 錯誤（不會 short dump）</td><td>get_text( )、屬性 sql_code、sql_message</td></tr>
+    </tbody>
+  </table>
+  <p>範例 2.08 用字串範本組出一段 HANA SQL，其中用了 HANA 的函數 <span class="kw">SUBSTRING(URL, 8, LENGTH(URL))</span>，把網址前面的 <span class="kw">http://</span>（7 個字元）去掉，放進 url2 欄位，再依序執行連線、建立敘述、執行查詢、綁定結果內表、讀取、關閉。</p>
+  <p><b>範例（改寫後）。</b></p>
+<pre><code class="abap">REPORT zrep_cls_hana03.
+
+TYPES: BEGIN OF ty_airline,          " 元件順序必須和 SELECT 欄位順序一致
+         airline_id       TYPE scarr-carrid,
+         airline_name     TYPE scarr-carrname,
+         airline_currency TYPE scarr-currcode,
+         url              TYPE scarr-url,
+         url2             TYPE string,
+       END OF ty_airline.
+
+PARAMETERS p_curr TYPE scarr-currcode DEFAULT 'EUR'.
+
+START-OF-SELECTION.
+  DATA lt_airline TYPE STANDARD TABLE OF ty_airline WITH EMPTY KEY.
+
+  " Native SQL 不會自動加 client 條件：必須自己寫 MANDT = ?
+  " 所有外部值都用 ? 佔位，不要把值直接組進 SQL 字串
+  DATA(lv_sql) = `SELECT CARRID, CARRNAME, CURRCODE, URL, `
+              &amp;&amp; `SUBSTRING(URL, 8, LENGTH(URL)) AS URL2 `
+              &amp;&amp; `FROM SCARR `
+              &amp;&amp; `WHERE MANDT = ? AND CURRCODE = ? AND CARRID &lt;&gt; 'CA' `
+              &amp;&amp; `ORDER BY CARRID`.
+
+  TRY.
+      DATA(lo_stmt) = cl_sql_connection=&gt;get_connection( )-&gt;create_statement( ).
+      DATA(lv_mandt) = sy-mandt.                        " 不直接取系統欄位的參考
+      lo_stmt-&gt;set_param( REF #( lv_mandt ) ).          " 依 ? 出現的順序綁定
+      lo_stmt-&gt;set_param( REF #( p_curr ) ).
+      DATA(lo_result) = lo_stmt-&gt;execute_query( lv_sql ).
+      lo_result-&gt;set_param_table( REF #( lt_airline ) ).
+      lo_result-&gt;next_package( ).                       " 不給上限時一次讀完
+      lo_result-&gt;close( ).
+    CATCH cx_sql_exception INTO DATA(lx_sql).
+      MESSAGE |SQL 錯誤 { lx_sql-&gt;sql_code }：{ lx_sql-&gt;get_text( ) }| TYPE 'I'.
+      RETURN.
+  ENDTRY.
+
+  TRY.
+      cl_salv_table=&gt;factory( IMPORTING r_salv_table = DATA(lo_alv)
+                              CHANGING  t_table      = lt_airline ).
+      lo_alv-&gt;display( ).
+    CATCH cx_salv_msg INTO DATA(lx_salv).
+      MESSAGE lx_salv-&gt;get_text( ) TYPE 'I'.
+  ENDTRY.</code></pre>
+  <p><b>與原範例的差異。</b></p>
+  <ul>
+    <li><b>修正邏輯錯誤：缺少 client 條件。</b>原範例的 WHERE 只有 <span class="kw">currcode</span> 和 <span class="kw">CARRID &lt;&gt; 'CA'</span>，沒有 MANDT。多 client 的系統（例如訓練機的 100／200／800，每個 client 都有 SCARR 示範資料）會讀到<b>每個 client 各一份</b>的重複資料。改寫時補上 <span class="kw">MANDT = ?</span> 並綁定 sy-mandt。</li>
+    <li><b>修正安全問題：值直接串進 SQL。</b>原範例寫 <span class="kw">currcode = '{ lv_currency }'</span>。只要這個值來自使用者輸入，就是典型的 SQL injection 漏洞。改寫時用 <span class="kw">?</span> 加 <span class="kw">set_param( )</span> 綁定參數。</li>
+    <li>原範例用 <span class="kw">GET REFERENCE OF lt_airline INTO lr_result</span>，改寫時改成 <span class="kw">REF #( )</span>；十幾個預先宣告的 lo_／lx_ 變數，都改成內嵌宣告；<span class="kw">WRITE: lx_sql-&gt;get_text( )</span> 改成 MESSAGE 並附上 sql_code。</li>
+    <li>原範例中 <span class="kw">cl_demo_output=&gt;display_data</span> 寫在 TRY 區塊裡、close 之後；改寫版把資料取得和顯示分成兩個 TRY，職責比較清楚。</li>
+    <li>ty_airline 的變數用 <span class="kw">lt_</span>／<span class="kw">lv_</span> 前綴，卻宣告在程式的全域區（應為 gt_／gv_），與範例 2.02 強調的命名規則互相矛盾。改寫時把它們放進 START-OF-SELECTION 的處理區塊（仍屬全域，但只在該處使用），並保留 lt_ 命名。</li>
+  </ul>
+  <div class="warn"><b>SUBSTRING 固定位移是脆弱的寫法。</b>第 8 個字元開始的寫法假設網址一定是 <span class="kw">http://</span> 開頭；遇到 <span class="kw">https://</span> 會多出一個斜線，遇到沒有協定的網址又會少掉 7 個字元。同樣的需求用 ABAP SQL 就能寫成可移植的版本（7.50+ 的 SQL 函數）：<span class="kw">replace( replace( url, 'https://', '' ), 'http://', '' ) AS url2</span>。在 S/4HANA 上，能用 ABAP SQL 或 CDS 做到的事，不需要動用 Native SQL；真的要用 HANA 專屬函數時，AMDP 也比 ADBC 容易維護（有語法檢查，也有傳輸）。見 <a href="#ch02-2-21">2-2 章第 21 節</a>。</div>
+
+  <h3 id="ch07-1-12">12. 動態 SQL 與 SQL Injection 防護（範例 2.08 延伸）</h3>
+  <p><b>觀念。</b>範例 2.08 的重點其實是「SQL 字串在執行期才組出來」，也就是動態 SQL。在 S/4HANA 中，動態 SQL 的首選是<b>動態 ABAP SQL</b>：欄位清單、表名、WHERE 條件都可以用括號放進字串，但仍然經過 ABAP 資料庫介面，會自動加 client 條件、可以用表緩衝，語法錯誤則以 <span class="kw">CX_SY_DYNAMIC_OSQL_ERROR</span> 系列例外回報。</p>
+  <p><b>範例（動態 ABAP SQL ＋ 防注入）。</b></p>
+<pre><code class="abap">PARAMETERS: p_curr TYPE scarr-currcode DEFAULT 'EUR',
+            p_excl TYPE scarr-carrid   DEFAULT 'CA'.
+
+START-OF-SELECTION.
+  " 欄位清單與表名來自程式內部的白名單，不直接接受使用者輸入
+  DATA(lv_fields) = `carrid, carrname, currcode, url`.
+  DATA(lv_table)  = `SCARR`.
+
+  " 表名／欄位名稱若來自外部，先驗證是否為合法的資料庫物件名稱
+  TRY.
+      lv_table = cl_abap_dyn_prg=&gt;check_table_name_str(
+                   val      = lv_table
+                   packages = `SAPBC_DATAMODEL` ).
+    CATCH cx_abap_not_a_table cx_abap_not_in_package.
+      MESSAGE '不允許的表名' TYPE 'E'.
+  ENDTRY.
+
+  " WHERE 條件內直接引用主機變數：值不會被當成 SQL 文字解析
+  DATA(lv_where) = `currcode = @p_curr AND carrid &lt;&gt; @p_excl`.
+
+  " 若一定要把值拼進字串，必須先跳脫單引號
+  DATA(lv_where_lit) = |currcode = { cl_abap_dyn_prg=&gt;quote( p_curr ) }|.
+
+  DATA lt_result TYPE STANDARD TABLE OF scarr WITH EMPTY KEY.
+  TRY.
+      SELECT (lv_fields)
+        FROM (lv_table)
+        WHERE (lv_where)
+        ORDER BY carrid
+        INTO CORRESPONDING FIELDS OF TABLE @lt_result.
+    CATCH cx_sy_dynamic_osql_error INTO DATA(lx_dyn).
+      MESSAGE lx_dyn-&gt;get_text( ) TYPE 'I'.
+  ENDTRY.
+
+  cl_demo_output=&gt;display( lt_result ).</code></pre>
+  <table>
+    <thead><tr><th>方式</th><th>自動加 client</th><th>表緩衝</th><th>語法檢查</th><th>S/4HANA 建議</th></tr></thead>
+    <tbody>
+      <tr><td>靜態 ABAP SQL</td><td>是</td><td>是</td><td>編譯時</td><td><b>首選</b></td></tr>
+      <tr><td>動態 ABAP SQL（括號記號）</td><td>是</td><td>是</td><td>執行期（CX_SY_DYNAMIC_OSQL_ERROR）</td><td>需要彈性時使用，搭配 CL_ABAP_DYN_PRG</td></tr>
+      <tr><td>ADBC（CL_SQL_STATEMENT）</td><td><b>否</b></td><td>否</td><td>執行期（CX_SQL_EXCEPTION）</td><td>僅限 ABAP SQL／CDS 做不到的 DB 專屬功能；次要連線</td></tr>
+      <tr><td>EXEC SQL … ENDEXEC</td><td><b>否</b></td><td>否</td><td>執行期（CX_SY_NATIVE_SQL_ERROR）</td><td>不建議，新程式不用</td></tr>
+      <tr><td>AMDP</td><td>否，需在 AMDP 內自行帶入 client 條件</td><td>否</td><td>啟用時由 HANA 檢查</td><td>複雜的 HANA 運算下推</td></tr>
+    </tbody>
+  </table>
+  <div class="tip"><b>實務提醒：列舉優於區間。</b>動態 WHERE 最常見的需求是「使用者輸入一段範圍」。Casper 的經驗是，條件用列舉（多筆 EQ）比用區間（BT）安全：區間比較的是字典序，不是業務語意，遇到號碼段不連續、ALPHA 前導零、編碼規則改過，就會漏抓或多抓。組動態條件時，優先用 SELECT-OPTIONS 搭配 <span class="kw">IN @so_xxx</span>，讓資料庫介面處理跳脫；不要自己拼 <span class="kw">BETWEEN '…' AND '…'</span>。動態 SQL 的其他寫法（動態表名、動態欄位、動態 WHERE）見 <a href="#ch02-2-20">2-2 章第 20 節</a>、<a href="#ch05-3-18">5-3 章第 18 節</a>。</div>
+
+  <h3 id="ch07-1-13">13. 本章範例的勘誤與改寫總表</h3>
+  <p>官方勘誤表（2018/11/29）的 10 項都在第 3 章之後（UML 圖、SE24、Overriding／Overloading、範例 5.15、5.32、6.10 等），會在 <a href="#ch07-2">7-2</a>～<a href="#ch07-7">7-7 章</a> 各自套用。以下是本章閱讀程式時發現、並已在改寫中修正的問題：</p>
+  <table>
+    <thead><tr><th>範例</th><th>原寫法／原註解</th><th>問題</th><th>本章處理</th></tr></thead>
+    <tbody>
+      <tr><td>1.01</td><td><span class="kw">gv_cuotient</span></td><td>拼字錯誤（quotient），而且宣告後沒有用到</td><td>刪除</td></tr>
+      <tr><td>1.01</td><td><span class="kw">CATCH cx_root</span> ＋ 空的 CLEANUP</td><td>捕捉範圍過大；CLEANUP 永遠不會執行</td><td>改成捕捉具體類別，刪除 CLEANUP</td></tr>
+      <tr><td>2.01</td><td>gv_char、gv_float、gv_float_origin、gv_float_new</td><td>宣告了卻沒有使用</td><td>刪除</td></tr>
+      <tr><td>2.02</td><td>常數 team1／team2</td><td>作者自己在註解中指出違反命名規則</td><td>改為 gc_／lc_</td></tr>
+      <tr><td>2.04</td><td><span class="kw">WRITE (name) TO</span></td><td>過時語法，而且會套用輸出格式</td><td>改成 ASSIGN (name) 並檢查 sy-subrc</td></tr>
+      <tr><td>2.05</td><td>airline_id／flight_number TYPE i；REFRESH</td><td>型別不符合業務語意，並與 2.08 不一致；REFRESH 已過時</td><td>改用 S_CARR_ID／S_CONN_ID；改用 CLEAR／FREE</td></tr>
+      <tr><td>2.06</td><td>註解「@號表示為內聯定義」</td><td>觀念錯誤：@ 是主機變數跳脫，DATA( ) 才是內嵌宣告</td><td>修正註解；SELECT * 改為明列欄位並加 ORDER BY</td></tr>
+      <tr><td>2.07</td><td><span class="kw">FROM ECC.ecc.T001</span>；print_Record／print_record</td><td>schema 寫死，無法移植；名稱大小寫不一致</td><td>改用 ABAP SQL USING CLIENT，或 ADBC 不寫 schema</td></tr>
+      <tr><td>2.08</td><td>WHERE 沒有 MANDT；<span class="kw">'{ lv_currency }'</span> 直接串進字串</td><td>多 client 系統會讀到重複資料；有 SQL injection 風險</td><td>補上 MANDT = ?；改用 set_param 綁定</td></tr>
+      <tr><td>2.08</td><td>全域區宣告 lt_／lv_／lo_ 變數</td><td>與 2.02 的命名規則矛盾</td><td>移進處理區塊，改用內嵌宣告</td></tr>
+    </tbody>
+  </table>
+  <div class="note">上表的「問題」是依範例程式本身判斷的；書中內文可能已經說明過其中幾項（例如 2.01、2.02 就是刻意示範的反例）。本章仍然一律改寫，是為了讓讀者直接複製的程式碼就是正確、現代的寫法。</div>
+
+  <h3 id="ch07-1-qa">練習與自我檢核</h3>
+  <ol>
+    <li>範例 2.01 若把 <span class="kw">DATA gv_elevation TYPE i VALUE 6688.</span> 改成 <span class="kw">DATA(gv_elevation) = 6688.</span>，六圈的輸出會是什麼？為什麼？<br><b>答：</b>只有第 3 圈是 8848（Top of the World），其餘都是 6688。內嵌宣告等於宣告加上可執行的指派，每圈都會重新設為 6688；帶 VALUE 的 DATA 是宣告敘述，只在程序開始時初始化一次。</li>
+    <li>下面兩行有什麼差別？<span class="kw">ASSIGN lv_name TO &lt;fs&gt;.</span>、<span class="kw">ASSIGN (lv_name) TO &lt;fs&gt;.</span><br><b>答：</b>第一行把 &lt;fs&gt; 指向 lv_name 變數本身，內容是一段名稱字串；第二行把 lv_name 的內容當成變數名稱，指向那個變數。動態版本找不到名稱時 sy-subrc = 4，必須檢查。</li>
+    <li>為什麼 <span class="kw">STATICS</span> 不能寫在實例方法裡？OO 中要用什麼代替？<br><b>答：</b>STATICS 的值是所有呼叫共用的，和「每個實例各自擁有狀態」的語意衝突，所以語法只允許在子程式、函數模組、靜態方法中使用。OO 中改用 CLASS-DATA（所有實例共用）或實例屬性（每個實例各自一份）。</li>
+    <li>範例 1.01 中，<span class="kw">CATCH cx_root</span> 和 <span class="kw">CATCH cx_sy_zerodivide</span> 同時存在時，應該怎麼排列？<br><b>答：</b>子類別在前、父類別在後：先寫 cx_sy_zerodivide，再寫 cx_sy_arithmetic_error，cx_root 最後（如果真的需要的話）。反過來寫時，後面的 CATCH 永遠不會執行。</li>
+    <li>範例 2.06 的註解說「@ 表示內嵌定義」，錯在哪裡？<br><b>答：</b>@ 是主機變數的跳脫符號，WHERE 條件裡的 <span class="kw">@gv_carrid</span> 並不是內嵌宣告；內嵌宣告是 <span class="kw">DATA( )</span>，在 INTO 子句中要寫成 <span class="kw">@DATA( )</span>，是因為它同時也是主機變數。</li>
+    <li>用 ADBC 查 SCARR 時，在多 client 系統會遇到什麼問題？該怎麼修正？<br><b>答：</b>Native SQL 和 ADBC 不會自動加 client 條件，會讀到所有 client 的資料。要自己寫 <span class="kw">WHERE MANDT = ?</span> 並把 sy-mandt 複製到區域變數後，用 <span class="kw">set_param( REF #( lv_mandt ) )</span> 綁定。</li>
+    <li>在 S/4HANA 1809 要讀所有 client 的 T001，有哪些寫法？各有什麼版本門檻？<br><b>答：</b>① 從 T000 取得 client 清單，逐一 <span class="kw">USING CLIENT @…</span>（7.51+，1809 可用）；② ADBC 不加 MANDT 條件（可用，但不建議）；③ <span class="kw">USING ALL CLIENTS</span> 需要 7.54（1909）；④ CLIENT SPECIFIED 在 7.51 起已過時，不要再用。</li>
+    <li>範例 2.08 的 <span class="kw">currcode = '{ lv_currency }'</span> 有什麼風險？請寫出兩種修正方式。<br><b>答：</b>值直接串進 SQL 文字，有 SQL injection 的風險。修正方式：① ADBC 用 <span class="kw">?</span> 佔位加 <span class="kw">set_param( )</span>；② 改寫成動態 ABAP SQL，WHERE 字串中引用 <span class="kw">@p_curr</span>；非拼字串不可時，先用 <span class="kw">cl_abap_dyn_prg=&gt;quote( )</span> 跳脫。</li>
+    <li>實作題：把範例 2.03 改寫成「每個實例有自己的計數器、另外有一個所有實例共用的總計數器」的區域類別，並用兩個實例驗證。<br><b>答要點：</b>實例屬性 <span class="kw">mv_count</span> 加上 <span class="kw">CLASS-DATA gv_total</span>；兩個實例各呼叫 add 兩次，會得到 mv_count 各為 2、gv_total 為 4。這正是下一章 <a href="#ch07-2">7-2 章</a> 的主題：實例成員和靜態成員。</li>
+    <li>範例 2.06 查詢的條件若改成 <span class="kw">WHERE currcode = 'EUR'</span>，<span class="kw">lt_scarr[ 1 ]</span> 會有什麼問題？<br><b>答：</b>可能回傳多筆，而 HANA 沒有預設排序，「第一筆」每次可能不同。必須加 <span class="kw">ORDER BY</span>（例如 carrid），或改用明確的鍵讀取。這就是 Casper 在成本評價 H／E 案例中踩過的坑。</li>
+  </ol>
+</section>

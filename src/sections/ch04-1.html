@@ -1,0 +1,1507 @@
+<section class="chapter" id="ch04-1" data-title="介面整合：RFC / BAPI 實戰（請購單 PR、物料主檔、商業夥伴 BP）">
+  <h2 id="ch04-1">第 4-1 章 介面整合：RFC / BAPI 實戰（請購單 PR、物料主檔、商業夥伴 BP）</h2>
+  <p class="lede">這一章講的是「SAP 怎麼跟外面的世界說話」。從 RFC 的五種通訊型態（sRFC／aRFC／tRFC／qRFC／bgRFC）、SM59 目的地、如何做出一支能被 Python、Java、.NET 呼叫的 RFC 函數，到 BAPI 的商業物件（BOR）觀念、BAPIRET2 的正確判讀、<b>BAPI_TRANSACTION_COMMIT 的必要性</b>，再到請購單、採購單、物料主檔、商業夥伴 BP 的實戰程式。學完之後你能做到老師說的那句話：<b>「只要懂得 SAP 請購單的 BAPI，就能讓外部系統（EEP／MES／電商）直接在 SAP 開請購單。」</b></p>
+
+  <div class="meta">
+    <div><b>核心 TCODE</b><span class="tcode">SE37</span><span class="tcode">SE80</span><span class="tcode">SM59</span><span class="tcode">BAPI</span><span class="tcode">SWO1</span><span class="tcode">SWO2</span><span class="tcode">SWO3</span><span class="tcode">SM58</span><span class="tcode">SMQ1</span><span class="tcode">SMQ2</span><span class="tcode">SBGRFCMON</span><span class="tcode">ST22</span><span class="tcode">SLG1</span><span class="tcode">SU53</span><span class="tcode">SOAMANAGER</span><span class="tcode">SEGW</span><span class="tcode">/IWFND/MAINT_SERVICE</span><span class="tcode">/AIF/ERR</span><span class="tcode">ME51N</span><span class="tcode">ME53N</span><span class="tcode">ME22N</span><span class="tcode">MM02</span><span class="tcode">MM03</span><span class="tcode">MD04</span><span class="tcode">MMBE</span><span class="tcode">BP</span><span class="tcode">VA01</span><span class="tcode">MIGO</span><span class="tcode">CS15</span></div>
+    <div><b>關鍵物件</b>BAPIRET2、BAPIRET1、BAPI_TRANSACTION_COMMIT、BAPI_TRANSACTION_ROLLBACK、BAPI_PR_CREATE、BAPI_REQUISITION_CREATE、BAPI_PO_CREATE1、BAPI_PO_CHANGE、BAPI_MATERIAL_SAVEDATA、BAPI_MATERIAL_GET_ALL、BAPI_BUPA_CREATE_FROM_DATA、CMD_EI_API、VMD_EI_API、CL_MD_BP_MAINTAIN、BUT000、BUT020、BUT100、EBAN、EKKO、EKPO、MARA、MARC、KNA1、LFA1、CL_ABAP_CHAR_UTILITIES、RS_RFC_BLACKLIST_CUSTOM</div>
+  </div>
+
+  <h3 id="ch04-1-01">1. SAP 介面技術地圖：先搞清楚該用哪一種</h3>
+  <p>老師開場就把常用的介面技術列出來，實務上選型錯了，後面全都是白工。目前 SAP 的介面技術主要有五類：</p>
+
+  <table>
+    <thead><tr><th>技術</th><th>本質</th><th>最適合的場景</th><th>缺點 / 注意</th></tr></thead>
+    <tbody>
+      <tr><td><b>Web Service（SOAP）</b></td><td>把函數包成可經由 Web 呼叫的 API，靠 WSDL 定義</td><td>SAP 對非 SAP、跨防火牆、跨平台；彈性最大</td><td>要用 <span class="tcode">SOAMANAGER</span> 建邏輯埠（Logical Port）；效能較差、XML 冗長</td></tr>
+      <tr><td><b>ALE / IDoc</b></td><td>以商業物件（BO）為單位，用 IDoc 格式非同步傳遞</td><td>SAP 對 SAP、主資料同步、EDI</td><td>對接收端配置人員要求高；IDoc 結構＝1 控制記錄＋n 資料記錄＋n 狀態記錄</td></tr>
+      <tr><td><b>RFC</b></td><td>遠端函數呼叫，是 BAPI／ALE 的底層</td><td>系統間即時呼叫函數；效能最好</td><td>要 <span class="tcode">SM59</span> 目的地；跨防火牆需 SAP Cloud Connector 或 SAProuter</td></tr>
+      <tr><td><b>BAPI</b></td><td>具 RFC 屬性、且註冊在 BOR 的標準商業介面</td><td>建立／修改／查詢單據與主資料，有版本相容保證</td><td>參數結構固定，客製欄位要靠 Extension</td></tr>
+      <tr><td><b>Middleware（仲介軟體）</b></td><td>CRM 特有，靠 Adapter 傳 BDoc</td><td>CRM 與 ERP 之間</td><td>BDoc 的本質是 <b>qRFC</b>；流程是 CRM → BDoc → IDoc/XML/BAPI 結構 → 外部系統</td></tr>
+    </tbody>
+  </table>
+
+  <p><b>IDoc 的出站與入站四步驟</b>（面試常考）：</p>
+  <ul>
+    <li>出站：① 應用層產生應用資料 → ② ALE 層建立出站 IDoc → ③ 通訊層尋找夥伴與埠 → ④ 發送 IDoc。</li>
+    <li>入站：① 通訊層接收入站埠資料 → ② ALE 層建立入站 IDoc、依夥伴參數檔找 IDoc 處理類型 → ③ 應用層寫入文件。</li>
+  </ul>
+
+  <div class="note">SAP 與 SAP 之間的 <span class="tcode">SM59</span> 邏輯連接是 <b>R/3 型（型別 3）</b>；SAP 對外部系統（例如產生檔案給 FTP、或註冊型外部程式）用的是 <b>T 型（TCP/IP）</b>。老師提到「SAP 發送到 FTP」的做法：建立 RFC 邏輯連接 → 用 <span class="kw">FTP_CONNECT</span> / <span class="kw">FTP_COMMAND</span> 系列函數連線登入 → 在指定位置建立檔案（詳見 4-4 章 FTP 段落）。</div>
+
+  <h3 id="ch04-1-02">2. BOPF 與 BAPI 的層次關係</h3>
+  <p><b>BOPF</b>（Business Object Processing Framework）是一個基於物件導向 ABAP 的框架，是 SAP Business Suite 用來開發商業運用物件的基礎設施。用 BOPF 開發可以省下大量時間，因為權限控制、交易處理（transaction handling）、緩存管理這些技術細節框架都幫你做掉了，你只要專注在業務邏輯。</p>
+  <p>在 BOPF 的架構中，<b>BAPI 是第三層——介面層（Interface Layer）</b>。老師的重點：</p>
+  <ul>
+    <li>Dynpro 是傳統 SAP 介面；SAPUI5 是 HTML5 的介面；兩者底下呼叫的商業邏輯可以是同一組。</li>
+    <li>SAP ERP 提供無數 BAPI 函數：單據新增、變更、查詢、庫存查詢、MRP 展算⋯⋯「你想得到的、想不到的都有」。</li>
+    <li><b>BAPI 若具有 RFC 屬性，就表示能讓外部程式執行</b>。這是整章的核心句。</li>
+  </ul>
+  <div class="tip">老師的白話口訣：<b>「B-API，就是 Business 的 API。」</b> 學會請購單的 BAPI，EEP／MES／電商網站就能直接在 SAP 開請購單，不用人工重打。</div>
+
+  <h3 id="ch04-1-03">3. RFC 的五種型態：sRFC / aRFC / tRFC / qRFC / bgRFC</h3>
+  <p>RFC 是 SAP 系統之間、以及 SAP 與外部系統之間程式通訊的<b>基本介面技術</b>，BAPI、ALE 等更高層技術都是基於 RFC 實現。依通訊方向分三種情境：</p>
+  <ul>
+    <li>兩個獨立的 SAP 系統之間通訊。</li>
+    <li>SAP 作為呼叫端，去呼叫外部遠端系統（非 SAP ABAP 系統）。</li>
+    <li>外部系統作為呼叫端，來呼叫 SAP。</li>
+  </ul>
+  <p>依同步性與可靠度，共有五種型態。<b>選錯型態是介面專案最貴的錯誤</b>：</p>
+
+  <table>
+    <thead><tr><th>型態</th><th>全名</th><th>特性</th><th>監控 TCODE</th><th>典型用途</th></tr></thead>
+    <tbody>
+      <tr><td><b>sRFC</b></td><td>Synchronous RFC</td><td>同步，呼叫端等回應；目標系統必須在線，否則直接短拋（DUMP）</td><td><span class="tcode">ST22</span></td><td>即時查詢：查庫存、查價格、查客戶信用</td></tr>
+      <tr><td><b>aRFC</b></td><td>Asynchronous RFC</td><td>非同步，不等回應（<span class="kw">STARTING NEW TASK</span>）；可用 <span class="kw">RECEIVE RESULTS</span> 回收結果；<b>目標仍須在線</b></td><td><span class="tcode">SM50</span></td><td>平行處理、把大批資料切成多工同時跑</td></tr>
+      <tr><td><b>tRFC</b></td><td>Transactional RFC</td><td>加 <span class="kw">IN BACKGROUND TASK</span>；先寫進 ARFCSSTATE / ARFCSDATA，COMMIT WORK 後才送出；保證<b>只執行一次</b>，但<b>不保證順序</b></td><td><span class="tcode">SM58</span></td><td>ALE/IDoc 傳輸、目標系統可能離線的情境</td></tr>
+      <tr><td><b>qRFC</b></td><td>Queued RFC</td><td>tRFC ＋ 佇列，保證 <b>只執行一次且照順序</b>；分出站佇列（Outbound）與入站佇列（Inbound）</td><td><span class="tcode">SMQ1</span> / <span class="tcode">SMQ2</span> / <span class="tcode">SMQR</span></td><td>CRM Middleware 的 BDoc、必須保序的主資料變更</td></tr>
+      <tr><td><b>bgRFC</b></td><td>Background RFC</td><td>NetWeaver 7.0 之後推出，取代 tRFC/qRFC；分 Type T（無序單元）與 Type Q（有序單元）；用類別 API 而非語法附加</td><td><span class="tcode">SBGRFCMON</span> / <span class="tcode">SBGRFCCONF</span></td><td><b>S/4HANA 新專案的建議做法</b></td></tr>
+    </tbody>
+  </table>
+
+  <pre><code class="abap">*&amp;-------------------------------------------------------------*
+*&amp; 五種 RFC 呼叫語法對照
+*&amp;-------------------------------------------------------------*
+
+" ① sRFC：同步。目標不在線 → 立刻例外／DUMP，必須 CATCH
+TRY.
+    CALL FUNCTION 'Z_MM_STOCK_GET'
+      DESTINATION 'PRD_CLNT100'          "SM59 建立的 RFC 目的地
+      EXPORTING  iv_werks = '1710'
+      TABLES     et_stock = lt_stock
+      EXCEPTIONS system_failure        = 1 MESSAGE DATA(lv_msg)
+                 communication_failure = 2 MESSAGE lv_msg
+                 OTHERS                = 3.
+    IF sy-subrc &lt;&gt; 0.
+      MESSAGE |RFC 失敗（{ sy-subrc }）：{ lv_msg }| TYPE 'E'.
+    ENDIF.
+  CATCH cx_root INTO DATA(lo_ex).
+    MESSAGE lo_ex-&gt;get_text( ) TYPE 'E'.
+ENDTRY.
+
+" ② aRFC：非同步、平行處理。用 CALLING ... ON END OF TASK 回收
+CALL FUNCTION 'Z_MM_STOCK_GET'
+  STARTING NEW TASK  |TASK{ lv_idx }|          "任務名稱必須唯一
+  DESTINATION IN GROUP DEFAULT                  "用 RZ12 的 Server Group
+  CALLING lo_handler-&gt;on_task_end ON END OF TASK
+  EXPORTING iv_werks = lv_werks
+  EXCEPTIONS resource_failure = 1 OTHERS = 2.
+
+" ③ tRFC：保證只執行一次，但不保證順序。一定要 COMMIT WORK 才真的送出
+CALL FUNCTION 'Z_IF_SEND_DOC'
+  IN BACKGROUND TASK
+  DESTINATION 'MES_SYSTEM'
+  EXPORTING is_doc = ls_doc.
+COMMIT WORK.                                    "沒有這行，資料只躺在 ARFCSSTATE
+
+" ④ qRFC：tRFC + 佇列，保證順序。先指定佇列名再呼叫
+CALL FUNCTION 'TRFC_SET_QUEUE_NAME'
+  EXPORTING qname = |ZPR{ lv_banfn }|           "同一佇列名者依序執行
+  EXCEPTIONS OTHERS = 1.
+CALL FUNCTION 'Z_IF_SEND_DOC'
+  IN BACKGROUND TASK
+  DESTINATION 'MES_SYSTEM'
+  EXPORTING is_doc = ls_doc.
+COMMIT WORK.
+
+" ⑤ bgRFC（S/4HANA 建議做法）：Type Q＝有序單元
+TRY.
+    DATA(lo_dest) = cl_bgrfc_destination_outbound=&gt;create( 'MES_SYSTEM' ).
+    DATA(lo_unit) = lo_dest-&gt;create_qrfc_unit( ).
+    lo_unit-&gt;add_queue_name_outbound( |ZPR{ lv_banfn }| ).
+    CALL FUNCTION 'Z_IF_SEND_DOC'
+      IN BACKGROUND UNIT lo_unit
+      EXPORTING is_doc = ls_doc.
+    COMMIT WORK.
+  CATCH cx_bgrfc_invalid_destination
+        cx_bgrfc_invalid_unit INTO DATA(lo_bg_ex).
+    MESSAGE lo_bg_ex-&gt;get_text( ) TYPE 'E'.
+ENDTRY.</code></pre>
+
+  <div class="warn"><b>tRFC/qRFC/bgRFC 少了 <span class="kw">COMMIT WORK</span> 就什麼都不會發生。</b>資料只會停在 ARFCSSTATE（tRFC）或 bgRFC 單元表裡，SM58 看得到一筆「Transaction recorded」永遠不執行。這是介面上線第一天最常見的災難。</div>
+  <div class="tip">除錯順序背起來：同步失敗看 <span class="tcode">ST22</span>；tRFC 卡住看 <span class="tcode">SM58</span>（可手動 <b>Execute LUW</b> 重送）；qRFC 卡住看 <span class="tcode">SMQ1</span>（出站）/ <span class="tcode">SMQ2</span>（入站），常見狀態 SYSFAIL、CPICERR、RETRY；bgRFC 看 <span class="tcode">SBGRFCMON</span>。</div>
+
+  <h3 id="ch04-1-04">4. SM59：RFC 目的地與連線測試</h3>
+  <p>RFC 目的地（Destination）是「連到哪裡、用什麼身分」的定義。<span class="tcode">SM59</span> 裡最常用的型別：</p>
+  <table>
+    <thead><tr><th>型別</th><th>說明</th><th>常見用途</th></tr></thead>
+    <tbody>
+      <tr><td><b>3（ABAP Connection）</b></td><td>連到另一套 SAP ABAP 系統</td><td>DEV → QAS → PRD、ALE/IDoc、跨系統 BAPI</td></tr>
+      <tr><td><b>T（TCP/IP Connection）</b></td><td>連到外部程式；分 Registered Server Program 與 Start on Explicit Host</td><td>Java／.NET／Python 註冊型伺服器、SAP Gateway 外掛</td></tr>
+      <tr><td><b>G（HTTP to External Server）</b></td><td>對外部 HTTP/REST 端點</td><td>ABAP 呼叫外部 REST API（配 CL_HTTP_CLIENT）</td></tr>
+      <tr><td><b>H（HTTP to ABAP System）</b></td><td>對另一套 ABAP 系統的 HTTP</td><td>OData／SOAP 內部呼叫</td></tr>
+      <tr><td><b>L（Logical Destination）</b></td><td>指向另一個既有目的地</td><td>做環境切換的間接層</td></tr>
+      <tr><td><b>NONE / 空白</b></td><td>不指定＝呼叫本機系統本身</td><td>測試時用 <span class="kw">DESTINATION 'NONE'</span> 走本機 RFC 路徑</td></tr>
+    </tbody>
+  </table>
+  <p>建立目的地的步驟（<span class="src">（依講義步驟整理）</span>）：<span class="tcode">SM59</span> → 選型別（例如 3）→ 按 Create → 填 <b>RFC Destination 名稱</b>（建議 <span class="kw">&lt;SID&gt;CLNT&lt;MANDT&gt;</span> 命名）→ Technical Settings 填 Target Host、System Number → Logon &amp; Security 填 Language、Client、User、Password（<b>務必用 Type = System 或 Communication 的技術帳號，不要用個人帳號</b>）→ 存檔 → 按 <b>Connection Test</b> 與 <b>Remote Logon</b> 驗證。</p>
+
+  <pre><code class="abap">*&amp;-------------------------------------------------------------*
+*&amp; 目的地健檢：先 PING 再呼叫，避免整支程式被同步 RFC 拖死
+*&amp;-------------------------------------------------------------*
+DATA(lv_dest) = CONV rfcdest( 'PRD_CLNT100' ).
+
+" 確認 SM59 目的地確實存在（RFCDES 是目的地主檔）
+SELECT SINGLE rfcdest FROM rfcdes
+  WHERE rfcdest = @lv_dest
+  INTO  @DATA(lv_exist).
+IF sy-subrc &lt;&gt; 0.
+  MESSAGE |RFC 目的地 { lv_dest } 不存在，請先在 SM59 建立| TYPE 'E'.
+ENDIF.
+
+" RFC_PING：最輕量的連線測試，逾時就不要往下打
+CALL FUNCTION 'RFC_PING'
+  DESTINATION lv_dest
+  EXCEPTIONS system_failure        = 1 MESSAGE DATA(lv_err)
+             communication_failure = 2 MESSAGE lv_err
+             OTHERS                = 3.
+IF sy-subrc &lt;&gt; 0.
+  MESSAGE |目的地 { lv_dest } 無法連線：{ lv_err }| TYPE 'E'.
+ENDIF.
+
+" 取回遠端系統資訊，寫進介面 Log，日後對帳非常好用
+CALL FUNCTION 'RFC_SYSTEM_INFO'
+  DESTINATION lv_dest
+  IMPORTING  rfcsi_export = DATA(ls_info)
+  EXCEPTIONS OTHERS       = 1.
+IF sy-subrc = 0.
+  WRITE: / |遠端系統：{ ls_info-rfcsysid } / Host：{ ls_info-rfchost } | &amp;&amp;
+           |/ Release：{ ls_info-rfcsaprl } / 時區：{ ls_info-rfctzone }|.
+ENDIF.</code></pre>
+
+  <div class="warn">SM59 目的地內嵌的帳號密碼等於一把鑰匙。<b>絕不可以在生產機建立指向生產機、又存有 DDIC/SAP* 密碼的目的地</b>；也不要讓開發機的目的地存生產機密碼（這是 SAP 稽核必查項）。技術帳號請設為 <b>Type = System</b> 並限制到最小權限的角色（S_RFC 只開必要的函數群組）。</div>
+
+  <h3 id="ch04-1-05">5. 建立 RFC-Enabled Function Module：SE37 的規矩</h3>
+  <p>任何 ABAP 程式都能用 <span class="kw">CALL FUNCTION ... DESTINATION</span> 呼叫遠端功能；反過來，要讓外部程式（Python／Java／.NET）呼叫你，就得做一支<b>具 RFC 屬性的函數模組</b>。步驟：</p>
+  <ul>
+    <li><span class="tcode">SE37</span>（或 <span class="tcode">SE80</span> 的函數群組）建立函數 → <b>Attributes</b> 頁籤 → Processing Type 選 <b>Remote-Enabled Module</b>。</li>
+    <li>勾選後，SAP 會對介面套用一組<b>強制限制</b>，違反的話啟動（Activate）就報錯。</li>
+  </ul>
+
+  <table>
+    <thead><tr><th>限制</th><th>說明</th><th>做法</th></tr></thead>
+    <tbody>
+      <tr><td><b>所有參數必須 pass by value</b></td><td>Import／Export／Changing 全部要勾 <b>Pass Value</b>；不能用 reference</td><td>SE37 介面畫面把 <b>值傳遞</b> 欄位打勾</td></tr>
+      <tr><td><b>型別必須是 DDIC 型別</b></td><td>不能用程式內部型別、不能用 TYPE ANY／泛型；結構與表都要是 SE11 建立的</td><td>先在 SE11 建 Structure 與 Table Type</td></tr>
+      <tr><td><b>不支援 CHANGING 的參考語意</b></td><td>Changing 參數雖可用，但外部連接器支援度不一</td><td>介面設計建議只用 IMPORTING / EXPORTING / TABLES</td></tr>
+      <tr><td><b>例外只能用傳統例外</b></td><td>不能用 class-based exception 當介面例外（外部連接器看不懂）</td><td>內部用 TRY/CATCH，介面用回傳 <b>BAPIRET2</b> 表告知結果</td></tr>
+      <tr><td><b>TABLES 參數雖已過時但仍可用</b></td><td>對外部連接器相容性最好</td><td>回傳多筆資料時用 TABLES 或 EXPORTING 一個 Table Type</td></tr>
+      <tr><td><b>不可有 Dynpro 互動</b></td><td>WRITE、CALL SCREEN、MESSAGE 都會讓遠端呼叫掛掉</td><td>訊息一律塞進 RETURN 表</td></tr>
+    </tbody>
+  </table>
+
+  <div class="warn"><b>字串型別的陷阱</b>：RFC 介面可以用 STRING / XSTRING，但部分舊版連接器（尤其 NCo 舊版、C RFC SDK 傳統 API）處理深層型別（deep type）會有問題。對外介面最安全的是<b>扁平字元型別（CHAR、NUMC、DEC）＋ DDIC 結構</b>。另外，<b>DECIMAL 欄位的小數位由 DDIC Domain 決定</b>，外部系統若用 float 接會有精度誤差，金額欄位請雙方約定用字串傳遞。</div>
+
+  <h3 id="ch04-1-06">6. 實作：給 Python / pyrfc 呼叫的 Z RFC 函數</h3>
+  <p>這是實務上最常被要求的東西：外部系統要撈 SAP 的庫存或主資料。老師的專案要點也寫得很清楚——「基礎資料能自動下載到 MSSQL，不必每個都動態」。下面是一支完整、可直接照抄的 RFC 函數樣板。</p>
+
+  <p><b>先在 SE11 建好 DDIC 物件</b>（<span class="src">（依講義步驟整理）</span>）：</p>
+  <ul>
+    <li>Structure <b>ZS_STOCK_S</b>：MATNR、MAKTX、WERKS、LGORT、CHARG、LABST、UMLME、INSME、SPEME、MEINS、STPRS、PEINH、WAERS。</li>
+    <li>Structure <b>ZS_RANGE_S</b>：SIGN（CHAR1）、OPTION（CHAR2）、LOW（CHAR40）、HIGH（CHAR40）——用來把 SELECT-OPTIONS 從外部傳進來。</li>
+    <li>Table Type <b>ZTT_STOCK</b>（行型別 ZS_STOCK_S）、<b>ZTT_RANGE</b>（行型別 ZS_RANGE_S）。</li>
+  </ul>
+
+  <pre><code class="abap">FUNCTION z_mm_stock_get.
+*"----------------------------------------------------------------------
+*"*"Local Interface:
+*"  IMPORTING
+*"     VALUE(IV_WERKS) TYPE  WERKS_D OPTIONAL
+*"     VALUE(IV_MAXROW) TYPE  I DEFAULT 10000
+*"  EXPORTING
+*"     VALUE(EV_COUNT) TYPE  I
+*"  TABLES
+*"      IT_MATNR STRUCTURE  ZS_RANGE_S OPTIONAL    "物料 select-option
+*"      IT_LGORT STRUCTURE  ZS_RANGE_S OPTIONAL    "儲存地點 select-option
+*"      ET_STOCK STRUCTURE  ZS_STOCK_S
+*"      ET_RETURN STRUCTURE  BAPIRET2
+*"----------------------------------------------------------------------
+*"  注意：Remote-Enabled 時每個參數都必須勾 Pass Value，型別必須是 DDIC 型別
+*"----------------------------------------------------------------------
+
+  CLEAR: et_stock[], et_return[], ev_count.
+
+  " 外部傳進來的 range 內表，型別要轉成 ABAP 的 RANGE 型別才能放進 WHERE
+  DATA lr_matnr TYPE RANGE OF matnr.
+  DATA lr_lgort TYPE RANGE OF lgort_d.
+
+  lr_matnr = CORRESPONDING #( it_matnr[] ).
+  lr_lgort = CORRESPONDING #( it_lgort[] ).
+
+  " 參數檢核：介面一定要自己擋，外部系統什麼都敢送
+  IF iv_werks IS INITIAL AND lr_matnr IS INITIAL.
+    APPEND VALUE bapiret2( type       = 'E'
+                           id         = 'ZIF'
+                           number     = '001'
+                           message    = '工廠與物料至少要給一個條件'
+                           message_v1 = 'Z_MM_STOCK_GET' ) TO et_return.
+    RETURN.
+  ENDIF.
+
+  TRY.
+      SELECT FROM mard AS d
+        INNER JOIN mara AS a ON a~matnr = d~matnr
+        LEFT OUTER JOIN makt AS t ON  t~matnr = d~matnr
+                                  AND t~spras = @sy-langu
+        LEFT OUTER JOIN mbew AS b ON  b~matnr = d~matnr
+                                  AND b~bwkey = d~werks
+        FIELDS d~matnr, t~maktx, d~werks, d~lgort,
+               d~labst, d~umlme, d~insme, d~speme,
+               a~meins, b~stprs, b~peinh
+        WHERE d~werks = @iv_werks              "空值時此條件由下面的 range 補
+          AND d~matnr IN @lr_matnr
+          AND d~lgort IN @lr_lgort
+          AND ( d~labst &lt;&gt; 0 OR d~umlme &lt;&gt; 0
+             OR d~insme &lt;&gt; 0 OR d~speme &lt;&gt; 0 )
+        ORDER BY d~matnr, d~werks, d~lgort      "外部系統要穩定順序，一定要 ORDER BY
+        INTO CORRESPONDING FIELDS OF TABLE @et_stock
+        UP TO @iv_maxrow ROWS.
+
+    CATCH cx_sy_open_sql_error INTO DATA(lo_sql_ex).
+      APPEND VALUE bapiret2( type    = 'E' id = 'ZIF' number = '002'
+                             message = lo_sql_ex-&gt;get_text( ) ) TO et_return.
+      RETURN.
+  ENDTRY.
+
+  " 幣別補值（公司代碼幣別）；外部系統看到金額一定會問幣別
+  SELECT SINGLE waers FROM t001k AS k
+    INNER JOIN t001 AS c ON c~bukrs = k~bukrs
+    FIELDS c~waers
+    WHERE k~bwkey = @iv_werks
+    INTO  @DATA(lv_waers).
+
+  LOOP AT et_stock ASSIGNING FIELD-SYMBOL(&lt;ls_stock&gt;).
+    &lt;ls_stock&gt;-waers = lv_waers.
+  ENDLOOP.
+
+  ev_count = lines( et_stock ).
+
+  APPEND VALUE bapiret2(
+    type       = COND #( WHEN ev_count = 0 THEN 'W' ELSE 'S' )
+    id         = 'ZIF'
+    number     = '000'
+    message    = |查詢完成，共 { ev_count } 筆|
+    message_v1 = |{ iv_werks }| ) TO et_return.
+
+ENDFUNCTION.</code></pre>
+
+  <p>Python 端用 <b>pyrfc</b>（PyRFC 套件，底層是 SAP NW RFC SDK）呼叫，把結果寫進 MSSQL：</p>
+
+  <pre><code class="python"># -*- coding: utf-8 -*-
+# 需求：pip install pyrfc（並先安裝 SAP NW RFC SDK 並設定 PATH / LD_LIBRARY_PATH）
+from pyrfc import Connection, ABAPApplicationError, CommunicationError
+
+CONN = dict(
+    user='RFC_USER', passwd='********',
+    ashost='10.1.1.10', sysnr='00', client='100', lang='ZH',
+    # 若走 SAP Cloud Connector / SAProuter：saprouter='/H/router/S/3299/H/host'
+)
+
+def get_stock(werks, matnr_list=None):
+    # select-option 的四欄結構：SIGN / OPTION / LOW / HIGH
+    it_matnr = [{'SIGN': 'I', 'OPTION': 'EQ', 'LOW': m, 'HIGH': ''}
+                for m in (matnr_list or [])]
+    with Connection(**CONN) as conn:
+        result = conn.call('Z_MM_STOCK_GET',
+                           IV_WERKS=werks,
+                           IV_MAXROW=50000,
+                           IT_MATNR=it_matnr)
+    # RETURN 一定要判：type 為 E / A 就是失敗
+    for msg in result['ET_RETURN']:
+        if msg['TYPE'] in ('E', 'A'):
+            raise RuntimeError(f"SAP 回傳錯誤：{msg['MESSAGE']}")
+    return result['ET_STOCK']
+
+if __name__ == '__main__':
+    try:
+        rows = get_stock('1710', ['TG11', 'TG12'])
+        print(f'取得 {len(rows)} 筆庫存')
+        # 之後用 pyodbc / SQLAlchemy 批次寫入 MSSQL
+    except (ABAPApplicationError, CommunicationError) as e:
+        print('RFC 失敗：', e)</code></pre>
+
+  <div class="tip">老師強調過的實務眉角：<b>條件用「區間（BT）」與用「列舉（EQ）」答案會不一樣，用列舉的才正確。</b>介面設計時把 SELECT-OPTIONS 開成 range 表傳進來，外部系統就能用 <span class="kw">SIGN='I' OPTION='EQ'</span> 一筆一筆列舉，避開區間在非連號編碼（物料號、成本中心）上抓到不該抓的資料。</div>
+  <div class="warn"><b>SELECT SINGLE 沒有排序保證</b>，多筆符合時 HANA 回傳哪一筆是不確定的。介面函數尤其危險——同一支程式今天抓到 A、明天抓到 B。要嘛加足主鍵條件，要嘛改成 <span class="kw">SELECT ... ORDER BY ... UP TO 1 ROWS</span>。</div>
+
+  <h3 id="ch04-1-07">7. 外部呼叫端：JCo、NCo、pyrfc、Cloud Connector</h3>
+  <p>SAP 為多種語言與作業系統提供 RFC 函式庫（RFC Library，內含 RFC API）與各式連接器：</p>
+  <table>
+    <thead><tr><th>連接器</th><th>語言／平台</th><th>備註</th></tr></thead>
+    <tbody>
+      <tr><td><b>SAP JCo</b>（Java Connector）</td><td>Java</td><td>最成熟，SAP PI/PO、多數中介系統的底層；<span class="kw">JCoDestinationManager</span> 取得目的地、<span class="kw">JCoFunction</span> 執行</td></tr>
+      <tr><td><b>SAP NCo</b>（.NET Connector）</td><td>C# / VB.NET</td><td>Windows 端 WinForm／ASP.NET 常用；需注意版本與 x86/x64 一致</td></tr>
+      <tr><td><b>RFC SDK</b></td><td>C / C++</td><td>所有連接器的底層；新版為 <b>NW RFC SDK</b>（舊 Classic RFC SDK 已停止支援）</td></tr>
+      <tr><td><b>PyRFC</b></td><td>Python</td><td>依賴 NW RFC SDK；適合資料工程、排程抓數、FastAPI 包裝成 REST</td></tr>
+      <tr><td><b>Lotus Connector</b></td><td>Lotus Notes</td><td>講義有列，現在幾乎絕跡</td></tr>
+      <tr><td><b>SAP Cloud Connector</b></td><td>連線元件</td><td>S/4HANA 私有雲／地端要被 BTP 上的雲端 App 呼叫時的<b>反向 Proxy</b>；在 SCC 設定 Virtual Host → Internal Host 的映射，並<b>逐一白名單允許的 Function Module 名稱</b></td></tr>
+    </tbody>
+  </table>
+
+  <p><b>兩種連線方向要分清楚：</b></p>
+  <ul>
+    <li><b>外部 → SAP（Client 模式）</b>：外部程式帶 ashost/sysnr/client 直接連 SAP Gateway，呼叫 RFC-enabled FM。這是 pyrfc 範例的模式。</li>
+    <li><b>SAP → 外部（Server / Registered 模式）</b>：外部程式以 <b>Program ID</b> 向 SAP Gateway 註冊；SM59 建 T 型目的地、指定同一個 Program ID 與 Gateway Host/Service，ABAP 就能 <span class="kw">CALL FUNCTION ... DESTINATION</span> 呼叫外面的程式。註冊狀態可在 <span class="tcode">SMGW</span> 的 Logged on Clients 看到。</li>
+  </ul>
+
+  <h4>RFC 黑名單（老師特別標紅的坑）</h4>
+  <p>SAP 為了防止外部任意呼叫危險函數，導入了 <b>RFC 黑名單（Blacklist）</b>機制。報表 <b>RS_RFC_BLACKLIST_CUSTOM</b> 用來維護客製白／黑名單。老師寫得很直接：<b>「要將欲執行的外部讀取的 Function Module 從黑名單中剔除才行。」</b>（2022.12.15）</p>
+  <ul>
+    <li>相關報表：<b>RS_RFC_BLACKLIST_CUSTOM</b>（客製名單）、<b>RS_RFC_BLACKLIST_SAP</b>（SAP 預設名單）。</li>
+    <li>相關 Profile 參數：<span class="kw">rfc/callback_security_method</span>、<span class="kw">rfc/reject_expired_passwd</span>；UCON（Unified Connectivity）也可能把函數擋在外面，要在 <span class="tcode">UCONCOCKPIT</span> 把函數放進 Communication Assembly。</li>
+    <li>症狀：外部呼叫回 <span class="kw">Function module ... is blacklisted</span> 或 <span class="kw">not released for remote calls</span>，但在 SE37 本機測試完全正常。</li>
+  </ul>
+
+  <div class="note">老師記錄的 iCoder &amp; SAP 專案測試要點（介面專案的驗收清單）：<b>PP</b> 能抓出缺料表（基礎資料能自動下載到 MSSQL，不必每個都動態）；<b>MM</b> 能做請購簽核；<b>SD</b> 能用 pivot 做業績分析；<b>FICO</b> 財務類二次開發需求不高，可不做。</div>
+
+  <h3 id="ch04-1-08">8. BAPI 的本質：BO、BOR 與怎麼把 BAPI 找出來</h3>
+  <p>BAPI（Business Application Programming Interface）是 SAP 企業物件的<b>特定方法</b>，儲存在企業物件儲藏庫（BOR）中，用來執行特定企業工作細項。在 SAP 系統中，BAPI 以 <b>RFC 功能模組</b>的形式存在於函數建立器裡。BAPI 具有標準企業介面，允許外部應用程式（透過 SAP 企業物件的協助）存取 SAP 程式、函式和資料。用戶端可以是同一套 SAP、外部系統（例如 .NET 應用程式）、HTTP 閘道或其他 SAP 系統；連接技術可以是 JS、Java、VB、ABAP。</p>
+
+  <p><b>先懂兩個名詞：</b></p>
+  <ul>
+    <li><b>BO（Business Object，業務物件）</b>：代表真實世界的物件，例如一張採購訂單、一筆物料資料。BO 包含業務資料，並完整描述業務過程。系統內部應用與系統之間就是在 BO 級別通訊。透過呼叫 BAPI，內外部應用可以用 Portal、Java、.NET、Web Service 等標準方式存取和操作業務物件。</li>
+    <li><b>BOR（Business Object Repository）</b>：SAP 業務物件類型（BO 的定義與描述）和相關 BAPI 的組織中心。BO 依所屬應用層級組織以便查找；BOR 管理不同發佈版本，並保證介面的<b>版本相容性</b>（這是 BAPI 相對於自寫 RFC 最大的價值）。</li>
+  </ul>
+
+  <table>
+    <thead><tr><th>TCODE</th><th>用途</th></tr></thead>
+    <tbody>
+      <tr><td><span class="tcode">BAPI</span></td><td><b>BAPI Explorer</b>：依應用元件階層瀏覽所有<b>已釋出（Released）</b>的 BAPI，可看文件、參數、範例</td></tr>
+      <tr><td><span class="tcode">SWO1</span></td><td>Business Object Builder：顯示／維護業務物件類型，看它的 Key、Method、Attribute、Event</td></tr>
+      <tr><td><span class="tcode">SWO2</span></td><td>BOR Browser：以樹狀瀏覽業務物件</td></tr>
+      <tr><td><span class="tcode">SWO3</span></td><td>查看 BOR（Business Object Repository）</td></tr>
+      <tr><td><span class="tcode">SE37</span></td><td>直接看 BAPI 的函數介面與原始碼、做單獨測試</td></tr>
+      <tr><td><span class="tcode">BAPI</span> → Alphabetical</td><td>用字母排序找，配合關鍵字（CREATE、CHANGE、GETDETAIL、GETLIST）猜名字</td></tr>
+    </tbody>
+  </table>
+
+  <p><b>BO 的結構</b>：SAP R/3 企業目標的目標類型（Object Type）相當於物件導向語言中「類別（Class）」的概念，其定義由六部分組成：<b>基本資料、介面（Interfaces）、鍵（Key Fields）、方法（Methods）、特徵（Attributes）、事件（Events）</b>。</p>
+
+  <h4>老師的絕招：由 TCODE 反查 BAPI（10-2）</h4>
+  <p>如果只知道交易代碼，可以這樣把 BAPI 挖出來。以「建立銷售訂單」<span class="tcode">VA01</span> 為例：</p>
+  <ol>
+    <li>進入 VA01 畫面 → 功能表 <b>System → Status</b>。</li>
+    <li>在交易代碼欄位上<b>雙擊</b>，進入交易定義，找到它的 <b>Package（開發類別）＝ VA</b>。</li>
+    <li>用 <span class="tcode">SE80</span> 打開 Package <b>VA</b>。</li>
+    <li>展開 <b>Business Engineering → Business Object Types（業務工程 → 業務物件類型）</b>。依業務需求判斷，要建立銷售訂單，<b>BUS2032（Sales Order）</b> 可能性最大。</li>
+    <li>雙擊 BUS2032 打開 <b>Methods</b>，尋找和「建立銷售訂單」同名的方法——這裡就是 <b>SalesOrder.CreateFromDat2</b>。把游標停在該行，點上方的「程式」按鈕，就能看到原始碼，找到 <b>BAPI_SALESORDER_CREATEFROMDAT2</b>。同樣方法可以找到修改（CHANGE）、刪除的 BAPI。</li>
+    <li>也可以雙擊 <b>SalesOrder.CreateFromDat2</b> 這一行，在彈出視窗中找到 <b>ABAP 子畫面</b>：如果單選鈕是「<b>API 功能</b>」，名稱欄就是我們要找的 BAPI；如果是「函數模組」，那就是一支一般 FM。</li>
+  </ol>
+  <div class="tip">另外三招也很好用：① <span class="tcode">SE84</span> → Enterprise Services / Business Objects 搜尋；② 在標準交易上開 <b>ST05 SQL Trace</b> 或 <b>SAT</b>，看它到底呼叫哪支 FM；③ 直接在 <span class="tcode">SE37</span> 用萬用字元搜 <span class="kw">BAPI_*CREATE*</span>、<span class="kw">BAPI_*GETDETAIL*</span>。</div>
+
+  <h3 id="ch04-1-09">9. BAPIRET2 與 COMMIT／ROLLBACK：BAPI 的兩條命</h3>
+  <p>幾乎所有 BAPI 都有一個 <b>RETURN</b> 參數，型別 <b>BAPIRET2</b>（舊版是 BAPIRET1 / BAPIRETURN）。這是判斷成功失敗的<b>唯一依據</b>——<span class="kw">sy-subrc</span> 在 BAPI 呼叫後幾乎永遠是 0，看它是沒有意義的。</p>
+
+  <table>
+    <thead><tr><th>欄位</th><th>意義</th></tr></thead>
+    <tbody>
+      <tr><td><b>TYPE</b></td><td>訊息類型：<b>S</b>=成功、<b>I</b>=資訊、<b>W</b>=警告、<b>E</b>=錯誤、<b>A</b>=中止。<b>E 與 A 才算失敗</b></td></tr>
+      <tr><td><b>ID / NUMBER</b></td><td>訊息類別（SE91）與訊息編號，組起來可用 MESSAGE ... INTO 重建文字</td></tr>
+      <tr><td><b>MESSAGE</b></td><td>已組好的訊息文字（含變數替換）</td></tr>
+      <tr><td><b>MESSAGE_V1~V4</b></td><td>訊息變數，訊息文字裡的 &amp;1~&amp;4</td></tr>
+      <tr><td><b>ROW / FIELD / PARAMETER</b></td><td>出錯的內表列號、欄位、參數名稱——回饋給外部系統時一定要帶上</td></tr>
+      <tr><td><b>LOG_NO / LOG_MSG_NO</b></td><td>應用 Log 編號，可到 <span class="tcode">SLG1</span> 查完整記錄</td></tr>
+    </tbody>
+  </table>
+
+  <div class="warn"><b>BAPI 內部不會自己 COMMIT。</b>SAP 標準 BAPI 只把資料放進 update task（更新任務）緩衝區，<b>你必須自己呼叫 <span class="kw">BAPI_TRANSACTION_COMMIT</span></b>，資料才會真的寫進資料庫。失敗時則要呼叫 <span class="kw">BAPI_TRANSACTION_ROLLBACK</span> 清掉緩衝區與鎖，否則同一個 LUW 裡的下一次呼叫會被前一次的髒資料汙染。<br><br>
+  <b><span class="kw">WAIT = 'X'</span> 的意義</b>：讓 COMMIT 等到更新任務真的做完才返回（同步更新）。如果你 COMMIT 完馬上要用剛產生的單號去做下一步（例如建完 PR 馬上轉 PO、或馬上 SELECT 出來），<b>沒有 WAIT = 'X' 就會抓不到資料</b>。代價是速度較慢，批次大量建單時可考慮省略，但要自行確保後續不立即讀取。</div>
+
+  <p>把「判 RETURN ＋ COMMIT／ROLLBACK」寫成一支共用的工具類別，是專案上最值得做的投資：</p>
+
+  <pre><code class="abap">*&amp;-------------------------------------------------------------*
+*&amp; BAPI 回傳處理共用類別（放在自建的 ZCL_BAPI_UTIL）
+*&amp;-------------------------------------------------------------*
+CLASS zcl_bapi_util DEFINITION PUBLIC FINAL CREATE PUBLIC.
+  PUBLIC SECTION.
+    " 判斷 RETURN 表裡有沒有 E / A
+    CLASS-METHODS has_error
+      IMPORTING it_return       TYPE bapiret2_t
+      RETURNING VALUE(rv_error) TYPE abap_bool.
+
+    " 把 RETURN 表串成一段可讀的訊息（給 MESSAGE 或介面回傳用）
+    CLASS-METHODS to_text
+      IMPORTING it_return      TYPE bapiret2_t
+                iv_only_error  TYPE abap_bool DEFAULT abap_true
+      RETURNING VALUE(rv_text) TYPE string.
+
+    " 依 RETURN 結果自動決定 COMMIT 或 ROLLBACK
+    CLASS-METHODS commit_or_rollback
+      IMPORTING it_return    TYPE bapiret2_t
+                iv_wait      TYPE abap_bool DEFAULT abap_true
+      RETURNING VALUE(rv_ok) TYPE abap_bool.
+ENDCLASS.
+
+CLASS zcl_bapi_util IMPLEMENTATION.
+
+  METHOD has_error.
+    " line_exists 比 LOOP ... EXIT 乾淨，也不會動到 sy-subrc 的語意
+    rv_error = xsdbool( line_exists( it_return[ type = 'E' ] ) OR
+                        line_exists( it_return[ type = 'A' ] ) ).
+  ENDMETHOD.
+
+  METHOD to_text.
+    rv_text = REDUCE string(
+      INIT lv_txt = ``
+      FOR &lt;ls_r&gt; IN it_return
+        WHERE ( type = 'E' OR type = 'A' OR type = 'W' OR type = 'S' )
+      NEXT lv_txt = COND #(
+        WHEN iv_only_error = abap_true AND &lt;ls_r&gt;-type NA 'EA'
+          THEN lv_txt
+        ELSE |{ lv_txt }{ COND #( WHEN lv_txt IS INITIAL THEN `` ELSE |; | ) }| &amp;&amp;
+             |[{ &lt;ls_r&gt;-type }]{ &lt;ls_r&gt;-id }{ &lt;ls_r&gt;-number } { &lt;ls_r&gt;-message }| ) ).
+  ENDMETHOD.
+
+  METHOD commit_or_rollback.
+    IF has_error( it_return ) = abap_true.
+      CALL FUNCTION 'BAPI_TRANSACTION_ROLLBACK'.   "清掉緩衝區與鎖
+      rv_ok = abap_false.
+    ELSE.
+      CALL FUNCTION 'BAPI_TRANSACTION_COMMIT'
+        EXPORTING wait = COND char1( WHEN iv_wait = abap_true
+                                     THEN 'X' ELSE space ).
+      rv_ok = abap_true.
+    ENDIF.
+  ENDMETHOD.
+
+ENDCLASS.</code></pre>
+
+  <pre><code class="abap">*&amp;-------------------------------------------------------------*
+*&amp; 標準呼叫樣板：任何 BAPI 都照這個骨架寫
+*&amp;-------------------------------------------------------------*
+DATA lt_return TYPE bapiret2_t.
+
+CALL FUNCTION 'BAPI_XXXX_CREATE'
+  EXPORTING  ...
+  IMPORTING  ...
+  TABLES     return = lt_return.
+
+IF zcl_bapi_util=&gt;commit_or_rollback( it_return = lt_return
+                                      iv_wait   = abap_true ) = abap_true.
+  MESSAGE |建立成功：{ lv_docno }| TYPE 'S'.
+ELSE.
+  MESSAGE zcl_bapi_util=&gt;to_text( lt_return ) TYPE 'S' DISPLAY LIKE 'E'.
+ENDIF.
+
+" 訊息要給使用者看清楚時，用 CL_SALV_TABLE 把整張 RETURN 表列出來
+TRY.
+    cl_salv_table=&gt;factory( IMPORTING r_salv_table = DATA(lo_salv)
+                            CHANGING  t_table      = lt_return ).
+    lo_salv-&gt;get_columns( )-&gt;set_optimize( abap_true ).
+    lo_salv-&gt;get_functions( )-&gt;set_all( abap_true ).
+    lo_salv-&gt;get_display_settings( )-&gt;set_list_header( 'BAPI 回傳訊息' ).
+    lo_salv-&gt;display( ).
+  CATCH cx_salv_msg INTO DATA(lo_salv_ex).
+    MESSAGE lo_salv_ex-&gt;get_text( ) TYPE 'E'.
+ENDTRY.</code></pre>
+
+  <div class="tip">兩個口訣：<b>「BAPI 只看 RETURN，不看 SY-SUBRC」</b>、<b>「有建就要 COMMIT，有錯就要 ROLLBACK」</b>。另外，同一支程式在一個 LUW 裡連續呼叫多支 BAPI（例如建 PR 再建 PO），中間<b>不要</b>各自 COMMIT，應該全部成功才一次 COMMIT，才有交易一致性。</div>
+
+  <h3 id="ch04-1-10">10. 物料主檔 BAPI：GET_ALL 與 SAVEDATA</h3>
+  <p>講義第 02 節的兩個範例：<b>BAPI_MATERIAL_GET_ALL</b> 讀出物料現況、<b>BAPI_MATERIAL_SAVEDATA</b> 寫回。老師的兩個案例是「修改物料主檔的淨重與單位」和「更改 MRP2 的前置天數（PLIFZ）」。</p>
+
+  <p><b>SAVEDATA 的核心觀念——X 結構（Checkbox Structure）</b>：每個資料結構（CLIENTDATA、PLANTDATA、SALESDATA⋯）都有一個對應的 X 結構（CLIENTDATAX、PLANTDATAX⋯）。<b>你要改哪個欄位，就在 X 結構的同名欄位填 'X'</b>；沒填 'X' 的欄位即使有值也不會被寫入，反之填了 'X' 但值為空，就會把該欄位<b>清空</b>。這是所有 SAP 主資料 BAPI 的共通設計。</p>
+
+  <pre><code class="abap">*&amp;---------------------------------------------------------------------*
+*&amp; Report ZBAPI_MATERIAL_CHANGE
+*&amp; 讀取物料 → 修改淨重／重量單位（基本視圖）＋ MRP2 前置時間（工廠視圖）
+*&amp;---------------------------------------------------------------------*
+REPORT zbapi_material_change.
+
+PARAMETERS: p_matnr TYPE mara-matnr OBLIGATORY,
+            p_werks TYPE marc-werks OBLIGATORY DEFAULT '1710',
+            p_ntgew TYPE mara-ntgew,          "淨重
+            p_gewei TYPE mara-gewei,          "重量單位
+            p_plifz TYPE marc-plifz.          "MRP2 計畫交貨時間（前置天數）
+
+START-OF-SELECTION.
+
+  DATA lt_return TYPE STANDARD TABLE OF bapi_matreturn2.
+
+  " ① 先讀出現況（GET_ALL 只讀不寫，可先確認物料存在與現值）
+  CALL FUNCTION 'BAPI_MATERIAL_GET_ALL'
+    EXPORTING material   = CONV bapimatall-material( p_matnr )
+              plant      = CONV bapimatall-plant( p_werks )
+              val_area   = CONV bapimatall-val_area( p_werks )
+    IMPORTING clientdata = DATA(ls_client_old)
+    TABLES    return     = lt_return.
+
+  IF line_exists( lt_return[ type = 'E' ] ).
+    MESSAGE |物料 { p_matnr } 讀取失敗：{ lt_return[ type = 'E' ]-message }|
+            TYPE 'E'.
+  ENDIF.
+
+  WRITE: / |原淨重：{ ls_client_old-net_weight } { ls_client_old-unit_of_wt }|.
+
+  " ② 抬頭：指定物料＋要維護哪些視圖（沒開視圖旗標，資料是寫不進去的）
+  DATA(ls_head) = VALUE bapimathead(
+    material    = p_matnr
+    basic_view  = abap_true      "基本資料視圖
+    mrp_view    = abap_true ).   "MRP 視圖
+
+  " ③ Client 層（MARA）：淨重與單位
+  DATA(ls_client)  = VALUE bapi_mara(  net_weight = p_ntgew
+                                       unit_of_wt = p_gewei ).
+  DATA(ls_clientx) = VALUE bapi_marax( net_weight = abap_true
+                                       unit_of_wt = abap_true ).
+  "★ 老師講義原稿此處把 CLIDAOUT-UNIT_OF_WT 寫成 'X'（誤植），
+  "   正確是「值放在 ls_client、旗標放在 ls_clientx」，不可混寫
+
+  " ④ Plant 層（MARC）：MRP2 的計畫交貨時間 PLND_DELRY = PLIFZ
+  DATA(ls_plant)  = VALUE bapi_marc(  plant       = p_werks
+                                      plnd_delry  = p_plifz ).
+  DATA(ls_plantx) = VALUE bapi_marcx( plant       = p_werks   "X 結構的 KEY 要填實際值
+                                      plnd_delry  = abap_true ).
+
+  CLEAR lt_return.
+  CALL FUNCTION 'BAPI_MATERIAL_SAVEDATA'
+    EXPORTING headdata       = ls_head
+              clientdata     = ls_client
+              clientdatax    = ls_clientx
+              plantdata      = ls_plant
+              plantdatax     = ls_plantx
+    IMPORTING return         = DATA(ls_return)
+    TABLES    returnmessages = lt_return.
+
+  " ⑤ 判斷 + COMMIT / ROLLBACK
+  IF ls_return-type CA 'EA' OR line_exists( lt_return[ type = 'E' ] ).
+    CALL FUNCTION 'BAPI_TRANSACTION_ROLLBACK'.
+    LOOP AT lt_return INTO DATA(ls_msg) WHERE type CA 'EAW'.
+      WRITE: / |[{ ls_msg-type }] { ls_msg-message }|.
+    ENDLOOP.
+  ELSE.
+    CALL FUNCTION 'BAPI_TRANSACTION_COMMIT'
+      EXPORTING wait = 'X'.
+    WRITE: / |物料 { p_matnr } 修改成功|.
+  ENDIF.</code></pre>
+
+  <div class="warn"><b>X 結構的 KEY 欄位要填真值，不是 'X'</b>。例如 <span class="kw">PLANTDATAX-PLANT</span> 要填 '1710'（跟 PLANTDATA-PLANT 一樣），只有<b>非 KEY 的資料欄位</b>才填 'X'。填錯會得到「Plant is not maintained」之類看起來莫名其妙的錯誤。同理，SALESDATAX 要填 SALES_ORG / DISTR_CHAN、STORAGELOCATIONDATAX 要填 PLANT / STGE_LOC。</div>
+  <div class="note">S/4HANA 補充：物料號碼欄位長度可延伸到 40 碼（MATNR 40）。BAPI_MATERIAL_SAVEDATA 的 HEADDATA-MATERIAL 仍是 18 碼，長物料號要改用 <b>HEADDATA-MATERIAL_LONG</b>；同理 BAPI_MARA 有 <b>MATERIAL_LONG</b> 版本。若系統啟用了長物料號而你只填 18 碼欄位，會出現「Material does not exist」。</div>
+
+  <h3 id="ch04-1-11">11. 請購單 BAPI：BAPI_PR_CREATE 與 BAPI_REQUISITION_CREATE</h3>
+  <p>請購單（Purchase Requisition，資料表 <b>EBAN</b>）有<b>兩支</b>建立 BAPI，這是新手最容易搞混的地方。老師在程式註解裡直接寫了官方參考：<b>Note 499627 — FAQ BAPIs for purchase requisitions</b>。</p>
+
+  <table>
+    <thead><tr><th>比較</th><th>BAPI_PR_CREATE</th><th>BAPI_REQUISITION_CREATE</th></tr></thead>
+    <tbody>
+      <tr><td>推出時間</td><td>ECC 6.0 之後的新版（ME_REQUISITION 系列）</td><td>舊版（4.6 時代）</td></tr>
+      <tr><td>結構</td><td>PRHEADER / PRHEADERX / PRITEM / PRITEMX（有 X 結構）</td><td>REQUISITION_ITEMS（無 X 結構）</td></tr>
+      <tr><td>回傳單號</td><td>EXPORTING <b>NUMBER</b></td><td>EXPORTING <b>NUMBER</b></td></tr>
+      <tr><td>功能</td><td>支援較新的欄位、增強、服務項目</td><td>欄位較少，但寫法簡單</td></tr>
+      <tr><td>建議</td><td><b>S/4HANA 新開發一律用這支</b></td><td>維護舊程式時才會遇到</td></tr>
+    </tbody>
+  </table>
+
+  <pre><code class="abap">*&amp;---------------------------------------------------------------------*
+*&amp; Report ZBAPI_PR_CREATE
+*&amp; 建立請購單 — BAPI_PR_CREATE
+*&amp; 參考 SAP Note 499627 - FAQ BAPIs for purchase requisitions
+*&amp;---------------------------------------------------------------------*
+REPORT zbapi_pr_create.
+
+PARAMETERS: p_matnr TYPE matnr    OBLIGATORY,   "物料編號
+            p_werks TYPE werks_d  OBLIGATORY,   "工廠
+            p_ekorg TYPE ekorg    OBLIGATORY,   "採購組織
+            p_ekgrp TYPE ekgrp,                 "採購群組
+            p_menge TYPE bapicurr_d DEFAULT 10, "數量
+            p_test  TYPE abap_bool AS CHECKBOX. "測試執行不真的建單
+
+START-OF-SELECTION.
+
+  " ① 抬頭：請購類型 NB＝標準請購
+  DATA(ls_head)  = VALUE bapimereqheader( pr_type = 'NB' ).
+  DATA(ls_headx) = VALUE bapimereqheaderx( pr_type = abap_true ).
+
+  " ② 項目：用 VALUE # 一次組好，項次固定 10 起跳
+  DATA(lv_item) = CONV bnfpo( 10 ).
+
+  DATA(lt_item) = VALUE bapimereqitemimp_t(
+    ( preq_item  = lv_item
+      preq_name  = sy-uname            "請購者
+      material   = p_matnr
+      plant      = p_werks
+      purch_org  = p_ekorg
+      pur_group  = p_ekgrp
+      quantity   = p_menge
+      deliv_date = sy-datum + 7 ) ).   "交貨日期，實務上不要用當天
+
+  " ③ X 結構：要傳的欄位全部給 'X'（PREQ_ITEM 是 KEY，填項次不是 'X'）
+  DATA(lt_itemx) = VALUE bapimereqitemx_t(
+    ( preq_item  = lv_item
+      material   = abap_true
+      plant      = abap_true
+      purch_org  = abap_true
+      pur_group  = abap_true
+      quantity   = abap_true
+      deliv_date = abap_true ) ).
+
+  DATA lt_return TYPE bapiret2_t.
+
+  CALL FUNCTION 'BAPI_PR_CREATE'
+    EXPORTING prheader     = ls_head
+              prheaderx    = ls_headx
+              testrun      = p_test        "測試模式：只驗證不寫入
+    IMPORTING number       = DATA(lv_banfn)  "傳回的請購單號
+    TABLES    return       = lt_return
+              pritem       = lt_item
+              pritemx      = lt_itemx.
+
+  " ④ 有單號才 COMMIT，沒單號一律 ROLLBACK
+  IF lv_banfn IS NOT INITIAL AND
+     NOT line_exists( lt_return[ type = 'E' ] ).
+    IF p_test = abap_false.
+      CALL FUNCTION 'BAPI_TRANSACTION_COMMIT'
+        EXPORTING wait = 'X'.             "要馬上讀 EBAN，WAIT 一定要給
+    ENDIF.
+    MESSAGE |請購單建立成功：{ lv_banfn }| TYPE 'S'.
+  ELSE.
+    CALL FUNCTION 'BAPI_TRANSACTION_ROLLBACK'.
+    LOOP AT lt_return INTO DATA(ls_ret) WHERE type CA 'EAW'.
+      WRITE: / |[{ ls_ret-type }] { ls_ret-id }{ ls_ret-number } { ls_ret-message }|.
+    ENDLOOP.
+  ENDIF.</code></pre>
+
+  <div class="tip"><b>TESTRUN = 'X'</b> 是 BAPI 的隱藏好朋友。BAPI_PR_CREATE、BAPI_PO_CREATE1、BAPI_SALESORDER_CREATEFROMDAT2 都支援，可以「跑一次驗證但不真的建單」。做介面時先用 TESTRUN 把使用者的資料驗一輪、把錯誤一次全吐回去，比建到一半失敗好太多。</div>
+
+  <p>舊版 <b>BAPI_REQUISITION_CREATE</b> 與查詢用的 <b>BAPI_REQUISITION_GETDETAIL</b>（老師的案例是「請購備品」）：</p>
+
+  <pre><code class="abap">*&amp;---------------------------------------------------------------------*
+*&amp; 舊版請購 BAPI：CREATE + GETDETAIL（請購備品案例）
+*&amp;---------------------------------------------------------------------*
+REPORT zbapi_requisition.
+
+PARAMETERS: p_matnr TYPE matnr   OBLIGATORY,
+            p_werks TYPE werks_d OBLIGATORY DEFAULT '1710',
+            p_menge TYPE bamng   DEFAULT 5,
+            p_ban   TYPE banfn.        "查詢用：既有請購單號
+
+START-OF-SELECTION.
+
+  DATA lt_return TYPE STANDARD TABLE OF bapireturn.
+
+  IF p_ban IS INITIAL.
+    " ---------- 建立（無 X 結構，欄位直接給值） ----------
+    DATA(lt_items) = VALUE bapiebanc_t(
+      ( preq_item  = '00010'
+        doc_type   = 'NB'
+        material   = p_matnr
+        plant      = p_werks
+        quantity   = p_menge
+        deliv_date = sy-datum + 7
+        preq_name  = sy-uname
+        pur_group  = '001'
+        acctasscat = ''          "帳戶指派類別；備品常用 'K'（成本中心）
+        item_cat   = '' ) ).     "項目類別
+
+    CALL FUNCTION 'BAPI_REQUISITION_CREATE'
+      IMPORTING number            = DATA(lv_banfn)
+      TABLES    requisition_items = lt_items
+                return            = lt_return.
+
+    IF lv_banfn IS NOT INITIAL.
+      CALL FUNCTION 'BAPI_TRANSACTION_COMMIT' EXPORTING wait = 'X'.
+      MESSAGE |請購單 { lv_banfn } 建立完成| TYPE 'S'.
+    ELSE.
+      CALL FUNCTION 'BAPI_TRANSACTION_ROLLBACK'.
+      LOOP AT lt_return INTO DATA(ls_r).
+        WRITE: / |[{ ls_r-type }] { ls_r-message }|.
+      ENDLOOP.
+    ENDIF.
+
+  ELSE.
+    " ---------- 查詢明細 ----------
+    DATA: lt_req_items TYPE STANDARD TABLE OF bapiebanc,
+          lt_req_acct  TYPE STANDARD TABLE OF bapiebkn,
+          lt_req_text  TYPE STANDARD TABLE OF bapiebantx.
+
+    CALL FUNCTION 'BAPI_REQUISITION_GETDETAIL'
+      EXPORTING number                  = p_ban
+      TABLES    requisition_items       = lt_req_items
+                requisition_account_assignment = lt_req_acct
+                requisition_item_text   = lt_req_text
+                return                  = lt_return.
+
+    " 用 CL_SALV_TABLE 直接顯示明細
+    TRY.
+        cl_salv_table=&gt;factory( IMPORTING r_salv_table = DATA(lo_alv)
+                                CHANGING  t_table      = lt_req_items ).
+        lo_alv-&gt;get_functions( )-&gt;set_all( abap_true ).
+        lo_alv-&gt;get_columns( )-&gt;set_optimize( abap_true ).
+        lo_alv-&gt;display( ).
+      CATCH cx_salv_msg INTO DATA(lo_ex).
+        MESSAGE lo_ex-&gt;get_text( ) TYPE 'E'.
+    ENDTRY.
+  ENDIF.</code></pre>
+
+  <div class="note">相關的請購／採購 BAPI 一次列齊：<b>BAPI_PR_CREATE</b>（建立）、<b>BAPI_PR_CHANGE</b>（變更）、<b>BAPI_PR_GETDETAIL</b>（明細）、<b>BAPI_REQUISITION_CREATE / CHANGE / DELETE / GETDETAIL / GETITEMS / RELEASE / RESET_RELEASE</b>。<b>簽核（Release）</b>是老師專案要點裡的「MM 能做請購簽核」，用的就是 <b>BAPI_REQUISITION_RELEASE</b>（傳 REL_CODE 與 NUMBER），簽核策略在 EBAN-FRGKZ / FRGZU 欄位。</div>
+
+  <h3 id="ch04-1-12">12. 採購單 BAPI：BAPI_PO_CREATE1 與 BAPI_PO_CHANGE</h3>
+  <p>講義第 08 節是「BAPI_PO_CHANGE 採購單修改日期」：改交貨日期要改的是<b>交貨排程行（Schedule Line，資料表 EKET）</b>，不是項目本身。老師在原始碼旁寫的重點：<b>「上面要轉的參數，在下面都要給 'X' 值，如 po_itemx = 'X'。」</b></p>
+
+  <pre><code class="abap">*&amp;---------------------------------------------------------------------*
+*&amp; Report ZPO_CHANGE — 修改採購單交貨日期（EKET 排程行）
+*&amp;---------------------------------------------------------------------*
+REPORT zpo_change.
+
+PARAMETERS: p_ebeln TYPE ekko-ebeln OBLIGATORY,
+            p_ebelp TYPE ekpo-ebelp OBLIGATORY DEFAULT '00010',
+            p_etenr TYPE eket-etenr  OBLIGATORY DEFAULT '0001',
+            p_eindt TYPE eket-eindt  OBLIGATORY.
+
+START-OF-SELECTION.
+
+  " 排程行資料：del_datcat_ext = 'D'（日）／'W'（週）／'M'（月）
+  DATA(lt_sched) = VALUE bapimeposchedule_tt(
+    ( po_item        = p_ebelp
+      sched_line     = p_etenr
+      del_datcat_ext = 'D'
+      delivery_date  = p_eindt ) ).
+
+  " X 結構：KEY 欄位填真值，另外要把 KEY 的 X 旗標也給 'X'
+  DATA(lt_schedx) = VALUE bapimeposchedulx_tt(
+    ( po_item        = p_ebelp
+      po_itemx       = abap_true
+      sched_line     = p_etenr
+      sched_linex    = abap_true
+      del_datcat_ext = abap_true
+      delivery_date  = abap_true ) ).
+
+  DATA lt_return TYPE bapiret2_t.
+
+  CALL FUNCTION 'BAPI_PO_CHANGE'
+    EXPORTING purchaseorder = p_ebeln
+    TABLES    return        = lt_return
+              poschedule    = lt_sched
+              poschedulex   = lt_schedx.
+
+  "★ 講義原稿用 IF sy-subrc NE 0 判斷是錯的：
+  "   BAPI 呼叫後 sy-subrc 幾乎永遠是 0，必須改判 RETURN 表
+  IF line_exists( lt_return[ type = 'E' ] ) OR
+     line_exists( lt_return[ type = 'A' ] ).
+    CALL FUNCTION 'BAPI_TRANSACTION_ROLLBACK'.
+    LOOP AT lt_return INTO DATA(ls_r) WHERE type CA 'EA'.
+      WRITE: / |[{ ls_r-type }] { ls_r-message }|.
+    ENDLOOP.
+  ELSE.
+    CALL FUNCTION 'BAPI_TRANSACTION_COMMIT' EXPORTING wait = 'X'.
+    MESSAGE |採購單 { p_ebeln } 項次 { p_ebelp } 交期已改為 { p_eindt DATE = USER }|
+            TYPE 'S'.
+  ENDIF.</code></pre>
+
+  <pre><code class="abap">*&amp;---------------------------------------------------------------------*
+*&amp; 建立採購單 — BAPI_PO_CREATE1（含 Header / Item / Schedule 三層）
+*&amp;---------------------------------------------------------------------*
+REPORT zbapi_po_create.
+
+PARAMETERS: p_lifnr TYPE lifnr    OBLIGATORY,   "供應商（S/4 是 BP 的供應商角色）
+            p_ekorg TYPE ekorg    OBLIGATORY,
+            p_ekgrp TYPE ekgrp    OBLIGATORY,
+            p_bukrs TYPE bukrs    OBLIGATORY,
+            p_matnr TYPE matnr    OBLIGATORY,
+            p_werks TYPE werks_d  OBLIGATORY,
+            p_menge TYPE bstmg    DEFAULT 100,
+            p_netpr TYPE bprei.
+
+START-OF-SELECTION.
+
+  DATA(ls_header)  = VALUE bapimepoheader(
+    comp_code  = p_bukrs
+    doc_type   = 'NB'            "標準採購單
+    vendor     = |{ p_lifnr ALPHA = IN }|
+    purch_org  = p_ekorg
+    pur_group  = p_ekgrp
+    doc_date   = sy-datum ).
+
+  DATA(ls_headerx) = VALUE bapimepoheaderx(
+    comp_code = abap_true  doc_type  = abap_true
+    vendor    = abap_true  purch_org = abap_true
+    pur_group = abap_true  doc_date  = abap_true ).
+
+  DATA(lt_item) = VALUE bapimepoitem_tt(
+    ( po_item   = '00010'
+      material  = p_matnr
+      plant     = p_werks
+      quantity  = p_menge
+      net_price = p_netpr
+      po_unit   = 'PC' ) ).
+
+  DATA(lt_itemx) = VALUE bapimepoitemx_tt(
+    ( po_item   = '00010'   po_itemx  = abap_true
+      material  = abap_true plant     = abap_true
+      quantity  = abap_true net_price = abap_true
+      po_unit   = abap_true ) ).
+
+  " 交貨排程：不給的話 BAPI 會用項目的交期自動生一行
+  DATA(lt_sched) = VALUE bapimeposchedule_tt(
+    ( po_item = '00010' sched_line = '0001'
+      delivery_date = sy-datum + 14  quantity = p_menge ) ).
+
+  DATA(lt_schedx) = VALUE bapimeposchedulx_tt(
+    ( po_item = '00010' po_itemx = abap_true
+      sched_line = '0001' sched_linex = abap_true
+      delivery_date = abap_true quantity = abap_true ) ).
+
+  DATA lt_return TYPE bapiret2_t.
+
+  CALL FUNCTION 'BAPI_PO_CREATE1'
+    EXPORTING poheader     = ls_header
+              poheaderx    = ls_headerx
+              no_price_from_po = abap_true   "不自動抓價格條件時用
+    IMPORTING exppurchaseorder = DATA(lv_ebeln)
+    TABLES    return       = lt_return
+              poitem       = lt_item
+              poitemx      = lt_itemx
+              poschedule   = lt_sched
+              poschedulex  = lt_schedx.
+
+  IF lv_ebeln IS NOT INITIAL.
+    CALL FUNCTION 'BAPI_TRANSACTION_COMMIT' EXPORTING wait = 'X'.
+    MESSAGE |採購單建立成功：{ lv_ebeln }| TYPE 'S'.
+  ELSE.
+    CALL FUNCTION 'BAPI_TRANSACTION_ROLLBACK'.
+    MESSAGE zcl_bapi_util=&gt;to_text( lt_return ) TYPE 'S' DISPLAY LIKE 'E'.
+  ENDIF.</code></pre>
+
+  <div class="warn">S/4HANA 的採購單建立<b>不要用 BAPI_PO_CREATE</b>（舊版、已不建議），一律用 <b>BAPI_PO_CREATE1</b>。另外注意 S/4 的 <b>MM 供應商即 BP</b>：LIFNR 仍存在於 LFA1，但是由 BP（CVI）產生的，不能再用 XK01/BAPI_VENDOR_CREATE 直接建。</div>
+
+  <h3 id="ch04-1-13">13. 商業夥伴 BP：BAPI_BUPA_* 與 S/4HANA 的 CVI</h3>
+  <p>S/4HANA 最大的主資料改變之一：<b>客戶（KNA1）與供應商（LFA1）合併成商業夥伴 BP</b>，交易只剩 <span class="tcode">BP</span>，XD01/XK01 等舊交易被封鎖。底層靠 <b>CVI（Customer/Vendor Integration）</b> 把 BUT000 與 KNA1/LFA1 同步。</p>
+
+  <h4>13-1 用 BAPI 建立 BP 基本資料（ZBP）</h4>
+  <pre><code class="abap">*&amp;---------------------------------------------------------------------*
+*&amp; Report ZBP — 用 BAPI_BUPA_CREATE_FROM_DATA 建立商業夥伴
+*&amp;---------------------------------------------------------------------*
+REPORT zbp.
+
+PARAMETERS: p_grp   TYPE bapibus1006_head-partn_grp DEFAULT 'BP02', "分組
+            p_name1 TYPE bapibus1006_central_organ-name1
+                    DEFAULT 'CASPER TRADING CO.',
+            p_land  TYPE bapibus1006_address-country DEFAULT 'TW'.
+
+START-OF-SELECTION.
+
+  " ① 中心資料：搜尋詞與稱謂
+  DATA(ls_central) = VALUE bapibus1006_central(
+    searchterm1 = 'CASPER'
+    searchterm2 = 'CASPER2'
+    title_key   = '0003' ).            "0003＝公司
+
+  " ② 名稱資訊（組織類型才有 NAME1~NAME4）
+  DATA(ls_org) = VALUE bapibus1006_central_organ(
+    name1 = p_name1
+    name2 = ''
+    name3 = '' ).
+
+  " ③ 標準地址
+  DATA(ls_addr) = VALUE bapibus1006_address(
+    postl_cod1 = '40401'
+    city       = 'TAICHUNG'
+    country    = p_land
+    region     = ''
+    street     = 'SAN MIN RD. SEC.3, NO.129'
+    langu      = sy-langu ).
+
+  " ④ 通訊資料：電話、行動電話、傳真、E-mail
+  DATA(lt_tel) = VALUE bapiadtel_tt(
+    ( country = p_land std_no = abap_true home_flag = abap_true
+      r_3_user = '1'  telephone = '04-22195678' )      "1＝市話
+    ( country = p_land r_3_user = '3'
+      telephone = '0912345678' ) ).                     "3＝行動電話
+
+  DATA(lt_fax)  = VALUE bapiadfax_tt(  ( fax    = '04-22195679' ) ).
+  DATA(lt_mail) = VALUE bapiadsmtp_tt( ( e_mail = 'tocasper@hotmail.com' ) ).
+
+  DATA: lv_partner TYPE bapibus1006_head-bpartner,
+        lt_return  TYPE bapiret2_t.
+
+  " ⑤ 建立 BP。PARTNERCATEGORY：1＝自然人 Person、2＝組織 Organization、3＝群組 Group
+  CALL FUNCTION 'BAPI_BUPA_CREATE_FROM_DATA'
+    EXPORTING businesspartnerextern   = lv_partner   "外部編碼；內部編碼留空
+              partnercategory         = '2'
+              partnergroup            = p_grp
+              centraldata             = ls_central
+              centraldataorganization = ls_org
+              addressdata             = ls_addr
+    IMPORTING businesspartner         = lv_partner
+    TABLES    telefondata             = lt_tel
+              faxdata                 = lt_fax
+              e_maildata              = lt_mail
+              return                  = lt_return.
+
+  " ⑥ 判 RETURN 再決定 COMMIT（原稿用 LOOP ... EXIT + sy-subrc，
+  "   改用 line_exists 更直觀，也不會被中途的其他語句改掉 sy-subrc）
+  IF line_exists( lt_return[ type = 'E' ] ) OR
+     line_exists( lt_return[ type = 'A' ] ).
+    CALL FUNCTION 'BAPI_TRANSACTION_ROLLBACK'.
+    LOOP AT lt_return INTO DATA(ls_r) WHERE type CA 'EA'.
+      WRITE: / |[{ ls_r-type }] { ls_r-message }|.
+    ENDLOOP.
+  ELSE.
+    CALL FUNCTION 'BAPI_TRANSACTION_COMMIT' EXPORTING wait = 'X'.
+    MESSAGE |BP 建立成功：{ lv_partner ALPHA = OUT }| TYPE 'S'.
+
+    " ⑦ 建完基本資料後，通常還要指派角色（例如 FLCU01 客戶、FLVN01 供應商）
+    CALL FUNCTION 'BAPI_BUPA_ROLE_ADD_2'
+      EXPORTING businesspartner     = lv_partner
+                businesspartnerrole = 'FLCU01'      "客戶：SD 角色
+      TABLES    return              = lt_return.
+    IF NOT line_exists( lt_return[ type = 'E' ] ).
+      CALL FUNCTION 'BAPI_TRANSACTION_COMMIT' EXPORTING wait = 'X'.
+    ENDIF.
+  ENDIF.</code></pre>
+
+  <h4>13-2 BP 相關 BAPI 全表（講義第 07 節「HANA BP 詳解」）</h4>
+  <table>
+    <thead><tr><th>分類</th><th>函數</th><th>用途</th></tr></thead>
+    <tbody>
+      <tr><td rowspan="2"><b>建立</b></td><td>BAPI_BUPA_CREATE_FROM_DATA</td><td>建立 BP，含中心資料、地址等</td></tr>
+      <tr><td>BAPI_BUPA_FS_CREATE_FROM_DATA2</td><td>功能同上，<b>多一個角色分配功能</b></td></tr>
+      <tr><td rowspan="5"><b>角色維護</b></td><td>BAPI_BUPA_ROLES_GET_2</td><td>取得已分配的 Role（按日期）</td></tr>
+      <tr><td>BAPI_BUPA_ROLE_ADD_2</td><td>新增 Role</td></tr>
+      <tr><td>BAPI_BUPA_ROLE_CHANGE</td><td>修改已存在的 Role 屬性</td></tr>
+      <tr><td>BAPI_BUPA_ROLE_EXIST_CHECK_2</td><td>檢核 Role 是否存在</td></tr>
+      <tr><td>BAPI_BUPA_ROLE_REMOVE</td><td>刪除已分配的 Role</td></tr>
+      <tr><td rowspan="2"><b>中心資料</b></td><td>BAPI_BUPA_CENTRAL_GETDETAIL</td><td>取得中心資料</td></tr>
+      <tr><td>BAPI_BUPA_CENTRAL_CHANGE</td><td>修改中心資料</td></tr>
+      <tr><td rowspan="6"><b>地址資訊</b></td><td>BAPI_BUPA_ADDRESSES_GET</td><td>取得所有地址</td></tr>
+      <tr><td>BAPI_BUPA_ADDRESS_ADD</td><td>新增地址</td></tr>
+      <tr><td>BAPI_BUPA_ADDRESS_CHANGE</td><td>修改既有地址</td></tr>
+      <tr><td>BAPI_BUPA_ADDRESS_GETDETAIL</td><td>取得某地址的明細</td></tr>
+      <tr><td>BAPI_BUPA_ADDRESS_GET_NUMBERS</td><td>取得地址對應的 address number</td></tr>
+      <tr><td>BAPI_BUPA_ADDRESS_REMOVE</td><td>刪除地址</td></tr>
+      <tr><td rowspan="6"><b>銀行資訊</b></td><td>BAPI_BUPA_BANKDETAILS_GET</td><td>取得所有銀行資訊</td></tr>
+      <tr><td>BAPI_BUPA_BANKDETAIL_ADD</td><td>新增銀行資訊</td></tr>
+      <tr><td>BAPI_BUPA_BANKDETAIL_CHANGE</td><td>修改銀行資訊</td></tr>
+      <tr><td>BAPI_BUPA_BANKDETAIL_GETDETAIL</td><td>取得單一銀行明細</td></tr>
+      <tr><td>BAPI_BUPA_BANKDETAIL_NUMBERS</td><td>取得銀行 ID</td></tr>
+      <tr><td>BAPI_BUPA_BANKDETAIL_REMOVE</td><td>刪除銀行資訊</td></tr>
+      <tr><td rowspan="5"><b>證件號碼<br>(Identification)</b></td><td>BAPI_IDENTIFICATIONDETAILS_GET</td><td>取得所有標識號</td></tr>
+      <tr><td>BAPI_IDENTIFICATION_GET_DETAIL</td><td>取得單一標識號明細</td></tr>
+      <tr><td>BAPI_IDENTIFICATION_ADD</td><td>新增標識號</td></tr>
+      <tr><td>BAPI_IDENTIFICATION_CHANGE</td><td>修改標識號</td></tr>
+      <tr><td>BAPI_IDENTIFICATION_REMOVE</td><td>刪除標識號</td></tr>
+      <tr><td rowspan="5"><b>API（推薦）</b></td><td>CMD_EI_API_EXTRACT</td><td>讀取 BP 客戶資訊</td></tr>
+      <tr><td>VMD_EI_API_EXTRACT</td><td>讀取 BP 供應商資訊</td></tr>
+      <tr><td>CMD_EI_API</td><td>維護 BP 客戶（類別）</td></tr>
+      <tr><td>VMD_EI_API</td><td>維護 BP 供應商（類別）</td></tr>
+      <tr><td><b>CL_MD_BP_MAINTAIN</b></td><td><b>維護 BP（較全功能）——S/4HANA 首選</b></td></tr>
+      <tr><td rowspan="2"><b>增強</b></td><td>PARTNER_UPDATE</td><td>BP 建立或修改時的 BAdI/Exit</td></tr>
+      <tr><td>ADDRESS_UPDATE</td><td>BP 地址（通訊）資料維護</td></tr>
+    </tbody>
+  </table>
+
+  <h4>13-3 BP / 客戶 / 供應商 的資料表清單</h4>
+  <table>
+    <thead><tr><th>群組</th><th>資料表</th><th>內容</th></tr></thead>
+    <tbody>
+      <tr><td rowspan="6"><b>BP</b></td><td><b>BUT000</b></td><td>BP 一般資料（BP 的核心表）</td></tr>
+      <tr><td><b>BUT020</b></td><td>BP 地址（連到 ADRC）</td></tr>
+      <tr><td><b>BUT100</b></td><td>BP 角色（FLCU01、FLVN01⋯）</td></tr>
+      <tr><td><b>BUT0BK</b></td><td>BP 銀行</td></tr>
+      <tr><td><b>BUT05*</b></td><td>BP Relation（夥伴關係）</td></tr>
+      <tr><td><b>BUT0CC</b></td><td>Payment（付款卡／付款資料）</td></tr>
+      <tr><td rowspan="17"><b>客戶</b></td><td>KNA1</td><td>客戶基本資料</td></tr>
+      <tr><td>KNB1</td><td>客戶公司代碼</td></tr>
+      <tr><td>KNVV</td><td>客戶 SD 資料</td></tr>
+      <tr><td>KNVI</td><td>客戶稅別標識</td></tr>
+      <tr><td>KNAS</td><td>加值稅登記號（VAT）</td></tr>
+      <tr><td>KNB5</td><td>催款資料</td></tr>
+      <tr><td>KNBK</td><td>銀行明細</td></tr>
+      <tr><td>KNVA</td><td>Loading Point</td></tr>
+      <tr><td>KNVD</td><td>銷售查詢表（Output for Document）</td></tr>
+      <tr><td>KNVL</td><td>許可證（Licenses）</td></tr>
+      <tr><td>KNVS</td><td>Shipping Point</td></tr>
+      <tr><td>KNEX</td><td>Legal Control - Sanctioned Party List</td></tr>
+      <tr><td>KNZA</td><td>備選付款人</td></tr>
+      <tr><td>KNKK</td><td>信貸管理（S/4 已改 FSCM，見警告）</td></tr>
+      <tr><td>KNC1</td><td>客戶註記錄（過帳金額）</td></tr>
+      <tr><td>VCKUN</td><td>信用相關</td></tr>
+      <tr><td>VCNUM</td><td>信用相關</td></tr>
+      <tr><td rowspan="4"><b>供應商</b></td><td>LFA1</td><td>供應商主資料</td></tr>
+      <tr><td>LFB1</td><td>供應商公司代碼</td></tr>
+      <tr><td>LFM1</td><td>供應商採購視圖</td></tr>
+      <tr><td>LFAS</td><td>Tax Number</td></tr>
+    </tbody>
+  </table>
+
+  <div class="warn"><b>S/4HANA 的 BP 相關陷阱</b>：<br>
+  ① <b>BAPI_CUSTOMER_CREATE / BAPI_VENDOR_CREATE 已不可用</b>。建客戶／供應商一律走 BP：優先用 <b>CL_MD_BP_MAINTAIN=&gt;maintain( )</b> 或 <b>CVI_EI_INBOUND_MAIN</b>／<b>CMD_EI_API=&gt;maintain_bapi( )</b>／<b>VMD_EI_API=&gt;maintain_bapi( )</b>；最新的做法是用已釋出的 OData API <b>API_BUSINESS_PARTNER</b>。<br>
+  ② 查詢型 <b>BAPI_CUSTOMER_GETDETAIL2 / BAPI_VENDOR_GETDETAIL</b> 在 S/4 仍可用（讀 KNA1/LFA1），但要記得 KNA1 是 CVI 同步出來的<b>從表</b>，主資料真相在 BUT000。<br>
+  ③ 信用管理 KNKK / KNKA 在 S/4 已被 <b>FSCM Credit Management（UKMBP_CMS_SGM）</b> 取代。<br>
+  ④ BP 編號與客戶編號可能不同（視編碼配置），介面對接時務必確認雙方交換的到底是 PARTNER 還是 KUNNR。</div>
+
+  <h4>13-4 自建 RFC：ZSD_BP_DATA 一次查出客戶＋供應商</h4>
+  <p>老師的示範重點之一：「這個例子，是自己寫的 BAPI 有 RFC」。把三支標準 BAPI 包成一支對外介面，外部系統只要呼叫一次。</p>
+  <table>
+    <thead><tr><th>參數</th><th>型別</th><th>說明</th></tr></thead>
+    <tbody>
+      <tr><td>I_CUSTOMERNO</td><td>BAPICUSTOMER_ID-CUSTOMER</td><td>客戶代碼（供應商也用同一個代碼查）</td></tr>
+      <tr><td>I_PI_SALESORG</td><td>BAPIKNA102-SALESORG</td><td>銷售組織</td></tr>
+      <tr><td>I_VEN</td><td>CHAR1（選填）</td><td><b>= 'X' 時一併抓供應商資料</b></td></tr>
+      <tr><td>LT_CUSTOMERADDRESS</td><td>BAPICUSTOMER_04</td><td>客戶地址</td></tr>
+      <tr><td>LT_CUSTOMERGENERALDETAIL</td><td>BAPICUSTOMER_KNA1</td><td>客戶一般資料</td></tr>
+      <tr><td>LT_RETURN</td><td>BAPIRET1</td><td>客戶查詢狀態</td></tr>
+      <tr><td>LT_PE_PERSONALDATA</td><td>BAPIKNA101_1</td><td>聯絡人個人資料</td></tr>
+      <tr><td>LT_PE_COMPANYDATA</td><td>BAPIKNA106</td><td>聯絡人公司資料</td></tr>
+      <tr><td>LT_VENDORGENERALDETAIL</td><td>BAPIVENDOR_04</td><td>供應商基本資料</td></tr>
+      <tr><td>LT_CUSTOMERBANKDETAIL（TABLES）</td><td>BAPICUSTOMER_02</td><td>客戶銀行資料</td></tr>
+      <tr><td>LT_VENDORBANKDETAIL（TABLES）</td><td>BAPIVENDOR_06</td><td>供應商銀行資料</td></tr>
+    </tbody>
+  </table>
+
+  <pre><code class="abap">FUNCTION zsd_bp_data.
+*"----------------------------------------------------------------------
+*"*"Local Interface:
+*"  IMPORTING
+*"     VALUE(I_CUSTOMERNO) LIKE  BAPICUSTOMER_ID-CUSTOMER
+*"     VALUE(I_PI_SALESORG) LIKE  BAPIKNA102-SALESORG
+*"     VALUE(I_VEN) TYPE  CHAR1 OPTIONAL
+*"  EXPORTING
+*"     VALUE(LT_CUSTOMERADDRESS) LIKE  BAPICUSTOMER_04
+*"     VALUE(LT_CUSTOMERGENERALDETAIL) LIKE  BAPICUSTOMER_KNA1
+*"     VALUE(LT_RETURN) LIKE  BAPIRET1
+*"     VALUE(LT_PE_PERSONALDATA) LIKE  BAPIKNA101_1
+*"     VALUE(LT_PE_COMPANYDATA) LIKE  BAPIKNA106
+*"     VALUE(LT_VENDORGENERALDETAIL) LIKE  BAPIVENDOR_04
+*"  TABLES
+*"      LT_CUSTOMERBANKDETAIL STRUCTURE  BAPICUSTOMER_02 OPTIONAL
+*"      LT_VENDORBANKDETAIL STRUCTURE  BAPIVENDOR_06 OPTIONAL
+*"----------------------------------------------------------------------
+*"  屬性頁籤要選 Remote-Enabled Module，每個參數都要勾 Pass Value
+*"----------------------------------------------------------------------
+
+  CLEAR: lt_customeraddress, lt_customergeneraldetail, lt_return,
+         lt_pe_personaldata, lt_pe_companydata, lt_vendorgeneraldetail,
+         lt_customerbankdetail[], lt_vendorbankdetail[].
+
+  " 客戶代碼要補零（ALPHA 轉換），外部系統常常只送 '1000'
+  DATA(lv_kunnr) = |{ i_customerno ALPHA = IN }|.
+
+  " ① 地址 + 銀行資料（對應 BP 角色 FLCU01 客戶）
+  CALL FUNCTION 'BAPI_CUSTOMER_GETDETAIL2'
+    EXPORTING customerno             = lv_kunnr
+    IMPORTING customeraddress        = lt_customeraddress
+              customergeneraldetail  = lt_customergeneraldetail
+              return                 = lt_return
+              "★ 若回 "Customer XXXXXXXX does not exist"，
+              "   代表這個 BP 沒有建 FLCU01 客戶角色
+    TABLES    customerbankdetail     = lt_customerbankdetail.
+
+  " ② 聯絡人（要給銷售組織）
+  CALL FUNCTION 'BAPI_CUSTOMER_GETDETAIL1'
+    EXPORTING customerno      = lv_kunnr
+              pi_salesorg     = i_pi_salesorg
+    IMPORTING pe_personaldata = lt_pe_personaldata
+              pe_companydata  = lt_pe_companydata.
+
+  " ③ 供應商（同一個 BP 也可能有 FLVN01 角色）
+  IF i_ven = abap_true.
+    CALL FUNCTION 'BAPI_VENDOR_GETDETAIL'
+      EXPORTING vendorno      = lv_kunnr
+      IMPORTING generaldetail = lt_vendorgeneraldetail
+      TABLES    bankdetail    = lt_vendorbankdetail.
+  ENDIF.
+
+ENDFUNCTION.</code></pre>
+
+  <p>測試方式（<span class="src">（依講義步驟整理）</span>）：<span class="tcode">SE37</span> → 輸入 ZSD_BP_DATA → 按 <b>F8 測試</b> → 填 I_CUSTOMERNO、I_PI_SALESORG、I_VEN='X' → 執行 → 逐一展開 EXPORTING 結構與 TABLES 內表檢視結果；再用 pyrfc / SoapUI 從外部呼叫一次，確認<b>沒有被 RFC 黑名單擋住</b>。</p>
+
+  <pre><code class="abap">*&amp;-------------------------------------------------------------*
+*&amp; S/4HANA 的 BP 讀寫：直接走 BUT000 + CVI 對照，或用 CL_MD_BP_MAINTAIN
+*&amp;-------------------------------------------------------------*
+
+" ① 讀：BP 一般資料 + 角色 + 客戶/供應商對照（CVI 對照表）
+SELECT FROM but000 AS b
+  LEFT OUTER JOIN but100 AS r ON r~partner = b~partner
+  LEFT OUTER JOIN cvi_cust_link AS cl ON cl~partner_guid = b~partner_guid
+  LEFT OUTER JOIN cvi_vend_link AS vl ON vl~partner_guid = b~partner_guid
+  FIELDS b~partner, b~bu_group, b~type, b~name_org1, b~name_org2,
+         b~bpkind, r~rltyp, cl~customer, vl~vendor
+  WHERE b~partner IN @s_partnr
+  ORDER BY b~partner, r~rltyp
+  INTO TABLE @DATA(lt_bp).
+
+" ② 寫：用 CL_MD_BP_MAINTAIN（S/4 建議做法，會同時處理 CVI 同步）
+DATA(ls_bp_data) = VALUE cvis_ei_extern(
+  partner-header-object_instance-bpartner = lv_partner
+  partner-header-object_task              = 'M'    "I=Insert / U=Update / M=Modify
+  partner-central_data-common-data-bp_centraldata-searchterm1 = 'CASPER'
+  partner-central_data-common-datax-bp_centraldata-searchterm1 = abap_true ).
+
+DATA(lt_bp_msg) = VALUE bapiretm( ).
+cl_md_bp_maintain=&gt;maintain(
+  EXPORTING i_data    = VALUE cvis_ei_extern_t( ( ls_bp_data ) )
+  IMPORTING et_return = lt_bp_msg ).
+
+" bapiretm 是「每個 BP 一組 BAPIRET2」的巢狀表，要兩層迴圈判斷
+DATA(lv_bp_error) = abap_false.
+LOOP AT lt_bp_msg INTO DATA(ls_bp_msg).
+  LOOP AT ls_bp_msg-object_msg INTO DATA(ls_one) WHERE type CA 'EA'.
+    WRITE: / |[{ ls_one-type }] { ls_one-message }|.
+    lv_bp_error = abap_true.
+  ENDLOOP.
+ENDLOOP.
+
+IF lv_bp_error = abap_false.
+  CALL FUNCTION 'BAPI_TRANSACTION_COMMIT' EXPORTING wait = 'X'.
+ELSE.
+  CALL FUNCTION 'BAPI_TRANSACTION_ROLLBACK'.
+ENDIF.</code></pre>
+
+  <h3 id="ch04-1-14">14. 常用 BAPI 速查表（依模組）</h3>
+  <table>
+    <thead><tr><th>模組</th><th>BAPI</th><th>用途</th><th>備註</th></tr></thead>
+    <tbody>
+      <tr><td rowspan="4"><b>MM 採購</b></td><td>BAPI_PR_CREATE / _CHANGE / _GETDETAIL</td><td>請購單（EBAN）</td><td>S/4 建議版本</td></tr>
+      <tr><td>BAPI_REQUISITION_CREATE / GETDETAIL / RELEASE</td><td>請購單舊版與簽核</td><td>Note 499627</td></tr>
+      <tr><td>BAPI_PO_CREATE1 / BAPI_PO_CHANGE / BAPI_PO_GETDETAIL1</td><td>採購單（EKKO/EKPO/EKET）</td><td>不要用 BAPI_PO_CREATE</td></tr>
+      <tr><td>BAPI_PO_RELEASE / BAPI_PO_RESET_RELEASE</td><td>採購單簽核／取消簽核</td><td>要傳 REL_CODE</td></tr>
+      <tr><td rowspan="4"><b>MM 主資料<br>與庫存</b></td><td>BAPI_MATERIAL_SAVEDATA</td><td>建立／修改物料主檔</td><td>X 結構是關鍵</td></tr>
+      <tr><td>BAPI_MATERIAL_GET_ALL / BAPI_MATERIAL_GET_DETAIL</td><td>讀取物料主檔</td><td>GET_ALL 一次拿多視圖</td></tr>
+      <tr><td><b>BAPI_GOODSMVT_CREATE</b></td><td>物料移動過帳（MIGO）</td><td>GM_CODE 01=收貨對 PO、03=其他收發、04=轉儲、05=其他收貨、06=退貨</td></tr>
+      <tr><td>BAPI_MATERIAL_AVAILABILITY / BAPI_MATERIAL_STOCK_REQ_LIST</td><td>ATP 可用量 / MD04 庫存需求表</td><td>見第 16 節</td></tr>
+      <tr><td rowspan="4"><b>SD</b></td><td><b>BAPI_SALESORDER_CREATEFROMDAT2</b></td><td>建立銷售訂單（VA01）</td><td>BO＝BUS2032、Method＝CreateFromDat2</td></tr>
+      <tr><td>BAPI_SALESORDER_CHANGE / _GETLIST / _GETSTATUS</td><td>銷售訂單變更／查詢</td><td>CHANGE 要傳 UPDATEFLAG</td></tr>
+      <tr><td><b>BAPI_OUTB_DELIVERY_CONFIRM_DEC</b></td><td>出庫交貨過帳發貨（PGI）</td><td>另有 _CHANGE、_CREATE_SLS、_SAVEREPLICA</td></tr>
+      <tr><td>BAPI_BILLINGDOC_CREATEMULTIPLE</td><td>開立發票（VF01）</td><td>—</td></tr>
+      <tr><td rowspan="3"><b>FI</b></td><td><b>BAPI_ACC_DOCUMENT_POST</b></td><td>過帳會計憑證（FB01/FB50）</td><td>S/4 資料落在 <b>ACDOCA</b></td></tr>
+      <tr><td><b>BAPI_INCOMINGINVOICE_CREATE</b></td><td>採購發票驗證（MIRO）</td><td>另有 _PARK、_CHANGE、_CANCEL</td></tr>
+      <tr><td>BAPI_AR_ACC_GETOPENITEMS / BAPI_AP_ACC_GETOPENITEMS</td><td>應收／應付未清項</td><td>—</td></tr>
+      <tr><td rowspan="3"><b>PP</b></td><td><b>BAPI_PRODORDCONF_CREATE_TT</b></td><td>生產工單確認（時間事件 Time Ticket，CO11N）</td><td>另有 _CREATE_HDR（抬頭確認）、_CANCEL</td></tr>
+      <tr><td>BAPI_PRODORD_CREATE / _RELEASE / _CHANGE</td><td>生產工單建立／下達</td><td>—</td></tr>
+      <tr><td>BAPI_PLANNEDORDER_CREATE / _CHANGE</td><td>計畫訂單</td><td>—</td></tr>
+      <tr><td rowspan="2"><b>BP</b></td><td>BAPI_BUPA_CREATE_FROM_DATA 系列</td><td>商業夥伴</td><td>見第 13 節</td></tr>
+      <tr><td>CL_MD_BP_MAINTAIN / CMD_EI_API / VMD_EI_API</td><td>S/4 建議做法</td><td>會同時處理 CVI 同步</td></tr>
+      <tr><td rowspan="2"><b>共用</b></td><td>BAPI_TRANSACTION_COMMIT / ROLLBACK</td><td>提交／回復</td><td>COMMIT 記得 WAIT='X'</td></tr>
+      <tr><td>BAPI_MESSAGE_GETDETAIL</td><td>由 ID/NUMBER 取回完整訊息文字</td><td>介面回饋常用</td></tr>
+    </tbody>
+  </table>
+
+  <pre><code class="abap">*&amp;-------------------------------------------------------------*
+*&amp; 三支高頻 BAPI 的骨架：發貨過帳 / 會計憑證 / 生產工單確認
+*&amp;-------------------------------------------------------------*
+
+" ① BAPI_GOODSMVT_CREATE：對採購單收貨（GM_CODE = '01'，移動類型 101）
+DATA(ls_gm_head) = VALUE bapi2017_gm_head_01(
+  pstng_date = sy-datum
+  doc_date   = sy-datum
+  ref_doc_no = |IF{ sy-datum }| ).
+
+DATA(lt_gm_item) = VALUE bapi2017_gm_item_create_t(
+  ( material   = lv_matnr
+    plant      = '1710'
+    stge_loc   = '171A'
+    move_type  = '101'
+    entry_qnt  = 100
+    entry_uom  = 'PC'
+    po_number  = lv_ebeln
+    po_item    = '00010'
+    mvt_ind    = 'B' ) ).           "B＝對採購單收貨
+
+DATA lt_return TYPE bapiret2_t.
+CALL FUNCTION 'BAPI_GOODSMVT_CREATE'
+  EXPORTING goodsmvt_header  = ls_gm_head
+            goodsmvt_code    = VALUE bapi2017_gm_code( gm_code = '01' )
+  IMPORTING materialdocument = DATA(lv_mblnr)
+            matdocumentyear  = DATA(lv_mjahr)
+  TABLES    goodsmvt_item    = lt_gm_item
+            return           = lt_return.
+
+IF lv_mblnr IS NOT INITIAL.
+  CALL FUNCTION 'BAPI_TRANSACTION_COMMIT' EXPORTING wait = 'X'.
+  MESSAGE |物料憑證 { lv_mblnr }/{ lv_mjahr } 過帳成功| TYPE 'S'.
+ELSE.
+  CALL FUNCTION 'BAPI_TRANSACTION_ROLLBACK'.
+ENDIF.
+
+" ② BAPI_ACC_DOCUMENT_POST：會計憑證（借貸必須平衡，否則整筆退回）
+DATA(ls_doc_hdr) = VALUE bapiache09(
+  bus_act    = 'RFBU'              "RFBU＝FI 一般過帳
+  username   = sy-uname
+  header_txt = 'IF POSTING'
+  comp_code  = '1710'
+  doc_date   = sy-datum
+  pstng_date = sy-datum
+  doc_type   = 'SA' ).
+
+DATA(lt_gl) = VALUE bapiacgl09_t(
+  ( itemno_acc = '0000000001' gl_account = '0000400000'
+    item_text  = '費用' costcenter = '0000017101' )
+  ( itemno_acc = '0000000002' gl_account = '0000113100'
+    item_text  = '銀行' ) ).
+
+" 金額表：借正貸負，幣別要跟公司代碼一致
+DATA(lt_amt) = VALUE bapiaccr09_t(
+  ( itemno_acc = '0000000001' currency = 'TWD' amt_doccur = '1000.00' )
+  ( itemno_acc = '0000000002' currency = 'TWD' amt_doccur = '1000.00-' ) ).
+
+CLEAR lt_return.
+CALL FUNCTION 'BAPI_ACC_DOCUMENT_POST'
+  EXPORTING documentheader = ls_doc_hdr
+  IMPORTING obj_key        = DATA(lv_objkey)
+  TABLES    accountgl      = lt_gl
+            currencyamount = lt_amt
+            return         = lt_return.
+
+IF NOT line_exists( lt_return[ type = 'E' ] ).
+  CALL FUNCTION 'BAPI_TRANSACTION_COMMIT' EXPORTING wait = 'X'.
+  MESSAGE |會計憑證 { lv_objkey }| TYPE 'S'.
+ELSE.
+  CALL FUNCTION 'BAPI_TRANSACTION_ROLLBACK'.
+ENDIF.
+
+" ③ BAPI_PRODORDCONF_CREATE_TT：生產工單時間事件確認
+DATA(lt_conf) = VALUE bapi_pp_timeticket_t(
+  ( orderid    = lv_aufnr
+    operation  = '0010'
+    yield      = 50
+    conf_quan_unit = 'PC'
+    fin_conf   = ''                "'X'＝最終確認
+    postg_date = sy-datum
+    ex_time_1  = 2  un_time_1 = 'STD' ) ).
+
+CLEAR lt_return.
+CALL FUNCTION 'BAPI_PRODORDCONF_CREATE_TT'
+  EXPORTING post_wrong_entries = '0'      "0＝有錯就整批不過
+  TABLES    timetickets        = lt_conf
+            return             = lt_return.
+
+IF NOT line_exists( lt_return[ type = 'E' ] ).
+  CALL FUNCTION 'BAPI_TRANSACTION_COMMIT' EXPORTING wait = 'X'.
+ELSE.
+  CALL FUNCTION 'BAPI_TRANSACTION_ROLLBACK'.
+ENDIF.</code></pre>
+
+  <div class="warn"><b>S/4HANA 的資料表已經換人</b>：BAPI_ACC_DOCUMENT_POST 過完帳，資料實際落在 <b>ACDOCA</b>（Universal Journal）；BKPF/BSEG 仍在（BSEG 是真表、BSIS/BSAS/BSID/BSAD/BSIK/BSAK 已變成 CDS 相容視圖）。物料憑證則從 MKPF/MSEG 改為 <b>MATDOC</b>（MKPF/MSEG 變成相容視圖）。做介面對帳時要查的是 ACDOCA / MATDOC，效能才會對。</div>
+
+  <h3 id="ch04-1-15">15. Extension In / Out：把客製欄位塞進標準 BAPI</h3>
+  <p>標準 BAPI 的參數是固定的，但客戶一定會有客製欄位（Append 在 EKPO、VBAP 上的 ZZ 欄位）。SAP 的官方解法是 <b>Extension（擴展）</b>：</p>
+  <ul>
+    <li><b>EXTENSIONIN</b>：呼叫方把客製欄位資料塞進去（型別多為 <b>BAPIPAREX</b>，欄位 STRUCTURE + VALUEPART1~4）。</li>
+    <li><b>EXTENSIONOUT</b>：BAPI 把客製欄位回傳出來。</li>
+    <li>SAP 端要在對應的 BAdI / Customer Exit 中把 EXTENSIONIN 解開，寫進資料庫。常見的擴展結構命名是 <b>BAPI_TE_&lt;table&gt;</b>（例如 BAPI_TE_MEPOITEM、BAPI_TE_VBAP）與其 X 結構 <b>BAPI_TE_&lt;table&gt;X</b>。</li>
+  </ul>
+
+  <pre><code class="abap">*&amp;-------------------------------------------------------------*
+*&amp; 用 EXTENSIONIN 傳客製欄位（以採購單項目 ZZ 欄位為例）
+*&amp;-------------------------------------------------------------*
+" 前置：SE11 對 CI_EKPODB / CI_EKPO 加 ZZFIELD1；
+"       並 Append 到 BAPI_TE_MEPOITEM / BAPI_TE_MEPOITEMX
+
+DATA(ls_te)  = VALUE bapi_te_mepoitem(  po_item  = '00010'
+                                        zzfield1 = 'MES-JOB-001' ).
+DATA(ls_tex) = VALUE bapi_te_mepoitemx( po_item  = '00010'
+                                        zzfield1 = abap_true ).
+
+" BAPIPAREX 的 VALUEPART1~4 各 240 碼，要把結構「壓平」再切段
+DATA(lt_ext) = VALUE bapiparex_t( ).
+
+APPEND VALUE bapiparex(
+  structure  = 'BAPI_TE_MEPOITEM'
+  valuepart1 = ls_te+0(240)
+  valuepart2 = ls_te+240(240) ) TO lt_ext.
+
+APPEND VALUE bapiparex(
+  structure  = 'BAPI_TE_MEPOITEMX'
+  valuepart1 = ls_tex+0(240) ) TO lt_ext.
+
+CALL FUNCTION 'BAPI_PO_CREATE1'
+  EXPORTING poheader     = ls_header
+            poheaderx    = ls_headerx
+  IMPORTING exppurchaseorder = DATA(lv_po)
+  TABLES    return       = lt_return
+            poitem       = lt_item
+            poitemx      = lt_itemx
+            extensionin  = lt_ext.        "★ 客製欄位由這裡進去</code></pre>
+
+  <div class="warn"><b>EXTENSIONIN 不是自動生效的。</b>你必須同時：① 在 SE11 把欄位 Append 到 BAPI_TE_* 結構；② 在對應的 BAdI（採購單是 <b>ME_BAPI_PO_CUST</b> / <b>ME_PROCESS_PO_CUST</b>；銷售訂單是 <b>VBAP</b> 相關的 <b>BAPI_SD_SALESORDER</b> Exit 或 MV45AFZZ）實作把值搬到內部結構。少了第二步，資料進去了也不會被寫進去，而且<b>連錯誤訊息都不會有</b>——這是介面除錯最鬼打牆的情形。<br>另外 VALUEPART 的切段位置一定要對齊結構長度，錯位會造成欄位內容整段偏移。</div>
+
+  <h3 id="ch04-1-16">16. MD04 / MMBE 與 BOM 反查：讀取型 API</h3>
+  <p>講義第 03 節列了三支「MD04 / MMBE」相關的 API，這是做 PP 缺料表（老師專案要點的第一項）最常用的：</p>
+  <table>
+    <thead><tr><th>函數</th><th>對應交易</th><th>說明</th></tr></thead>
+    <tbody>
+      <tr><td><b>MD_STOCK_REQUIREMENTS_LIST_API</b></td><td><span class="tcode">MD04</span></td><td>庫存需求表，回傳 MDPSX（明細行）、MDEZX（含日期彙總）、MDSUX（彙總）。<b>非 RFC-enabled</b>，要對外要自己包一層</td></tr>
+      <tr><td><b>BAPI_MATERIAL_STOCK_REQ_LIST</b></td><td><span class="tcode">MD04</span></td><td>官方 BAPI 版本，<b>有 RFC 屬性</b>，可直接被外部呼叫</td></tr>
+      <tr><td><b>BAPI_MATERIAL_AVAILABILITY</b></td><td><span class="tcode">CO09</span> / ATP</td><td>可用量檢查（講義寫成 API_MATERIAL_AVAILABILITY，正確函數名是 <b>BAPI_MATERIAL_AVAILABILITY</b>）</td></tr>
+      <tr><td><b>CS_WHERE_USED_MAT</b></td><td><span class="tcode">CS15</span></td><td>物料被用在哪些 BOM——<b>會找多階</b></td></tr>
+      <tr><td><b>CSEP_MAT_BOM_SELECT_WHERE_USED</b></td><td><span class="tcode">CS15</span></td><td>同上，但<b>僅找上一階</b></td></tr>
+    </tbody>
+  </table>
+
+  <pre><code class="abap">*&amp;-------------------------------------------------------------*
+*&amp; MD04 庫存需求表 + BOM 反查（缺料分析的兩塊拼圖）
+*&amp;-------------------------------------------------------------*
+
+" ① MD04：取得庫存／需求明細
+DATA: lt_mdpsx TYPE STANDARD TABLE OF mdps,
+      lt_mdezx TYPE STANDARD TABLE OF mdez,
+      lt_mdsux TYPE STANDARD TABLE OF mdsu.
+
+CALL FUNCTION 'MD_STOCK_REQUIREMENTS_LIST_API'
+  EXPORTING  matnr        = lv_matnr
+             werks        = lv_werks
+             input_par    = VALUE mdinp( bertyp = 'A'      "MRP 元素全部
+                                          disp_lev = space )
+  IMPORTING  e_mt61d      = DATA(ls_mt61d)                 "抬頭：安全存量等
+  TABLES     mdpsx        = lt_mdpsx
+             mdezx        = lt_mdezx
+             mdsux        = lt_mdsux
+  EXCEPTIONS material_plant_not_found = 1
+             plant_not_found          = 2
+             OTHERS                   = 3.
+
+IF sy-subrc &lt;&gt; 0.
+  MESSAGE |MD04 讀取失敗（{ sy-subrc }）：{ lv_matnr } / { lv_werks }| TYPE 'E'.
+ENDIF.
+
+" 用 FOR 過濾出「可用量為負」的日期，就是缺料點
+DATA(lt_short) = VALUE mdez_tt(
+  FOR &lt;ls_e&gt; IN lt_mdezx WHERE ( mng02 &lt; 0 ) ( &lt;ls_e&gt; ) ).
+
+" ② BOM 反查：這顆料被哪些成品用到（多階）
+DATA: lt_wultb TYPE STANDARD TABLE OF stpov,
+      lt_equic TYPE STANDARD TABLE OF cscequi,
+      lt_kndic TYPE STANDARD TABLE OF cscknd,
+      lt_matc  TYPE STANDARD TABLE OF cscmat,
+      lt_stdc  TYPE STANDARD TABLE OF cscstd,
+      lt_tplc  TYPE STANDARD TABLE OF cyctpl.
+
+CALL FUNCTION 'CS_WHERE_USED_MAT'
+  EXPORTING  datub                     = '99991231'
+             datuv                     = sy-datum
+             matnr                     = lv_matnr
+             werks                     = lv_werks
+             stlan                     = '1'          "BOM 用途：1＝生產
+             mtnrv                     = lv_matnr
+             postp                     = space
+  TABLES     wultb                     = lt_wultb
+             equicat                   = lt_equic
+             kndcat                    = lt_kndic
+             matcat                    = lt_matc
+             stdcat                    = lt_stdc
+             tplcat                    = lt_tplc
+  EXCEPTIONS call_invalid              = 1
+             material_not_found        = 2
+             no_where_used_rec_found   = 3
+             no_where_used_rec_selected = 4
+             no_where_used_rec_valid   = 5
+             OTHERS                    = 6.
+
+CASE sy-subrc.
+  WHEN 0.     "有找到
+  WHEN 3 OR 4 OR 5.
+    MESSAGE |物料 { lv_matnr } 沒有被任何 BOM 使用| TYPE 'S'.
+  WHEN OTHERS.
+    MESSAGE |BOM 反查失敗（{ sy-subrc }）| TYPE 'E'.
+ENDCASE.
+
+" 只要上一階時，改用這支比較快
+" CALL FUNCTION 'CSEP_MAT_BOM_SELECT_WHERE_USED' ...</code></pre>
+
+  <div class="note">S/4HANA 的替代方案：MD04 有 CDS View <b>C_MRPMaterialStockRequirement</b> 與 Fiori App「Monitor Material Coverage」；庫存概覽 MMBE 對應 CDS <b>I_MaterialStock</b>／<b>NSDM_V_MARD</b>。做報表時優先用 CDS，效能與可維護性都比呼叫傳統 FM 好。</div>
+
+  <h3 id="ch04-1-17">17. 測試、除錯與常用小工具</h3>
+  <h4>17-1 測試方法</h4>
+  <ul>
+    <li><b>SE37 單獨測試</b>：<span class="tcode">SE37</span> → F8。可以按「測試資料目錄（Test Data Directory）」把測試資料<b>存起來重複使用</b>；也可以按「Debugging」直接進偵錯。這是驗證 BAPI 參數最快的方法。</li>
+    <li><b>SE38 包裝程式</b>：把 BAPI 呼叫寫成一支報表，加上 PARAMETERS 與 SELECT-OPTIONS，方便反覆測與交給顧問測。TESTRUN 開關一定要留。</li>
+    <li><b>SE37 → Function Module → Test → Test sequences</b>：可以把「建單 → COMMIT → 查詢」串成一連串測試。</li>
+    <li><b>外部端測試</b>：pyrfc 寫一支 10 行的腳本、或用 SAP GUI 的 <span class="tcode">SM59</span> Connection Test；Web Service 用 <span class="tcode">SOAMANAGER</span> 的 Test 功能或 SoapUI/Postman。</li>
+  </ul>
+
+  <h4>17-2 出事了去哪裡查</h4>
+  <table>
+    <thead><tr><th>症狀</th><th>查哪裡</th><th>常見原因</th></tr></thead>
+    <tbody>
+      <tr><td>同步呼叫直接短拋</td><td><span class="tcode">ST22</span></td><td>目標系統不通、型別不符（CX_SY_CONVERSION）、參數超長</td></tr>
+      <tr><td>tRFC 沒送出去 / 卡住</td><td><span class="tcode">SM58</span></td><td>忘了 COMMIT WORK、目的地帳號密碼過期、目標函數不存在</td></tr>
+      <tr><td>qRFC 佇列停住</td><td><span class="tcode">SMQ1</span> / <span class="tcode">SMQ2</span></td><td>前一筆 SYSFAIL 卡住整條佇列（要先修好第一筆）</td></tr>
+      <tr><td>bgRFC 單元失敗</td><td><span class="tcode">SBGRFCMON</span></td><td>Supervisor Destination 沒設（<span class="tcode">SBGRFCCONF</span>）</td></tr>
+      <tr><td>外部呼叫被拒</td><td><span class="tcode">SU53</span>、RS_RFC_BLACKLIST_CUSTOM、<span class="tcode">UCONCOCKPIT</span></td><td>S_RFC 權限不足、函數在黑名單、UCON 未開放</td></tr>
+      <tr><td>BAPI 回 E 但看不懂</td><td><span class="tcode">SLG1</span>（用 RETURN 的 LOG_NO）、<span class="tcode">SE91</span>（用 ID+NUMBER）</td><td>訊息變數 V1~V4 沒帶出來</td></tr>
+      <tr><td>資料建好了卻查不到</td><td>檢查 COMMIT 的 <b>WAIT = 'X'</b></td><td>更新任務還沒完成就去 SELECT</td></tr>
+      <tr><td>更新任務失敗</td><td><span class="tcode">SM13</span></td><td>COMMIT 之後在 update task 才炸掉，前台看不到錯誤</td></tr>
+      <tr><td>介面錯誤要給業務看</td><td><span class="tcode">/AIF/ERR</span></td><td>AIF（Application Interface Framework）的錯誤監控畫面</td></tr>
+    </tbody>
+  </table>
+
+  <h4>17-3 特殊符號處理（講義 10-1）</h4>
+  <p>SAP 和外部系統對某些特殊字元的編碼方式可能不一致，所以要對發送或接收的字串做轉換。工具類別是 <b>CL_ABAP_CHAR_UTILITIES</b>。</p>
+
+  <pre><code class="abap">*&amp;-------------------------------------------------------------*
+*&amp; 介面字串清洗：把控制字元與 BOM 一次清掉
+*&amp;-------------------------------------------------------------*
+DATA(lv_json) = lv_raw_string.   "外部回傳的 JSON 字串
+
+" 用 VALUE # 建一張「要清掉的字元」表，比連續八行 REPLACE 好維護
+DATA(lt_bad) = VALUE string_table(
+  ( CONV string( cl_abap_char_utilities=&gt;horizontal_tab ) )        "09 TAB
+  ( CONV string( cl_abap_char_utilities=&gt;cr_lf ) )                 "0D0A 回車換行
+  ( CONV string( cl_abap_char_utilities=&gt;vertical_tab ) )          "0B 垂直定位
+  ( CONV string( cl_abap_char_utilities=&gt;newline ) )               "0A 換行
+  ( CONV string( cl_abap_char_utilities=&gt;form_feed ) )             "0C 換頁
+  ( CONV string( cl_abap_char_utilities=&gt;backspace ) )             "08 退格
+  ( CONV string( cl_abap_char_utilities=&gt;byte_order_mark_little ) ) "UTF-16LE BOM
+  ( CONV string( cl_abap_char_utilities=&gt;byte_order_mark_utf8 ) ) ). "UTF-8 BOM
+
+LOOP AT lt_bad INTO DATA(lv_bad).
+  REPLACE ALL OCCURRENCES OF lv_bad IN lv_json WITH ``.
+ENDLOOP.
+
+" 產生 CSV 時反過來：用 TAB 當分隔字元、CR_LF 當換行
+DATA(lv_sep) = cl_abap_char_utilities=&gt;horizontal_tab.
+DATA(lv_eol) = cl_abap_char_utilities=&gt;cr_lf.
+DATA(lv_line) = |{ ls_row-matnr }{ lv_sep }{ ls_row-maktx }{ lv_sep }| &amp;&amp;
+                |{ ls_row-labst NUMBER = RAW }{ lv_eol }|.
+
+" JSON 轉換直接用標準類別，不要自己拼字串
+DATA(lv_out) = /ui2/cl_json=&gt;serialize( data        = lt_stock
+                                        pretty_name = /ui2/cl_json=&gt;pretty_mode-camel_case ).
+/ui2/cl_json=&gt;deserialize( EXPORTING json = lv_json
+                           CHANGING  data = lt_stock ).</code></pre>
+
+  <div class="tip">講義 10-3 的另一個實用技巧：<b>由 VA03 的 Extras → Output 找到客製程式</b>。步驟是 <span class="tcode">VA03</span> → Extras → Output → Header → Edit，看到 Output Type（例如 Z001）→ <span class="tcode">SPRO</span> → SAP Reference IMG 找到訂單的 Output Type 設定 → 點 Z001 → 左欄中間選項就會顯示「哪一支程式的哪一個 FORM」→ 到 <span class="tcode">SE38</span> 找那支程式 → 進去找名為 <b>ENTRY</b> 的 FORM。老師記錄的實際路徑：<b>entry → processing → print data → upload_data_to_external_db</b>。測試方式：VA02 直接改資料儲存（<b>務必在測試區</b>），就會重新觸發輸出、重下資料。</div>
+
+  <h3 id="ch04-1-18">18. S/4HANA 的介面策略：BAPI 之後該用什麼</h3>
+  <p>BAPI 仍然可用，但 S/4HANA 的官方優先順序已經改變。做新專案時建議按這個順序選：</p>
+  <table>
+    <thead><tr><th>優先序</th><th>技術</th><th>說明</th><th>入口</th></tr></thead>
+    <tbody>
+      <tr><td><b>1</b></td><td><b>Released OData API</b></td><td>SAP 官方釋出、有版本承諾（C1 Release Contract），例如 <b>API_BUSINESS_PARTNER</b>、<b>API_PURCHASEREQ_PROCESS_SRV</b>、<b>API_PURCHASEORDER_PROCESS_SRV</b>、<b>API_PRODUCT_SRV</b>、<b>API_SALES_ORDER_SRV</b>、<b>API_MATERIAL_STOCK_SRV</b></td><td><b>SAP Business Accelerator Hub</b>（原 API Business Hub）</td></tr>
+      <tr><td><b>2</b></td><td><b>Released SOAP / Event</b></td><td>非同步大量傳輸；SAP Event Mesh 可訂閱業務事件</td><td><span class="tcode">SOAMANAGER</span></td></tr>
+      <tr><td><b>3</b></td><td><b>Released RFC / BAPI</b></td><td>仍是效能最好的地端整合；<b>看 BAPI 是否標為 Released</b>（ADT 中的 API State ＝ Use System-Internally / Released）</td><td><span class="tcode">BAPI</span>、<span class="tcode">SE37</span></td></tr>
+      <tr><td><b>4</b></td><td><b>CDS View / ABAP RAP</b></td><td>自己開介面：CDS + Service Definition + Service Binding，一鍵產生 OData V2/V4</td><td>ADT（Eclipse）</td></tr>
+      <tr><td><b>5</b></td><td><b>AIF</b>（Application Interface Framework）</td><td>介面的<b>監控、錯誤處理、重送、對帳</b>框架；把介面訊息、Log、權限統一管理，業務單位可自行重送</td><td><span class="tcode">/AIF/ERR</span>、<span class="tcode">/AIF/CUST</span></td></tr>
+      <tr><td>—</td><td><b>SAP Cloud Connector</b></td><td>BTP 雲端 App 要打地端 S/4 時的安全通道；逐一白名單資源與函數</td><td>SCC 管理介面</td></tr>
+    </tbody>
+  </table>
+
+  <div class="warn"><b>S/4HANA 已被取代 / 不可再用的舊介面（重點記憶）</b><br>
+  ① <b>客戶／供應商 → BP</b>：BAPI_CUSTOMER_CREATE、BAPI_VENDOR_CREATE、XD01/XK01/VD01/MK01 都不可用，改走 BP + CVI（CL_MD_BP_MAINTAIN / CMD_EI_API / VMD_EI_API / API_BUSINESS_PARTNER）。<br>
+  ② <b>BAPI_PO_CREATE</b> → 改 <b>BAPI_PO_CREATE1</b>。<br>
+  ③ <b>SD 的 Rebate、SD Credit Management 舊 BAPI</b> → 改 Settlement Management / FSCM。<br>
+  ④ <b>MB01/MB1A/MB1B/MB1C/MB11 等 MB* 交易碼</b> → 改 MIGO 或 BAPI_GOODSMVT_CREATE；報表 MB5B 的資料來源已改 <b>MATDOC</b>。<br>
+  ⑤ <b>FI 的 BSIS/BSAS/BSID/BSAD/BSIK/BSAK</b> 已變成相容視圖，效能查詢請改 <b>ACDOCA</b>。<br>
+  ⑥ <b>Classic RFC SDK</b> 已停止支援，外部連接器請升級到 <b>NW RFC SDK</b>（JCo 3.x / NCo 3.x / pyrfc）。<br>
+  ⑦ 自建的 RFC 若用了被移除的舊表欄位（例如 MSEG 的某些欄位、MARD 的部分彙總欄位），升級時會直接語法錯誤，升級前要用 <b>SAP Readiness Check</b> 與 <b>Custom Code Migration（ATC 的 S4HANA_READINESS 檢查）</b>掃一遍。</div>
+
+  <div class="tip">判斷一支 BAPI 在 S/4HANA 到底能不能用，最快的方法：在 ADT（Eclipse）打開該 FM，看 <b>Properties → API State</b>；或在 SAP Business Accelerator Hub 搜尋它的名字，有列出來的才是 SAP 承諾維護的。沒有 Release 承諾的 FM，SAP 隨時可以改介面。</div>
+
+  <h3 id="ch04-1-qa">練習與自我檢核</h3>
+  <ol>
+    <li><b>介面選型</b>：一個電商網站要「即時查 SAP 庫存」和「每天晚上把 5 萬筆訂單丟進 SAP」。這兩個需求各該用哪種 RFC 型態？為什麼？<br><i>要點：即時查用 sRFC（同步、要立刻回答）；大批丟單用 qRFC/bgRFC（保證只做一次且保序、目標忙碌時可排隊），或者用 IDoc/AIF。</i></li>
+    <li><b>tRFC 沒動靜</b>：程式寫了 <span class="kw">CALL FUNCTION ... IN BACKGROUND TASK DESTINATION ...</span>，SM58 看到一筆記錄卻永遠不執行，最可能是什麼？<br><i>要點：忘了 <span class="kw">COMMIT WORK</span>。次要可能：目的地帳號鎖住、目標系統沒有那支函數。</i></li>
+    <li><b>RFC-enabled FM 的三個硬性限制</b>是什麼？如果我想用 class-based exception 當介面例外，該怎麼辦？<br><i>要點：① 所有參數 pass by value；② 型別必須是 DDIC 型別；③ 不可有 Dynpro 互動（WRITE/CALL SCREEN）。class-based exception 不能當介面例外，改成內部 TRY/CATCH、外部用 BAPIRET2 表回傳。</i></li>
+    <li><b>判斷 BAPI 成功失敗</b>：為什麼不能用 <span class="kw">IF sy-subrc NE 0</span>？講義第 08 節的 ZPO_CHANGE 就犯了這個錯，請改寫。<br><i>要點：BAPI 呼叫後 sy-subrc 幾乎永遠是 0。要判 RETURN 表有沒有 TYPE = 'E' 或 'A'（用 <span class="kw">line_exists( lt_return[ type = 'E' ] )</span>）。</i></li>
+    <li><b>COMMIT 的 WAIT</b>：什麼情況一定要給 <span class="kw">WAIT = 'X'</span>？什麼情況可以省略？<br><i>要點：COMMIT 後馬上要用產生的單號去 SELECT 或做下一個 BAPI，必須 WAIT='X'；純批次寫入且後續不立即讀取，可省略以換取速度。</i></li>
+    <li><b>X 結構</b>：BAPI_MATERIAL_SAVEDATA 的 PLANTDATAX-PLANT 應該填 'X' 還是填工廠代碼？為什麼？<br><i>要點：填工廠代碼。X 結構中 KEY 欄位填真值，只有非 KEY 的資料欄位才填 'X'。</i></li>
+    <li><b>找 BAPI</b>：只知道交易碼 <span class="tcode">ME51N</span>，請用老師教的方法找出建立請購單的 BAPI。<br><i>要點：System → Status 雙擊 TCODE 找 Package → SE80 開 Package → Business Object Types → 找 BUS2105（Purchase Requisition）→ 看 Method → 對應 FM。或直接在 SE37 搜 <span class="kw">BAPI_PR_*</span>。</i></li>
+    <li><b>兩支請購 BAPI</b>：BAPI_PR_CREATE 與 BAPI_REQUISITION_CREATE 有何差異？該查哪一份 SAP Note？<br><i>要點：前者有 X 結構、欄位較新，S/4 建議用；後者是舊版無 X 結構。Note <b>499627 - FAQ BAPIs for purchase requisitions</b>。</i></li>
+    <li><b>客製欄位</b>：客戶要在採購單項目加一個 ZZ 欄位，並由外部系統帶進來。完整要做哪幾件事？<br><i>要點：① SE11 Append CI_EKPODB/CI_EKPO；② Append 到 BAPI_TE_MEPOITEM / BAPI_TE_MEPOITEMX；③ 呼叫時填 EXTENSIONIN（BAPIPAREX 的 VALUEPART1~4）；④ 實作 BAdI ME_BAPI_PO_CUST / ME_PROCESS_PO_CUST 把值搬進去。少了第 4 步不會有任何錯誤訊息。</i></li>
+    <li><b>RFC 黑名單</b>：外部呼叫回報「function module is blacklisted」，但 SE37 測試完全正常，怎麼處理？<br><i>要點：執行報表 <b>RS_RFC_BLACKLIST_CUSTOM</b> 把該 FM 從黑名單剔除；另檢查 UCON（UCONCOCKPIT）與 S_RFC 權限。</i></li>
+    <li><b>S/4 主資料</b>：舊系統的介面用 BAPI_CUSTOMER_CREATE 建客戶，升級 S/4 之後要改成什麼？<br><i>要點：改走 BP。優先 API_BUSINESS_PARTNER（OData），地端可用 CL_MD_BP_MAINTAIN=&gt;maintain( ) 或 CMD_EI_API=&gt;maintain_bapi( )，記得 BUT000/BUT100/BUT020 才是主資料真相，KNA1 是 CVI 同步出來的。</i></li>
+    <li><b>缺料表</b>：要做一支「PP 缺料表」給 MSSQL，請設計 RFC 介面。<br><i>要點：資料來源用 MD_STOCK_REQUIREMENTS_LIST_API（或 BAPI_MATERIAL_STOCK_REQ_LIST）取 MDEZX，篩出可用量為負的日期；BOM 反查用 CS_WHERE_USED_MAT（多階）。介面設計成 RFC-enabled FM，參數用 range 表讓外部列舉（不要用區間），一定要 ORDER BY，並回傳 BAPIRET2。</i></li>
+    <li><b>條件的坑</b>：老師強調「條件用區間跟用列舉時答案會不同，用列舉的才正確」，這件事在設計 RFC 介面時要怎麼落實？<br><i>要點：介面參數開成 SIGN/OPTION/LOW/HIGH 的 range 表，外部系統以 <span class="kw">OPTION = 'EQ'</span> 一筆一筆列舉；不要在介面內部自作聰明把使用者給的清單壓成 BT 區間。</i></li>
+    <li><b>不穩定的結果</b>：一支介面函數每天跑出來的數字都不一樣，程式邏輯卻沒改，最可能的兩個原因是什麼？<br><i>要點：① SELECT 沒有 ORDER BY 或用了 SELECT SINGLE，多筆符合時 HANA 回傳順序不定（正如成本評價同時有 H item category 與 E cost component 兩種角度，沒排序就一下抓到 H、一下抓到 E）；② FOR ALL ENTRIES 的驅動表為空時會撈出全表。兩者都要在程式裡明確擋掉。</i></li>
+  </ol>
+</section>

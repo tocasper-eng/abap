@@ -1,0 +1,798 @@
+<section class="chapter" id="ch08-3" data-title="實戰源碼庫（三）：客戶月對帳單與外貿單據列印">
+  <h2>第 8-3 章 實戰源碼庫（三）：客戶月對帳單與外貿單據列印</h2>
+  <p class="lede">這一章拆解兩支「每月、每票貨都要印」的 SD 表單程式：<b>ZSDF003 客戶月對帳單（列印＋批次寄信）</b>，以及 <b>ZSDF004 外貿單據列印</b>（Proforma Invoice、報關發票／合同／委託書／箱單、結匯單 Commercial Invoice＋Delivery Note＋Packing List、出口貨物明細、報關單、申報要素共九種）。前者的核心是「關帳日未清項重建、帳齡分桶、累計餘額、SmartForms 轉 PDF 批次寄信」；後者的核心是「交貨單取數、HS 大類彙總、淨毛重與箱數、英文大寫金額、Excel 範本輸出」。原程式來自某醫療器材公司實際上線的專案，已是 S/4HANA 系統（用了 <span class="kw">PRCD_ELEMENTS</span>），但寫法仍是 ECC 時代的 FORM／OLE 風格，正好拿來示範「怎麼改寫成 S/4HANA 1809+ 的樣子」。</p>
+
+  <div class="meta">
+    <div><b>核心 TCODE</b><span class="tcode">SE38</span><span class="tcode">SMARTFORMS</span><span class="tcode">SE11</span><span class="tcode">SE37</span><span class="tcode">SE91</span><span class="tcode">SMW0</span><span class="tcode">SO10</span><span class="tcode">SCOT</span><span class="tcode">SOST</span><span class="tcode">SM36</span><span class="tcode">SM37</span><span class="tcode">SP01</span><span class="tcode">FBL5N</span><span class="tcode">FD10N</span><span class="tcode">F.27</span><span class="tcode">BP</span><span class="tcode">VA03</span><span class="tcode">VL03N</span><span class="tcode">SU53</span></div>
+    <div><b>關鍵物件</b>BSID、BSAD、ACDOCA、I_OperationalAcctgDocItem、KNB1、KNVP、KNA1、ADRC、ADR6、ADRT、BUT050、BUT051、TVZBT、T052U、NET_DUE_DATE_GET、SSF_FUNCTION_MODULE_NAME、CONVERT_OTF、CL_BCS、CL_DOCUMENT_BCS、CL_CAM_ADDRESS_BCS、VBAK、VBAP、VBKD、VBEP、VBPA、LIKP、LIPS、PRCD_ELEMENTS、MCHA、MCH1、T005T、T173T、TCURT、TB032T、SPELL_AMOUNT、DOWNLOAD_WEB_OBJECT、CL_GUI_FRONTEND_SERVICES、CL_MIME_REPOSITORY_API</div>
+  </div>
+
+  <div class="warn"><b>資安聲明。</b>原始碼裡寫死了真實的公司名稱、網址、電話、寄件 SAP 帳號、客戶編號與開發人員姓名。本章一律以「某醫療器材公司」「子公司 A/B/C」「<span class="kw">'C000001'</span>」「<span class="kw">ar@example.com</span>」等佔位符代替；你自己的程式也應該如此——<b>寄件者、信件落款、客戶特例清單都不該寫在程式碼裡</b>，改放設定表或 SO10 文字（詳見 8-3-07、8-3-09）。</div>
+
+  <h3 id="ch08-3-01">1. 案例索引</h3>
+  <p>本章負責兩個案例資料夾。ZSDF004 資料夾有兩份 docx，比對結果如下表最後兩列：<b>兩份內容不重疊</b>，(2) 那份只有 ZSDF004 各子程式共用的函數 ZFM_SPELL_AMOUNT_POINT 與自建表 ZWMT015 的截圖，是主程式的「相依物件」。</p>
+  <table>
+    <thead><tr><th>程式</th><th>功能</th><th>模組</th><th>原始檔構成</th><th>規模</th><th>截圖／範本</th><th>本章小節</th></tr></thead>
+    <tbody>
+      <tr><td><b>ZSDF003</b></td><td>客戶月對帳單（未清項＋帳齡）列印與寄信；背景作業時自動寄給所有客戶</td><td>SD／FI-AR</td><td>主程式（事件區塊）＋ ZSDF003_TOP（資料宣告、巨集）＋ _S01（選擇畫面）＋ _F01（取數、列印、寄信，約 1,100 行）＋ _F02（ALV）＋ _F03（Screen 9000 收件人彈窗，表頭寫成 YSDF003_F03）＋ 函數 ZSD_GET_PERSON、ZSD_GET_USERNAME；SmartForm ZSDF008</td><td>約 1,800 行</td><td>選擇畫面、ALV 結果、訊息類別 ZMSG、結構 ZSDS006／ZSDS004、表 ZSDT002、兩支函數介面；EXPORT.xlsx（ALV 匯出樣本）</td><td>02～09</td></tr>
+      <tr><td><b>ZSDF004</b></td><td>外貿單據選單：依選項 SUBMIT 九支子程式</td><td>SD（表頭標 WM）</td><td>選單程式約 235 行</td><td>—</td><td>選擇畫面</td><td>10、11</td></tr>
+      <tr><td>ZSDF004_R01</td><td>Proforma Invoice（標準／美國／子公司 C 三種版型）</td><td>SD</td><td>單一 REPORT，FORM 結構</td><td>約 1,230 行</td><td>ALV 結果截圖；SMW0 範本 ×3</td><td>12、14、15</td></tr>
+      <tr><td>ZSDF004_R02</td><td>報關發票</td><td>SD</td><td>同上</td><td>約 1,150 行</td><td>SMW0 範本 ZSDF004_BGFP</td><td>12、13</td></tr>
+      <tr><td>ZSDF004_R03</td><td>報關合同</td><td>SD</td><td>同上</td><td>約 1,140 行</td><td>ZSDF004_BGHT</td><td>12、13</td></tr>
+      <tr><td>ZSDF004_R04</td><td>出口貨物報關委託書</td><td>SD</td><td>同上</td><td>約 810 行</td><td>ZSDF004_BGWTS</td><td>13</td></tr>
+      <tr><td>ZSDF004_R05</td><td>報關箱單（依 HS 大類彙總件數、淨毛重、體積）</td><td>SD／WM</td><td>同上</td><td>約 1,140 行</td><td>ZSDF004_BGXD</td><td>13</td></tr>
+      <tr><td>ZSDF004_R06</td><td>結匯單：Commercial Invoice＋Delivery Note＋Packing List 三頁，十種版型（標準、子公司 A/B/C/D、智利、ARYA、巴西、阿根廷、澳洲）</td><td>SD／WM／批次</td><td>同上，最複雜</td><td>約 1,860 行</td><td>ZSDF004_JHD_* ×10</td><td>13、15</td></tr>
+      <tr><td>ZSDF004_R07</td><td>出口貨物明細表</td><td>SD</td><td>同上</td><td>約 1,390 行</td><td>ZSDF004_CKHWMXB</td><td>13</td></tr>
+      <tr><td>ZSDF004_R08</td><td>新版報關單</td><td>SD</td><td>同上（讀 BUT000／TB032T、T173T）</td><td>約 1,460 行</td><td>ZSDF004_XBBGD</td><td>13</td></tr>
+      <tr><td>ZSDF004_R09</td><td>申報要素</td><td>SD</td><td>同上（讀 ZTSDBGYS-ZSBYS）</td><td>約 900 行</td><td>ZSDF004_SBYS</td><td>13</td></tr>
+      <tr><td>ZFM_SPELL_AMOUNT_POINT</td><td>英文大寫金額（含小數 POINT）</td><td>共用</td><td>函數群組 ZMMFG002（common functions）</td><td>約 75 行</td><td>屬性、匯入、匯出、原始碼、ZWMT015 表結構（在「(2).docx」）</td><td>14</td></tr>
+    </tbody>
+  </table>
+  <div class="note"><b>兩份 docx 的比對結論：</b>主 docx（約 11,500 行）＝ ZSDF004 選單＋R01～R09 全部原始碼＋選擇畫面與 PI 結果兩張截圖；「(2).docx」＝ ZFM_SPELL_AMOUNT_POINT 原始碼＋四張函數截圖＋ZWMT015（產品銷售出庫記錄清單）兩張表結構截圖。R01、R02、R03、R06 都呼叫這支函數，R05～R07 都讀 ZWMT015，所以 (2) 是補充相依物件，不是重複版本。另外，R01、R02、R04、R05、R07、R08、R09 的程式表頭都寫著「Program Name: ZSDF004_R07」、描述空白——明顯是複製貼上沒改，這也是 8-3-16 要談的「九支程式其實是同一個骨架」的證據。</div>
+
+  <h3 id="ch08-3-02">2. ZSDF003 業務情境、選擇畫面與輸出</h3>
+  <p><b>業務情境：</b>美國子公司的應收帳款（AR）會計每月要寄「Statement」給醫院、診所客戶，列出關帳日為止所有未清發票、貸項、溢收款，並附帳齡（Current／1–30／31–60／61–90／90 天以上逾期）。前景執行時會計在 ALV 勾選客戶再按「列印」或「發送郵件」；排成背景作業時則自動對所有有餘額的客戶寄出。</p>
+  <p><b>選擇畫面</b>（截圖「月對帳單打印&amp;發郵件」）：</p>
+  <table>
+    <thead><tr><th>欄位</th><th>原程式定義</th><th>說明</th></tr></thead>
+    <tbody>
+      <tr><td>公司代碼</td><td><span class="kw">S_BUKRS FOR t001-bukrs DEFAULT gc_bukrs NO-EXTENSION NO INTERVALS</span></td><td>預設常數 1010；看似可多選，但取付款條件時又寫死 <span class="kw">knb1~bukrs = gc_bukrs</span>，兩者不一致</td></tr>
+      <tr><td>日期</td><td><span class="kw">P_DATUM TYPE datum OBLIGATORY</span>，INITIALIZATION 帶 <span class="kw">sy-datlo</span></td><td>關帳日（Key date）；背景執行時被強制改成 <span class="kw">sy-datum</span></td></tr>
+      <tr><td>客戶號</td><td><span class="kw">S_KUNNR FOR kna1-kunnr</span></td><td>背景執行時被清空＝全部客戶</td></tr>
+    </tbody>
+  </table>
+  <p><b>ALV 輸出</b>（截圖「結果」，工具列自訂按鈕「列印」「發送郵件」）與 EXPORT.xlsx 匯出樣本的欄位一致：</p>
+  <table>
+    <thead><tr><th>ALV 欄位</th><th>結構 ZSDS005 元件</th><th>來源</th></tr></thead>
+    <tbody>
+      <tr><td>客戶號</td><td>KUNNR</td><td>KNA1</td></tr>
+      <tr><td>客戶名稱 1／2</td><td>KNAME1、KNAME2（另含 KSTREET、KSTR_SUPPL1/2、KCITY1、KREGION、KPOST_CODE1，供表單列印地址）</td><td>ADRC（經 KNA1-ADRNR）</td></tr>
+      <tr><td>日期</td><td>DATUM</td><td>選擇畫面關帳日</td></tr>
+      <tr><td>付款條件</td><td>ZTERM、VTEXT</td><td>KNB1-ZTERM ＋ TVZBT 文字（例：30 天、45 天、60 天）</td></tr>
+      <tr><td>未清金額（Current，未到期）</td><td>CURRENT</td><td>帳齡計算</td></tr>
+      <tr><td>1-30／31-60／61-90／超過 90 天逾期金額</td><td>CURRENT1～CURRENT4</td><td>帳齡計算</td></tr>
+      <tr><td>總額</td><td>TOTAL</td><td>五桶加總</td></tr>
+      <tr><td>（勾選框）</td><td>BOX（TY_ALV 附加）</td><td>layout-box_fname</td></tr>
+    </tbody>
+  </table>
+  <p><span class="src">（ZSDS005 本身沒有截圖，上表元件名稱依程式的 SELECT 別名與 fieldcat 推得。）</span></p>
+  <p>EXPORT.xlsx 樣本裡可以看到某些客戶的「31-60 天逾期金額」是負數——這是 2023-02-15 的修改「金額 &lt; 0 也照天數分桶」造成的：貸項／溢收款不再一律沖到 Current，而是跟著自己的到期日落桶。這是業務規則選擇，不是錯，但要在對帳單說明欄寫清楚，否則客戶會以為你算錯。</p>
+
+  <p><b>自建物件</b>（依截圖整理）：</p>
+  <table>
+    <thead><tr><th>物件</th><th>類型</th><th>元件</th><th>用途</th></tr></thead>
+    <tbody>
+      <tr><td>ZSDS006 對帳單列印行</td><td>結構</td><td>KUNNR（KUNNR, CHAR10）、BUDAT（BUDAT, DATS8）、TRANSACTION（CHAR200，內建類型）、AMOUNT（BWERT, CURR13,2）、BALANCE（BWERT, CURR13,2）</td><td>SmartForm ZSDF008 的明細表 IT_LINE</td></tr>
+      <tr><td>ZSDS004 聯絡人郵箱資訊</td><td>結構</td><td>KUNNR（BU_PARTNER）、PARTNER2（BU_PARTNER）、UNAME（BU_NAME1TX, CHAR80）、MAIL（AD_SMTPADR, CHAR241）</td><td>ZSD_GET_PERSON 的回傳表</td></tr>
+      <tr><td>ZSDT002 郵件抄送人維護</td><td>透明表</td><td>MANDT（鍵）、MAIL（鍵，AD_SMTPADR）、UNAME（ZENAME, CHAR40）、SALE、INVOICE、STATEMENT、PURCHASE_ORDER（各 CHAR1 旗標）</td><td>一張表管四種單據的固定 CC 名單；對帳單取 STATEMENT = 'X'</td></tr>
+      <tr><td>ZSD_GET_PERSON</td><td>函數（群組 ZSDFG001「SD 模組函數組」，套件 ZDEV）</td><td>匯入 I_KUNNR（KUNNR）、I_LIFNR（LIFNR）、I_ABTNR（BU_ABTNR 部門）皆選填；表 IT_KUNNR（KUNNR_RAN）、IT_LIFNR（LIFNR_RAN）、IT_PERSON（ZSDS004）</td><td>依客戶或供應商取聯絡人郵箱（ADR6＋ADRT 備註當姓名）</td></tr>
+      <tr><td>ZSD_GET_USERNAME</td><td>函數（同群組）</td><td>匯入 I_UNAME（SY-UNAME）；匯出 E_UNAME（NAME_TEXT）</td><td>USR21 → ADRP 取使用者全名（信件落款，後來註解掉）</td></tr>
+      <tr><td>ZMSG</td><td>訊息類別（專案共用）</td><td>本程式用到 100「沒有滿足條件的資料」、109「客戶號在公司代碼 &amp;1 下不存在」、110「請選擇收件人」、111「郵件發送成功」、112「請選擇需要操作的資料」、141（公司代碼權限）</td><td>截圖顯示 146～174 號為其他模組的訊息，可見一個訊息類別被全公司共用</td></tr>
+    </tbody>
+  </table>
+  <div class="tip">一張 ZSDT002 用四個旗標管四種單據的 CC 名單，是很實用的小設計：業務改名單不用找 ABAP。8-2 章的報價單／發票寄信（<a href="#ch08-2">8-2 章</a>）用的就是同一張表與同一支 ZSD_GET_PERSON。改寫時建議再加「公司代碼」「有效期間」兩個欄位，避免跨公司誤寄。</div>
+
+  <h3 id="ch08-3-03">3. ZSDF003 程式架構拆解與資料流</h3>
+  <table>
+    <thead><tr><th>步驟</th><th>原程式 FORM</th><th>做了什麼</th><th>用到的標準物件</th></tr></thead>
+    <tbody>
+      <tr><td>權限</td><td>frm_auth_data（AT SELECTION-SCREEN）</td><td>對 S_BUKRS 內每個公司代碼檢查 F_BKPF_BUK（ACTVT DUMMY）</td><td>T001、F_BKPF_BUK</td></tr>
+      <tr><td>客戶與地址</td><td>frm_get_data</td><td>ADRC JOIN KNA1 取名稱、街道、城市、郵遞區號</td><td>KNA1、ADRC</td></tr>
+      <tr><td>付款條件</td><td>同上</td><td>KNB1 LEFT JOIN TVZBT</td><td>KNB1、TVZBT</td></tr>
+      <tr><td>帳齡（舊方案，已註解）</td><td>同上</td><td>SUBMIT 中國在地化帳齡報表 RFIDCN_AR_AGING，用 CL_SALV_BS_RUNTIME_INFO 攔截 ALV 資料</td><td>RFIDCN_AR_AGING</td></tr>
+      <tr><td>收件夥伴</td><td>同上</td><td>KNVP 夥伴功能 RE（付款方／Bill-to）JOIN KNA1，帳戶群組 Z004 優先，否則 Z001/Z002</td><td>KNVP、KNA1-KTOKD</td></tr>
+      <tr><td>未清項</td><td>同上</td><td>BSID（REBZG 為空）＋ BSAD（清帳日 &gt; 關帳日）＝關帳日當時仍未清</td><td>BSID、BSAD</td></tr>
+      <tr><td>部分付款</td><td>同上</td><td>BSID 中憑證類型 DZ／AB 且 REBZG 有值者，依 REBZG/REBZJ/REBZZ 掛回原發票扣減</td><td>BSID</td></tr>
+      <tr><td>到期日</td><td>同上</td><td>DZ 用 NET_DUE_DATE_GET；其他用 J_1A_SD_CI_DUEDATE_CHECK（以會計憑證號當發票號）</td><td>NET_DUE_DATE_GET</td></tr>
+      <tr><td>明細與分桶</td><td>同上</td><td>組 TRANSACTION 文字（INV #…Due.MM/DD/YYYY.Orig.Amount $…、CREDMEM #…、PMT Overpayment）；依逾期天數累加 CURRENT～CURRENT4</td><td>—</td></tr>
+      <tr><td>累計餘額</td><td>同上</td><td>明細依客戶、日期排序後逐行累加 BALANCE</td><td>—</td></tr>
+      <tr><td>聯絡人</td><td>frm_get_mail</td><td>ZSD_GET_PERSON 取收件人，ZSDT002 取 CC</td><td>ADR6、ADRT</td></tr>
+      <tr><td>列印／寄信</td><td>frm_print_data、frm_send_mail、frm_set_statement</td><td>SmartForm ZSDF008 → spool → CONVERT_OTFSPOOLJOB_2_PDF → CL_BCS 寄出，每封之後 SUBMIT RSCONN01</td><td>SSF_*、CL_BCS</td></tr>
+      <tr><td>收件人彈窗</td><td>Screen 9000（_F03）</td><td>只勾一個客戶時，彈出兩個唯讀 CL_GUI_TEXTEDIT 顯示收件人／CC，按鈕以 REUSE_ALV_POPUP_TO_SELECT 勾選</td><td>CL_GUI_CUSTOM_CONTAINER、CL_GUI_TEXTEDIT</td></tr>
+    </tbody>
+  </table>
+  <div class="warn"><b>先講清楚：這支「月對帳單」不是「期初／本期／期末」格式。</b>它是美式 <b>Open Item Statement（未清項對帳單）</b>：只列關帳日仍未清的項目與帳齡，已清帳的發票與付款不出現。台灣、中國客戶常要的是 <b>Balance Forward Statement（餘額結轉式）</b>：期初餘額 ＋ 本期發票 − 本期收款 ＝ 期末餘額，本期所有交易都要列。兩種格式取數邏輯完全不同，需求訪談時務必先確認是哪一種；本章 8-3-04 做未清項，8-3-05 補上期初／本期／期末的 ACDOCA 寫法。</div>
+  <div class="tip">動手寫之前請先回到 Casper 的第三條：<b>先找標準</b>。SAP 標準的客戶對帳單是 FI 通訊（Correspondence）：<span class="tcode">F.27</span> 定期對帳單、通訊類型 SAP06（未清項清單），列印程式 RFKORD10（Account Statement，餘額結轉式）與 RFKORD11（Open Item List），可以接 SmartForms／Adobe Forms 與郵件輸出。逾期催收則是 <span class="tcode">F150</span> 催款。只有在格式或寄件規則真的無法以標準滿足時，才值得像本案一樣全客製。</div>
+
+  <h3 id="ch08-3-04">4. 關鍵邏輯一：重建「關帳日當下」的未清項與部分付款</h3>
+  <p>「關帳日當下未清」＝「今天仍未清且關帳日前已過帳」（BSID）＋「關帳日前過帳、但在關帳日<b>之後</b>才清帳」（BSAD，<span class="kw">augdt &gt; p_datum</span>）。原程式這個觀念是對的（2021-12 補上 BSAD 那段之前，回溯月份的對帳單都會少列），改寫時用 <span class="kw">UNION ALL</span>（7.50+）一次取回。</p>
+  <pre><code class="abap">TYPES: BEGIN OF ty_item,
+         bukrs TYPE bukrs,
+         kunnr TYPE kunnr,
+         gjahr TYPE gjahr,
+         belnr TYPE belnr_d,
+         buzei TYPE buzei,
+         blart TYPE blart,
+         budat TYPE budat,
+         bldat TYPE bldat,
+         zuonr TYPE dzuonr,
+         zfbdt TYPE dzfbdt,
+         zbd1t TYPE dzbd1t,
+         zbd2t TYPE dzbd2t,
+         zbd3t TYPE dzbd3t,
+         shkzg TYPE shkzg,
+         dmbtr TYPE dmbtr,
+         rebzg TYPE rebzg,
+         rebzj TYPE rebzj,
+         rebzz TYPE rebzz,
+       END OF ty_item,
+       tt_item TYPE STANDARD TABLE OF ty_item WITH EMPTY KEY.
+
+DATA lt_open TYPE tt_item.
+
+" ① 關帳日當下仍未清 = 現在還開著（BSID）＋ 關帳日之後才清掉（BSAD）
+SELECT bukrs, kunnr, gjahr, belnr, buzei, blart, budat, bldat, zuonr,
+       zfbdt, zbd1t, zbd2t, zbd3t, shkzg, dmbtr, rebzg, rebzj, rebzz
+  FROM bsid
+  WHERE bukrs = @p_bukrs
+    AND kunnr IN @s_kunnr
+    AND budat &lt;= @p_datum
+UNION ALL
+SELECT bukrs, kunnr, gjahr, belnr, buzei, blart, budat, bldat, zuonr,
+       zfbdt, zbd1t, zbd2t, zbd3t, shkzg, dmbtr, rebzg, rebzj, rebzz
+  FROM bsad
+  WHERE bukrs = @p_bukrs
+    AND kunnr IN @s_kunnr
+    AND budat &lt;= @p_datum
+    AND augdt &gt;  @p_datum
+  INTO TABLE @lt_open.
+
+" ② 部分付款（帶發票參照 REBZG 的收款行）先依參照鍵彙總，帶正負號（借正貸負）
+TYPES: BEGIN OF ty_ref_sum,
+         rebzj  TYPE rebzj,
+         rebzg  TYPE rebzg,
+         rebzz  TYPE rebzz,
+         amount TYPE dmbtr,
+       END OF ty_ref_sum.
+DATA lt_ref_sum TYPE HASHED TABLE OF ty_ref_sum WITH UNIQUE KEY rebzj rebzg rebzz.
+
+LOOP AT lt_open INTO DATA(ls_part) WHERE rebzg IS NOT INITIAL.
+  COLLECT VALUE ty_ref_sum(
+            rebzj  = ls_part-rebzj
+            rebzg  = ls_part-rebzg
+            rebzz  = ls_part-rebzz
+            amount = COND #( WHEN ls_part-shkzg = 'H' THEN ls_part-dmbtr * -1
+                             ELSE ls_part-dmbtr ) )
+    INTO lt_ref_sum.
+ENDLOOP.
+
+" ③ 發票行 + 已沖部分付款 = 剩餘未收；找不到原發票的部分付款要保留成獨立行，總額才對得起來
+LOOP AT lt_open INTO DATA(ls_inv) WHERE rebzg IS INITIAL.
+  DATA(lv_signed) = COND dmbtr( WHEN ls_inv-shkzg = 'H' THEN ls_inv-dmbtr * -1
+                                ELSE ls_inv-dmbtr ).
+  DATA(lv_paid)   = VALUE #( lt_ref_sum[ rebzj = ls_inv-gjahr
+                                         rebzg = ls_inv-belnr
+                                         rebzz = ls_inv-buzei ]-amount OPTIONAL ).
+  APPEND VALUE #( kunnr    = ls_inv-kunnr
+                  budat    = ls_inv-budat
+                  belnr    = ls_inv-belnr
+                  buzei    = ls_inv-buzei
+                  orig     = lv_signed
+                  residual = lv_signed + lv_paid ) TO lt_stmt_item.
+  DELETE lt_ref_sum WHERE rebzj = ls_inv-gjahr AND rebzg = ls_inv-belnr AND rebzz = ls_inv-buzei.
+ENDLOOP.
+" lt_ref_sum 剩下的就是「參照不到發票」的部分付款 → 另列為 Unapplied Payment</code></pre>
+  <div class="warn"><b>原程式在這裡的三個問題：</b>
+  <ul>
+    <li><b>BSID 與 BSAD 處理不對稱。</b>BSID 那段過濾 <span class="kw">rebzg = space</span>，部分付款另外扣回發票；BSAD 那段沒過濾，已清掉的部分付款會變成獨立一行；而「扣回 BSAD 部分付款」那段在 2023-02 被整段註解。結果是：同一張發票，查當月與查上個月，明細呈現方式不同，總額卻恰好相等，會計很難對。改寫版把兩邊合併後統一處理。</li>
+    <li><b>部分付款只認憑證類型 DZ／AB。</b>其他類型（例如手動沖帳 SA、殘額過帳）帶 REBZG 時會被當成發票本身列出。改寫版以「有沒有 REBZG」判斷，不以憑證類型判斷——這也是 Casper 第二條的精神：<b>條件寫成業務語意（有參照），不要寫成碰巧成立的清單</b>。</li>
+    <li><b>巢狀 <span class="kw">LOOP … WHERE</span> 在標準表上</b>，n×m 次掃描；客戶一多背景作業就跑不完。改用 HASHED 表一次查找。</li>
+  </ul>
+  另外特殊總帳（UMSKZ，例如預收款 A、票據 W）是否要出現在對帳單，是業務規則，請明確寫成條件（列舉 UMSKZ 值），不要默默全收。</div>
+  <div class="note"><b>S/4HANA 差異：</b>BSID／BSAD 在 S/4HANA 已不是實體索引表，而是同名的<b>相容性視圖（Compatibility View）</b>，底層讀的是 BSEG／ACDOCA 的實際行項目，所以舊程式的 SELECT 仍能執行、結果一致，但它是「為了相容而存在」。新開發建議直接讀 ACDOCA，或讀 SAP 發布的 CDS 視圖 <span class="kw">I_OperationalAcctgDocItem</span>（含 NetDueDate、ClearingDate、InvoiceReference 等欄位；欄位名稱與是否 released 請以你系統的 ADT／SE11 為準）。</div>
+
+  <h3 id="ch08-3-05">5. 期初／本期／期末：用 ACDOCA 做餘額結轉式對帳單</h3>
+  <p>若客戶要的是「期初餘額＋本期借方−本期貸方＝期末餘額」，就不需要重建未清項，直接加總 Universal Journal ACDOCA 即可：<b>期初＝本年度結轉（期間 000）＋起日前的過帳；本期＝起迄日間的過帳；期末＝期初＋本期</b>。ACDOCA 的 HSL（公司代碼幣別）本身帶正負號（借正貸負），DRCRK 是借貸別。</p>
+  <pre><code class="abap">" 期間：p_from ~ p_to（假設會計年度 = 曆年；非曆年請用 FIRST_DAY_IN_PERIOD_GET 等換算）
+DATA(lv_gjahr) = CONV gjahr( p_from(4) ).
+
+" 讓資料庫先依「客戶 / 期間 / 日期 / 借貸 / 幣別」彙總，ABAP 端只做分類
+SELECT kunnr, poper, budat, drcrk, rhcur, SUM( hsl ) AS hsl
+  FROM acdoca
+  WHERE rldnr  = '0L'                 " 主帳本
+    AND rbukrs = @p_bukrs
+    AND gjahr  = @lv_gjahr
+    AND koart  = 'D'                  " 客戶行
+    AND kunnr  IN @s_kunnr
+    AND ( poper = '000' OR budat &lt;= @p_to )
+  GROUP BY kunnr, poper, budat, drcrk, rhcur
+  INTO TABLE @DATA(lt_sum).
+
+TYPES: BEGIN OF ty_balance,
+         kunnr         TYPE kunnr,
+         waers         TYPE waers,
+         opening       TYPE fins_vhcur12,
+         period_debit  TYPE fins_vhcur12,
+         period_credit TYPE fins_vhcur12,
+         closing       TYPE fins_vhcur12,
+       END OF ty_balance.
+DATA lt_balance TYPE SORTED TABLE OF ty_balance WITH UNIQUE KEY kunnr waers.
+
+LOOP AT lt_sum INTO DATA(ls_sum)
+     GROUP BY ( kunnr = ls_sum-kunnr waers = ls_sum-rhcur ) INTO DATA(grp).
+  DATA(ls_bal) = VALUE ty_balance( kunnr = grp-kunnr waers = grp-waers ).
+  LOOP AT GROUP grp INTO DATA(ls_g).
+    IF ls_g-poper = '000' OR ls_g-budat &lt; p_from.
+      ls_bal-opening = ls_bal-opening + ls_g-hsl.
+    ELSEIF ls_g-drcrk = 'S'.
+      ls_bal-period_debit = ls_bal-period_debit + ls_g-hsl.
+    ELSE.
+      ls_bal-period_credit = ls_bal-period_credit + ls_g-hsl.   " 負數
+    ENDIF.
+  ENDLOOP.
+  ls_bal-closing = ls_bal-opening + ls_bal-period_debit + ls_bal-period_credit.
+  INSERT ls_bal INTO TABLE lt_balance.
+ENDLOOP.</code></pre>
+  <div class="warn"><b>期初最容易算錯的地方：年結結轉。</b>年結後，客戶餘額在 ACDOCA 會以<b>期間 000</b> 的結轉記錄出現在新年度。上面的寫法是「只取當年度＋含 000 期」；另一種是「跨年度全取、但排除結轉記錄」。兩種擇一，<b>混用就會重複計算</b>。上線前一定要挑幾個客戶，把期末數字與 <span class="tcode">FD10N</span>（客戶餘額）、<span class="tcode">FBL5N</span>（行項目）比對，連預收款等特殊總帳是否納入也要對齊。ACDOCA 的金額資料元素（上例 FINS_VHCUR12）與欄位請以 SE11 為準。</div>
+  <div class="tip">本期明細要列在對帳單上時，就再取一次 <span class="kw">budat BETWEEN @p_from AND @p_to</span> 的行項目，並且 <b>ORDER BY budat, belnr, docln</b>。Casper 第一條：HANA 沒有預設排序；同一天有多張憑證時，沒有第二、三排序鍵，每次印出來的順序（以及逐行的累計餘額）都可能不同，客戶拿兩份對帳單一比就會質疑。</div>
+
+  <h3 id="ch08-3-06">6. 關鍵邏輯二：到期日、帳齡分桶與累計餘額</h3>
+  <p>原程式的到期日有兩條路：收款類（DZ）呼叫標準 <span class="kw">NET_DUE_DATE_GET</span>；其他呼叫 <span class="kw">J_1A_SD_CI_DUEDATE_CHECK</span>，並把<b>會計憑證號當成發票號</b>傳入。後者是阿根廷在地化（J_1A*）函數，而且只在「FI 憑證號＝請款單號」這個號碼範圍巧合下才成立。另外它把算出來的到期日寫回 <span class="kw">zfbdt</span>（基準日）欄位，結構裡明明宣告了 <span class="kw">duedt</span> 卻沒用；付款條件為空時 zfbdt 又保持基準日，同一欄位兩種語意。</p>
+  <pre><code class="abap">DATA lv_netdt TYPE netdt.
+
+" 一律用標準函數算淨到期日（S/4HANA 亦可直接讀 I_OperationalAcctgDocItem-NetDueDate）
+CALL FUNCTION 'NET_DUE_DATE_GET'
+  EXPORTING
+    i_zfbdt = ls_inv-zfbdt
+    i_zbd1t = ls_inv-zbd1t
+    i_zbd2t = ls_inv-zbd2t
+    i_zbd3t = ls_inv-zbd3t
+    i_shkzg = ls_inv-shkzg
+    i_rebzg = ls_inv-rebzg
+    i_koart = 'D'
+  IMPORTING
+    e_faedt = lv_netdt.
+
+DATA(lv_days)   = CONV i( p_datum - lv_netdt ).
+DATA(lv_bucket) = COND i( WHEN lv_days &lt;= 0  THEN 0      " Current（未到期）
+                          WHEN lv_days &lt;= 30 THEN 1
+                          WHEN lv_days &lt;= 60 THEN 2
+                          WHEN lv_days &lt;= 90 THEN 3
+                          ELSE 4 ).
+
+ASSIGN lt_head[ kunnr = ls_inv-kunnr ] TO FIELD-SYMBOL(&lt;ls_head&gt;).
+IF sy-subrc = 0.
+  CASE lv_bucket.
+    WHEN 0. &lt;ls_head&gt;-current  = &lt;ls_head&gt;-current  + lv_residual.
+    WHEN 1. &lt;ls_head&gt;-current1 = &lt;ls_head&gt;-current1 + lv_residual.
+    WHEN 2. &lt;ls_head&gt;-current2 = &lt;ls_head&gt;-current2 + lv_residual.
+    WHEN 3. &lt;ls_head&gt;-current3 = &lt;ls_head&gt;-current3 + lv_residual.
+    WHEN 4. &lt;ls_head&gt;-current4 = &lt;ls_head&gt;-current4 + lv_residual.
+  ENDCASE.
+  &lt;ls_head&gt;-total = &lt;ls_head&gt;-total + lv_residual.
+ENDIF.</code></pre>
+  <p>接著產生對帳單明細與逐行累計餘額。<b>排序鍵一定要唯一</b>：</p>
+  <pre><code class="abap">TYPES: BEGIN OF ty_stmt_line,
+         kunnr       TYPE kunnr,         " 控制層級欄位必須放第一個
+         budat       TYPE budat,
+         belnr       TYPE belnr_d,
+         buzei       TYPE buzei,
+         waers       TYPE waers,
+         transaction TYPE string,
+         amount      TYPE dmbtr,
+         balance     TYPE dmbtr,
+       END OF ty_stmt_line.
+DATA lt_line    TYPE STANDARD TABLE OF ty_stmt_line WITH EMPTY KEY.
+DATA lv_balance TYPE dmbtr.
+
+" 原程式只 SORT BY kunnr budat：同一天多筆時順序不固定 → 累計餘額每次印得不一樣
+SORT lt_line BY kunnr budat belnr buzei.
+
+LOOP AT lt_line ASSIGNING FIELD-SYMBOL(&lt;ls_line&gt;).
+  AT NEW kunnr.
+    CLEAR lv_balance.
+  ENDAT.
+  lv_balance = lv_balance + &lt;ls_line&gt;-amount.
+  &lt;ls_line&gt;-balance = lv_balance.
+ENDLOOP.
+
+" 交易說明文字：用字串範本與格式化選項，不要自己切 lv_date+4(2)
+" 例：INV #90001234 Due 07/31/2023 Orig. Amount 1,234.00 USD
+&lt;ls_line&gt;-transaction = |INV #{ lv_invoice_no ALPHA = OUT } Due { lv_netdt DATE = ENVIRONMENT } | &amp;&amp;
+                        |Orig. Amount { lv_orig CURRENCY = lv_waers NUMBER = ENVIRONMENT } { lv_waers }|.</code></pre>
+  <div class="note"><b>DATE = ENVIRONMENT 與國家格式：</b>美國客戶要 MM/DD/YYYY，原程式手動拼字串。較乾淨的做法是在產生該客戶文字前 <span class="kw">SET COUNTRY 'US'</span>（或依客戶國別），再用 <span class="kw">DATE = ENVIRONMENT</span>／<span class="kw">NUMBER = ENVIRONMENT</span>，千分位與日期格式就會跟著國別走；用完記得 <span class="kw">SET COUNTRY space</span> 還原。原程式把「$」直接寫進文字，等於假設所有客戶都是美元，ZSDS006 的 AMOUNT／BALANCE 也沒有幣別參照欄位——一旦有加幣客戶就錯。</div>
+  <div class="tip">原講義對於舊版單據（憑證類型 UE，舊系統移轉的期初未清）用「分配號 ZUONR」當發票號、用「憑證日期 BLDAT」當日期，這是移轉專案很常見的慣例：舊系統發票號放在 ZUONR 或 XBLNR。改寫時請把這種「某類型改讀某欄位」的規則集中在一個方法裡，並在程式註解寫明是移轉慣例，否則三年後沒人知道 UE 是什麼。</div>
+
+  <h3 id="ch08-3-07">7. SmartForms 轉 PDF 與批次寄信（CL_BCS）</h3>
+  <p>原程式的流程是：SmartForm ZSDF008 輸出到印表機 LP01 → 產生 spool → <span class="kw">RSPO_GET_ATTRIBUTES_SPOOLJOB</span> 判斷 OTF/LIST → <span class="kw">CONVERT_OTFSPOOLJOB_2_PDF</span> → <span class="kw">CL_BCS</span> 寄出 → <span class="kw">COMMIT WORK AND WAIT</span> → <span class="kw">SUBMIT rsconn01 WITH mode = 'INT'</span>。每寄一個客戶就留下一筆 spool、跑一次 SAPconnect。改寫重點是<b>不經 spool，直接要 OTF</b>（<span class="kw">getotf = abap_true</span>），再用 <span class="kw">CONVERT_OTF</span> 轉 PDF。SmartForms 基礎見 <a href="#ch04-3">4-3 章</a>，郵件與背景作業見 <a href="#ch04-4">4-4 章</a>。</p>
+  <pre><code class="abap">DATA lv_fm_name TYPE rs38l_fnam.
+DATA ls_job     TYPE ssfcrescl.
+DATA lv_pdf     TYPE xstring.
+DATA lv_len     TYPE i.
+DATA lt_tline   TYPE STANDARD TABLE OF tline WITH EMPTY KEY.
+
+CALL FUNCTION 'SSF_FUNCTION_MODULE_NAME'
+  EXPORTING
+    formname           = 'ZSDF008'
+  IMPORTING
+    fm_name            = lv_fm_name
+  EXCEPTIONS
+    no_form            = 1
+    no_function_module = 2
+    OTHERS             = 3.
+IF sy-subrc &lt;&gt; 0.
+  MESSAGE ID sy-msgid TYPE 'E' NUMBER sy-msgno WITH sy-msgv1 sy-msgv2 sy-msgv3 sy-msgv4.
+ENDIF.
+
+DATA(ls_control) = VALUE ssfctrlop( no_dialog = abap_true
+                                    getotf    = abap_true      " 只要 OTF，不進 spool
+                                    langu     = sy-langu ).
+DATA(ls_output)  = VALUE ssfcompop( tddest = 'LOCL' ).
+
+LOOP AT lt_head INTO DATA(ls_head) WHERE box = abap_true.
+  DATA(lt_cust_line) = VALUE zsds006_tt( FOR l IN lt_line WHERE ( kunnr = ls_head-kunnr )
+                                         ( CORRESPONDING #( l ) ) ).
+  CALL FUNCTION lv_fm_name
+    EXPORTING
+      control_parameters = ls_control
+      output_options     = ls_output
+      user_settings      = abap_false
+      ls_head            = CORRESPONDING zsds005( ls_head )
+    IMPORTING
+      job_output_info    = ls_job
+    TABLES
+      it_line            = lt_cust_line
+    EXCEPTIONS
+      OTHERS             = 1.
+  IF sy-subrc &lt;&gt; 0.
+    APPEND VALUE #( kunnr = ls_head-kunnr status = 'E' text = |SmartForm error { sy-msgno }| ) TO lt_log.
+    CONTINUE.
+  ENDIF.
+
+  CALL FUNCTION 'CONVERT_OTF'
+    EXPORTING
+      format                = 'PDF'
+    IMPORTING
+      bin_filesize          = lv_len
+      bin_file              = lv_pdf
+    TABLES
+      otf                   = ls_job-otfdata
+      lines                 = lt_tline
+    EXCEPTIONS
+      err_max_linewidth     = 1
+      err_format            = 2
+      err_conv_not_possible = 3
+      OTHERS                = 4.
+  IF sy-subrc = 0.
+    send_statement( is_head = ls_head iv_pdf = lv_pdf ).   " 見下一段
+  ENDIF.
+ENDLOOP.</code></pre>
+  <p>寄信本體。寄件者、信件本文、落款全部來自設定，不寫在程式裡：</p>
+  <pre><code class="abap">METHOD send_statement.
+  TRY.
+      DATA(lo_send) = cl_bcs=&gt;create_persistent( ).
+
+      " 本文：SO10 標準文字或郵件範本讀出後轉 HTML；公司名稱、電話、網址都在文字裡維護
+      DATA(lt_body) = get_mail_body( iv_bukrs = mv_bukrs iv_langu = is_head-langu ).
+
+      DATA(lo_doc) = cl_document_bcs=&gt;create_document(
+                       i_type    = 'HTM'
+                       i_text    = lt_body
+                       i_subject = CONV so_obj_des( |Statement { is_head-kunnr ALPHA = OUT } { mv_keydate DATE = ISO }| ) ).
+      lo_doc-&gt;add_attachment(
+        i_attachment_type    = 'PDF'
+        i_attachment_subject = CONV so_obj_des( |Statement_{ is_head-kunnr ALPHA = OUT }| )
+        i_attachment_size    = CONV so_obj_len( xstrlen( iv_pdf ) )
+        i_att_content_hex    = cl_bcs_convert=&gt;xstring_to_solix( iv_pdf ) ).
+      lo_send-&gt;set_document( lo_doc ).
+
+      " 寄件者：設定表中的共用信箱（例 ar@example.com），不要用寫死的 SAP 使用者
+      lo_send-&gt;set_sender( cl_cam_address_bcs=&gt;create_internet_address( ms_cfg-sender_mail ) ).
+
+      LOOP AT get_recipients( is_head-kunnr ) INTO DATA(ls_rcpt).
+        lo_send-&gt;add_recipient(
+          i_recipient = cl_cam_address_bcs=&gt;create_internet_address( ls_rcpt-mail )
+          i_copy      = ls_rcpt-is_cc ).
+      ENDLOOP.
+
+      lo_send-&gt;set_send_immediately( abap_true ).
+      IF lo_send-&gt;send( i_with_error_screen = abap_false ) = abap_true.
+        APPEND VALUE #( kunnr = is_head-kunnr status = 'S' ) TO mt_log.
+      ELSE.
+        APPEND VALUE #( kunnr = is_head-kunnr status = 'E' text = 'No recipient accepted' ) TO mt_log.
+      ENDIF.
+      COMMIT WORK.                      " BCS 需要 COMMIT 才會真正排入 SAPconnect
+    CATCH cx_bcs INTO DATA(lx_bcs).
+      ROLLBACK WORK.
+      APPEND VALUE #( kunnr = is_head-kunnr status = 'E' text = lx_bcs-&gt;get_text( ) ) TO mt_log.
+  ENDTRY.
+ENDMETHOD.</code></pre>
+  <div class="warn"><b>原程式寄信段的問題：</b>
+  <ul>
+    <li><b>寄件者寫死成某個 SAP 使用者代號</b>（<span class="kw">cl_sapuser_bcs=&gt;create( gc_uname )</span>），該帳號一旦被鎖或離職改名，整批對帳單就寄不出去。改用設定表中的共用信箱。</li>
+    <li><b>信件本文用十幾行 <span class="kw">&lt;font face=Arial&gt;</span> 寫死公司全名、電話、官網</b>。公司更名、換電話就要改程式、走傳輸。改用 <span class="tcode">SO10</span> 標準文字（可多語）或郵件範本維護。</li>
+    <li><b><span class="kw">CATCH cx_bcs</span> 後什麼都不做</b>，寄失敗完全無聲；背景作業還會顯示成功。改寫版每個客戶都寫一筆執行紀錄（可再寫進 BAL 應用程式日誌，<span class="tcode">SLG1</span> 查詢）。</li>
+    <li><b>每封信 <span class="kw">SUBMIT rsconn01</span></b>：強迫 SAPconnect 立刻處理整個佇列，數百個客戶時非常慢，也會干擾其他程式的郵件。正確做法是由 Basis 在 <span class="tcode">SCOT</span> 排定傳送作業，程式只負責 <span class="kw">set_send_immediately</span> 與 COMMIT。</li>
+    <li><span class="kw">set_link_to_outbox( 'X' )</span> 會讓每封信進寄件者的 SAP 外寄匣，批次寄數百封時外寄匣會爆量；需要追蹤請用 <span class="tcode">SOST</span>。</li>
+  </ul></div>
+  <div class="tip"><b>批次寄信的上線設計（背景作業）：</b>
+  <ol>
+    <li><span class="tcode">SM36</span> 排程時用<b>變式</b>，關帳日用動態日期變數（例如「上月最後一天」）或 <span class="kw">TVARVC</span> 變數；不要像原程式在 <span class="kw">sy-batch</span> 時硬把日期改成今天、把客戶範圍清空——那樣變式就失去意義，也不能只重寄某幾個客戶。</li>
+    <li>先做「試跑模式」參數：只產 PDF、寄到測試信箱，不寄客戶。</li>
+    <li><b>測試機（DEV／QAS）一定要在 SCOT 設定轉寄或封鎖外部網域</b>，否則從正式機複製回來的客戶郵箱，會讓測試對帳單真的寄到客戶手上——這是對帳單專案最常見、也最尷尬的事故。</li>
+    <li>寄送紀錄存表：客戶、關帳日、收件人、狀態、時間。重跑時可以「只寄上次失敗的」，避免客戶收到兩份。</li>
+  </ol></div>
+
+  <h3 id="ch08-3-08">8. 收件人：KNVP 夥伴、ADR6 郵箱與 BP 聯絡人</h3>
+  <p>原程式的收件人規則：取客戶的<b>夥伴功能 RE</b>（Bill-to，付款方；註解卻寫「取 SHIP TO」，是註解錯），若 RE 夥伴中有帳戶群組 Z004 的就只用 Z004，否則用 Z001／Z002；再把這些夥伴的 ADR6 郵箱當收件人，ADRT 的備註（comm_type = 'INT'）當收件人姓名。CC 則是 ZSDT002 中 STATEMENT = 'X' 的所有人。只勾一個客戶時會彈出 Screen 9000 讓使用者再勾選；勾多個客戶則直接寄給全部聯絡人。</p>
+  <pre><code class="abap">" 帳戶群組優先序放設定表（列舉值，不寫死 'Z004' / 'Z001' / 'Z002'）
+SELECT DISTINCT
+       p~kunnr, p~kunn2, k~ktokd, a~smtp_addr, t~remark AS contact_name
+  FROM knvp AS p
+  INNER JOIN kna1 AS k ON k~kunnr = p~kunn2
+  INNER JOIN adr6 AS a ON a~addrnumber = k~adrnr
+                      AND a~persnumber = @space          " 組織地址上的郵箱
+  LEFT OUTER JOIN adrt AS t ON t~addrnumber = a~addrnumber
+                           AND t~persnumber = a~persnumber
+                           AND t~date_from  = a~date_from
+                           AND t~consnumber = a~consnumber
+                           AND t~comm_type  = 'INT'
+  WHERE p~kunnr IN @lt_kunnr_rng
+    AND p~parvw = 'RE'                                     " 內部碼 RE = Bill-to
+    AND k~ktokd IN @lt_ktokd_rng
+  ORDER BY p~kunnr, k~ktokd, a~smtp_addr
+  INTO TABLE @DATA(lt_contact).
+
+SELECT mail, uname
+  FROM zsdt002
+  WHERE statement = @abap_true
+  ORDER BY mail
+  INTO TABLE @DATA(lt_cc).</code></pre>
+  <div class="note"><b>S/4HANA 差異：</b>客戶主檔已由商業夥伴（BP）統一維護，<span class="tcode">XD01</span>／<span class="tcode">XD02</span> 停用、改用 <span class="tcode">BP</span>（見 <a href="#ch01-3">1-3 章</a>）。KNA1、KNVP 仍存在（BP 的客戶角色資料），地址與郵箱仍在 ADRC／ADR6，所以上面的 SQL 在 S/4HANA 照樣可用。但「聯絡人」在 BP 世界是<b>夥伴關係</b>：BUT050（關係類型 BUR001「聯絡人」）＋ BUT051（部門 ABTNR、功能、郵箱）。原函數 ZSD_GET_PERSON 裡其實已經有一段依 BUT050／BUT051、以部門 I_ABTNR 篩選的寫法（被註解掉），那才是 S/4HANA 的正解：<b>以「應收帳款部門的聯絡人」取收件人</b>，比用 ADRT 備註欄當姓名可靠得多。</div>
+  <div class="tip">Casper 第二條在這裡也適用：帳戶群組用 <span class="kw">IN @lt_ktokd_rng</span>，range 內放多筆 <span class="kw">I EQ</span>，不要寫成 BT 區間。帳戶群組、夥伴功能、ALPHA 前導零的客戶號，用區間比對的是字典序，新增群組時很容易漏抓或多抓。</div>
+
+  <h3 id="ch08-3-09">9. ZSDF003 原程式問題與改進、上線注意事項</h3>
+  <table>
+    <thead><tr><th>原寫法</th><th>問題</th><th>改進</th></tr></thead>
+    <tbody>
+      <tr><td>TABLES: kna1, t001；<span class="kw">LIKE TABLE OF t001 WITH HEADER LINE</span>；<span class="kw">gt_cline(256) TYPE c OCCURS 0</span>；<span class="kw">slis_t_fieldcat_alv WITH HEADER LINE</span></td><td>舊語法，S/4HANA 新程式禁用</td><td>DATA 參照變數給 SELECT-OPTIONS、內嵌宣告、標準表</td></tr>
+      <tr><td>DEFINE add_fieldcat／add_field 巨集</td><td>無法除錯、難讀</td><td>CL_SALV_TABLE 自動取欄位文字；需勾選框時用 CL_SALV 的 checkbox_hotspot 或 CL_GUI_ALV_GRID（<a href="#ch02-3">2-3 章</a>）</td></tr>
+      <tr><td>REUSE_ALV_GRID_DISPLAY_LVC ＋ GET_GLOBALS_FROM_SLVC_FULLSCR 取 grid</td><td>用 FM 包裝又回頭拿物件，兩套 API 混用</td><td>直接 CL_SALV_TABLE（加自訂 function）或 CL_GUI_ALV_GRID</td></tr>
+      <tr><td>REUSE_ALV_POPUP_TO_SELECT 選收件人</td><td>舊 FM</td><td>CL_SALV_TABLE 的 popup 模式（set_screen_popup）</td></tr>
+      <tr><td>S_BUKRS 可多選，但 KNB1 條件寫死常數 1010</td><td>選別的公司代碼時付款條件全錯</td><td>改成單一 P_BUKRS，所有 SELECT 一致使用</td></tr>
+      <tr><td>背景時改寫 p_datum、清空 s_kunnr</td><td>變式失效、無法重寄單一客戶</td><td>以變式＋動態日期控制</td></tr>
+      <tr><td>J_1A_SD_CI_DUEDATE_CHECK 以 BELNR 當 VBELN</td><td>在地化函數、號碼巧合</td><td>NET_DUE_DATE_GET 或 NetDueDate</td></tr>
+      <tr><td>SORT BY kunnr budat 後累計餘額</td><td>同日多筆順序不定（HANA 無預設排序）</td><td>加 belnr、buzei 為排序鍵</td></tr>
+      <tr><td>ZSDS006 金額欄無幣別參照；文字寫死「$」</td><td>多幣別客戶顯示錯誤</td><td>加 WAERS 欄位並設參照；CURRENCY 格式化</td></tr>
+      <tr><td>BWERT（採購訂單淨值）當金額資料元素</td><td>語意錯誤，F1 說明會誤導</td><td>用 DMBTR／WRBTR 或自建資料元素</td></tr>
+      <tr><td>Spool → PDF、每封 SUBMIT RSCONN01、空 CATCH</td><td>慢、留垃圾 spool、失敗無聲</td><td>getotf＋CONVERT_OTF、SCOT 排程、執行紀錄</td></tr>
+      <tr><td>寄件 SAP 帳號、公司名、電話、網址寫死</td><td>資安與維護風險</td><td>設定表＋SO10</td></tr>
+      <tr><td>FORM／PERFORM 全程式</td><td>新程式不建議</td><td>本地類別（資料取得／帳齡計算／輸出／寄送 四個責任分開），單元測試可針對帳齡計算寫 ABAP Unit</td></tr>
+    </tbody>
+  </table>
+  <div class="warn"><b>上線注意事項：</b>① 以 <span class="tcode">FBL5N</span>（關帳日模式、未清項）逐一核對至少 10 個客戶的總額與帳齡，含有部分付款、貸項、溢收、特殊總帳的客戶各挑一個。② 月結前後的關帳日各跑一次，確認 BSAD 回溯邏輯正確。③ 確認 SmartForm 的地址在不同國家格式下不跑版。④ 測試機的 SCOT 封鎖外寄（見 8-3-07）。⑤ 背景作業使用者需要 F_BKPF_BUK、S_OC_SEND 等權限，用 <span class="tcode">SU53</span>／<span class="tcode">STAUTHTRACE</span> 先確認。</div>
+
+  <h3 id="ch08-3-10">10. ZSDF004 業務情境、選擇畫面與九種單據</h3>
+  <p><b>業務情境：</b>出口一票貨，船務／關務要同時準備給客戶的 <b>Proforma Invoice</b>（訂單階段報價與預付款依據）、給海關的<b>報關發票、報關合同、報關委託書、報關箱單、報關單、申報要素</b>，以及出貨後給銀行押匯、給客戶清關用的<b>結匯單</b>（Commercial Invoice、Delivery Note、Packing List）。這些單據內容大量重疊（買方、合同號、運編號、品名、數量、金額、淨毛重、HS 編碼），手工在 Excel 抄寫很容易前後不一，海關查驗時「發票金額與箱單不符」就會被卡關。ZSDF004 把它們集中在一個選單程式。</p>
+  <p><b>選擇畫面</b>（截圖「外貿單據打印」）分兩塊：</p>
+  <table>
+    <thead><tr><th>區塊</th><th>欄位</th><th>參照</th></tr></thead>
+    <tbody>
+      <tr><td rowspan="6">查詢條件</td><td>銷售訂單號 S_VBELN</td><td>VBAK-VBELN</td></tr>
+      <tr><td>客戶合同號 S_VSNMR</td><td>VBAK-VSNMR_V（銷售文件版本號，這家公司拿來存客戶合同號）</td></tr>
+      <tr><td>客戶訂單號 S_BSTKD</td><td>VBKD-BSTKD</td></tr>
+      <tr><td>交貨單號 S_VBELN2</td><td>LIKP-VBELN</td></tr>
+      <tr><td>運編號 S_BOLNR</td><td>LIKP-BOLNR（提單號欄位，這家公司拿來存外運編號，同時當發票號）</td></tr>
+      <tr><td>訂單日期 S_ERDAT</td><td>VBAK-ERDAT</td></tr>
+      <tr><td>打印單據</td><td colspan="2">單選鈕 P_R1～P_R9；P_R1 旁再有子選項「標準／美國／子公司 C」三種 PI 版型；P_R6（結匯單）旁有十種版型子選項。未選主選項時，子選項以 LOOP AT SCREEN 設為不可輸入並清空。</td></tr>
+    </tbody>
+  </table>
+  <table>
+    <thead><tr><th>選項</th><th>子程式</th><th>單據</th><th>取數層級</th><th>Excel 範本（SMW0）</th><th>主要內容</th></tr></thead>
+    <tbody>
+      <tr><td>P_R1</td><td>R01</td><td>Proforma Invoice</td><td>銷售訂單（VBAK/VBAP）</td><td>ZSDF004_INVOICE_ST 及另兩個版型</td><td>BUYER、合同號、訂單號、幣別＋Incoterms、日期、交期（VBEP 最晚計劃行日期）、付款條件、業務員（VBPA 夥伴 YW）、目的國、品項（客戶料號／品名、數量 PCS、BOX 數、單價、金額）、SAY … 大寫金額</td></tr>
+      <tr><td>P_R2</td><td>R02</td><td>報關發票</td><td>交貨單（LIKP/LIPS）</td><td>ZSDF004_BGFP</td><td>依 HS 大類彙總的品名（中文／英文）、數量、單價、金額；FROM CHINA TO 目的國；TOTAL 大寫</td></tr>
+      <tr><td>P_R3</td><td>R03</td><td>報關合同</td><td>交貨單</td><td>ZSDF004_BGHT</td><td>合同號、訂單號、運輸路線（中英）、付款條件、大類彙總明細</td></tr>
+      <tr><td>P_R4</td><td>R04</td><td>出口貨物報關委託書</td><td>交貨單</td><td>ZSDF004_BGWTS</td><td>大類品名、HS Code（去重後串接）</td></tr>
+      <tr><td>P_R5</td><td>R05</td><td>報關箱單</td><td>交貨單＋ZWMT015 箱號</td><td>ZSDF004_BGXD</td><td>唛頭（BOX_OF_／LOT_）、品名、件數、淨重、毛重、體積（各含單位）</td></tr>
+      <tr><td>P_R6</td><td>R06</td><td>結匯單（CI／DN／PL 三頁）</td><td>交貨單（澳洲版型改用銷售訂單）</td><td>ZSDF004_JHD_* 共十個</td><td>Invoice No.＝運編號、箱號清單、客戶料號、批號（MCHA 自建欄位）、生產／效期、FDA 編號、UPN、HS、單價、數量、金額、淨毛重、材積</td></tr>
+      <tr><td>P_R7</td><td>R07</td><td>出口貨物明細</td><td>交貨單＋箱號</td><td>ZSDF004_CKHWMXB</td><td>件數、數量、金額、淨毛重、體積、裝運類型（T173T）、整單 HS Code 串接</td></tr>
+      <tr><td>P_R8</td><td>R08</td><td>新版報關單</td><td>交貨單</td><td>ZSDF004_XBBGD</td><td>境外收貨人、運輸方式、合同協議號、貿易國／運抵國、指運港、成交方式、標記唛碼（BP 法人型態 TB032T 短文字）、原料費／加工費</td></tr>
+      <tr><td>P_R9</td><td>R09</td><td>申報要素</td><td>交貨單</td><td>ZSDF004_SBYS</td><td>每個大類的申報要素（ZTSDBGYS-ZSBYS＋ZSBYS2）</td></tr>
+    </tbody>
+  </table>
+  <p><b>自建表</b>（程式中出現、依欄位用法整理）：</p>
+  <table>
+    <thead><tr><th>表</th><th>說明</th><th>程式用到的欄位</th></tr></thead>
+    <tbody>
+      <tr><td>ZTSDKHCHXX 客戶存貨資訊維護</td><td>客戶＋物料層級的外貿主資料</td><td>ZMATNR、ZKUNNR、ZDYCHBM（列印存貨編碼＝客戶料號）、ZDYCHMC（列印品名）、ZPACK（每箱數量）、ZXH（項號／換算倍數）、ZMZ 毛重、ZJZ 淨重、ZTJ 體積、ZXX（材積文字）、ZDL 海關大類、ZFDAN／ZFDAP（FDA 編號）</td></tr>
+      <tr><td>ZTSDBGYS 報關要素</td><td>海關大類主檔</td><td>ZDL、ZNAME1（中文名）、ZNAME2（英文名）、ZSHCODE（HS 編碼）、ZSBYS／ZSBYS2（申報要素）</td></tr>
+      <tr><td>ZWMT015 產品銷售出庫記錄清單（截圖，33 欄）</td><td>掃描槍出庫記錄，一箱一物料一批一筆</td><td>主鍵 MANDT＋ID；ZVBELN 交貨單、PIBILL 揀貨單、ZBOXNO 箱號（NUMC6）、ZMITAT／ZMCHARG 滅菌批號、ZEXPRESS 快遞單號、ZEXPTYPE、ZQRCODE 箱二維碼、BARCODE、PRODATE 生產日期、SMQUAN 條碼數量、MATNR（CHAR40）、MAKTX、LGORT、WERKS、BATCH 公司內部批號、ZCHARG 批號、SONUM 特殊庫存、ZNAME 員工工號、SHR 收貨人、LOEKZ 刪除標記、ZPOST 過帳標識、MBLNR 物料憑證、BUDAT；附加結構 ZFIS001（CRDAT、CRTIM、CRNAM、UDATE、UTIME、UNAME）</td></tr>
+      <tr><td>ZWMT012／ZWMT008</td><td>子公司 A 版型的出庫批次明細／滅菌批與生產日期</td><td>ZVBELN、ZPOSNR、CHARG、ZDEL；ITEM、CHARG、PRODATE、STERILIZE、LOEKZ</td></tr>
+    </tbody>
+  </table>
+  <div class="note">ZWMT015 其實就是一套自建的「裝箱管理」。SAP 標準對應的是<b>處理單位（Handling Unit, HU）</b>：VEKP（HU 表頭，含毛重、淨重、體積、外部 HU 號）、VEPO（HU 內容），在交貨單上包裝（<span class="tcode">VL02N</span> 包裝功能）後，Packing List 的箱數與重量直接可得。若專案已經用 EWM 或 HU 管理，這類外貿單據應直接讀 HU，而不是再建一張掃描表——又是「先找標準」。</div>
+
+  <h3 id="ch08-3-11">11. ZSDF004 程式架構：選單 SUBMIT 分派＋九支子程式共用骨架</h3>
+  <p>選單程式只做一件事：把六個 SELECT-OPTIONS 轉成 <span class="kw">RSPARAMS</span>，依單選鈕決定子程式名稱與 P_TYPE（版型），<span class="kw">SUBMIT (lv_report) WITH SELECTION-TABLE rspar_tab AND RETURN</span>。每支子程式的骨架都一樣：</p>
+  <ol>
+    <li>權限：AUTHORITY-CHECK <span class="kw">M_MATE_MAT</span>（BEGRU 'N'），把 MARA 中權限群組 N 的物料組成 range，再找出含這些物料的銷售訂單組成 range，最後把這些訂單從結果刪掉（ELSE 分支在講義中被刪減為「…」，完整規則無法確認）。</li>
+    <li>取數：SELECT 訂單或交貨單清單 → REUSE_ALV_GRID_DISPLAY_LVC 顯示，SEL 欄勾選。</li>
+    <li>按「列印」：同一交貨單（或 PI 的同一批訂單）的行項目一起處理 → 取表頭與明細 → 算合計、大寫金額。</li>
+    <li>範本：<span class="kw">cl_gui_frontend_services=&gt;file_save_dialog</span> 讓使用者選存檔路徑 → <span class="kw">DOWNLOAD_WEB_OBJECT</span> 把 SMW0 的 Excel 範本下載到該路徑。</li>
+    <li>填值：<span class="kw">CREATE OBJECT w_excel 'EXCEL.APPLICATION'</span> 開啟檔案 → 表頭用 <span class="kw">set_cell</span>（寫死列／欄座標）逐格填 → 明細先以 Rows Copy/Insert 插入 n−1 列，再把明細組成 TAB 分隔字串放進<b>剪貼簿</b>（<span class="kw">clipboard_export</span>），選取起始儲存格後 Paste → AutoFit → SaveAs。</li>
+  </ol>
+  <p>選單的現代寫法：</p>
+  <pre><code class="abap">CLASS lcl_rspar DEFINITION.
+  PUBLIC SECTION.
+    CLASS-METHODS add
+      IMPORTING iv_name  TYPE rsscr_name
+                it_range TYPE STANDARD TABLE
+      CHANGING  ct_rspar TYPE rsparams_tt.
+ENDCLASS.
+
+CLASS lcl_rspar IMPLEMENTATION.
+  METHOD add.
+    LOOP AT it_range ASSIGNING FIELD-SYMBOL(&lt;ls_range&gt;).
+      DATA(ls_par) = VALUE rsparams( selname = iv_name kind = 'S' ).
+      MOVE-CORRESPONDING &lt;ls_range&gt; TO ls_par.     " sign / option / low / high
+      APPEND ls_par TO ct_rspar.
+    ENDLOOP.
+  ENDMETHOD.
+ENDCLASS.
+
+START-OF-SELECTION.
+  DATA lt_rspar TYPE rsparams_tt.
+  lcl_rspar=&gt;add( EXPORTING iv_name = 'S_VBELN'  it_range = s_vbeln[]  CHANGING ct_rspar = lt_rspar ).
+  lcl_rspar=&gt;add( EXPORTING iv_name = 'S_VSNMR'  it_range = s_vsnmr[]  CHANGING ct_rspar = lt_rspar ).
+  lcl_rspar=&gt;add( EXPORTING iv_name = 'S_BSTKD'  it_range = s_bstkd[]  CHANGING ct_rspar = lt_rspar ).
+  lcl_rspar=&gt;add( EXPORTING iv_name = 'S_VBELN2' it_range = s_vbeln2[] CHANGING ct_rspar = lt_rspar ).
+  lcl_rspar=&gt;add( EXPORTING iv_name = 'S_BOLNR'  it_range = s_bolnr[]  CHANGING ct_rspar = lt_rspar ).
+  lcl_rspar=&gt;add( EXPORTING iv_name = 'S_ERDAT'  it_range = s_erdat[]  CHANGING ct_rspar = lt_rspar ).
+
+  " 版型：PI 三種、結匯單十種；對照放常數表或設定表，不要在畫面上寫死客戶／子公司代號
+  DATA(lv_layout) = COND char1( WHEN p_r1 = abap_true THEN SWITCH #( abap_true WHEN p_r11 THEN '1'
+                                                                               WHEN p_r12 THEN '2'
+                                                                               WHEN p_r13 THEN '3' )
+                                WHEN p_r6 = abap_true THEN get_jhd_layout( ) ).
+  IF lv_layout IS NOT INITIAL.
+    APPEND VALUE #( selname = 'P_TYPE' kind = 'P' low = lv_layout ) TO lt_rspar.
+  ENDIF.
+
+  DATA(lv_report) = SWITCH progname( abap_true
+                      WHEN p_r1 THEN 'ZSDF004_R01'    " Proforma Invoice
+                      WHEN p_r2 THEN 'ZSDF004_R02'    " 報關發票
+                      WHEN p_r3 THEN 'ZSDF004_R03'    " 報關合同
+                      WHEN p_r4 THEN 'ZSDF004_R04'    " 報關委託書
+                      WHEN p_r5 THEN 'ZSDF004_R05'    " 報關箱單
+                      WHEN p_r6 THEN 'ZSDF004_R06'    " 結匯單
+                      WHEN p_r7 THEN 'ZSDF004_R07'    " 出口貨物明細
+                      WHEN p_r8 THEN 'ZSDF004_R08'    " 新版報關單
+                      WHEN p_r9 THEN 'ZSDF004_R09' ). " 申報要素
+  IF lv_report IS NOT INITIAL.
+    SUBMIT (lv_report) WITH SELECTION-TABLE lt_rspar AND RETURN.
+  ENDIF.</code></pre>
+  <div class="tip">選擇畫面的動態控制（子選項隨主選項開關）見 <a href="#ch03-1">3-1 章</a>。原程式在 <span class="kw">AT SELECTION-SCREEN OUTPUT</span> 的 LOOP AT SCREEN 裡順便清空子選項的值，這樣做可行，但更好的是把「清值」放在 <span class="kw">AT SELECTION-SCREEN ON RADIOBUTTON GROUP</span>，畫面邏輯（顯示／隱藏）與資料邏輯（預設值）分開。</div>
+
+  <h3 id="ch08-3-12">12. 單據取數：Proforma Invoice（訂單層）與報關單據（交貨單層）</h3>
+  <p>PI 在出貨前開，讀<b>銷售訂單</b>：VBAK（合同號 VSNMR_V、幣別、建立日、條件號 KNUMV）＋ VBAP（物料、訂購數量 KWMENG）＋ VBKD 表頭（POSNR = '000000'：客戶訂單號、付款條件、Incoterms）＋ VBEP（計劃行交期）＋ VBPA（業務員夥伴 YW）＋ PRCD_ELEMENTS（條件類型 PR02 單價）。報關與結匯單在出貨後開，讀<b>交貨單</b>：LIKP（運編號 BOLNR、收貨方 KUNNR、售達方 KUNAG、裝運類型 VSART、Incoterms）＋ LIPS（交貨量 LFIMG、參考訂單 VGBEL/VGPOS、批次 CHARG）。</p>
+  <pre><code class="abap">" Proforma Invoice：一次 JOIN 取回，客戶料號資訊用 LEFT OUTER JOIN，不要在 LOOP 裡逐筆 SELECT
+SELECT k~vbeln, p~posnr, k~vsnmr_v, d~bstkd, k~erdat, k~kunnr, k~waerk,
+       d~zterm, d~inco1, p~matnr, p~kwmeng, p~vrkme, p~netwr,
+       c~zdychbm, c~zdychmc, c~zpack, c~zxh
+  FROM vbak AS k
+  INNER JOIN vbap AS p ON p~vbeln = k~vbeln
+  LEFT OUTER JOIN vbkd AS d ON d~vbeln = k~vbeln
+                           AND d~posnr = '000000'
+  LEFT OUTER JOIN ztsdkhchxx AS c ON c~zmatnr = p~matnr
+                                 AND c~zkunnr = k~kunnr
+  WHERE k~vbeln   IN @s_vbeln
+    AND k~vsnmr_v IN @s_vsnmr
+    AND k~erdat   IN @s_erdat
+    AND d~bstkd   IN @s_bstkd     " 注意：有輸入時等同把 VBKD 變成 INNER JOIN
+  ORDER BY k~vbeln, p~posnr
+  INTO TABLE @DATA(lt_pi).
+
+" 「數量以 PCS 換算」的特殊客戶放設定表（例：C000001），不寫死客戶號
+SELECT kunnr FROM zsd_ft_cust WHERE pcs_convert = @abap_true INTO TABLE @DATA(lt_pcs_cust).
+
+LOOP AT lt_pi ASSIGNING FIELD-SYMBOL(&lt;ls_pi&gt;).
+  DATA(lv_factor) = COND decfloat34(
+                      WHEN &lt;ls_pi&gt;-zxh IS NOT INITIAL
+                       AND line_exists( lt_pcs_cust[ kunnr = &lt;ls_pi&gt;-kunnr ] )
+                      THEN &lt;ls_pi&gt;-zxh ELSE 1 ).
+  DATA(lv_qty_pcs) = &lt;ls_pi&gt;-kwmeng * lv_factor.
+
+  " 單價由「行淨值 / 數量」推回，行金額直接用 NETWR：與報關發票同一算法，尾差才一致
+  DATA(lv_unit) = COND decfloat34( WHEN lv_qty_pcs &lt;&gt; 0 THEN &lt;ls_pi&gt;-netwr / lv_qty_pcs ).
+
+  APPEND VALUE #( posnr      = &lt;ls_pi&gt;-posnr
+                  cust_mat   = &lt;ls_pi&gt;-zdychbm
+                  descr      = &lt;ls_pi&gt;-zdychmc
+                  qty_text   = |{ lv_qty_pcs NUMBER = USER DECIMALS = 0 } PCS|
+                  box_text   = COND #( WHEN &lt;ls_pi&gt;-zpack IS NOT INITIAL
+                                       THEN |{ lv_qty_pcs / &lt;ls_pi&gt;-zpack NUMBER = USER DECIMALS = 2 } BOX| )
+                  price_text = |{ lv_unit DECIMALS = 4 } { &lt;ls_pi&gt;-waerk }/PC|
+                  amount_txt = |{ &lt;ls_pi&gt;-netwr CURRENCY = &lt;ls_pi&gt;-waerk NUMBER = USER } { &lt;ls_pi&gt;-waerk }| )
+         TO lt_pi_line.
+ENDLOOP.</code></pre>
+  <div class="warn"><b>日圓金額差 100 倍的坑。</b>原程式把 <span class="kw">PRCD_ELEMENTS-KBETR</span> 直接放進字串並加上「￥」。SAP 內部對沒有小數位的幣別（JPY、KRW 等，TCURX 設定）仍以兩位小數儲存，1,000 日圓在資料庫裡是 10.00；只有用 <span class="kw">CURRENCY = waerk</span> 格式化（或 WRITE … CURRENCY、CURRENCY_AMOUNT_SAP_TO_DISPLAY）才會還原成 1,000。直接轉字串就會印出 10.00，差 100 倍。同理，原程式把 CNY 與 JPY 都印成「￥」，對報關文件是模糊的，建議一律印 ISO 幣別代碼。</div>
+  <div class="warn"><b>PI 與報關發票算法不同，尾差對不上。</b>R01 用「PR02 單價 × 數量」；R02 在一次修改中改成「VBAP-NETWR ÷ KWMENG × 交貨量」以「最佳化尾差」。結果同一張訂單，PI 總額與報關發票總額可能差幾分錢，海關或客戶一對就出問題。另外 KBETR 是「每 KPEIN 個 KMEIN 的價格」，條件價格單位不是 1 時直接乘數量就錯。<b>所有單據的單價與金額應該由同一個方法算</b>，而且以 NETWR 為準。</div>
+  <div class="note"><b>Casper 第一條再出現：</b>原程式多處 <span class="kw">READ TABLE … INDEX 1</span> 取「第一筆」：VBPA 業務員、T052U 付款條件文字、KNA1＋ADRC 地址（這個連 SORT 都沒有），R06 還有一句 <span class="kw">SELECT SINGLE * FROM vbkd WHERE vbeln = …</span> 沒給 POSNR——訂單有項目層 VBKD 時，拿到表頭還是某個項目完全看資料庫心情。一律要寫完整鍵，或先 ORDER BY 再取第一筆。</div>
+  <div class="note"><b>T052U 用 SPRAS = '1' 的原因：</b>程式註解寫「中文環境維護的也是英文」——付款條件的英文說明被維護在中文語言鍵下。'1' 是中文的內部語言鍵，不是英文。正確做法是在英文（E）下維護翻譯，程式依單據語言讀取；否則日後有人把中文鍵改成真的中文，英文 PI 就會印出中文付款條件。</div>
+
+  <h3 id="ch08-3-13">13. 報關彙總、結匯單（Commercial Invoice／Packing List）與箱數</h3>
+  <p>報關發票、合同、委託書、箱單、明細表都不是逐料號列印，而是<b>依海關大類（ZDL，對應 HS 編碼）彙總</b>：同一大類的數量、金額、淨重、毛重、體積相加，品名欄把該大類的中英文名稱串起來（Excel 公式 <span class="kw">CHAR(10)</span> 換行）。只有一個特定收貨方例外，改成依物料彙總（原程式把該客戶號寫死在 IF 條件裡，又寫死了三次）。結匯單 R06 則逐交貨項目列出，含批號、生產日期、效期、FDA 編號、UPN、箱號清單，三頁分別是 Commercial Invoice（有單價金額）、Delivery Note（無金額）、Packing List（有淨毛重與材積）。</p>
+  <pre><code class="abap">" 依 HS 大類彙總（取代 SORT + AT END OF + SUM 的寫法）
+TYPES: BEGIN OF ty_hs_line,
+         zdl    TYPE c LENGTH 10,
+         hscode TYPE c LENGTH 20,
+         qty    TYPE p LENGTH 15 DECIMALS 0,
+         amount TYPE p LENGTH 15 DECIMALS 2,
+         ntgew  TYPE p LENGTH 15 DECIMALS 3,
+         brgew  TYPE p LENGTH 15 DECIMALS 3,
+         volum  TYPE p LENGTH 15 DECIMALS 3,
+         descr  TYPE string,
+       END OF ty_hs_line,
+       tt_hs_line TYPE STANDARD TABLE OF ty_hs_line WITH EMPTY KEY.
+
+DATA(lt_hs) = VALUE tt_hs_line(
+  FOR GROUPS g OF r IN lt_dlv_item
+      GROUP BY ( zdl = r-zdl hscode = r-hscode )
+      ASCENDING
+  ( zdl    = g-zdl
+    hscode = g-hscode
+    qty    = REDUCE #( INIT q TYPE ty_hs_line-qty    FOR m IN GROUP g NEXT q = q + m-qty_pcs )
+    amount = REDUCE #( INIT a TYPE ty_hs_line-amount FOR m IN GROUP g NEXT a = a + m-netwr )
+    ntgew  = REDUCE #( INIT n TYPE ty_hs_line-ntgew  FOR m IN GROUP g NEXT n = n + m-ntgew )
+    brgew  = REDUCE #( INIT b TYPE ty_hs_line-brgew  FOR m IN GROUP g NEXT b = b + m-brgew )
+    volum  = REDUCE #( INIT v TYPE ty_hs_line-volum  FOR m IN GROUP g NEXT v = v + m-volum )
+    descr  = concat_lines_of( table = VALUE string_table(
+                                FOR m IN GROUP g ( |{ m-name_zh }/{ m-name_en }| ) )
+                              sep   = cl_abap_char_utilities=&gt;newline ) ) ).</code></pre>
+  <p>箱數（件數）是 Packing List 最容易算錯的欄位：一個箱子可能裝了兩個大類的貨。原程式用「已記錄旗標」避免同箱重複計數；用 SQL 表達會更清楚——<b>整張交貨單的總箱數要對整張單 COUNT DISTINCT，不能把各大類的箱數相加</b>：</p>
+  <pre><code class="abap">" 各大類的箱數（同一箱跨大類時，各大類都會算到它）
+SELECT b~zvbeln, c~zdl, COUNT( DISTINCT b~zboxno ) AS box_cnt
+  FROM zwmt015 AS b
+  INNER JOIN likp AS l ON l~vbeln = b~zvbeln
+  INNER JOIN ztsdkhchxx AS c ON c~zmatnr = b~matnr
+                            AND c~zkunnr = l~kunnr
+  WHERE b~zvbeln IN @lt_vbeln_rng
+    AND b~loekz  = @space
+  GROUP BY b~zvbeln, c~zdl
+  INTO TABLE @DATA(lt_box_by_hs).
+
+" 整張交貨單的總件數：獨立計算，不可用上面各列相加
+SELECT zvbeln, COUNT( DISTINCT zboxno ) AS box_total
+  FROM zwmt015
+  WHERE zvbeln IN @lt_vbeln_rng
+    AND loekz  = @space
+  GROUP BY zvbeln
+  INTO TABLE @DATA(lt_box_total).</code></pre>
+  <div class="tip">原程式的箱號欄印成「1,2,3,5,7,8」這種逐一列舉的清單，而不是壓成「1-3,5,7-8」。對關務來說列舉看起來冗長，但<b>可逐箱核對、不會因為跳號而誤判</b>——這正是 Casper 第二條「列舉比區間安全」在單據上的體現。若客戶堅持要區間格式，也請在系統內保留列舉值，只在輸出時壓縮。</div>
+  <div class="note"><b>批號、效期與標準欄位對照：</b>R06 從 MCHA 的自建附加欄位 ZZBATCH 讀「對外批號」，用自建函數 ZWMFU0 以生產日期推算效期，部分版型改讀滅菌批表 ZWMT008。SAP 標準：批次主檔 MCH1（S/4HANA 預設批次層級為物料層級，應讀 MCH1 而非工廠層級的 MCHA）的 HSDAT 生產日、VFDAT 有效期限（由物料主檔 MARA-MHDHB 總貨架壽命自動計算）、LICHA 供應商批號；更多屬性放批次分類（<span class="tcode">MSC3N</span>）。原程式還在某版型把工廠寫死為 1000 去讀 MCHA，多工廠時必錯。</div>
+  <div class="warn"><b>S/4HANA 外貿功能差異：</b>ECC 的 SD 外貿（Foreign Trade）在 S/4HANA 由 <b>International Trade</b>（及 SAP GTS）取代，商品編碼（HS／Commodity Code）改為可設有效期間的分類管理，細節請依版本查 Simplification List。本案的 HS 編碼、申報要素、中英文品名都放在自建表 ZTSDBGYS，這在標準功能不足（特別是中國海關的申報要素）時合理，但要有維護畫面（<span class="tcode">SM30</span>）、變更記錄與負責單位，不然 HS 編碼改版時沒人知道要改。</div>
+
+  <h3 id="ch08-3-14">14. 英文大寫金額：ZFM_SPELL_AMOUNT_POINT 的問題與 SPELL_AMOUNT 正確用法</h3>
+  <p>外貿發票最後一行通常是「SAY US DOLLARS ONE THOUSAND TWO HUNDRED THIRTY-FOUR AND CENTS FIFTY ONLY」。原專案寫了共用函數 ZFM_SPELL_AMOUNT_POINT（群組 ZMMFG002「common functions」，短文「英文大寫（翻譯 point）」；匯入 I_AMOUNT 無型別、說明為「憑證貨幣計量的淨價值」，匯出 E_AMOUNT 無型別）。做法是：把金額轉成字串、以「.」切成整數與小數，整數丟 <span class="kw">SPELL_AMOUNT</span>，小數兩位<b>各自</b>再丟一次，組成「… AND POINT FIVE-SIX」。</p>
+  <div class="warn"><b>這支函數的問題：</b>
+  <ul>
+    <li><span class="kw">CURRENCY = sy-waers</span>：SY-WAERS 是過時的系統欄位，通常為空或不正確；SPELL_AMOUNT 需要實際幣別才能正確處理小數位（JPY 的內部位移問題也由它處理）。</li>
+    <li>小數逐位念成「POINT FIVE-SIX」不是商業發票慣例；0.50 會念成「POINT FIVE」，客戶與銀行常要的是「AND CENTS FIFTY」。</li>
+    <li>匯入參數無型別、字串切割依賴小數點字元與千分位設定；負數會帶出「-」。</li>
+    <li>程式裡有 <span class="kw">IF … &lt;&gt; 'ZERO' ..</span> 兩個句點的筆誤（剛好合法，因為空敘述被允許），代表這段沒有被仔細審查。</li>
+  </ul>
+  其實 SPELL_AMOUNT 本身就回傳整數文字 WORD 與小數文字 DECWORD，不需要自己切。</div>
+  <pre><code class="abap">METHOD amount_in_words.
+  " iv_amount：內部格式金額；iv_waers：單據幣別
+  DATA ls_words TYPE spell.
+
+  CALL FUNCTION 'SPELL_AMOUNT'
+    EXPORTING
+      amount    = iv_amount
+      currency  = iv_waers
+      language  = 'E'
+    IMPORTING
+      in_words  = ls_words
+    EXCEPTIONS
+      not_found = 1
+      too_large = 2
+      OTHERS    = 3.
+  IF sy-subrc &lt;&gt; 0.
+    RETURN.
+  ENDIF.
+
+  SELECT SINGLE ltext FROM tcurt
+    WHERE spras = 'E' AND waers = @iv_waers
+    INTO @DATA(lv_curr_name).
+
+  rv_text = COND #(
+    WHEN ls_words-decword IS INITIAL OR ls_words-decword = 'ZERO'
+    THEN |SAY { to_upper( lv_curr_name ) } { ls_words-word } ONLY|
+    ELSE |SAY { to_upper( lv_curr_name ) } { ls_words-word } AND CENTS { ls_words-decword } ONLY| ).
+ENDMETHOD.</code></pre>
+  <div class="tip">大寫金額一律對「合計金額」算一次，並與數字合計放在同一個方法產生；不要各單據各算。這支方法很適合寫 ABAP Unit：0、0.01、0.50、1,234.56、JPY 1000、負數各一個測試案例。</div>
+
+  <h3 id="ch08-3-15">15. Excel 輸出現代化：OLE＋剪貼簿 → 伺服器端產生 xlsx</h3>
+  <p>ZSDF004 九支程式全部用 <b>OLE Automation</b> 操作使用者電腦上的 Excel，明細靠<b>剪貼簿</b>貼上。這在 2000 年代很普遍，但在 S/4HANA 專案有一連串問題：</p>
+  <table>
+    <thead><tr><th>問題</th><th>說明</th></tr></thead>
+    <tbody>
+      <tr><td>只能在 SAP GUI for Windows＋本機裝 Excel 時執行</td><td>SAP GUI for HTML、Fiori Launchpad、背景作業全都不能用；也就無法「出貨過帳後自動產生並寄出」</td></tr>
+      <tr><td>覆蓋使用者剪貼簿</td><td>使用者剛複製的內容被清掉；執行中若使用者按了 Ctrl+C，貼進 Excel 的就是別的東西——單據內容錯了還不會報錯</td></tr>
+      <tr><td>慢且脆弱</td><td>每格一次 OLE 往返；Excel 版本、巨集安全設定、防毒都會影響；FREE OBJECT 沒做好會留下 EXCEL.EXE 殭屍程序</td></tr>
+      <tr><td>座標寫死</td><td><span class="kw">set_cell USING 13 4 …</span> 這類列欄號散落各程式；範本多一列，程式就要改</td></tr>
+      <tr><td>檔案落在使用者本機</td><td>沒有存檔紀錄、無法稽核「發給海關的是哪一版」</td></tr>
+    </tbody>
+  </table>
+  <p>替代方案依需求選：<b>固定版面、要 PDF</b> → SmartForms 或 Adobe Forms（<span class="tcode">SFP</span>，S/4HANA 輸出管理主推，見 <a href="#ch04-3">4-3 章</a>）；<b>海關或客戶要可編輯的 Excel</b> → 伺服器端產生 xlsx，例如開源的 abap2xlsx（非 SAP 標準，導入前需經公司原始碼審查），較新的 S/4HANA 版本另有 XCO 的 XLSX 模組可用（依版本確認）。範本不再放 <span class="tcode">SMW0</span> 下載到本機，而是放 MIME Repository，由程式在伺服器端讀取：</p>
+  <pre><code class="abap">METHOD build_invoice_xlsx.
+  " 1. 讀範本（SE80 MIME Repository；路徑放設定表）
+  DATA lv_template TYPE xstring.
+  DATA(lo_mr) = cl_mime_repository_api=&gt;get_api( ).
+  lo_mr-&gt;get( EXPORTING  i_url     = ms_cfg-template_url      " 例：/SAP/PUBLIC/ZSDF004/PI_STD.xlsx
+              IMPORTING  e_content = lv_template
+              EXCEPTIONS OTHERS    = 1 ).
+  IF sy-subrc &lt;&gt; 0.
+    RAISE EXCEPTION TYPE zcx_sd_ft_doc EXPORTING textid = zcx_sd_ft_doc=&gt;template_not_found.
+  ENDIF.
+
+  TRY.
+      " 2. abap2xlsx 載入範本、填值（開源專案，API 以導入版本為準）
+      DATA(lo_excel) = CAST zif_excel_reader( NEW zcl_excel_reader_2007( ) )-&gt;load( lv_template ).
+      DATA(lo_ws)    = lo_excel-&gt;get_active_worksheet( ).
+
+      " 表頭：座標集中在版型設定（ZSD_FT_LAYOUT：版型 / 欄位名 / 欄 / 列），不散落在程式裡
+      LOOP AT mt_layout INTO DATA(ls_pos) WHERE area = 'H'.
+        ASSIGN COMPONENT ls_pos-fieldname OF STRUCTURE is_head TO FIELD-SYMBOL(&lt;lv_value&gt;).
+        IF sy-subrc = 0.
+          lo_ws-&gt;set_cell( ip_column = ls_pos-col ip_row = ls_pos-row ip_value = &lt;lv_value&gt; ).
+        ENDIF.
+      ENDLOOP.
+
+      " 明細：從起始列往下寫，不用剪貼簿
+      DATA(lv_row) = ms_layout_head-item_start_row.
+      LOOP AT it_item INTO DATA(ls_item).
+        LOOP AT mt_layout INTO ls_pos WHERE area = 'I'.
+          ASSIGN COMPONENT ls_pos-fieldname OF STRUCTURE ls_item TO &lt;lv_value&gt;.
+          IF sy-subrc = 0.
+            lo_ws-&gt;set_cell( ip_column = ls_pos-col ip_row = lv_row ip_value = &lt;lv_value&gt; ).
+          ENDIF.
+        ENDLOOP.
+        lv_row = lv_row + 1.
+      ENDLOOP.
+
+      " 3. 輸出 xstring：前景可 gui_download，背景可當郵件附件或存 DMS / 附件服務
+      rv_xlsx = CAST zif_excel_writer( NEW zcl_excel_writer_2007( ) )-&gt;write_file( lo_excel ).
+    CATCH zcx_excel INTO DATA(lx_excel).
+      RAISE EXCEPTION TYPE zcx_sd_ft_doc EXPORTING previous = lx_excel.
+  ENDTRY.
+ENDMETHOD.</code></pre>
+  <div class="note">範本若需要「插入列並沿用格式」，abap2xlsx 的作法與 Excel OLE 的 Rows.Insert 不同（通常是預留樣式、逐列套用 style），實作前先用小範本驗證。無論選哪個工具，<b>產出的檔案都應該在系統內留存</b>（例如掛在交貨單的附件上），日後海關查核時才能證明當時送出的內容。</div>
+
+  <h3 id="ch08-3-16">16. ZSDF004 原程式問題與改進、S/4HANA 與上線注意事項</h3>
+  <table>
+    <thead><tr><th>原寫法</th><th>問題</th><th>改進</th></tr></thead>
+    <tbody>
+      <tr><td>九支子程式各有一份 set_cell、range_paste、get_col_by_number、frm_download_template、frm_check_authority、ALV 顯示</td><td>同一個 bug 要修九次；表頭註解都還寫著 R07</td><td>抽出共用類別：資料來源（訂單層／交貨單層）× 版型（輸出格式）。用策略模式（Strategy）讓每種單據只實作「取數」與「欄位對應」，見 <a href="#ch07-5">7-5 章</a></td></tr>
+      <tr><td>TABLES: vbak, vbkd, likp；<span class="kw">RANGE OF … WITH HEADER LINE</span>；R06 的 <span class="kw">DATA: BEGIN OF gt_data OCCURS 0</span></td><td>舊語法</td><td>參照變數、標準 RANGE 表、內嵌宣告</td></tr>
+      <tr><td>REUSE_ALV_GRID_DISPLAY（R06）／REUSE_ALV_GRID_DISPLAY_LVC（其餘）</td><td>兩套 ALV FM 混用</td><td>CL_SALV_TABLE 多選（<a href="#ch02-3">2-3 章</a>）</td></tr>
+      <tr><td>LOOP 內 SELECT SINGLE * 與逐筆 SELECT … APPENDING</td><td>N+1 查詢；SELECT * 取整列</td><td>JOIN 或 FOR ALL ENTRIES（先檢查驅動表非空）、明列欄位</td></tr>
+      <tr><td>權限：以 MARA-BEGRU = 'N' 產生全部物料 range，再產生訂單 range</td><td>物料多時 range 過大，會觸發 SQL 敘述過長的短傾印；且邏輯難以驗證</td><td>對結果列中實際出現的 BEGRU 逐一 AUTHORITY-CHECK；或以 CDS 視圖＋存取控制（DCL）處理</td></tr>
+      <tr><td>特定客戶號寫死於 IF（數量換算、依物料彙總）</td><td>新增客戶要改程式；客戶號也不該出現在原始碼</td><td>設定表（例：ZSD_FT_CUST，放 C000001 這類鍵值與旗標）</td></tr>
+      <tr><td>幣別符號 IF 串（USD→$、EUR→€、CNY/JPY→￥）</td><td>JPY 金額差 100 倍、CNY/JPY 無法區分</td><td>CURRENCY 格式化＋ISO 代碼</td></tr>
+      <tr><td>PI 用 PR02 單價、報關用 NETWR 比例</td><td>單據間金額尾差不一致</td><td>單一計價方法，以 NETWR 為準</td></tr>
+      <tr><td>T052U 讀中文語言鍵當英文</td><td>語言維護錯位</td><td>英文下維護翻譯</td></tr>
+      <tr><td>TRANSLATE … TO UPPER CASE、CONCATENATE、MOVE-CORRESPONDING 表頭行</td><td>舊寫法</td><td><span class="kw">to_upper( )</span>、字串範本、<span class="kw">CORRESPONDING #( )</span></td></tr>
+      <tr><td>OLE Excel＋剪貼簿＋SMW0 下載到本機</td><td>見 8-3-15</td><td>伺服器端產生、系統內留存</td></tr>
+      <tr><td>MCHA 寫死工廠 1000、自建效期函數</td><td>多工廠錯誤；重造標準</td><td>MCH1-VFDAT／HSDAT，批次分類</td></tr>
+    </tbody>
+  </table>
+  <div class="note"><b>S/4HANA 差異總整理：</b>KONV → PRCD_ELEMENTS（原程式已改，代表它本來就跑在 S/4HANA）；客戶主檔 → BP（KNA1-STRAS 等地址欄是冗餘副本，地址以 ADRC 為準）；物料號 40 碼（ZWMT015-MATNR 已是 CHAR40，但自建表 ZTSDKHCHXX-ZMATNR 請確認長度）；VBUK／VBUP 狀態併入 VBAK／VBAP／LIKP／LIPS（本案未用到，若要判斷「已過帳發貨」請讀 LIKP-WBSTK）；外貿 → International Trade／GTS；輸出管理 → S/4HANA Output Management（BRF+ 決定、Adobe Forms），新表單建議掛在交貨單／請款單的輸出類型上，而不是另寫選單程式。</div>
+  <div class="warn"><b>上線注意事項：</b>① 以同一票貨把 PI、報關發票、箱單、結匯單的數量、金額、淨毛重、件數四項交叉核對，任何一項不一致都不能上線。② 測試 JPY、無小數位幣別與 KPEIN ≠ 1 的價格條件。③ 測試一箱多大類、一料多批、部分交貨、同一交貨單多張訂單。④ ZTSDKHCHXX 缺資料時要明確報錯（原程式靜默留空，單據上品名與重量就是空白）。⑤ 關務單據屬於法定文件，產出檔要留存並可追溯到交貨單與列印人。</div>
+
+  <h3 id="ch08-3-qa">練習與自我檢核</h3>
+  <ol>
+    <li><b>未清項 vs 餘額結轉：</b>客戶說「對帳單上看不到我上個月付的款」。你判斷他要的是哪一種對帳單？兩種各要讀哪些資料？<br><i>要點：</i>他要的是期初／本期／期末（餘額結轉式），本期收款必須列出；未清項式對帳單本來就不列已清項目。前者讀 ACDOCA 期間彙總＋本期明細（8-3-05），後者讀 BSID＋BSAD（augdt &gt; 關帳日）或 I_OperationalAcctgDocItem。</li>
+    <li><b>關帳日回溯：</b>為什麼只讀 BSID 產生的「6 月 30 日對帳單」在 7 月 10 日重跑時金額會變少？<br><i>要點：</i>7 月 1～10 日收款清掉的發票已移到 BSAD；要補上 <span class="kw">augdt &gt; p_datum</span> 的 BSAD 行項目。</li>
+    <li><b>排序穩定性：</b>對帳單明細依 kunnr、budat 排序後逐行累計餘額，會有什麼問題？怎麼修？<br><i>要點：</i>HANA 無預設排序，同日多筆順序不定，累計餘額逐行數字每次不同；加入 belnr、buzei（或 docln）為排序鍵（Casper 第一條）。</li>
+    <li><b>到期日：</b>指出原程式用 J_1A_SD_CI_DUEDATE_CHECK 的兩個風險，並寫出替代呼叫。<br><i>要點：</i>在地化函數、以 FI 憑證號當請款單號的號碼巧合；改 NET_DUE_DATE_GET 或 NetDueDate 欄位；到期日不要寫回 ZFBDT。</li>
+    <li><b>批次寄信：</b>列出把對帳單排成每月背景作業時，至少四項必須先處理的設定或程式修改。<br><i>要點：</i>變式＋動態日期、寄件者設定化、測試機 SCOT 封鎖外寄、寄送紀錄與失敗重寄、移除每封 SUBMIT RSCONN01、背景使用者權限。</li>
+    <li><b>收件人：</b>S/4HANA 中，要取「客戶應收帳款部門的聯絡人郵箱」，應該讀哪兩張 BP 表？關係類型是什麼？<br><i>要點：</i>BUT050（關係類型 BUR001 聯絡人）＋BUT051（部門 ABTNR、郵箱）；原函數中被註解的那段就是這個做法。</li>
+    <li><b>日圓：</b>PRCD_ELEMENTS-KBETR = 10.00、幣別 JPY，原程式印出什麼？正確應為多少？怎麼寫？<br><i>要點：</i>印出「￥10.00」，正確為 1,000 日圓；用 <span class="kw">|{ kbetr CURRENCY = waerk }|</span> 或 CURRENCY_AMOUNT_SAP_TO_DISPLAY。</li>
+    <li><b>箱數：</b>一張交貨單 10 箱，其中 2 箱同時裝了大類 A 與 B 的貨。各大類箱數與總件數各是多少？為什麼總件數不能相加？<br><i>要點：</i>各大類的箱數分別計算（混裝的 2 箱在 A、B 各算一次），總件數＝整張單 COUNT DISTINCT＝10；相加會多出 2。</li>
+    <li><b>大寫金額：</b>用 SPELL_AMOUNT 產生「SAY US DOLLAR … AND CENTS … ONLY」，並說明原 ZFM_SPELL_AMOUNT_POINT 傳 SY-WAERS 的問題。<br><i>要點：</i>見 8-3-14；SY-WAERS 過時且常為空，幣別小數位處理錯誤。</li>
+    <li><b>重構設計：</b>把 ZSDF004 九支子程式重構成類別架構，畫出你的類別清單與責任。<br><i>要點：</i>資料來源介面（訂單層、交貨單層）、單據策略介面（取數＋欄位對應＋版型）、共用服務（計價、大寫金額、HS 彙總、箱數、xlsx/PDF 產生、留存）、設定表（版型座標、特殊客戶、範本路徑）；Excel 產出改伺服器端，可背景執行。</li>
+    <li><b>先找標準：</b>本章兩個案例，各舉一個「其實標準有」的功能。<br><i>要點：</i>對帳單 → F.27／RFKORD10／RFKORD11、F150 催款；外貿 → HU（VEKP／VEPO）箱數與重量、批次主檔 VFDAT、International Trade 商品編碼、S/4HANA 輸出管理。</li>
+  </ol>
+</section>

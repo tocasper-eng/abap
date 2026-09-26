@@ -1,0 +1,1268 @@
+<section class="chapter" id="ch08-6" data-title="實戰源碼庫（六）：MM／SD 查詢報表">
+  <h2>第 8-6 章 實戰源碼庫（六）：MM／SD 查詢報表</h2>
+  <p class="lede">這一章拆解某醫療器材公司實際上線的七支 MM／SD 查詢與對照表維護程式：採購訂單查詢、供應商到貨單、交貨單明細、產品退貨查詢、客戶合作夥伴功能報表，以及兩張用通用維護框架管理的自建對照表。它們的共同點是「撈資料 → 補欄位 → 丟進 ALV」，但同時也把舊寫法的所有坑都示範了一遍：REUSE_ALV 與 OOALV 混用、MSEG／VBUK 等 S/4HANA 已變動的資料模型、FOR ALL ENTRIES 吃掉重複列、「取第一筆」沒排序、權限過濾反而把整張單刪掉。讀完你會得到一個可以直接套用的 CL_SALV_TABLE 報表骨架、一個共用 ALV 輔助類別，以及一張「什麼時候才需要 CL_GUI_ALV_GRID」的判斷表。本章與 <a href="#ch02-3">2-3 章 ALV</a>、<a href="#ch03-2">3-2 章 OOALV 與 Screen</a> 互補：那兩章講工具本身，本章講工具在真實專案裡被怎麼用、又該怎麼改。</p>
+
+  <div class="meta">
+    <div><b>核心 TCODE</b><span class="tcode">SE38</span><span class="tcode">SE11</span><span class="tcode">SE54</span><span class="tcode">SM30</span><span class="tcode">SE93</span><span class="tcode">ME23N</span><span class="tcode">ME2N</span><span class="tcode">MIGO</span><span class="tcode">MB51</span><span class="tcode">VL03N</span><span class="tcode">VA03</span><span class="tcode">VF03</span><span class="tcode">BP</span><span class="tcode">SU24</span><span class="tcode">SU53</span><span class="tcode">SAT</span><span class="tcode">ST05</span></div>
+    <div><b>關鍵物件</b>EKKO、EKPO、EKET、EKBE、RSEG、MATDOC（取代 MKPF／MSEG）、MARC、T024D、LFA1、LFM1、LFBK、BNKA、CDHDR、CDPOS、CVI_VEND_LINK、BUT000、DFKKBPTAXNUM、QAMB、QALS、LIKP、LIPS、VBAK、VBAP、VBKD、VBPA、VBFA、VBRK、VBRP、PRCD_ELEMENTS（取代 KONV）、MCHA、KNA1、KNVV、KNVP、ADRC、ADR6、TPART、MVKE、TVM3T、CL_SALV_TABLE、CL_GUI_ALV_GRID、CL_SALV_BS_RUNTIME_INFO、CL_BUPA_NAVIGATION_REQUEST、CL_BUPA_DIALOG_JOEL、READ_TEXT、VIEW_MAINTENANCE_CALL、MD_CONVERT_MATERIAL_UNIT</div>
+  </div>
+
+  <div class="warn"><b>資安與隱私說明：</b>原始素材的匯出範本（xlsx）與結果截圖中含有真實的客戶、供應商名稱、收貨人姓名與手機、收貨地址、物流單號與開發者姓名。本章一律不轉錄，範例中的客戶／供應商／物料號碼皆為佔位符（例如 <span class="kw">'C000001'</span>、<span class="kw">'V000001'</span>、<span class="kw">'MAT-A'</span>）。你在自己的專案寫教材或貼問題到網路時，也請比照辦理。</div>
+
+  <h3 id="ch08-6-01">1. 案例索引與本章地圖</h3>
+  <p>七個案例全部列在下表。「原始檔構成」是素材中實際附上的檔案；「行數」是抽出文字（含匯出範本前幾列）的約略規模，用來判斷閱讀成本。</p>
+  <table>
+    <thead><tr><th>程式</th><th>功能</th><th>模組</th><th>原始檔構成</th><th>規模</th><th>截圖／範本</th><th>本章小節</th></tr></thead>
+    <tbody>
+      <tr><td><b>ZMMF010N</b></td><td>採購訂單查詢報表（由列印程式 ZMMF010 複製改寫而來）</td><td>MM</td><td>主程式＋ZMMF010_TOPN＋ZMMF010_FO1N（資料處理）；選擇畫面 S01N、顯示／列印 FO2N 兩個 include 未附</td><td>約 780 行</td><td>選擇畫面、結果畫面、結構 ZMMS015／ZMMS016；1EXPORT.xlsx</td><td>§3、§4</td></tr>
+      <tr><td><b>ZPUR007</b></td><td>供應商到貨單（收貨、退貨、合格量、已開票量）</td><td>MM</td><td>主程式（檔頭仍寫 ZMMR007）＋TOP／S01／FORM／FORM2，全部在一份 docx</td><td>約 1,500 行</td><td>選擇畫面、結果畫面；2EXPORT.xlsx</td><td>§5、§6</td></tr>
+      <tr><td><b>ZSDR007N</b></td><td>交貨單明細列表（兩套輸出模板，依裝運點切換）</td><td>SD（檔頭誤寫 WM、程式名誤寫 ZFIR004）</td><td>單一程式、無 include，FORM 全寫在主程式</td><td>約 1,800 行</td><td>選擇、結果截圖；docx 內 12 張（ZWMT015、ZSSDR007_01 模板 A、VBAP append、ZWMT012…）；EXPORT.xlsx／MHTML</td><td>§7、§8、§9</td></tr>
+      <tr><td><b>ZSDR018</b></td><td>產品退貨查詢（條碼掃描日誌彙總＋明細＋邏輯刪除）</td><td>SD</td><td>主程式＋ZSDR018_TOP／SCR／FRM</td><td>約 500 行</td><td>docx 內 5 張（選擇、結果、ZSDT001、ZSDT023）</td><td>§10</td></tr>
+      <tr><td><b>ZSDR040</b></td><td>客戶合作夥伴功能報表（售達方 → 送達方／收票方）</td><td>SD</td><td>主程式＋TOP／C01／S01／F01／F02／O01／I01＋共用 include <b>ZALV_COMM</b></td><td>約 1,880 行</td><td>選擇、結果、訊息類別 ZMSG 截圖；6.xlsx</td><td>§11、§12、§13</td></tr>
+      <tr><td><b>ZSDF016</b></td><td>銷售訂單移動類型對應關係（自建表 ZSDT016 維護）</td><td>SD（檔頭誤寫 WM）</td><td>單一小程式＋共用函數 ZFMVIEW_MAINTENANCE_CALL（函數群 ZMMFG003）</td><td>約 270 行</td><td>docx 內 11 張（ZSDT016、維護畫面、函數介面／例外）；5.xlsx</td><td>§14</td></tr>
+      <tr><td><b>ZSDU021</b></td><td>SO 物料轉換關係（自建表 ZSDT020 維護）</td><td>SD</td><td>單一小程式（檔頭寫 ZSDU020）＋同一支共用函數</td><td>約 250 行</td><td>結果截圖；docx 內 6 張（ZSDT020、函數介面）；7.xlsx</td><td>§15</td></tr>
+    </tbody>
+  </table>
+  <p>閱讀順序建議：先看 §2 的共通骨架，之後每個案例都是「把舊程式的業務邏輯搬進這個骨架」；§9（SD 狀態欄位）、§12（夥伴功能）、§13（共用 ALV 類別）是跨案例的主題章節，§16 是上線前的總檢核。</p>
+  <div class="note">素材的檔頭資訊（程式名、模組、作者）多處與實際不符：ZPUR007 的檔頭寫 ZMMR007、ZSDR007N 寫 ZFIR004、ZSDU021 寫 ZSDU020，模組欄也常寫成 WM。這是「複製舊程式改名」留下的痕跡，實務上會讓 where-used 與稽核追不到人。<b>複製程式後第一件事是改檔頭、改訊息類別與文字元素</b>，並在 revision log 寫明來源。</div>
+
+  <h3 id="ch08-6-02">2. 共通骨架：從 REUSE／OOALV 收斂到 CL_SALV_TABLE</h3>
+  <p>七支程式用了四種 ALV 寫法：ZMMF010N 是 CL_GUI_ALV_GRID 宣告卻走 FO2N include 顯示、ZPUR007 與 ZSDR018 用 <span class="kw">REUSE_ALV_GRID_DISPLAY_LVC</span>、ZSDR007N 用最舊的 SLIS 版 REUSE 函數、ZSDR040 用 Docking Container＋Splitter＋CL_GUI_ALV_GRID 的全套 OOALV。但仔細看需求，<b>七支都是唯讀報表</b>：沒有任何一支真的讓使用者改儲存格再存回去（ZSDR018 明細的「選擇」勾選框只是用來選列）。這正是 CL_SALV_TABLE 的主場。</p>
+
+  <table>
+    <thead><tr><th>需求</th><th>CL_SALV_TABLE 做得到？</th><th>怎麼做</th></tr></thead>
+    <tbody>
+      <tr><td>排序、篩選、小計、合計、匯出 Excel、版面變式</td><td>可以</td><td><span class="kw">get_functions( )-&gt;set_all( )</span>、<span class="kw">get_layout( )</span></td></tr>
+      <tr><td>雙擊或熱點跳到 ME23N／VL03N／BP</td><td>可以</td><td><span class="kw">get_event( )</span> 的 DOUBLE_CLICK、LINK_CLICK</td></tr>
+      <tr><td>自訂按鈕（例如「明細」「刪除」）</td><td>可以</td><td>全螢幕用 <span class="kw">set_screen_status( )</span> 套自己的 GUI Status；容器模式用 <span class="kw">get_functions( )-&gt;add_function( )</span></td></tr>
+      <tr><td>選多列後執行動作</td><td>可以</td><td><span class="kw">get_selections( )-&gt;set_selection_mode( )</span>＋<span class="kw">get_selected_rows( )</span></td></tr>
+      <tr><td>依權限隱藏價格欄</td><td>可以</td><td><span class="kw">set_technical( )</span>（不是 set_visible，見 §4）</td></tr>
+      <tr><td>勾選框、圖示、紅綠燈、顏色</td><td>可以（唯讀顯示）</td><td><span class="kw">set_cell_type( )</span>、<span class="kw">set_exception_column( )</span>、<span class="kw">set_color_column( )</span></td></tr>
+      <tr><td>表頭資訊（TOP_OF_PAGE）</td><td>可以</td><td><span class="kw">set_top_of_list( )</span> 搭配 CL_SALV_FORM_LAYOUT_GRID</td></tr>
+      <tr><td><b>儲存格可編輯、DATA_CHANGED 驗證、儲存格 F4、儲存格按鈕、拖放</b></td><td><b>不行</b></td><td>這才需要 <b>CL_GUI_ALV_GRID</b>（見 <a href="#ch02-3">2-3 章第 10 節</a>、<a href="#ch03-2">3-2 章第 8、9 節</a>）</td></tr>
+      <tr><td>同一畫面多個 Grid 連動、內嵌在自訂 Dynpro 的一塊區域</td><td>部分可以</td><td>SALV 也能放進容器（<span class="kw">r_container</span>）；但互動複雜時 OOALV 較好控制</td></tr>
+    </tbody>
+  </table>
+  <div class="tip"><b>判斷口訣：「要改資料才用 GRID，只看資料一律 SALV。」</b>用 CL_GUI_ALV_GRID 的代價是：要自己建 Screen、PBO／PAI、容器、Field Catalog、事件類別，程式量是 SALV 的三到五倍（ZSDR040 光骨架就 1,000 多行）。而 REUSE_ALV 系列函數雖然仍可呼叫，但 SAP 已不再擴充，新程式不要再用（對照 <a href="#ap-01">附錄 舊語法對照</a>）。</div>
+
+  <p>下面是本章所有改寫共用的報表骨架：選擇畫面 → 權限檢查 → 本地類別 run( ) → 取數 → CL_SALV_TABLE 顯示。後面每個案例都只替換 <span class="kw">ty_out</span>、<span class="kw">get_data( )</span> 與欄位設定。</p>
+<pre><code class="abap">REPORT zmm_report_skeleton MESSAGE-ID zmsg.
+
+" 只當 SELECT-OPTIONS 的型別參考，取代舊寫法的 TABLES 敘述
+DATA gs_sel_ekko TYPE ekko.
+
+SELECTION-SCREEN BEGIN OF BLOCK b1 WITH FRAME TITLE TEXT-001.
+  SELECT-OPTIONS: s_ekorg FOR gs_sel_ekko-ekorg OBLIGATORY,
+                  s_ebeln FOR gs_sel_ekko-ebeln,
+                  s_bedat FOR gs_sel_ekko-bedat DEFAULT sy-datum.
+SELECTION-SCREEN END OF BLOCK b1.
+
+CLASS lcl_report DEFINITION FINAL.
+  PUBLIC SECTION.
+    TYPES: BEGIN OF ty_out,
+             ebeln TYPE ekko-ebeln,
+             ebelp TYPE ekpo-ebelp,
+             lifnr TYPE ekko-lifnr,
+             matnr TYPE ekpo-matnr,
+             menge TYPE ekpo-menge,
+             meins TYPE ekpo-meins,
+           END OF ty_out,
+           tt_out TYPE STANDARD TABLE OF ty_out WITH EMPTY KEY.
+    CLASS-METHODS check_authority.
+    METHODS run.
+  PRIVATE SECTION.
+    DATA mt_out TYPE tt_out.
+    METHODS get_data.
+    METHODS display.
+ENDCLASS.
+
+CLASS lcl_report IMPLEMENTATION.
+  METHOD check_authority.
+    " 先把畫面範圍展開成實際存在的值，再逐一檢查（與原程式思路相同）
+    SELECT ekorg FROM t024e WHERE ekorg IN @s_ekorg INTO TABLE @DATA(lt_ekorg).
+    LOOP AT lt_ekorg INTO DATA(ls_ekorg).
+      AUTHORITY-CHECK OBJECT 'M_BEST_EKO'
+        ID 'EKORG' FIELD ls_ekorg-ekorg
+        ID 'ACTVT' FIELD '03'.
+      IF sy-subrc &lt;&gt; 0.
+        MESSAGE |沒有採購組織 { ls_ekorg-ekorg } 的顯示權限| TYPE 'E'.
+      ENDIF.
+    ENDLOOP.
+  ENDMETHOD.
+
+  METHOD run.
+    get_data( ).
+    IF mt_out IS INITIAL.
+      MESSAGE '沒有符合條件的資料' TYPE 'S' DISPLAY LIKE 'E'.
+      RETURN.
+    ENDIF.
+    display( ).
+  ENDMETHOD.
+
+  METHOD get_data.
+    SELECT k~ebeln, p~ebelp, k~lifnr, p~matnr, p~menge, p~meins
+      FROM ekko AS k
+      INNER JOIN ekpo AS p ON p~ebeln = k~ebeln
+      WHERE k~ekorg IN @s_ekorg
+        AND k~ebeln IN @s_ebeln
+        AND k~bedat IN @s_bedat
+        AND p~loekz &lt;&gt; 'L'
+      ORDER BY k~ebeln, p~ebelp            " HANA 沒有預設排序：要順序就明寫
+      INTO CORRESPONDING FIELDS OF TABLE @mt_out.
+  ENDMETHOD.
+
+  METHOD display.
+    TRY.
+        cl_salv_table=&gt;factory( IMPORTING r_salv_table = DATA(lo_alv)
+                                CHANGING  t_table      = mt_out ).
+        lo_alv-&gt;get_functions( )-&gt;set_all( abap_true ).
+        lo_alv-&gt;get_columns( )-&gt;set_optimize( abap_true ).
+        lo_alv-&gt;get_display_settings( )-&gt;set_striped_pattern( abap_true ).
+        DATA(lo_layout) = lo_alv-&gt;get_layout( ).
+        lo_layout-&gt;set_key( VALUE #( report = sy-repid ) ).
+        lo_layout-&gt;set_save_restriction( if_salv_c_layout=&gt;restrict_none ).
+        lo_alv-&gt;display( ).
+      CATCH cx_salv_msg INTO DATA(lx_salv).
+        MESSAGE lx_salv TYPE 'S' DISPLAY LIKE 'E'.
+    ENDTRY.
+  ENDMETHOD.
+ENDCLASS.
+
+AT SELECTION-SCREEN.
+  lcl_report=&gt;check_authority( ).
+
+START-OF-SELECTION.
+  NEW lcl_report( )-&gt;run( ).</code></pre>
+  <div class="note">原程式幾乎都把權限檢查放在 <span class="kw">AT SELECTION-SCREEN</span> 並發 E 訊息，這個位置是對的：錯誤會停在選擇畫面讓使用者改條件。但它們共同的缺點是「只要有一個工廠沒權限就整支擋掉」，更友善的做法是把沒權限的值從範圍中剔除、只查有權限的部分，並用 S 訊息提示（ZSDR018 被註解掉的 frm_auth_check 就是這個寫法，可惜沒啟用）。</div>
+
+  <h3 id="ch08-6-03">3. ZMMF010N 採購訂單查詢報表（一）：情境、選擇畫面與資料來源</h3>
+  <p><b>業務情境。</b>採購與計畫人員每天要看「哪些 PO 還沒到齊、到了多少在品檢、價格與稅碼是否正確、供應商名稱最近有沒有改過」。標準的 <span class="tcode">ME2N</span>／<span class="tcode">ME2L</span> 能看到大部分欄位，但看不到「103 到貨送檢數量」「供應商曾用名與變更日」「規格型號（客製欄位 MARA-ZGGXH）」「MRP 控制者名稱」與 PO 表頭備註，所以做了這支報表。它原本是採購單列印程式 ZMMF010 的複製版（檔頭仍寫「采购订单打印 COPY ZMMF010」），因此 TOP include 裡還留著列印用的表頭／行項目結構 ZMMS015、ZMMS016，以及銀行帳號、稅號、付款條件等列印才需要的欄位。</p>
+
+  <p><b>選擇畫面（依截圖）。</b>全部是 SELECT-OPTIONS：</p>
+  <table>
+    <thead><tr><th>畫面文字</th><th>欄位</th><th>預設</th><th>備註</th></tr></thead>
+    <tbody>
+      <tr><td>公司代碼</td><td>EKKO-BUKRS</td><td>1000</td><td></td></tr>
+      <tr><td>採購組織</td><td>EKKO-EKORG</td><td></td><td></td></tr>
+      <tr><td>工廠</td><td>EKPO-WERKS</td><td>1000</td><td>權限物件 M_BEST_WRK 逐一檢查</td></tr>
+      <tr><td>採購組</td><td>EKKO-EKGRP</td><td></td><td></td></tr>
+      <tr><td>採購憑證</td><td>EKKO-EBELN</td><td></td><td></td></tr>
+      <tr><td>憑證類型</td><td>EKKO-BSART</td><td></td><td></td></tr>
+      <tr><td>憑證日期</td><td>EKKO-BEDAT</td><td>當天</td><td></td></tr>
+      <tr><td>供應商編碼</td><td>EKKO-LIFNR</td><td></td><td></td></tr>
+      <tr><td>物料編碼</td><td>EKPO-MATNR</td><td></td><td>畫面寬度即 40 碼物料號（S/4）</td></tr>
+      <tr><td>建立日期／建立者</td><td>EKKO-AEDAT／EKKO-ERNAM</td><td></td><td></td></tr>
+      <tr><td>MRP 控制者</td><td>MARC-DISPO</td><td></td><td></td></tr>
+      <tr><td>交貨已完成</td><td>EKPO-ELIKZ</td><td></td><td></td></tr>
+    </tbody>
+  </table>
+
+  <p><b>輸出欄位（依匯出範本表頭，共 37 欄）：</b>公司代碼、採購組織、採購組、採購憑證、行項目、憑證類型、憑證日期、供應商編碼、供應商名稱、供應商曾用名、曾用名變更日期、物料編碼、物料描述、版次（EKPO-REVLV）、MRP 控制者、MRP 控制者名稱、規格型號、建立日期、建立人、項目類別、科目分配類別、計畫交貨日期、計畫行、工廠、庫存地點、採購訂單數量、訂單單位、已發貨數量、未發貨數量、103 到貨送檢數量、備註（PO 表頭文字 F01）、淨價、含稅價、總價值、價格單位、稅碼、交貨已完成。</p>
+
+  <p><b>列印結構（依 SE11 截圖）。</b>雖然查詢報表用不到，但這兩個結構說明了這支程式的「前世」，也是 <a href="#ch08-4">8-4 章</a>採購單表單的資料介面：</p>
+  <table>
+    <thead><tr><th>結構</th><th>用途</th><th>欄位（資料元素）</th></tr></thead>
+    <tbody>
+      <tr><td>ZMMS015（18 欄）</td><td>採購訂單列印表頭</td><td>BUTXT 公司名稱、NAME1 名稱（NAME1_GP）、NAME2 城市（AD_CITY1）、EBELN、TEXT1 表頭備註 50 位（ZTEXT1）、ADRNR 地址、TELF1 電話、TELFX 傳真、BANKN 銀行帳號、ERNAM、BEDAT、BANKA 銀行名稱、TAXNUM 稅號（BPTAXNUM）、VERKF 供應商業務員（EVERK）、ZHJZL 採購數量合計（BSTMG，QUAN 13,3）、ZHJTR 金額小數 3 位（ZNETPR1，CURR 11,3）、VTEXT 付款條件描述（DZTERM_BEZ）、SNAME 製單人</td></tr>
+      <tr><td>ZMMS016（13 欄）</td><td>採購訂單列印行項目</td><td>EBELN、EBELP、MATNR（40）、MAKTX、MEINS（BSTME）、MENGE（BSTMG）、ZGGXH 規格型號、BRTWR 總價值（BBWERT）、NETPR1 金額小數 3 位、WAERS、ZHSTR 含稅單價（ZNETPR1）、EINDT、REVLV</td></tr>
+    </tbody>
+  </table>
+
+  <p><b>用到的標準表：</b>EKKO／EKPO（抬頭／項目）、EKET（計畫行：EINDT 交貨日、WEMNG 已收貨量）、MARC＋T024D（MRP 控制者與名稱）、MSEG（103／104 移動）、LFA1、LFM1（VERKF 供應商業務員）、LFBK＋BNKA（銀行）、DFKKBPTAXNUM（BP 稅號，稅號類別 CN0）、ADRC（城市）、T001（公司名稱）、TVZBT（付款條件文字）、CDHDR／CDPOS（曾用名變更記錄）、USER_ADDR（建立人姓名）、MAKT；函數 <span class="kw">READ_TEXT</span>（物件 EKKO、ID F01）。</p>
+
+  <p><b>程式架構拆解：</b></p>
+  <table>
+    <thead><tr><th>事件／FORM</th><th>做什麼</th></tr></thead>
+    <tbody>
+      <tr><td>AT SELECTION-SCREEN → frm_auth_data</td><td>依 S_WERKS 逐一檢查 <span class="kw">M_BEST_WRK</span>；再檢查 <span class="kw">M_BEST_BSA</span> 的 ACTVT 09（顯示價格），沒有就設 gv_flag = 'X'，之後不顯示價格欄</td></tr>
+      <tr><td>START-OF-SELECTION → frm_get_data</td><td>EKKO JOIN EKPO JOIN MARC JOIN T024D，一次撈主資料</td></tr>
+      <tr><td>frm_deal_data</td><td>十幾個 FOR ALL ENTRIES 撈周邊表，再 LOOP 逐筆 READ TABLE BINARY SEARCH 補欄位、算數量、呼叫 READ_TEXT</td></tr>
+      <tr><td>END-OF-SELECTION → frm_set_fieldcat／layout／alv_display</td><td>用 DEFINE 巨集組 LVC Field Catalog；無價格權限時不加 NETPR／ZHSTR／BRTWR</td></tr>
+    </tbody>
+  </table>
+
+  <p><b>現代改寫：主查詢。</b>重點有兩個：一是 MARC／T024D 改成 LEFT OUTER JOIN（原程式用 INNER JOIN，沒有物料號的文字項目、服務項目會整列消失，但它後面又寫了「物料號為空時用短文字 TXZ01 當描述」——這段程式永遠跑不到）；二是把排序寫進 SQL。</p>
+<pre><code class="abap">TYPES: BEGIN OF ty_out,
+         bukrs TYPE ekko-bukrs,   ekorg TYPE ekko-ekorg,   ekgrp TYPE ekko-ekgrp,
+         ebeln TYPE ekko-ebeln,   ebelp TYPE ekpo-ebelp,   bsart TYPE ekko-bsart,
+         bedat TYPE ekko-bedat,   lifnr TYPE ekko-lifnr,   name1 TYPE lfa1-name1,
+         name3 TYPE lfa1-name3,   udate TYPE cdhdr-udate,  matnr TYPE ekpo-matnr,
+         maktx TYPE makt-maktx,   txz01 TYPE ekpo-txz01,   revlv TYPE ekpo-revlv,
+         dispo TYPE marc-dispo,   dsnam TYPE t024d-dsnam,  aedat TYPE ekko-aedat,
+         ernam TYPE ekko-ernam,   zterm TYPE ekko-zterm,   pstyp TYPE ekpo-pstyp,
+         knttp TYPE ekpo-knttp,   werks TYPE ekpo-werks,   lgort TYPE ekpo-lgort,
+         menge TYPE ekpo-menge,   meins TYPE ekpo-meins,   eindt TYPE eket-eindt,
+         wemng TYPE eket-wemng,   zwjsl TYPE ekpo-menge,   zsjsl TYPE ekpo-menge,
+         netpr TYPE ekpo-netpr,   zhstr TYPE p LENGTH 13 DECIMALS 3,
+         brtwr TYPE ekpo-brtwr,   peinh TYPE ekpo-peinh,   mwskz TYPE ekpo-mwskz,
+         elikz TYPE ekpo-elikz,   text1 TYPE char255,
+       END OF ty_out,
+       tt_out TYPE STANDARD TABLE OF ty_out WITH EMPTY KEY.
+DATA gt_out TYPE tt_out.
+
+SELECT k~bukrs, k~ekorg, k~ekgrp, k~ebeln, p~ebelp, k~bsart, k~bedat,
+       k~lifnr, p~matnr, p~txz01, p~revlv, c~dispo, d~dsnam,
+       k~aedat, k~ernam, k~zterm, p~pstyp, p~knttp, p~werks, p~lgort,
+       p~menge, p~meins, p~netpr, p~peinh, p~mwskz, p~brtwr, p~elikz
+  FROM ekko AS k
+  INNER JOIN ekpo AS p       ON p~ebeln = k~ebeln
+  LEFT OUTER JOIN marc AS c  ON c~matnr = p~matnr AND c~werks = p~werks
+  LEFT OUTER JOIN t024d AS d ON d~werks = c~werks AND d~dispo = c~dispo
+  WHERE k~bukrs IN @s_bukrs
+    AND k~ekorg IN @s_ekorg
+    AND k~ekgrp IN @s_ekgrp
+    AND k~ebeln IN @s_ebeln
+    AND k~bsart IN @s_bsart
+    AND k~bedat IN @s_bedat
+    AND k~lifnr IN @s_lifnr
+    AND k~aedat IN @s_aedat
+    AND k~ernam IN @s_ernam
+    AND p~werks IN @s_werks
+    AND p~matnr IN @s_matnr
+    AND p~elikz IN @s_elikz
+    AND c~dispo IN @s_dispo          " 7.40 SP05 起 WHERE 可引用外連接右表欄位
+    AND p~loekz &lt;&gt; 'L'               " L = 已刪除；S = 已凍結（仍顯示）
+  ORDER BY k~ebeln, p~ebelp
+  INTO CORRESPONDING FIELDS OF TABLE @gt_out.</code></pre>
+  <div class="warn"><b>外連接＋右表條件的陷阱：</b>使用者一旦填了 MRP 控制者，<span class="kw">c~dispo IN @s_dispo</span> 會把右表為 NULL 的列（文字項目）排除——這通常正是使用者要的；但若你希望「填了條件仍保留無物料項目」，就要把條件移進 ON 子句。兩種寫法語意不同，寫之前先跟使用者確認。</div>
+
+  <h3 id="ch08-6-04">4. ZMMF010N（二）：送檢量、未交量、曾用名與價格欄位權限</h3>
+  <p><b>關鍵邏輯一：103 到貨送檢數量。</b>原程式從 MSEG 撈 BWART 103／104，依借貸方向（SHKZG = 'H' 取負）累加到 PO 行項目。在 S/4HANA，<b>MKPF／MSEG 已被 MATDOC 取代</b>，原表名仍可讀是因為系統提供了相容性視圖（重導到 MATDOC），但新程式應直接讀 MATDOC 或 CDS <span class="kw">I_MaterialDocumentItem</span>（見 <a href="#ch01-3">1-3 章</a>）。</p>
+<pre><code class="abap">" 103 = 收貨至 GR 凍結庫存（送檢），104 = 103 的沖銷
+" 注意：FOR ALL ENTRIES 會刪除「完全相同」的結果列，
+"       所以一定要把憑證主鍵 MBLNR/MJAHR/ZEILE 一起選出來，否則兩筆同量的收貨會被併成一筆
+IF gt_out IS NOT INITIAL.
+  SELECT mblnr, mjahr, zeile, ebeln, ebelp, shkzg, menge
+    FROM matdoc
+    FOR ALL ENTRIES IN @gt_out
+    WHERE ebeln = @gt_out-ebeln
+      AND ebelp = @gt_out-ebelp
+      AND bwart IN ('103','104')
+      AND record_type = 'MDOC'       " 一般物料憑證列；欄位與值請先在 SE11 確認
+    INTO TABLE @DATA(lt_mdoc).
+ENDIF.
+
+TYPES: BEGIN OF ty_qty,
+         ebeln TYPE ebeln,
+         ebelp TYPE ebelp,
+         menge TYPE menge_d,
+       END OF ty_qty.
+DATA lt_qty103 TYPE SORTED TABLE OF ty_qty WITH UNIQUE KEY ebeln ebelp.
+
+LOOP AT lt_mdoc INTO DATA(ls_m)
+     GROUP BY ( ebeln = ls_m-ebeln ebelp = ls_m-ebelp ) INTO DATA(grp).
+  INSERT VALUE #( ebeln = grp-ebeln
+                  ebelp = grp-ebelp
+                  menge = REDUCE menge_d( INIT s = CONV menge_d( 0 )
+                                          FOR m IN GROUP grp
+                                          NEXT s = s + COND menge_d( WHEN m-shkzg = 'H'
+                                                                     THEN 0 - m-menge
+                                                                     ELSE m-menge ) ) )
+         INTO TABLE lt_qty103.
+ENDLOOP.</code></pre>
+  <div class="note">7.52 的 ABAP SQL 不允許 FOR ALL ENTRIES 與 SUM 等彙總函數並用，所以這裡用「FAE 撈明細 → LOOP AT … GROUP BY 彙總」。若條件可以用子查詢表達（例如 <span class="kw">WHERE ebeln IN ( SELECT ebeln FROM ekko WHERE … )</span>），就能直接在資料庫 GROUP BY，傳回的資料量更少，§8 會示範。</div>
+
+  <p><b>關鍵邏輯二：已交量、未交量與計畫交貨日。</b>原程式把 EKET 依 <span class="kw">EINDT DESCENDING</span> 排序後 BINARY SEARCH 取「第一筆」當計畫交貨日，同時用 COLLECT 加總 WEMNG；未交量 = 訂單量 − 已交量，交貨已完成（ELIKZ）則未交量歸零。這段邏輯本身正確，改寫時保留「先明確排序再取第一筆」的精神——這正是 Casper 在成本評價專案踩過的坑：<b>HANA 沒有預設排序，任何「取第一筆」都必須先寫清楚排序依據</b>。</p>
+<pre><code class="abap">SELECT ebeln, ebelp, etenr, eindt, wemng
+  FROM eket
+  FOR ALL ENTRIES IN @gt_out
+  WHERE ebeln = @gt_out-ebeln
+    AND ebelp = @gt_out-ebelp
+  INTO TABLE @DATA(lt_eket).
+SORT lt_eket BY ebeln ebelp eindt DESCENDING.   " 明確定義「第一筆」＝最晚的計畫交貨日
+
+LOOP AT gt_out ASSIGNING FIELD-SYMBOL(&lt;o&gt;).
+  &lt;o&gt;-eindt = VALUE #( lt_eket[ ebeln = &lt;o&gt;-ebeln ebelp = &lt;o&gt;-ebelp ]-eindt OPTIONAL ).
+  &lt;o&gt;-wemng = REDUCE #( INIT s = CONV eket-wemng( 0 )
+                        FOR e IN lt_eket WHERE ( ebeln = &lt;o&gt;-ebeln AND ebelp = &lt;o&gt;-ebelp )
+                        NEXT s = s + e-wemng ).
+  &lt;o&gt;-zwjsl = COND #( WHEN &lt;o&gt;-elikz = abap_true THEN 0
+                      ELSE &lt;o&gt;-menge - &lt;o&gt;-wemng ).
+  &lt;o&gt;-zsjsl = VALUE #( lt_qty103[ ebeln = &lt;o&gt;-ebeln ebelp = &lt;o&gt;-ebelp ]-menge OPTIONAL ).
+  &lt;o&gt;-zhstr = COND #( WHEN &lt;o&gt;-menge &lt;&gt; 0 THEN &lt;o&gt;-brtwr / &lt;o&gt;-menge ).   " 含稅單價
+  &lt;o&gt;-maktx = COND #( WHEN &lt;o&gt;-matnr IS INITIAL THEN &lt;o&gt;-txz01 ELSE &lt;o&gt;-maktx ).
+ENDLOOP.</code></pre>
+
+  <p><b>關鍵邏輯三：供應商曾用名與稅號。</b>原程式用 CDHDR JOIN CDPOS（物件類別 KRED、欄位 NAME3、變更指示 U）找每個供應商最後一次改 NAME3 的日期。兩個 S/4HANA 重點：(1) 供應商主檔已改由 <span class="tcode">BP</span> 維護（XK01／XK02 停用），名稱實際存在 BUT000，CVI 同步回 LFA1；變更文件可能記在 BP 的物件類別（BUPA_BUP，欄位 NAME_ORG3）而非 KRED——原程式把這兩個值寫在註解裡，顯然開發者也不確定，<b>上線前請在測試機改一次名稱，用 CDHDR 實測記在哪個物件類別</b>。(2) 原程式用 <span class="kw">partner = lifnr</span> 直接讀 DFKKBPTAXNUM，這只在「BP 號碼與供應商號碼相同」時成立；正確做法是經 CVI_VEND_LINK 對應。</p>
+<pre><code class="abap">" 1) 最後一次改名的日期：CDPOS 以完整鍵值 JOIN，才吃得到索引
+DATA lt_objid TYPE STANDARD TABLE OF cdobjectv WITH EMPTY KEY.
+lt_objid = VALUE #( FOR GROUPS g OF o IN gt_out GROUP BY o-lifnr ( CONV cdobjectv( g ) ) ).
+
+IF lt_objid IS NOT INITIAL.
+  SELECT h~objectid, h~changenr, h~udate
+    FROM cdhdr AS h
+    INNER JOIN cdpos AS p ON p~objectclas = h~objectclas
+                         AND p~objectid   = h~objectid
+                         AND p~changenr   = h~changenr
+    FOR ALL ENTRIES IN @lt_objid
+    WHERE h~objectclas = 'KRED'
+      AND h~objectid   = @lt_objid-table_line
+      AND p~tabname    = 'LFA1'
+      AND p~fname      = 'NAME3'
+      AND p~chngind    = 'U'
+    INTO TABLE @DATA(lt_chg).
+  SORT lt_chg BY objectid udate DESCENDING changenr DESCENDING.
+  DELETE ADJACENT DUPLICATES FROM lt_chg COMPARING objectid.
+ENDIF.
+
+" 2) 稅號：供應商 → CVI_VEND_LINK → BP → DFKKBPTAXNUM
+IF gt_out IS NOT INITIAL.
+  SELECT v~vendor, t~taxtype, t~taxnum, t~taxnumxl
+    FROM cvi_vend_link AS v
+    INNER JOIN but000 AS b       ON b~partner_guid = v~partner_guid
+    INNER JOIN dfkkbptaxnum AS t ON t~partner = b~partner
+    FOR ALL ENTRIES IN @gt_out
+    WHERE v~vendor  = @gt_out-lifnr
+      AND t~taxtype = 'CN0'          " 稅號類別依國別設定而異
+    INTO TABLE @DATA(lt_tax).
+ENDIF.</code></pre>
+
+  <p><b>關鍵邏輯四：沒有價格權限就隱藏價格欄。</b>原程式的設計很好：檢查 <span class="kw">M_BEST_BSA</span> 的活動 09（顯示價格），沒有就不把 NETPR／ZHSTR／BRTWR 放進 Field Catalog。改成 SALV 時要注意：<b>set_visible( abap_false ) 只是預設隱藏，使用者可以從版面設定把欄位叫回來</b>；權限用途必須用 <span class="kw">set_technical( )</span>，並且乾脆把值清掉，連匯出、除錯都看不到。</p>
+<pre><code class="abap">AUTHORITY-CHECK OBJECT 'M_BEST_BSA'
+  ID 'BSART' DUMMY
+  ID 'ACTVT' FIELD '09'.                 " 09 = 顯示價格
+DATA(lv_no_price) = xsdbool( sy-subrc &lt;&gt; 0 ).
+
+IF lv_no_price = abap_true.
+  LOOP AT gt_out ASSIGNING FIELD-SYMBOL(&lt;p&gt;).
+    CLEAR: &lt;p&gt;-netpr, &lt;p&gt;-zhstr, &lt;p&gt;-brtwr.        " 資料層就不給
+  ENDLOOP.
+ENDIF.
+
+" ……cl_salv_table=&gt;factory( ) 之後
+IF lv_no_price = abap_true.
+  DATA(lt_price_cols) = VALUE string_table( ( `NETPR` ) ( `ZHSTR` ) ( `BRTWR` ) ).
+  LOOP AT lt_price_cols INTO DATA(lv_col).
+    TRY.
+        lo_alv-&gt;get_columns( )-&gt;get_column( CONV #( lv_col ) )-&gt;set_technical( abap_true ).
+      CATCH cx_salv_not_found.
+    ENDTRY.
+  ENDLOOP.
+ENDIF.</code></pre>
+
+  <p><b>原程式的問題與改進：</b></p>
+  <ul>
+    <li><b>死碼的權限刪除：</b>巨集裡寫了 <span class="kw">DELETE gt_fieldcat WHERE fieldname = 'NETPR' AND fieldname = 'ZHSTR' AND fieldname = 'BRTWR'</span>——同一欄位不可能同時等於三個值，條件永遠為假。真正發揮作用的是後面的 <span class="kw">IF gv_flag &lt;&gt; 'X'</span>。應該用 OR 或 IN，且不要把邏輯寫在巨集裡（巨集無法除錯）。</li>
+    <li><b>整表讀取：</b><span class="kw">SELECT … FROM adrp</span> 沒有 WHERE、<span class="kw">SELECT * FROM user_addr</span> 也沒有 WHERE，使用者數多時白白搬整張表。改成只讀 gt_out 中出現的 ERNAM（FOR ALL ENTRIES 或 JOIN USR21 → ADRP）。</li>
+    <li><b>未排序就 BINARY SEARCH：</b>lt_tvzbt、lt_eket1 沒有排序就讀；lt_eket1 還沒加 BINARY SEARCH 但也沒排序，行為依賴 COLLECT 的插入順序。一律改用 SORTED／HASHED 表或表達式 <span class="kw">itab[ … ]</span>。</li>
+    <li><b>銀行帳號取第一筆：</b>LFBK 一個供應商可能有多個銀行帳號，原程式以 LIFNR 二分搜尋取到哪筆算哪筆。列印用途應讀 BP 的預設銀行明細（BUT0BK），或以銀行明細 ID 明確指定。</li>
+    <li><b>CDHDR 條件 <span class="kw">cdpos~objectid IN s_lifnr</span>：</b>使用者沒填供應商時會撈出全公司所有 NAME3 變更；改成依結果集的供應商 FAE（如上）。</li>
+    <li><b>含稅單價的定義</b>在 ZMMF010N 是 BRTWR ÷ MENGE（每一基本單位），在 ZPUR007 是 BRTWR ÷ MENGE × PEINH（每一價格單位）。同一家公司兩支報表對「含稅價」定義不同，使用者對帳時必吵。請統一定義並寫在欄位說明。</li>
+    <li>READ_TEXT 放在 LOOP 內逐筆呼叫；筆數大時至少先依 EBELN 去重後再呼叫，並把結果放進 HASHED 表重複利用（同一張 PO 多個行項目不必讀多次）。</li>
+  </ul>
+  <div class="tip"><b>上線注意：</b>(1) 價格權限要在 <span class="tcode">SU24</span> 把 M_BEST_BSA 的 ACTVT 09 預設值設好，並請資安角色負責人明確區分「看 PO」與「看價格」兩種角色。(2) 報表若要給計畫人員用，建議以 MRP 控制者為必填或預設（<span class="kw">GET PARAMETER ID</span>），避免一次拉全公司的 PO。(3) 單純查詢需求，先評估標準的採購訂單項目監控類 Fiori App 或 <span class="tcode">ME2N</span> 的動態選擇與版面，能用標準就不要客製（先標準、再客製）。</div>
+
+  <h3 id="ch08-6-05">5. ZPUR007 供應商到貨單（一）：情境與移動類型地圖</h3>
+  <p><b>業務情境。</b>採購與品管、財務三方對帳用：每一筆收貨（物料憑證行）列出到貨數量、之後被退了多少、合格多少、合格金額，以及已經被發票校驗（MIRO）用掉多少數量。醫療器材業大量使用「103 收貨至 GR 凍結 → 品檢 → 105 放行」的兩段式收貨，加上退貨訂單（憑證類型 ZR，退貨單號以 48 開頭）、自訂移動類型 Z11／Z12，讓「合格量」的算法變得相當複雜。</p>
+
+  <p><b>選擇畫面（依截圖）：</b>過帳日期（MKPF-BUDAT）、物料憑證編號、物料憑證年份、物料編碼、憑證類型（EKKO-BSART）、工廠（預設 1000）、供應商、採購訂單號，全部為 SELECT-OPTIONS。</p>
+  <p><b>輸出欄位（依匯出範本，35 欄）：</b>過帳日期、憑證抬頭文本、物料憑證編號／年份／項目、移動類型、物料編號／描述、用戶名、供應商帳戶號／描述／曾用名／曾用名變更日期、到貨數量、基本計量單位、採購訂單號／項目、採購憑證文本（EKKO 表頭文字 F01）、已開票數量、採購訂單數量、不含稅價、含稅價、退貨數量、合格數量、合格金額、稅碼、版本、價格單位、憑證日期、貨幣碼、憑證類型、庫存地點、批號、借方／貸方標識、工廠、集團（MANDT，不該輸出）。</p>
+
+  <p><b>用到的標準表：</b>MKPF／MSEG（S/4：MATDOC）、EKKO／EKPO、EKBE、RSEG（發票憑證行）、QAMB（檢驗批與物料憑證的關聯）＋QALS（檢驗批）、LFA1、CDHDR／CDPOS、MAKT、T001W；函數 READ_TEXT；權限物件 <span class="kw">M_MATE_WRK</span>、<span class="kw">M_MATE_MAT</span>（物料權限群組 BEGRU）。</p>
+
+  <p><b>移動類型地圖。</b>整支程式的核心就是這張表：主收貨（原始列）與「追隨」它的後續異動如何歸類。原程式用 flag '1'～'5' 表示：</p>
+  <table>
+    <thead><tr><th>原始收貨（列）</th><th>後續異動</th><th>原程式 flag</th><th>歸入</th><th>公式（原邏輯）</th></tr></thead>
+    <tbody>
+      <tr><td rowspan="2">101 收貨入庫</td><td>102（101 沖銷）</td><td>1</td><td>退貨量</td><td rowspan="2">退貨量 = Σ102 + Σ122／123；合格量 = 到貨量 + 退貨量（退貨為負值）</td></tr>
+      <tr><td>122 退回供應商、123（122 沖銷）</td><td>2</td><td>退貨量</td></tr>
+      <tr><td rowspan="3">103 收貨至 GR 凍結</td><td>104（103 沖銷）、124 自 GR 凍結退回、125（124 沖銷）</td><td>3</td><td>退貨量</td><td rowspan="3">退貨量 = Σ104／124／125；合格量 = Σ102 + Σ105／106</td></tr>
+      <tr><td>105 GR 凍結放行入庫、106（105 沖銷）</td><td>4</td><td>合格量</td></tr>
+      <tr><td>102</td><td>1</td><td>合格量（原邏輯如此，需與業務確認）</td></tr>
+      <tr><td>Z11（自訂收貨）</td><td>122／123、Z12（自訂退回）</td><td>2、5</td><td>退貨量</td><td>合格量 = 到貨量 + 退貨量</td></tr>
+      <tr><td>161 退貨訂單退貨（ZR）</td><td>161／162</td><td>—</td><td>合格量</td><td>ZR 單的到貨量與合格量最後一律轉為負值</td></tr>
+      <tr><td>—</td><td>333（2023 年追加）</td><td>—</td><td>只加進查詢條件</td><td>未對應任何 flag，實際上被忽略</td></tr>
+    </tbody>
+  </table>
+  <div class="warn"><b>這張表才是需求文件。</b>原程式把這些規則分散寫在三百多行的 IF／READ／LOOP 裡，還出現兩個版本（frm_deal_data 與 frm_deal_data2，前者已不呼叫但未刪除）、333 加了卻沒歸類、161 的處理在兩個版本間不一致。改寫時請先把這張表交給採購／品管主管簽核，再寫程式；規則若常變，放進自建設定表（像 §14 的 ZSDT016），不要寫死。</div>
+
+  <p><b>現代改寫：主查詢直接讀 MATDOC，過帳日期下在 SQL。</b>原程式先撈全部收貨，最後才用 <span class="kw">LOOP … IF budat NOT IN s_dudat … DELETE</span> 過濾過帳日期——等於每次都把歷年收貨全搬出來。MATDOC 本身就有表頭欄位（BUDAT、BKTXT、USNAM），一個 SELECT 就夠，不必再 FAE 讀 MKPF。</p>
+<pre><code class="abap">TYPES tt_bwart_r TYPE RANGE OF bwart.
+TYPES tt_bsart_r TYPE RANGE OF esart.
+
+" 用列舉（EQ）而不是區間：移動類型、憑證類型都是代碼，不是連續號碼
+DATA(lr_gr_bwart) = VALUE tt_bwart_r( sign = 'I' option = 'EQ'
+                                      ( low = '101' ) ( low = '103' )
+                                      ( low = '161' ) ( low = 'Z11' ) ).
+DATA(lr_bsart)    = VALUE tt_bsart_r( sign = 'I' option = 'EQ'
+                                      ( low = 'NB' ) ( low = 'NB3' ) ( low = 'NB4' )
+                                      ( low = 'Z3' ) ( low = 'Z5' )  ( low = 'Z6' )
+                                      ( low = 'Z8' ) ( low = 'ZR' ) ).
+
+SELECT m~mblnr, m~mjahr, m~zeile, m~budat, m~bktxt, m~usnam,
+       m~bwart, m~matnr, m~werks, m~lgort, m~charg, m~lifnr,
+       m~shkzg, m~menge, m~meins, m~ebeln, m~ebelp,
+       k~waers, k~bsart, k~bedat
+  FROM matdoc AS m
+  INNER JOIN ekko AS k ON k~ebeln = m~ebeln
+  WHERE m~budat IN @s_budat
+    AND m~mblnr IN @s_mblnr
+    AND m~mjahr IN @s_mjahr
+    AND m~matnr IN @s_matnr
+    AND m~werks IN @s_werks
+    AND m~lifnr IN @s_lifnr
+    AND m~ebeln IN @s_ebeln
+    AND m~bwart IN @lr_gr_bwart
+    AND m~record_type = 'MDOC'
+    AND k~bsart IN @lr_bsart
+    AND k~bsart IN @s_bsart
+  ORDER BY m~ebeln, m~ebelp, m~mjahr, m~mblnr, m~zeile
+  INTO CORRESPONDING FIELDS OF TABLE @gt_out.</code></pre>
+  <div class="note">原程式的選擇畫面變數叫 <span class="kw">s_dudat</span>（打字錯誤，應為 budat），而且畫面第一個欄位就是過帳日期卻沒設必填。收貨類報表一定要讓日期「必填或有預設區間」，否則使用者按下執行就是一次全表掃描。</div>
+
+  <h3 id="ch08-6-06">6. ZPUR007（二）：退貨量、合格量、已開票量的現代算法</h3>
+  <p><b>程式架構拆解（原程式）：</b>frm_get_data 撈主收貨 → frm_deal_data2：(1) 以 EBELN／EBELP FAE 撈後續異動；(2) 對「沒有參考憑證」的收貨，從 EKBE 找後續異動，再經 QAMB → QALS（檢驗批）反查它原本對應哪一筆收貨；(3) 依參考憑證（LFBJA／LFBNR／LFPOS）或沖銷憑證（SJAHR／SMBLN／SMBLP）配對、COLLECT 成 flag 彙總表；(4) LOOP 主表，依移動類型 READ 各 flag 加總；(5) READ_TEXT 補 PO 表頭文字；(6) ZR 單轉負值。</p>
+  <p><b>現代改寫：規則資料化＋分組彙總。</b>把「移動類型 → 歸類」做成一張常數表（未來可改成自建設定表），後續異動先算出「它追隨的是哪一筆收貨」，再用 GROUP BY 一次彙總：</p>
+<pre><code class="abap">TYPES: BEGIN OF ty_map,
+         bwart TYPE bwart,
+         cat   TYPE c LENGTH 1,      " 1:102 2:122/123 3:104/124/125 4:105/106 5:Z12 6:161/162
+       END OF ty_map,
+       tt_map TYPE SORTED TABLE OF ty_map WITH UNIQUE KEY bwart.
+
+DATA(lt_map) = VALUE tt_map( ( bwart = '102' cat = '1' )
+                             ( bwart = '122' cat = '2' ) ( bwart = '123' cat = '2' )
+                             ( bwart = '104' cat = '3' ) ( bwart = '124' cat = '3' )
+                             ( bwart = '125' cat = '3' )
+                             ( bwart = '105' cat = '4' ) ( bwart = '106' cat = '4' )
+                             ( bwart = 'Z12' cat = '5' )
+                             ( bwart = '161' cat = '6' ) ( bwart = '162' cat = '6' ) ).
+DATA(lr_follow) = VALUE tt_bwart_r( FOR mp IN lt_map ( sign = 'I' option = 'EQ' low = mp-bwart ) ).
+
+IF gt_out IS NOT INITIAL.
+  SELECT mblnr, mjahr, zeile, bwart, shkzg, menge,
+         lfbja, lfbnr, lfpos, sjahr, smbln, smblp
+    FROM matdoc
+    FOR ALL ENTRIES IN @gt_out
+    WHERE ebeln = @gt_out-ebeln
+      AND ebelp = @gt_out-ebelp
+      AND bwart IN @lr_follow
+      AND record_type = 'MDOC'
+    INTO TABLE @DATA(lt_follow).
+ENDIF.
+
+TYPES: BEGIN OF ty_sum,
+         ref_mjahr TYPE mjahr,
+         ref_mblnr TYPE mblnr,
+         ref_zeile TYPE mblpo,
+         cat       TYPE c LENGTH 1,
+         menge     TYPE menge_d,
+       END OF ty_sum.
+DATA lt_sum TYPE SORTED TABLE OF ty_sum WITH UNIQUE KEY ref_mjahr ref_mblnr ref_zeile cat.
+
+LOOP AT lt_follow INTO DATA(ls_f)
+     GROUP BY ( ref_mjahr = COND mjahr( WHEN ls_f-lfbnr IS NOT INITIAL THEN ls_f-lfbja ELSE ls_f-sjahr )
+                ref_mblnr = COND mblnr( WHEN ls_f-lfbnr IS NOT INITIAL THEN ls_f-lfbnr ELSE ls_f-smbln )
+                ref_zeile = COND mblpo( WHEN ls_f-lfbnr IS NOT INITIAL THEN ls_f-lfpos ELSE ls_f-smblp )
+                cat       = VALUE #( lt_map[ bwart = ls_f-bwart ]-cat OPTIONAL ) )
+     INTO DATA(g).
+  INSERT VALUE #( ref_mjahr = g-ref_mjahr ref_mblnr = g-ref_mblnr
+                  ref_zeile = g-ref_zeile cat = g-cat
+                  menge = REDUCE menge_d( INIT s = CONV menge_d( 0 )
+                                          FOR x IN GROUP g
+                                          NEXT s = s + COND menge_d( WHEN x-shkzg = 'H' THEN 0 - x-menge
+                                                                     ELSE x-menge ) ) )
+         INTO TABLE lt_sum.
+ENDLOOP.
+
+LOOP AT gt_out ASSIGNING FIELD-SYMBOL(&lt;o&gt;).
+  " 小工具：取某一類的累計量，找不到為 0
+  DATA(q1) = VALUE menge_d( lt_sum[ ref_mjahr = &lt;o&gt;-mjahr ref_mblnr = &lt;o&gt;-mblnr ref_zeile = &lt;o&gt;-zeile cat = '1' ]-menge OPTIONAL ).
+  DATA(q2) = VALUE menge_d( lt_sum[ ref_mjahr = &lt;o&gt;-mjahr ref_mblnr = &lt;o&gt;-mblnr ref_zeile = &lt;o&gt;-zeile cat = '2' ]-menge OPTIONAL ).
+  DATA(q3) = VALUE menge_d( lt_sum[ ref_mjahr = &lt;o&gt;-mjahr ref_mblnr = &lt;o&gt;-mblnr ref_zeile = &lt;o&gt;-zeile cat = '3' ]-menge OPTIONAL ).
+  DATA(q4) = VALUE menge_d( lt_sum[ ref_mjahr = &lt;o&gt;-mjahr ref_mblnr = &lt;o&gt;-mblnr ref_zeile = &lt;o&gt;-zeile cat = '4' ]-menge OPTIONAL ).
+  DATA(q5) = VALUE menge_d( lt_sum[ ref_mjahr = &lt;o&gt;-mjahr ref_mblnr = &lt;o&gt;-mblnr ref_zeile = &lt;o&gt;-zeile cat = '5' ]-menge OPTIONAL ).
+
+  CASE &lt;o&gt;-bwart.
+    WHEN '101'.
+      &lt;o&gt;-zthsl = q1 + q2.
+      &lt;o&gt;-zhgsl = &lt;o&gt;-menge + &lt;o&gt;-zthsl.
+    WHEN '103'.
+      &lt;o&gt;-zthsl = q3.
+      &lt;o&gt;-zhgsl = q1 + q4.
+    WHEN 'Z11'.
+      &lt;o&gt;-zthsl = q2 + q5.
+      &lt;o&gt;-zhgsl = &lt;o&gt;-menge + &lt;o&gt;-zthsl.
+    WHEN OTHERS.            " 161：規則待業務確認，先不自行推論
+  ENDCASE.
+
+  IF &lt;o&gt;-bsart = 'ZR'.      " 退貨訂單：到貨量與合格量以負數呈現
+    &lt;o&gt;-menge = 0 - &lt;o&gt;-menge.
+    &lt;o&gt;-zhgsl = 0 - abs( &lt;o&gt;-zhgsl ).
+  ENDIF.
+ENDLOOP.</code></pre>
+
+  <p><b>已開票數量：改讀 EKBE，並且要看借貸方向。</b>原程式從 RSEG 以參考收貨憑證（LFBNR／LFGJA／LFPOS）加總 MENGE，但<b>沒有考慮 SHKZG</b>：發票被沖銷時，原發票與沖銷發票都會出現在 RSEG，直接相加就變成兩倍。採購訂單歷史 EKBE 的 VGABE = '2'（發票收據）同時帶有參考收貨與借貸方向，是更直接的來源：</p>
+<pre><code class="abap">IF gt_out IS NOT INITIAL.
+  " 主鍵 GJAHR/BELNR/BUZEI 必須選出，避免 FAE 把兩筆同量的發票併掉
+  SELECT ebeln, ebelp, gjahr, belnr, buzei, lfgja, lfbnr, lfpos, shkzg, menge
+    FROM ekbe
+    FOR ALL ENTRIES IN @gt_out
+    WHERE ebeln = @gt_out-ebeln
+      AND ebelp = @gt_out-ebelp
+      AND vgabe = '2'                       " 2 = 發票收據（IR）
+    INTO TABLE @DATA(lt_ir).
+ENDIF.
+
+LOOP AT gt_out ASSIGNING FIELD-SYMBOL(&lt;gr&gt;).
+  &lt;gr&gt;-zmenge1 = REDUCE menge_d(
+      INIT s = CONV menge_d( 0 )
+      FOR ir IN lt_ir WHERE ( ebeln = &lt;gr&gt;-ebeln AND ebelp = &lt;gr&gt;-ebelp
+                              AND lfgja = &lt;gr&gt;-mjahr AND lfbnr = &lt;gr&gt;-mblnr
+                              AND lfpos = &lt;gr&gt;-zeile )
+      NEXT s = s + COND menge_d( WHEN ir-shkzg = 'H' THEN 0 - ir-menge ELSE ir-menge ) ).
+ENDLOOP.</code></pre>
+  <div class="note">發票上的借貸方向以 PO 的角度解讀：一般發票為借（S），貸項憑證或沖銷為貸（H）。若公司有「後續借記／貸記」（subsequent debit/credit）只調金額不調數量的情形，EKBE 的數量欄可能為 0，需要另外判斷，請用 <span class="tcode">ME23N</span> 的採購訂單歷史頁籤對照幾筆實際資料後再定案。</div>
+
+  <p><b>原程式的問題與改進：</b></p>
+  <ul>
+    <li><b>MKPF 被覆蓋的 bug：</b>frm_deal_data2 先用 <span class="kw">APPENDING CORRESPONDING FIELDS OF TABLE lt_mkpf</span> 補讀 QALS 反查到的退貨憑證表頭，幾行之後又用 <span class="kw">INTO CORRESPONDING FIELDS OF TABLE lt_mkpf</span> 重讀——前面補的資料全被覆蓋。改讀 MATDOC 後表頭欄位就在同一列，這類問題自然消失。</li>
+    <li><b>O(n²) 巢狀迴圈：</b>2023 年追加的 <span class="kw">LOOP AT lt_mseg … LOOP AT lt_mseg2 … MODIFY lt_mseg</span> 對每一組都 MODIFY，不管有沒有對到。資料一多就是效能災難；改成 HASHED 表查找或上面的 GROUP BY。</li>
+    <li><b>物料權限「連坐」：</b>frm_auth_data 對權限群組 N 的物料，從 MSEG 反查出所有相關 PO，再把這些 PO 的<b>所有行項目</b>都刪掉——使用者只是沒權限看某一個物料，卻整張 PO 都看不到。而且 <span class="kw">SELECT ebeln FROM mseg WHERE matnr IN gr_matnr</span> 沒有其他條件，是全表掃描。正確做法是在主查詢以 <span class="kw">NOT IN</span> 排除受限物料，或 JOIN MARA 以 BEGRU 過濾到「行」的層級。</li>
+    <li><b>「排除 SAP_ALL」的權限技巧：</b>原程式先檢查 BEGRU = 'N' 成功後，再檢查 BEGRU = 空白也成功就視為全權限。這是利用「有 * 權限的人兩個檢查都會過」的推論，可讀性差且容易誤判；應直接以使用者對每個 BEGRU 的檢查結果組成排除清單。</li>
+    <li><b>品檢狀態：</b>frm_deal_data 裡曾依 MSEG-QINSPST = '1'（需檢驗）決定合格量初值，這段在改版後被丟在不再呼叫的 FORM 裡，行為悄悄改變。改版時「舊 FORM 留著不刪」是最危險的習慣。</li>
+    <li><b>DELETE TABLE gt_out FROM gs_out：</b>在 LOOP 中依「表格鍵」刪除，標準表的預設鍵是所有字元欄位，可能刪錯列；改為 <span class="kw">DELETE gt_out WHERE budat NOT IN s_budat</span>，或更好——在 SQL 就過濾。</li>
+    <li>輸出了集團（MANDT）欄位，對使用者沒有意義，移除。</li>
+  </ul>
+  <div class="tip"><b>上線注意：</b>(1) 這類「到貨→退貨→合格→開票」的報表，驗收時請挑五種情境各一張單（一般 101、101 後 122、103 後 105、103 後 124、ZR 退貨單）逐欄對照 <span class="tcode">MB51</span> 與 <span class="tcode">ME23N</span> 採購訂單歷史，不要只看總數。(2) 若只是要「每張 PO 收了多少、開票多少」，標準 CDS <span class="kw">I_PurchaseOrderHistoryAPI01</span> 等 API 類視圖已提供，先評估標準（名稱依版本而異，請在 ADT 以 PurchaseOrderHistory 搜尋）。</div>
+
+  <h3 id="ch08-6-07">7. ZSDR007N 交貨單明細列表（一）：雙模板、選擇畫面與主查詢</h3>
+  <p><b>業務情境。</b>業務、倉庫、財務共用的「出貨總帳」：一列一個交貨單行項目，同時帶出訂單價格（報價、含稅單價、折扣）、出貨金額、累計開票與未開票、批次的生產／失效日期、醫療器材註冊證、物流單號與物流軌跡。依<b>裝運點</b>決定輸出格式：裝運點 1004 用「模板 A」（結構 ZSSDR007_01，偏內部／樣品），1000 用「模板 B」（程式內 LT_OUT2，85 欄的完整版）。</p>
+
+  <p><b>選擇畫面（依截圖）：</b></p>
+  <table>
+    <thead><tr><th>畫面文字</th><th>變數</th><th>參考欄位</th><th>備註</th></tr></thead>
+    <tbody>
+      <tr><td>裝運點</td><td>VSTEL</td><td>LIKP-VSTEL</td><td>必填、NO-EXTENSION NO INTERVALS、預設 1000；權限物件 V_LIKP_VST</td></tr>
+      <tr><td>分銷渠道</td><td>VTWEG</td><td>LIPS-VTWEG</td><td></td></tr>
+      <tr><td>交貨單號／銷售訂單號</td><td>VBELN／VGBEL</td><td>LIKP-VBELN／LIPS-VGBEL</td><td></td></tr>
+      <tr><td>外部訂單號</td><td>BSTKD</td><td>VBKD-BSTKD</td><td>客戶採購單號</td></tr>
+      <tr><td>客戶編號</td><td>KUNAG</td><td>LIKP-KUNAG</td><td>售達方</td></tr>
+      <tr><td>過帳日期</td><td>AEDAT</td><td>LIKP-AEDAT</td><td>變數名叫 AEDAT，實際比對的卻是 <b>WADAT_IST</b>（實際發貨日）——命名誤導</td></tr>
+      <tr><td>建立日期</td><td>ERDAT</td><td>LIKP-ERDAT</td><td></td></tr>
+      <tr><td>部門</td><td>KOSTL</td><td>LIPS-KOSTL</td><td>成本中心</td></tr>
+      <tr><td>批號</td><td>BATCH</td><td>ZWMT015-BATCH</td><td>客製批號，先經 MCHA-ZZBATCH 換成 SAP 批次</td></tr>
+      <tr><td>物料／REF 號</td><td>MATNR／BISMT</td><td>LIPS-MATNR／MARA-BISMT</td><td>BISMT 舊物料號被拿來存規格型號</td></tr>
+      <tr><td>建立者、業務類型、客戶銷售模式、存貨合同分類</td><td>ERNAM、AUART、KTOKD、MVGR3</td><td>LIKP、VBAK、KNA1、MVKE</td><td>客戶銷售模式＝客戶帳戶群組 KTOKD</td></tr>
+      <tr><td>未交貨／已交貨</td><td>P_WJH／P_YJH</td><td>核取方塊，預設皆勾</td><td>轉成 WBSTK 範圍 A／C</td></tr>
+    </tbody>
+  </table>
+
+  <p><b>自建表與擴充欄位（依 docx 截圖）：</b></p>
+  <table>
+    <thead><tr><th>物件</th><th>說明</th><th>重點欄位</th></tr></thead>
+    <tbody>
+      <tr><td>ZWMT015 產品銷售出庫記錄清單</td><td>WMS 掃碼出庫明細</td><td>ID（鍵）、ZVBELN 交貨單、PIBILL 揀貨單號、ZBOXNO 箱號、ZEXPRESS 快遞單號、ZEXPTYPE 快遞類型、ZQRCODE 箱二維碼、BARCODE、PRODATE、SMQUAN、MATNR、LGORT、WERKS、BATCH 客製批號、ZCHARG 批次、SONUM 特殊庫存編號、ZNAME 員工工號、SHR 收貨人、ZMCHARG／ZMITAT 滅菌批號、LOEKZ、ZPOST 過帳標識、MBLNR、BUDAT、CRDAT／CRTIM</td></tr>
+      <tr><td>ZWMT012 揀貨單行項目表</td><td>揀貨單與 SAP 單據的關聯</td><td>ZITEM（鍵）、AUFNR 單號（CHAR 12）、<b>ZVBELN（CHAR 12）</b>、ZPOSNR、VBELN／POSNR、BESTQ、GRUND、MATNR、LIFNR、CHARG、HSDAT、LGPLA 倉位、SOBKZ、SONUM、VERME、POST／POSTDATE（LT01 過帳）、ZDEL 刪除標記、ZCKFLG、MBLNR／MJAHR、LGNUM、TANUM</td></tr>
+      <tr><td>ZWMT011／ZSDT015／ZSDT018</td><td>揀貨單抬頭、物流軌跡、物流訂閱回應</td><td>ZEXPRESS、ZGXZT 狀態、ZDATE、ZGXXQ 軌跡內容、E_RETURNCODE</td></tr>
+      <tr><td>ZSSDR007_01（模板 A，30 欄）</td><td>輸出結構</td><td>XH 序號、VBELN、BOLNR、AEDAT、VSART、VSARTT、BEZEI、VTEXT、KUNAG、NAME1、BEZEI_2 銷售部門、NAME1_2 業務員、WAERK、KURSK、VGBEL、BSTKD、VSNMR_V、MATNR、BISMT、ARKTX、ZGGXH、LFIMG、PCSLFIMG、PCSKBETR、BATCH、BJPRICE 報價單價、KBETR 報價金額、NETPR 均攤金額、KWERT、NETPR_2 本幣均攤金額</td></tr>
+      <tr><td>VBAP append ZZVBAP_ZUZID</td><td>訂單項目擴充</td><td>ZZBORW_DEALER 借用經銷商、ZZSHIP_NO 發貨批號、ZUZID 外部行項目 ID；另有 ZZHHSL 換貨數量、ZZCZH／ZZCZPMC 註冊證</td></tr>
+    </tbody>
+  </table>
+
+  <p><b>用到的標準表：</b>LIKP、LIPS、VBAK、VBAP、VBKD、VBPA、VBFA、VBRK、VBRP、PRCD_ELEMENTS、KNA1、KNVV、KNVP、BUT000、ADRC、MARA、MAKT、MVKE、TVM3T、MCHA、CSKT、T173T、TVKBT、T077X；函數 <span class="kw">WB2_TVAKT_SINGLE_SELECT</span>、<span class="kw">TVTWT_SINGLE_READ</span>、<span class="kw">KNA1_READ_SINGLE</span>、<span class="kw">READ_TEXT</span>（VBBK Z001／Z002、VBBP Z003／0002）、<span class="kw">FIMA_DATE_CREATE</span>、<span class="kw">ROUND</span>、<span class="kw">CONVERSION_EXIT_CUNIT_OUTPUT</span>、<span class="kw">CONVERT_TO_LOCAL_CURRENCY</span>。</p>
+
+  <p><b>程式架構拆解：</b>START-OF-SELECTION 依序 FRM_CHECK_INPUT（勾選檢查、V_LIKP_VST、物料權限群組）→ FRM_GET_DATA（一個 11 表 JOIN 撈主資料，之後依裝運點分兩大段補欄位）→ FRM_SET_FIELD（模板 A 用 REUSE_ALV_FIELDCATALOG_MERGE 讀結構，模板 B 用巨集 M_FIELD 逐欄 85 行）→ FRM_ALV_OUT（ZLR 退貨交貨單整列轉負、單價取絕對值、SLIS 版 REUSE 顯示；雙擊跳 VL03N）。</p>
+
+  <p><b>現代改寫：主查詢。</b>這支程式其實<b>已經是 S/4HANA 版本</b>：它讀 <span class="kw">LIKP~WBSTK</span>（S/4 才有，ECC 在 VBUK）與 <span class="kw">PRCD_ELEMENTS</span>（取代 KONV）。改寫重點是把狀態範圍寫完整、語言不寫死、並把可選的關聯改成外連接：</p>
+<pre><code class="abap">" 未交貨／已交貨 → 貨物移動狀態 WBSTK（S/4：LIKP-WBSTK；ECC：VBUK-WBSTK）
+TYPES tt_wbstk_r TYPE RANGE OF wbstk.
+DATA lr_wbstk TYPE tt_wbstk_r.
+IF p_wjh = abap_true.            " 未交貨：未處理 A ＋ 部分處理 B（原程式漏了 B）
+  lr_wbstk = VALUE #( BASE lr_wbstk sign = 'I' option = 'EQ' ( low = 'A' ) ( low = 'B' ) ).
+ENDIF.
+IF p_yjh = abap_true.            " 已交貨：完全處理 C
+  lr_wbstk = VALUE #( BASE lr_wbstk ( sign = 'I' option = 'EQ' low = 'C' ) ).
+ENDIF.
+
+SELECT l~vbeln, i~posnr, l~erdat, l~ernam, l~aedat, l~aenam, l~wadat_ist,
+       l~kunag, l~vkorg, l~lfart, l~vsart, l~wbstk,
+       i~matnr, i~charg, i~werks, i~lgort, i~lfimg, i~vrkme,
+       i~kostl, i~aufnr, i~vgbel, i~vgpos, i~vtweg, i~spart,
+       a~auart, a~waerk, a~audat, a~knumv, a~vkbur,
+       p~posnr AS vposnr, p~kwmeng, p~netpr, p~netwr, p~mwsbp,
+       k~bstkd, k~kursk, m~mhdhb, m~iprkz, t~maktx
+  FROM likp AS l
+  INNER JOIN lips AS i      ON i~vbeln = l~vbeln
+  INNER JOIN vbak AS a      ON a~vbeln = i~vgbel
+  INNER JOIN vbap AS p      ON p~vbeln = i~vgbel AND p~posnr = i~vgpos
+  INNER JOIN mara AS m      ON m~matnr = i~matnr
+  LEFT OUTER JOIN vbkd AS k ON k~vbeln = i~vgbel AND k~posnr = '000000'
+  LEFT OUTER JOIN makt AS t ON t~matnr = i~matnr AND t~spras = @sy-langu
+  WHERE l~vstel     IN @s_vstel
+    AND l~vbeln     IN @s_vbeln
+    AND l~kunag     IN @s_kunag
+    AND l~erdat     IN @s_erdat
+    AND l~wadat_ist IN @s_wadat          " 名稱照實：實際發貨日
+    AND l~ernam     IN @s_ernam
+    AND l~wbstk     IN @lr_wbstk
+    AND i~vgbel     IN @s_vgbel
+    AND i~vtweg     IN @s_vtweg
+    AND i~kostl     IN @s_kostl
+    AND i~matnr     IN @s_matnr
+    AND m~bismt     IN @s_bismt
+    AND a~auart     IN @s_auart
+    AND k~bstkd     IN @s_bstkd
+  ORDER BY l~vbeln, i~posnr
+  INTO TABLE @DATA(lt_dn).</code></pre>
+  <div class="note">原程式有一段 <span class="kw">CAST( likp~vbeln AS CHAR( 12 ) ) AS zvbeln</span>，乍看多此一舉，其實是因為自建表 ZWMT012 的 ZVBELN 是 CHAR 12、而 VBELN 是 CHAR 10，FOR ALL ENTRIES 的比較兩邊型別長度要一致才吃得到索引、也才不會因補空白出錯。<b>自建表的單號欄位請直接參照標準資料元素（VBELN_VL）</b>，就不需要這種 CAST。</div>
+  <div class="warn">原程式把 MAKT 寫成 <span class="kw">makt~spras = '1'</span>（簡體中文的內部語言碼），英文登入的使用者會拿到中文描述、沒有中文描述的物料則<b>因為 INNER JOIN 整列消失</b>。語言一律用 <span class="kw">sy-langu</span>，文字表一律 LEFT OUTER JOIN。</div>
+
+  <h3 id="ch08-6-08">8. ZSDR007N（二）：定價條件、開票量、效期與物流欄位</h3>
+  <p><b>關鍵邏輯一：定價條件轉欄位。</b>原程式把 PRCD_ELEMENTS 中 PR00（含稅報價）、PR01（含稅單價）、MWSI（稅）、ZK02（折扣率）、ZK03（折扣額）分別 READ 出來放到不同欄位；模板 A 用 PR02 與 ZD00（權益金額）。問題在於「發貨數量不含稅金額」寫成 <span class="kw">kbetr_2 / '1.13' * lfimg</span>——<b>稅率 13% 寫死在程式裡</b>，稅率一調整（或出口零稅率訂單），整欄就錯。改成以條件金額 KWERT 按數量比例計算，不必知道稅率：</p>
+<pre><code class="abap">TYPES: BEGIN OF ty_cond,
+         knumv TYPE prcd_elements-knumv,
+         kposn TYPE prcd_elements-kposn,
+         stunr TYPE prcd_elements-stunr,
+         zaehk TYPE prcd_elements-zaehk,
+         kschl TYPE prcd_elements-kschl,
+         kbetr TYPE prcd_elements-kbetr,
+         kwert TYPE prcd_elements-kwert,
+       END OF ty_cond.
+DATA lt_cond TYPE SORTED TABLE OF ty_cond WITH NON-UNIQUE KEY knumv kposn kschl.
+
+IF lt_dn IS NOT INITIAL.
+  SELECT knumv, kposn, stunr, zaehk, kschl, kbetr, kwert      " 帶主鍵 STUNR/ZAEHK，避免 FAE 去重
+    FROM prcd_elements
+    FOR ALL ENTRIES IN @lt_dn
+    WHERE knumv = @lt_dn-knumv
+      AND kposn = @lt_dn-vposnr
+      AND kschl IN ('PR00','PR01','MWSI','ZK02','ZK03')
+      AND kinak = @space                                     " 只取有效條件
+    INTO CORRESPONDING FIELDS OF TABLE @lt_cond.
+ENDIF.
+
+LOOP AT lt_dn ASSIGNING FIELD-SYMBOL(&lt;d&gt;).
+  DATA(lv_gross) = VALUE #( lt_cond[ knumv = &lt;d&gt;-knumv kposn = &lt;d&gt;-vposnr kschl = 'PR01' ]-kwert OPTIONAL ).
+  DATA(lv_tax)   = VALUE #( lt_cond[ knumv = &lt;d&gt;-knumv kposn = &lt;d&gt;-vposnr kschl = 'MWSI' ]-kwert OPTIONAL ).
+  " 出貨金額 = 訂單金額 × 出貨量 ÷ 訂單量；稅額同理，完全不需要知道稅率
+  DATA(lv_ratio) = COND decfloat34( WHEN &lt;d&gt;-kwmeng &lt;&gt; 0 THEN &lt;d&gt;-lfimg / &lt;d&gt;-kwmeng ELSE 0 ).
+  DATA(lv_ship_gross) = lv_gross * lv_ratio.                 " 發貨數量含稅金額
+  DATA(lv_ship_tax)   = lv_tax   * lv_ratio.                 " 實際發貨稅額
+  DATA(lv_ship_net)   = lv_ship_gross - lv_ship_tax.         " 發貨數量不含稅金額
+  " …… 指派到輸出欄位
+ENDLOOP.</code></pre>
+  <div class="note">稅率欄位原程式是把 MWSI 的 KBETR 轉字串後在小數點切開取整數部分，這依賴 KBETR 的儲存格式（ECC 的 KONV 百分比以千分比存放，S/4 的 PRCD_ELEMENTS 則不同）。需要顯示稅率時，請以稅碼（MWSKZ）讀稅率設定，或至少先在 <span class="tcode">SE16</span> 查幾筆 PRCD_ELEMENTS 的實際存值再寫轉換，不要憑印象。</div>
+
+  <p><b>關鍵邏輯二：累計開票數量。</b>原程式 FAE 讀 VBRP JOIN VBRK（排除 FKSTO 已取消、排除 S1／S2 取消發票），再用「BINARY SEARCH 找插入位置 → INSERT INDEX」自己維護一張排序彙總表——技巧不錯，但其實資料庫就能彙總。以子查詢取代 FAE，就能在 SQL 直接 SUM：</p>
+<pre><code class="abap">SELECT r~vgbel, r~vgpos, SUM( r~fkimg ) AS fkimg
+  FROM vbrp AS r
+  INNER JOIN vbrk AS k ON k~vbeln = r~vbeln
+  WHERE k~fksto = @space                          " 已被取消的發票不算
+    AND k~fkart NOT IN ('S1','S2')                " 取消用的發票本身也不算
+    AND r~vgbel IN ( SELECT vbeln FROM likp       " 子查詢：與主查詢相同的交貨單範圍
+                       WHERE vstel IN @s_vstel
+                         AND vbeln IN @s_vbeln
+                         AND erdat IN @s_erdat )
+  GROUP BY r~vgbel, r~vgpos
+  INTO TABLE @DATA(lt_billed).</code></pre>
+
+  <p><b>關鍵邏輯三：失效日期與註冊證。</b>原程式先用 MARA-MHDHB（總貨架壽命）÷（365/12）換算成月數、四捨五入，再用 FIMA_DATE_CREATE 從生產日期加月數減一天，得到失效日，用來挑選當時有效的註冊證（ZWMT002 依生效日倒序取第一筆）；後來又改成直接讀自建表 ZWMT008 的滅菌效期。兩個建議：(1) 標準批次主檔 MCHA 本來就有 <b>VFDAT（貨架壽命到期日）</b>，只要收貨時有維護，直接讀即可；(2) MHDHB 的單位由 <b>MARA-IPRKZ</b>（期間指示：天／週／月／年）決定，不能一律當天數。另外注意：批次層級若設在「物料」或「集團」層，批次資料在 MCH1 而不是 MCHA。</p>
+<pre><code class="abap">SELECT matnr, werks, charg, hsdat, vfdat
+  FROM mcha
+  FOR ALL ENTRIES IN @lt_dn
+  WHERE matnr = @lt_dn-matnr
+    AND werks = @lt_dn-werks
+    AND charg = @lt_dn-charg
+  INTO TABLE @DATA(lt_batch).
+
+LOOP AT lt_dn ASSIGNING FIELD-SYMBOL(&lt;b&gt;).
+  DATA(ls_batch) = VALUE #( lt_batch[ matnr = &lt;b&gt;-matnr werks = &lt;b&gt;-werks charg = &lt;b&gt;-charg ] OPTIONAL ).
+  DATA(lv_expiry) = COND d(
+      WHEN ls_batch-vfdat IS NOT INITIAL
+        THEN ls_batch-vfdat                                 " 標準欄位優先
+      WHEN ls_batch-hsdat IS NOT INITIAL AND &lt;b&gt;-mhdhb &gt; 0
+       AND ( &lt;b&gt;-iprkz = space OR &lt;b&gt;-iprkz = 'D' )          " 期間單位為「天」才能直接相加
+        THEN ls_batch-hsdat + &lt;b&gt;-mhdhb - 1
+      ELSE '00000000' ).
+  " …… lv_expiry 指派到「失效日期」欄
+ENDLOOP.</code></pre>
+
+  <p><b>關鍵邏輯四：物流欄位。</b>物流單號來自 WMS 揀貨表 ZWMT012／ZWMT011，物流軌跡來自 ZSDT015（由外部快遞查詢服務回寫，見 <a href="#ch08-8">8-8 章</a>），「訂閱狀態」則是在 LOOP 內 <span class="kw">SELECT * FROM zwmt012 … ENDSELECT</span> 裡再 <span class="kw">SELECT SINGLE * FROM zsdt018</span>，逐筆查外部服務的回應碼是否為 200。這是全程式最慢的一段：每一行交貨明細都會觸發兩層資料庫讀取。改寫方式是先把所有揀貨單號收集起來，一次 JOIN 讀出「有任何一筆回應成功」的揀貨單，放進 HASHED 表查找。</p>
+  <div class="warn"><b>介面金鑰不要寫死：</b>這類物流、快遞查詢介面通常需要 app key 與 token。同一套素材中的介面程式把金鑰直接寫在原始碼裡——任何能看 SE38 的人、任何拿到傳輸檔的人都看得到。正確做法：連線資訊放 <span class="tcode">SM59</span> 目的地（HTTP 類型 G），憑證放 <span class="tcode">STRUST</span>，其餘密鑰放受權限保護的安全儲存或自建表（加權限物件、不開 SM30），程式裡只寫 <span class="kw">'&lt;YOUR_API_KEY&gt;'</span> 這類佔位符。細節見 <a href="#ch08-8">8-8 章</a>。</div>
+
+  <p><b>原程式的問題與改進：</b></p>
+  <ul>
+    <li><b>物料權限過濾比錯欄位（嚴重 bug）：</b>FRM_CHECK_INPUT 從 <b>VBAP</b> 撈出含受限物料的<b>銷售訂單號</b>放進 R_VBELN，FRM_ALV_OUT 卻用 <span class="kw">DELETE lt_out2 WHERE vbeln IN r_vbeln</span> 去比<b>交貨單號</b>。兩種號碼段不同，幾乎永遠比不到——權限過濾形同虛設；萬一號碼段重疊，反而會刪錯資料。應比對 VGBEL（參考訂單），或更好，在主查詢以 MATNR 直接排除。</li>
+    <li><b>寫死的業務值：</b>特定客戶號碼（程式中以 IF kunag = '某客戶' 特殊處理 PCS 數量）、銷售組織 1000、成本中心控制範圍 1000、稅率 1.13、日期 2022-08-29 之前清空購貨單位地址——全部應移到設定表或至少常數區並註明來源。</li>
+    <li><b>ZTSDKHCHXX 整表讀取</b>後以非 BINARY 的 READ 查找；CSKT、TVKBT、T077X、T173T 也都整表讀。小表無妨，但請改 HASHED 表查找。</li>
+    <li><b>LOOP 內的函數呼叫：</b>每列都呼叫 WB2_TVAKT_SINGLE_SELECT、TVTWT_SINGLE_READ、KNA1_READ_SINGLE、READ_TEXT 四次、SELECT SINGLE MVKE。雖然前兩個有緩衝，但一致的做法是 JOIN 文字表（TVAKT、TVTWT）或事先批次讀取。</li>
+    <li><b>ADD 與 MOVE-CORRESPONDING 混用、RANGES 敘述、WITH HEADER LINE、OCCURS 0</b>：全部改現代語法（見 <a href="#ap-01">附錄</a>）。</li>
+    <li><b>WRITE wadat_ist TO wadat_ist</b>：把日期欄格式化後寫回自己，型別是 D 時結果不可預期；日期交給 ALV 依使用者格式顯示即可。</li>
+    <li>ZLR 退貨交貨單「整列乘 −1」寫在顯示前，然後又把單價取絕對值；改成在資料準備時一次決定正負號，顯示層不改數字。</li>
+  </ul>
+  <div class="tip"><b>上線注意：</b>85 欄的明細報表，第一件事是跟使用者確認「真的每天都要 85 欄嗎」。實務上可以拆成「出貨明細」「開票追蹤」「物流追蹤」三個 SALV 版面變式（DISVARIANT），同一支程式、不同預設版面；再進一步就該評估 CDS＋Fiori Elements 的分析型清單（見 <a href="#ch02-3">2-3 章第 15 節</a>）。</div>
+
+  <h3 id="ch08-6-09">9. SD 狀態欄位在 S/4HANA：VBUK／VBUP 併入之後怎麼寫</h3>
+  <p>ZSDR007N 用 LIKP-WBSTK 判斷已交／未交，是 S/4HANA 資料模型簡化最常碰到的一項：<b>ECC 的狀態表 VBUK（表頭狀態）與 VBUP（項目狀態）在 S/4HANA 不再是實體表，狀態欄位被搬進各單據自己的表頭與項目表</b>。舊程式 JOIN VBUK 仍可能編譯通過（系統提供相容性視圖），但效能差、而且欄位不一定齊全，新程式請直接讀主表。</p>
+  <table>
+    <thead><tr><th>ECC</th><th>S/4HANA</th><th>常用欄位</th></tr></thead>
+    <tbody>
+      <tr><td>VBUK（銷售訂單表頭狀態）</td><td>VBAK</td><td>GBSTK 整體處理、LFSTK 交貨、FKSTK 開票、ABSTK 拒絕、CMGST 信用檢查</td></tr>
+      <tr><td>VBUK（交貨單表頭狀態）</td><td>LIKP</td><td>WBSTK 貨物移動、KOSTK 揀貨、PKSTK 包裝、FKSTK 開票、GBSTK 整體</td></tr>
+      <tr><td>VBUK（發票表頭狀態）</td><td>VBRK</td><td>發票相關狀態（如會計過帳狀態 RFBSK 原本就在 VBRK）</td></tr>
+      <tr><td>VBUP（訂單項目狀態）</td><td>VBAP</td><td>GBSTA、LFSTA、FKSTA、ABSTA</td></tr>
+      <tr><td>VBUP（交貨項目狀態）</td><td>LIPS</td><td>WBSTA、KOSTA、FKSTA、GBSTA</td></tr>
+      <tr><td>KONV（定價條件）</td><td>PRCD_ELEMENTS</td><td>KNUMV、KPOSN、KSCHL、KBETR、KWERT、KINAK</td></tr>
+      <tr><td>VBFA（單據流）</td><td>VBFA（仍存在，但結構精簡）</td><td>VBELV／POSNV → VBELN／POSNN、VBTYP_N</td></tr>
+    </tbody>
+  </table>
+  <p>欄位清單以你系統的 <span class="tcode">SE11</span> 為準（不同版本與啟用的功能會有差異）。狀態值的語意則沒變：<b>空白＝不相關、A＝未處理、B＝部分處理、C＝完全處理</b>。</p>
+<pre><code class="abap">" ECC 寫法（S/4 請勿再用）：FROM vbak JOIN vbuk ON vbuk~vbeln = vbak~vbeln WHERE vbuk~lfstk &lt;&gt; 'C'
+" S/4HANA：狀態就在單據表本身
+SELECT vbeln, auart, erdat, kunnr, gbstk, lfstk, fkstk, abstk, cmgst
+  FROM vbak
+  WHERE vkorg IN @s_vkorg
+    AND erdat IN @s_erdat
+    AND lfstk IN ('A','B')                 " 列舉：未交貨＋部分交貨（不要寫 lfstk &lt; 'C'）
+  ORDER BY vbeln
+  INTO TABLE @DATA(lt_open_so).
+
+IF lt_open_so IS NOT INITIAL.
+  SELECT vbeln, posnr, matnr, kwmeng, gbsta, lfsta, fksta, absta
+    FROM vbap
+    FOR ALL ENTRIES IN @lt_open_so
+    WHERE vbeln = @lt_open_so-vbeln
+      AND absta &lt;&gt; 'C'                     " 排除已整行拒絕的項目
+    INTO TABLE @DATA(lt_open_item).
+ENDIF.</code></pre>
+  <div class="tip"><b>列舉優於區間，狀態碼也一樣。</b>寫 <span class="kw">lfstk &lt; 'C'</span> 看似等於「A 或 B」，但它也包含空白（不相關），而且未來 SAP 若新增狀態值（字母順序不保證語意），條件就默默變了。這正是 Casper 強調的：<b>條件用列舉（多筆 EQ）比用區間（BT／比大小）安全</b>——區間比的是字典序，不是業務語意。ZSDR007N 原本只列 A 與 C、漏掉 B，也是同一類問題：列舉要列完整，並且和使用者確認每個值的意思。</div>
+
+  <h3 id="ch08-6-10">10. ZSDR018 產品退貨查詢：條碼日誌彙總、SUBMIT 取 ALV 資料與邏輯刪除</h3>
+  <p><b>業務情境。</b>經銷商退貨時，倉庫用手持終端逐箱掃描條碼，每掃一次寫一筆到自建表 <b>ZSDT001（條碼交易日誌表）</b>，依「生成單號」歸組。這支報表依客戶＋物料＋批次彙總「掃了多少、幾箱」，按「明細」看每一筆掃描，並可在明細中勾選刪除掃錯的紀錄（邏輯刪除）。刪除前要比對另一支報表 ZSDR026 算出的「未退貨入庫數量」，已經入庫的不准刪。</p>
+
+  <p><b>選擇畫面（依截圖，標題「產品退貨清單查詢」）：</b>生成單號（ZBILL）、客戶（KUNNR）、工廠（T001L-WERKS，預設 1000）、物料、批次（MCHA）、日期（CPUDT，INITIALIZATION 預設當天）、員工工號（ZNAME）。<b>結果畫面：</b>客戶、客戶名稱、物料號、物料描述、批次、數量，工具列多一顆「明細」按鈕。</p>
+
+  <p><b>自建表（依 SE11 截圖）：</b></p>
+  <table>
+    <thead><tr><th>表</th><th>說明</th><th>欄位</th></tr></thead>
+    <tbody>
+      <tr><td>ZSDT001（29 欄）</td><td>條碼交易日誌表</td><td>MANDT、ID（鍵，CHAR 15）、ZBILL 生成單號、BARCODE 條碼（60）、CODE69 69 碼、KUNNR、WERKS、MATNR（40）、UDI 標識、GOODSCODE 存貨編碼、CHARG、QUANTITY（QUAN 13,3）、MEINS、PRODATE 生產日期、ZBATCH 客製批號、ZNAME 員工工號、CPUDT 日期、LOEKZ 刪除標識、POST 是否生成成功、NAME1、ZSL 數量、MAKTX、CRDAT、BWART、ZDY01～ZDY04 自訂欄位（各 50）、MVGR3</td></tr>
+      <tr><td>ZSDT023（21 欄）</td><td>VL02N 發貨過帳或沖銷後同步更新表</td><td>MANDT、ID（鍵）、VBELN（VBELN_VL）、POSNR、BWART、KUNNR、NAME1、WERKS、MATNR、MAKTX、UDI、GOODSCODE、CHARG、QUANTITY、MEINS、PRODATE、ZBATCH、ZNAME（UNAME）、CPUDT、UZEIT、LOEKZ</td></tr>
+    </tbody>
+  </table>
+
+  <p><b>程式架構拆解：</b>frm_get_data：SELECT ZSDT001 → 用 <span class="kw">CL_SALV_BS_RUNTIME_INFO</span> 攔截 ZSDR026 的 ALV 資料 → sub_clac_data：LOOP 彙總（READ TABLE 找到就累加、找不到就 APPEND，packnum 計箱數），再對明細表與彙總表<b>各跑一次</b>逐筆 SELECT SINGLE 讀 KNA1／MAKT／TVM3T JOIN MVKE／MCHA → REUSE_ALV_GRID_DISPLAY_LVC 顯示；user_command 'ZDETAIL' 開第二個 REUSE ALV 顯示明細（SEL 欄設為可編輯勾選框）；明細的 'ZDEL'：POPUP_TO_CONFIRM → 檢查刪除量不得大於 ZSDR026 的未退貨入庫量 → 逐筆 <span class="kw">UPDATE zsdt001 SET loekz = 'X'</span> 並逐筆 COMMIT WORK AND WAIT。</p>
+
+  <p><b>值得學的技巧：SUBMIT 另一支報表並取回它的 ALV 資料。</b>這是「重用別人報表邏輯、又不想複製程式」的常見手法：先告訴 ALV 執行環境「不要顯示、只要資料」，SUBMIT … AND RETURN，再取回資料參照。</p>
+<pre><code class="abap">METHOD get_zsdr026_data.
+  " rt_result 的型別要與 ZSDR026 的輸出表欄位相容（至少同名欄位）
+  FIELD-SYMBOLS &lt;lt_data&gt; TYPE STANDARD TABLE.
+
+  cl_salv_bs_runtime_info=&gt;set( display  = abap_false
+                                metadata = abap_false
+                                data     = abap_true ).
+  TRY.
+      SUBMIT zsdr026 WITH s_kunnr IN s_kunnr
+                     WITH s_werks IN s_werks
+                     WITH s_matnr IN s_matnr
+                     AND RETURN.
+      cl_salv_bs_runtime_info=&gt;get_data_ref( IMPORTING r_data = DATA(lr_data) ).
+      ASSIGN lr_data-&gt;* TO &lt;lt_data&gt;.
+      IF &lt;lt_data&gt; IS ASSIGNED.
+        MOVE-CORRESPONDING &lt;lt_data&gt; TO rt_result.     " 依欄位名稱搬移
+      ENDIF.
+    CATCH cx_salv_bs_sc_runtime_info INTO DATA(lx).
+      MESSAGE lx TYPE 'S' DISPLAY LIKE 'E'.
+  ENDTRY.
+  " 一定要清除：否則同一個內部階段之後的 ALV 都會「不顯示」
+  cl_salv_bs_runtime_info=&gt;clear_all( ).
+ENDMETHOD.</code></pre>
+  <div class="warn"><b>這招的限制：</b>(1) 被呼叫的報表必須用 ALV 輸出（REUSE 或 SALV 皆可），且輸出表結構一改，呼叫端就靜默取不到欄位；(2) 被呼叫的報表若有 COMMIT、寄信、更新資料的副作用，也會一起執行；(3) 效能等於多跑一整支報表。它適合「一次性、短期」的整合；長期做法是把 ZSDR026 的取數邏輯抽成類別方法（例如 <span class="kw">zcl_sd_return_stock=&gt;get_open_qty( )</span>），兩支報表都呼叫它（見 <a href="#ch07-5">7-5 章 Facade</a>）。</div>
+
+  <p><b>現代改寫：彙總與文字一次在 SQL 完成。</b>原程式先整批撈明細、ABAP 彙總，再對每一列 SELECT SINGLE 四次；明細與彙總各做一次，等於 N×8 次資料庫往返。改成 GROUP BY＋外連接文字表，一次拿到結果：</p>
+<pre><code class="abap">SELECT z~kunnr, c~name1, z~matnr, t~maktx, z~werks, z~charg,
+       SUM( z~quantity ) AS quantity,
+       COUNT(*)          AS packnum            " 箱數 = 掃描筆數
+  FROM zsdt001 AS z
+  LEFT OUTER JOIN kna1 AS c ON c~kunnr = z~kunnr
+  LEFT OUTER JOIN makt AS t ON t~matnr = z~matnr AND t~spras = @sy-langu
+  WHERE z~zbill IN @s_zbill
+    AND z~werks IN @s_werks
+    AND z~matnr IN @s_matnr
+    AND z~kunnr IN @s_kunnr
+    AND z~charg IN @s_charg
+    AND z~cpudt IN @s_cpudt
+    AND z~zname IN @s_zname
+    AND z~loekz = @space
+  GROUP BY z~kunnr, c~name1, z~matnr, t~maktx, z~werks, z~charg
+  ORDER BY z~kunnr, z~matnr, z~charg
+  INTO TABLE @DATA(lt_sum).</code></pre>
+
+  <p><b>現代改寫：明細中的刪除。</b>原程式的明細 ALV 為了讓使用者勾選，把 SEL 欄設成可編輯勾選框——這是整支程式唯一「需要可編輯」的地方，但其實只是為了選列。改用 SALV 的多列選取就不必動用 CL_GUI_ALV_GRID。刪除本身則補上三件原程式缺少的事：<b>權限、鎖、一次性 COMMIT</b>。</p>
+<pre><code class="abap">" 顯示明細時：開啟多列選取，並套用含「刪除」按鈕的 GUI Status
+mo_detail-&gt;get_selections( )-&gt;set_selection_mode( if_salv_c_selection_mode=&gt;row_column ).
+mo_detail-&gt;set_screen_status( pfstatus      = 'PF_DETAIL'
+                              report        = sy-repid
+                              set_functions = mo_detail-&gt;c_functions_all ).
+
+METHOD delete_selected.
+  DATA(lt_rows) = mo_detail-&gt;get_selections( )-&gt;get_selected_rows( ).
+  IF lt_rows IS INITIAL.
+    MESSAGE '請先選取至少一列' TYPE 'S' DISPLAY LIKE 'E'.
+    RETURN.
+  ENDIF.
+
+  AUTHORITY-CHECK OBJECT 'Z_SD_SCAN'            " 自建權限物件：工廠＋活動
+    ID 'WERKS' DUMMY
+    ID 'ACTVT' FIELD '06'.                       " 06 = 刪除
+  IF sy-subrc &lt;&gt; 0.
+    MESSAGE '沒有刪除掃描紀錄的權限' TYPE 'S' DISPLAY LIKE 'E'.
+    RETURN.
+  ENDIF.
+
+  DATA(lt_del) = VALUE tt_scan( FOR r IN lt_rows ( mt_detail[ r ] ) ).
+
+  " 規則檢查：同一 工廠/客戶/物料/批次 的刪除量不得大於未退貨入庫量
+  LOOP AT lt_del INTO DATA(ls_d)
+       GROUP BY ( werks = ls_d-werks kunnr = ls_d-kunnr matnr = ls_d-matnr charg = ls_d-charg )
+       INTO DATA(g).
+    DATA(lv_del_qty) = REDUCE menge_d( INIT s = CONV menge_d( 0 ) FOR x IN GROUP g NEXT s = s + x-quantity ).
+    DATA(lv_open)    = VALUE #( mt_open[ werks = g-werks kunnr = g-kunnr matnr = g-matnr charg = g-charg ]-zwthrk OPTIONAL ).
+    IF lv_del_qty &gt; lv_open.
+      MESSAGE |物料 { g-matnr ALPHA = OUT } 刪除數量不能大於未退貨入庫數量| TYPE 'S' DISPLAY LIKE 'E'.
+      RETURN.
+    ENDIF.
+  ENDLOOP.
+
+  " 鎖定（鎖物件 EZSDT001 需先在 SE11 建立）→ 一次更新 → 一次 COMMIT
+  LOOP AT lt_del INTO DATA(ls_lock).
+    CALL FUNCTION 'ENQUEUE_EZSDT001'
+      EXPORTING
+        id             = ls_lock-id
+      EXCEPTIONS
+        foreign_lock   = 1
+        system_failure = 2
+        OTHERS         = 3.
+    IF sy-subrc &lt;&gt; 0.
+      MESSAGE |紀錄 { ls_lock-id } 正由他人處理中| TYPE 'S' DISPLAY LIKE 'E'.
+      CALL FUNCTION 'DEQUEUE_ALL'.
+      RETURN.
+    ENDIF.
+  ENDLOOP.
+
+  DATA lr_id TYPE RANGE OF zsdt001-id.
+  lr_id = VALUE #( FOR d IN lt_del ( sign = 'I' option = 'EQ' low = d-id ) ).
+  UPDATE zsdt001 SET loekz = 'X' WHERE id IN @lr_id AND loekz = @space.
+  COMMIT WORK.
+  CALL FUNCTION 'DEQUEUE_ALL'.
+  MESSAGE |已刪除 { sy-dbcnt } 筆| TYPE 'S'.
+ENDMETHOD.</code></pre>
+  <p><b>原程式的問題與改進：</b></p>
+  <ul>
+    <li><b>沒有權限檢查：</b>frm_auth_check 整段被註解、呼叫也被註解——任何能執行這支報表的人都能刪掃描紀錄。</li>
+    <li><b>ALV 回呼裡發 E 訊息：</b>刪除量超過時 <span class="kw">MESSAGE … TYPE 'E'</span> 會中斷整個清單處理，使用者被踢出畫面、剛才的勾選全沒了。回呼中一律用 S＋DISPLAY LIKE 'E' 再 RETURN。</li>
+    <li><b>逐筆 COMMIT WORK AND WAIT：</b>刪 100 筆就 COMMIT 100 次，中途失敗會留下「刪一半」的狀態。應一次更新、一次 COMMIT（見 <a href="#ch04-1">4-1 章 LUW</a>）。</li>
+    <li><b>LOOP 中 DELETE 當前列</b>後又用 <span class="kw">IF sy-subrc = 0</span> 判斷「已刪除」，sy-subrc 是最後一次 DELETE 的結果，與整批是否成功無關。</li>
+    <li><b>讀 ZSDR026 的結果用 READ TABLE 但沒檢查 sy-subrc</b>，找不到時比較的是上一輪殘留的 zwthrk 值。</li>
+    <li>彙總只依客戶＋物料＋批次，卻用工廠去查 MCHA；多工廠時工廠會取到第一筆明細的值。彙總鍵要包含所有後續要用到的欄位。</li>
+  </ul>
+
+  <h3 id="ch08-6-11">11. ZSDR040 客戶合作夥伴功能報表（一）：KNVP 夥伴功能與 BP 歸檔旗標</h3>
+  <p><b>業務情境。</b>海外子公司（銷售組織 1010，英文介面）的主資料維護人員需要一張清單：每個售達方（Sold-to）在各銷售範圍下掛了哪些送達方（Ship-to）與收票方（Bill-to），連同售達方地址、預設 email、付款條件、價格清單類型、客戶群組、多個美國市場用的客製欄位（免稅號、GPO GLN、GID、關係機構、FedEx／UPS／DHL 帳號），以及售達方與夥伴是否已標記歸檔（BUT000-XDELE）。</p>
+  <p><b>選擇畫面（依截圖，標題 Customer Partner Function report）：</b>Sales Organization（必填，預設 1010）、Distribution Channel、Division、Sold-to、Partner（Ship-to, Bill-to）、核取方塊 Include Flagged for Archiving（程式預設勾選，截圖中為未勾）。<b>結果（依匯出範本）：</b>Sold-to、Sold-to Name、Archiving_SoldTo、合作夥伴功能、Partner Function、Partner、Partner Name、Archiving_flag；其餘地址與 KNVV 欄位在欄位目錄中設為 NO_OUT（隱藏但可叫出）。</p>
+
+  <p><b>夥伴功能的內碼與外碼。</b>匯出範本中夥伴功能顯示為「SH」，程式裡卻寫 'WE'——這不是兩個不同的值，而是 <b>PARVW 的轉換出口（Conversion Exit PARVW）依登入語言顯示不同代碼</b>。程式內、SQL 條件內一律用內碼：</p>
+  <table>
+    <thead><tr><th>內碼（DB 值）</th><th>英文外碼</th><th>中文</th><th>在客戶主檔／單據</th></tr></thead>
+    <tbody>
+      <tr><td>AG</td><td>SP</td><td>售達方</td><td>KNVP／VBPA</td></tr>
+      <tr><td>WE</td><td>SH</td><td>送達方</td><td>KNVP／VBPA</td></tr>
+      <tr><td>RE</td><td>BP</td><td>收票方</td><td>KNVP／VBPA</td></tr>
+      <tr><td>RG</td><td>PY</td><td>付款方</td><td>KNVP／VBPA</td></tr>
+      <tr><td>Z2、Z4、Z5、YW、SB</td><td>—</td><td>本套素材的自訂功能：分中心經理、依產品群的銷售員、業務員、經銷商庫存地點</td><td>ZSDR007N 使用</td></tr>
+    </tbody>
+  </table>
+
+  <p><b>用到的標準表：</b>KNVP（客戶夥伴功能，夥伴號碼在 KUNN2）、KNA1、KNVV（銷售範圍資料）、ADRC、ADR6（email，FLGDEFAULT 預設）、TPART（夥伴功能文字）、BUT000（BU_GROUP 分組、XDELE 歸檔旗標）、TVKO（權限檢查）；權限物件 <span class="kw">V_VBAK_VKO</span>；BP 導覽類別 CL_BUPA_NAVIGATION_REQUEST、CL_BUPA_DIALOG_JOEL_OPTIONS、CL_BUPA_DIALOG_JOEL。</p>
+
+  <p><b>現代改寫：修正 JOIN 條件。</b>原查詢有兩個會「長出重複列」的錯誤：KNVV 與第二個 KNVP（夥伴）的 JOIN 都<b>少了銷售組織 VKORG</b>，客戶若在多個銷售組織都有建檔，資料就交叉相乘；ADRC 沒限定國際版本（NATION），有多語地址版本時也會重複。另外 ADR6 用 INNER JOIN，沒有 email 的客戶整個消失。</p>
+<pre><code class="abap">SELECT sp~vkorg, sp~vtweg, sp~spart,
+       sp~kunnr AS soldto, c~name1 AS soldto_name,
+       a~street, a~str_suppl1, a~post_code1, a~city1, a~country, a~region,
+       a~tel_number, e~smtp_addr,
+       v~zterm, v~pltyp, v~kdgrp, v~loevm,
+       pf~parvw, tx~vtext AS parvw_text,
+       pf~kunn2 AS kunnr, pn~name1 AS kunnr_name
+  FROM knvp AS sp
+  INNER JOIN kna1 AS c  ON c~kunnr  = sp~kunnr
+  INNER JOIN knvv AS v  ON v~kunnr  = sp~kunnr
+                       AND v~vkorg  = sp~vkorg           " 原程式漏了這一行
+                       AND v~vtweg  = sp~vtweg
+                       AND v~spart  = sp~spart
+  INNER JOIN knvp AS pf ON pf~kunnr = sp~kunnr
+                       AND pf~vkorg = sp~vkorg           " 原程式也漏了這一行
+                       AND pf~vtweg = sp~vtweg
+                       AND pf~spart = sp~spart
+  INNER JOIN kna1 AS pn ON pn~kunnr = pf~kunn2
+  LEFT OUTER JOIN adrc AS a  ON a~addrnumber = c~adrnr
+                            AND a~nation     = @space    " 只取主要地址版本（NATION 空白）
+  LEFT OUTER JOIN adr6 AS e  ON e~addrnumber = c~adrnr
+                            AND e~flgdefault = @abap_true
+  LEFT OUTER JOIN tpart AS tx ON tx~parvw = pf~parvw
+                             AND tx~spras = @sy-langu
+  WHERE sp~parvw  = 'AG'
+    AND pf~parvw IN ('WE','RE')
+    AND sp~vkorg IN @s_vkorg
+    AND sp~vtweg IN @s_vtweg
+    AND sp~spart IN @s_spart
+    AND sp~kunnr IN @s_kunnr
+    AND pf~kunn2 IN @s_kunmg                             " 原程式撈完才 DELETE，改下在 SQL
+  ORDER BY sp~kunnr, pf~parvw DESCENDING, pf~kunn2
+  INTO TABLE @DATA(lt_list).</code></pre>
+  <p><b>歸檔旗標。</b>原程式另外讀 BUT000：夥伴為送達方時看 BU_GROUP 5000、收票方看 6000、售達方看 4000，XDELE = 'X' 則打勾；未勾「含已歸檔」時整列刪除。這裡的 BP 分組代碼是該公司的設定，不是 SAP 標準值；而且「BP 號碼＝客戶號碼」的假設同 §4 所述，嚴謹做法應經 <b>CVI_CUST_LINK</b>（PARTNER_GUID ↔ CUSTOMER）對應。</p>
+  <div class="note">S/4HANA 的客戶主檔一律用 <span class="tcode">BP</span> 維護，XD01／XD02／VD01 已停用；KNA1、KNVV、KNVP 仍是實體表（由 CVI 同步），所以讀取沒有問題，但<b>寫入</b>必須走 BP 的 API（如 CMD_EI_API 或 BP 相關 BAPI，見 <a href="#ch04-1">4-1 章</a>與 <a href="#ch08-7">8-7 章</a>）。</div>
+
+  <h3 id="ch08-6-12">12. 夥伴功能實務：VBPA 單據夥伴、表頭／項目與 BP 導覽</h3>
+  <p>KNVP 是「客戶主檔上預設的夥伴」，建立訂單時依夥伴決定程序帶進單據，存到 <b>VBPA</b>；之後使用者可以在單據上改。所以<b>報表要顯示「這張單實際的送達方」，一定讀 VBPA，不要讀 KNVP</b>。ZSDR007N 同時用了兩種：業務員、開票公司、收貨地址、經銷商庫存地點讀 VBPA（正確），分中心經理與銷售員讀 KNVP（代表「現在主檔上的人」，不是「當時單據上的人」——若業務員異動，歷史出貨會被算到新業務員名下，這需要跟業務確認是否為預期）。</p>
+  <p><b>VBPA 的兩個細節：</b>(1) 夥伴可以存在表頭（POSNR = 000000）也可以存在項目（POSNR = 項目號，當某一行送到不同地址時）；原程式全部只讀表頭，逐行送貨地址不同時會顯示錯。(2) 單次客戶（one-time customer）的地址不在 KNA1，而是 VBPA-ADRNR 指向的 ADRC——這也是原程式讀收貨地址時走 VBPA-ADRNR 的原因，做得對。</p>
+<pre><code class="abap">" 一次讀出所有需要的單據夥伴（表頭＋項目），之後在記憶體中「項目優先、表頭遞補」
+IF lt_dn IS NOT INITIAL.
+  SELECT vbeln, posnr, parvw, kunnr, lifnr, pernr, adrnr
+    FROM vbpa
+    FOR ALL ENTRIES IN @lt_dn
+    WHERE vbeln = @lt_dn-vgbel
+      AND parvw IN ('WE','RE','SB')
+    INTO TABLE @DATA(lt_vbpa).
+ENDIF.
+SORT lt_vbpa BY vbeln posnr parvw.
+
+LOOP AT lt_dn ASSIGNING FIELD-SYMBOL(&lt;dn&gt;).
+  DATA(ls_ship_to) = VALUE #( lt_vbpa[ vbeln = &lt;dn&gt;-vgbel posnr = &lt;dn&gt;-vgpos parvw = 'WE' ]
+                              DEFAULT VALUE #( lt_vbpa[ vbeln = &lt;dn&gt;-vgbel posnr = '000000' parvw = 'WE' ] OPTIONAL ) ).
+  DATA(ls_bill_to) = VALUE #( lt_vbpa[ vbeln = &lt;dn&gt;-vgbel posnr = &lt;dn&gt;-vgpos parvw = 'RE' ]
+                              DEFAULT VALUE #( lt_vbpa[ vbeln = &lt;dn&gt;-vgbel posnr = '000000' parvw = 'RE' ] OPTIONAL ) ).
+  " ls_ship_to-adrnr → ADRC 取收貨地址（單次客戶也適用）
+ENDLOOP.</code></pre>
+
+  <p><b>從報表跳到 BP。</b>ZSDR040 雙擊售達方或夥伴時，用 BP 對話框的導覽 API 直接開啟該 BP（因為 <span class="kw">SET PARAMETER ID 'BPA' ＋ CALL TRANSACTION 'BP' AND SKIP FIRST SCREEN</span> 對 BP 交易無效，它不是傳統的第一畫面結構——原程式也把這兩行註解掉了）。但原程式同時設定了「允許建立、修改、刪除角色」，對一支查詢報表來說權限開太大；而且傳入空的角色。報表的導覽應該只給顯示：</p>
+<pre><code class="abap">METHOD show_bp.
+  DATA(lo_request) = NEW cl_bupa_navigation_request( ).
+  lo_request-&gt;set_maintenance_id( cl_bupa_navigation_request=&gt;gc_maintenance_id_partner ).
+  lo_request-&gt;set_partner_number( iv_partner ).                       " BU_PARTNER
+  lo_request-&gt;set_bupa_activity( cl_bupa_navigation_request=&gt;gc_activity_display ).
+
+  DATA(lo_options) = NEW cl_bupa_dialog_joel_options( ).
+  lo_options-&gt;set_locator_visible( space ).                          " 不顯示左側搜尋區
+  lo_options-&gt;set_navigation_disabled( abap_true ).                  " 不允許切換到其他 BP
+
+  cl_bupa_dialog_joel=&gt;start_with_navigation(
+    EXPORTING
+      iv_request = lo_request
+      iv_options = lo_options
+    EXCEPTIONS
+      OTHERS     = 1 ).
+  IF sy-subrc &lt;&gt; 0.
+    MESSAGE |無法開啟 BP { iv_partner ALPHA = OUT }| TYPE 'S' DISPLAY LIKE 'E'.
+  ENDIF.
+ENDMETHOD.</code></pre>
+  <div class="note">即使導覽 API 設成顯示，BP 交易本身仍會做權限檢查（B_BUPA_RLT 等），這是正確的最後一道防線。報表端「只開顯示」是為了避免使用者誤以為這裡可以改主資料。</div>
+
+  <h3 id="ch08-6-13">13. ZALV_COMM 共用 include 的問題與共用 ALV 類別的設計</h3>
+  <p><b>ZSDR040 的架構。</b>主程式 7 個 include：TOP（先 INCLUDE ZALV_COMM，再宣告 GT_ALV 等）、C01（事件接收類別 LCL_EVENT_RECEIVER_GRID：DOUBLE_CLICK、BUTTON_CLICK、DATA_CHANGED、TOP_OF_PAGE，每個方法只是 PERFORM 到 FORM）、S01（選擇畫面＋5 個功能鍵）、F01（建立 Docking Container → Splitter 兩列 → 上格放 HTML 表頭、下格放 Grid；Field Catalog 用 REUSE_ALV_FIELDCATALOG_MERGE 讀內表宣告再轉 LVC；排除工具列按鈕；註冊 ENTER／MODIFIED 編輯事件）、F02（INITIALIZATION、FETCH_DATA）、O01（PBO：GUI Status、第一次建立 ALV 否則 refresh）、I01（PAI）。從 include 註解可以看出它是從一支名為 YS_AVL_SAMPLE 的範本複製而來。</p>
+  <p><b>ZALV_COMM 裡有什麼：</b>檔頭寫著「WARNING!!!!! DO NOT CHANGE ANY OF THE FOLLOWING TYPES!」，內容是一大包全域變數：5 組 Docking／Custom Container、5 個 Splitter、6 個 CL_GUI_ALV_GRID、5 組 Field Catalog、Layout、Sort、排除按鈕表、5 個文字編輯器 CL_GUI_TEXTEDIT、5 組 CL_DD_DOCUMENT＋HTML Viewer、ALV Tree 與 HTML Control、HR 物件 ID（HRP1000-OBJID）、畫面常數與圖示常數……。</p>
+  <table>
+    <thead><tr><th>問題</th><th>後果</th></tr></thead>
+    <tbody>
+      <tr><td>用 include 共用「變數」而不是共用「行為」</td><td>每支引用它的程式都背著上百個用不到的全域變數；共用的只是宣告，建立容器、設欄位、處理事件的程式碼還是每支複製一份</td></tr>
+      <tr><td>「不准改」的全域宣告</td><td>任何一支程式需要第 7 個 Grid 或不同型別，就只能在自己程式再宣告一份，久了命名衝突、遮蔽</td></tr>
+      <tr><td>複製範本帶進大量死碼</td><td>ZSDR040 的 SAVE／DELE／CREATE／CLEAR_DATA／GET_INIT_DATA／SET_MODIFY_SCREEN 全是空的 FORM；BDC_DYNPRO、SAVE_TEXTEDITOR、BUTTON_CLICK 的 SM37 分支都是註解；註冊了編輯事件、寫了 DATA_CHANGED，但這是唯讀報表</td></tr>
+      <tr><td>表頭其實看不到</td><td>Splitter 第一列（表頭區）的高度被設為 0，所以 TOP_OF_PAGE 寫的 HTML 表頭永遠不會顯示；PRINT_TOP_OF_PAGE 還先 CREATE OBJECT 覆蓋了傳入的參數</td></tr>
+      <tr><td>權限用使用者名稱寫死</td><td>PBO 裡 <span class="kw">IF sy-uname = '…'</span> 才隱藏按鈕；換人、換帳號就失效，且原始碼含個人帳號</td></tr>
+      <tr><td>依登入語言決定預設銷售組織</td><td>INITIALIZATION 以 sy-langu（E／1／D）決定預設 1010／1000／1020；用中文登入的海外同事就拿錯預設。應改用使用者參數 <span class="kw">GET PARAMETER ID 'VKO'</span>（使用者在 SU3 維護）</td></tr>
+      <tr><td>PAI 中 E 訊息後接 STOP</td><td>E 訊息之後的 STOP 永遠執行不到；且在 Dynpro PAI 發 E 訊息會讓畫面欄位全部鎖住，改用 S＋DISPLAY LIKE 'E'</td></tr>
+    </tbody>
+  </table>
+
+  <p><b>改寫方向：共用「行為」的全域類別。</b>七支報表 90% 的 ALV 程式碼是同一件事：建立 SALV、開啟標準功能、設版面變式鍵、依設定改欄位文字／隱藏／熱點／勾選框。把這件事做成一個小而穩定的類別，每支報表只傳「欄位設定清單」：</p>
+<pre><code class="abap">CLASS zcl_salv_helper DEFINITION PUBLIC FINAL CREATE PUBLIC.
+  PUBLIC SECTION.
+    TYPES: BEGIN OF ty_col,
+             name     TYPE lvc_fname,
+             text     TYPE scrtext_l,
+             hidden   TYPE abap_bool,   " 預設隱藏，使用者可從版面叫回
+             tech     TYPE abap_bool,   " 完全不可見（權限用途）
+             hotspot  TYPE abap_bool,
+             checkbox TYPE abap_bool,
+           END OF ty_col,
+           tt_col TYPE STANDARD TABLE OF ty_col WITH EMPTY KEY.
+
+    CLASS-METHODS create
+      IMPORTING it_columns TYPE tt_col OPTIONAL
+                iv_title   TYPE lvc_title OPTIONAL
+                iv_handle  TYPE slis_handl OPTIONAL   " 同一程式多個 ALV 時區分版面變式
+      EXPORTING eo_alv     TYPE REF TO cl_salv_table
+      CHANGING  ct_data    TYPE STANDARD TABLE
+      RAISING   cx_salv_msg.
+ENDCLASS.
+
+CLASS zcl_salv_helper IMPLEMENTATION.
+  METHOD create.
+    cl_salv_table=&gt;factory( IMPORTING r_salv_table = eo_alv
+                            CHANGING  t_table      = ct_data ).
+
+    eo_alv-&gt;get_functions( )-&gt;set_all( abap_true ).
+    DATA(lo_disp) = eo_alv-&gt;get_display_settings( ).
+    lo_disp-&gt;set_striped_pattern( abap_true ).
+    IF iv_title IS NOT INITIAL.
+      lo_disp-&gt;set_list_header( iv_title ).
+    ENDIF.
+
+    DATA(lo_layout) = eo_alv-&gt;get_layout( ).
+    lo_layout-&gt;set_key( VALUE #( report = sy-cprog handle = iv_handle ) ).
+    lo_layout-&gt;set_save_restriction( if_salv_c_layout=&gt;restrict_none ).
+    lo_layout-&gt;set_default( abap_true ).
+
+    DATA(lo_cols) = eo_alv-&gt;get_columns( ).
+    lo_cols-&gt;set_optimize( abap_true ).
+
+    LOOP AT it_columns INTO DATA(ls_col).
+      TRY.
+          DATA(lo_col) = CAST cl_salv_column_table( lo_cols-&gt;get_column( ls_col-name ) ).
+          IF ls_col-text IS NOT INITIAL.
+            lo_col-&gt;set_long_text( ls_col-text ).
+            lo_col-&gt;set_medium_text( CONV #( ls_col-text ) ).
+            lo_col-&gt;set_short_text( CONV #( ls_col-text ) ).
+          ENDIF.
+          IF ls_col-hidden = abap_true.
+            lo_col-&gt;set_visible( abap_false ).
+          ENDIF.
+          IF ls_col-tech = abap_true.
+            lo_col-&gt;set_technical( abap_true ).
+          ENDIF.
+          IF ls_col-hotspot = abap_true.
+            lo_col-&gt;set_cell_type( if_salv_c_cell_type=&gt;hotspot ).
+          ELSEIF ls_col-checkbox = abap_true.
+            lo_col-&gt;set_cell_type( if_salv_c_cell_type=&gt;checkbox ).
+          ENDIF.
+        CATCH cx_salv_not_found.
+          " 共用類別不因一個欄名打錯就讓整支報表 dump；開發時可在此加 ASSERT
+      ENDTRY.
+    ENDLOOP.
+  ENDMETHOD.
+ENDCLASS.</code></pre>
+  <p>ZSDR040 用這個類別改寫後，1,000 多行的 ALV 骨架剩下這樣（事件類別只處理熱點）：</p>
+<pre><code class="abap">CLASS lcl_events DEFINITION.
+  PUBLIC SECTION.
+    CLASS-METHODS on_link_click FOR EVENT link_click OF cl_salv_events_table
+      IMPORTING row column.
+ENDCLASS.
+
+CLASS lcl_events IMPLEMENTATION.
+  METHOD on_link_click.
+    DATA(ls_row) = VALUE #( gt_alv[ row ] OPTIONAL ).
+    CASE column.
+      WHEN 'SOLDTO'. lcl_report=&gt;show_bp( CONV #( ls_row-soldto ) ).
+      WHEN 'KUNNR'.  lcl_report=&gt;show_bp( CONV #( ls_row-kunnr ) ).
+    ENDCASE.
+  ENDMETHOD.
+ENDCLASS.
+
+START-OF-SELECTION.
+  lcl_report=&gt;fetch_data( ).                 " 內容即 §11 的 SELECT
+  TRY.
+      zcl_salv_helper=&gt;create(
+        EXPORTING
+          it_columns = VALUE #( ( name = 'SOLDTO'      text = 'Sold-to'          hotspot  = abap_true )
+                                ( name = 'SOLDTO_NAME' text = 'Sold-to Name' )
+                                ( name = 'XDELE_SO'    text = 'Archiving Sold-to' checkbox = abap_true )
+                                ( name = 'PARVW_TEXT'  text = 'Partner Function' )
+                                ( name = 'KUNNR'       text = 'Partner'          hotspot  = abap_true )
+                                ( name = 'KUNNR_NAME'  text = 'Partner Name' )
+                                ( name = 'XDELE'       text = 'Archiving flag'   checkbox = abap_true )
+                                ( name = 'STREET'      hidden = abap_true )
+                                ( name = 'SMTP_ADDR'   hidden = abap_true ) )
+          iv_title   = 'Customer Partner Function report'
+        IMPORTING
+          eo_alv     = DATA(lo_alv)
+        CHANGING
+          ct_data    = gt_alv ).
+      SET HANDLER lcl_events=&gt;on_link_click FOR lo_alv-&gt;get_event( ).
+      lo_alv-&gt;display( ).
+    CATCH cx_salv_msg INTO DATA(lx).
+      MESSAGE lx TYPE 'S' DISPLAY LIKE 'E'.
+  ENDTRY.</code></pre>
+  <div class="tip"><b>共用類別的設計原則：</b>(1) 只包「每支報表都一樣」的行為，不要想包山包海（ZALV_COMM 的失敗就在於想預先準備一切）；(2) 輸入用資料（欄位設定表），不要用一堆布林參數；(3) 回傳 SALV 物件本身，讓呼叫端仍可做個別化設定（排序、合計、顏色）；(4) 放在共用套件、寫 ABAP Unit 測試，改版要走正式傳輸。更完整的設計模式討論見 <a href="#ch07-5">7-5 章</a>（Facade）。若真的需要可編輯 Grid，另做一個 <span class="kw">zcl_alv_grid_helper</span>，不要讓一個類別同時處理兩種 ALV。</div>
+
+  <h3 id="ch08-6-14">14. ZSDF016 銷售訂單移動類型對應關係：自建對照表與通用維護框架</h3>
+  <p><b>業務情境。</b>不同訂單類型、不同客戶帳戶分配群組，出貨時要用不同的移動類型過帳：一般銷售 601，樣品、贈品、借用等要改用自訂移動類型並記到成本中心或內部訂單。業務規則放在自建表 <b>ZSDT016</b>，由這支程式讓關鍵使用者維護，出貨過帳的增強程式（素材中未附，推測在交貨單過帳相關的 user exit／BAdI）再讀這張表決定移動類型。</p>
+  <table>
+    <thead><tr><th>欄位</th><th>鍵</th><th>資料元素</th><th>說明</th></tr></thead>
+    <tbody>
+      <tr><td>MANDT</td><td>✓</td><td>MANDT</td><td>集團</td></tr>
+      <tr><td>AUART</td><td>✓</td><td>AUART</td><td>銷售憑證類型（Y001～Y005、Z001…）</td></tr>
+      <tr><td>KTGRD</td><td>✓</td><td>KTGRD</td><td>此客戶的帳戶分配群組（03～06）</td></tr>
+      <tr><td>KOSTL</td><td>✓</td><td><b>XFELD</b></td><td>「有成本中心」勾選框——欄名叫 KOSTL 但不是成本中心號碼</td></tr>
+      <tr><td>AUFNR</td><td>✓</td><td><b>XFELD</b></td><td>「有內部訂單」勾選框</td></tr>
+      <tr><td>BWART</td><td></td><td>BWART</td><td>移動類型（601、Z71、Z77、Z79、Z85、Z87、Z89、Z91…）</td></tr>
+    </tbody>
+  </table>
+  <p><b>維護畫面（依截圖）：</b>標題「銷售訂單移動類型對應關係」，工具列有「顯示→修改」「全選」「反選」「全不選」、搜尋、篩選、排序，以及「下載模板」「導入」「導出」。這些全部來自共用函數 <b>ZFMVIEW_MAINTENANCE_CALL</b>（函數群 ZMMFG003「View Maintain」），ZSDF016 本身只做兩件事：呼叫 <span class="kw">ZFMGET_FIELDCAT_WITH_TABLE</span> 取得欄位目錄並調整欄位文字／勾選框／參考表，再呼叫維護函數。</p>
+  <table>
+    <thead><tr><th>ZFMVIEW_MAINTENANCE_CALL 參數</th><th>說明</th></tr></thead>
+    <tbody>
+      <tr><td>I_VIEW_NAME（DD02V-TABNAME）</td><td>要維護的表名</td></tr>
+      <tr><td>I_CALLBACK_PROGRAM ＋ I_CALLBACK_INITIAL_DATA／BEFOR_SAVE／AFTER_SAVE／CHECK_SCREEN／EXIT、I_USER_COMMAND</td><td>回呼 FORM 名稱，函數內以 <span class="kw">PERFORM (name) IN PROGRAM (prog) IF FOUND</span> 動態呼叫</td></tr>
+      <tr><td>I_PF_STATUS、I_TITLE</td><td>GUI 狀態、標題</td></tr>
+      <tr><td>I_ACTION（預設 'S' 顯示）、I_NO_LOCK、I_LOCK_GRANULARITY（'X' 細粒度：鎖到過濾後的每筆資料；空白：粗粒度）</td><td>模式與鎖定策略</td></tr>
+      <tr><td>I_AUTHORITY_CHECK、I_FC_FLAG、I_CWIDTH_OPT</td><td>權限檢查開關、欄位目錄模式、欄寬最佳化</td></tr>
+      <tr><td>T_FIELDCAT、T_SEARCH_FIELDS、T_FILTER（RSPARAMS）、T_SORT</td><td>欄位目錄、搜尋欄位、資料過濾（可做資料層權限）、排序</td></tr>
+      <tr><td>例外 VIEW_IS_WRONG、VIEW_IS_NOT_MAINTENCABLE、CALLBACK_PROGRAM_NOT_EXIT、LOCK_FAILED、DISTRIBUTE_FAILED、NO_AUTHORITY</td><td>錯誤回報</td></tr>
+    </tbody>
+  </table>
+
+  <p><b>先找標準：SM30／表維護產生器。</b>這個自建框架做得相當完整（匯入匯出、細粒度鎖、回呼），但 SAP 標準的<b>表維護產生器（<span class="tcode">SE54</span>）＋ <span class="tcode">SM30</span></b> 已涵蓋大部分需求：鎖定、權限群組（S_TABU_DIS／S_TABU_NAM）、傳輸記錄、事件（Events，相當於這裡的回呼）、變更記錄（技術設定勾「記錄資料變更」）。再包一個參數交易碼（<span class="tcode">SE93</span>）就能給使用者直接進入。從程式呼叫：</p>
+<pre><code class="abap">" 標準做法：表維護產生器產生維護畫面後，程式或交易碼直接呼叫
+CALL FUNCTION 'VIEW_MAINTENANCE_CALL'
+  EXPORTING
+    action         = 'U'              " S 顯示、U 修改
+    view_name      = 'ZSDT016'
+  EXCEPTIONS
+    foreign_lock   = 1
+    no_upd_auth    = 2
+    view_not_found = 3
+    OTHERS         = 4.
+IF sy-subrc &lt;&gt; 0.
+  MESSAGE ID sy-msgid TYPE 'S' NUMBER sy-msgno
+          WITH sy-msgv1 sy-msgv2 sy-msgv3 sy-msgv4 DISPLAY LIKE 'E'.
+ENDIF.</code></pre>
+  <p><b>讀這張表的一方：決定移動類型。</b>對照表只有被正確讀取才有意義。把讀取邏輯包成一個方法，並且明確處理「找不到規則」——<b>絕不能默默退回 601</b>，否則樣品出貨會被當成銷售出貨過帳，成本科目全錯：</p>
+<pre><code class="abap">CLASS zcl_sd_mvt_determination DEFINITION PUBLIC FINAL CREATE PUBLIC.
+  PUBLIC SECTION.
+    CLASS-METHODS get_bwart
+      IMPORTING iv_auart        TYPE auart
+                iv_ktgrd        TYPE ktgrd
+                iv_kostl        TYPE kostl OPTIONAL
+                iv_aufnr        TYPE aufnr OPTIONAL
+      RETURNING VALUE(rv_bwart) TYPE bwart.
+ENDCLASS.
+
+CLASS zcl_sd_mvt_determination IMPLEMENTATION.
+  METHOD get_bwart.
+    " 表的鍵是完整的五個欄位，所以 SELECT SINGLE 必定唯一，不存在「取第一筆」問題
+    SELECT SINGLE bwart
+      FROM zsdt016
+      WHERE auart = @iv_auart
+        AND ktgrd = @iv_ktgrd
+        AND kostl = @( xsdbool( iv_kostl IS NOT INITIAL ) )
+        AND aufnr = @( xsdbool( iv_aufnr IS NOT INITIAL ) )
+      INTO @rv_bwart.
+    " 找不到時回傳空值：由呼叫端（出貨過帳增強）擋下並提示維護 ZSDT016
+  ENDMETHOD.
+ENDCLASS.</code></pre>
+  <div class="warn"><b>先標準、再客製。</b>「依訂單類型決定出貨移動類型」在 SAP 標準是由<b>計劃行類別</b>決定的（<span class="tcode">VOV6</span> 設定計劃行類別的移動類型；<span class="tcode">VOV5</span> 依項目類別＋MRP 類型決定計劃行類別），樣品、免費品通常用不同的訂單類型／項目類別就能分流；科目則由移動類型的帳戶修改碼與評價設定（<span class="tcode">OBYC</span>）決定。只有「同一訂單類型、同一項目類別，卻要依客戶帳戶群組或是否帶成本中心而改變移動類型」這種標準做不到的組合，才值得自建表＋增強。Casper 的經驗是：標準設定 → BAdI／Enhancement Spot → Enhancement Point → 修改標準，每往右一步，升級成本高一個量級。</div>
+  <p><b>原框架的問題與改進：</b></p>
+  <ul>
+    <li><b>動態表名未驗證：</b>函數以 <span class="kw">SELECT * FROM (i_view_name)</span> 讀取、並可更新任意傳入的表，若有人以 SE37 測試或寫支程式傳入標準表名，就可能維護到不該維護的表。動態名稱要用白名單檢查（例如 <span class="kw">cl_abap_dyn_prg=&gt;check_whitelist_tab( )</span>，或限制 Z／Y 開頭且屬於指定套件），並做 S_TABU_NAM 權限檢查。</li>
+    <li><b>整表讀取：</b>不論過濾條件，先 <span class="kw">SELECT *</span> 整張表再在 ABAP 過濾（frm_set_filter）；大表會很慢，過濾應轉成 WHERE。</li>
+    <li><b>欄位命名：</b>勾選框欄位取名 KOSTL、AUFNR，會讓後人以為存的是成本中心／內部訂單號碼。應命名如 ZZ_HAS_KOSTL。</li>
+    <li>欄寬以 <span class="kw">strlen( coltext ) * 2</span> 估算中文字寬（原程式用 COMPUTE），可接受但屬經驗值；SALV／LVC 的 cwidth_opt 已能自動處理。</li>
+  </ul>
+
+  <h3 id="ch08-6-15">15. ZSDU021 SO 物料轉換關係：一對多規則與單位換算</h3>
+  <p><b>業務情境。</b>客戶以「散裝物料＋EA」下單，公司實際出貨卻是另一個「整箱物料＋CV（箱）」，例如 8 EA 的來源物料轉成 1 CV 的目的物料。轉換規則存在自建表 <b>ZSDT020（物料轉換）</b>，維護程式 ZSDU021 與 ZSDF016 完全同一個模式（同一支共用函數、同一段 FORM），只改表名、欄位文字與數量欄位的單位參照（QFIELDNAME）。</p>
+  <table>
+    <thead><tr><th>欄位</th><th>鍵</th><th>資料元素</th><th>畫面文字</th></tr></thead>
+    <tbody>
+      <tr><td>MANDT</td><td>✓</td><td>MANDT</td><td>集團</td></tr>
+      <tr><td>MATNR_F</td><td>✓</td><td>MATNR（40）</td><td>源物料</td></tr>
+      <tr><td>MATNR_T</td><td>✓</td><td>MATNR（40）</td><td>目的物料</td></tr>
+      <tr><td>MENGE_F</td><td></td><td>MENGE_D（QUAN 13,3）</td><td>源數量（單位參照 MEINS_F）</td></tr>
+      <tr><td>MEINS_F</td><td></td><td>MEINS</td><td>源單位</td></tr>
+      <tr><td>MENGE_T</td><td></td><td>MENGE_D</td><td>目的數量（單位參照 MEINS_T）</td></tr>
+      <tr><td>MEINS_T</td><td></td><td>MEINS</td><td>目的單位</td></tr>
+    </tbody>
+  </table>
+  <p><b>關鍵觀察：鍵值是「來源＋目的」，所以同一個來源物料可以對應多個目的物料</b>——匯出範本與結果截圖都能看到同一個來源物料有兩列不同目的物料。任何「給我來源物料、回傳目的物料」的程式如果寫成 <span class="kw">SELECT SINGLE … WHERE matnr_f = …</span>，在 HANA 上每次拿到哪一列都不保證，這就是 Casper 所說「HANA 沒有預設排序，取第一筆必須先明確排序」的標準案例；而在這裡，連排序都不夠——一對多本身就是業務決策，必須由呼叫端指定或另設優先順序欄位。</p>
+<pre><code class="abap">METHOD convert.
+  " iv_matnr_f / iv_menge / iv_meins：訂單上的來源物料與數量；iv_matnr_t：指定的目的物料（可空）
+  DATA lr_matnr_t TYPE RANGE OF matnr.
+  IF iv_matnr_t IS NOT INITIAL.                 " 空範圍＝不限制目的物料
+    lr_matnr_t = VALUE #( ( sign = 'I' option = 'EQ' low = iv_matnr_t ) ).
+  ENDIF.
+
+  SELECT matnr_t, menge_f, meins_f, menge_t, meins_t
+    FROM zsdt020
+    WHERE matnr_f = @iv_matnr_f
+      AND matnr_t IN @lr_matnr_t
+    ORDER BY matnr_t
+    INTO TABLE @DATA(lt_rule).
+
+  CASE lines( lt_rule ).
+    WHEN 0.
+      RETURN.                                   " 沒有規則：不轉換
+    WHEN 1.
+      DATA(ls_rule) = lt_rule[ 1 ].
+    WHEN OTHERS.
+      " 一對多：不可自行「取第一筆」，要求呼叫端指定目的物料
+      MESSAGE |物料 { iv_matnr_f ALPHA = OUT } 有多個轉換目的物料，請指定| TYPE 'E'.
+  ENDCASE.
+
+  " 訂單單位與規則的來源單位不同時，先換成來源單位（依物料的單位換算 MARM）
+  DATA(lv_qty_f) = iv_menge.
+  IF iv_meins &lt;&gt; ls_rule-meins_f.
+    CALL FUNCTION 'MD_CONVERT_MATERIAL_UNIT'
+      EXPORTING
+        i_matnr              = iv_matnr_f
+        i_in_me              = iv_meins
+        i_out_me             = ls_rule-meins_f
+        i_menge              = iv_menge
+      IMPORTING
+        e_menge              = lv_qty_f
+      EXCEPTIONS
+        error_in_application = 1
+        error                = 2
+        OTHERS               = 3.
+    IF sy-subrc &lt;&gt; 0.
+      MESSAGE ID sy-msgid TYPE 'E' NUMBER sy-msgno WITH sy-msgv1 sy-msgv2 sy-msgv3 sy-msgv4.
+    ENDIF.
+  ENDIF.
+
+  " 8 EA → 1 CV：目的數量 = 來源數量 ÷ 來源基數 × 目的基數，並檢查是否整箱
+  DATA(lv_qty_t) = CONV decfloat34( lv_qty_f ) / ls_rule-menge_f * ls_rule-menge_t.
+  IF frac( lv_qty_t ) &lt;&gt; 0.
+    MESSAGE |數量 { lv_qty_f } { ls_rule-meins_f } 無法整除為 { ls_rule-meins_t }| TYPE 'E'.
+  ENDIF.
+  es_result = VALUE #( matnr = ls_rule-matnr_t menge = lv_qty_t meins = ls_rule-meins_t ).
+ENDMETHOD.</code></pre>
+  <div class="note">上例方法內用 TYPE 'E' 訊息是為了示意；若這段邏輯會在訂單增強（例如 MV45AFZZ，見 <a href="#ch08-1">8-1 章</a>）或背景介面中被呼叫，請改為拋出 class-based exception，由呼叫端決定如何呈現（見 <a href="#ch03-2">3-2 章例外處理</a>）。</div>
+  <div class="tip"><b>先找標準：</b>若來源與目的其實是「同一個物料的不同包裝單位」，用物料主檔的替代計量單位（MARM，<span class="tcode">MM02</span> 附加資料 → 計量單位）加銷售單位就夠了，完全不需要自建表；若是「客戶下 A 料、系統自動換成 B 料」，標準有<b>物料決定（Material Determination，<span class="tcode">VB11</span>）</b>；若是「一個銷售料號出貨時展開成多個組件」，標準有<b>銷售 BOM</b>。ZSDT020 只適用於「換料＋換單位＋固定比例」同時發生、標準都不合的情況——做之前把這三個標準方案逐一排除，並寫進設計文件。</div>
+
+  <h3 id="ch08-6-16">16. 上線前檢核清單：七支程式共同的坑</h3>
+  <p>把七個案例的問題歸納成一張清單。每次寫新的 MM／SD 查詢報表，交付前逐條打勾：</p>
+  <table>
+    <thead><tr><th>#</th><th>檢核項目</th><th>本章反例</th><th>正確做法</th></tr></thead>
+    <tbody>
+      <tr><td>1</td><td>「取第一筆」前有沒有明確排序？</td><td>ZMMF010N 的 LFBK 銀行帳號；ZSDU021 一對多規則若寫成 SELECT SINGLE</td><td>SQL 寫 ORDER BY 或 ABAP 先 SORT；一對多要由業務決定優先順序</td></tr>
+      <tr><td>2</td><td>代碼條件是列舉（EQ）還是區間／比大小？</td><td>ZSDR007N 的 WBSTK 漏了 B；狀態寫成 &lt; 'C'</td><td>用 RANGE 列舉每個值，並與使用者確認語意</td></tr>
+      <tr><td>3</td><td>FOR ALL ENTRIES 有沒有選出主鍵？驅動表空了有沒有擋？</td><td>多數原程式有擋空表，但 SELECT 欄位缺主鍵的風險普遍存在</td><td>選出完整主鍵；<span class="kw">IF itab IS NOT INITIAL</span> 包住</td></tr>
+      <tr><td>4</td><td>條件有沒有全部下在 SQL？</td><td>ZPUR007 過帳日期撈完才刪；ZSDR040 夥伴範圍撈完才刪</td><td>WHERE 一次到位；需要彙總時用子查詢或 GROUP BY</td></tr>
+      <tr><td>5</td><td>LOOP 裡有沒有 SELECT／函數呼叫？</td><td>ZSDR007N 的 SELECT…ENDSELECT、SELECT SINGLE；ZSDR018 每列 4 次 SELECT SINGLE</td><td>先收集鍵值、批次讀取、HASHED 表查找；用 <span class="tcode">SAT</span>／<span class="tcode">ST05</span> 驗證</td></tr>
+      <tr><td>6</td><td>S/4 資料模型有沒有跟上？</td><td>MKPF／MSEG、VBUK／VBUP、KONV、LFA1 直接等同 BP</td><td>MATDOC、狀態欄位在 VBAK／LIKP／VBAP／LIPS、PRCD_ELEMENTS、CVI_VEND_LINK／CVI_CUST_LINK</td></tr>
+      <tr><td>7</td><td>JOIN 條件是否完整？文字表是否外連接？</td><td>ZSDR040 漏 VKORG；ZMMF010N 的 MARC 內連接；ZSDR007N 的 MAKT 內連接＋寫死語言</td><td>對照表的主鍵逐欄檢查 ON 條件；文字表一律 LEFT OUTER JOIN＋sy-langu</td></tr>
+      <tr><td>8</td><td>權限過濾是否作用在正確的欄位與層級？</td><td>ZSDR007N 拿訂單號比交貨單號；ZPUR007 一個物料沒權限就刪整張 PO；ZSDR018 沒有權限檢查</td><td>在 SQL 層以正確欄位排除；刪除類功能必做 AUTHORITY-CHECK</td></tr>
+      <tr><td>9</td><td>價格等敏感欄位是「隱藏」還是「不給」？</td><td>ZMMF010N 的做法正確（不放進欄位目錄）</td><td>SALV 用 set_technical 並清空值，不要只 set_visible</td></tr>
+      <tr><td>10</td><td>有沒有寫死的值？</td><td>稅率 1.13、特定客戶號碼、組織 1000、使用者帳號、語言 '1'、日期 20220829</td><td>設定表、常數區、使用者參數；非改不可時加註解與來源</td></tr>
+      <tr><td>11</td><td>更新類動作：鎖、一次 COMMIT、錯誤可回復？</td><td>ZSDR018 逐筆 COMMIT、無鎖</td><td>ENQUEUE → 一次 UPDATE → COMMIT → DEQUEUE</td></tr>
+      <tr><td>12</td><td>ALV 選型對不對？</td><td>七支唯讀報表用了三種以上寫法，其中兩支用全套 OOALV</td><td>唯讀一律 CL_SALV_TABLE；要編輯才用 CL_GUI_ALV_GRID</td></tr>
+      <tr><td>13</td><td>死碼與舊版 FORM 清掉了嗎？</td><td>ZPUR007 的 frm_deal_data、ZSDR040 的空 FORM 與範本殘骸</td><td>版本控制交給傳輸與版本管理，程式裡不留「以防萬一」的舊碼</td></tr>
+      <tr><td>14</td><td>先找過標準了嗎？</td><td>ME2N、MB51、VL06O、標準 CDS／Fiori、SM30、VOV6、VB11、銷售 BOM</td><td>標準設定 → BAdI → Enhancement Point → 修改標準，逐級評估</td></tr>
+    </tbody>
+  </table>
+  <div class="warn"><b>Casper 的三條實務經驗，在這一章全都出現了：</b>(1) <b>HANA 沒有預設排序</b>——成本評價的 H 與 E 兩種角度、欄位數不同，不排序時一下抓 H 一下抓 E，成本就不穩定（該案最後固定抓 H）；本章的 EKET 交貨日、LFBK 銀行、ZSDT020 一對多規則是同一類問題。(2) <b>列舉比區間安全</b>——區間比的是字典序不是業務語意，號碼段不連續、ALPHA 前導零、編碼規則改過就會漏抓多抓；本章的移動類型、憑證類型、WBSTK 狀態都用列舉。(3) <b>先找標準再客製</b>——ZSDF016／ZSDU021 兩張自建表與整個自建維護框架，都應先和 VOV6、VB11、銷售 BOM、SM30 比過再決定。</div>
+
+  <h3 id="ch08-6-qa">練習與自我檢核</h3>
+  <ol>
+    <li><b>ALV 選型：</b>ZSDR018 的明細畫面需要「勾選多列後刪除」。請說明為什麼不需要 CL_GUI_ALV_GRID，並寫出 SALV 設定多列選取與取得選取列的兩行程式。<br><i>參考要點：</i>勾選只是為了選列，不是編輯資料；<span class="kw">get_selections( )-&gt;set_selection_mode( if_salv_c_selection_mode=&gt;row_column )</span>、<span class="kw">get_selected_rows( )</span>。只有儲存格要被修改並回寫時才需要 GRID。</li>
+    <li><b>FOR ALL ENTRIES 陷阱：</b>某人把 §4 的 MATDOC 查詢改成只選 <span class="kw">ebeln, ebelp, shkzg, menge</span>，結果 103 送檢量變少了。為什麼？<br><i>參考要點：</i>FAE 會刪除完全相同的結果列；兩筆同 PO 行項目、同數量、同方向的收貨會被併成一筆。要選出 MBLNR／MJAHR／ZEILE 主鍵。</li>
+    <li><b>S/4 狀態欄位：</b>把 ECC 寫法「VBAK JOIN VBUK，找 LFSTK 不等於 C 的訂單」改寫成 S/4HANA 寫法，並說明為什麼不建議寫 <span class="kw">lfstk &lt;&gt; 'C'</span>。<br><i>參考要點：</i>直接讀 VBAK-LFSTK，<span class="kw">lfstk IN ('A','B')</span>；&lt;&gt; 'C' 會包含空白（交貨不相關的訂單，例如貸項請求），列舉才能精準表達語意。</li>
+    <li><b>找 bug：</b>ZSDR007N 的物料權限過濾為什麼幾乎沒有作用？請提出兩種修正。<br><i>參考要點：</i>R_VBELN 裝的是 VBAP 的銷售訂單號，卻拿來比交貨單號 VBELN。修正一：改比 VGBEL；修正二（較佳）：主查詢加 <span class="kw">AND i~matnr NOT IN @lr_restricted_matnr</span> 或 JOIN MARA 以 BEGRU 過濾到行層級。</li>
+    <li><b>找 bug：</b>ZSDR040 的結果為什麼會出現重複列？列出至少三個原因。<br><i>參考要點：</i>KNVV JOIN 少 VKORG；夥伴 KNVP JOIN 少 VKORG；ADRC 未限定 NATION（多地址版本）；（另：ADR6 INNER JOIN 則是造成「少列」）。</li>
+    <li><b>稅率寫死：</b>ZSDR007N 的「發貨數量不含稅金額 = 含稅單價 ÷ 1.13 × 數量」有什麼風險？寫出不依賴稅率的算法。<br><i>參考要點：</i>稅率調整、零稅率出口、不同稅碼時全錯；以 PR01 與 MWSI 的 KWERT 依「出貨量 ÷ 訂單量」比例計算含稅金額與稅額，相減得不含稅金額。</li>
+    <li><b>取回別支報表的 ALV：</b>說明 CL_SALV_BS_RUNTIME_INFO 的使用步驟與最容易忘記的一步，以及它的長期替代方案。<br><i>參考要點：</i>set( display = false, metadata = false, data = true ) → SUBMIT … AND RETURN → get_data_ref( ) → <b>clear_all( )</b>；忘記 clear_all 會讓後續 ALV 不顯示。長期應把取數邏輯抽成共用類別方法。</li>
+    <li><b>先標準再客製：</b>使用者要求「樣品訂單出貨改用 Z77 移動類型」。在建立 ZSDT016 這類自建表之前，你會先檢查哪些標準設定？<br><i>參考要點：</i>樣品用獨立訂單類型／項目類別 → 計劃行類別決定（VOV5）→ 計劃行類別上的移動類型（VOV6）→ 科目由 OBYC 決定。標準能分流就不需要增強。</li>
+    <li><b>一對多規則：</b>ZSDT020 的主鍵是 MATNR_F＋MATNR_T。若有人寫 <span class="kw">SELECT SINGLE matnr_t FROM zsdt020 WHERE matnr_f = @lv_matnr</span>，會發生什麼事？怎麼改？<br><i>參考要點：</i>同一來源有多個目的物料時，HANA 回傳哪筆不保證，結果可能每次不同；要求呼叫端指定目的物料，或在表中加優先順序欄位並 ORDER BY，找到多筆時明確報錯。</li>
+    <li><b>設計題：</b>替你的專案設計一個共用 ALV 輔助類別的介面（參考 §13），說明哪些功能應該放進去、哪些不應該。<br><i>參考要點：</i>放：建立 SALV、標準功能、版面變式鍵、欄位文字／隱藏／technical／熱點／勾選框。不放：取數邏輯、可編輯 Grid、業務規則；保持小而穩定、以資料驅動、回傳 SALV 物件供個別化。</li>
+    <li><b>價格權限：</b>為什麼用 SALV 隱藏價格欄時要用 set_technical 而不是 set_visible？還要再做什麼？<br><i>參考要點：</i>set_visible( false ) 使用者可從版面設定叫回；set_technical 不可叫回。另外應在資料層清空欄位值，並在 SU24 維護 M_BEST_BSA 活動 09 的預設。</li>
+    <li><b>S/4 主資料：</b>ZMMF010N 以 <span class="kw">dfkkbptaxnum~partner = lifnr</span> 讀供應商稅號，在什麼情況下會錯？正確的關聯路徑是什麼？<br><i>參考要點：</i>BP 號碼與供應商號碼不同（不同號碼範圍）時就對不到或對錯人；正確路徑 LFA1-LIFNR → CVI_VEND_LINK-VENDOR → PARTNER_GUID → BUT000-PARTNER → DFKKBPTAXNUM。客戶則用 CVI_CUST_LINK。</li>
+  </ol>
+</section>

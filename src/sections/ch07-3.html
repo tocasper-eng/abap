@@ -1,0 +1,885 @@
+<section class="chapter" id="ch07-3" data-title="OOP 範例庫（三）：封裝、繼承、多型與抽象（書第 5 章）">
+  <h2>第 7-3 章 OOP 範例庫（三）：封裝、繼承、多型與抽象（書第 5 章）</h2>
+  <p class="lede">本章整理《SAP ABAP 面向对象程序设计 – 原则.模式.实践》第 5 章的 36 支隨書範例（5.1～5.36）：從銀行帳戶類別的<b>封裝</b>開始，走過兩套物料類別繼承體系（ZCL_SUPER_CLASS_MATL 與 ZCL_SUPER_MATL／原料／半成品／成品）的 <b>REDEFINITION</b>、水果家族的 <b>Up Cast／Down Cast</b>、北朝平民與花木蘭的<b>抽象類別與多型</b>，最後以航班查詢示範<b>介面多型</b>。所有程式碼都改寫成 S/4HANA 1809+ 可直接用的現代寫法，並套用勘誤表第 3、4、5 條與作者沒列出的幾個錯誤。</p>
+  <div class="meta">
+    <div><b>核心 TCODE</b><span class="tcode">SE24</span><span class="tcode">SE80</span><span class="tcode">SE38</span><span class="tcode">SE11</span><span class="tcode">SE16N</span></div>
+    <div><b>關鍵物件</b>ZCL_ACCOUNT_BALANCE、ZCL_SUPER_CLASS_MATL、ZCL_SUB_CLASS_MATL_RAW、ZCL_SUPER_MATL、ZCL_SUB_MATL_RAW、ZCL_SUB_MATL_SEMI、ZCL_SUB_MATL_FIN、ZCL_FRUIT、ZCL_APPLE、ZCL_PEAR、ZCL_VEGETARIAN_FOOD、ZCL_BEICHAO_CIVILIAN、ZCL_HUAHU、ZCL_HUAMULAN、ZIF_GET_FLIGHTS、ZCL_GET_FLIGHT_PRICE、ZCL_GET_FLIGHT_DEST、CX_SY_MOVE_CAST_ERROR、CL_DEMO_OUTPUT、MARA、MAKT、SFLIGHT、SFLIGHTS、SPFLI</div>
+    <div><b>關鍵語法</b>INHERITING FROM、REDEFINITION、super-&gt;、ABSTRACT、FINAL、READ-ONLY、?=、CAST #( )、IS INSTANCE OF、CASE TYPE OF、NEW</div>
+  </div>
+  <div class="note">原廠觀念細節（重定義規則、建構子與繼承、靜態/動態型別的完整定義）請看 <a href="#ch05-2-09">5-2 章第 9 節「繼承與重定義」</a>、<a href="#ch05-2-10">第 10 節「轉型與多型」</a>、<a href="#ch05-2-11">第 11 節「介面」</a>；本章專注在<b>書中範例怎麼寫、哪裡寫錯、現代要怎麼寫</b>。類別與物件的基本功（屬性、方法、建構子、SE24 操作）見 <a href="#ch07-2">7-2 章</a>；由本章延伸出的開放封閉、里氏替換、介面隔離等原則見 <a href="#ch07-4">7-4 章</a>。</div>
+
+  <h3 id="ch07-3-01">1. 範例索引</h3>
+  <p>書的第 5 章沒有單獨的「範例 5.0」，36 支範例中約一半是只有幾行的方法片段（書中是分段貼出一個類別的各個方法，最後才給完整類別），本章把同一個類別的片段併在同一節講解。</p>
+  <table>
+    <thead><tr><th>編號</th><th>原 REPORT／類別／方法</th><th>主題一句話</th><th>本章講解</th></tr></thead>
+    <tbody>
+      <tr><td>5.1</td><td>ZCL_ACCOUNT_BALANCE→GET_ACCOUNT_NUMBER</td><td>取得帳號的 getter</td><td><a href="#ch07-3-02">第 2 節</a></td></tr>
+      <tr><td>5.2</td><td>ZCL_ACCOUNT_BALANCE→SET_ACCOUNT_NUMBER</td><td>setter 內做驗證：去前導零後須符合 CA277*</td><td><a href="#ch07-3-02">第 2 節</a></td></tr>
+      <tr><td>5.3</td><td>ZCL_ACCOUNT_BALANCE→GET_ACCOUNT_BALANCE</td><td>取得餘額的 getter</td><td><a href="#ch07-3-02">第 2 節</a></td></tr>
+      <tr><td>5.4</td><td>ZCL_ACCOUNT_BALANCE→SET_ACCOUNT_BALANCE</td><td>設定餘額的 setter（無驗證）</td><td><a href="#ch07-3-02">第 2 節</a></td></tr>
+      <tr><td>5.5</td><td>ZCL_ACCOUNT_BALANCE→DEPOSIT</td><td>存款：帳號有效且金額 &gt; 0 才入帳</td><td><a href="#ch07-3-03">第 3 節</a></td></tr>
+      <tr><td>5.6</td><td>ZCL_ACCOUNT_BALANCE→WITHDRAW</td><td>提款：餘額足夠才扣款</td><td><a href="#ch07-3-03">第 3 節</a></td></tr>
+      <tr><td>5.7</td><td>（註解片段）</td><td>「Public 屬性可以直接存取」—封裝的反例</td><td><a href="#ch07-3-02">第 2 節</a></td></tr>
+      <tr><td>5.8</td><td>REPORT ZREP_CLS_27_1</td><td>帳戶類別的測試程式，三種方法呼叫寫法</td><td><a href="#ch07-3-04">第 4 節</a></td></tr>
+      <tr><td>5.9</td><td>ZCL_SUPER_CLASS_MATL</td><td>物料父類別：public／protected／private 三種可見性</td><td><a href="#ch07-3-05">第 5 節</a></td></tr>
+      <tr><td>5.10</td><td>ZCL_SUB_CLASS_MATL_RAW→SET_MATERIAL_ID</td><td>子類別重定義 setter（未呼叫 super）</td><td><a href="#ch07-3-06">第 6 節</a></td></tr>
+      <tr><td>5.11</td><td>ZCL_SUB_CLASS_MATL_RAW→GET_MATERIAL_TYPE</td><td>子類別新增方法：從 MARA 讀物料類型</td><td><a href="#ch07-3-06">第 6 節</a></td></tr>
+      <tr><td>5.12</td><td>ZCL_SUB_CLASS_MATL_RAW（完整）</td><td>INHERITING FROM＋REDEFINITION＋FINAL 的完整子類別</td><td><a href="#ch07-3-06">第 6 節</a></td></tr>
+      <tr><td>5.13</td><td>REPORT ZREP_CLS_010</td><td>分別建立父、子類別物件並呼叫同名方法</td><td><a href="#ch07-3-07">第 7 節</a></td></tr>
+      <tr><td>5.14</td><td>REPORT ZREP_CLS_0151</td><td>向上轉型的三種寫法（水果／蘋果／梨子）</td><td><a href="#ch07-3-08">第 8 節</a></td></tr>
+      <tr><td>5.15</td><td>REPORT ZREP_CLS_015</td><td>向下轉型的四種情境與 CX_SY_MOVE_CAST_ERROR（勘誤第 4 條）</td><td><a href="#ch07-3-09">第 9 節</a></td></tr>
+      <tr><td>5.16</td><td>ZCL_SUPER_MATL→PRINT_MATERIAL_DESC</td><td>第二套物料父類別的輸出方法</td><td><a href="#ch07-3-10">第 10 節</a></td></tr>
+      <tr><td>5.17</td><td>ZCL_SUPER_MATL（完整）</td><td>物料父類別完整定義</td><td><a href="#ch07-3-10">第 10 節</a></td></tr>
+      <tr><td>5.18</td><td>ZCL_SUB_MATL_RAW→PRINT_MATERIAL_DESC</td><td>原料：super-&gt; 後追加供應商、批次、採購日期</td><td><a href="#ch07-3-11">第 11 節</a></td></tr>
+      <tr><td>5.19</td><td>ZCL_SUB_MATL_RAW（完整）</td><td>原料子類別完整定義（FINAL）</td><td><a href="#ch07-3-11">第 11 節</a></td></tr>
+      <tr><td>5.20</td><td>ZCL_SUB_MATL_SEMI→PRINT_MATERIAL_DESC</td><td>半成品：追加批次、重檢日期</td><td><a href="#ch07-3-11">第 11 節</a></td></tr>
+      <tr><td>5.21</td><td>ZCL_SUB_MATL_SEMI（完整）</td><td>半成品子類別完整定義（FINAL）</td><td><a href="#ch07-3-11">第 11 節</a></td></tr>
+      <tr><td>5.22</td><td>ZCL_SUB_MATL_FIN→PRINT_MATERIAL_DESC</td><td>成品：追加批次、生產日期</td><td><a href="#ch07-3-11">第 11 節</a></td></tr>
+      <tr><td>5.23</td><td>ZCL_SUB_MATL_FIN→PRINT_MATERIAL_TYPE</td><td>成品子類別獨有的新方法</td><td><a href="#ch07-3-11">第 11 節</a></td></tr>
+      <tr><td>5.24</td><td>ZCL_SUB_MATL_FIN（完整）</td><td>成品子類別完整定義（未加 FINAL）</td><td><a href="#ch07-3-11">第 11 節</a></td></tr>
+      <tr><td>5.25</td><td>REPORT ZREP_CLS_013</td><td>多型測試：父類別參考指向不同子類別，最後向下轉型</td><td><a href="#ch07-3-12">第 12 節</a></td></tr>
+      <tr><td>5.26</td><td>ZCL_BEICHAO_CIVILIAN→SETUP_PROFILE</td><td>北朝平民：設定姓名、性別</td><td><a href="#ch07-3-13">第 13 節</a></td></tr>
+      <tr><td>5.27</td><td>ZCL_BEICHAO_CIVILIAN→SELF_INTRODUCE</td><td>自我介紹（父類別實作，子類別共用）</td><td><a href="#ch07-3-13">第 13 節</a></td></tr>
+      <tr><td>5.28</td><td>ZCL_HUAHU→SHOW_CAPABILITY</td><td>花弧實作抽象方法：「年老體衰，耕讀持家」</td><td><a href="#ch07-3-13">第 13 節</a></td></tr>
+      <tr><td>5.29</td><td>ZCL_HUAMULAN→SHOW_CAPABILITY</td><td>花木蘭實作抽象方法：「年輕力壯，衝鋒陷陣」</td><td><a href="#ch07-3-13">第 13 節</a></td></tr>
+      <tr><td>5.30</td><td>ZCL_HUAMULAN→MAKE_UP</td><td>花木蘭獨有方法：「當窗理雲鬢，對鏡貼花黃」</td><td><a href="#ch07-3-13">第 13 節</a></td></tr>
+      <tr><td>5.31</td><td>ZCL_BEICHAO_CIVILIAN／ZCL_HUAHU／ZCL_HUAMULAN</td><td>抽象父類別＋兩個 FINAL 子類別的 Source Code-Based 完整原始碼</td><td><a href="#ch07-3-13">第 13 節</a></td></tr>
+      <tr><td>5.32</td><td>REPORT ZREP_CLS_012</td><td>花木蘭代父從軍：多型、Up Cast、Down Cast 全流程（勘誤第 5 條）</td><td><a href="#ch07-3-14">第 14 節</a></td></tr>
+      <tr><td>5.33</td><td>ZCL_GET_FLIGHT_PRICE→ZIF_GET_FLIGHTS~GET_FLIGHT_DETAILS</td><td>介面實作一：從 SFLIGHT 讀票價</td><td><a href="#ch07-3-15">第 15 節</a></td></tr>
+      <tr><td>5.34</td><td>ZCL_GET_FLIGHT_DEST→ZIF_GET_FLIGHTS~GET_FLIGHT_DETAILS</td><td>介面實作二：從 SFLIGHTS 讀起訖城市</td><td><a href="#ch07-3-15">第 15 節</a></td></tr>
+      <tr><td>5.35</td><td>ZCL_GET_FLIGHT_DEST→PRINT_FLIGHT_DEST</td><td>實作類別自己新增、介面沒有的方法</td><td><a href="#ch07-3-15">第 15 節</a></td></tr>
+      <tr><td>5.36</td><td>REPORT ZREP_CLS_016</td><td>介面參考的 Up Cast 與 Down Cast</td><td><a href="#ch07-3-15">第 15 節</a></td></tr>
+    </tbody>
+  </table>
+  <div class="warn"><b>本章套用的勘誤：</b>勘誤表第 3 條（第 147 頁「覆蓋＝Overriding、重載＝Overloading」，原書英文寫反）見 <a href="#ch07-3-06">第 6 節</a>；第 4 條（第 150 頁範例 5.15 梨子類應繼承 zcl_fruit）見 <a href="#ch07-3-09">第 9 節</a>，<b>範例 5.14 其實有同樣的錯誤，勘誤表沒列</b>，本章一併修正；第 5 條（第 168 頁範例 5.32 變數 go_civi_solider 應為 go_civi_soldier）見 <a href="#ch07-3-14">第 14 節</a>。</div>
+  <div class="note">範例 5.1～5.8 使用的 ZCL_ACCOUNT_BALANCE、以及 5.33～5.36 使用的 ZIF_GET_FLIGHTS，<b>類別／介面本身的定義不在範例資料夾中</b>（書中是以 SE24 截圖建立）。本章給的定義是依方法片段與測試程式的呼叫方式反推，標為 <span class="src">（依範例呼叫方式重建）</span>。</div>
+
+  <h3 id="ch07-3-02">2. 封裝：用 getter／setter 守住帳戶資料（5.1～5.4、5.7）</h3>
+  <p><b>觀念。</b>封裝（Encapsulation）是把資料藏在類別裡（PRIVATE），外界只能透過公開方法讀寫，類別因此可以在 setter 裡把關。書中的 ZCL_ACCOUNT_BALANCE 有兩個屬性 MV_ACCOUNT_NUMBER（帳號）、MV_ACCOUNT_BALANCE（餘額），以及四個存取方法：</p>
+  <ul>
+    <li>5.1 <span class="kw">get_account_number</span>、5.3 <span class="kw">get_account_balance</span>：單純回傳屬性。</li>
+    <li>5.2 <span class="kw">set_account_number</span>：先 <span class="kw">SHIFT … LEFT DELETING LEADING '0'</span> 去掉前導零，再用 <span class="kw">CP 'CA277*'</span> 檢查是否以 CA277 開頭；不符合就把帳號設成 '0000000000' 當作「無效」記號。</li>
+    <li>5.4 <span class="kw">set_account_balance</span>：直接指定，<b>沒有任何驗證</b>。</li>
+    <li>5.7 只是一行被註解掉的 <span class="kw">lo_account_balance-&gt;account_number = '12111111232'</span>，說明「如果屬性是 PUBLIC，外界就能直接改寫、繞過 setter 的驗證」——這正是封裝要防止的事。</li>
+  </ul>
+  <p><b>範例（改寫後）</b> <span class="src">（依範例呼叫方式重建）</span>：先建一個例外類別（<span class="tcode">SE24</span> 建 ZCX_ACCOUNT_ERROR，超類別 CX_STATIC_CHECK），用來取代「魔術值 '0000000000'」。</p>
+<pre><code class="abap">CLASS zcx_account_error DEFINITION PUBLIC INHERITING FROM cx_static_check FINAL CREATE PUBLIC.
+  PUBLIC SECTION.
+    DATA mv_text TYPE string READ-ONLY.
+    METHODS constructor
+      IMPORTING iv_text   TYPE string OPTIONAL
+                previous TYPE REF TO cx_root OPTIONAL.
+    METHODS get_text REDEFINITION.
+ENDCLASS.
+
+CLASS zcx_account_error IMPLEMENTATION.
+  METHOD constructor.
+    super-&gt;constructor( previous = previous ).
+    mv_text = iv_text.
+  ENDMETHOD.
+  METHOD get_text.
+    result = mv_text.
+  ENDMETHOD.
+ENDCLASS.</code></pre>
+<pre><code class="abap">CLASS zcl_account_balance DEFINITION PUBLIC FINAL CREATE PUBLIC.
+  PUBLIC SECTION.
+    TYPES ty_account_number TYPE c LENGTH 10.
+
+    METHODS get_account_number RETURNING VALUE(rv_account_number) TYPE ty_account_number.
+    METHODS set_account_number
+      IMPORTING iv_account_number TYPE ty_account_number
+      RAISING   zcx_account_error.
+    METHODS get_account_balance RETURNING VALUE(rv_account_balance) TYPE dmbtr.
+    METHODS set_account_balance
+      IMPORTING iv_account_balance TYPE dmbtr
+      RAISING   zcx_account_error.
+    METHODS deposit
+      IMPORTING iv_deposit_amount         TYPE dmbtr
+      RETURNING VALUE(rv_account_balance) TYPE dmbtr
+      RAISING   zcx_account_error.
+    METHODS withdraw
+      IMPORTING iv_withdraw_amount        TYPE dmbtr
+      RETURNING VALUE(rv_account_balance) TYPE dmbtr
+      RAISING   zcx_account_error.
+  PRIVATE SECTION.
+    DATA mv_account_number  TYPE ty_account_number.   " 空白＝尚未設定有效帳號
+    DATA mv_account_balance TYPE dmbtr.
+    METHODS assert_account RAISING zcx_account_error.
+ENDCLASS.
+
+CLASS zcl_account_balance IMPLEMENTATION.
+  METHOD get_account_number.                            " 5.1
+    rv_account_number = mv_account_number.
+  ENDMETHOD.
+
+  METHOD set_account_number.                            " 5.2
+    " shift_left( sub = ) 會把左側連續出現的 '0' 全部去掉，等同 SHIFT ... DELETING LEADING '0'
+    DATA(lv_stripped) = shift_left( val = CONV string( iv_account_number ) sub = `0` ).
+    IF lv_stripped NP 'CA277*'.
+      RAISE EXCEPTION TYPE zcx_account_error
+        EXPORTING iv_text = |帳號 { iv_account_number } 不是 CA277 開頭，拒絕設定|.
+    ENDIF.
+    mv_account_number = iv_account_number.
+  ENDMETHOD.
+
+  METHOD get_account_balance.                           " 5.3
+    rv_account_balance = mv_account_balance.
+  ENDMETHOD.
+
+  METHOD set_account_balance.                           " 5.4：補上驗證
+    IF iv_account_balance &lt; 0.
+      RAISE EXCEPTION TYPE zcx_account_error EXPORTING iv_text = `期初餘額不可為負數`.
+    ENDIF.
+    mv_account_balance = iv_account_balance.
+  ENDMETHOD.
+
+  METHOD assert_account.
+    IF mv_account_number IS INITIAL.
+      RAISE EXCEPTION TYPE zcx_account_error EXPORTING iv_text = `尚未設定有效帳號`.
+    ENDIF.
+  ENDMETHOD.
+
+  METHOD deposit.   " 5.5，見第 3 節
+    assert_account( ).
+    IF iv_deposit_amount &lt;= 0.
+      RAISE EXCEPTION TYPE zcx_account_error EXPORTING iv_text = `存款金額必須大於 0`.
+    ENDIF.
+    mv_account_balance = mv_account_balance + iv_deposit_amount.   " 7.54+ 可寫 mv_account_balance += iv_deposit_amount.
+    rv_account_balance = mv_account_balance.
+  ENDMETHOD.
+
+  METHOD withdraw.  " 5.6，見第 3 節
+    assert_account( ).
+    IF iv_withdraw_amount &lt;= 0.
+      RAISE EXCEPTION TYPE zcx_account_error EXPORTING iv_text = `提款金額必須大於 0`.
+    ENDIF.
+    IF iv_withdraw_amount &gt; mv_account_balance.
+      RAISE EXCEPTION TYPE zcx_account_error
+        EXPORTING iv_text = |餘額 { mv_account_balance } 不足以提領 { iv_withdraw_amount }|.
+    ENDIF.
+    mv_account_balance = mv_account_balance - iv_withdraw_amount.
+    rv_account_balance = mv_account_balance.
+  ENDMETHOD.
+ENDCLASS.</code></pre>
+  <div class="warn"><b>版本門檻：</b>計算指派 <span class="kw">+=</span>、<span class="kw">-=</span> 是 ABAP 7.54（S/4HANA 1909）才有的語法。上面 deposit 只在註解中示範；1809（7.53）請一律寫成 <span class="kw">a = a + b</span>，本章程式碼都照這個寫法。</div>
+  <p><b>與原範例的差異。</b></p>
+  <ul>
+    <li>原 5.2 驗證失敗時把帳號設成 '0000000000'，呼叫端完全不知道失敗了；改寫後<b>丟出類別式例外</b>，呼叫端必須處理（CX_STATIC_CHECK 會被語法檢查強制 CATCH 或往上宣告）。</li>
+    <li>原 5.4 可以把餘額設成負數；改寫補上檢查。書中 5.4 的用意是「最單純的 setter」，但實務上 setter 的存在意義就是驗證，沒有驗證的 setter 跟 PUBLIC 屬性差不多。</li>
+    <li><span class="kw">CP</span> 比對<b>不分大小寫</b>（除非在樣式中用 # 跳脫），所以 'ca277…' 也會通過；若業務規則要求大寫，請先 <span class="kw">to_upper( )</span> 或改用 <span class="kw">matches( val = … pcre = … )</span>（PCRE 需 7.55，1809 用 <span class="kw">regex =</span>）。</li>
+    <li>原範例屬性型別：帳號用資料元素 STRING10、餘額用 DMBTR（金額，CURR 13,2）。改寫把帳號型別定義在類別的 TYPES 裡，讓類別自成一體。</li>
+    <li>5.7 的註解「Public attribute could be access directly」文法有誤（應為 accessed），重點是觀念：<b>屬性預設放 PRIVATE</b>；真的要讓外界讀，就用 <span class="kw">PUBLIC SECTION … DATA … READ-ONLY</span>，外界可讀不可寫。</li>
+  </ul>
+  <div class="tip">實務提醒：DMBTR 是「本位幣金額」，單獨存在時沒有幣別。真正的帳戶類別至少要多一個 WAERS 屬性，並在 <span class="tcode">SE11</span> 的結構中把金額欄位參照到幣別欄位，否則畫面輸出與 ALV 的小數位會出錯（例如日圓、台幣沒有小數）。</div>
+
+  <h3 id="ch07-3-03">3. 存款與提款：把業務規則放進方法（5.5、5.6）</h3>
+  <p><b>觀念。</b>封裝不只是「藏資料」，更是「把規則放在資料旁邊」。書中 5.5 deposit 規定帳號有效（不是 '0000000000'）且金額 &gt; 0 才入帳；5.6 withdraw 規定餘額 ≥ 提款額才扣款。改寫後的完整方法已列在第 2 節的類別中，這裡說明原範例的三個邏輯問題：</p>
+  <table>
+    <thead><tr><th>原範例</th><th>問題</th><th>改寫</th></tr></thead>
+    <tbody>
+      <tr><td>5.5 條件不成立時什麼都不做</td><td>RETURNING 參數保持初始值 0，呼叫端拿到「餘額 0」會誤以為帳戶被清空</td><td>丟 ZCX_ACCOUNT_ERROR，訊息說明原因</td></tr>
+      <tr><td>5.6 沒檢查帳號</td><td>deposit 檢查帳號、withdraw 不檢查，兩個方法規則不對稱：無效帳號不能存、卻能提</td><td>兩者共用私有方法 assert_account</td></tr>
+      <tr><td>5.6 沒檢查金額 &gt; 0</td><td>提領負數等於存款，繞過了 deposit 的規則</td><td>金額 ≤ 0 丟例外</td></tr>
+    </tbody>
+  </table>
+  <p>原範例的寫法（<span class="kw">mv_account_balance = mv_account_balance + iv_deposit_amount</span>）本身就是合法現代寫法，不需要改成 <span class="kw">ADD … TO</span>（那是禁用的舊語法）。</p>
+<pre><code class="abap">" 呼叫端處理例外的標準寫法
+TRY.
+    DATA(lv_new_balance) = go_account-&gt;withdraw( CONV dmbtr( '500.00' ) ).
+  CATCH zcx_account_error INTO DATA(lx_account).
+    MESSAGE lx_account TYPE 'I' DISPLAY LIKE 'E'.   " 例外物件可直接給 MESSAGE（實作 IF_T100_MESSAGE 時顯示 T100 訊息，否則用 get_text）
+ENDTRY.</code></pre>
+  <div class="tip">實務提醒：抽出 assert_account 這類「守門」私有方法，是讓多個公開方法規則一致的最低成本做法。以後要加「帳戶凍結不可提款」，只改一個地方。</div>
+
+  <h3 id="ch07-3-04">4. 帳戶測試程式：從 CALL METHOD 到函數式呼叫（5.8）</h3>
+  <p><b>觀念。</b>5.8 ZREP_CLS_27_1 是帳戶類別的測試程式，作者刻意在同一支程式展示三種呼叫方式：① <span class="kw">CALL METHOD obj-&gt;m EXPORTING … RECEIVING …</span>、② <span class="kw">CALL METHOD obj-&gt;m( p )</span>、③ 函數式 <span class="kw">x = obj-&gt;m( p )</span>（註解寫「New format of calling method」）。</p>
+<pre><code class="abap">REPORT zrep_cls_27_1.
+
+PARAMETERS: p_numbr TYPE zcl_account_balance=&gt;ty_account_number OBLIGATORY,
+            p_blnce TYPE dmbtr,
+            p_dpst  TYPE dmbtr,
+            p_wdrw  TYPE dmbtr.
+
+START-OF-SELECTION.
+  DATA(go_account) = NEW zcl_account_balance( ).
+  DATA(go_out)     = cl_demo_output=&gt;new( ).
+
+  TRY.
+      go_account-&gt;set_account_number( p_numbr ).
+      go_account-&gt;set_account_balance( p_blnce ).
+      go_out-&gt;write( |帳號 { go_account-&gt;get_account_number( ) }，期初餘額 { go_account-&gt;get_account_balance( ) }| ).
+
+      DATA(gv_balance) = go_account-&gt;deposit( p_dpst ).
+      go_out-&gt;write( |存入 { p_dpst } 元，餘額 { gv_balance }| ).
+
+      gv_balance = go_account-&gt;withdraw( p_wdrw ).
+      go_out-&gt;write( |提領 { p_wdrw } 元，餘額 { gv_balance }| ).
+    CATCH zcx_account_error INTO DATA(gx_error).
+      go_out-&gt;write( |錯誤：{ gx_error-&gt;get_text( ) }| ).
+  ENDTRY.
+
+  go_out-&gt;display( ).</code></pre>
+  <p><b>與原範例的差異。</b></p>
+  <ul>
+    <li><span class="kw">CREATE OBJECT: go_account_balance.</span> → <span class="kw">DATA(go_account) = NEW zcl_account_balance( )</span>。</li>
+    <li>所有 <span class="kw">CALL METHOD</span> 改為函數式呼叫；<span class="kw">RECEIVING</span> 改為直接指派回傳值。原範例第二種寫法 <span class="kw">CALL METHOD obj-&gt;m( p ).</span> 是「新舊混搭」，語法雖然合法但兩頭不討好，不要用。</li>
+    <li>原程式把 <span class="kw">p_numbr = go_account_balance-&gt;get_account_number( )</span> 寫回選擇畫面參數——若帳號驗證失敗，輸出的就是 0000000000，而且第一行 WRITE 印出的 p_blnce 是<b>設定之前</b>的輸入值，不是類別裡的餘額。改寫一律從物件取值。</li>
+    <li>原程式先呼叫 deposit 拿到回傳值，下一行又用 get_account_balance 覆蓋，等於白接；改寫直接用回傳值。</li>
+    <li><span class="kw">WRITE</span> 清單改為 <span class="kw">CL_DEMO_OUTPUT</span>（示範用，正式程式請用 <a href="#ch02-3">CL_SALV_TABLE</a> 或訊息）。PARAMETERS 型別直接參照類別的公開型別 <span class="kw">zcl_account_balance=&gt;ty_account_number</span>，類別改長度時畫面跟著變。</li>
+  </ul>
+  <div class="warn">CL_DEMO_OUTPUT 是 SAP 的<b>示範用類別</b>，官方明言不要用在正式產品程式；本部（第七部）為了貼近原書的 WRITE 輸出，範例統一用它，搬到正式程式時請換成 SALV 或應用程式日誌（BAL）。</div>
+
+  <h3 id="ch07-3-05">5. 繼承基礎：物料父類別與三種可見性（5.9）</h3>
+  <p><b>觀念。</b>5.9 ZCL_SUPER_CLASS_MATL 是第一套物料繼承體系的父類別，用來示範子類別看得到什麼：</p>
+  <table>
+    <thead><tr><th>區段</th><th>組件</th><th>外部程式</th><th>子類別</th><th>本類別</th></tr></thead>
+    <tbody>
+      <tr><td>PUBLIC</td><td>MV_MATERIAL_ID、SET_MATERIAL_ID</td><td>可存取</td><td>可存取、方法可重定義</td><td>可存取</td></tr>
+      <tr><td>PROTECTED</td><td>MV_MATERIAL_NAME（MAKT-MAKTX）、GET_MATERIAL_NAME</td><td>不可</td><td>可存取、方法可重定義</td><td>可存取</td></tr>
+      <tr><td>PRIVATE</td><td>MV_MATERIAL_DESC（STRING）、GET_MATERIAL_DESC</td><td>不可</td><td><b>不可（看不到，也不能重定義）</b></td><td>可存取</td></tr>
+    </tbody>
+  </table>
+<pre><code class="abap">CLASS zcl_super_class_matl DEFINITION PUBLIC CREATE PUBLIC.
+  PUBLIC SECTION.
+    DATA mv_material_id TYPE matnr READ-ONLY.          " 原範例為可寫的 PUBLIC 屬性
+    METHODS set_material_id
+      IMPORTING iv_material_id TYPE matnr.
+    METHODS describe
+      RETURNING VALUE(rv_text) TYPE string.            " 取代方法內的 WRITE
+  PROTECTED SECTION.
+    DATA mv_material_name TYPE maktx.
+    METHODS get_material_name
+      RETURNING VALUE(rv_material_name) TYPE maktx.
+  PRIVATE SECTION.
+    DATA mv_material_desc TYPE string.
+    METHODS get_material_desc
+      RETURNING VALUE(rv_material_desc) TYPE string.
+ENDCLASS.
+
+CLASS zcl_super_class_matl IMPLEMENTATION.
+  METHOD set_material_id.
+    mv_material_id = iv_material_id.
+  ENDMETHOD.
+  METHOD describe.
+    rv_text = |Material: { mv_material_id ALPHA = OUT }|.
+  ENDMETHOD.
+  METHOD get_material_name.
+    rv_material_name = mv_material_name.
+  ENDMETHOD.
+  METHOD get_material_desc.
+    rv_material_desc = mv_material_desc.
+  ENDMETHOD.
+ENDCLASS.</code></pre>
+  <p><b>與原範例的差異。</b></p>
+  <ul>
+    <li>原範例在 set_material_id 裡直接 <span class="kw">WRITE: / 'Material: ', mv_material_id</span>。把輸出寫進業務類別，會讓類別無法用在背景作業、RFC、Fiori；改寫把「設定」與「描述」分開，由呼叫端決定怎麼顯示。</li>
+    <li><span class="kw">TYPE mara-matnr</span> 改用資料元素 <span class="kw">matnr</span>（效果相同，較易讀）；PUBLIC 屬性加 <span class="kw">READ-ONLY</span>，延續第 2 節的封裝原則。</li>
+    <li>原範例的 get_material_desc 放在 PRIVATE 卻從未被任何方法呼叫，只是為了示範「子類別看不到」。</li>
+  </ul>
+  <div class="warn"><b>S/4HANA 注意：</b>MATNR 在 S/4HANA 已從 18 碼擴充為 <b>40 碼</b>。舊程式若自訂 <span class="kw">TYPE c LENGTH 18</span> 接物料號碼會被截斷，一律參照資料元素 MATNR。數字型物料號碼存在資料庫是帶前導零的內部格式，顯示用 <span class="kw">ALPHA = OUT</span>、查詢前用 <span class="kw">ALPHA = IN</span>（或 CONVERSION_EXIT_MATN1_INPUT）轉換——也因此<b>物料號碼條件請用列舉（多筆 EQ），不要用 BT 區間</b>：區間比的是字典序，前導零與編碼規則一改就漏抓或多抓。</div>
+
+  <h3 id="ch07-3-06">6. REDEFINITION 與 super-&gt;：原料子類別（5.10～5.12）</h3>
+  <p><b>觀念。</b>子類別用 <span class="kw">INHERITING FROM</span> 繼承父類別，並在<b>與父類別相同的可見性區段</b>寫 <span class="kw">METHODS m REDEFINITION.</span> 改寫方法內容。重定義<b>不能改簽名</b>；要沿用父類別行為時呼叫 <span class="kw">super-&gt;m( )</span>。5.12 的 ZCL_SUB_CLASS_MATL_RAW 做了三件事：重定義 set_material_id（5.10）、新增 get_material_type 從 MARA 讀物料類型（5.11）、加上 <span class="kw">FINAL</span> 不准再被繼承。</p>
+  <div class="warn"><b>勘誤表第 3 條（第 147 頁）：</b>原書把英文對調了。正確是——<b>覆蓋＝Overriding</b>：子類別重新定義父類別的方法，ABAP 叫<b>重定義（Redefine）</b>；<b>重載＝Overloading</b>：同一個類別裡有多個同名、參數表不同的方法。<b>ABAP 同一個類別內不允許同名方法，所以沒有重載</b>；ABAP 的多型就是靠 Overriding／REDEFINITION 實現。要模擬重載，請用 OPTIONAL 參數或取不同的方法名稱（例如 create_by_id、create_by_name）。</div>
+<pre><code class="abap">CLASS zcl_sub_class_matl_raw DEFINITION PUBLIC
+  INHERITING FROM zcl_super_class_matl
+  FINAL CREATE PUBLIC.
+  PUBLIC SECTION.
+    METHODS get_material_type
+      RETURNING VALUE(rv_material_type) TYPE mtart.
+    METHODS set_material_id REDEFINITION.
+    METHODS describe        REDEFINITION.
+ENDCLASS.
+
+CLASS zcl_sub_class_matl_raw IMPLEMENTATION.
+  METHOD set_material_id.
+    super-&gt;set_material_id( iv_material_id ).   " 先沿用父類別的指派，不要複製貼上
+    " 子類別額外的規則寫在這裡，例如檢查確實是原料
+  ENDMETHOD.
+
+  METHOD describe.
+    rv_text = |Raw { super-&gt;describe( ) }（類型 { get_material_type( ) }）|.
+  ENDMETHOD.
+
+  METHOD get_material_type.
+    " MATNR 是 MARA 的完整主鍵，SELECT SINGLE 結果唯一、可預期
+    SELECT SINGLE mtart
+      FROM mara
+      WHERE matnr = @mv_material_id
+      INTO @rv_material_type.
+    " 找不到時 rv_material_type 維持初始值（RETURNING 參數進方法時就是初始值）
+  ENDMETHOD.
+ENDCLASS.</code></pre>
+  <p><b>與原範例的差異。</b></p>
+  <ul>
+    <li>原 5.10 把 SE24 自動產生的 <span class="kw">CALL METHOD SUPER-&gt;SET_MATERIAL_ID</span> 註解掉，自己重寫一次 <span class="kw">mv_material_id = iv_material_id</span>——等於<b>複製父類別程式碼</b>。父類別日後加了檢查，子類別就漏掉。改寫呼叫 <span class="kw">super-&gt;</span>。</li>
+    <li>原 5.11 的 get_material_type 有 IMPORTING iv_material_id，卻不用物件自己的 mv_material_id——物件已經知道自己是哪個物料，還要呼叫端再傳一次，而且兩者可能不一致。改寫直接用屬性。</li>
+    <li>原 SELECT 是 <span class="kw">SELECT SINGLE mtart FROM mara INTO (ls_mara-mtart) WHERE matnr = iv_material_id</span>：宣告整個 MARA 結構只為取一個欄位、主機變數沒有 @。改寫用 @ 並直接 INTO 回傳參數；原本 ELSE 分支 <span class="kw">rv_material_type = ''</span> 是多餘的。</li>
+    <li>原範例宣告了 PRIVATE 屬性 MV_MATERIAL_TYPE 但從未使用，改寫刪除；方法內的 WRITE 移除。</li>
+  </ul>
+  <div class="tip">實務提醒（先標準再客製）：在 S/4HANA 讀物料主檔，除了 MARA，可以優先考慮已發布（released）的 CDS View <b>I_Product</b>（ProductType 欄位即 MTART）。自己寫類別包 MARA 之前，先確認標準是否已有 API／CDS；標準設定 → BAdI → Enhancement → 改標準，每往右一步成本高一個量級。</div>
+
+  <h3 id="ch07-3-07">7. 父類別物件與子類別物件各自測試（5.13）</h3>
+  <p><b>觀念。</b>5.13 ZREP_CLS_010 分別建立子類別物件與父類別物件，呼叫同名的 set_material_id，觀察輸出分別是「Raw Material:」與「Material:」——同一個方法名，執行的是物件<b>自己類別</b>的實作。這還不是多型（變數型別與物件型別相同），多型要到第 12 節父類別參考指向子類別物件時才出現。</p>
+<pre><code class="abap">REPORT zrep_cls_010.
+
+PARAMETERS p_matnr TYPE matnr OBLIGATORY.
+
+START-OF-SELECTION.
+  DATA(go_out) = cl_demo_output=&gt;new( ).
+
+  go_out-&gt;write( `1. 測試子類別物件` ).
+  DATA(go_sub_material_raw) = NEW zcl_sub_class_matl_raw( ).
+  go_sub_material_raw-&gt;set_material_id( p_matnr ).
+  go_out-&gt;write( go_sub_material_raw-&gt;describe( ) ).
+
+  go_out-&gt;write( `2. 測試父類別物件` ).
+  DATA(go_super_material) = NEW zcl_super_class_matl( ).
+  go_super_material-&gt;set_material_id( p_matnr ).
+  go_out-&gt;write( go_super_material-&gt;describe( ) ).
+
+  go_out-&gt;display( ).</code></pre>
+  <p><b>與原範例的差異。</b>原程式把 <span class="kw">PARAMETERS</span> 寫在 <span class="kw">START-OF-SELECTION</span> 之後——宣告性敘述放在事件區塊裡雖能編譯，但閱讀上誤導（選擇畫面在事件之前就出現），改放到最前面；宣告了 gv_material_id 並賦值卻從未使用，刪除；兩處 <span class="kw">CREATE OBJECT</span> ＋ <span class="kw">CALL METHOD … ( p_matnr )</span> 改為 NEW 與函數式呼叫。</p>
+
+  <h3 id="ch07-3-08">8. 向上轉型 Up Cast（5.14）</h3>
+  <p><b>觀念。</b>向上轉型（Up Cast，又稱 Widening Cast）是把<b>子類別物件</b>指派給<b>父類別型別的參考變數</b>。因為「蘋果是一種水果」永遠成立，編譯器直接允許，用一般的 <span class="kw">=</span> 即可，不會失敗。轉型後透過父類別參考只能呼叫父類別看得到的組件，但呼叫被重定義的方法時，執行的是子類別的版本。</p>
+  <p>5.14 ZREP_CLS_0151 列出三種寫法：① <span class="kw">CREATE OBJECT go_fruit TYPE zcl_apple</span>（或 <span class="kw">go_fruit = NEW zcl_apple( )</span>）；② 分別建立物件後 <span class="kw">go_fruit = go_apple</span>；③ <span class="kw">MOVE go_apple TO go_fruit</span>。</p>
+<pre><code class="abap">REPORT zrep_cls_0151.
+
+CLASS lcl_fruit DEFINITION.
+  PUBLIC SECTION.
+    METHODS name RETURNING VALUE(rv_name) TYPE string.
+ENDCLASS.
+CLASS lcl_fruit IMPLEMENTATION.
+  METHOD name.
+    rv_name = `水果`.
+  ENDMETHOD.
+ENDCLASS.
+
+CLASS lcl_apple DEFINITION INHERITING FROM lcl_fruit.
+  PUBLIC SECTION.
+    METHODS name REDEFINITION.
+ENDCLASS.
+CLASS lcl_apple IMPLEMENTATION.
+  METHOD name.
+    rv_name = `蘋果`.
+  ENDMETHOD.
+ENDCLASS.
+
+" 修正：梨子是水果的子類別，不是蘋果的子類別（同勘誤第 4 條）
+CLASS lcl_pear DEFINITION INHERITING FROM lcl_fruit.
+  PUBLIC SECTION.
+    METHODS name REDEFINITION.
+ENDCLASS.
+CLASS lcl_pear IMPLEMENTATION.
+  METHOD name.
+    rv_name = `梨子`.
+  ENDMETHOD.
+ENDCLASS.
+
+START-OF-SELECTION.
+  DATA go_fruit TYPE REF TO lcl_fruit.       " 刻意宣告為父類別型別
+
+  " 寫法 1：直接以子類別建立，指派給父類別參考（等同 CREATE OBJECT go_fruit TYPE lcl_apple）
+  go_fruit = NEW lcl_apple( ).
+  cl_demo_output=&gt;write( go_fruit-&gt;name( ) ).          " 蘋果
+
+  " 寫法 2：先有子類別參考，再用 = 指派（寫法 3 的 MOVE ... TO 與此等價，已淘汰）
+  DATA(go_pear) = NEW lcl_pear( ).
+  go_fruit = go_pear.
+  cl_demo_output=&gt;write( go_fruit-&gt;name( ) ).          " 梨子
+
+  cl_demo_output=&gt;display( ).</code></pre>
+  <p><b>與原範例的差異。</b></p>
+  <ul>
+    <li><b>範例 5.14 的梨子也寫成 <span class="kw">zcl_pear DEFINITION INHERITING FROM zcl_apple</span></b>，註解卻說「子類梨子，繼承自水果類」——和勘誤第 4 條（5.15）是同一個錯，勘誤表只修了 5.15。本章兩處都改為繼承水果。</li>
+    <li>原範例寫 <span class="kw">zcl_fruit DEFINITION INHERITING FROM object</span>：所有類別本來就隱含繼承根類別 OBJECT，不需要也不建議明寫。</li>
+    <li>原範例的局部類別取名 zcl_…，容易跟 <span class="tcode">SE24</span> 的全域類別混淆；局部類別慣例用 <b>lcl_</b> 前綴。原範例的類別沒有任何方法，無法觀察多型，改寫加上 name( ) 讓效果看得見。</li>
+    <li>寫法 2、3 原本先 <span class="kw">CREATE OBJECT go_fruit.</span> 再被 <span class="kw">go_fruit = go_apple</span> 覆蓋，前一個物件白建了；向上轉型<b>不需要</b>先建立父類別物件。<span class="kw">MOVE … TO</span> 是禁用的舊語法，用 <span class="kw">=</span>。</li>
+  </ul>
+  <div class="tip">內嵌宣告的陷阱：<span class="kw">DATA(go_fruit) = NEW lcl_apple( ).</span> 推導出來的靜態型別是 <b>lcl_apple</b>，不是 lcl_fruit。想要父類別（或介面）型別的變數，要嘛像上面明確 <span class="kw">DATA go_fruit TYPE REF TO lcl_fruit</span>，要嘛寫 <span class="kw">DATA(go_fruit) = CAST lcl_fruit( NEW lcl_apple( ) ).</span></div>
+
+  <h3 id="ch07-3-09">9. 向下轉型 Down Cast 與 CX_SY_MOVE_CAST_ERROR（5.15）</h3>
+  <p><b>觀念。</b>向下轉型（Down Cast，又稱 Narrowing Cast）是把父類別參考指派回子類別型別的變數。編譯器無法保證「這個水果一定是梨子」，所以必須用 <span class="kw">?=</span> 或 <span class="kw">CAST</span> 明講「我負責」，由<b>執行期</b>檢查：物件的<b>動態型別</b>是目標類別或其子類別就成功，否則丟 <b>CX_SY_MOVE_CAST_ERROR</b>。5.15 的類別階層是 素食 ZCL_VEGETARIAN_FOOD → 水果 ZCL_FRUIT → 蘋果 ZCL_APPLE／梨子 ZCL_PEAR，示範四種情境：</p>
+  <table>
+    <thead><tr><th>情境</th><th>原寫法</th><th>結果</th><th>現代寫法</th></tr></thead>
+    <tbody>
+      <tr><td>1. 蘋果向上轉型成素食後，再轉回蘋果</td><td><span class="kw">go_apple ?= go_vegetarian_food</span></td><td>成功</td><td><span class="kw">?=</span> 或 <span class="kw">CAST</span></td></tr>
+      <tr><td>2. 梨子向上轉型後，再轉回梨子</td><td><span class="kw">MOVE go_vegetarian_food ?TO go_pear</span></td><td>成功</td><td><span class="kw">MOVE ?TO</span> 已淘汰，用 <span class="kw">?=</span></td></tr>
+      <tr><td>3. 梨子向上轉型後，用 CAST 轉回梨子</td><td><span class="kw">CAST zcl_pear( go_vegetarian_food ).</span></td><td>成功</td><td>必須把 CAST 結果指派給變數</td></tr>
+      <tr><td>4. 物件本身就是「素食」，沒經過向上轉型就要轉成梨子</td><td>同上</td><td><b>CX_SY_MOVE_CAST_ERROR</b></td><td>先用 IS INSTANCE OF 判斷</td></tr>
+    </tbody>
+  </table>
+  <div class="warn"><b>勘誤表第 4 條（第 150 頁）：</b>範例 5.15 的梨子類原寫 <span class="kw">zcl_pear DEFINITION INHERITING FROM zcl_apple</span>，應繼承水果類 <b>zcl_fruit</b>。這不只是命名問題：若梨子繼承蘋果，一顆梨子物件執行 <span class="kw">go_apple ?= …</span> 會<b>成功</b>（梨子是一種蘋果），語意完全錯誤，而編譯器與執行期都不會提醒你。繼承代表「is-a」，類別樹畫錯，所有轉型判斷都跟著錯。</div>
+<pre><code class="abap">REPORT zrep_cls_015.
+
+CLASS lcl_vegetarian_food DEFINITION.
+ENDCLASS.
+CLASS lcl_fruit DEFINITION INHERITING FROM lcl_vegetarian_food.
+ENDCLASS.
+CLASS lcl_apple DEFINITION INHERITING FROM lcl_fruit.
+ENDCLASS.
+CLASS lcl_pear DEFINITION INHERITING FROM lcl_fruit.     " 勘誤第 4 條：繼承水果
+ENDCLASS.
+
+START-OF-SELECTION.
+  DATA go_food TYPE REF TO lcl_vegetarian_food.
+  DATA(go_out) = cl_demo_output=&gt;new( ).
+
+  " 情境 1～3：先向上轉型，再向下轉型 → 成功
+  go_food = NEW lcl_pear( ).
+  TRY.
+      DATA(go_pear) = CAST lcl_pear( go_food ).          " 等同 go_pear ?= go_food
+      go_out-&gt;write( `CAST lcl_pear( go_food ) - Correct` ).
+    CATCH cx_sy_move_cast_error.
+      go_out-&gt;write( `CAST lcl_pear( go_food ) - Error` ).
+  ENDTRY.
+
+  " 梨子不是蘋果：修正類別樹後，這裡會正確失敗
+  TRY.
+      DATA(go_apple) = CAST lcl_apple( go_food ).
+      go_out-&gt;write( `CAST lcl_apple( 梨子 ) - Correct` ).
+    CATCH cx_sy_move_cast_error.
+      go_out-&gt;write( `CAST lcl_apple( 梨子 ) - Error（正確的錯誤）` ).
+  ENDTRY.
+
+  " 情境 4：物件本身就是素食，從未是梨子 → 轉型失敗
+  go_food = NEW lcl_vegetarian_food( ).
+  TRY.
+      go_pear = CAST #( go_food ).                        " # 由左邊的 go_pear 推導為 lcl_pear
+      go_out-&gt;write( `情境 4 - Correct` ).
+    CATCH cx_sy_move_cast_error INTO DATA(gx_cast).
+      go_out-&gt;write( |情境 4 - Error：{ gx_cast-&gt;get_text( ) }| ).
+  ENDTRY.
+
+  " 不靠例外的寫法：先判斷再轉（IS INSTANCE OF／CASE TYPE OF 需 7.50+，1809 可用）
+  IF go_food IS INSTANCE OF lcl_pear.
+    go_pear = CAST #( go_food ).
+  ELSE.
+    go_out-&gt;write( `go_food 不是梨子，不轉型` ).
+  ENDIF.
+
+  go_out-&gt;display( ).</code></pre>
+  <p><b>與原範例的差異。</b></p>
+  <ul>
+    <li>原範例情境 3、4 把 <span class="kw">CAST zcl_pear( go_vegetarian_food ).</span> 單獨寫成一行敘述。建構運算式（CAST、NEW、VALUE…）必須放在運算元位置，單獨成一行不是有效的 ABAP 敘述（只有後面接方法呼叫，如 <span class="kw">CAST x( o )-&gt;m( ).</span> 才可以）。改寫一律指派給變數。</li>
+    <li>原範例每個情境都先 <span class="kw">CREATE OBJECT go_vegetarian_food TYPE zcl_vegetarian_food</span>，下一行又被向上轉型覆蓋；多餘的建立已移除。</li>
+    <li>原範例註解說「如果子類經過向上轉型到父類，則父類對象可以直接向下強轉型」——更精確的說法是：成功與否只看<b>物件的動態型別</b>，與「曾經向上轉型」這個動作無關。</li>
+  </ul>
+  <div class="tip">實務提醒：ALV 事件、BAdI 參數、框架回呼常給你一個介面或父類別參考。向下轉型前先 <span class="kw">IS INSTANCE OF</span>，或者用 <span class="kw">CASE TYPE OF go_food WHEN TYPE lcl_pear INTO DATA(lo_pear). … ENDCASE.</span> 一次完成判斷與轉型；只有在「不應該發生」的情況才讓它丟 CX_SY_MOVE_CAST_ERROR。</div>
+
+  <h3 id="ch07-3-10">10. 第二套物料繼承體系：ZCL_SUPER_MATL（5.16、5.17）</h3>
+  <p><b>觀念。</b>從 5.16 開始，書中用另一套物料類別示範多型：父類別 ZCL_SUPER_MATL 只有一個屬性 MV_MATERIAL_ID 與一個方法 PRINT_MATERIAL_DESC（印出「物料號碼」），三個子類別原料 RAW、半成品 SEMI、成品 FIN 各自重定義這個方法，在父類別輸出之後追加自己的資訊。這是「<b>樣板＋擴充</b>」的典型用法：共同部分寫一次在父類別，差異寫在子類別。</p>
+<pre><code class="abap">CLASS zcl_super_matl DEFINITION PUBLIC CREATE PUBLIC.
+  PUBLIC SECTION.
+    METHODS constructor
+      IMPORTING iv_material_id TYPE matnr.
+    METHODS get_material_id
+      RETURNING VALUE(rv_material_id) TYPE matnr.
+    "! 回傳描述行；子類別以 REDEFINITION 追加內容
+    METHODS get_desc_lines
+      RETURNING VALUE(rt_lines) TYPE string_table.
+  PROTECTED SECTION.
+    DATA mv_material_id TYPE matnr.
+ENDCLASS.
+
+CLASS zcl_super_matl IMPLEMENTATION.
+  METHOD constructor.
+    mv_material_id = iv_material_id.
+  ENDMETHOD.
+  METHOD get_material_id.
+    rv_material_id = mv_material_id.
+  ENDMETHOD.
+  METHOD get_desc_lines.                       " 對應 5.16 print_material_desc
+    rt_lines = VALUE #( ( |物料號碼 { mv_material_id ALPHA = OUT }| ) ).
+  ENDMETHOD.
+ENDCLASS.</code></pre>
+  <p><b>與原範例的差異。</b></p>
+  <ul>
+    <li>原 5.17 的 MV_MATERIAL_ID 型別是 <b>STRING</b>，與第一套 5.9 的 MARA-MATNR 不一致；物料號碼一律用 MATNR（40 碼）。</li>
+    <li>原 MV_MATERIAL_ID 是 PUBLIC 可寫屬性，5.25 的測試程式直接 <span class="kw">go_super_matl-&gt;mv_material_id = 'MATL001'</span> 賦值——這跟本章第 2 節的封裝原則矛盾。改寫用<b>建構子</b>傳入，屬性放 PROTECTED 讓子類別可讀；子類別沒有自己的建構子，會自動沿用父類別的建構子簽名。</li>
+    <li>print_material_desc 直接 WRITE，改為回傳 <span class="kw">string_table</span>（方法名改為 get_desc_lines 以反映「回傳而非列印」），子類別可以在父類別結果上追加，呼叫端決定輸出到哪裡。</li>
+  </ul>
+
+  <h3 id="ch07-3-11">11. 原料、半成品、成品子類別（5.18～5.24）</h3>
+  <p><b>觀念。</b>三個子類別都 <span class="kw">INHERITING FROM zcl_super_matl</span> 並重定義描述方法，先呼叫 <span class="kw">super-&gt;</span> 取得「物料號碼」，再追加各自的欄位：</p>
+  <table>
+    <thead><tr><th>子類別</th><th>範例</th><th>追加內容</th><th>FINAL</th><th>新增方法</th></tr></thead>
+    <tbody>
+      <tr><td>ZCL_SUB_MATL_RAW（原料）</td><td>5.18、5.19</td><td>供應商號碼 VEN0127、批次號碼 MF01RAW209、採購日期</td><td>是</td><td>無</td></tr>
+      <tr><td>ZCL_SUB_MATL_SEMI（半成品）</td><td>5.20、5.21</td><td>批次號碼 MF01SEM537、重檢日期</td><td>是</td><td>無</td></tr>
+      <tr><td>ZCL_SUB_MATL_FIN（成品）</td><td>5.22～5.24</td><td>批次號碼 MF01FIN001、生產日期</td><td><b>否</b></td><td>PRINT_MATERIAL_TYPE（5.23，印出物料類型 FIN）</td></tr>
+    </tbody>
+  </table>
+<pre><code class="abap">CLASS zcl_sub_matl_raw DEFINITION PUBLIC INHERITING FROM zcl_super_matl FINAL CREATE PUBLIC.
+  PUBLIC SECTION.
+    METHODS get_desc_lines REDEFINITION.
+ENDCLASS.
+CLASS zcl_sub_matl_raw IMPLEMENTATION.
+  METHOD get_desc_lines.                                   " 5.18
+    rt_lines = VALUE #( BASE super-&gt;get_desc_lines( )
+                        ( |供應商號碼 VEN0127| )
+                        ( |批次號碼 MF01RAW209| )
+                        ( |採購日期 { sy-datum DATE = USER }| ) ).
+  ENDMETHOD.
+ENDCLASS.
+
+CLASS zcl_sub_matl_semi DEFINITION PUBLIC INHERITING FROM zcl_super_matl FINAL CREATE PUBLIC.
+  PUBLIC SECTION.
+    METHODS get_desc_lines REDEFINITION.
+ENDCLASS.
+CLASS zcl_sub_matl_semi IMPLEMENTATION.
+  METHOD get_desc_lines.                                   " 5.20
+    rt_lines = VALUE #( BASE super-&gt;get_desc_lines( )
+                        ( |批次號碼 MF01SEM537| )
+                        ( |重檢日期 { sy-datum DATE = USER }| ) ).
+  ENDMETHOD.
+ENDCLASS.
+
+CLASS zcl_sub_matl_fin DEFINITION PUBLIC INHERITING FROM zcl_super_matl FINAL CREATE PUBLIC.
+  PUBLIC SECTION.
+    METHODS get_material_type
+      RETURNING VALUE(rv_type) TYPE string.                " 5.23 子類別獨有
+    METHODS get_desc_lines REDEFINITION.
+ENDCLASS.
+CLASS zcl_sub_matl_fin IMPLEMENTATION.
+  METHOD get_desc_lines.                                   " 5.22
+    rt_lines = VALUE #( BASE super-&gt;get_desc_lines( )
+                        ( |批次號碼 MF01FIN001| )
+                        ( |生產日期 { sy-datum DATE = USER }| ) ).
+  ENDMETHOD.
+  METHOD get_material_type.
+    rv_type = `FIN`.
+  ENDMETHOD.
+ENDCLASS.</code></pre>
+  <p><b>與原範例的差異。</b></p>
+  <ul>
+    <li><span class="kw">CALL METHOD super-&gt;print_material_desc.</span> ＋多行 <span class="kw">WRITE</span> → <span class="kw">VALUE #( BASE super-&gt;… ( … ) )</span>：BASE 先放入父類別結果，再追加子類別的行（VALUE BASE 需 7.40 SP08 以上，1809 可用）。</li>
+    <li>原 5.24 成品類別<b>沒有加 FINAL</b>，而 5.19、5.21 的原料、半成品都有；書中沒有說明成品為何需要再被繼承，看起來是建立時漏勾。三者設計地位相同，改寫統一加 FINAL（若日後真要細分成品，再拿掉即可）。</li>
+    <li>5.23 print_material_type 改為 get_material_type 回傳值；5.22 原寫 <span class="kw">SY-DATUM</span> 大寫、5.24 小寫，大小寫不影響 ABAP，但同一類別的兩份原始碼不一致，顯示片段與完整版是分別貼上的。</li>
+    <li>日期輸出改用字串範本 <span class="kw">DATE = USER</span>，依使用者設定格式顯示，不是 WRITE 的內部格式。</li>
+  </ul>
+  <div class="warn">範例中的 VEN0127、MF01RAW209 等是<b>寫死的示範值</b>。真實系統的批次資訊在批次主檔 MCH1（跨工廠）／MCHA（工廠層級），供應商在 LFA1／BP；把業務資料寫死在類別裡，是示範程式和正式程式最大的差別之一。</div>
+
+  <h3 id="ch07-3-12">12. 多型測試：同一個呼叫，不同行為（5.25）</h3>
+  <p><b>觀念。</b>多型（Polymorphism）＝<b>同一個父類別參考，呼叫同一個方法，依物件實際的類別執行不同的實作</b>。5.25 ZREP_CLS_013 先建立四個物件，然後把 go_super_matl 依序指向原料、半成品、成品物件，每次呼叫 print_material_desc 都得到不同輸出；最後把 go_super_matl（此時指向成品）向下轉型回 go_sub_matl_fin，才能呼叫成品獨有的 print_material_type。</p>
+<pre><code class="abap">REPORT zrep_cls_013.
+
+TYPES tt_materials TYPE STANDARD TABLE OF REF TO zcl_super_matl WITH EMPTY KEY.
+
+START-OF-SELECTION.
+  DATA(go_out) = cl_demo_output=&gt;new( ).
+
+  " 向上轉型：子類別物件直接放進父類別參考的內表
+  DATA(gt_materials) = VALUE tt_materials(
+    ( NEW zcl_super_matl( 'MATL001' ) )
+    ( NEW zcl_sub_matl_raw( 'RAW001' ) )
+    ( NEW zcl_sub_matl_semi( 'SEMI001' ) )
+    ( NEW zcl_sub_matl_fin( 'FIN001' ) ) ).
+
+  LOOP AT gt_materials INTO DATA(go_matl).
+    " 多型：同一行程式，依物件的動態型別執行不同的 get_desc_lines
+    go_out-&gt;write( go_matl-&gt;get_desc_lines( ) ).
+
+    " 子類別獨有的方法：先判斷再向下轉型
+    CASE TYPE OF go_matl.
+      WHEN TYPE zcl_sub_matl_fin INTO DATA(go_fin).
+        go_out-&gt;write( |物料類型 { go_fin-&gt;get_material_type( ) }| ).
+    ENDCASE.
+  ENDLOOP.
+
+  go_out-&gt;display( ).</code></pre>
+  <p><b>與原範例的差異。</b>原程式用四個變數、四次 CREATE OBJECT、四段幾乎相同的程式碼；多型真正的價值是<b>呼叫端不必知道有幾種子類別</b>，所以改寫把物件放進 <span class="kw">REF TO zcl_super_matl</span> 的內表，一個 LOOP 處理全部，日後新增「包材」子類別時這支程式不用改（開放封閉原則，見 <a href="#ch07-4">7-4 章</a>）。原程式最後的 <span class="kw">go_sub_matl_fin ?= go_super_matl</span> 是在「確定此時指向成品」的前提下才安全；改寫用 <span class="kw">CASE TYPE OF</span>（7.50+）判斷與轉型一次完成。</p>
+  <div class="tip">實務提醒：如果你發現自己在 LOOP 裡寫很多 <span class="kw">CASE TYPE OF</span>／<span class="kw">IS INSTANCE OF</span> 去呼叫各子類別獨有的方法，代表那個行為其實應該是父類別（或介面）的方法、由子類別各自重定義。向下轉型是例外，不是常態。</div>
+
+  <h3 id="ch07-3-13">13. 抽象類別：北朝平民、花弧與花木蘭（5.26～5.31）</h3>
+  <p><b>觀念。</b>抽象類別（<span class="kw">ABSTRACT</span>）不能被實例化，只能被繼承；其中的抽象方法（<span class="kw">METHODS m ABSTRACT</span>）只有宣告沒有實作，<b>每個非抽象的子類別都必須以 REDEFINITION 實作它</b>。抽象類別適合「有共同資料與部分共同行為，但某些行為每個子類別一定不同」的情境。書中以《木蘭辭》設計：</p>
+  <ul>
+    <li>ZCL_BEICHAO_CIVILIAN（北朝平民，ABSTRACT）：READ-ONLY 屬性 MV_NAME、MV_GENDER；5.26 setup_profile 設定姓名性別；5.27 self_introduce「我是…，性別…」；show_capability 是<b>抽象方法</b>。</li>
+    <li>ZCL_HUAHU（花弧，FINAL）：5.28 show_capability「年老體衰，耕讀持家」。</li>
+    <li>ZCL_HUAMULAN（花木蘭，FINAL）：5.29 show_capability「年輕力壯，衝鋒陷陣」；5.30 獨有方法 make_up「當窗理雲鬢，對鏡貼花黃」。</li>
+  </ul>
+  <p>5.31 是三個類別的 <b>Source Code-Based</b> 完整原始碼。作者的使用說明：在 <span class="tcode">SE24</span> 建立全域類別後按「Source Code-Based」切換到程式碼模式，貼上 DEFINITION 與 IMPLEMENTATION 後啟用，再切回 Form-Based 就能看到屬性與方法。<span class="src">（依範例註解整理）</span></p>
+<pre><code class="abap">CLASS zcl_beichao_civilian DEFINITION PUBLIC ABSTRACT CREATE PUBLIC.
+  PUBLIC SECTION.
+    DATA mv_name   TYPE string READ-ONLY.
+    DATA mv_gender TYPE string READ-ONLY.
+    METHODS setup_profile                               " 5.26
+      IMPORTING iv_name   TYPE string
+                iv_gender TYPE string.
+    METHODS self_introduce                              " 5.27
+      RETURNING VALUE(rv_text) TYPE string.
+    METHODS show_capability ABSTRACT                    " 抽象方法：子類別必須實作
+      RETURNING VALUE(rv_text) TYPE string.
+ENDCLASS.
+
+CLASS zcl_beichao_civilian IMPLEMENTATION.
+  METHOD setup_profile.
+    mv_name   = iv_name.
+    mv_gender = iv_gender.
+  ENDMETHOD.
+  METHOD self_introduce.
+    rv_text = |我是 { mv_name }，性別 { mv_gender }|.
+  ENDMETHOD.
+  " show_capability 是抽象方法，這裡不能（也不必）實作
+ENDCLASS.
+
+CLASS zcl_huahu DEFINITION PUBLIC INHERITING FROM zcl_beichao_civilian FINAL CREATE PUBLIC.
+  PUBLIC SECTION.
+    METHODS show_capability REDEFINITION.
+ENDCLASS.
+CLASS zcl_huahu IMPLEMENTATION.
+  METHOD show_capability.                               " 5.28
+    rv_text = `年老體衰，耕讀持家`.
+  ENDMETHOD.
+ENDCLASS.
+
+CLASS zcl_huamulan DEFINITION PUBLIC INHERITING FROM zcl_beichao_civilian FINAL CREATE PUBLIC.
+  PUBLIC SECTION.
+    METHODS make_up RETURNING VALUE(rv_text) TYPE string.   " 5.30 子類別獨有
+    METHODS show_capability REDEFINITION.
+ENDCLASS.
+CLASS zcl_huamulan IMPLEMENTATION.
+  METHOD show_capability.                               " 5.29
+    rv_text = `年輕力壯，衝鋒陷陣`.
+  ENDMETHOD.
+  METHOD make_up.
+    rv_text = `當窗理雲鬢，對鏡貼花黃`.
+  ENDMETHOD.
+ENDCLASS.</code></pre>
+  <p><b>與原範例的差異。</b>方法內的 <span class="kw">WRITE</span> 改為回傳字串；原始碼中 SE24 自動產生的 <span class="kw">* &lt;SIGNATURE&gt;</span> 註解區塊省略（Class Builder 會自動重產）。其餘結構——ABSTRACT 父類別、READ-ONLY 屬性、兩個 FINAL 子類別——與原書相同，是本章設計最乾淨的一組範例。</p>
+  <div class="note">用詞更正：5.32 原註解稱父類別為「<b>虛擬類</b>」。ABAP 的 <span class="kw">ABSTRACT</span> 應譯為「<b>抽象類別</b>」；「虛擬（virtual）」是 C++ 的概念，指可被覆寫的方法——ABAP 的實例方法預設就可以被重定義（除非加 FINAL），不存在 virtual 關鍵字。</div>
+  <div class="tip">抽象類別 vs. 介面怎麼選：需要<b>共用資料與實作</b>（如 mv_name、self_introduce）用抽象類別；只需要<b>約定行為</b>、而且實作類別可能已經有別的父類別時用介面（ABAP 單一繼承，但可實作多個介面）。實務上常見兩者並用：介面定義契約，抽象類別提供預設實作。</div>
+
+  <h3 id="ch07-3-14">14. 花木蘭代父從軍：多型與轉型全流程（5.32）</h3>
+  <p><b>觀念。</b>5.32 ZREP_CLS_012 把本章所有觀念串成一個故事，共六段：</p>
+  <ol>
+    <li>建立花木蘭物件，setup_profile('花木蘭','女')，自我介紹、展示能力、化妝。</li>
+    <li>建立花弧物件，setup_profile('花弧','男')，展示能力「年老體衰」；花弧沒有 make_up。</li>
+    <li>把花弧<b>向上轉型</b>成北朝平民參考 go_civi_soldier：軍中報名「我是花弧」，但作戰能力是「年老體衰」——父親無法打仗。</li>
+    <li>木蘭決定代父從軍：花木蘭物件 setup_profile('花弧','男')。</li>
+    <li>把花木蘭<b>向上轉型</b>成 go_civi_soldier：報名時自稱花弧，但 show_capability 執行的是花木蘭的實作「年輕力壯，衝鋒陷陣」——這就是多型；此時<b>不能</b>呼叫 make_up（父類別參考看不到子類別新增的方法）。</li>
+    <li>花木蘭回鄉：<b>向下轉型</b> go_hua_mulan ?= go_civi_soldier，重新 setup_profile('花木蘭','女')，又可以呼叫 make_up 了。</li>
+  </ol>
+<pre><code class="abap">REPORT zrep_cls_012.
+
+START-OF-SELECTION.
+  DATA go_civi_soldier TYPE REF TO zcl_beichao_civilian.   " 勘誤第 5 條：soldier，不是 solider
+  DATA(go_out) = cl_demo_output=&gt;new( ).
+
+  go_out-&gt;write( `1. 測試子類別物件花木蘭` ).
+  DATA(go_hua_mulan) = NEW zcl_huamulan( ).
+  go_hua_mulan-&gt;setup_profile( iv_name = `花木蘭` iv_gender = `女` ).
+  go_out-&gt;write( go_hua_mulan-&gt;self_introduce( ) ).
+  go_out-&gt;write( go_hua_mulan-&gt;show_capability( ) ).
+  go_out-&gt;write( go_hua_mulan-&gt;make_up( ) ).
+
+  go_out-&gt;write( `2. 測試子類別物件花弧` ).
+  DATA(go_hua_hu) = NEW zcl_huahu( ).
+  go_hua_hu-&gt;setup_profile( iv_name = `花弧` iv_gender = `男` ).
+  go_out-&gt;write( go_hua_hu-&gt;self_introduce( ) ).
+  go_out-&gt;write( go_hua_hu-&gt;show_capability( ) ).
+  " go_hua_hu-&gt;make_up( ).          → 語法錯誤：花弧沒有這個方法
+
+  go_out-&gt;write( `3. 向上轉型，多型 - 父親無法打仗` ).
+  " go_civi_soldier = NEW zcl_beichao_civilian( ).  → 語法錯誤：抽象類別不能實例化
+  go_civi_soldier = go_hua_hu.
+  go_out-&gt;write( go_civi_soldier-&gt;self_introduce( ) ).
+  go_out-&gt;write( go_civi_soldier-&gt;show_capability( ) ).   " 年老體衰，耕讀持家
+
+  go_out-&gt;write( `4. 木蘭決定代父從軍` ).
+  go_hua_mulan-&gt;setup_profile( iv_name = `花弧` iv_gender = `男` ).
+
+  go_out-&gt;write( `5. 向上轉型，多型 - 代父從軍` ).
+  go_civi_soldier = go_hua_mulan.            " 兩個變數指向同一個物件
+  go_out-&gt;write( go_civi_soldier-&gt;self_introduce( ) ).    " 我是 花弧，性別 男
+  go_out-&gt;write( go_civi_soldier-&gt;show_capability( ) ).   " 年輕力壯，衝鋒陷陣（花木蘭的實作）
+  " go_civi_soldier-&gt;make_up( ).    → 語法錯誤：父類別參考看不到子類別新增的方法
+
+  go_out-&gt;write( `6. 向下轉型，花木蘭重新做自己` ).
+  go_hua_mulan = CAST #( go_civi_soldier ).  " 動態型別是 zcl_huamulan，轉型成功
+  go_hua_mulan-&gt;setup_profile( iv_name = `花木蘭` iv_gender = `女` ).
+  go_out-&gt;write( go_hua_mulan-&gt;self_introduce( ) ).
+  go_out-&gt;write( go_hua_mulan-&gt;show_capability( ) ).
+  go_out-&gt;write( go_hua_mulan-&gt;make_up( ) ).
+
+  go_out-&gt;display( ).</code></pre>
+  <div class="warn"><b>勘誤表第 5 條（第 168 頁）：</b>原程式的變數 <span class="kw">go_civi_solider</span> 拼錯，應為 <b>go_civi_soldier</b>（soldier＝士兵）。拼字錯誤不影響執行，但程式中全部 10 處都要一致修改；在 ADT 用「Rename」重構（Alt+Shift+R）可一次改完。</div>
+  <p><b>與原範例的差異（勘誤表沒列、讀程式發現的）。</b></p>
+  <ul>
+    <li>第 3 段 <span class="kw">go_civi_solider = go_hua_hu.</span> <b>連續寫了兩次</b>（第一次註解「虛擬類對象變量不經創建，直接由子類對象賦值也可以」、第二次註解「向上轉型」），其實是同一件事，改寫保留一次。</li>
+    <li>第 5 段註解「調用的是<b>重新聲明過的</b>自我介紹」不正確：self_introduce 從未被重定義，執行的仍是父類別的實作；會印出「我是花弧」是因為第 4 段已把<b>資料</b>改成花弧。真正體現多型的是下一行 show_capability。</li>
+    <li>第 6 段註解說「不必按子類類型重新創建父類對象，因為子類曾經向上轉型」——同第 9 節，成功的原因是 go_civi_soldier 此刻指向的物件<b>動態型別就是 zcl_huamulan</b>。</li>
+    <li>MV_NAME、MV_GENDER 是 READ-ONLY，所以姓名只能透過 setup_profile 修改；這正好讓「木蘭冒名」必須經過公開方法，是封裝＋多型一起運作的好例子。</li>
+    <li>原程式的 <span class="kw">CALL METHOD … EXPORTING …</span> 全部改為函數式呼叫，<span class="kw">?=</span> 改為 <span class="kw">CAST #( )</span>（兩者等價，擇一統一即可）。</li>
+  </ul>
+
+  <h3 id="ch07-3-15">15. 介面多型：航班價格與起訖城市（5.33～5.36）</h3>
+  <p><b>觀念。</b>多型不只發生在繼承樹上。兩個<b>毫無繼承關係</b>的類別，只要實作同一個介面，就能被同一個介面參考變數操作。書中介面 ZIF_GET_FLIGHTS 有一個方法 GET_FLIGHT_DETAILS，兩個實作類別：</p>
+  <ul>
+    <li>5.33 ZCL_GET_FLIGHT_PRICE：從 <b>SFLIGHT</b> 取 CARRID、CONNID、FLDATE、PRICE、CURRENCY（票價）。</li>
+    <li>5.34 ZCL_GET_FLIGHT_DEST：從 <b>SFLIGHTS</b>（航班資料庫 View）取 CARRID、CARRNAME、CONNID、COUNTRYFR、CITYFROM、AIRPFROM、COUNTRYTO、CITYTO、AIRPTO（起訖城市與機場）；5.35 另有自己的方法 PRINT_FLIGHT_DEST。</li>
+    <li>5.36 ZREP_CLS_016：直接以類別參考呼叫 <span class="kw">go_flight_p-&gt;zif_get_flights~get_flight_details</span>；再 <span class="kw">CREATE OBJECT gi_get_flights TYPE zcl_get_flight_dest</span> 把目的地類別<b>向上轉型</b>成介面參考；介面參考呼叫不到 print_flight_dest（原註解引用錯誤訊息「Method "PRINT_FLIGHT_DEST(" is unknown or PROTECTED or PRIVATE」），必須<b>向下轉型</b>回 ZCL_GET_FLIGHT_DEST。</li>
+  </ul>
+  <p>介面定義不在範例中，以下 <span class="src">（依範例呼叫方式重建）</span>，並修正原設計的問題：</p>
+<pre><code class="abap">INTERFACE zif_get_flights PUBLIC.
+  METHODS get_flight_details
+    IMPORTING iv_carrid    TYPE s_carr_id         " 原範例沒有：CONNID 必須搭配 CARRID 才唯一
+              iv_flight_no TYPE s_conn_id
+    EXPORTING es_sflight   TYPE sflight           " 價格類別填這個
+              es_sflights  TYPE sflights          " 目的地類別填這個
+              ev_found     TYPE abap_bool.        " 取代「呼叫後檢查 sy-subrc」
+ENDINTERFACE.
+
+CLASS zcl_get_flight_price DEFINITION PUBLIC FINAL CREATE PUBLIC.
+  PUBLIC SECTION.
+    INTERFACES zif_get_flights.
+ENDCLASS.
+CLASS zcl_get_flight_price IMPLEMENTATION.
+  METHOD zif_get_flights~get_flight_details.                    " 5.33
+    CLEAR: es_sflight, es_sflights.
+    " 同一航線有多個航班日期：明確排序取「最近的一班」，不要讓 HANA 隨便給一筆
+    DATA lt_flight TYPE STANDARD TABLE OF sflight WITH EMPTY KEY.
+    SELECT carrid, connid, fldate, price, currency
+      FROM sflight
+      WHERE carrid = @iv_carrid
+        AND connid = @iv_flight_no
+      ORDER BY fldate DESCENDING
+      INTO CORRESPONDING FIELDS OF TABLE @lt_flight
+      UP TO 1 ROWS.
+    es_sflight = VALUE #( lt_flight[ 1 ] OPTIONAL ).
+    ev_found   = xsdbool( lt_flight IS NOT INITIAL ).
+  ENDMETHOD.
+ENDCLASS.
+
+CLASS zcl_get_flight_dest DEFINITION PUBLIC FINAL CREATE PUBLIC.
+  PUBLIC SECTION.
+    INTERFACES zif_get_flights.
+    METHODS get_dest_text RETURNING VALUE(rv_text) TYPE string.  " 5.35 介面沒有的方法
+  PRIVATE SECTION.
+    DATA ms_last TYPE sflights.
+ENDCLASS.
+CLASS zcl_get_flight_dest IMPLEMENTATION.
+  METHOD zif_get_flights~get_flight_details.                    " 5.34
+    CLEAR: es_sflight, es_sflights.
+    " 起訖城市屬於航線（SPFLI），同一 CARRID+CONNID 各日期的值相同，SELECT SINGLE 結果一致
+    SELECT SINGLE carrid, carrname, connid, countryfr, cityfrom, airpfrom,
+                  countryto, cityto, airpto
+      FROM sflights
+      WHERE carrid = @iv_carrid
+        AND connid = @iv_flight_no
+      INTO CORRESPONDING FIELDS OF @es_sflights.
+    ev_found = xsdbool( sy-subrc = 0 ).
+    ms_last  = es_sflights.
+  ENDMETHOD.
+  METHOD get_dest_text.
+    rv_text = |{ ms_last-carrid } { ms_last-connid }：{ ms_last-cityfrom } → { ms_last-cityto }|.
+  ENDMETHOD.
+ENDCLASS.</code></pre>
+<pre><code class="abap">REPORT zrep_cls_016.
+
+PARAMETERS: p_carrid TYPE s_carr_id OBLIGATORY DEFAULT 'LH',
+            p_connid TYPE s_conn_id OBLIGATORY DEFAULT '0400'.
+
+START-OF-SELECTION.
+  DATA go_flights TYPE REF TO zif_get_flights.        " 介面參考
+  DATA(go_out) = cl_demo_output=&gt;new( ).
+
+  " 1. 價格：向上轉型成介面參考後呼叫（不必寫 zif_get_flights~ 前綴）
+  go_flights = NEW zcl_get_flight_price( ).
+  go_flights-&gt;get_flight_details( EXPORTING iv_carrid    = p_carrid
+                                            iv_flight_no = p_connid
+                                  IMPORTING es_sflight   = DATA(gs_price)
+                                            ev_found     = DATA(gv_found) ).
+  IF gv_found = abap_true.
+    go_out-&gt;write( gs_price ).
+  ENDIF.
+
+  " 2. 起訖城市：同一個介面變數，換一個實作類別 → 介面多型
+  go_flights = NEW zcl_get_flight_dest( ).
+  go_flights-&gt;get_flight_details( EXPORTING iv_carrid    = p_carrid
+                                            iv_flight_no = p_connid
+                                  IMPORTING es_sflights  = DATA(gs_dest)
+                                            ev_found     = gv_found ).
+  IF gv_found = abap_true.
+    go_out-&gt;write( gs_dest ).
+  ENDIF.
+
+  " 3. go_flights-&gt;get_dest_text( ) → 語法錯誤：介面參考看不到實作類別自己的方法
+  "    向下轉型回實作類別才能呼叫
+  IF go_flights IS INSTANCE OF zcl_get_flight_dest.
+    go_out-&gt;write( CAST zcl_get_flight_dest( go_flights )-&gt;get_dest_text( ) ).
+  ENDIF.
+
+  go_out-&gt;display( ).</code></pre>
+  <p><b>與原範例的差異。</b></p>
+  <ul>
+    <li><b>原 5.33／5.34 只用 CONNID 查詢</b>：SFLIGHT 的主鍵是 MANDT＋CARRID＋CONNID＋FLDATE，同一個航班號碼在不同航空公司、不同日期有很多筆，<span class="kw">SELECT SINGLE … WHERE connid = …</span> 拿到哪一筆<b>沒有保證</b>。改寫補上 CARRID，並對價格明確 <span class="kw">ORDER BY fldate DESCENDING</span> 取一筆。</li>
+    <li>原 5.36 在方法呼叫後檢查 <span class="kw">IF sy-subrc = 0</span>：方法呼叫本身不會設定 sy-subrc（只有傳統 EXCEPTIONS 才會），那個值是方法內部 SELECT 殘留下來的，一旦方法內多加一行敘述就失效。改寫用明確的 ev_found 輸出參數。</li>
+    <li>原 5.36 的 <span class="kw">PARAMETERS s_connid</span> 用 s_ 前綴，慣例上 s_ 是 SELECT-OPTIONS，參數用 p_；另宣告了 <span class="kw">DATA: sflight TYPE sflight.</span> 卻從未使用（像是舊版 TABLES 的殘留），刪除。</li>
+    <li>原程式對價格類別用類別參考 go_flight_p 呼叫 <span class="kw">zif_get_flights~get_flight_details</span>（必須寫介面前綴），對目的地類別才用介面參考；改寫兩者都經由介面參考，才看得出「同一個呼叫、不同實作」。也可在類別中宣告 <span class="kw">ALIASES</span> 讓類別參考不必寫前綴。</li>
+    <li>5.35 print_flight_dest 只 WRITE 固定字串 'PRINT_FLIGHT_DEST'，改寫為真正組出起訖文字的 get_dest_text。</li>
+    <li>SELECT 改為逗號分隔欄位＋@ 主機變數＋INTO 置於最後的嚴格模式寫法。</li>
+  </ul>
+  <div class="warn"><b>Casper 實務經驗：HANA 沒有預設排序。</b>在舊的資料庫上，「SELECT SINGLE 不給完整主鍵」常常碰巧回傳同一筆，測試都過；搬到 HANA 後，同一支程式今天抓到 A 航空、明天抓到 B 航空。Casper 在成本評價專案就踩過：同時存在 item category「H」與 cost component「E」兩種角度的資料，程式沒排序時一下抓到 H、一下抓到 E，成本結果不穩定，最後結論是<b>明確限定並排序、固定抓 H</b>。任何「取第一筆」的邏輯，一律先把條件補到唯一，或明確 ORDER BY。</div>
+  <div class="note">設計評論：這個介面讓一個方法同時帶 es_sflight 與 es_sflights 兩個輸出，而每個實作只填其中一個——呼叫端必須知道「現在是哪個實作」才知道該讀哪個參數，這其實抵銷了多型的好處。較好的設計是讓介面回傳雙方共用的抽象結果（例如一個描述字串表，或各自獨立的兩個介面）。這正是介面隔離原則（ISP）要解決的問題，見 <a href="#ch07-4">7-4 章</a>。</div>
+
+  <h3 id="ch07-3-16">16. 總整理：重定義規則、FINAL／ABSTRACT／介面的選擇</h3>
+  <p>把本章 36 支範例歸納成可以直接查的規則表（原廠完整規則見 <a href="#ch05-2-09">5-2 章第 9 節</a>）：</p>
+  <table>
+    <thead><tr><th>情況</th><th>能否 REDEFINITION</th><th>本章範例</th></tr></thead>
+    <tbody>
+      <tr><td>父類別 PUBLIC／PROTECTED 實例方法</td><td>可以，且不能改簽名</td><td>5.10、5.18、5.20、5.22</td></tr>
+      <tr><td>父類別 PRIVATE 方法</td><td>不行，子類別看不到</td><td>5.9 get_material_desc</td></tr>
+      <tr><td>靜態方法（CLASS-METHODS）</td><td>不行</td><td>—</td></tr>
+      <tr><td>方法加了 FINAL，或類別是 FINAL</td><td>不行（FINAL 類別連繼承都不行）</td><td>5.12、5.19、5.21、5.31</td></tr>
+      <tr><td>抽象方法</td><td>非抽象子類別<b>必須</b>實作</td><td>5.28、5.29</td></tr>
+      <tr><td>建構子</td><td>不是 REDEFINITION；子類別可自訂簽名，但必須先呼叫 super-&gt;constructor( )</td><td>第 10 節改寫</td></tr>
+      <tr><td>同一類別同名不同參數（Overloading）</td><td>ABAP 不支援（勘誤第 3 條）</td><td>—</td></tr>
+    </tbody>
+  </table>
+  <table>
+    <thead><tr><th>工具</th><th>何時用</th><th>本章範例</th></tr></thead>
+    <tbody>
+      <tr><td>一般繼承＋REDEFINITION</td><td>父類別本身有意義、可被實例化，子類別擴充部分行為</td><td>物料體系 5.9～5.25</td></tr>
+      <tr><td>ABSTRACT 類別</td><td>父類別本身不該存在實體，但有共用資料與實作</td><td>北朝平民 5.26～5.32</td></tr>
+      <tr><td>介面</td><td>只約定行為；實作類別之間沒有 is-a 關係，或已有別的父類別</td><td>航班 5.33～5.36</td></tr>
+      <tr><td>FINAL</td><td>不打算被繼承的類別——<b>預設就該加</b>，需要時再拿掉</td><td>原料、半成品、花弧、花木蘭</td></tr>
+    </tbody>
+  </table>
+<pre><code class="abap">" 轉型速查（7.53 可用）
+DATA lo_parent TYPE REF TO zcl_super_matl.
+
+lo_parent = NEW zcl_sub_matl_fin( 'FIN001' ).              " Up Cast：= 即可，永不失敗
+
+DATA(lo_fin1) = CAST zcl_sub_matl_fin( lo_parent ).        " Down Cast：型別不符丟 CX_SY_MOVE_CAST_ERROR
+DATA lo_fin2 TYPE REF TO zcl_sub_matl_fin.
+lo_fin2 ?= lo_parent.                                      " 同上，舊式寫法仍合法
+
+IF lo_parent IS INSTANCE OF zcl_sub_matl_fin.              " 先判斷（7.50+）
+  DATA(lv_type) = CAST zcl_sub_matl_fin( lo_parent )-&gt;get_material_type( ).
+ENDIF.
+
+CASE TYPE OF lo_parent.                                    " 判斷＋轉型一次完成（7.50+）
+  WHEN TYPE zcl_sub_matl_raw  INTO DATA(lo_raw).
+  WHEN TYPE zcl_sub_matl_semi INTO DATA(lo_semi).
+  WHEN TYPE zcl_sub_matl_fin  INTO DATA(lo_fin3).
+  WHEN OTHERS.
+ENDCASE.</code></pre>
+  <div class="tip">先標準、再客製：想「繼承 SAP 標準類別改一點行為」之前，先查它是不是 FINAL、有沒有被 SAP 發布（released）供客戶使用；大多數標準行為的擴充點是 BAdI／Enhancement Spot（見 <a href="#ch03-4">3-4 章</a>），而不是繼承標準類別。繼承非發布的標準類別，升級時簽名一變就全部失效。</div>
+
+  <h3 id="ch07-3-qa">練習與自我檢核</h3>
+  <ol>
+    <li><b>範例 5.2 的 setter 驗證失敗時把帳號設成 '0000000000'，這樣做有什麼問題？現代寫法怎麼處理？</b><br>參考答案要點：呼叫端不知道失敗、無效值與合法值混在同一個欄位（魔術值）；改丟類別式例外（CX_STATIC_CHECK 子類），強迫呼叫端 TRY…CATCH。</li>
+    <li><b>請用一句話區分 Overriding 與 Overloading，並說明 ABAP 支援哪一個。</b><br>參考答案要點：Overriding＝子類別重新定義父類別方法（ABAP 的 REDEFINITION）；Overloading＝同一類別同名不同參數，ABAP 不支援。原書第 147 頁英文對調（勘誤第 3 條）。</li>
+    <li><b>範例 5.10 把 CALL METHOD super-&gt;set_material_id 註解掉，自己再寫一次指派。會有什麼風險？</b><br>參考答案要點：複製父類別邏輯；父類別日後加驗證或記錄，子類別不會跟著更新。應呼叫 super-&gt;set_material_id( ) 再加子類別專屬邏輯。</li>
+    <li><b>若依原書把 zcl_pear 繼承自 zcl_apple，下列哪個轉型會「錯誤地成功」？</b> <span class="kw">DATA(lo_a) = CAST zcl_apple( lo_food )</span>（lo_food 指向梨子物件）<br>參考答案要點：會成功，因為梨子被定義成蘋果的子類別；修正為繼承 zcl_fruit 後才會正確丟 CX_SY_MOVE_CAST_ERROR（勘誤第 4 條，5.14 也有同樣錯誤）。</li>
+    <li><b>範例 5.32 第 5 段，go_civi_soldier-&gt;self_introduce( ) 印出「我是花弧」，這是多型的效果嗎？</b><br>參考答案要點：不是。self_introduce 沒有被重定義，印出花弧是因為第 4 段 setup_profile 改了資料；多型體現在 show_capability 執行花木蘭的實作。原註解「重新聲明過的自我介紹」不正確。</li>
+    <li><b>為什麼 go_civi_soldier-&gt;make_up( ) 是語法錯誤，而不是執行期錯誤？</b><br>參考答案要點：能呼叫哪些方法由參考變數的<b>靜態型別</b>（zcl_beichao_civilian）在編譯時決定；執行哪個實作才由動態型別決定。</li>
+    <li><b>DATA(lo) = NEW zcl_sub_matl_raw( 'RAW001' ). 之後 lo 的靜態型別是什麼？如何得到父類別型別的變數？</b><br>參考答案要點：zcl_sub_matl_raw；明確 DATA lo TYPE REF TO zcl_super_matl，或 DATA(lo) = CAST zcl_super_matl( NEW zcl_sub_matl_raw( 'RAW001' ) )。</li>
+    <li><b>範例 5.33 的 SELECT SINGLE … WHERE connid = @iv_flight_no 在 HANA 上會出什麼問題？請改寫。</b><br>參考答案要點：CONNID 非完整主鍵，HANA 無預設排序，每次可能回不同航空公司／日期的資料。補 CARRID，並用 ORDER BY fldate DESCENDING ＋ INTO TABLE … UP TO 1 ROWS 明確決定取哪一筆。</li>
+    <li><b>5.36 在方法呼叫後檢查 sy-subrc 為什麼不可靠？</b><br>參考答案要點：類別方法呼叫不設定 sy-subrc（除非用傳統 EXCEPTIONS），讀到的是方法內部最後一個敘述留下的值；應以輸出參數、回傳值或例外傳達結果。</li>
+    <li><b>實作題：</b>為第 10～12 節的物料體系新增「包材」子類別 ZCL_SUB_MATL_PACK（追加「包裝規格 10 入/箱」一行），並確認第 12 節的 ZREP_CLS_013 除了在 VALUE 裡多加一行 NEW 之外，不需任何修改。<br>參考答案要點：INHERITING FROM zcl_super_matl FINAL，get_desc_lines REDEFINITION，用 VALUE #( BASE super-&gt;get_desc_lines( ) ( … ) )；LOOP 內的多型呼叫自動生效——這就是開放封閉原則。</li>
+    <li><b>什麼時候該用抽象類別、什麼時候該用介面？請以北朝平民與航班查詢各舉一例說明。</b><br>參考答案要點：北朝平民有共用資料（姓名、性別）與共用實作（自我介紹）→ 抽象類別；航班價格與目的地兩個類別沒有 is-a 關係、只共用「查詢」這個行為 → 介面。</li>
+  </ol>
+</section>

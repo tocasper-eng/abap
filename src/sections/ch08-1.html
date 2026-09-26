@@ -1,0 +1,660 @@
+<section class="chapter" id="ch08-1" data-title="實戰源碼庫（一）：增強實例——MV45AFZZ、BAdI 與客製欄位">
+  <h2>第 8-1 章 實戰源碼庫（一）：增強實例——MV45AFZZ、BAdI 與客製欄位</h2>
+  <p class="lede">第八部拆解一套「某醫療器材公司」實際上線的 36 支客製程式。本章先處理最危險、也最常被問的一塊：<b>增強</b>。素材包含銷售訂單 User Exit <b>MV45AFZZ</b> 的完整客製內容、VA01／LT03 流程中被觸發的 BAdI 清單、交貨單 <b>LE_SHP_DELIVERY_PROC</b>、會計介面 <b>AC_DOCUMENT</b>、物料憑證 <b>MB_DOCUMENT_BADI</b>，以及生產工單 CO01/CO02 的客製欄位與存檔檢查（<b>PPCO0007／PPCO0012</b>）。每個增強點都回答四個問題：<b>什麼時候觸發、能改什麼、不能改什麼、能不能 COMMIT</b>，再對照 S/4HANA 的現況。讀完你會發現：原程式大部分的問題都不是語法舊，而是「在錯的時間點、做了不該做的事」。</p>
+
+  <div class="meta">
+    <div><b>核心 TCODE</b><span class="tcode">VA01</span><span class="tcode">VA02</span><span class="tcode">VA21</span><span class="tcode">VL01N</span><span class="tcode">VL02N</span><span class="tcode">VL09</span><span class="tcode">LT03</span><span class="tcode">MIGO</span><span class="tcode">VF01</span><span class="tcode">CO01</span><span class="tcode">CO02</span><span class="tcode">CO41</span><span class="tcode">COHV</span><span class="tcode">COOIS</span><span class="tcode">SE18</span><span class="tcode">SE19</span><span class="tcode">SMOD</span><span class="tcode">CMOD</span><span class="tcode">SE80</span><span class="tcode">VOFM</span><span class="tcode">SM13</span><span class="tcode">SM58</span><span class="tcode">SBGRFCMON</span></div>
+    <div><b>關鍵物件</b>MV45AFZZ、SAPMV45A、XVBAK／XVBAP／XVBEP／YVBAK、TKOMK／TKOMP、XKOMV、T180-TRTYP、LE_SHP_DELIVERY_PROC、FINCHDEL、LIKP-VLSTK、LIPS-KOSTA、AC_DOCUMENT、ACCHD／ACCIT／ACCIT_SUB、MB_DOCUMENT_BADI、XMKPF／XMSEG、MATDOC、PPCO0007、EXIT_SAPLCOZV_001、ZXCO1U06、PPCO0012、EXIT_SAPLCOKO1_001/002、CI_AUFK、CAUFVD、COIS_SELECT_ORDER_DATA_READ、BAPI_PRODORD_COMPLETE_TECH、BAPI_PR_CHANGE</div>
+  </div>
+
+  <h3 id="ch08-1-01">1. 案例索引</h3>
+  <p>本章負責的七份素材如下。行數為去掉 SAP 標準註解後的客製程式規模（約略值）。素材中出現的公司名、人員帳號、客戶號碼一律不引用；範例中的組織代碼以 <span class="kw">'1000'</span>、客戶以 <span class="kw">'C000001'</span> 等佔位符表示。</p>
+  <table>
+    <thead><tr><th>#</th><th>素材（原檔）</th><th>增強點</th><th>模組</th><th>原始檔構成／規模</th><th>截圖</th><th>本章小節</th></tr></thead>
+    <tbody>
+      <tr><td>1</td><td>MV45AFZZ.docx</td><td>SD 銷售文件 User Exit（FORM USEREXIT_*）＋ 隱式增強 ENHANCEMENT</td><td>SD</td><td>docx，MV45AFZZ 全文；客製約 800 行，分散在 10 個 FORM、11 個 ENHANCEMENT 實作中</td><td>無</td><td>3～7</td></tr>
+      <tr><td>2</td><td>va01 badi.txt</td><td>VA01 流程觸發的 BAdI 清單</td><td>SD</td><td>txt，17 列 BAdI 名稱（依表頭條件、儲存分段）</td><td>無</td><td>8</td></tr>
+      <tr><td>3</td><td>LT03 BADI LIST.txt</td><td>LT03（交貨單建轉儲單）流程觸發的 BAdI 清單</td><td>LE／WM／MM／FI／CO</td><td>txt，約 45 列（含重複）</td><td>無</td><td>8</td></tr>
+      <tr><td>4</td><td>LT03 交货单过账不能冲销增强</td><td>BAdI LE_SHP_DELIVERY_PROC（實作 ZLE_SHP_DELIVERY_PRO）</td><td>LE-SHP</td><td>2 個方法：CHANGE_DELIVERY_HEADER（約 5 行）、DELIVERY_FINAL_CHECK（約 40 行，主體為停用區塊）</td><td>屬性頁、介面頁（17 個方法）</td><td>9</td></tr>
+      <tr><td>5</td><td>LT03 集成会计凭证增强</td><td>BAdI AC_DOCUMENT（實作 ZAC_DOCUMENT）</td><td>FI／CO</td><td>2 個方法：CHANGE_INITIAL（約 260 行）、CHANGE_AFTER_CHECK（約 5 行）</td><td>屬性頁、介面頁（5 個方法）</td><td>10</td></tr>
+      <tr><td>6</td><td>LT03物料凭证增强</td><td>BAdI MB_DOCUMENT_BADI（實作 ZMB_DOCUMENT_BADI）</td><td>MM-IM</td><td>2 個方法：MB_DOCUMENT_BEFORE_UPDATE（約 150 行）、MB_DOCUMENT_UPDATE（約 90 行，半數為註解）</td><td>屬性頁、介面頁（2 個方法）</td><td>11</td></tr>
+      <tr><td>7</td><td>CO01增强客制化字段增强</td><td>Customer Exit PPCO0007（EXIT_SAPLCOZV_001／include ZXCO1U06）＋ PPCO0012 客製子畫面＋附屬報表 ZPPU036＋函數 ZPPFU036</td><td>PP</td><td>docx：ZXCO1U06 約 600 行、ZPPU036 約 720 行、ZPPFU036 約 135 行</td><td>5 張：ZPPT000、ZSDT_STORAGE_LOG、ZTSD001、ZPPS036、CO02 客製頁籤</td><td>12～14</td></tr>
+    </tbody>
+  </table>
+  <p>第 2 節先建立共同框架（增強點選擇的升級階梯），第 15 節把全部增強點整理成一張「觸發時機／可改／不可改／COMMIT／S/4HANA 現況」總表，建議先跳去看一眼再回來讀細節。增強技術本身的基礎請先讀 <a href="#ch03-3">3-3 章</a>（User Exit、Customer Exit）與 <a href="#ch03-4">3-4 章</a>（BAdI、Enhancement Framework）；怎麼在系統裡「找到」這些點，見 <a href="#ch06-2">6-2 章</a>。</p>
+
+  <h3 id="ch08-1-02">2. 先標準、再客製：這套源碼示範了「每往右一步貴一個量級」</h3>
+  <p>Casper 的第 3 條經驗是：<b>標準設定 → BAdI／Enhancement Spot → Enhancement Point → 修改標準，每往右一步升級成本高一個量級</b>。這套源碼幾乎把每一級都踩過一遍，剛好拿來當教材：</p>
+  <table>
+    <thead><tr><th>原程式的做法</th><th>所在級別</th><th>其實有更左邊的解法</th></tr></thead>
+    <tbody>
+      <tr><td>在 MOVE_FIELD_TO_VBAP 依訂單類型強制改項目類別 PSTYV</td><td>User Exit（修改標準 include）</td><td>項目類別決定 <span class="tcode">VOV4</span>（訂單類型＋項目類別群組＋用途＋上層項目類別）；需依客戶決定時可用「用途」或客戶定價程序欄位驅動</td></tr>
+      <tr><td>在 PRICING_PREPARE_TKOMP 直接把 XKOMV 的運費條件金額改成 0</td><td>User Exit</td><td>條件類型的<b>需求常式</b>（<span class="tcode">VOFM</span>，見 <a href="#ch03-3-07">3-3 章第 7 節</a>）＋ TKOMP 自訂欄位；或乾脆用存取順序＋條件記錄</td></tr>
+      <tr><td>在 SAVE_DOCUMENT_PREPARE 依自建表覆寫計畫行移動類型 BWART</td><td>User Exit</td><td>計畫行類別決定 <span class="tcode">VOV5</span>，移動類型掛在計畫行類別 <span class="tcode">VOV6</span></td></tr>
+      <tr><td>在 AC_DOCUMENT 組會計行項目文字 SGTXT、改利潤中心</td><td>Classic BAdI</td><td>FI 替代 <span class="tcode">GGB1</span>／<span class="tcode">OBBH</span>；利潤中心由物料主檔、訂單、<span class="tcode">3KEH</span> 或衍生規則決定</td></tr>
+      <tr><td>在 LE_SHP_DELIVERY_PROC 清掉 LIKP-VLSTK 讓交貨單可以沖銷</td><td>BAdI 改標準狀態欄位</td><td>檢討倉庫號碼／交貨類型的分散式倉儲設定，讓不該分配的交貨一開始就不被標記</td></tr>
+      <tr><td>在工單存檔出口裡直接 <span class="kw">UPDATE mcha</span></td><td>Customer Exit 直接改標準表</td><td>批次特性（分類系統）或 <span class="kw">BAPI_BATCH_CHANGE</span>，並放在更新工作中</td></tr>
+    </tbody>
+  </table>
+  <div class="warn"><b>判斷口訣：</b>增強的程式碼越短越好，而且只做三件事之一——<b>帶預設值、做檢查、把資料交出去（非同步）</b>。一旦在增強裡看到「呼叫標準程式的內部 FORM」「動態 ASSIGN 別人的全域變數」「直接 UPDATE 標準表」「同步呼叫外部 HTTP」，就代表已經走到階梯最右端，下次升級一定會痛。</div>
+
+  <h3 id="ch08-1-03">3. MV45AFZZ 總覽：每個 USEREXIT 的觸發時機與限制</h3>
+  <p><b>MV45AFZZ</b> 是 SAPMV45A（<span class="tcode">VA01</span>～<span class="tcode">VA03</span>、<span class="tcode">VA21</span>～<span class="tcode">VA23</span>、<span class="tcode">VA41</span>…，以及 BAPI_SALESORDER_CREATEFROMDAT2 等 BAPI）所 include 的「保留給客戶修改」的子程式集合。它是第一代增強（見 <a href="#ch03-3-06">3-3 章第 6 節</a>）：技術上屬於<b>修改 SAP 物件</b>，直接改要向 SAP 註冊 SSCR 物件鍵。本案例的寫法值得學：絕大部分客製都放在 FORM 結尾的<b>隱式增強點</b>（<span class="kw">ENHANCEMENT … ZIM_MV45AFZZ_USEREXIT</span>、ZSD_LGORT、ZSD_ZWLCB、ZLIFNR、ZPP_MPS、ZVA01_B…，見 <a href="#ch03-4-13">3-4 章第 13 節</a>），不需要物件鍵，升級時由 <span class="tcode">SPAU_ENH</span> 處理；只有少數幾行（MOVE_FIELD_TO_VBAK 開頭、SAVE_DOCUMENT_PREPARE 開頭）是直接改在 FORM 本體。</p>
+  <table>
+    <thead><tr><th>FORM</th><th>觸發時機</th><th>可以做</th><th>不可以／不建議</th><th>本案例用來做什麼</th></tr></thead>
+    <tbody>
+      <tr><td>USEREXIT_MOVE_FIELD_TO_VBAK</td><td>表頭欄位從畫面搬到 VBAK 之後（每次 PAI 都可能跑）</td><td>改 VBAK 欄位（含附加欄位）</td><td>彈窗、重的 SELECT（會重複執行）</td><td>訂單原因預設、報價截止日、成本中心從記憶體帶入、<b>項目拆行</b>、顯示聯絡 email</td></tr>
+      <tr><td>USEREXIT_MOVE_FIELD_TO_VBAP</td><td>項目欄位搬到 VBAP 之後，每個項目、每次變更都跑</td><td>改 VBAP 欄位</td><td>改 VBAK；呼叫彈窗（BAPI 會卡住）</td><td>預設倉位、帶物料附加欄位、項目類別、跳出物料注意事項文字</td></tr>
+      <tr><td>USEREXIT_MOVE_FIELD_TO_VBEP</td><td>計畫行欄位搬到 VBEP 之後</td><td>改 VBEP</td><td>—</td><td>特定訂單類型把計畫行類別改成 CS</td></tr>
+      <tr><td>USEREXIT_MOVE_FIELD_TO_VBKD</td><td>商業資料搬到 VBKD 之後</td><td>改 VBKD</td><td>—</td><td>新單清空 KZAZU（發票合併指示）</td></tr>
+      <tr><td>USEREXIT_PRICING_PREPARE_TKOMK</td><td>定價前組表頭通訊結構</td><td>填 TKOMK（含附加欄位）</td><td>直接改 XKOMV</td><td>帶客戶群組 KVGR2、把夥伴 1D 放進 HIENR01</td></tr>
+      <tr><td>USEREXIT_PRICING_PREPARE_TKOMP</td><td>定價前組項目通訊結構</td><td>填 TKOMP</td><td><b>直接改 XKOMV 條件金額</b></td><td>依承運方式把運費條件 ZMU3 歸零</td></tr>
+      <tr><td>USEREXIT_READ_DOCUMENT</td><td>讀取既有文件（VA02／VA03）之後</td><td>讀附加資料到全域變數</td><td>改文件內容</td><td>呼叫 Z 函數把項目交給客製子畫面</td></tr>
+      <tr><td>USEREXIT_SAVE_DOCUMENT_PREPARE</td><td>儲存前、所有檢查之前的最後一次機會</td><td>改 XVBAK／XVBAP／XVBEP、做檢查並以錯誤訊息擋住</td><td>COMMIT、同步呼叫外部系統</td><td>成本中心與內部訂單互斥檢查、呼叫外部稅務計算、覆寫移動類型、預設倉位</td></tr>
+      <tr><td>USEREXIT_SAVE_DOCUMENT</td><td>已給號、寫入更新工作（update task）之前</td><td>寫自建表（最好 IN UPDATE TASK）、登記 tRFC／bgRFC</td><td><b>COMMIT WORK</b>、MESSAGE E（此時再擋已來不及）、STARTING NEW TASK 讀剛存的資料</td><td>改請購單固定供應商、觸發生產排程、訂單異動通知</td></tr>
+      <tr><td>USEREXIT_DELETE_DOCUMENT／FIELD_MODIFICATION／NUMBER_RANGE</td><td>刪除文件／畫面欄位屬性／號碼範圍</td><td>—</td><td>—</td><td>本案例未使用（空白）</td></tr>
+    </tbody>
+  </table>
+  <div class="warn"><b>MV45AFZZ 的 COMMIT 鐵律：</b>整個 SAPMV45A 是一個 LUW，存檔時由 SAP 自己執行 <span class="kw">COMMIT WORK</span>。任何 USEREXIT 裡都不可以 COMMIT／ROLLBACK，也不可以呼叫內含 COMMIT 的 BAPI（例如在出口裡同步呼叫 <span class="kw">BAPI_PR_CHANGE</span> ＋ <span class="kw">BAPI_TRANSACTION_COMMIT</span>），否則訂單會「存一半」。要做後續動作，一律用 <span class="kw">IN UPDATE TASK</span>、<span class="kw">IN BACKGROUND TASK</span>（tRFC）或 bgRFC，讓它跟著 SAP 的 COMMIT 一起生效或一起取消。</div>
+  <div class="warn"><b>S/4HANA 現況：</b>S/4HANA（on-premise 與 private cloud）中 MV45AFZZ 等 SD User Exit <b>仍然被呼叫、仍可使用</b>，這也是本案例在 S/4HANA 環境（傳輸請求編號為 S4 開頭）運作的原因。但它屬於 Clean Core 分級中最不乾淨的一層；S/4HANA 另提供給 Key User 擴充用的 Cloud BAdI（例如 SD_SLS_MODIFY_HEAD、SD_SLS_MODIFY_ITEM、SD_SLS_CHECK_HEAD 等，在 Custom Logic App 中實作），新需求若能用它們達成應優先考慮；S/4HANA Cloud Public Edition 完全不能用 MV45AFZZ。詳見 <a href="#ch03-4-17">3-4 章第 17 節</a>。另外 VBUK／VBUP 在 S/4HANA 已併入 VBAK／VBAP，出口裡若有讀取狀態表的舊寫法要一併改。</div>
+
+  <h3 id="ch08-1-04">4. MV45AFZZ（一）：MOVE_FIELD_TO_VBAK／VBAP——帶預設值的正確寫法</h3>
+  <p><b>業務情境：</b>報價單（訂單類型 ZQT1／ZQT2）要依「客戶＋銷售組織＋訂單類型」自動算出有效截止日 BNDDT；銷售訂單項目沒填倉位時要依自建表 ZSDT024（物料＋銷售組織＋訂單類型＋訂單原因）帶出；項目要帶入年度物料成本（自建表 ZFIT019）與物料主檔上的客製欄位。</p>
+  <p><b>原程式的做法：</b>截止日以 <span class="kw">sy-tcode = 'VA21'</span> 判斷是否為建立；倉位用 <span class="kw">SELECT SINGLE *</span>；年度用 <span class="kw">sy-datum(4)</span>；另外在 VBAK 出口裡用 <span class="kw">IMPORT l_kostl FROM MEMORY ID 'ZKOSTL'</span> 從某支前置程式接成本中心。</p>
+  <pre><code class="abap">* ---- FORM USEREXIT_MOVE_FIELD_TO_VBAK（寫在 FORM 結尾的隱式增強中）----
+* 報價單有效截止日：只在「新增」時帶預設，修改時尊重使用者輸入
+IF t180-trtyp = 'H'                                  "H=新增 V=修改 A=顯示
+   AND vbak-bnddt IS INITIAL
+   AND ( vbak-auart = 'ZQT1' OR vbak-auart = 'ZQT2' ).  "列舉，不用區間
+  SELECT SINGLE zdays
+    FROM zsdt033
+    WHERE kunnr = @vbak-kunnr
+      AND vkorg = @vbak-vkorg
+      AND auart = @vbak-auart
+    INTO @DATA(lv_days).
+  IF sy-subrc = 0 AND lv_days &gt; 0.
+    vbak-bnddt = vbak-angdt + lv_days.
+  ENDIF.
+ENDIF.
+
+* ---- FORM USEREXIT_MOVE_FIELD_TO_VBAP ----
+* 1) 倉位預設：只選需要的欄位，不要 SELECT *
+IF vbap-lgort IS INITIAL.
+  SELECT SINGLE lgort
+    FROM zsdt024
+    WHERE matnr = @vbap-matnr
+      AND vkorg = @vbak-vkorg
+      AND auart = @vbak-auart
+      AND augru = @vbak-augru
+    INTO @DATA(lv_lgort).
+  IF sy-subrc = 0 AND lv_lgort IS NOT INITIAL.
+    vbap-lgort = lv_lgort.
+  ENDIF.
+ENDIF.
+
+* 2) 年度物料成本：用「單據日期」的年度，而不是「今天」
+DATA(lv_year) = CONV bdatj( vbak-audat(4) ).
+SELECT SINGLE zwlcb
+  FROM zfit019
+  WHERE bdatj = @lv_year
+    AND werks = @vbap-werks
+    AND matnr = @vbap-matnr
+  INTO @vbap-zzwlcb.                                 "VBAP 附加欄位建議以 ZZ 開頭</code></pre>
+  <p><b>原程式的問題與改進：</b></p>
+  <ul>
+    <li><b>用 sy-tcode 判斷情境</b>：經由 BAPI、EDI（IDoc）、或自建交易碼建立報價單時，sy-tcode 不是 VA21，預設值就不會帶。SAPMV45A 內應看 <span class="kw">T180-TRTYP</span>（H 新增、V 修改、A 顯示）與 <span class="kw">VBAK-VBTYP</span>／訂單類型。</li>
+    <li><b>年度取 sy-datum</b>：跨年補單、12 月 31 日建的單隔天修改，都會拿到不同年度的成本；應以單據日期 AUDAT 或定價日期為準。</li>
+    <li><b>自建欄位命名</b>：原程式 VBAP 附加欄位叫 ZWLCB、VBAK 附加欄位叫 ZNAME／ZAEDAT／ZADRNR，沒有依 SAP 建議用 ZZ／YY 開頭，將來 SAP 新增同名欄位時會衝突。</li>
+    <li><b>IMPORT FROM MEMORY 帶成本中心</b>：依賴「一定有某支前置程式先 EXPORT」，使用者直接進 VA01 就拿不到；而且 ABAP Memory 在 BAPI／背景下行為不同。能改成畫面欄位或 BAPI 的 EXTENSIONIN 傳入就不要用記憶體。</li>
+    <li>MOVE_FIELD_TO_VBAP 裡用 <span class="kw">READ_TEXT</span> ＋ <span class="kw">POPUP_TO_DISPLAY_TEXT</span> 顯示物料注意事項：此出口每次項目變更都會跑，使用者會一直被彈窗；在 BAPI／背景處理下彈窗更會造成作業中斷。改用 <span class="kw">MESSAGE … TYPE 'I'</span> 只在新增項目時出一次，或乾脆用 SD 的<b>物料注意事項（Material Info Record／銷售文字）</b>標準功能。</li>
+  </ul>
+  <div class="warn"><b>HANA 沒有預設排序（Casper 經驗 1）的活教材：</b>原程式在 MOVE_FIELD_TO_VBAP 裡從自建表 ZWMT002 抓出同一材質編碼的多筆資料，然後用迴圈找「日期最接近訂單建立日」的那筆，判斷式是 <span class="kw">IF l_gap &lt;= l_gap_min</span>。當兩筆距離相同（例如前後各差 3 天），誰會被選中取決於 SELECT 回來的順序——在 HANA 上這個順序<b>不保證穩定</b>，同一張訂單今天和明天帶出的材質號可能不同。正確做法是 <span class="kw">SELECT … ORDER BY</span> 明確排序（例如距離、再加日期、再加主鍵），或把「平手時取較新日期」寫成規則。</div>
+  <p><b>上線注意：</b>MOVE_FIELD_TO_* 系列在一次交易中會被呼叫很多次，裡面的 SELECT 請確認有用到主鍵或索引，必要時用全域內表緩衝（例如在 SAVE_DOCUMENT 清除）。自建表 ZSDT024／ZSDT033 請開 <span class="tcode">SM30</span> 維護畫面並設權限群組。</p>
+
+  <h3 id="ch08-1-05">5. MV45AFZZ（二）：PRICING_PREPARE_TKOMK／TKOMP——定價出口只負責「準備資料」</h3>
+  <p><b>業務情境：</b>某個海外銷售組織要依「客戶在兩家快遞承運商是否有自己的帳號」「出貨方式 VSART」「客戶群組 KVGR1」決定是否收取運費條件（原程式條件類型 ZMU3）；另外特定訂單類型＋項目類別組合才收運費，其餘一律歸零。表頭另外要把客戶群組 KVGR2、以及某夥伴功能（1D）的客戶放進 TKOMK，供存取順序使用。</p>
+  <p><b>原程式的做法：</b>TKOMK 的部分寫法正確（只填 TKOMK 欄位）。TKOMP 的部分則是直接 <span class="kw">LOOP AT xkomv WHERE kschl = 'ZMU3' … xkomv-kbetr = '0'. MODIFY xkomv.</span>——在「準備定價資料」的出口裡改定價「結果」。</p>
+  <p>這有三個問題：① 定價之後若重新定價（例如改數量、按「更新定價」），出口不一定再跑到同一個時點，金額可能又回來；② 條件歸零但條件仍然存在，<b>條件值 0 與「不適用」在帳務、報表上意義不同</b>；③ 判斷邏輯寫死 16 個訂單類型／項目類別組合與 15 個出貨方式代碼，業務一新增就要改程式。正確分工是：出口只把「判斷依據」放進通訊結構，是否適用交給<b>條件需求常式</b>（<span class="tcode">VOFM</span>）。</p>
+  <pre><code class="abap">* 前置（一次性）：
+*  1. KOMP 附加結構（SE11 在 KOMPAZ 內 append）新增欄位 ZZNO_FREIGHT TYPE abap_bool
+*  2. 建自建設定表 ZSD_FREIGHT_EXEMPT：VKORG / VSART / 條件（帳號類型）→ 免運
+*  3. VOFM 需求常式 9xx，掛在運費條件類型的定價程序步驟上
+
+* ---- FORM USEREXIT_PRICING_PREPARE_TKOMP ----
+* 只「準備資料」：判斷此項目是否免運費
+SELECT SINGLE kvgr1, zzcarrier_a, zzcarrier_b
+  FROM knvv
+  WHERE kunnr = @vbak-kunnr
+    AND vkorg = @vbak-vkorg
+    AND vtweg = @vbak-vtweg
+    AND spart = @vbak-spart
+  INTO @DATA(ls_knvv).
+
+" 客戶具備哪些「免運資格」：一個資格一筆 EQ（列舉，不用區間）
+DATA lt_acct TYPE RANGE OF char1.
+IF ls_knvv-zzcarrier_a IS NOT INITIAL.
+  APPEND VALUE #( sign = 'I' option = 'EQ' low = 'A' ) TO lt_acct.   "承運商 A 自有帳號
+ENDIF.
+IF ls_knvv-zzcarrier_b IS NOT INITIAL.
+  APPEND VALUE #( sign = 'I' option = 'EQ' low = 'B' ) TO lt_acct.   "承運商 B 自有帳號
+ENDIF.
+IF ls_knvv-kvgr1 = 'Y'.
+  APPEND VALUE #( sign = 'I' option = 'EQ' low = 'G' ) TO lt_acct.   "客戶群組
+ENDIF.
+
+CLEAR tkomp-zzno_freight.
+IF lt_acct IS NOT INITIAL.          "空的 RANGE 會變成「全部符合」，一定要先擋
+  SELECT SINGLE @abap_true
+    FROM zsd_freight_exempt
+    WHERE vkorg     = @vbak-vkorg
+      AND vsart     = @vbkd-vsart
+      AND acct_type IN @lt_acct
+    INTO @tkomp-zzno_freight.
+ENDIF.</code></pre>
+  <pre><code class="abap">* ---- VOFM 需求常式（Requirement）9xx，SAP 產生的框架內只寫這一段 ----
+* sy-subrc = 0 表示條件適用；4 表示不適用（條件不會被決定出來）
+sy-subrc = COND #( WHEN komp-zzno_freight = abap_true THEN 4 ELSE 0 ).</code></pre>
+  <div class="tip">需求常式讓「不收運費」變成<b>條件根本不出現</b>，而不是「條件金額 0」，定價分析（訂單中的「分析」按鈕）也看得出是哪個常式擋掉的，除錯成本低很多。訂單類型＋項目類別的白名單同樣可放進設定表，由需求常式或 TKOMP 欄位判斷。</div>
+  <p><b>列舉優於區間（Casper 經驗 2）：</b>原程式判斷出貨方式時是逐一列出 <span class="kw">'F1' OR 'F2' … OR 'F8'</span>、<span class="kw">'U1' … 'U7'</span>，這點反而是對的——若改成 <span class="kw">BETWEEN 'F1' AND 'F8'</span>，一旦新增 'F10'、'FA' 之類代碼，字典序就會把它們意外包進來或漏掉。搬進設定表時也請維持「一筆一個值」。</p>
+  <p><b>S/4HANA 注意：</b>S/4HANA 的定價結果表由 KONV 改為 <b>PRCD_ELEMENTS</b>，但 SAPMV45A 內的 XKOMV 內表介面不變，出口程式碼通常不用改；若有自建報表直接讀 KONV，要改讀 PRCD_ELEMENTS。</p>
+
+  <h3 id="ch08-1-06">6. MV45AFZZ（三）：SAVE_DOCUMENT_PREPARE——最後檢查與覆寫計畫行</h3>
+  <p><b>業務情境：</b>① 表頭輸入成本中心（KOSTL）時，項目不可同時有內部訂單（AUFNR）；② 依「訂單類型＋客戶科目指派群組 KTGRD＋是否有成本中心＋是否有內部訂單」四個條件，從自建表 ZSDT016 決定計畫行的移動類型 BWART（對應的維護程式 ZSDF016 收錄在第八部其他章）；③ 海外銷售組織儲存前呼叫外部稅務計算服務，把回傳稅額寫回稅額條件；④ 清空項目的 FIXMG（交貨日期與數量固定）；⑤ VA02 解除交貨凍結時記錄解除人與日期。</p>
+  <pre><code class="abap">* ---- FORM USEREXIT_SAVE_DOCUMENT_PREPARE ----
+* ① 成本中心與內部訂單互斥（XVBAP 有表頭行，運算式中要寫 xvbap[]）
+IF vbak-kostl IS NOT INITIAL
+   AND REDUCE i( INIT n = 0
+                 FOR ls_ap IN xvbap[]
+                 WHERE ( updkz &lt;&gt; 'D' AND aufnr IS NOT INITIAL )
+                 NEXT n = n + 1 ) &gt; 0.
+  MESSAGE e010(zsd).          "成本中心與內部訂單不可同時輸入（用訊息類別，不寫死中文）
+ENDIF.
+
+* ② 依設定表決定計畫行移動類型：先一次讀進來，不在迴圈內 SELECT
+SELECT auart, ktgrd, kostl, aufnr, bwart
+  FROM zsdt016
+  WHERE auart = @vbak-auart
+    AND ktgrd = @vbkd-ktgrd
+  INTO TABLE @DATA(lt_rule).
+
+DATA(lv_kostl_flag) = xsdbool( vbak-kostl IS NOT INITIAL ).
+
+LOOP AT xvbep[] ASSIGNING FIELD-SYMBOL(&lt;ls_ep&gt;)
+     WHERE ettyp &lt;&gt; 'CS' AND updkz &lt;&gt; 'D'.
+  READ TABLE xvbap[] ASSIGNING FIELD-SYMBOL(&lt;ls_ap&gt;)
+       WITH KEY posnr = &lt;ls_ep&gt;-posnr.
+  CHECK sy-subrc = 0.
+  " 旗標「每個項目」重新計算（原程式沒有清，前一項有內部訂單會污染後面所有項目）
+  DATA(lv_aufnr_flag) = xsdbool( &lt;ls_ap&gt;-aufnr IS NOT INITIAL ).
+  ASSIGN lt_rule[ kostl = lv_kostl_flag aufnr = lv_aufnr_flag ] TO FIELD-SYMBOL(&lt;ls_rule&gt;).
+  IF sy-subrc &lt;&gt; 0.
+    MESSAGE e011(zsd) WITH vbak-auart vbkd-ktgrd.   "未維護移動類型
+  ENDIF.
+  IF &lt;ls_rule&gt;-bwart &lt;&gt; &lt;ls_ep&gt;-bwart.
+    &lt;ls_ep&gt;-bwart = &lt;ls_rule&gt;-bwart.
+    IF &lt;ls_ep&gt;-updkz IS INITIAL.        "原本未異動的行要標成 U，否則不會寫回資料庫
+      &lt;ls_ep&gt;-updkz = 'U'.
+    ENDIF.
+  ENDIF.
+ENDLOOP.</code></pre>
+  <p><b>原程式的問題與改進：</b></p>
+  <ul>
+    <li><b>旗標沒有逐項重算</b>：原程式在迴圈外建立 <span class="kw">ls_zsdt016</span>，迴圈內只在「有內部訂單」時把 AUFNR 旗標設成 X，從不清除；第一個項目有內部訂單，後面所有項目都會被當成有。這是很典型、測試時不容易發現的 bug。</li>
+    <li><b>兩個銷售組織的邏輯各複製一份</b>（一段給 1000／1001、一段給 1010，後者多了「查不到就依計畫行類別從 TVEP 取」），應抽成一個方法、差異放進設定。</li>
+    <li><b>xvbak 可能是空的</b>：原程式註解「只修改條件時此為空」，所以先判斷 xvbak 是否初始、再退回 yvbak。這個觀察是對的：XVBAK 在只改定價的情境下不一定有值，讀表頭請以 <b>VBAK</b> 工作區為準。</li>
+    <li><b>移動類型本來是標準設定</b>：計畫行類別決定移動類型（<span class="tcode">VOV6</span>），計畫行類別由項目類別＋MRP 類型決定（<span class="tcode">VOV5</span>）。本案例需要「成本中心／內部訂單」兩個維度，標準沒有，才走到出口；這種「在儲存前覆寫標準決定結果」的出口，務必在文件中寫清楚，否則顧問查設定會一直對不上。</li>
+  </ul>
+  <div class="warn"><b>在 SAVE_DOCUMENT_PREPARE 同步呼叫外部 API 的風險：</b>原程式在這裡組出貨地址、稅務分類、每個項目金額與運費行，再呼叫 Z 函數同步呼叫外部稅務計算服務，回來後改寫稅額條件 ZMU2／ZMU7 與表頭返利稅 ZMR1。問題是：① 外部服務慢或斷線，使用者存檔就卡住；② 使用者存檔被後續檢查擋下再存一次，外部系統會收到重複交易；③ 呼叫發生在 COMMIT 之前，外部系統已記錄交易、SAP 卻可能回滾。較穩健的做法是：定價時用 SAP 標準的外部稅務介面（稅務管轄碼＋外部稅務系統整合）取得稅額，「交易確認」則在 COMMIT 之後以 bgRFC／事件送出。金鑰、端點一律放在 <span class="tcode">SM59</span> 目的地與 <span class="tcode">STRUST</span>，不寫在程式裡（見 <a href="#ch04-1">4-1 章</a>）。</div>
+
+  <h3 id="ch08-1-07">7. MV45AFZZ（四）：SAVE_DOCUMENT 的後續動作與「呼叫標準內部 FORM」的禁區</h3>
+  <p><b>業務情境 A：</b>第三方訂單（訂單類型 ZTPS）存檔時，要把訂單表頭上的自建欄位「指定供應商」寫到系統自動產生的請購單上（固定供應商 FIXED_VEND）。<b>情境 B：</b>特定訂單類型、沒有交貨凍結時，把項目清單丟給一支 Z 函數觸發生產排程（MPS）。</p>
+  <p><b>原程式：</b>情境 A 用 <span class="kw">CALL FUNCTION 'BAPI_PR_CHANGE' IN BACKGROUND TASK</span>，請購項目號碼自己用 10、20、30 往上加；情境 B 用 <span class="kw">CALL FUNCTION 'ZPPFM001' STARTING NEW TASK</span>。</p>
+  <pre><code class="abap">* ---- FORM USEREXIT_SAVE_DOCUMENT：此時已給號，COMMIT 尚未發生 ----
+IF vbak-auart = 'ZTPS' AND vbak-zzlifnr IS NOT INITIAL.
+  DATA lt_pritem  TYPE STANDARD TABLE OF bapimereqitemimp WITH EMPTY KEY.
+  DATA lt_pritemx TYPE STANDARD TABLE OF bapimereqitemx   WITH EMPTY KEY.
+
+  " 請購項目號碼以計畫行上的實際 BANFN/BNFPO 為準，不要自己 10、20、30 往上算
+  LOOP AT xvbep[] INTO DATA(ls_ep)
+       WHERE banfn IS NOT INITIAL AND bnfpo IS NOT INITIAL AND updkz &lt;&gt; 'D'.
+    lt_pritem  = VALUE #( BASE lt_pritem  ( preq_item = ls_ep-bnfpo fixed_vend = vbak-zzlifnr ) ).
+    lt_pritemx = VALUE #( BASE lt_pritemx ( preq_item = ls_ep-bnfpo fixed_vend = abap_true ) ).
+    DATA(lv_banfn) = ls_ep-banfn.
+  ENDLOOP.
+
+  IF lt_pritem IS NOT INITIAL.
+    TRY.
+        " bgRFC：登記在本 LUW，隨 SAP 標準的 COMMIT WORK 一起送出，失敗可在 SBGRFCMON 重送
+        DATA(lo_dest) = cl_bgrfc_destination_outbound=&gt;create( 'ZBGRFC_SD_FOLLOWUP' ).
+        DATA(lo_unit) = lo_dest-&gt;create_trfc_unit( ).
+        CALL FUNCTION 'Z_SD_PR_SET_FIXED_VENDOR' IN BACKGROUND UNIT lo_unit
+          EXPORTING
+            iv_banfn   = lv_banfn
+            it_pritem  = lt_pritem
+            it_pritemx = lt_pritemx.
+      CATCH cx_bgrfc_invalid_destination INTO DATA(lx_dest).
+        MESSAGE lx_dest TYPE 'E'.
+    ENDTRY.
+  ENDIF.
+ENDIF.
+* Z_SD_PR_SET_FIXED_VENDOR 內：先 ENQUEUE 等待請購單鎖釋放，再呼叫 BAPI_PR_CHANGE，
+* 依 RETURN 決定 BAPI_TRANSACTION_COMMIT 或 ROLLBACK，錯誤寫應用日誌（SLG1）。</code></pre>
+  <p><b>原程式的問題與改進：</b></p>
+  <ul>
+    <li><b>IN BACKGROUND TASK（tRFC）本身沒錯</b>，它確實會在 SAP 的 COMMIT 後才送出；但 tRFC 啟動時，訂單的更新工作可能還沒寫完，請購單仍被鎖，BAPI 就會失敗並停在 <span class="tcode">SM58</span>。包一層 Z 函數處理鎖等待與錯誤記錄，並在 S/4HANA 改用 bgRFC（<span class="tcode">SBGRFCMON</span> 監控）。</li>
+    <li><b>請購項目號碼自己算</b>：假設請購項目恰好是 10、20、30 對應訂單每一個項目，遇到非第三方項目、已刪除項目或請購單項目號碼規則不同就錯位。</li>
+    <li><b>STARTING NEW TASK</b> 是 aRFC，立刻在另一個工作階段執行，<b>不受本 LUW 控制</b>：訂單可能還沒寫進資料庫，Z 函數讀不到；訂單存檔失敗回滾時，排程卻已觸發。要改成 IN UPDATE TASK 或 bgRFC。</li>
+    <li>SAVE_DOCUMENT 裡的 <span class="kw">MESSAGE i001</span>（提醒「這是預收款訂單」）在 BAPI／背景下沒有意義，建議移到 SAVE_DOCUMENT_PREPARE 並加上「是否在對話模式」判斷（例如 <span class="kw">sy-binpt</span>、<span class="kw">sy-batch</span> 與呼叫來源）。</li>
+  </ul>
+  <div class="warn"><b>禁區：在出口裡呼叫 SAPMV45A 的內部 FORM。</b>原程式 MOVE_FIELD_TO_VBAK 中有一段「項目換算拆分」：對未交貨的項目呼叫 Z 函數算出替代物料與數量，然後直接呼叫標準程式 SAPFV45P／SAPFV45E 內部的十餘個子程式（刪除項目、建立項目、檢查物料、檢查項目類別、填計畫行⋯），模擬使用者在畫面上刪一行、加數行。這在技術上能動，但：① 這些內部子程式<b>不是公開介面</b>，任何支援包都可能改參數或行為；② 在 VBAK 出口裡新增、刪除項目，會與 SAPMV45A 自身的項目迴圈互相干擾，極易產生不一致；③ BAPI 建單時同一段也會被執行。正解通常是：以 <b>BOM／物料決定（<span class="tcode">VB11</span>）／產品替代</b>等標準功能處理，或在訂單存檔後以 <span class="kw">BAPI_SALESORDER_CHANGE</span> 另外調整。本書不提供此段的改寫範例，因為它本身就不該存在。</div>
+  <div class="note">原程式在 VBAK 出口還有一段：讀客戶 BP 的聯絡地址（BUT020 ＋ ADR6 ＋ ADRT，以地址備註 'ORD' 篩選），把所有訂單通知 email 串起來用 <span class="kw">MESSAGE s002</span> 顯示在狀態列。思路（用 BP 地址用途／備註分類聯絡人）可以參考；但每次 PAI 都查一次，且 email 屬個人資料，不宜在狀態列顯示。</div>
+
+  <h3 id="ch08-1-08">8. VA01 與 LT03 的 BAdI 清單：怎麼讀、哪些值得記</h3>
+  <p>素材中兩份 txt 是開發者用「在 <span class="kw">CL_EXITHANDLER=&gt;GET_INSTANCE</span> 設斷點、再跑一次交易」的方法（見 <a href="#ch03-4-06">3-4 章第 6 節</a>、<a href="#ch06-2">6-2 章</a>）記下的<b>實際被呼叫的 Classic BAdI</b>。注意兩件事：① 這個方法只抓得到 Classic BAdI（New BAdI 要在 <span class="kw">CL_ENH_BADI_RUNTIME_FUNCTIONS</span> 或 <span class="kw">GET BADI</span> 處下斷點）；② 清單中有很多 SAP 內部或行業解決方案用的 BAdI，列出來不代表都能用。以下依素材順序整理，<b>用途說明依 SAP 標準文件整理，實際介面以 <span class="tcode">SE18</span> 為準</b>：</p>
+  <table>
+    <thead><tr><th>BAdI</th><th>出現在</th><th>用途</th><th>實務評價</th></tr></thead>
+    <tbody>
+      <tr><td>BADI_SD_CM</td><td>VA01、LT03</td><td>SD 信用管理相關</td><td>S/4HANA 信用管理改為 FIN-FSCM Credit Management，舊 SD 信用檢查邏輯多已不適用</td></tr>
+      <tr><td>BADI_LAYER</td><td>VA01、LT03</td><td>框架層通用 BAdI</td><td>技術性，不用實作</td></tr>
+      <tr><td>BADI_SD_SALES_ITEM</td><td>VA01</td><td>銷售文件項目相關處理</td><td>可作為部分 MV45AFZZ 項目邏輯的物件導向替代，先看方法清單是否涵蓋需求</td></tr>
+      <tr><td>BADI_SD_SALES_BASIC</td><td>LT03</td><td>銷售文件基本處理</td><td>同上</td></tr>
+      <tr><td>BADI_SD_SALES_ADDON</td><td>VA01</td><td>銷售文件附加功能</td><td>多為行業方案使用</td></tr>
+      <tr><td>BADI_SD_TAB_CUST_H</td><td>VA01</td><td>銷售文件表頭客製頁籤</td><td>加表頭客製欄位頁籤時會碰到</td></tr>
+      <tr><td>CHECK_COBL_ADDON</td><td>VA01、LT03</td><td>成本物件（COBL）欄位的附加檢查</td><td>帳務分配欄位檢查可用</td></tr>
+      <tr><td>EHS_DG_001／EHS_DG_002</td><td>VA01、LT03</td><td>EHS 危險品檢查</td><td>有導入 EHS 危險品管理才相關</td></tr>
+      <tr><td>BADI_SD_ROUTE</td><td>VA01</td><td>路線決定</td><td>先檢查標準路線決定設定</td></tr>
+      <tr><td>SD_COND_ACCESS_A</td><td>VA01</td><td>定價條件存取</td><td>技術性</td></tr>
+      <tr><td>BADI_SD_TO_FM</td><td>VA01（表頭條件）</td><td>SD 與資金管理（FM）整合</td><td>公部門方案才相關</td></tr>
+      <tr><td>BADI_SD_DPBP</td><td>VA01</td><td>預收款／開票計畫相關</td><td>—</td></tr>
+      <tr><td>CFOP_DET_PREP</td><td>VA01（含儲存）</td><td>巴西 CFOP 稅碼決定</td><td>巴西在地化，與本案無關</td></tr>
+      <tr><td>BADI_ISPS_GRANT</td><td>VA01（儲存）</td><td>公部門補助管理</td><td>行業方案</td></tr>
+      <tr><td>DIP_UPDATE_FKDAT</td><td>VA01（儲存）</td><td>資源相關開票（DIP）的開票日期</td><td>服務業開票才相關</td></tr>
+      <tr><td>LE_WM_RF_QUEUE</td><td>LT03</td><td>WM 無線射頻佇列</td><td>傳統 WM</td></tr>
+      <tr><td><b>LE_SHP_DELIVERY_PROC</b></td><td>LT03</td><td>交貨單處理（本章第 9 節）</td><td><b>交貨單最重要的 BAdI</b></td></tr>
+      <tr><td>LE_SHP_PRICING／LE_SHP_ITEM_STATUS</td><td>LT03</td><td>交貨單定價、項目狀態</td><td>—</td></tr>
+      <tr><td>LE_SHP_GOODSMOVEMENT</td><td>LT03</td><td>交貨過帳時的物料移動資料</td><td>要在交貨發貨時帶自訂欄位到物料憑證時會用到</td></tr>
+      <tr><td>ATP_PUBLISH_RESULTS、CUKO_PLANT_CHANGE</td><td>LT03</td><td>可用量結果、工廠變更</td><td>技術性</td></tr>
+      <tr><td>MB_QUAN_CHECK_BADI、MB_CHECK_LINE_BADI、MB_STOR_LOC_BADI_GTS</td><td>LT03</td><td>物料移動數量檢查、行檢查、GTS 倉位</td><td>MB_CHECK_LINE_BADI 適合做「物料移動行」的檢查</td></tr>
+      <tr><td><b>MB_DOCUMENT_BADI</b>／MB_DOCUMENT_BADI_SAP／MB_DOC_BADI_INTERNAL</td><td>LT03</td><td>物料憑證寫入（本章第 11 節）；後兩者為 SAP 內部</td><td>客戶只實作 MB_DOCUMENT_BADI</td></tr>
+      <tr><td>FAGL_PERIOD_CHECK、FAGL_DERIVE_SEGMENT、FAGL_DERIVE_PSEGMENT、FAGL_SEGMENT_BS_ACC、FAGL_SET_SEGMENT</td><td>LT03</td><td>新總帳期間檢查、區段（Segment）衍生</td><td>要衍生區段時先用利潤中心主檔上的區段欄位</td></tr>
+      <tr><td>CKML_UPDATE、CKML_CROSS_COMPANY、CKML_MGV_EXIT</td><td>LT03</td><td>物料分類帳（Material Ledger）</td><td>S/4HANA 物料分類帳為必啟用，這幾個會一直出現</td></tr>
+      <tr><td>K_SETTLEMENT_3、K_PLAN_SETTLEMENT、CO_DOCUMENT_INFO</td><td>LT03</td><td>CO 結算、CO 憑證資訊</td><td>—</td></tr>
+      <tr><td>FI_LIMIT_PROCESS、AC_QUANTITY_GET、FMRE_BUS_PROCESS、EXIT_XFMPR1_001、FCOM_EXT_LEDGER、FCOM_VORGN_4_EXT_LDR</td><td>LT03</td><td>FI 流程控制、數量、資金管理、外部分類帳</td><td>技術性</td></tr>
+      <tr><td><b>AC_DOCUMENT</b></td><td>LT03</td><td>會計介面（本章第 10 節）</td><td>後勤單據產生 FI/CO 憑證時的最後修改點</td></tr>
+      <tr><td>ME_DP_CLEARING、BADI_MATN1、WM_DSD_ENHANCEMENT</td><td>LT03</td><td>預付款清帳、物料號轉換、直送（DSD）</td><td>BADI_MATN1 與物料號格式有關，S/4HANA 物料號 40 碼時要留意</td></tr>
+    </tbody>
+  </table>
+  <div class="tip">從 LT03 這一份清單可以看出一件很有用的事：<b>「交貨單建轉儲單並過帳」一個動作，會穿過 SD、LE、WM、MM、FI、CO 六個模組的 BAdI</b>。要在「發貨過帳時」做事，並不一定要掛在交貨單上——想改物料憑證就用 MB_DOCUMENT_BADI，想改會計憑證就用 AC_DOCUMENT，掛在最貼近資料的那一層，邏輯最單純。</div>
+  <div class="warn"><b>S/4HANA 現況：LT03 屬於傳統 WM（LE-WM）。</b>傳統 WM 在 S/4HANA 屬於相容性範圍（Compatibility Scope），不是目標架構，SAP 建議改用內嵌式或獨立式 EWM；相容性套件的使用權期限依授權與 SAP 官方的相容性範圍說明（可查 SAP Note 2269324）為準，專案規劃時務必確認。上表中 LE_SHP_*、MB_*、AC_DOCUMENT、FAGL_* 等則與 WM 無關，在 S/4HANA 仍然有效。</div>
+
+  <h3 id="ch08-1-09">9. LE_SHP_DELIVERY_PROC：交貨單「過帳後不能沖銷」的增強</h3>
+  <p><b>業務情境：</b>交貨單由外部系統透過 BAPI 發貨過帳後，使用者在 <span class="tcode">VL09</span> 沖銷時被系統擋下。開發者在 BAdI 實作 <b>ZLE_SHP_DELIVERY_PRO</b>（定義 LE_SHP_DELIVERY_PROC、多重使用、已遷移到同名 Enhancement Spot）中，於 CHANGE_DELIVERY_HEADER 清掉 <b>LIKP-VLSTK</b>，順便寫入自建欄位（修改時間）與 AEDAT，讓 MES 做增量抽取。DELIVERY_FINAL_CHECK 則原本要擋「已揀配完成的項目不可刪除」，後來被 <span class="kw">IF 1 = 2</span> 整段停用。</p>
+  <p>依截圖，此 BAdI 的介面 IF_EX_LE_SHP_DELIVERY_PROC 共 17 個方法：</p>
+  <table>
+    <thead><tr><th>方法</th><th>觸發時機（依 SAP 方法說明）</th><th>適合做什麼</th></tr></thead>
+    <tbody>
+      <tr><td>CHANGE_FCODE_ATTRIBUTES／CHANGE_FIELD_ATTRIBUTES</td><td>畫面功能碼、欄位屬性</td><td>隱藏按鈕、欄位唯讀</td></tr>
+      <tr><td>READ_DELIVERY／INITIALIZE_DELIVERY</td><td>讀取交貨後／初始化</td><td>讀、清自己的全域資料</td></tr>
+      <tr><td>FILL_DELIVERY_HEADER／FILL_DELIVERY_ITEM</td><td>建立交貨表頭／項目時</td><td>帶自建欄位預設值</td></tr>
+      <tr><td>CHANGE_DELIVERY_HEADER／CHANGE_DELIVERY_ITEM</td><td>表頭／項目資料變更時</td><td>更新自建欄位</td></tr>
+      <tr><td>CHECK_ITEM_DELETION／ITEM_DELETION／DELIVERY_DELETION</td><td>刪除項目檢查、刪除項目／整張交貨時</td><td>擋刪除、同步刪除自建表資料</td></tr>
+      <tr><td><b>DELIVERY_FINAL_CHECK</b></td><td>儲存前最後檢查</td><td>把錯誤寫進 <b>CT_FINCHDEL</b>，交貨會被擋下存檔</td></tr>
+      <tr><td>SAVE_DOCUMENT_PREPARE</td><td>儲存前最後決定</td><td>最後一次改資料</td></tr>
+      <tr><td>DOCUMENT_NUMBER_PUBLISH</td><td>內部給號後</td><td>取得交貨單號</td></tr>
+      <tr><td><b>SAVE_AND_PUBLISH_DOCUMENT</b></td><td>儲存自己的資料、發布交貨</td><td>寫自建表（IN UPDATE TASK）、登記送外部系統</td></tr>
+      <tr><td>SAVE_AND_PUBLISH_BEFORE_OUTPUT</td><td>訊息輸出（Output）之前</td><td>在列印／IDoc 前補資料</td></tr>
+      <tr><td>PUBLISH_DELIVERY_ITEM</td><td>項目處理完成後</td><td>—</td></tr>
+    </tbody>
+  </table>
+  <pre><code class="abap">METHOD if_ex_le_shp_delivery_proc~change_delivery_header.
+  " 只改「自己的」附加欄位：給外部系統增量抽取用的異動時間戳
+  " （不要動 VLSTK 等標準狀態欄位，也不要自己寫 AEDAT——那是標準欄位，由系統維護）
+  GET TIME STAMP FIELD cs_likp-zzchg_ts.
+ENDMETHOD.
+
+METHOD if_ex_le_shp_delivery_proc~delivery_final_check.
+  " 已揀配完成（KOSTA = 'C'）的項目不可刪除；錯誤寫進 CT_FINCHDEL，不要用 MESSAGE
+  CONSTANTS lc_werks TYPE werks_d VALUE '1000'.   "實務上改放設定表
+  LOOP AT it_xlips ASSIGNING FIELD-SYMBOL(&lt;ls_lips&gt;)
+       WHERE updkz = 'D' AND kosta = 'C' AND werks = lc_werks.
+    INSERT VALUE #( vbeln    = &lt;ls_lips&gt;-vbeln
+                    posnr    = &lt;ls_lips&gt;-posnr
+                    pruefung = '99'
+                    msgty    = 'E'
+                    msgid    = 'ZLE'
+                    msgno    = '001'
+                    msgv1    = |{ &lt;ls_lips&gt;-posnr ALPHA = OUT }| ) INTO TABLE ct_finchdel.
+  ENDLOOP.
+ENDMETHOD.</code></pre>
+  <p><b>原程式的問題與改進：</b></p>
+  <ul>
+    <li><b>清 VLSTK 是在改標準控制</b>。VLSTK 是交貨單的「分配狀態（分散式倉儲）」：交貨被標記為要分配給外部倉儲系統時，系統會限制在 SAP 端直接處理（包括沖銷）。清掉它等於告訴系統「這張交貨沒有分配出去」，沖銷自然就不擋了——但若外部倉儲系統真的收到了這張交貨，兩邊就對不起來。正解是回頭查：為什麼透過 BAPI 過帳的交貨會被標記為需分配（倉庫號碼／交貨類型的分散式設定），而不是每次變更都把狀態抹掉。</li>
+    <li><b>CHANGE_DELIVERY_HEADER 每次變更都會跑</b>，寫 AEDAT＝今天，連「只是打開再存」都會讓異動日期改變。增量抽取建議用自建時間戳欄位，或改用<b>變更文件（CDHDR／CDPOS）</b>、交貨輸出 IDoc（DELVRY）。</li>
+    <li><b>DELIVERY_FINAL_CHECK 裡用 MESSAGE TYPE 'E'</b>：SAP 的方法說明要求把錯誤寫進 CT_FINCHDEL，由標準流程決定如何呈現；直接 MESSAGE 在 BAPI、背景（例如 <span class="tcode">VL10</span> 批次建交貨）下會中斷處理。原程式其實兩種都寫了：一般情況 MESSAGE、按「全部刪除」時才寫 CT_FINCHDEL。</li>
+    <li><b>動態 ASSIGN <span class="kw">'(SAPMV50A)FCODE'</span></b> 讀主程式的功能碼判斷是否按了刪除：這是「偷看別人的全域變數」，主程式名稱在 BAPI、背景或新版 UI 下都不同，隨時失效。以 IT_XLIPS／IT_XLIKP 的 UPDKZ 判斷即可。</li>
+    <li><b>sy-tcode 判斷</b>（VL01N／VL02N／VL03N）與 <span class="kw">IF 1 = 2</span> 的死程式碼：停用請用開關設定表或直接刪除，保留在正式系統只會誤導後人。</li>
+  </ul>
+  <div class="warn"><b>S/4HANA 注意：</b>LE_SHP_DELIVERY_PROC 在 S/4HANA 仍然有效。VBUK／VBUP 已併入 LIKP／LIPS，所以 KOSTA（揀配狀態）等狀態欄位現在就在 LIPS 上，IT_XLIPS（LIPSVB）可直接讀；舊程式若 SELECT VBUP 要改。<b>COMMIT 限制：</b>所有方法都在交貨單的 LUW 內，一律不可 COMMIT／ROLLBACK；要寫自建表請在 SAVE_AND_PUBLISH_DOCUMENT 中以 IN UPDATE TASK 呼叫。</div>
+
+  <h3 id="ch08-1-10">10. AC_DOCUMENT：後勤單據產生會計憑證時改行項目文字與利潤中心</h3>
+  <p><b>業務情境：</b>① 物料憑證（AWTYP = MKPF）產生的會計憑證，行項目文字 SGTXT 要依自建設定表 ZFIT006 自動組合：依移動類型與「費用化採購／外協採購／一般」三種情境，挑選期間、成本中心名稱、銷售訂單類型、客戶名稱、工單類型名稱、工單號、評估類別描述、物料號、供應商名稱、交貨單號、物料短文字、兩段固定文字等元素，依設定的順序串成 50 字元內的文字；② 交易鍵 WRX（GR/IR 暫估）的行清掉成本中心與內部訂單；③ 某銷售組織在 <span class="tcode">VF01</span>／<span class="tcode">VF02</span> 開票產生的會計憑證，非稅額行一律改成固定的利潤中心；④ 表頭文字 BKTXT 保留。</p>
+  <p>依截圖，實作 <b>ZAC_DOCUMENT</b>（定義 AC_DOCUMENT，非多重使用、無過濾）介面 IF_EX_AC_DOCUMENT 有 5 個方法：</p>
+  <table>
+    <thead><tr><th>方法</th><th>時機</th><th>說明</th></tr></thead>
+    <tbody>
+      <tr><td><b>CHANGE_INITIAL</b></td><td>呼叫 AC 各元件（FI、CO、PCA…）之前</td><td>IM_DOCUMENT（ACCHD 表頭、ACCIT 行、ACCCR 金額）唯讀；要改的內容放進 EX_DOCUMENT（表頭 ACCHD_SUB、行 ACCIT_SUB）</td></tr>
+      <tr><td>CHANGE_AFTER_CHECK</td><td>AC 元件檢查之後</td><td>同上，但已過檢查，改了不會再被檢查一次，要更小心</td></tr>
+      <tr><td>IS_SUPPRESSED_ACCT</td><td>—</td><td>不更新 ACCT* 表（SAP Note 48009）</td></tr>
+      <tr><td>IS_COMPRESSION_REQUIRED</td><td>—</td><td>內表 TABLE_COMPRESS（SAP Note 320959）</td></tr>
+      <tr><td>IS_ACCTIT_RELEVANT</td><td>—</td><td>對其他 AWTYP 啟用 ACCT* 更新</td></tr>
+    </tbody>
+  </table>
+  <pre><code class="abap">METHOD if_ex_ac_document~change_initial.
+  CONSTANTS lc_bukrs TYPE bukrs VALUE '1000'.
+  CHECK im_document-header-awtyp = 'MKPF'.
+
+  " 規則表一次讀進來；元素依 ZQJ/ZCBZXMC… 的順序號排序（明確排序，不依賴資料庫回傳順序）
+  SELECT bwart, zfyh, zqj, zcbzxmc, zxsddlx, zkhmc, zddlxmc, zddh, zpgl, zwlh,
+         zgysmc, zjhdh, zwldwb, zwb1bs, zwb1, zwb2bs, zwb2
+    FROM zfit006 INTO TABLE @DATA(lt_rule).
+
+  LOOP AT im_document-item ASSIGNING FIELD-SYMBOL(&lt;ls_it&gt;) WHERE bukrs = lc_bukrs.
+    " 情境判斷：費用化（帳務分配 K/F）、外協（採購項目類別 3）、一般（無帳務分配）
+    DATA(lv_scen) = COND char1(
+      WHEN &lt;ls_it&gt;-knttp = 'K' OR &lt;ls_it&gt;-knttp = 'F' THEN 'X'
+      WHEN zcl_fi_text_helper=&gt;is_subcontract( iv_ebeln = &lt;ls_it&gt;-ebeln
+                                               iv_ebelp = &lt;ls_it&gt;-ebelp ) THEN '3'
+      WHEN &lt;ls_it&gt;-knttp IS INITIAL THEN ' '
+      ELSE '#' ).
+    CHECK lv_scen &lt;&gt; '#'.
+    ASSIGN lt_rule[ bwart = &lt;ls_it&gt;-bwart zfyh = lv_scen ] TO FIELD-SYMBOL(&lt;ls_rule&gt;).
+    CHECK sy-subrc = 0.
+
+    " 依規則組文字（名稱查詢集中在 helper 類別內並做緩衝）
+    DATA(lv_text) = zcl_fi_text_helper=&gt;build_sgtxt( is_rule = &lt;ls_rule&gt; is_item = &lt;ls_it&gt; ).
+    CHECK lv_text IS NOT INITIAL.
+
+    " 關鍵：從「原行」完整複製再改，避免未填欄位把原值清空
+    DATA(ls_sub) = CORRESPONDING accit_sub( &lt;ls_it&gt; ).
+    ls_sub-sgtxt = substring( val = lv_text len = nmin( val1 = strlen( lv_text ) val2 = 50 ) ).
+    APPEND ls_sub TO ex_document-item.
+  ENDLOOP.
+
+  ex_document-header-bktxt = im_document-header-bktxt.
+ENDMETHOD.</code></pre>
+  <p><b>原程式的問題與改進：</b></p>
+  <ul>
+    <li><b>「下一行就是對方科目」的假設</b>：原程式在非 GBB 行時，用 <span class="kw">lv_tabix + 1</span> 讀下一行的成本中心、工單號，假設會計行一定是「存貨行、緊接著對方科目行」成對排列。行的順序是由標準程式產生的內部細節，移動類型、帳務分配、分割評價一變就可能不成立。這跟 Casper 經驗 1 是同一類錯誤：<b>任何「取第一筆／取下一筆」的邏輯，都必須建立在明確定義的順序或鍵值上</b>。應以物料憑證行號等可對應的欄位把兩行配對（可對應的欄位請在 <span class="tcode">SE11</span> 檢視 ACCIT 確認）。</li>
+    <li><b>WRX 清成本中心的那段沒有生效的保證</b>：原程式改的是本地副本 <span class="kw">it_accit</span>，只有當該行同時落在第二段 MKPF 迴圈、且符合公司代碼與規則時，才會因為 MOVE-CORRESPONDING 被帶進 EX_DOCUMENT；其餘 WRX 行的修改直接被丟掉。能否改某欄位，取決於它<b>是否存在於 ACCIT_SUB</b>（請在 SE11 確認；需要時 SAP 有透過 Note 擴充 ACCIT_SUB 的做法）。</li>
+    <li><b>開票段整個覆蓋 EX_DOCUMENT-ITEM</b>：第三段在開票情境下直接 <span class="kw">ex_document-item[] = lt_accia_sub[]</span>，若日後有人在前面加了其他修改，會被靜默覆蓋；而且利潤中心寫死常數。利潤中心的正解是<b>主檔與衍生規則</b>（物料主檔工廠層利潤中心、<span class="tcode">3KEH</span>、替代），不是在 BAdI 裡覆寫。</li>
+    <li>用 <span class="kw">ASSIGN ('(SAPMV60A)VBRK')</span>、<span class="kw">'(SAPMV60A)XVBRP[]'</span> 偷讀開票主程式的全域變數：開票由 <span class="tcode">VF04</span>／背景作業／BAPI 觸發時主程式不同，必然失效。IM_DOCUMENT-HEADER 已有 AWTYP、AWKEY、TCODE，行上有 AWITEM，足以回頭讀 VBRP。</li>
+    <li>迴圈內大量 <span class="kw">SELECT SINGLE</span>（EKPO、CSKT、VBAK、KNA1、T003P＋AUFK、T025T、LFA1），語言寫死 <span class="kw">spras = '1'</span>（中文）、成本中心文字寫死 <span class="kw">datbi = '99991231'</span>：語言應用 <span class="kw">sy-langu</span> 或公司代碼語言；成本中心文字應以過帳日期落在 DATAB～DATBI 取。</li>
+  </ul>
+  <div class="tip"><b>先標準（Casper 經驗 3）：</b>「依規則組行項目文字」在 FI 的標準工具是<b>替代（Substitution，<span class="tcode">GGB1</span>／<span class="tcode">OBBH</span>，Callup Point 2 行項目）</b>，可用 Exit 常式組文字，業務規則變更不必動 BAdI。只有當替代拿不到後勤來源資料（例如移動類型、工單類型）時，才輪到 AC_DOCUMENT。</div>
+  <div class="warn"><b>COMMIT 與 S/4HANA：</b>AC_DOCUMENT 在會計介面（AC_DOCUMENT_CREATE 系列）中被呼叫，處於來源單據（MIGO、開票、交貨發貨⋯）的 LUW 內，<b>不可 COMMIT、不可 MESSAGE、不可彈窗</b>。S/4HANA 中 AC_DOCUMENT 仍有效，最終寫入 Universal Journal <b>ACDOCA</b>（BSEG 仍存在）；另外 KNA1／LFA1 名稱在 S/4HANA 由 BP 同步而來，可讀但主資料維護入口是 <span class="tcode">BP</span>。</div>
+
+  <h3 id="ch08-1-11">11. MB_DOCUMENT_BADI：物料憑證過帳時把收貨、入庫資料送給 MES</h3>
+  <p><b>業務情境：</b>工廠的 MES 需要即時知道兩類異動：<b>A. 原材料收貨</b>（移動類型 103／104／124，且採購單類型屬於指定清單）；<b>B. 原材料入庫</b>——採購入庫（105／106、自訂 Z11／Z12、委外 101／102／321／322、備品 101／102 且物料類型為指定值）、生產入庫（有工單的 101／102／321／322）、以及 122 退貨。另外，指定採購單類型（ZR）的物料憑證要寫一筆到自建表 ZMKPF。</p>
+  <p>依截圖，實作 <b>ZMB_DOCUMENT_BADI</b>（定義 MB_DOCUMENT_BADI，多重使用，已遷移至 Enhancement Spot <b>MB_GOODSMOVEMENT</b>）有兩個方法：</p>
+  <table>
+    <thead><tr><th>方法</th><th>SAP 說明</th><th>執行環境</th><th>能做／不能做</th></tr></thead>
+    <tbody>
+      <tr><td><b>MB_DOCUMENT_BEFORE_UPDATE</b></td><td>Exit After Writing a Material Document. Not in 'update task'</td><td>對話工作階段，物料憑證已給號、尚未進更新工作</td><td>可讀 XMKPF／XMSEG／XVM07M；可 <span class="kw">CALL FUNCTION … IN UPDATE TASK</span> 或登記 bgRFC；<b>不可 COMMIT</b>、不可改物料憑證內容（參數是唯讀）</td></tr>
+      <tr><td><b>MB_DOCUMENT_UPDATE</b></td><td>When Writing a Material Document. In 'update task'</td><td>更新工作（V1）內</td><td>可直接寫自建表（與物料憑證同進退）；<b>不可 COMMIT、不可 MESSAGE、不可同步 RFC／HTTP</b>，出錯會讓整張物料憑證在 <span class="tcode">SM13</span> 更新失敗</td></tr>
+    </tbody>
+  </table>
+  <pre><code class="abap">METHOD if_ex_mb_document_badi~mb_document_before_update.
+  CONSTANTS lc_werks TYPE werks_d VALUE '1000'.
+
+  " 1) 只挑出本工廠、有採購單參照的行；空表絕不能拿去 FOR ALL ENTRIES
+  DATA lt_po_lines LIKE xmseg.
+  lt_po_lines = VALUE #( FOR m IN xmseg
+                         WHERE ( werks = lc_werks AND ebeln IS NOT INITIAL AND ebelp IS NOT INITIAL )
+                         ( m ) ).
+  IF lt_po_lines IS NOT INITIAL.
+    SELECT p~ebeln, p~ebelp, h~bsart, p~txz01
+      FROM ekpo AS p INNER JOIN ekko AS h ON h~ebeln = p~ebeln
+      FOR ALL ENTRIES IN @lt_po_lines
+      WHERE p~ebeln = @lt_po_lines-ebeln
+        AND p~ebelp = @lt_po_lines-ebelp
+      INTO TABLE @DATA(lt_po).
+    SORT lt_po BY ebeln ebelp.
+  ENDIF.
+
+  " 2) 規則放設定表：移動類型 × 採購單類型 × 流程（A=收貨 B=入庫），一筆一值（列舉）
+  SELECT bwart, bsart, flow FROM zmm_mes_rule INTO TABLE @DATA(lt_rule).
+
+  DATA(ls_mkpf) = VALUE #( xmkpf[ 1 ] OPTIONAL ).
+  DATA lt_gr TYPE STANDARD TABLE OF zmes_po_recevice WITH EMPTY KEY.
+
+  LOOP AT xmseg ASSIGNING FIELD-SYMBOL(&lt;ls_mseg&gt;) WHERE werks = lc_werks.
+    DATA(ls_po) = VALUE #( lt_po[ ebeln = &lt;ls_mseg&gt;-ebeln ebelp = &lt;ls_mseg&gt;-ebelp ] OPTIONAL ).
+    IF line_exists( lt_rule[ bwart = &lt;ls_mseg&gt;-bwart bsart = ls_po-bsart flow = 'A' ] ).
+      APPEND VALUE #( BASE CORRESPONDING #( &lt;ls_mseg&gt; )
+                      budat = ls_mkpf-budat
+                      cputm = ls_mkpf-cputm
+                      usnam = ls_mkpf-usnam
+                      mjahr = ls_mkpf-mjahr
+                      maktx = ls_po-txz01 ) TO lt_gr.
+    ENDIF.
+  ENDLOOP.
+
+  " 3) 交給更新工作：與物料憑證同一個 COMMIT，憑證失敗就不會送
+  IF lt_gr IS NOT INITIAL.
+    CALL FUNCTION 'Z_MES_QUEUE_GOODS_RECEIPT' IN UPDATE TASK
+      EXPORTING
+        it_data = lt_gr.
+  ENDIF.
+ENDMETHOD.</code></pre>
+  <p><b>原程式的問題與改進：</b></p>
+  <ul>
+    <li><b>整體架構其實是對的</b>：在 BEFORE_UPDATE 收集資料，再以 <span class="kw">IN UPDATE TASK</span> 呼叫發送函數，保證「物料憑證存成功才送」。從註解可看出早期版本是在 MB_DOCUMENT_UPDATE 裡直接呼叫發送函數，後來改對了。</li>
+    <li><b>但「更新工作中同步呼叫 MES」仍有風險</b>：若 Z 發送函數在更新工作內做同步 HTTP／RFC，MES 斷線就會讓物料憑證更新失敗（SM13）。建議更新函數只把資料寫進自建佇列表，由 bgRFC 或背景作業（見 <a href="#ch04-4">4-4 章</a>）負責實際傳送與重送。</li>
+    <li><b>移動類型、採購單類型、物料類型全部寫死在 IF 裡</b>，還需要一個 <span class="kw">ls_x</span> 旗標防止同一行被兩個 IF 同時命中而重複送出——這正是規則散落的症狀，搬進設定表就自然消失。</li>
+    <li><b>迴圈內 SELECT SINGLE</b>（EKKO＋EKPO、LFA1、MARA）改成一次讀取；供應商名稱在 S/4HANA 建議由 BP 取得。</li>
+    <li><b>MB_DOCUMENT_UPDATE 只看第一行</b>（<span class="kw">READ TABLE xmseg INDEX 1</span>）判斷整張憑證的採購單類型，多採購單合併收貨時會漏；寫 ZMKPF 用 MODIFY 在更新工作中是正確位置。</li>
+    <li>原程式還保留 <span class="kw">lv_test = abap_false</span> 開關與大量註解程式碼、個人署名，正式系統請清掉。</li>
+  </ul>
+  <div class="warn"><b>S/4HANA：MSEG → MATDOC。</b>S/4HANA 的物料憑證實體表是 <b>MATDOC</b>，MKPF／MSEG 成為相容性 CDS 視圖（讀取仍可用、但效能與欄位請以 MATDOC 為準）。MB_DOCUMENT_BADI 在 S/4HANA <b>仍然被呼叫</b>，參數仍以 MKPF／MSEG 結構的 XMKPF／XMSEG 提供，所以本案例程式可以沿用；但自建報表若直接 SELECT MSEG 做大量彙總，應改讀 MATDOC 或標準 CDS（如 I_MaterialDocumentItem）。行層級的檢查請用 MB_CHECK_LINE_BADI，不要塞在 MB_DOCUMENT_BADI 裡用 MESSAGE 擋。</div>
+
+  <h3 id="ch08-1-12">12. CO01／CO02 客製欄位：CI_AUFK、客製頁籤與存檔出口的分工</h3>
+  <p><b>業務情境：</b>生產工單表頭要多出一個「客戶畫面」頁籤，讓使用者輸入<b>生產批號</b>、返工原因、原因占比（%）、訂單放量數，並顯示表體備註、產品描述、工單備註。依截圖（<span class="tcode">CO02</span> 生產訂單變更：抬頭，第 9 個頁籤「客戶螢幕」）欄位整理如下：</p>
+  <table>
+    <thead><tr><th>畫面標籤</th><th>程式中的欄位</th><th>用途／檢查</th></tr></thead>
+    <tbody>
+      <tr><td>生產批號</td><td>ZSCPH（CHAR 20）</td><td>除特定工單類型外必填；原則上不可重複；同步寫到批次</td></tr>
+      <tr><td>返工原因</td><td>ZFGYY（下拉清單）</td><td>返工工單類型必填</td></tr>
+      <tr><td>原因占比</td><td>ZYYZB（%）</td><td>返工工單必填，不得大於 100</td></tr>
+      <tr><td>訂單放量數</td><td>ZDDFLS（CHAR 8）</td><td>除特定工單類型外必填</td></tr>
+      <tr><td>表體備註、產品描述、工單備註</td><td>—</td><td>顯示／文字欄位</td></tr>
+    </tbody>
+  </table>
+  <p>完整做法需要三個零件，分工清楚才不會出錯：</p>
+  <table>
+    <thead><tr><th>零件</th><th>內容</th><th>觸發時機</th><th>可改／不可改</th></tr></thead>
+    <tbody>
+      <tr><td><b>CI_AUFK</b>（<span class="tcode">SE11</span>）</td><td>AUFK 的客戶 include，放自建欄位</td><td>—</td><td>加欄位後 AUFK、CAUFVD、COOIS 的 IOHEADER 都會帶出（本案例的 ZPPU036 就直接讀 IOHEADER-ZSCPH）</td></tr>
+      <tr><td><b>PPCO0012</b>（<span class="tcode">CMOD</span>）</td><td>SAPLXCO1 畫面 0100（客製子畫面）；PBO 出口 EXIT_SAPLCOKO1_001、PAI 出口 EXIT_SAPLCOKO1_002</td><td>頁籤顯示／使用者輸入後</td><td>PBO 把工單表頭資料放到 ZXCO1TOP 的全域變數供畫面顯示；PAI 以匯出參數 <b>E_COCI_AUFK</b> 把輸入值交回，存檔時由標準寫入 AUFK</td></tr>
+      <tr><td><b>PPCO0007</b>（<span class="tcode">CMOD</span>）</td><td>EXIT_SAPLCOZV_001，include <b>ZXCO1U06</b></td><td>工單存檔前</td><td>匯入 HEADER_IMP（CAUFVD），可透過 HEADER_EXP 回傳修改後的<b>表頭</b>欄位、NO_UPDATE 旗標；只涵蓋表頭</td></tr>
+    </tbody>
+  </table>
+  <p>素材中的程式就是 <b>ZXCO1U06</b>（存檔出口）。依修改紀錄，原本這裡也處理 <span class="tcode">CO41</span>（計畫訂單轉生產訂單）的批號帶入，後來把 CO41 的校驗搬到 PPCO0001 的 EXIT_SAPLCOBT_001。整理出來的存檔檢查如下：</p>
+  <ul>
+    <li><b>CO41 分支</b>：從 ABAP Memory（ID 'ZCO41'）取出前置程式準備的「計畫訂單 → 生產批號／放量數」清單（自建表 <b>ZPPT000</b>），依預留號 RSNUM 對應，寫回 HEADER_EXP，並更新 ZPPT000。</li>
+    <li><b>一般分支</b>（非 ZPPU036、非背景、非 <span class="tcode">COHV</span>、狀態不含 TECO）：生產批號必填、唯一性檢查（排除特定客戶＋工單類型與返工工單）、返工原因／占比、放量數必填、<b>物料價格不可為 0</b>（依 MBEW 價格控制 S 取標準價、否則取移動平均價）。</li>
+    <li><b>銷售訂單綁定</b>：若自建表 <b>ZTSD001</b>（銷售訂單占用工單表）有此工單，工單數量減少到低於「已占用數量」時擋下，否則警告。</li>
+    <li><b>批次同步</b>：把生產批號直接 <span class="kw">UPDATE mcha</span> 寫到批次附加欄位與生產日期。</li>
+    <li><b>包裝物進位</b>：動態 ASSIGN <span class="kw">'(SAPLCOBC)RESB_BT[]'</span>，對外部物料群組為包裝物的元件需求量無條件進位。</li>
+    <li><b>TECO 權限檢查</b>：<span class="tcode">CO02</span>／<span class="tcode">COHV</span> 設 TECO 時，沒有自建權限物件 ZPP_TECO 的人要先通過五項檢查（見第 14 節）。</li>
+  </ul>
+  <pre><code class="abap">* ---- EXIT_SAPLCOZV_001（PPCO0007）→ include ZXCO1U06 ----
+* 匯入 header_imp TYPE caufvd；匯出 header_exp（只影響表頭）、no_update
+header_exp = header_imp.
+
+" 只在對話建立／變更時檢查；背景、TECO 流程不擋（條件請依專案需求）
+CHECK sy-batch = abap_false AND header_imp-sttxt NS 'TECO'.
+
+" 1) 必填檢查：用訊息類別，不寫死中文；工單類型清單用列舉
+IF header_imp-zscph IS INITIAL AND header_imp-auart &lt;&gt; 'Z501'.
+  MESSAGE e101(zpp).                                  "生產批號為空
+ENDIF.
+IF header_imp-auart = 'Z301' AND ( header_imp-zfgyy IS INITIAL OR header_imp-zyyzb IS INITIAL ).
+  MESSAGE e102(zpp).                                  "返工原因／占比為空
+ENDIF.
+IF header_imp-zyyzb &gt; 100.
+  MESSAGE e103(zpp).                                  "占比不得大於 100%
+ENDIF.
+
+" 2) 生產批號唯一性：例外條件放設定表，不寫死客戶號碼
+IF header_imp-zscph IS NOT INITIAL.
+  SELECT SINGLE @abap_true FROM aufk
+    WHERE zscph = @header_imp-zscph
+      AND aufnr &lt;&gt; @header_imp-aufnr
+    INTO @DATA(lv_dup).
+  IF lv_dup = abap_true
+     AND NOT zcl_pp_batch_rule=&gt;is_exempt( iv_auart = header_imp-auart
+                                          iv_kdauf = header_imp-kdauf_aufk ).
+    MESSAGE e104(zpp) WITH header_imp-zscph.          "此生產批號已存在
+  ENDIF.
+ENDIF.
+
+" 3) 物料價格不可為 0：一次讀齊三個欄位，用 COND 取價
+SELECT SINGLE vprsv, verpr, stprs
+  FROM mbew
+  WHERE matnr = @header_imp-matnr
+    AND bwkey = @header_imp-werks                     "評價範圍 = 工廠（需與實際設定一致）
+    AND bwtar = @space
+  INTO @DATA(ls_mbew).
+DATA(lv_price) = COND #( WHEN ls_mbew-vprsv = 'S' THEN ls_mbew-stprs ELSE ls_mbew-verpr ).
+IF lv_price IS INITIAL.
+  MESSAGE e105(zpp) WITH header_imp-matnr.            "物料價格為 0
+ENDIF.</code></pre>
+
+  <h3 id="ch08-1-13">13. CO01 出口的問題清單與改寫方向</h3>
+  <p><b>原程式的問題與改進：</b></p>
+  <ul>
+    <li><b>存檔出口裡 <span class="kw">UPDATE mcha</span></b>：直接改標準批次表，不經批次管理的檢查、不留變更紀錄；此時工單本身還沒真正存檔，使用者若取消或存檔失敗，批次卻已被改（原程式註解掉了 COMMIT，但同一 LUW 內其他 COMMIT 仍會把它帶出去）。應改用 <span class="kw">BAPI_BATCH_CHANGE</span> 或批次分類特性，並放進 IN UPDATE TASK 的 Z 函數，與工單同進退。</li>
+    <li><b>存檔出口裡 <span class="kw">MODIFY zppt000</span></b>：同樣是在 LUW 中途直接寫表，應放 IN UPDATE TASK。</li>
+    <li><b>ABAP Memory 當介面</b>（EXPORT／IMPORT … MEMORY ID 'ZCO41'、'ZCO41INDEX'）：依賴前置程式與呼叫順序，還用一個計數器記錄「這是第幾張」。CO41 多張轉換時只要有一張失敗，計數器就錯位。改由 ZPPT000 以「計畫訂單號」直接查（本來就有 PLNUM 欄位），不需要記憶體與計數器。</li>
+    <li><b>動態 ASSIGN <span class="kw">'(SAPLCOBC)RESB_BT[]'</span> 改元件需求量</b>：用 HEADER_EXP 只能改表頭，所以作者「偷改」了元件緩衝區。元件數量的正規入口是 BOM 本身（數量、捨入）或 BAdI <b>WORKORDER_UPDATE</b>／元件相關出口；包裝物要整數，最乾淨的做法是在 BOM 或物料主檔的捨入設定處理。</li>
+    <li><b>寫死條件</b>：<span class="kw">sy-mandt = '800'</span>（只在正式 client 檢查價格）、特定客戶號碼、工單類型 Z114／Z211／Z301／Z401／Z402／Z501 散落各處——client 判斷在複製 client 或升級測試時必定出事，應改用設定表或參數。</li>
+    <li><b>MESSAGE … TYPE 'S' DISPLAY LIKE 'E' 加 <span class="kw">REJECT</span></b>：REJECT 是邏輯資料庫報表的事件語法，在 Customer Exit 裡行為不明確；要擋存檔就用 E 訊息，或設 NO_UPDATE（依出口文件）。</li>
+    <li><b>同一段檢查寫兩遍</b>（CO41 分支與一般分支各一份，只差 TYPE 'E' 與 'S'+REJECT），應抽成方法。</li>
+    <li><b>MBEW 讀三次</b>分別取 VPRSV、VERPR、STPRS，一次讀齊即可。</li>
+    <li><b>在出口裡 SUBMIT 報表再 IMPORT FROM MEMORY</b>（TECO 檢查，見下一節）：出口裡跑一支完整報表，效能與可維護性都差；把檢查邏輯做成類別方法，出口與報表共用。</li>
+  </ul>
+  <div class="note">素材附了三個自建物件的截圖，整理如下，改寫時請保留其語意：</div>
+  <table>
+    <thead><tr><th>物件</th><th>類型／說明</th><th>欄位（鍵值以 * 標示）</th></tr></thead>
+    <tbody>
+      <tr><td>ZPPT000</td><td>透明表：CO41 增強欄位——計畫訂單</td><td>MANDT*、PLNUM*（計畫訂單）、RSNUM（預留號）、AUFNR（訂單號）、ZSCPH（生產批號 CHAR20）、ZDDFLS（訂單放量數 CHAR8）、XFLAG（勾選）、TINDE（迴圈索引 INT4）、CNAME／CDATE／CTIME（建立者／日期／時間）、UNAME／UDATE／UTIME（修改者／日期／時間）</td></tr>
+      <tr><td>ZSDT_STORAGE_LOG</td><td>透明表：生產入庫自動更新綁定關係增強日誌</td><td>MANDT*、ZGUID*（CHAR32）、PNAME（程式名）、CDATE、CTIME、CUSER、ZJSON（STRING，JSON 資料）</td></tr>
+      <tr><td>ZTSD001</td><td>透明表：銷售訂單占用工單表</td><td>MANDT*、VBELN*、POSNR*、AUFNR*、CHARG（生產批號）、MATNR、WERKS、ZZYSL_GD（占用數量 QUAN 13,3）、ZERNAM（匹配人）、ZERDAT（匹配日期）、ZBZ（備註 CHAR80）</td></tr>
+    </tbody>
+  </table>
+  <div class="tip">ZSDT_STORAGE_LOG 的設計值得學：刪除綁定資料前，先用 <span class="kw">/UI2/CL_JSON=&gt;SERIALIZE</span> 把整批資料轉成 JSON 存進日誌表（GUID 為鍵），事後可追溯、可還原。這段在原程式中已被註解停用，但思路適合所有「會刪資料的增強」。</div>
+  <div class="warn"><b>S/4HANA 現況：</b>CO01／CO02、PPCO0007、PPCO0012、CI_AUFK 在 S/4HANA on-premise 仍可使用。PP 另有 BAdI <b>WORKORDER_UPDATE</b>（例如 AT_SAVE、BEFORE_UPDATE 等方法）可在存檔時做檢查與後續處理，新開發可優先評估。MBEW 在 S/4HANA 的價格資料來自物料分類帳（Material Ledger 為必啟用），讀 MBEW 仍可取得標準價／移動平均價，但請以實際評價範圍設定（工廠或公司代碼層）決定 BWKEY。</div>
+
+  <h3 id="ch08-1-14">14. ZPPU036：生產工單 TECO 前的五項檢查</h3>
+  <p><b>業務情境：</b>生產工單設技術完成（TECO）前，要確認「發料、退料、報工、入庫、倒沖」都已處理乾淨。素材中除了存檔出口外，還附了報表 <b>ZPPU036</b> 與函數 <b>ZPPFU036</b>；存檔出口在 <span class="tcode">CO02</span>／<span class="tcode">COHV</span> 偵測到 TECO 時，會 SUBMIT 其檢查版 ZPPU036_CHECK 並用函數取得結果。</p>
+  <p><b>選擇畫面：</b>工廠（單值）、工單號、工單類型、MRP 控制者、基本完成日期、物料、生產批號（CI_AUFK 欄位）；勾選「只顯示可 TECO」、「背景執行（直接對可 TECO 的工單執行）」。<b>輸出：</b>ALV 顯示工單、五個檢查燈號、整體燈號、物料與描述、批號、工廠、類型、建立日、銷售訂單／項目、計畫／收貨／報廢數量、單位、倉位、交貨完成、MRP 控制者、開始日、下達日、處理訊息；可勾選後執行 TECO，或點工單跳 <span class="tcode">COHV</span>（SUBMIT CORUAFFW）。</p>
+  <table>
+    <thead><tr><th>回傳結構 ZPPS036 欄位</th><th>檢查內容（ZPPFU036）</th><th>資料來源（COIS_SELECT_ORDER_DATA_READ）</th></tr></thead>
+    <tbody>
+      <tr><td>ZF_GR 入庫檢查</td><td>計畫數量 PSMNG − 收貨數量 WEMNG − 工序確認的廢品 XMNGA ≤ 0</td><td>IOITEM、IOOPCONF</td></tr>
+      <tr><td>ZF_GI 發料檢查</td><td>對每個有效庫存元件（未刪除、非最終發料、項目類別 L、非散裝／幻影、非直接採購、需求量 &gt; 0），261 − 262 發料量 ≥ 需求量</td><td>IOOPCOMP、IOMAMO</td></tr>
+      <tr><td>ZF_RE 退料檢查</td><td>已發量 ENMNG 不得大於需求量 BDMNG</td><td>IOOPCOMP</td></tr>
+      <tr><td>ZF_CF 報工檢查</td><td>每道未刪除工序（以系統狀態 I0013 判斷，不只看 LOEKZ）：工序數量 − 確認良品 − 累計廢品 ≤ 0</td><td>IOOPER、AFVC＋JEST</td></tr>
+      <tr><td>ZF_FB 倒沖檢查</td><td>不得有倒沖錯誤（貨物移動錯誤）</td><td>IOGMER、IOOPGMER</td></tr>
+      <tr><td>ZF_TECO 整體</td><td>五項都不是紅燈才可 TECO</td><td>—</td></tr>
+    </tbody>
+  </table>
+  <pre><code class="abap">" 對勾選的工單執行 TECO：一張一個 LUW，依結果 COMMIT 或 ROLLBACK
+LOOP AT gt_out ASSIGNING FIELD-SYMBOL(&lt;ls_out&gt;) WHERE sel = abap_true.
+  DATA lt_orders TYPE STANDARD TABLE OF bapi_order_key    WITH EMPTY KEY.
+  DATA lt_detail TYPE STANDARD TABLE OF bapi_order_return WITH EMPTY KEY.
+  DATA ls_return TYPE bapiret2.
+  lt_orders = VALUE #( ( order_number = &lt;ls_out&gt;-aufnr ) ).
+  CLEAR: lt_detail, ls_return.
+
+  CALL FUNCTION 'BAPI_PRODORD_COMPLETE_TECH'
+    EXPORTING
+      scope_compl_tech = '1'
+    IMPORTING
+      return           = ls_return
+    TABLES
+      orders           = lt_orders
+      detail_return    = lt_detail.
+
+  " 原程式寫成 WHERE order_number = x AND type = 'E' OR type = 'A'，
+  " AND 優先於 OR，任何工單的 A 訊息都會被算進來——這裡明確分開判斷
+  DATA(lv_failed) = xsdbool(
+       ls_return-type CA 'EA'
+    OR line_exists( lt_detail[ order_number = &lt;ls_out&gt;-aufnr type = 'E' ] )
+    OR line_exists( lt_detail[ order_number = &lt;ls_out&gt;-aufnr type = 'A' ] ) ).
+
+  IF lv_failed = abap_true.
+    CALL FUNCTION 'BAPI_TRANSACTION_ROLLBACK'.
+    &lt;ls_out&gt;-msg = VALUE #( lt_detail[ order_number = &lt;ls_out&gt;-aufnr ]-message OPTIONAL ).
+    &lt;ls_out&gt;-sel = abap_false.
+  ELSE.
+    CALL FUNCTION 'BAPI_TRANSACTION_COMMIT'
+      EXPORTING
+        wait = abap_true.
+    &lt;ls_out&gt;-status_icon = icon_okay.
+  ENDIF.
+ENDLOOP.</code></pre>
+  <p><b>原程式的問題與改進：</b></p>
+  <ul>
+    <li><b>運算子優先順序 bug</b>：<span class="kw">WHERE order_number = gs_out-aufnr AND type = 'E' OR type = 'A'</span> 等於 <span class="kw">( … AND type = 'E' ) OR type = 'A'</span>。在 ABAP 中 AND 優先於 OR，條件混用時一律加括號。</li>
+    <li><b>取資料迴圈中 <span class="kw">COMMIT WORK AND WAIT</span></b>：只是讀資料卻每張工單 COMMIT 一次，沒有意義又拖慢效能；而且 ZPPFU036 本身只是計算。</li>
+    <li><b>每張工單呼叫一次 COIS_SELECT_ORDER_DATA_READ</b>：先整批讀、再逐張讀明細，資料量大時很慢；可改為一次讀取所有工單的明細，再依工單分組（<span class="kw">LOOP AT … GROUP BY</span>）。</li>
+    <li>燈號用 <span class="kw">'@5B@'</span>、<span class="kw">'@5C@'</span>、<span class="kw">'@09@'</span> 字面值，應用 TYPE-POOL ICON 的常數（<span class="kw">icon_green_light</span> 等）；ALV 用 REUSE_ALV_GRID_DISPLAY_LVC ＋ GET_GLOBALS_FROM_SLVC_FULLSCR 取 grid，改寫時可換成 <span class="kw">CL_SALV_TABLE</span>（需要勾選編輯才用 CL_GUI_ALV_GRID，見 <a href="#ch02-3">2-3 章</a>）。</li>
+    <li>標準功能先看：<span class="tcode">COHV</span>／<span class="tcode">COOIS</span> 已可大量 TECO，且工單結案前的檢查可透過<b>狀態管理</b>（使用者狀態設定檔 <span class="tcode">BS02</span>，限制在特定狀態下不允許 TECO）部分達成；檢查邏輯確實超出標準時才用自建報表。</li>
+  </ul>
+
+  <h3 id="ch08-1-15">15. 總表：本章增強點的觸發時機、可改範圍、COMMIT 限制與 S/4HANA 現況</h3>
+  <table>
+    <thead><tr><th>增強點</th><th>代數／類型</th><th>觸發時機</th><th>可改</th><th>不可改／禁止</th><th>COMMIT</th><th>S/4HANA 現況</th></tr></thead>
+    <tbody>
+      <tr><td>MV45AFZZ MOVE_FIELD_TO_*</td><td>第一代 User Exit</td><td>欄位搬進 VBAK／VBAP／VBEP／VBKD 後，會重複執行</td><td>對應工作區欄位</td><td>彈窗、重 SELECT、呼叫 SAPFV45* 內部 FORM</td><td>禁止</td><td>仍可用；新需求先評估 SD_SLS_* Cloud BAdI</td></tr>
+      <tr><td>MV45AFZZ PRICING_PREPARE_TKOMK／TKOMP</td><td>第一代 User Exit</td><td>定價前組通訊結構</td><td>TKOMK／TKOMP（含附加欄位）</td><td>直接改 XKOMV 金額</td><td>禁止</td><td>仍可用；定價結果表為 PRCD_ELEMENTS</td></tr>
+      <tr><td>MV45AFZZ SAVE_DOCUMENT_PREPARE</td><td>第一代 User Exit</td><td>儲存前最後修改與檢查</td><td>XVBAK／XVBAP／XVBEP（記得 UPDKZ）</td><td>同步外部呼叫</td><td>禁止</td><td>仍可用</td></tr>
+      <tr><td>MV45AFZZ SAVE_DOCUMENT</td><td>第一代 User Exit</td><td>已給號、更新工作前</td><td>自建表（IN UPDATE TASK）、登記 tRFC／bgRFC</td><td>MESSAGE E、STARTING NEW TASK</td><td>禁止</td><td>仍可用；非同步改 bgRFC</td></tr>
+      <tr><td>LE_SHP_DELIVERY_PROC</td><td>Classic BAdI（已遷移為 Enhancement Spot）、多重使用</td><td>交貨建立／變更／刪除／儲存各時點</td><td>CS_LIKP／CS_LIPS 的自建欄位、CT_FINCHDEL</td><td>標準狀態欄位（如 VLSTK）、MESSAGE、動態讀主程式變數</td><td>禁止</td><td>仍有效；狀態欄位在 LIKP／LIPS</td></tr>
+      <tr><td>AC_DOCUMENT</td><td>Classic BAdI</td><td>後勤單據產生 FI/CO 憑證（CHANGE_INITIAL／CHANGE_AFTER_CHECK）</td><td>EX_DOCUMENT 中 ACCHD_SUB／ACCIT_SUB 所含欄位</td><td>IM_DOCUMENT、ACCIT_SUB 以外欄位；MESSAGE</td><td>禁止</td><td>仍有效；寫入 ACDOCA</td></tr>
+      <tr><td>MB_DOCUMENT_BADI BEFORE_UPDATE</td><td>Classic BAdI（Spot MB_GOODSMOVEMENT）、多重使用</td><td>物料憑證給號後、進更新工作前</td><td>只能讀；可呼叫 IN UPDATE TASK</td><td>改憑證內容</td><td>禁止</td><td>仍有效；實體表 MATDOC</td></tr>
+      <tr><td>MB_DOCUMENT_BADI UPDATE</td><td>同上</td><td>更新工作（V1）中</td><td>寫自建表</td><td>MESSAGE、同步 RFC／HTTP、彈窗</td><td>禁止（會造成 SM13 更新失敗）</td><td>同上</td></tr>
+      <tr><td>PPCO0007 EXIT_SAPLCOZV_001</td><td>第二代 Customer Exit</td><td>工單存檔前</td><td>HEADER_EXP（表頭）、NO_UPDATE</td><td>元件、工序（原程式動態 ASSIGN 改元件屬越界）；直接 UPDATE 標準表</td><td>禁止</td><td>仍可用；可評估 BAdI WORKORDER_UPDATE</td></tr>
+      <tr><td>PPCO0012 EXIT_SAPLCOKO1_001／002</td><td>第二代 Customer Exit（畫面出口）</td><td>客製頁籤 PBO／PAI</td><td>E_COCI_AUFK（CI_AUFK 欄位）</td><td>—</td><td>禁止</td><td>仍可用（SAP GUI）；Fiori 需另做擴充</td></tr>
+    </tbody>
+  </table>
+  <div class="warn"><b>一句話總結 COMMIT：</b>本章所有增強點都位在「別人的 LUW」裡，<b>沒有一個可以 COMMIT</b>。需要「存檔之後再做」的事，一律用 IN UPDATE TASK（同一交易、同進退）或 tRFC／bgRFC（交易成功後非同步、可重送）；不要用 STARTING NEW TASK 或同步 HTTP 去碰外部世界。</div>
+  <p><b>上線檢核清單：</b></p>
+  <ol>
+    <li>增強是否只在需要的組織／單據類型觸發？條件是否用設定表而非寫死（client、銷售組織、客戶號碼）？</li>
+    <li>是否依賴 sy-tcode、動態 ASSIGN 主程式變數、ABAP Memory？→ 用 BAPI、背景、批次建單各測一次。</li>
+    <li>迴圈內是否有 SELECT？任何「取第一筆」是否有明確排序？</li>
+    <li>MESSAGE 在 BAPI／背景下的行為是否可接受？錯誤是否寫進正確的回傳參數（CT_FINCHDEL 等）？</li>
+    <li>是否有 COMMIT、STARTING NEW TASK、同步外部呼叫？</li>
+    <li>自建表是否有 SM30 維護、權限群組、傳輸設定？增強實作是否放在正確套件、隨同一傳輸請求移轉？</li>
+    <li>是否已記錄在增強清單文件中（哪個增強點、做什麼、負責人、對應設定表），方便下次升級做 SPAU／SPAU_ENH？</li>
+  </ol>
+
+  <h3 id="ch08-1-qa">練習與自我檢核</h3>
+  <ol>
+    <li><b>MV45AFZZ 中哪兩個 FORM 最適合做「儲存前檢查」與「儲存後通知外部系統的登記」？各自能不能 COMMIT？</b><br>參考答案：檢查用 USEREXIT_SAVE_DOCUMENT_PREPARE（還能以 E 訊息擋下並改 XVBAK／XVBAP）；登記後續動作用 USEREXIT_SAVE_DOCUMENT（已給號，用 IN UPDATE TASK 或 bgRFC）。兩者都不能 COMMIT，由 SAPMV45A 統一 COMMIT。</li>
+    <li><b>為什麼原程式用 sy-tcode = 'VA21' 判斷報價單建立是不可靠的？應改看什麼？</b><br>參考答案：BAPI、IDoc、自建交易碼建單時 sy-tcode 不同；應看 T180-TRTYP（H 新增、V 修改、A 顯示）與訂單類型／VBTYP。</li>
+    <li><b>在 PRICING_PREPARE_TKOMP 把 XKOMV 某條件金額改成 0，和用 VOFM 需求常式讓條件不適用，差在哪裡？</b><br>參考答案：前者條件仍存在、金額為 0，重新定價可能被還原，且在分析與報表上是「適用但 0 元」；後者條件根本不被決定，可在定價分析看到被哪個需求擋掉，邏輯位置也正確（出口只準備資料）。</li>
+    <li><b>找出第 6 節原程式移動類型決定的 bug，並說明修法。</b><br>參考答案：AUFNR 旗標在迴圈外的工作區設定後從不清除，前面項目有內部訂單會污染後面項目；應在每個項目重新計算旗標（xsdbool），並把規則表先整批讀入。</li>
+    <li><b>LE_SHP_DELIVERY_PROC 的 DELIVERY_FINAL_CHECK 要擋存檔時，錯誤應該怎麼回報？為什麼不要用 MESSAGE？</b><br>參考答案：寫進 CT_FINCHDEL（VBELN、POSNR、訊息類別／編號／變數等）；MESSAGE 在 BAPI、VL10 批次、背景處理下會中斷整批作業，也繞過了標準的錯誤呈現機制。</li>
+    <li><b>清除 LIKP-VLSTK 讓交貨可以沖銷，這種做法有什麼風險？正確方向為何？</b><br>參考答案：VLSTK 是分散式倉儲的分配狀態，清掉等於抹除「已分配給外部倉儲」的事實，可能造成 SAP 與外部倉儲不一致；應檢討為何這些交貨被標記為需分配（倉庫號碼／交貨類型設定），而非每次變更都清狀態。</li>
+    <li><b>AC_DOCUMENT 的 CHANGE_INITIAL 中，為什麼要先 CORRESPONDING 整行再改 SGTXT？「讀下一行」的寫法錯在哪？</b><br>參考答案：EX_DOCUMENT-ITEM 的內容會回寫到會計行，未填欄位有被清空的風險，所以從原行完整複製再改目標欄位；會計行的排列順序是標準程式內部細節，「下一行就是對方科目」不是保證，要用可對應的鍵值配對——與「HANA 沒有預設排序」同一個道理。</li>
+    <li><b>MB_DOCUMENT_BEFORE_UPDATE 與 MB_DOCUMENT_UPDATE 各在什麼環境執行？要把收貨資料送 MES，放哪裡、怎麼送？</b><br>參考答案：前者在對話工作階段、進更新工作前（不在 update task）；後者在更新工作中。在前者收集資料，以 IN UPDATE TASK 呼叫 Z 函數寫入佇列表，再由 bgRFC 或背景作業實際傳送、可重送；兩者都不能 COMMIT，後者更不能 MESSAGE 或同步呼叫外部。</li>
+    <li><b>S/4HANA 中 MB_DOCUMENT_BADI 還有效嗎？自建報表讀 MSEG 要注意什麼？</b><br>參考答案：仍有效，參數仍是 XMKPF／XMSEG；但實體表為 MATDOC，MKPF／MSEG 是相容性視圖，大量彙總應改讀 MATDOC 或標準 CDS。</li>
+    <li><b>生產工單要加「生產批號」客製欄位並在存檔時檢查，需要哪三個零件？各自的出口／物件名稱？</b><br>參考答案：CI_AUFK 加欄位；PPCO0012（SAPLXCO1 畫面 0100，EXIT_SAPLCOKO1_001 PBO／002 PAI，以 E_COCI_AUFK 回傳）做頁籤；PPCO0007（EXIT_SAPLCOZV_001，include ZXCO1U06，HEADER_IMP／HEADER_EXP）做存檔檢查。</li>
+    <li><b>列出 ZXCO1U06 中至少四個違反「增強只做預設值、檢查、非同步交出」原則的寫法。</b><br>參考答案：直接 UPDATE mcha；直接 MODIFY zppt000；動態 ASSIGN (SAPLCOBC)RESB_BT[] 改元件數量；SUBMIT 報表＋IMPORT FROM MEMORY；ABAP Memory 計數器；sy-mandt = '800' 寫死；寫死客戶號碼的例外；REJECT。</li>
+    <li><b>下面條件有什麼問題？<span class="kw">LOOP AT it_return INTO ls WHERE order_number = lv_aufnr AND type = 'E' OR type = 'A'.</span></b><br>參考答案：AND 優先於 OR，實際是「(該工單且 E) 或 (任何工單的 A)」；應寫成 <span class="kw">order_number = lv_aufnr AND ( type = 'E' OR type = 'A' )</span>。</li>
+    <li><b>用 Casper 的「先標準再客製」階梯，替本章任選三個需求各指出一個更左邊的解法。</b><br>參考答案（擇三）：項目類別強制 → VOV4 決定；運費歸零 → VOFM 需求常式／條件記錄；計畫行移動類型 → VOV5／VOV6；會計行文字 → GGB1 替代；利潤中心 → 主檔／3KEH／衍生；批次批號 → 批次分類特性或 BAPI_BATCH_CHANGE；包裝物整數 → BOM／物料捨入設定；TECO 前檢查 → 使用者狀態設定檔 BS02。</li>
+  </ol>
+</section>

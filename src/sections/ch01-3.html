@@ -1,0 +1,1014 @@
+<section class="chapter" id="ch01-3" data-title="三層 VIEW 與重要主數據：SM30 / SE54 / SE39 / ZUSER 實作">
+  <h2 id="ch01-3">第 1-3 章 三層 VIEW 與重要主數據：SM30 / SE54 / SE39 / ZUSER 實作</h2>
+  <p class="lede">這一章要做兩件事。第一件是把「資料表 → 維護視圖 → 維護對話框 → View Cluster → 自訂 TCODE」這條完整的三層式維護鏈路親手做一遍，做出跟 SAP 標準畫面（NACE、OKKP、OMT3）一模一樣的多階維護畫面。第二件是把 SAP 的重要主數據表一次認完：使用者（USR21／ADRP／USR02）、客戶（KNA1／KNB1／KNVV）、廠商（LFA1／LFB1／LFM1）、物料、銷售、採購、財務、庫存，並且知道在 S/4HANA 這些表哪些已經變成相容視圖。學完之後，你能看到任何一個 SAP 畫面就反推出它背後是哪張表、是怎麼被設計出來的。</p>
+
+  <div class="meta">
+    <div><b>核心 TCODE</b><span class="tcode">SE11</span><span class="tcode">SE54</span><span class="tcode">SM30</span><span class="tcode">SM34</span><span class="tcode">SE39</span><span class="tcode">SE38</span><span class="tcode">SE93</span><span class="tcode">SE80</span><span class="tcode">SE16N</span><span class="tcode">SE16H</span><span class="tcode">SE84</span><span class="tcode">SDBE</span><span class="tcode">ST05</span><span class="tcode">NACE</span><span class="tcode">OKKP</span><span class="tcode">OMT3</span><span class="tcode">XD99</span><span class="tcode">XK99</span><span class="tcode">SU01</span><span class="tcode">PA30</span><span class="tcode">PA40</span><span class="tcode">PPOME</span><span class="tcode">SE37</span></div>
+    <div><b>關鍵物件</b>ZMARA／ZMARC／ZMARD、ZMV_MARA／ZMV_MARC／ZMV_MARD、VCLDIR、VCLSTRUC、USR21、ADRP、USR02、KNA1、KNVV、KNB1、LFA1、LFM1、LFB1、MARA、MARC、MARD、MBEW、VBAK、VBAP、EKKO、EKPO、ACDOCA、MATDOC、HRP1001、CL_SALV_TABLE、VIEW_MAINTENANCE_CALL</div>
+  </div>
+
+  <h3 id="ch01-3-01">1. 為什麼要學三層維護？先看 SAP 自己怎麼做</h3>
+  <p>SAP 標準系統裡有一大類畫面長得都一樣：左邊一個樹狀或清單，選一筆，雙擊進去下一層，再選一筆，再進去更下一層。這種畫面叫做<b>多階維護視圖（View Cluster，中文常稱「維護視圖群組」）</b>，不是有人手工刻的 Dialog 程式，而是用 SE54 產生出來的。</p>
+  <ul>
+    <li><span class="tcode">NACE</span>　輸出控制（Output Determination）。應用別 → 輸出類型 → 存取順序 → 條件記錄，典型的多階維護。講義第二節就是叫你先去 NACE 點一遍，體會「原來這是產生出來的」。</li>
+    <li><span class="tcode">OKKP</span>　管控範圍（Controlling Area）維護，也是三層式：管控範圍 → 分派公司代碼 → 啟動元件／控制指標。</li>
+    <li><span class="tcode">OMT3</span>　把倉庫號碼指派到工廠／儲存地點（Assign Warehouse Number to Plant/Storage Location），是 WM 與 IM 整合的重要設定。路徑：SPRO → Enterprise Structure → Assignment → Logistics Execution → Assign Warehouse Number to Plant/Storage Location。它其實就是一支「參數交易」，背後跑的是 View Cluster。</li>
+  </ul>
+  <div class="tip">老師的重點：學完這一章，<b>以後看到類似的畫面就能知道他是如何設計的了</b>。這是 ABAP 顧問跟一般 Coder 的分水嶺 —— 能配置解決的就不要寫程式，而多階維護畫面根本不用寫程式，用產生的就好。</div>
+
+  <h3 id="ch01-3-02">2. 三層式維護的觀念地圖：表 → 維護視圖 → 維護對話框 → View Cluster</h3>
+  <p>整條鏈路一共四個物件，缺一不可。很多同學做不出來，都是因為搞不清楚自己現在在做哪一層。</p>
+  <table>
+    <thead><tr><th>層次</th><th>物件</th><th>建立工具</th><th>用途</th></tr></thead>
+    <tbody>
+      <tr><td>① 資料層</td><td>透明表 Transparent Table（ZMARA／ZMARC／ZMARD）</td><td>SE11</td><td>真正存資料的地方；表跟表之間用<b>外部索引鍵（Foreign Key）</b>串起來</td></tr>
+      <tr><td>② 視圖層</td><td>維護視圖 Maintenance View（ZMV_MARA／ZMV_MARC／ZMV_MARD）</td><td>SE11 → View → Maintenance View</td><td>決定「這一層要維護哪些欄位」，並帶 Delivery Class 與 Data Browser/Table View Maint. 設定</td></tr>
+      <tr><td>③ 畫面層</td><td>維護對話框 Table Maintenance Dialog（Function Group + Screen + 事件）</td><td>SE54（Generated Table Maintenance）</td><td>產生 SM30 可以叫得動的畫面；一步式或兩步式</td></tr>
+      <tr><td>④ 群組層</td><td>維護視圖群組 View Cluster（例如 ZMV_MARA_000）</td><td>SE54 → Edit View Cluster</td><td>把三個維護對話框串成「上層選一筆 → 下層只顯示相關資料」的階層畫面，用 SM34 執行</td></tr>
+    </tbody>
+  </table>
+  <div class="note">名詞對照：SE54 的正式名稱是「Generate Table Maintenance Dialog」，也可以從 SE11 的選單 <b>Utilities → Table Maintenance Generator</b> 進去，兩者是同一件事。SM30 執行「單一維護視圖」，SM34 執行「View Cluster」。</div>
+
+  <h3 id="ch01-3-03">3. 第一步：SE11 建三張表 ZMARA / ZMARC / ZMARD 與外部索引鍵</h3>
+  <p>這三張表在模仿 SAP 標準物料主檔的三層結構：ZMARA（一般資料，Key = MANDT + MATNR）→ ZMARC（工廠資料，Key = MANDT + MATNR + WERKS）→ ZMARD（儲存地點／庫存資料，Key = MANDT + MATNR + WERKS + LGORT）。</p>
+  <table>
+    <thead><tr><th>表</th><th>主鍵</th><th>建議欄位</th><th>外部索引鍵</th></tr></thead>
+    <tbody>
+      <tr><td>ZMARA</td><td>MANDT、MATNR</td><td>MTART（物料類型）、MATKL（物料群組）、MEINS（基本單位）、ERSDA、ERNAM</td><td>MTART → T134、MEINS → T006</td></tr>
+      <tr><td>ZMARC</td><td>MANDT、MATNR、WERKS</td><td>DISMM（MRP 類型）、EKGRP（採購群組）、BESKZ（採購類型）</td><td><b>MANDT、MATNR → ZMARA</b>；WERKS → T001W</td></tr>
+      <tr><td>ZMARD</td><td>MANDT、MATNR、WERKS、LGORT</td><td>LABST（未受限庫存）、INSME（品檢庫存）、SPEME（凍結庫存）</td><td><b>MANDT、MATNR、WERKS → ZMARC</b>；LGORT → T001L</td></tr>
+    </tbody>
+  </table>
+  <p>建外部索引鍵的操作：在 SE11 的 Fields 頁籤把游標停在該欄位 → 按工具列的 <b>Foreign Keys</b> 鑰匙圖示 → Check table 填上層表名 → 系統會自動提出欄位對應（Key fields）→ 確認 <b>Field assignment</b> 正確 → Cardinality 通常填 <b>1 : CN</b>（上層一筆對下層多筆）→ Foreign key field type 選 <b>Key fields of a text table / Non-key-fields</b> 視情況。<span class="src">（依講義步驟整理）</span></p>
+  <div class="warn">外部索引鍵不是裝飾品。<b>SE54 產生 View Cluster 時，就是靠外部索引鍵自動推導上下層的關聯鍵</b>。外鍵沒建或建錯，SE54 抓出來的關聯欄位就會是錯的，做到最後一定卡住。這也是講義 6-04 心得第 2 點在講的事。</div>
+  <p>三張表建好之後，先用一段 ABAP 驗證資料串得起來。這是現代寫法的 JOIN，一次把三層撈出來：</p>
+  <pre><code class="abap">REPORT zmm_zmard_check.
+
+" 三層 JOIN：ZMARA(一般) → ZMARC(工廠) → ZMARD(儲存地點)
+" 注意：ABAP SQL 一律用 @ 逸出主機變數；不要用 SELECT *
+PARAMETERS: p_werks TYPE t001w-werks OBLIGATORY.
+
+SELECT a~matnr,
+       a~mtart,
+       a~matkl,
+       a~meins,
+       c~werks,
+       c~dismm,
+       c~ekgrp,
+       d~lgort,
+       d~labst,
+       d~insme
+  FROM zmara AS a
+  INNER JOIN zmarc AS c ON c~matnr = a~matnr
+  INNER JOIN zmard AS d ON d~matnr = c~matnr
+                       AND d~werks = c~werks
+  WHERE c~werks = @p_werks
+  ORDER BY a~matnr, c~werks, d~lgort
+  INTO TABLE @DATA(lt_stock).
+
+IF lt_stock IS INITIAL.
+  MESSAGE |工廠 { p_werks } 沒有任何資料| TYPE 'S' DISPLAY LIKE 'W'.
+  RETURN.
+ENDIF.
+
+" 用 REDUCE 直接算總庫存，不要再寫迴圈累加
+DATA(lv_total) = REDUCE zmard-labst( INIT s = CONV zmard-labst( 0 )
+                                     FOR &lt;ls&gt; IN lt_stock
+                                     NEXT s = s + &lt;ls&gt;-labst ).
+WRITE: / |工廠 { p_werks } 未受限庫存合計：{ lv_total NUMBER = USER }|.</code></pre>
+  <div class="tip">MANDT 不需要出現在 JOIN 條件裡。ABAP SQL 對 client-dependent 的表會自動加上目前 client 的條件（若真的要跨 client，才用 <b>USING ALL CLIENTS</b> 或 <b>USING CLIENT @lv_mandt</b>）。</div>
+
+  <h3 id="ch01-3-04">4. 第二步：SE11 建三個維護視圖 ZMV_MARA / ZMV_MARC / ZMV_MARD</h3>
+  <p>路徑：<span class="tcode">SE11</span> → View → 輸入 <b>ZMV_MARA</b> → Create → 選 <b>Maintenance View</b>。</p>
+  <ol>
+    <li><b>Tables/Join Conditions</b>：Tables 只放一張表（ZMARA）。三層維護的每一個維護視圖各自對應一張表，不要在這裡就 JOIN 起來，JOIN 是 View Cluster 的工作。</li>
+    <li><b>View Flds</b>：按 <b>Table fields</b> 把要維護的欄位全部帶進來。Key 欄位一定要在。</li>
+    <li><b>Maint.Status</b>（維護狀態）頁籤：<b>Access = Read and change</b>（可讀可改）；Delivery class 通常設 <b>A</b>（Application table）或 <b>C</b>（Customizing table，會產生傳輸請求）。</li>
+    <li>存檔 → 指定 Package（<b>三個 View 必須放同一個 Package</b>）→ Activate。</li>
+    <li>ZMV_MARC、ZMV_MARD 重複同樣動作。</li>
+  </ol>
+  <div class="warn">講義 6-04 心得第 3 點的「S」：在建 <b>Maintenance View</b> 與建 <b>Cluster View</b> 的欄位清單裡，都有一欄要勾成 <b>S</b>（代表該欄位是上層傳下來的「Selection／Sub-set 欄位」，也就是用來把下層資料限縮成「只屬於上層那一筆」的欄位）。<b>兩個地方都要勾，只勾一邊做不出階層效果。</b></div>
+  <div class="note">Delivery Class 選 C 還是 A 的實務差別：設定型資料（客戶自訂的組態）選 <b>C</b>，維護時會跳出傳輸請求視窗，可以從 DEV 傳到 PRD；交易型／主資料選 <b>A</b>，資料留在各系統不跟著傳輸。做客戶專案時選錯，會變成「PRD 的資料被 DEV 覆蓋」或「設定傳不過去」。</div>
+
+  <h3 id="ch01-3-05">5. 第三步：SE54 產生維護對話框（一步式 vs 兩步式）</h3>
+  <p>SE54 初始畫面：輸入 <b>Table/View</b> = ZMV_MARA → 選 <b>Generated Objects</b> → Create。要填的三個關鍵欄位：</p>
+  <table>
+    <thead><tr><th>欄位</th><th>填什麼</th><th>說明</th></tr></thead>
+    <tbody>
+      <tr><td>Authorization Group</td><td><b>&amp;NC&amp;</b> 或自訂的權限群組</td><td>&amp;NC&amp; = 不檢查。正式專案應建自己的權限群組（SE54 → Authorization Groups）</td></tr>
+      <tr><td>Function Group</td><td>自己的 Z 開頭 FG，例如 <b>ZFG_MM_MARA</b></td><td><b>老師特別強調：要用自己的 Function Group，不要像截圖裡用 TMP。</b>TMP 是本機物件，不能傳輸，而且會跟別人打架</td></tr>
+      <tr><td>Maintenance type</td><td><b>one step</b> 或 <b>two step</b></td><td>見下表</td></tr>
+      <tr><td>Overview screen / Single screen</td><td>按 <b>Find scr. number(s)</b> 讓系統自動配號（通常 0001 / 0002）</td><td>兩步式才需要第二個畫面號</td></tr>
+    </tbody>
+  </table>
+  <table>
+    <thead><tr><th>維護型態</th><th>畫面</th><th>適用時機</th></tr></thead>
+    <tbody>
+      <tr><td><b>一步式 One step</b></td><td>只有一個總覽畫面（Overview），所有欄位都在同一列上編輯</td><td>欄位少（大約 10 個以內）、螢幕放得下；三層維護的下層通常用一步式</td></tr>
+      <tr><td><b>兩步式 Two step</b></td><td>總覽畫面只顯示 Key + 少數欄位，雙擊某一列才進入單筆明細畫面（Single screen）維護全部欄位</td><td>欄位多、或需要在明細畫面做分組與說明文字</td></tr>
+    </tbody>
+  </table>
+  <p>三個維護視圖各做一次 SE54，做完三個維護對話框。做完之後用 <span class="tcode">SM30</span> 逐一測試：輸入 ZMV_MARA → Maintain → 應該可以新增／修改／刪除。</p>
+  <div class="tip">SE54 產生出來的東西可以在 SE80 的那個 Function Group 底下看到：畫面 0001/0002、PBO/PAI 模組、以及一個 <b>Events</b> 掛點。要加自訂檢核邏輯就是掛在 Events，不是去改產生出來的畫面（會被重新產生時蓋掉）。</div>
+
+  <h3 id="ch01-3-06">6. 在維護對話框掛事件：存檔前檢核（Event 01 / 05 / 21）</h3>
+  <p>SE54 → 進入產生畫面後選單 <b>Environment → Modification → Events</b>，選一個事件編號，填一個 FORM 名稱，按小鉛筆讓系統把 FORM 骨架寫進 Function Group 的 include（通常是 <code>LZFG_MM_MARAF01</code>）。常用事件：</p>
+  <table>
+    <thead><tr><th>事件</th><th>時機</th><th>典型用途</th></tr></thead>
+    <tbody>
+      <tr><td>01</td><td>Before saving the data in the database</td><td>存檔前的完整性檢核、擋掉不合理資料</td></tr>
+      <tr><td>02</td><td>After saving the data in the database</td><td>寫 Log、觸發後續處理</td></tr>
+      <tr><td>05</td><td>Creating a new entry</td><td>自動帶預設值、自動編號</td></tr>
+      <tr><td>21</td><td>Fill hidden fields</td><td>補 ERDAT／ERNAM／AEDAT／AENAM 這種不顯示在畫面上的欄位</td></tr>
+      <tr><td>AA</td><td>Instead of the standard data read routine</td><td>自己控制資料讀取（少用）</td></tr>
+    </tbody>
+  </table>
+  <pre><code class="abap">*&amp;---------------------------------------------------------------------*
+*&amp; Include LZFG_MM_MARAF01 —— SE54 事件的自訂 FORM
+*&amp;---------------------------------------------------------------------*
+
+" Event 21：Fill hidden fields（自動補建檔人與建檔日）
+FORM fill_hidden_fields.
+  " TOTAL / EXTRACT 是維護對話框產生的全域內表，型別為 view 的結構
+  zmv_mara-ersda = COND #( WHEN zmv_mara-ersda IS INITIAL
+                           THEN sy-datum ELSE zmv_mara-ersda ).
+  zmv_mara-ernam = COND #( WHEN zmv_mara-ernam IS INITIAL
+                           THEN sy-uname ELSE zmv_mara-ernam ).
+ENDFORM.
+
+" Event 01：Before saving —— 存檔前檢核
+FORM check_before_save.
+  " 物料類型必須存在於 T134，否則擋下
+  FIELD-SYMBOLS &lt;ls_row&gt; TYPE zmv_mara.
+
+  LOOP AT total ASSIGNING FIELD-SYMBOL(&lt;ls_total&gt;).
+    " TOTAL 的第 1 個字元是動作旗標，資料本體從第 2 個字元起
+    ASSIGN &lt;ls_total&gt;+1 TO &lt;ls_row&gt; CASTING.
+    IF sy-subrc &lt;&gt; 0.
+      CONTINUE.
+    ENDIF.
+
+    SELECT SINGLE @abap_true FROM t134
+      WHERE mtart = @&lt;ls_row&gt;-mtart
+      INTO @DATA(lv_exists).
+
+    IF lv_exists &lt;&gt; abap_true.
+      MESSAGE |物料類型 { &lt;ls_row&gt;-mtart } 不存在於 T134| TYPE 'E'.
+    ENDIF.
+  ENDLOOP.
+ENDFORM.</code></pre>
+  <div class="warn">維護對話框的內表 <b>TOTAL</b> 第一個字元是「動作旗標」（<code>'N'</code> 新增、<code>'U'</code> 修改、<code>'D'</code> 刪除、空白＝未異動），資料本體從第 2 個字元起，所以上面才要用 <code>&lt;ls_total&gt;+1</code> 搭配 <code>CASTING</code>。直接把 TOTAL 當成 view 結構用會整個欄位位移。</div>
+
+  <h3 id="ch01-3-07">7. 第四步：SE54 建 View Cluster（三層）與 SM34 執行</h3>
+  <p>路徑：<span class="tcode">SE54</span> → 在初始畫面選 <b>Edit View Cluster</b>（維護視圖群組）→ 輸入名稱 <b>ZMV_MARA_000</b> → Create。</p>
+  <ol>
+    <li><b>Object Structure</b>（物件結構）：依序把三個維護視圖登記進來
+      <ul>
+        <li>ZMV_MARA　Position 1、<b>Dep. = 上層（起始節點）</b>、Predecessor 留空</li>
+        <li>ZMV_MARC　Position 2、Predecessor = <b>ZMV_MARA</b></li>
+        <li>ZMV_MARD　Position 3、Predecessor = <b>ZMV_MARC</b></li>
+      </ul>
+    </li>
+    <li>每一列雙擊進 <b>Field-Dependence</b>（欄位相依）：把上層傳下來的 Key 欄位對應好，並勾上前面說的 <b>S</b>。ZMARC 要對 MANDT + MATNR；ZMARD 要對 MANDT + MATNR + WERKS。<b>系統自動抓的關聯鍵可能不準，要會自己調整。</b></li>
+    <li><b>Header Entry</b>：填 View Cluster 的說明文字。</li>
+    <li>存檔 → 指定 Package（跟三個 View 同一個 Package）→ <b>返回上一頁之後，要再按 ACTIVATE 鈕</b>（老師特別提醒，很多人漏掉這一步，結果 SM34 打不開）。</li>
+  </ol>
+  <p>執行：<span class="tcode">SM34</span> → 輸入 <b>ZMV_MARA_000</b> → Maintain。應該看到左邊 Dialog Structure 樹狀，點 ZMARA 選一筆物料 → 雙擊左樹的「工廠」節點 → 只出現該物料的工廠資料 → 再往下就是儲存地點。</p>
+  <h4>三層維護實作心得（老師的三條鐵律）</h4>
+  <ol>
+    <li><b>所有的 View 都要在同一個 Package。</b>跨 Package 會在啟用或傳輸時出問題。</li>
+    <li><b>SE54 讓系統自動抓關聯鍵時，可能不準，要會自己調整。</b>自動推導靠的是外部索引鍵，外鍵設計不完整就會抓錯。</li>
+    <li><b>「S」設定在建 Maintenance View 與 Cluster View 時都要勾。</b></li>
+  </ol>
+  <h4>SE11 改良修正（6-03）</h4>
+  <ul>
+    <li>執行結果應該是 <b>MANDT 不必勾成 S</b>。MANDT 是 client 欄位，系統自己會處理，勾成 S 反而會多出一個沒用的相依條件。</li>
+    <li>有些欄位的抬頭（Column heading）不正確，這是資料元素的短文字問題。<b>只能在 Screen Layout（畫面配置）上修飾</b> —— 進 SE51 或從 SE54 的產生畫面雙擊欄位，改 Text 屬性；或者回到 SE11 把 Data Element 的 Field Label（Short／Medium／Long／Heading）補齊，再重新產生一次維護對話框。</li>
+  </ul>
+  <div class="warn">改完 Data Element 的欄位標籤後，維護對話框<b>不會自動更新</b>，要回 SE54 對該 view 執行「重新產生（Generated Objects → Change → 重新產生）」。如果你已經在產生的畫面上手工改過東西，重新產生會蓋掉，這也是為什麼自訂邏輯要寫在 Events 而不是寫在畫面裡。</div>
+
+  <h3 id="ch01-3-08">8. 第五步：把 View Cluster 變成自己的 TCODE（參數交易）</h3>
+  <p>SM34 每次都要輸入 View Cluster 名稱很不方便。SAP 標準的做法（OMT3、OVXM 這些交易就是這樣做出來的）是建一支<b>參數交易（Parameter Transaction）</b>，直接跳過初始畫面。</p>
+  <p>操作：<span class="tcode">SE93</span> → 建立交易碼 <b>ZMM_MARA3</b> → 選 <b>Transaction with parameters (parameter transaction)</b> →</p>
+  <table>
+    <thead><tr><th>設定</th><th>View Cluster（SM34）</th><th>單一維護視圖（SM30）</th></tr></thead>
+    <tbody>
+      <tr><td>Transaction</td><td><b>SM34</b>（或 VIEWCLUSTER）</td><td><b>SM30</b></td></tr>
+      <tr><td>Skip initial screen</td><td>勾選</td><td>勾選</td></tr>
+      <tr><td>Default Values：欄位 1</td><td><b>VCLDIR-VCLNAME</b> = <b>ZMV_MARA_000</b></td><td><b>VIEWNAME</b> = <b>ZMV_MARA</b></td></tr>
+      <tr><td>Default Values：欄位 2</td><td><b>UPDATE</b> = <b>X</b></td><td><b>UPDATE</b> = <b>X</b></td></tr>
+    </tbody>
+  </table>
+  <div class="note">UPDATE = 'X' 代表進去就是「維護模式」（可改）；不填就是顯示模式。這正是講義寫的 <code>VCLDIR-VCLNAME　zmv_mara_000</code> / <code>UPDATE　x</code> 兩行的意思。</div>
+  <p>相關的系統表（想知道某個 TCODE 背後掛的是哪個 View Cluster，就查這幾張）：</p>
+  <table>
+    <thead><tr><th>表</th><th>內容</th></tr></thead>
+    <tbody>
+      <tr><td><b>VCLDIR</b></td><td>View Cluster 目錄（VCLNAME＝群組名稱）</td></tr>
+      <tr><td><b>VCLSTRUC / VCLSTRUCT</b></td><td>View Cluster 的物件結構與階層關係</td></tr>
+      <tr><td><b>VCLMF</b></td><td>View Cluster 的欄位相依設定</td></tr>
+      <tr><td><b>TVDIR</b></td><td>維護對話框目錄：哪個 view 用哪個 Function Group、幾號畫面、一步還兩步</td></tr>
+      <tr><td><b>TSTC / TSTCP</b></td><td>交易碼主檔／交易碼的參數（參數交易的預設值就存在 TSTCP-PARAM）</td></tr>
+    </tbody>
+  </table>
+  <p>如果不想建 TCODE，也可以在自己的程式裡直接叫起維護畫面：</p>
+  <pre><code class="abap">REPORT zmm_call_maint.
+
+" (1) 叫起單一維護視圖 = 程式版的 SM30
+CALL FUNCTION 'VIEW_MAINTENANCE_CALL'
+  EXPORTING
+    action                 = 'U'          " U = 維護(可改)，S = 顯示
+    view_name              = 'ZMV_MARA'
+  EXCEPTIONS
+    client_reference       = 1
+    foreign_lock           = 2
+    invalid_action         = 3
+    no_clientindependent_auth = 4
+    no_database_function   = 5
+    no_editor_function     = 6
+    no_show_auth           = 7
+    no_tvdir_entry         = 8
+    no_upd_auth            = 9
+    only_show_auth         = 10
+    permission_failure     = 11
+    view_not_found         = 12
+    OTHERS                 = 13.
+
+IF sy-subrc &lt;&gt; 0.
+  MESSAGE |呼叫維護畫面失敗，SUBRC = { sy-subrc }| TYPE 'E'.
+ENDIF.
+
+" (2) 叫起 View Cluster = 程式版的 SM34
+CALL FUNCTION 'VIEWCLUSTER_MAINTENANCE_CALL'
+  EXPORTING
+    viewcluster_name = 'ZMV_MARA_000'
+    maintenance_action = 'U'
+  EXCEPTIONS
+    client_reference          = 1
+    foreign_lock              = 2
+    viewcluster_not_found     = 3
+    viewcluster_is_inconsistent = 4
+    missing_generated_function = 5
+    no_upd_auth               = 6
+    no_show_auth              = 7
+    object_not_found          = 8
+    no_tvdir_entry            = 9
+    no_clientindependent_auth = 10
+    called_from_other_system  = 11
+    OTHERS                    = 12.
+
+IF sy-subrc &lt;&gt; 0.
+  MESSAGE |呼叫 View Cluster 失敗，SUBRC = { sy-subrc }| TYPE 'E'.
+ENDIF.</code></pre>
+  <div class="tip">實務常用的第三支：<code>VIEW_MAINTENANCE_SINGLE_ENTRY</code> 可以直接跳到某一筆資料的明細畫面，做「從 ALV 雙擊 → 跳去維護該筆設定」很好用。</div>
+
+  <h3 id="ch01-3-09">9. SE39：分割螢幕編輯器與程式比較</h3>
+  <p><span class="tcode">SE39</span> 是 <b>ABAP Splitscreen Editor（分割螢幕編輯器）</b>：左右各開一支程式，同一個畫面對照著看、對照著改。做客製最常用在「客戶版程式 vs 標準程式」、「新版 vs 舊版」的比對。</p>
+  <ul>
+    <li><b>開啟</b>：SE39 → 左欄輸入程式 A、右欄輸入程式 B → Display／Change。也可以從 SE38 的選單 <b>Utilities → Splitscreen Editor</b> 進去。</li>
+    <li><b>比對</b>：左右都載入之後按 <b>Compare</b>（比較）鈕，系統會標出差異行；<b>Next difference / Previous difference</b> 逐段跳。</li>
+    <li><b>搬程式碼</b>：選取左邊的段落 → 用剪下貼上直接放進右邊，做版本移植時很省事。</li>
+    <li><b>版本管理</b>：真正要看「同一支程式的不同版本」差異，用 SE38 → <b>Utilities → Versions → Version Management</b>，選兩個版本按 <b>Compare</b>；跨系統比對可以按 <b>Remote comparison</b> 指定 RFC 目的地，比對 DEV 與 PRD 的同一支程式。</li>
+    <li><b>Eclipse/ADT</b>：在 ADT 裡是 <b>Compare With → Another ABAP Object / Local History</b>，功能更好用，但 SE39 在只有 SAP GUI 的客戶現場仍然是必備技能。</li>
+  </ul>
+  <div class="tip">老師的用法：把「上課寫的版本」跟「自己回家改的版本」用 SE39 並排，一邊比一邊記，比單純重看程式有效得多。另外，做增強（User Exit／BAdI）前，先用 SE39 把標準程式跟自己要改的 Include 並排，可以避免改錯地方。</div>
+
+  <h3 id="ch01-3-10">10. 查資料的兩把刀：SE16N 與 SE16H；以及怎麼由畫面欄位反查資料表</h3>
+  <h4>SE16 / SE16N / SE16H 的差別</h4>
+  <table>
+    <thead><tr><th>TCODE</th><th>特色</th><th>什麼時候用</th></tr></thead>
+    <tbody>
+      <tr><td>SE16</td><td>最原始的 Data Browser，畫面陽春</td><td>權限只給到 SE16 時</td></tr>
+      <tr><td><b>SE16N</b></td><td>General Table Display。可自選輸出欄位、可存 Variant、可直接輸出成 ALV／Excel、支援 <b>&amp;SAP_EDIT</b>（多數 S/4 系統已鎖住或需 Debug 才能開）</td><td>日常查資料的主力</td></tr>
+      <tr><td><b>SE16H</b></td><td>HANA 版。多了 <b>Group by／Aggregation（SUM、MAX、MIN、AVG、COUNT）</b>、<b>Having</b>、<b>Order by</b>、多表 JOIN（Table Join 頁籤）、以及「Total」「Sort」欄位設定</td><td>要做小計、分群、快速驗證統計數字時 —— 不用寫程式就能當一次性報表</td></tr>
+    </tbody>
+  </table>
+  <div class="tip">SE16H 的隱藏技：勾 <b>Outer Join</b> 可以做左外接；<b>Number of Hits</b> 設 0 代表不限筆數（大表小心）；輸入條件時用列舉（逗號分隔的多個單值）比用區間（BETWEEN）安全，因為某些欄位（例如版本、成本類別）在區間裡會夾進你不想要的值。</div>
+  <div class="warn">SE16N 的 <b>&amp;SAP_EDIT</b> 直接改資料庫、<b>不會走任何應用邏輯、不會寫變更文件</b>，在生產機是重大事故來源。任何時候都不要在 PRD 用它「修資料」。</div>
+
+  <h4>由畫面欄位反查資料表（四招）</h4>
+  <ol>
+    <li><b>F1 → 技術資訊（Technical Information）</b>：把游標放在欄位上按 <b>F1</b> → 按小鎚子（Technical Information）→ 會顯示 <b>Table Name（畫面結構名）</b>、<b>Field Name</b>、<b>Data Element</b>、<b>Screen field</b>、<b>Program name / Screen number</b>。注意這裡看到的常常是<b>畫面結構</b>（例如 RM03M、VBAK 的 dialog structure），不一定是真正的資料庫表。</li>
+    <li><b>從 Data Element 反查</b>：拿到 Data Element 之後，SE11 顯示該 Data Element → 按 <b>Where-Used List（Ctrl+Shift+F3）</b> → 勾 <b>Table Fields</b> → 就會列出所有用到這個資料元素的資料表。</li>
+    <li><b>SE84（Repository Information System）</b>：ABAP Dictionary → Database Tables／Views，可以用<b>名稱樣式、Package、Application Component</b> 搜尋。例如想找 SD 的表就用 Application Component = SD 去撈。SE84 也可以反查「某個 Table 被哪些程式用到」。</li>
+    <li><b>SDBE / ST05（追 SQL）</b>：
+      <ul>
+        <li><span class="tcode">ST05</span> SQL Trace：<b>Activate Trace</b> → 去畫面做一次操作 → 回來 <b>Deactivate Trace</b> → <b>Display Trace</b>。追出來的每一行都是真正打到 DB 的 SQL，表名一目瞭然。這是最可靠的一招。</li>
+        <li><span class="tcode">SDBE</span> Explain SQL Statement：把一段 SQL 貼進去看執行計畫（Explain Plan），用來判斷有沒有走到索引。ST05 的 trace 明細上按 <b>Explain</b> 也會轉到同樣的功能。</li>
+      </ul>
+    </li>
+  </ol>
+  <p>也可以用程式查字典。下面這段用 DDIC 表反查「哪些資料表含有某個欄位」：</p>
+  <pre><code class="abap">REPORT zdd_find_table.
+
+PARAMETERS: p_field TYPE dd03l-fieldname DEFAULT 'MATNR'.
+
+" DD02L 資料表目錄 / DD03L 欄位 / DD02T 表說明 / DD04T 資料元素說明
+SELECT t~tabname,
+       t~tabclass,
+       f~fieldname,
+       f~keyflag,
+       f~rollname,
+       x~ddtext AS table_text
+  FROM dd02l AS t
+  INNER JOIN dd03l AS f ON f~tabname = t~tabname
+  LEFT OUTER JOIN dd02t AS x ON x~tabname = t~tabname
+                            AND x~ddlanguage = @sy-langu
+  WHERE f~fieldname = @p_field
+    AND t~tabclass  = 'TRANSP'          " 只看透明表
+    AND t~as4local  = 'A'               " 只看已啟用版本
+  ORDER BY t~tabname
+  INTO TABLE @DATA(lt_tab).
+
+IF lt_tab IS INITIAL.
+  MESSAGE |找不到含欄位 { p_field } 的透明表| TYPE 'S' DISPLAY LIKE 'W'.
+  RETURN.
+ENDIF.
+
+TRY.
+    cl_salv_table=&gt;factory( IMPORTING r_salv_table = DATA(lo_alv)
+                            CHANGING  t_table      = lt_tab ).
+    lo_alv-&gt;get_functions( )-&gt;set_all( ).
+    lo_alv-&gt;get_columns( )-&gt;set_optimize( abap_true ).
+    lo_alv-&gt;get_display_settings( )-&gt;set_list_header( |含有欄位 { p_field } 的資料表| ).
+    lo_alv-&gt;display( ).
+  CATCH cx_salv_msg INTO DATA(lx_salv).
+    MESSAGE lx_salv-&gt;get_text( ) TYPE 'E'.
+ENDTRY.</code></pre>
+
+  <h3 id="ch01-3-11">11. SAP 重要主數據表總覽（以及 S/4HANA 的相容視圖）</h3>
+  <p>這是老師要求「一定要背」的部分。寫 ABAP 的人腦子裡要有這張地圖，看到需求才知道去哪撈資料。</p>
+  <h4>物料主檔（MM）</h4>
+  <table>
+    <thead><tr><th>表</th><th>層級 / 主鍵</th><th>內容</th></tr></thead>
+    <tbody>
+      <tr><td><b>MARA</b></td><td>MATNR</td><td>物料一般資料：MTART 物料類型、MATKL 物料群組、MEINS 基本單位、MBRSH 產業別</td></tr>
+      <tr><td><b>MAKT</b></td><td>MATNR + SPRAS</td><td>物料說明（多語言）。查中文要加 <code>spras = @sy-langu</code></td></tr>
+      <tr><td><b>MARC</b></td><td>MATNR + WERKS</td><td>工廠層資料：DISMM MRP 類型、EKGRP 採購群組、BESKZ 採購類型、DZEIT 自製時間</td></tr>
+      <tr><td><b>MARD</b></td><td>MATNR + WERKS + LGORT</td><td>儲存地點庫存：LABST 未受限、INSME 品檢、SPEME 凍結</td></tr>
+      <tr><td><b>MBEW</b></td><td>MATNR + BWKEY(+BWTAR)</td><td>評價資料：VPRSV 價格控制(S/V)、STPRS 標準價、VERPR 移動平均價、LBKUM 總量、SALK3 總值</td></tr>
+      <tr><td><b>MVKE</b></td><td>MATNR + VKORG + VTWEG</td><td>銷售資料</td></tr>
+      <tr><td><b>MCHA / MCHB</b></td><td>批次主檔 / 批次庫存</td><td>有啟用批次管理才有</td></tr>
+      <tr><td><b>MARDH / MBEWH / MCHBH</b></td><td>+ LFGJA + LFMON</td><td><b>歷史庫存（期末）</b>。查上月底庫存必用，但只有「該月有異動」才會產生歷史列</td></tr>
+    </tbody>
+  </table>
+  <div class="warn">S/4HANA 的 MM-IM 簡化：<b>MARD、MCHB、MSKA、MSKU、MSLB、MKOL、MSPR、MSTB、MSTE、MSTQ 等庫存量表，已經改成建立在 MATDOC / MATDOC_EXTRACT 之上的相容視圖（NSDM_V_MARD 之類）</b>。它們仍然 SELECT 得動（相容視圖的用意就是讓舊程式不用改），但要注意：(1) <b>不可以直接 INSERT/UPDATE/MODIFY</b>；(2) 拿它們當大量 JOIN 的主表效能會很差，S/4 的正解是改用對應的 <b>CDS View</b>（例如 I_MaterialStock、I_MaterialDocumentItem）；(3) MARDH 這種歷史表在 S/4 一樣是由 MATDOC 推算，抓期末庫存要注意「無異動月份不產生資料」的老坑。</div>
+
+  <h4>客戶主檔（SD／FI）—— XD99 大量維護</h4>
+  <table>
+    <thead><tr><th>表</th><th>視角</th><th>重要欄位</th></tr></thead>
+    <tbody>
+      <tr><td><b>KNA1</b></td><td>一般資料（General）</td><td>KUNNR 客戶編號、NAME1 名字、NAME2 姓、LAND1 國別、SPRAS 語言、SORTL 搜尋字串、ERDAT 建檔日期、ERNAM 建檔人員</td></tr>
+      <tr><td><b>KNB1</b></td><td>公司代碼（Company Code）</td><td>KUNNR、BUKRS 公司代碼、PERNR 員工編號、AKONT <b>應收帳款統馭科目</b>、ZTERM 付款條件、ERDAT、ERNAM</td></tr>
+      <tr><td><b>KNVV</b></td><td>銷售範圍（Sales Area）</td><td>KUNNR、VKORG 銷售組織、VTWEG 銷售通路、SPART 產品別、WAERS 幣別、ZTERM 付款條件、KTGRD <b>客戶科目分類群組（收入類別）</b>、VWERK 工廠、INCO1 貿易條件、INCO2 條件地點、ERDAT、ERNAM</td></tr>
+      <tr><td>KNVK / KNVP / KNVH</td><td>聯絡人 / 夥伴功能 / 客戶階層</td><td>KNVP 的 PARVW 決定 SP(售達)、SH(送達)、BP(帳單)、PY(付款)</td></tr>
+    </tbody>
+  </table>
+  <div class="note">講義的練習：<b>把 KNA1（共同資料）、KNB1（公司資料）、KNVV（銷售資料）合併在一個 ALV 上</b>，這就是 XD99（客戶主檔大量維護）在做的事的簡化版。</div>
+
+  <h4>廠商主檔（MM／FI）—— XK99 大量維護</h4>
+  <table>
+    <thead><tr><th>表</th><th>視角</th><th>重要欄位</th></tr></thead>
+    <tbody>
+      <tr><td><b>LFA1</b></td><td>一般資料</td><td>LIFNR 廠商編號、NAME1、NAME2、LAND1、SPRAS、<b>KTOKK 帳戶群組</b>、ERDAT、ERNAM、<b>KUNNR 對應客戶</b>（同一法人同時是客戶也是廠商時填）</td></tr>
+      <tr><td><b>LFB1</b></td><td>公司代碼</td><td>LIFNR、BUKRS、PERNR、AKONT <b>應付帳款統馭科目</b>、ZTERM、ERDAT、ERNAM</td></tr>
+      <tr><td><b>LFM1</b></td><td>採購組織</td><td>LIFNR、EKORG 採購組織、WAERS 幣別、ZTERM 付款條件、<b>INCO1/INCO2</b>、ERDAT、ERNAM</td></tr>
+      <tr><td>LFM2 / LFBK / LFBW</td><td>採購資料(依產品別) / 銀行 / 扣繳</td><td>—</td></tr>
+    </tbody>
+  </table>
+  <div class="warn">講義原文把 LFA1-KTOKK 標成「搜尋字串」、LFM1 第一欄寫成 KUNNR，這是抄寫時的筆誤。正確是：<b>LFA1-KTOKK ＝ 帳戶群組（Account Group）</b>，搜尋字串是 <b>LFA1-SORTL</b>；<b>LFM1 的主鍵是 LIFNR + EKORG</b>，沒有 KUNNR 與 VTWEG。</div>
+  <div class="warn"><b>S/4HANA 的最大變化：Business Partner（BP）強制。</b>客戶與廠商一律先建 BP（TCODE <span class="tcode">BP</span>），系統再透過 CVI（Customer/Vendor Integration）同步產生 KNA1／LFA1。相關表：<b>BUT000</b>（BP 一般資料）、<b>BUT020</b>（BP 地址）、<b>BUT100</b>（BP 角色）、<b>CVI_CUST_LINK</b>（BP ↔ KUNNR 對照）、<b>CVI_VEND_LINK</b>（BP ↔ LIFNR 對照）。XD01／XK01 這些舊交易在 S/4 已被停用（只剩顯示或直接不能用），程式如果要建客戶／廠商，要改呼叫 BP 的 API（例如 <code>CVI_EI_INBOUND_MAIN</code> 或 OData API_BUSINESS_PARTNER）。</div>
+
+  <h4>銷售 / 出貨 / 開票（SD）</h4>
+  <table>
+    <thead><tr><th>單據</th><th>抬頭</th><th>明細</th><th>備註</th></tr></thead>
+    <tbody>
+      <tr><td>銷售訂單 VA01/02/03</td><td><b>VBAK</b>（VBELN）</td><td><b>VBAP</b>（VBELN+POSNR）</td><td>VBEP 交期排程、VBPA 夥伴、VBKD 商務資料</td></tr>
+      <tr><td>交貨單 VL01N/VL03N</td><td><b>LIKP</b></td><td><b>LIPS</b></td><td>LIPS-VGBEL/VGPOS 回指銷售訂單</td></tr>
+      <tr><td>發票 VF01/VF03</td><td><b>VBRK</b></td><td><b>VBRP</b></td><td>VBRP-AUBEL/AUPOS 回指銷售訂單</td></tr>
+      <tr><td>流程串接</td><td><b>VBFA</b>（單據流 Document Flow）</td><td>—</td><td>VBELV 前置單據 → VBELN 後續單據，VBTYP_N 單據類別</td></tr>
+    </tbody>
+  </table>
+  <div class="warn">S/4HANA：<b>VBUK / VBUP（銷售單據狀態表）已被刪除</b>，狀態欄位（GBSTK 總體狀態、LFSTK 交貨狀態、FKSTK 開票狀態等）<b>併入 VBAK / VBAP 本身</b>。舊程式若 SELECT VBUK 會直接語法錯誤，要改抓 VBAK。同理 LIKP/LIPS 的狀態併回 LIKP/LIPS。另外 <b>KONV（條件明細）改名為 PRCD_ELEMENTS</b>，KONV 只剩相容視圖。</div>
+
+  <h4>採購（MM）</h4>
+  <table>
+    <thead><tr><th>表</th><th>內容</th></tr></thead>
+    <tbody>
+      <tr><td><b>EBAN</b></td><td>採購申請 PR（BANFN + BNFPO）</td></tr>
+      <tr><td><b>EKKO</b></td><td>採購單抬頭（EBELN）：LIFNR 廠商、EKORG 採購組織、BSART 單據類型、BEDAT 單據日期</td></tr>
+      <tr><td><b>EKPO</b></td><td>採購單明細（EBELN + EBELP）：MATNR、WERKS、MENGE 數量、NETPR 單價、LOEKZ <b>刪除旗標</b>、ELIKZ 交貨完成</td></tr>
+      <tr><td><b>EKET</b></td><td>交期排程（Delivery Schedule）</td></tr>
+      <tr><td><b>EKBE</b></td><td><b>採購單歷史</b>：收貨(BEWTP='E')、發票(BEWTP='Q')，抓「PO 收了多少、付了多少」一定用它</td></tr>
+      <tr><td><b>EINA / EINE</b></td><td>採購資訊記錄（一般 / 採購組織）</td></tr>
+    </tbody>
+  </table>
+
+  <h4>生產（PP）</h4>
+  <table>
+    <thead><tr><th>表</th><th>內容</th></tr></thead>
+    <tbody>
+      <tr><td><b>AUFK</b></td><td>訂單主檔（AUFNR）—— 生產訂單、內部訂單共用</td></tr>
+      <tr><td><b>AFKO</b></td><td>生產訂單抬頭（AUFNR + AUFPL 工序計畫）</td></tr>
+      <tr><td><b>AFPO</b></td><td>生產訂單明細（產出物料、數量）</td></tr>
+      <tr><td><b>AFVC / AFVV</b></td><td>工序（Operation）與其數量／時間</td></tr>
+      <tr><td><b>RESB</b></td><td>預留（Reservation）＝ 生產訂單的用料清單</td></tr>
+      <tr><td><b>MAST / STKO / STPO</b></td><td>BOM：物料↔BOM 對照 / BOM 抬頭 / BOM 明細</td></tr>
+      <tr><td><b>PLKO / PLPO / MAPL</b></td><td>途程：抬頭 / 工序 / 物料途程對照</td></tr>
+    </tbody>
+  </table>
+
+  <h4>財務與庫存（FI / MM-IM）—— S/4 變動最大的區域</h4>
+  <table>
+    <thead><tr><th>傳統表</th><th>內容</th><th>S/4HANA 現況</th></tr></thead>
+    <tbody>
+      <tr><td><b>BKPF</b> / <b>BSEG</b></td><td>會計憑證抬頭 / 明細</td><td>仍然存在，但<b>唯一真實來源是 ACDOCA（Universal Journal）</b>。BSEG 只保留部分欄位角色</td></tr>
+      <tr><td><b>ACDOCA</b></td><td>統一日記帳行項目</td><td>FI + CO + AA + ML 合而為一。欄位：RBUKRS 公司代碼、GJAHR、BELNR、DOCLN、RACCT 會計科目、HSL/KSL/OSL 各幣別金額、RCNTR 成本中心、PRCTR 利潤中心、KOKRS、AUFNR、MATNR、WERKS、USNAM 輸入人員</td></tr>
+      <tr><td>BSIS/BSAS、BSID/BSAD、BSIK/BSAK</td><td>總帳／客戶／廠商 未清+已清 索引表</td><td><b>已改為相容視圖</b>，資料實際來自 ACDOCA + BSEG。不要再拿它們做大量 JOIN</td></tr>
+      <tr><td>GLT0、FAGLFLEXA/T、COEP、COSS/COSP</td><td>總帳／新總帳／CO 明細與彙總</td><td>全部由 <b>ACDOCA</b> 取代，原表改為相容視圖</td></tr>
+      <tr><td><b>MKPF</b> / <b>MSEG</b></td><td>物料憑證抬頭 / 明細</td><td>由 <b>MATDOC</b> 取代；MKPF／MSEG 變成相容視圖（NSDM_V_MKPF / NSDM_V_MSEG）。<b>不可寫入</b>，且 MB5B 這類報表改讀 MATDOC</td></tr>
+      <tr><td><b>MATDOC</b></td><td>物料憑證單一表</td><td>同時扛「憑證明細 + 庫存彙總」，欄位極多（1000+），查詢請明列欄位</td></tr>
+    </tbody>
+  </table>
+
+  <h4>組織與共用表</h4>
+  <table>
+    <thead><tr><th>表</th><th>內容</th></tr></thead>
+    <tbody>
+      <tr><td><b>T001</b></td><td>公司代碼（BUKRS、BUTXT、WAERS 本位幣、LAND1、KTOPL 科目表）</td></tr>
+      <tr><td><b>T001W</b></td><td>工廠／銷售據點（WERKS、NAME1、地址）</td></tr>
+      <tr><td><b>T001L</b></td><td>儲存地點（WERKS + LGORT）</td></tr>
+      <tr><td><b>T001K</b></td><td>評價範圍（BWKEY），連到 MBEW</td></tr>
+      <tr><td><b>TVKO / TVTW / TSPA / TVKOV</b></td><td>銷售組織 / 通路 / 產品別 / 銷售範圍</td></tr>
+      <tr><td><b>T024E / T024</b></td><td>採購組織 / 採購群組</td></tr>
+      <tr><td><b>TKA01 / TKA02</b></td><td>管控範圍（OKKP 維護的就是它）/ 公司代碼分派</td></tr>
+      <tr><td><b>TCURR / TCURC / TCURV / TCURF</b></td><td><b>匯率</b>／幣別／匯率類型／換算因子。TCURR 的 GDATU 是<b>反轉日期</b>（99999999 − YYYYMMDD），不能直接當日期比大小</td></tr>
+      <tr><td><b>T006 / T006A</b></td><td>計量單位（內部 MEINS vs 外部 MSEHI，要用 <code>CONVERSION_EXIT_CUNIT_OUTPUT</code> 轉）</td></tr>
+      <tr><td><b>T134 / T023</b></td><td>物料類型 / 物料群組</td></tr>
+      <tr><td><b>T000 / T002</b></td><td>Client 清單 / 語言碼</td></tr>
+    </tbody>
+  </table>
+  <div class="warn">TCURR 的三大坑：(1) GDATU 是反轉日期，要用 FM <code>CONVERSION_EXIT_INVDT_INPUT/OUTPUT</code> 轉；(2) 匯率有 FROM/TO 方向與 UKURS 正負號（負值代表分子分母顛倒）；(3) 換算金額<b>不要自己乘</b>，用 FM <code>CONVERT_TO_LOCAL_CURRENCY</code> / <code>CONVERT_TO_FOREIGN_CURRENCY</code>，或 S/4 的 <code>CURRENCY_CONVERSION</code> SQL 函數，才會處理到 TCURF 的換算因子。</div>
+
+  <h3 id="ch01-3-12">12. 使用者主檔：USR21 / ADRP / USR02 與 ZUSER 實作（ALV 版）</h3>
+  <p>這是講義 7-01 的核心：<b>以 USR21 為核心</b>，往兩邊接。</p>
+  <table>
+    <thead><tr><th>表</th><th>關聯鍵</th><th>重要欄位</th></tr></thead>
+    <tbody>
+      <tr><td><b>USR21</b>（使用者 ↔ 位址對照）</td><td>核心表</td><td>BNAME 用戶代碼、<b>PERSNUMBER 員工（人員）編號</b>、ADDRNUMBER 地址編號、KOSTL 成本中心、START_MENU 初始選單</td></tr>
+      <tr><td><b>ADRP</b>（人員位址）</td><td>USR21-<b>PERSNUMBER</b> = ADRP-PERSNUMBER</td><td>NAME_FIRST 名字、NAME_LAST 姓氏、NAME_TEXT 全名、DATE_FROM／DATE_TO 有效期間</td></tr>
+      <tr><td><b>USR02</b>（登入資料）</td><td>USR21-<b>BNAME</b> = USR02-BNAME</td><td>ANAME 建檔人員、TRDAT 最後登錄日、LTIME 最後登錄時、ERDAT 建檔日、UFLAG 鎖定旗標、CLASS 使用者群組</td></tr>
+      <tr><td>其他常用</td><td>—</td><td>USR03 位址、ADR6 email、AGR_USERS 角色分派、UST04 Profile、USREFUS 參考使用者</td></tr>
+    </tbody>
+  </table>
+  <div class="warn"><b>ADRP 是時間相依的</b>：同一個 PERSNUMBER 可能有多筆（不同 DATE_FROM／DATE_TO），還有 NATION 欄位（''＝標準格式、'I'＝國際格式、'K'＝漢字格式）。原講義用 <code>SELECT SINGLE</code> 抓 ADRP，如果剛好有多筆就會<b>抓到不確定的那一筆</b> —— 這正是「SELECT SINGLE 沒有排序保證」的經典陷阱。正解是加上 <code>date_from &lt;= @sy-datum AND date_to &gt;= @sy-datum</code> 與 <code>nation = @space</code>。</div>
+
+  <h4>原講義寫法的問題（要看得懂、但不要照抄）</h4>
+  <ul>
+    <li><code>TABLES: USR02, USR21, ADRP.</code> —— 只為了 SELECT-OPTIONS 的參照就宣告 TABLES，會產生同名的全域工作區，是舊寫法。改用 <code>SELECT-OPTIONS s_bname FOR gv_bname</code> 搭配 <code>DATA gv_bname TYPE usr21-bname.</code>。</li>
+    <li>在 <code>LOOP</code> 裡對每一筆做兩次 <code>SELECT SINGLE</code> —— 典型的 <b>N+1 查詢</b>。1000 個使用者就打 2000 次 DB。正解是一次 JOIN，或先用 <code>FOR ALL ENTRIES</code> 撈進兩張 hash 內表再對照。</li>
+    <li><code>SELECT * ... INTO CORRESPONDING FIELDS OF TABLE</code> —— 欄位靠名字硬對，欄位改名就默默出錯，而且傳整列浪費 IO。</li>
+    <li>ALV 版裡 <code>i_callback_pf_status_set = 'STATUS_SET'</code>，但實際 FORM 叫 <code>FORM_PF_STATUS_SET</code>，<b>名字對不上，事件不會觸發</b>。這是原程式的實際 Bug，抄的時候要注意。</li>
+    <li><code>lt_event</code> 都填好了卻又同時傳 <code>i_callback_*</code>，兩套機制重複；<code>REUSE_ALV_GRID_DISPLAY</code> 在 S/4 已不建議新開發使用。</li>
+  </ul>
+
+  <h4>ZUSER 現代版（CL_SALV_TABLE + 一次 JOIN）</h4>
+  <pre><code class="abap">*&amp;---------------------------------------------------------------------*
+*&amp; Report ZUSERS  —— 使用者清單（USR21 + USR02 + ADRP）
+*&amp; S/4HANA 現代寫法版本
+*&amp;---------------------------------------------------------------------*
+REPORT zusers.
+
+" 不用 TABLES:，只宣告參照用的變數
+DATA: gv_bname TYPE usr21-bname.
+
+SELECT-OPTIONS: s_bname FOR gv_bname.
+
+TYPES: BEGIN OF ty_out,
+         recn       TYPE i,                  "項次
+         bname      TYPE usr21-bname,        "用戶帳號
+         aname      TYPE usr02-aname,        "建檔人員
+         trdat      TYPE usr02-trdat,        "最後登錄日
+         ltime      TYPE usr02-ltime,        "最後登錄時
+         uflag      TYPE usr02-uflag,        "鎖定旗標
+         persnumber TYPE adrp-persnumber,    "人事編號
+         name_last  TYPE adrp-name_last,     "姓
+         name_first TYPE adrp-name_first,    "名
+         kostl      TYPE usr21-kostl,        "成本中心
+       END OF ty_out.
+
+START-OF-SELECTION.
+
+  " 一次 JOIN 解決，不要在迴圈裡 SELECT SINGLE（N+1 查詢）
+  " ADRP 是時間相依，一定要加有效期間與 NATION 條件
+  SELECT u21~bname,
+         u02~aname,
+         u02~trdat,
+         u02~ltime,
+         u02~uflag,
+         u21~persnumber,
+         p~name_last,
+         p~name_first,
+         u21~kostl
+    FROM usr21 AS u21
+    LEFT OUTER JOIN usr02 AS u02 ON u02~bname = u21~bname
+    LEFT OUTER JOIN adrp  AS p   ON p~persnumber = u21~persnumber
+                                AND p~nation     = @space
+                                AND p~date_from &lt;= @sy-datum
+                                AND p~date_to   &gt;= @sy-datum
+    WHERE u21~bname IN @s_bname
+    ORDER BY u21~bname
+    INTO CORRESPONDING FIELDS OF TABLE @DATA(lt_out).
+
+  IF lt_out IS INITIAL.
+    MESSAGE '查無符合條件的使用者' TYPE 'S' DISPLAY LIKE 'W'.
+    RETURN.
+  ENDIF.
+
+  " 補流水號：用 INDEX INTO 取代自己累加的計數器
+  LOOP AT lt_out ASSIGNING FIELD-SYMBOL(&lt;ls_out&gt;).
+    &lt;ls_out&gt;-recn = sy-tabix.
+  ENDLOOP.
+
+  TRY.
+      cl_salv_table=&gt;factory( IMPORTING r_salv_table = DATA(lo_alv)
+                              CHANGING  t_table      = lt_out ).
+
+      lo_alv-&gt;get_functions( )-&gt;set_all( ).                       "啟用全部工具列功能
+      lo_alv-&gt;get_display_settings( )-&gt;set_striped_pattern( abap_true ). "斑馬紋
+      lo_alv-&gt;get_display_settings( )-&gt;set_list_header(
+        |ZUSERS 用戶清單列表 (CASPER)　來源：USR21 / USR02 / ADRP| ).
+      lo_alv-&gt;get_columns( )-&gt;set_optimize( abap_true ).          "最佳欄寬
+
+      " 逐欄設定中文抬頭 —— 取代舊版一大段 fieldcat
+      DATA(lo_cols) = lo_alv-&gt;get_columns( ).
+
+      LOOP AT VALUE stringtab( ( `RECN` ) ( `BNAME` ) ( `ANAME` ) ( `TRDAT` )
+                               ( `LTIME` ) ( `UFLAG` ) ( `PERSNUMBER` )
+                               ( `NAME_LAST` ) ( `NAME_FIRST` ) ( `KOSTL` ) )
+           INTO DATA(lv_col).
+        TRY.
+            DATA(lo_col) = CAST cl_salv_column_table( lo_cols-&gt;get_column( CONV #( lv_col ) ) ).
+            DATA(lv_text) = SWITCH string( lv_col
+                              WHEN `RECN`       THEN `項次`
+                              WHEN `BNAME`      THEN `用戶代碼`
+                              WHEN `ANAME`      THEN `建檔人員`
+                              WHEN `TRDAT`      THEN `最後登錄日`
+                              WHEN `LTIME`      THEN `最後登錄時`
+                              WHEN `UFLAG`      THEN `鎖定`
+                              WHEN `PERSNUMBER` THEN `人事編號`
+                              WHEN `NAME_LAST`  THEN `姓`
+                              WHEN `NAME_FIRST` THEN `名`
+                              WHEN `KOSTL`      THEN `成本中心`
+                              ELSE lv_col ).
+            lo_col-&gt;set_short_text( CONV #( lv_text ) ).
+            lo_col-&gt;set_medium_text( CONV #( lv_text ) ).
+            lo_col-&gt;set_long_text( CONV #( lv_text ) ).
+          CATCH cx_salv_not_found.
+            CONTINUE.
+        ENDTRY.
+      ENDLOOP.
+
+      " 把 BNAME 設為 Key 欄位（會變色並釘在左邊）
+      TRY.
+          CAST cl_salv_column_table( lo_cols-&gt;get_column( 'BNAME' ) )-&gt;set_key( abap_true ).
+        CATCH cx_salv_not_found.
+      ENDTRY.
+
+      lo_alv-&gt;display( ).
+
+    CATCH cx_salv_msg INTO DATA(lx_salv).
+      MESSAGE lx_salv-&gt;get_text( ) TYPE 'E'.
+  ENDTRY.</code></pre>
+  <div class="tip">CL_SALV_TABLE 對照 REUSE_ALV_GRID_DISPLAY 的心智轉換：<b>fieldcat → get_columns( )</b>、<b>layout → get_display_settings( )</b>、<b>it_sort → get_sorts( )</b>、<b>PF-STATUS → get_functions( )</b>、<b>TOP_OF_PAGE → set_top_of_list( cl_salv_form_layout_grid )</b>、<b>USER_COMMAND → get_event( ) + SET HANDLER</b>。</div>
+
+  <h3 id="ch01-3-13">13. ZUSER（WRITE 版）—— 老師要求「要會默寫」的那一支</h3>
+  <p>還沒學 ALV 之前，先用 WRITE 版練基本功。這一支的重點是：<b>SELECT → SORT → LOOP → WRITE → 統計筆數</b>，把整個報表骨架背下來。以下是現代化改寫，語意跟原講義完全一致（篩選 <code>BNAME LIKE 'E%'</code>）。</p>
+  <pre><code class="abap">*&amp;---------------------------------------------------------------------*
+*&amp; Report ZUSERS_WRITE —— WRITE 版（背骨架用）
+*&amp;---------------------------------------------------------------------*
+REPORT zusers_write LINE-SIZE 160.
+
+TYPES: BEGIN OF ty_out,
+         bname      TYPE usr21-bname,
+         aname      TYPE usr02-aname,
+         persnumber TYPE adrp-persnumber,
+         name_last  TYPE adrp-name_last,
+         name_first TYPE adrp-name_first,
+       END OF ty_out.
+
+START-OF-SELECTION.
+
+  " LIKE 'E%' 在 ABAP SQL 用 LIKE 'E%'；跳脫字元用 ESCAPE
+  SELECT u21~bname,
+         u02~aname,
+         u21~persnumber,
+         p~name_last,
+         p~name_first
+    FROM usr21 AS u21
+    LEFT OUTER JOIN usr02 AS u02 ON u02~bname = u21~bname
+    LEFT OUTER JOIN adrp  AS p   ON p~persnumber = u21~persnumber
+                                AND p~nation     = @space
+    WHERE u21~bname LIKE 'E%'
+    ORDER BY u21~bname
+    INTO TABLE @DATA(lt_out).
+
+  " 用 lines( ) 取代 DESCRIBE TABLE ... LINES
+  DATA(lv_cnt) = lines( lt_out ).
+
+  IF lv_cnt = 0.
+    WRITE: / '查無資料'.
+    RETURN.
+  ENDIF.
+
+  WRITE: /05 '項次',
+          25 '員工帳號',
+          50 '建檔人員',
+          75 '員工編號',
+         100 '姓',
+         125 '名'.
+  ULINE.
+
+  LOOP AT lt_out INTO DATA(ls_out).
+    WRITE: /05 sy-tabix,
+            25 ls_out-bname,
+            50 ls_out-aname,
+            75 ls_out-persnumber,
+           100 ls_out-name_last,
+           125 ls_out-name_first.
+  ENDLOOP.
+
+  ULINE.
+  WRITE: / |Record : { lv_cnt }　執行人員：{ sy-uname }　日期：{ sy-datum DATE = USER }|.</code></pre>
+  <div class="warn">原程式的 <code>DESCRIBE TABLE LT_OUTTAB LINES lv_cnt</code> 放在 LOOP 之前、<code>MODIFY LT_OUTTAB FROM WA_OUTTAB</code> 放在 LOOP 之內，是舊式「先撈主表再回填」的寫法。這種寫法在資料量大時效能很差，而且 <code>MODIFY ... FROM</code> 依賴隱含的 <code>sy-tabix</code>，一旦中間加了 <code>SORT</code> 或 <code>DELETE</code> 就會改到錯的列。改用 <code>ASSIGNING FIELD-SYMBOL(&lt;ls&gt;)</code> 直接就地修改，既快又安全。</div>
+
+  <h3 id="ch01-3-14">14. 客戶（XD99）與廠商（XK99）三合一 ALV 練習</h3>
+  <p>講義 7-02／7-03 的兩題練習，做法完全對稱。這裡各給一支範本。</p>
+  <pre><code class="abap">*&amp;---------------------------------------------------------------------*
+*&amp; Report ZSD_CUSTOMER_ALL —— 客戶三視角合併（KNA1 + KNB1 + KNVV）
+*&amp;---------------------------------------------------------------------*
+REPORT zsd_customer_all.
+
+DATA: gv_kunnr TYPE kna1-kunnr,
+      gv_bukrs TYPE knb1-bukrs,
+      gv_vkorg TYPE knvv-vkorg.
+
+SELECT-OPTIONS: s_kunnr FOR gv_kunnr,
+                s_bukrs FOR gv_bukrs,
+                s_vkorg FOR gv_vkorg.
+
+START-OF-SELECTION.
+
+  " 一般 + 公司代碼 + 銷售範圍，一次三表 JOIN
+  " 一個客戶可能有多家公司代碼、多個銷售範圍 → 結果會是笛卡兒展開，這是正常的
+  SELECT a~kunnr,
+         a~name1,
+         a~name2,
+         a~land1,
+         a~spras,
+         a~sortl,
+         a~erdat,
+         a~ernam,
+         b~bukrs,
+         b~akont,                    "應收帳款統馭科目
+         b~zterm AS zterm_fi,
+         v~vkorg,
+         v~vtweg,
+         v~spart,
+         v~waers,
+         v~zterm AS zterm_sd,
+         v~ktgrd,                    "客戶科目分類群組
+         v~vwerk,
+         v~inco1,
+         v~inco2
+    FROM kna1 AS a
+    LEFT OUTER JOIN knb1 AS b ON b~kunnr = a~kunnr
+    LEFT OUTER JOIN knvv AS v ON v~kunnr = a~kunnr
+    WHERE a~kunnr IN @s_kunnr
+      AND ( b~bukrs IN @s_bukrs OR b~bukrs IS NULL )
+      AND ( v~vkorg IN @s_vkorg OR v~vkorg IS NULL )
+    ORDER BY a~kunnr, b~bukrs, v~vkorg, v~vtweg, v~spart
+    INTO TABLE @DATA(lt_cust).
+
+  IF lt_cust IS INITIAL.
+    MESSAGE '查無客戶資料' TYPE 'S' DISPLAY LIKE 'W'.
+    RETURN.
+  ENDIF.
+
+  TRY.
+      cl_salv_table=&gt;factory( IMPORTING r_salv_table = DATA(lo_alv)
+                              CHANGING  t_table      = lt_cust ).
+      lo_alv-&gt;get_functions( )-&gt;set_all( ).
+      lo_alv-&gt;get_columns( )-&gt;set_optimize( abap_true ).
+      lo_alv-&gt;get_display_settings( )-&gt;set_list_header( '客戶主檔：一般 / 公司代碼 / 銷售範圍' ).
+      lo_alv-&gt;display( ).
+    CATCH cx_salv_msg INTO DATA(lx).
+      MESSAGE lx-&gt;get_text( ) TYPE 'E'.
+  ENDTRY.</code></pre>
+  <pre><code class="abap">*&amp;---------------------------------------------------------------------*
+*&amp; Report ZMM_VENDOR_ALL —— 廠商三視角合併（LFA1 + LFB1 + LFM1）
+*&amp;---------------------------------------------------------------------*
+REPORT zmm_vendor_all.
+
+DATA: gv_lifnr TYPE lfa1-lifnr,
+      gv_bukrs TYPE lfb1-bukrs,
+      gv_ekorg TYPE lfm1-ekorg.
+
+SELECT-OPTIONS: s_lifnr FOR gv_lifnr,
+                s_bukrs FOR gv_bukrs,
+                s_ekorg FOR gv_ekorg.
+
+START-OF-SELECTION.
+
+  SELECT a~lifnr,
+         a~name1,
+         a~name2,
+         a~land1,
+         a~spras,
+         a~ktokk,                    "帳戶群組（不是搜尋字串！）
+         a~sortl,                    "搜尋字串在這裡
+         a~kunnr,                    "同一法人對應的客戶代號
+         a~erdat,
+         a~ernam,
+         b~bukrs,
+         b~akont,                    "應付帳款統馭科目
+         b~zterm AS zterm_fi,
+         m~ekorg,
+         m~waers,
+         m~zterm AS zterm_mm,
+         m~inco1,
+         m~inco2
+    FROM lfa1 AS a
+    LEFT OUTER JOIN lfb1 AS b ON b~lifnr = a~lifnr
+    LEFT OUTER JOIN lfm1 AS m ON m~lifnr = a~lifnr
+    WHERE a~lifnr IN @s_lifnr
+      AND ( b~bukrs IN @s_bukrs OR b~bukrs IS NULL )
+      AND ( m~ekorg IN @s_ekorg OR m~ekorg IS NULL )
+    ORDER BY a~lifnr, b~bukrs, m~ekorg
+    INTO TABLE @DATA(lt_vend).
+
+  IF lt_vend IS INITIAL.
+    MESSAGE '查無廠商資料' TYPE 'S' DISPLAY LIKE 'W'.
+    RETURN.
+  ENDIF.
+
+  TRY.
+      cl_salv_table=&gt;factory( IMPORTING r_salv_table = DATA(lo_alv)
+                              CHANGING  t_table      = lt_vend ).
+      lo_alv-&gt;get_functions( )-&gt;set_all( ).
+      lo_alv-&gt;get_columns( )-&gt;set_optimize( abap_true ).
+      lo_alv-&gt;get_display_settings( )-&gt;set_list_header( '廠商主檔：一般 / 公司代碼 / 採購組織' ).
+      lo_alv-&gt;display( ).
+    CATCH cx_salv_msg INTO DATA(lx).
+      MESSAGE lx-&gt;get_text( ) TYPE 'E'.
+  ENDTRY.</code></pre>
+  <div class="warn">用 LEFT OUTER JOIN 時，<code>WHERE b~bukrs IN @s_bukrs</code> 會把「沒有公司代碼資料的客戶」整筆濾掉（因為 NULL 不符合任何條件），所以上面才寫成 <code>( b~bukrs IN @s_bukrs OR b~bukrs IS NULL )</code>。這是 OUTER JOIN 最常見的坑。真的要嚴格篩選就改用 INNER JOIN。</div>
+  <div class="tip"><b>員工、客戶、廠商三大主數據</b>（講義 7-06）的記憶口訣：三者都是「一般資料 → 組織層資料 → 交易用資料」三段式。員工＝USR21/ADRP/USR02（或 HR 的 PA0002/PA0001/PA0008），客戶＝KNA1/KNB1/KNVV，廠商＝LFA1/LFB1/LFM1。看懂一組就看懂三組。</div>
+
+  <h3 id="ch01-3-15">15. Infotype 與 HR 資料表</h3>
+  <h4>什麼是 Infotype</h4>
+  <p><b>Infotype（資訊類型）</b>是把內容相似的資料分組管理的單位，用<b>四位數字</b>當代碼，例如 0001 組織分派、0002 個人資料。從技術面看，一個 Infotype 同時是一組資料分群、一個畫面、一張資料庫表、以及一個結構；它還帶著系統控制屬性，例如<b>時間限制（Time Constraint）</b>、追溯計算相關性等。</p>
+  <p>為什麼 HR 要用 Infotype？講義給了兩個理由：</p>
+  <ul>
+    <li><b>Security（安全）</b>：HR 資料的敏感度差很多。地址、稅務資料員工可以自己看自己改；薪資、考評不行。切成不同 Infotype 才能對每一組資料套不同的權限設定 —— 誰能看、誰能改。</li>
+    <li><b>History（歷史）</b>：HR 資料是<b>時間相依</b>的。你現在的薪資是一個數字，下個月一號調薪之後是另一個數字；七月一日搬家。舊資料必須保留，Payroll 才知道今天該付多少、下個月該付多少；報表也才回答得出「YuLin 從到職到現在的薪資變化」。所以<b>每一個 Infotype 記錄都有起始日（BEGDA）與結束日（ENDDA）</b>。</li>
+  </ul>
+  <table>
+    <thead><tr><th>Infotype</th><th>內容</th></tr></thead>
+    <tbody>
+      <tr><td>0000</td><td>Events（人事異動措施）</td></tr>
+      <tr><td>0001</td><td>Org assignment（組織分派）：PERNR、姓名、員工群組／次群組、職位、人事範圍／次範圍、成本中心</td></tr>
+      <tr><td>0002</td><td>Personal info（個人資料）</td></tr>
+      <tr><td>0003</td><td>Payroll data（薪資狀態）</td></tr>
+      <tr><td>0007</td><td>Work time（計畫工時）</td></tr>
+      <tr><td>0221</td><td>Adjustment（薪資調整）</td></tr>
+      <tr><td>1000–1999</td><td>PD Relationship infotypes（組織管理的物件與關係）</td></tr>
+    </tbody>
+  </table>
+  <div class="note"><b>Infotype 與內表的差別</b>：Infotype 是一筆「記錄／畫面」，掛在員工或 PD 物件（職位、組織單位）上；資料表存的是這個 Infotype 的值與行為設定。HR 的主程式（邏輯資料庫 PNP／PNPCE）會在執行期<b>自動幫每個 Infotype 產生對應的內表</b>（<code>Pnnnn</code>，例如 P0001），程式用 <code>GET PERNR</code> 事件搭配 <code>INFOTYPES: 0001, 0002.</code> 取用。</div>
+  <div class="tip">自我測驗（講義原題）：Infotypes are accessed directly from Object Maintenance in — a. Simple Maintenance　b. Organization &amp; Staffing Interface　c. <b>Expert Mode</b>　d. Structure Graphics　e. None．<b>答案：c</b>。</div>
+
+  <h4>HR 資料表命名規則</h4>
+  <table>
+    <thead><tr><th>前綴</th><th>內容</th><th>例</th></tr></thead>
+    <tbody>
+      <tr><td><b>PA*</b></td><td>Personnel Administration 的 Infotype 表，PA + 四位 Infotype 號</td><td>PA0001（組織分派）、PA0002（個人資料）、PA0008（基本薪資）</td></tr>
+      <tr><td><b>HRP*</b></td><td>Personnel Development / OM 的 Infotype 表</td><td>HRP1000（物件）、<b>HRP1001（關係）</b></td></tr>
+      <tr><td><b>PB*</b></td><td>Recruitment（招募）的 Infotype 表</td><td>PB0001</td></tr>
+      <tr><td><b>PCL*</b></td><td>HR Cluster（薪資結果等，存成 cluster，要用 IMPORT FROM DATABASE 讀）</td><td>PCL1、PCL2</td></tr>
+      <tr><td>PCERT</td><td>Payroll posting runs（薪資過帳執行）</td><td>—</td></tr>
+      <tr><td>CATSDB</td><td>CATS 工時登錄</td><td>PTEX2000 是 CATS 轉 Infotype 2001/2002 的介面表</td></tr>
+    </tbody>
+  </table>
+  <p>常用 TCODE：<span class="tcode">PA20</span> 顯示人事主檔、<span class="tcode">PA30</span> 維護人事主檔、<span class="tcode">PA40</span> 人事措施（Personnel Actions，到職／調動／離職就是走這裡，會依序帶出一連串 Infotype 畫面）、<span class="tcode">PPOME</span> 組織與職位維護、<span class="tcode">PPOSE</span> 顯示組織架構、<span class="tcode">PP01</span> 維護 PD 物件。</p>
+  <p>講義 9-2 的題目：<b>取得 PPOME 的輸入內容 → HRP1001</b>。現代寫法：</p>
+  <pre><code class="abap">*&amp;---------------------------------------------------------------------*
+*&amp; Report ZHR_HRP1001 —— 讀組織管理關係表 HRP1001 並以 SALV 顯示
+*&amp;---------------------------------------------------------------------*
+REPORT zhr_hrp1001.
+
+DATA: gv_objid TYPE hrp1001-objid.
+
+PARAMETERS:     p_plvar TYPE hrp1001-plvar DEFAULT '01',  "計畫版本，01=現行
+                p_otype TYPE hrp1001-otype DEFAULT 'O'.   "物件類型 O=組織單位 S=職位 P=人員
+SELECT-OPTIONS: s_objid FOR gv_objid,
+                s_uname FOR gv_objid NO INTERVALS.        "維護人員（示意）
+
+START-OF-SELECTION.
+
+  " 明列欄位、用 @ 逸出、加上有效期間；不要 SELECT *
+  SELECT plvar,          "計畫版本
+         otype,          "物件類型
+         objid,          "物件編號
+         subty AS relat, "關係代碼（A/B + 三位）
+         istat,          "規劃狀態
+         begda,
+         endda,
+         sclas,          "對方物件類型
+         sobid,          "對方物件編號
+         uname,          "最後維護人員
+         aedtm           "最後維護日期
+    FROM hrp1001
+    WHERE plvar = @p_plvar
+      AND otype = @p_otype
+      AND objid IN @s_objid
+      AND begda &lt;= @sy-datum
+      AND endda &gt;= @sy-datum
+    ORDER BY objid, subty, sobid
+    INTO TABLE @DATA(lt_rel).
+
+  IF lt_rel IS INITIAL.
+    MESSAGE '查無組織關係資料' TYPE 'S' DISPLAY LIKE 'W'.
+    RETURN.
+  ENDIF.
+
+  TRY.
+      cl_salv_table=&gt;factory( IMPORTING r_salv_table = DATA(lo_alv)
+                              CHANGING  t_table      = lt_rel ).
+      lo_alv-&gt;get_functions( )-&gt;set_all( ).
+      lo_alv-&gt;get_columns( )-&gt;set_optimize( abap_true ).
+      lo_alv-&gt;get_display_settings( )-&gt;set_list_header( 'HRP1001 組織管理關係（PPOME 的資料來源）' ).
+      lo_alv-&gt;display( ).
+    CATCH cx_salv_msg INTO DATA(lx).
+      MESSAGE lx-&gt;get_text( ) TYPE 'E'.
+  ENDTRY.</code></pre>
+  <div class="warn">原講義寫 <code>SELECT * INTO TABLE gt_hrp1001 FROM hrp1001 WHERE hrp1001~uname = 'PU407'</code>：(1) 沒有 <code>@</code> 逸出（S/4 的嚴格模式會警告或報錯）；(2) <code>SELECT *</code> 撈整張寬表；(3) 沒有帶 <b>PLVAR / BEGDA / ENDDA</b>，HRP1001 是時間相依表，不帶期間會撈到所有歷史版本。<b>OM 的表一定要帶 PLVAR + 有效期間。</b></div>
+  <div class="note">HRP1001-SUBTY 就是關係代碼：<b>A002/B002</b> 報告關係、<b>A003/B003</b> 隸屬、<b>A008/B008</b> 職位↔人員、<b>A012/B012</b> 主管職位。A 是「由下往上」，B 是「由上往下」，同一組關係在表裡會存成兩筆互為反向。</div>
+
+  <h3 id="ch01-3-16">16. 開發命名規則釋例</h3>
+  <p>這是一份實際專案的開發準則案例，僅供參考；到職場之後仍需依公司的規範。命名的四個原則：<b>簡易快捷且唯一、符合 SAP 客戶化命名空間、盡可能短、有意義</b>；少用特殊字元（底線除外）；<b>如果是複製 SAP 標準物件，請在前面加 "Z_"</b>。</p>
+  <h4>Repository 物件</h4>
+  <table>
+    <thead><tr><th>物件</th><th>範例</th><th>長度</th><th>規則</th></tr></thead>
+    <tbody>
+      <tr><td>Program / Report</td><td>ZFIR0001</td><td>8</td><td>1＝Z；2-3＝模組簡寫；4＝程式類型；5-8＝序號</td></tr>
+      <tr><td>Transaction Code</td><td>ZFIR0001</td><td>8</td><td>同 Program</td></tr>
+      <tr><td>Function Group</td><td>ZFI_CHECK_DOCNUM</td><td>26</td><td>1＝Z；2-3＝模組；4 起底線＋有意義名稱</td></tr>
+      <tr><td>Function Module</td><td>ZFI_ASK_FOR_CONFIRMATION</td><td>30</td><td>同上</td></tr>
+      <tr><td>Package / Development Class</td><td>ZDEV_FI</td><td>30</td><td>1＝Z；2-4＝DEV；5-7＝模組</td></tr>
+      <tr><td>Authorization Object</td><td>ZMM_INVENT</td><td>10</td><td>1＝Z；2-3＝模組；其後自由但唯一</td></tr>
+      <tr><td>Enhancement Project</td><td>ZMM0001</td><td>8</td><td>1＝Z；2-3＝模組；5-8＝序號</td></tr>
+      <tr><td>SmartForms / SAPscript</td><td>ZMMF_INVOICE</td><td>30</td><td>1＝Z；2-3＝模組；4＝F；5-30 自由</td></tr>
+      <tr><td>Table / View / Structure</td><td>ZSD_BILLING_RANGES</td><td>16</td><td>1＝Z；2-3＝模組；5-16 自由。View 加 <b>_V</b> 後綴</td></tr>
+      <tr><td>Domain</td><td>ZCUSTTYPE</td><td>30</td><td>Z 開頭</td></tr>
+      <tr><td>Data Element</td><td>ZCUSTYPE</td><td>30</td><td>Z 開頭</td></tr>
+      <tr><td>Type Group</td><td>ZCUST</td><td>5</td><td>Z 開頭</td></tr>
+      <tr><td>Field</td><td>CUSTTYPE</td><td>16</td><td>自訂欄位加 Z；SAP 既有欄位沿用不加</td></tr>
+      <tr><td>Search Help</td><td>ZSH_CUST</td><td>30</td><td>1＝Z；2-3＝SH；其後自由</td></tr>
+      <tr><td>Lock Object</td><td>EZTCUST</td><td>16</td><td>1＝<b>E</b>；其後接物件名（通常是表或 view 名）</td></tr>
+      <tr><td>Append Structure</td><td>ZZVBAK（append 到 VBAK）</td><td>16</td><td>1-2＝<b>ZZ</b></td></tr>
+      <tr><td>Custom BAdI</td><td>ZMM_CUSTOMER_DATA</td><td>20</td><td>1＝Z；2-3＝模組</td></tr>
+      <tr><td>BAdI Implementation</td><td>ZMM_CUSTOMER_DATA_01</td><td>20</td><td>最好包含 BAdI 名稱</td></tr>
+      <tr><td>BAdI Method</td><td>GetSalesOrder</td><td>30</td><td>自由但要描述功能</td></tr>
+      <tr><td>Message ID</td><td>ZSD01</td><td>20</td><td>1＝Z；2-3＝模組；4-5＝序號</td></tr>
+      <tr><td>Area Menu（PF-Status）</td><td>S001</td><td>20</td><td>1＝S；2-4 自由</td></tr>
+      <tr><td>IDoc Type / Message Type / Process Code</td><td>ZFIDELV001、ZSDBILLING</td><td>30</td><td>1＝Z；2-3＝模組</td></tr>
+      <tr><td>Segment Definition / Documentation</td><td>ZSDORDER01 / Z1KORDER01</td><td>27</td><td>Z 開頭＋模組</td></tr>
+    </tbody>
+  </table>
+  <h4>程式類型代碼（Program Type，命名第 4 碼）</h4>
+  <table>
+    <thead><tr><th>代碼</th><th>說明</th><th>代碼</th><th>說明</th></tr></thead>
+    <tbody>
+      <tr><td>F</td><td>Smartform / Scriptform</td><td>M</td><td>Module Pool</td></tr>
+      <tr><td>R</td><td>Report</td><td>B</td><td>BDC</td></tr>
+      <tr><td>U</td><td>Utility Program</td><td>E</td><td>Customer Enhancement</td></tr>
+      <tr><td>C</td><td>Conversion</td><td>I</td><td>Interface</td></tr>
+    </tbody>
+  </table>
+  <h4>SAP 模組代碼</h4>
+  <table>
+    <thead><tr><th>代碼</th><th>模組</th><th>代碼</th><th>模組</th></tr></thead>
+    <tbody>
+      <tr><td>XA</td><td>Cross Application</td><td>PS</td><td>Project System</td></tr>
+      <tr><td>FI</td><td>Finance</td><td>HR</td><td>Human Resource / Payroll</td></tr>
+      <tr><td>CO</td><td>Controlling</td><td>BW</td><td>Business Warehouse</td></tr>
+      <tr><td>LO</td><td>Logistics General</td><td>SM</td><td>Strategic Enterprise Mgmt</td></tr>
+      <tr><td>MM</td><td>Materials Management</td><td>BS</td><td>Basis related program</td></tr>
+      <tr><td>WM</td><td>Warehouse Management</td><td>SV</td><td>Service Management</td></tr>
+      <tr><td>SD</td><td>Sales and Distribution</td><td>PL</td><td>Product Lifecycle Management</td></tr>
+      <tr><td>PP</td><td>Production Planning</td><td>CR</td><td>CRM</td></tr>
+      <tr><td>QM</td><td>Quality Management</td><td>AM</td><td>Asset Management</td></tr>
+      <tr><td>PM</td><td>Plant Maintenance</td><td>EP</td><td>Enterprise Portal development</td></tr>
+    </tbody>
+  </table>
+  <h4>程式內變數命名</h4>
+  <table>
+    <thead><tr><th>種類</th><th>前綴</th><th>範例</th></tr></thead>
+    <tbody>
+      <tr><td>Constant 常數</td><td>CNS_</td><td>CNS_BASE_CLIENT</td></tr>
+      <tr><td>Types 自訂型別</td><td>TY_</td><td>TY_DATA</td></tr>
+      <tr><td>Work Variable 工作變數</td><td>W_</td><td>W_TEMP_SALARY_NB、W_LAST_UPDATE_DT</td></tr>
+      <tr><td>Internal Table 全域內表</td><td>IT_</td><td>IT_EKKO</td></tr>
+      <tr><td>Internal Table 區域內表</td><td>LI_</td><td>LI_EKKO</td></tr>
+      <tr><td>Work Area 工作區</td><td>WA_</td><td>WA_EKKO</td></tr>
+      <tr><td>Screen Element</td><td>RB_ / PB_ / CB_</td><td>Radio Button / Push Button / Check Box</td></tr>
+      <tr><td>Parameter（單值輸入，≤8 字元）</td><td>P_</td><td>P_CUSTNM、P_FISCYR</td></tr>
+      <tr><td>Select-Option（區間輸入，≤8 字元）</td><td>S_</td><td>S_LIFNR、S_BUKRS</td></tr>
+      <tr><td>Range（≤8 字元）</td><td>R_</td><td>R_LIFNR、R_BUKRS</td></tr>
+      <tr><td>Subroutine 子程式</td><td>FRM_</td><td>PERFORM FRM_GET_EKKO</td></tr>
+      <tr><td>System Field</td><td>SY-</td><td>SY-DATUM、SY-UNAME、SY-SUBRC</td></tr>
+    </tbody>
+  </table>
+  <div class="note"><b>RANGES</b> 語句會建立一張選擇表（欄位為 SIGN／OPTION／LOW／HIGH），可以在程式中自行填值後直接用在 <code>WHERE ... IN</code>。現代寫法建議改用 <code>TYPES ty_r_lifnr TYPE RANGE OF lifnr.</code> 搭配 <code>VALUE #( ( sign = 'I' option = 'EQ' low = '0000100001' ) )</code>，比 RANGES 更清楚且可當方法參數傳遞。</div>
+  <h4>訊息與傳輸請求</h4>
+  <table>
+    <thead><tr><th>Message Type</th><th>意義</th></tr></thead>
+    <tbody>
+      <tr><td>A</td><td>Abend —— 取消資訊（程式直接中止）</td></tr>
+      <tr><td>E</td><td>Error —— 錯誤資訊</td></tr>
+      <tr><td>W</td><td>Warning —— 警告資訊</td></tr>
+      <tr><td>I</td><td>Informational —— 訊息視窗</td></tr>
+      <tr><td>S</td><td>Success —— 成功資訊（顯示在下一個畫面的狀態列）</td></tr>
+    </tbody>
+  </table>
+  <p>Message Number 為 3 位數字，000～999。傳輸請求（Task / Request）的描述格式：<b>「YYMMDD：程式名稱代碼：修改或新增主要描述」</b>，最長 60 字元，例如 <code>060720：ZMMR0001：增加物料類型條件</code>。實務上仍應以 Basis 顧問提供的 CR 描述規定為準。</p>
+
+  <h3 id="ch01-3-17">17. 總結練習：從零做出一整套（第一節的驗收題）</h3>
+  <p>講義開宗明義給的練習順序，是把 1-2 章的資料字典與這一章的維護畫面串起來的完整流程：</p>
+  <ol>
+    <li><b>Domain</b>（域）—— 定資料型態、長度、值範圍（Value Range／Fixed Values）</li>
+    <li><b>Data Element</b>（資料元素）—— 掛 Domain，定四種欄位標籤與 F1 說明文件</li>
+    <li><b>Master Table</b>（主檔表）—— 例如 Z00_KNA1</li>
+    <li><b>Transaction Table</b>（交易表）—— 例如 Z00_VBAK</li>
+    <li><b>Foreign Key</b>（外部索引鍵）—— 把交易表接回主檔表</li>
+    <li><b>Search Help</b>（搜尋說明）—— 掛在欄位或 Data Element 上，F4 才有東西</li>
+    <li><b>Maintenance View</b>（維護視圖）＋ SE54 產生維護畫面</li>
+  </ol>
+  <p><b>驗收成果：用 <span class="tcode">SM30</span> 打開 Z00_VBAK，能新增、修改、刪除，且外鍵欄位按 F4 會跳出正確的搜尋說明。</b></p>
+  <p>做完之後，可以寫一支小程式驗證資料的參照完整性（下層有、上層沒有的孤兒資料）：</p>
+  <pre><code class="abap">*&amp;---------------------------------------------------------------------*
+*&amp; Report ZMM_CHECK_ORPHAN —— 檢查三層表的參照完整性
+*&amp;---------------------------------------------------------------------*
+REPORT zmm_check_orphan.
+
+" 先把上層 Key 撈成 HASHED，查找 O(1)
+SELECT matnr FROM zmara
+  INTO TABLE @DATA(lt_mara).
+
+DATA lt_mara_key TYPE HASHED TABLE OF zmara-matnr WITH UNIQUE KEY table_line.
+lt_mara_key = VALUE #( FOR &lt;m&gt; IN lt_mara ( &lt;m&gt;-matnr ) ).
+
+SELECT matnr, werks FROM zmarc
+  ORDER BY matnr, werks
+  INTO TABLE @DATA(lt_marc).
+
+DATA lt_bad TYPE TABLE OF string.
+
+LOOP AT lt_marc INTO DATA(ls_marc).
+  " line_exists 判斷內表是否有該筆，取代 READ TABLE ... TRANSPORTING NO FIELDS + sy-subrc
+  IF NOT line_exists( lt_mara_key[ table_line = ls_marc-matnr ] ).
+    APPEND |ZMARC 有孤兒資料：MATNR = { ls_marc-matnr }，WERKS = { ls_marc-werks }| TO lt_bad.
+  ENDIF.
+ENDLOOP.
+
+IF lt_bad IS INITIAL.
+  MESSAGE '參照完整性檢查通過' TYPE 'S'.
+ELSE.
+  LOOP AT lt_bad INTO DATA(lv_msg).
+    WRITE: / lv_msg.
+  ENDLOOP.
+  WRITE: / |共 { lines( lt_bad ) } 筆異常 —— 表示外部索引鍵沒有設好，或有人繞過維護畫面直接改資料庫|.
+ENDIF.</code></pre>
+  <div class="warn"><b>FOR ALL ENTRIES 空表陷阱</b>：如果上面改用 <code>SELECT ... FOR ALL ENTRIES IN lt_mara</code>，而 <code>lt_mara</code> 是空的，SAP 會<b>忽略整個 WHERE 條件把全表撈回來</b>。任何 FOR ALL ENTRIES 之前一定要先 <code>IF lt_x IS INITIAL. RETURN. ENDIF.</code>，並且對驅動內表先做 <code>SORT + DELETE ADJACENT DUPLICATES</code>。</div>
+
+  <h3 id="ch01-3-qa">練習與自我檢核</h3>
+  <ol>
+    <li>照著 SE11 建出 ZMARA / ZMARC / ZMARD 三張表，並設定 ZMARC → ZMARA（MANDT、MATNR）與 ZMARD → ZMARC（MANDT、MATNR、WERKS）的外部索引鍵。<b>提示：Cardinality 選 1:CN。</b></li>
+    <li>建三個維護視圖 ZMV_MARA / ZMV_MARC / ZMV_MARD，全部放在<b>同一個 Package</b>，用 SE54 各產生一次維護對話框。<b>提示：Function Group 用自己的 Z 開頭，不要用 TMP。</b></li>
+    <li>建 View Cluster ZMV_MARA_000，用 SM34 執行，做到「選一個物料 → 只看到該物料的工廠 → 只看到該工廠的儲存地點」。<b>提示：Field-Dependence 要勾 S，MANDT 不用勾 S；存檔返回後記得按 Activate。</b></li>
+    <li>用 SE93 把 ZMV_MARA_000 包成一支自己的 TCODE。<b>答案要點：參數交易，Transaction = SM34、勾 Skip initial screen、VCLDIR-VCLNAME = ZMV_MARA_000、UPDATE = X。</b></li>
+    <li>在 ZMV_MARA 的維護對話框掛上 Event 21，讓 ERSDA／ERNAM 自動帶值；再掛 Event 01，檢核 MTART 必須存在於 T134。<b>提示：路徑是 SE54 → Environment → Modification → Events。</b></li>
+    <li>去 NACE、OKKP、OMT3 各點一遍，說出它們各有幾層、每一層對應哪張表。<b>提示：用 SE93 看 TCODE 的參數，再查 VCLDIR / VCLSTRUC。</b></li>
+    <li>寫 ZUSERS（WRITE 版），輸出項次／員工帳號／建檔人員／員工編號／姓／名，最後印總筆數與執行者。<b>要求：不用 TABLES、不用 SELECT SINGLE 在迴圈裡、用 lines( ) 取代 DESCRIBE。</b></li>
+    <li>把上題改寫成 CL_SALV_TABLE 版本，加上中文欄位抬頭、斑馬紋、最佳欄寬、清單抬頭。<b>提示：get_columns( ) / get_display_settings( ) / get_functions( )。</b></li>
+    <li>做 XD99 練習：把 KNA1 + KNB1 + KNVV 三視角合併在同一個 ALV。<b>陷阱：LEFT OUTER JOIN 加 WHERE 會濾掉 NULL 那一側。</b></li>
+    <li>做 XK99 練習：把 LFA1 + LFB1 + LFM1 合併在同一個 ALV。<b>順便回答：LFA1-KTOKK 是什麼？搜尋字串是哪個欄位？</b>（答：帳戶群組；SORTL）</li>
+    <li>用 F1 → 技術資訊查出 VA03 畫面上「銷售訂單號碼」欄位的 Data Element，再用 Where-Used List 找出所有含此資料元素的資料表。<b>答案要點：Data Element = VBELN_VA，會找到 VBAK、VBAP、VBFA 等。</b></li>
+    <li>用 ST05 追一次 ME23N 的顯示動作，說出它讀了哪些表；再用 SE16H 對 EKPO 做 Group by LIFNR 的金額小計。</li>
+    <li>說明在 S/4HANA 中，下列各項的現況：MSEG、KONV、VBUK、MARD、BSIS、COEP。<b>答案要點：分別對應 MATDOC、PRCD_ELEMENTS、併入 VBAK、NSDM 相容視圖、ACDOCA 相容視圖、ACDOCA。</b></li>
+    <li>用 SE39 把「自己寫的 ZUSERS」與「老師版 ZUSERS」並排比較，列出三個你改掉的地方與理由。</li>
+    <li>Infotype 為什麼要切這麼細？用「安全」與「歷史」兩個角度各舉一個例子。再說明 PA0001 與 HRP1001 的差別。</li>
+    <li>依命名規則，替下列需求取名：一支 MM 的 BDC 程式、一個 SD 的搜尋說明、一個 append 到 EKPO 的結構、一個 FI 的 Function Group。<b>參考答案：ZMMB0001、ZSH_xxx、ZZEKPO、ZFI_xxxx。</b></li>
+  </ol>
+</section>

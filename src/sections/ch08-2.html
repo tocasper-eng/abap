@@ -1,0 +1,1047 @@
+<section class="chapter" id="ch08-2" data-title="實戰源碼庫（二）：SD 報價／銷售訂單／發票表單——列印、發郵件與 PayPal 付款連結">
+  <h2>第 8-2 章 實戰源碼庫（二）：SD 報價／銷售訂單／發票表單——列印、發郵件與 PayPal 付款連結</h2>
+  <p class="lede">這一章拆解兩支「一支程式、三種入口」的 SD 表單程式：<b>ZSDF001</b>（報價單／銷售訂單清單、列印、寄信、建立 PayPal 付款連結）與 <b>ZSDF002</b>（發票清單、列印、寄信、PayPal）。它們同時是 NACE 輸出條件的列印程式、前台 ALV 批次工具、也是每天清晨自動寄信的背景 JOB；中間串起 SmartForms 呼叫、OTF→PDF、CL_BCS 寄信、自建寄送記錄與 PayPal 狀態表。4-3 章教你「怎麼做一張 SmartForm」、5-19 章對照原廠 BC470 教材，這一章則是「上線之後，一支真實的表單程式長什麼樣子、哪裡會出事」。</p>
+
+  <div class="meta">
+    <div><b>核心 TCODE</b><span class="tcode">NACE</span><span class="tcode">VV12</span><span class="tcode">VV22</span><span class="tcode">VV32</span><span class="tcode">VA23</span><span class="tcode">VA03</span><span class="tcode">VF03</span><span class="tcode">VL03N</span><span class="tcode">SMARTFORMS</span><span class="tcode">SE11</span><span class="tcode">SP01</span><span class="tcode">SOST</span><span class="tcode">SCOT</span><span class="tcode">SM36</span><span class="tcode">SM59</span><span class="tcode">STRUST</span><span class="tcode">OPD</span></div>
+    <div><b>關鍵物件</b>NAST、TNAPR、RVADTABL、RSNAST00、VBAK、VBAP、VBKD、VBPA、VBRK、VBRP、VBFA、LIPS、LIKP、ADRC、ADR6、BUT000、BUT020、BUT051、DFKKBPTAXNUM、PRCD_ELEMENTS、T052、TVZBT、T173T、TVAUT、KNB1、MCHA、STXFADM、STXFPCUST、SSF_FUNCTION_MODULE_NAME、SSF_OPEN、SSF_CLOSE、SSFCOMP_OPEN、SSF_CREATE_COMPOSER_INPUT、CONVERT_OTF、CONVERT_OTFSPOOLJOB_2_PDF、READ_TEXT、CL_BCS、CL_DOCUMENT_BCS、CL_CAM_ADDRESS_BCS、ZSDT002、ZFIT002、ZSDT019</div>
+  </div>
+
+  <div class="warn"><b>資安與隱私聲明</b>：原始碼中的寄件者帳號、客戶與業務員 email、公司名稱、地址電話、網址、內部網路磁碟路徑、開發者姓名、真實客戶號與單據號碼，本章一律<b>不引用</b>，範例中以 <span class="kw">user@example.com</span>、<span class="kw">C000001</span>、「某醫療器材公司」等佔位符代替。這兩支程式本身沒有寫死 PayPal 金鑰（金鑰在另一組介面函數 ZSDFM006_* 內，見 <a href="#ch08-8">8-8 章</a>），但 HTML 郵件內文把公司地址、電話、網址全部硬寫在程式裡——這同樣是要避免的寫法。</div>
+
+  <h3 id="ch08-2-01">1. 案例索引</h3>
+  <p>兩個案例資料夾都附了 SAP 標準函數 <span class="kw">SSF_FUNCTION_MODULE_NAME</span>、<span class="kw">SSF_OPEN</span>、<span class="kw">SSFCOMP_OPEN</span>、<span class="kw">SSF_CREATE_COMPOSER_INPUT</span> 的原始碼（原開發者拿來追蹤列印流程用），以及 ALV 匯出的 Excel 樣本（3EXPORT.xlsx／4EXPORT.xlsx）。兩個 <span class="kw">說明.txt</span> 都只有一行「本报表功能：」，內容是空的，功能說明全部要從程式碼與截圖反推。</p>
+  <table>
+    <thead><tr><th>程式</th><th>功能</th><th>模組</th><th>原始檔構成（約略行數）</th><th>截圖／範本</th><th>本章小節</th></tr></thead>
+    <tbody>
+      <tr><td><b>ZSDF001</b><br>报价 销售订单 清单 打印 发邮件 PAYPAL</td><td>報價單（ZQT1/ZQT2）與銷售訂單（ZOEU、ZEVU、ZFEU、ZDEU、ZMTU、ZFOU、ZPDU）清單；列印、寄 PDF、建立／刪除 PayPal 付款連結；另掛多個 NACE 入口（含訂單確認、交貨單、發票、貸項、付款請求）</td><td>SD（含 FI 收款）</td><td>主程式 ZSDF001（70）＋ TOP（170）＋ S01（22）＋ F01 報價與共用（1,200）＋ F02 訂單／ALV／PayPal（1,070）＋ F03 訂單確認與交貨單 NACE 入口（3,290）＋ F04 發票 NACE 入口（480），合計約 6,300 行</td><td>選擇畫面、ALV 結果、ZSDT002、ZFIT002、ZSDS001（兩張）、ZSDS002、ZSDS003、ZSDS004、ZSDS015、ZSDF026（六張）、資料元素 ZEDISCOUNT_AMOUNT 與其網域、表單 ZSDF025D_VA23T 屬性與介面；Excel 樣本 3EXPORT.xlsx</td><td>2、3、5～10、12、14～16</td></tr>
+      <tr><td><b>ZSDF002</b><br>发票 清单 打印 发邮件 PAYPAL</td><td>發票（F2）、退貨貸項（RE）、貸項（G2）清單；列印、寄 PDF（單一客戶可彈窗挑收件人／CC）、建立／刪除 PayPal 付款連結；寫寄送記錄 ZSDT019；每日背景自動寄前一天的發票</td><td>SD／FI-AR</td><td>主程式 zsdf002（74）＋ TOP（200）＋ S01（17）＋ F01 取數／列印／寄信（1,770）＋ F02 PayPal 與 ALV（400）＋ F03 Screen 9000 收件人畫面（220），合計約 2,700 行</td><td>選擇畫面、ALV 結果、ZSDT019、ZSDS007（兩張）、ZSDS008、ZSDS009、ZSDS010；Excel 樣本 4EXPORT.xlsx</td><td>2、4～6、9～13、15、16</td></tr>
+    </tbody>
+  </table>
+  <div class="note">兩支程式大量共用：TOP 的巨集 <span class="kw">add_fieldcat</span>、地址搬移邏輯、<span class="kw">frm_send_mail</span>、<span class="kw">frm_get_mail</span>（ZSD_GET_PERSON＋ZSDT002）、PayPal 的取消／刪除流程，幾乎是整段複製貼上。這正是第 16 節要談的「共用邏輯應該抽成類別」的典型反例。月對帳單 ZSDF003（<a href="#ch08-3">8-3 章</a>）也共用 ZSDT002 的 STATEMENT 旗標。</div>
+
+  <h3 id="ch08-2-02">2. 業務情境與整體架構：一支程式、三種入口</h3>
+  <p><b>業務情境</b>：某醫療器材公司的美國子公司，客服（Customer Care）開報價單與訂單、會計開發票。客戶多是醫院與診所，要的是「一收到單據 PDF 就能在信裡點連結線上付款」。於是 IT 做了兩支程式，讓同一份資料可以從三個方向被觸發：</p>
+  <table>
+    <thead><tr><th>入口</th><th>觸發方式</th><th>程式內的旗標</th><th>行為</th></tr></thead>
+    <tbody>
+      <tr><td>① NACE 輸出條件</td><td>VA21/VA22 存檔、VA02、VF01/VF02 或 VV12/VV22/VV32 設定的輸出類型被處理（RSNAST00 呼叫 FORM <span class="kw">ENTRY_*</span>）</td><td><span class="kw">gv_print</span> 或 <span class="kw">gv_mail</span> 依入口常式設定；<span class="kw">s_vbeln</span> 填 <span class="kw">NAST-OBJKY</span></td><td>單張列印或單張寄信</td></tr>
+      <tr><td>② 前台 ALV</td><td>使用者執行 ZSDF001／ZSDF002，勾選多筆後按 PRINT / Send Mail / Send Paypal / Delete Paypal</td><td>ALV 的 <span class="kw">BOX</span> 勾選欄</td><td>批次列印、批次寄信、批次建立付款連結</td></tr>
+      <tr><td>③ 背景 JOB</td><td>SM36 排每天一次，<span class="kw">sy-batch = 'X'</span></td><td>全部勾選，<span class="kw">gv_mail = 'X'</span></td><td>自動寄出「昨天」的報價／訂單／發票；ZSDF002 勾「SendPayPal」時先建付款連結再寄</td></tr>
+    </tbody>
+  </table>
+  <p><b>程式架構拆解</b>（兩支相同）：</p>
+  <ol>
+    <li><b>取數</b>：抬頭（VBAK 或 VBRK）→ 商業資料 VBKD（採購單號 BSTKD、付款條件 ZTERM）→ 夥伴 VBPA（RE 開票對象、WE 收貨方）＋ 地址 ADRC → 行項目（VBAP 或 VBRP）→ 長文本 READ_TEXT → 業務員（VBAP 客製欄位 Z_REP1 對到供應商主檔 LFA1 與其 email）→ 收件人與 CC。</li>
+    <li><b>選表單</b>：依訂單類型 AUART 用 CASE 決定 SmartForm 名稱。</li>
+    <li><b>輸出</b>：列印 → <span class="kw">SSF_OPEN</span> 一次、表單 N 次、<span class="kw">SSF_CLOSE</span> 一次；寄信 → 表單產生 Spool → 讀 Spool 轉 PDF → CL_BCS 寄出。</li>
+    <li><b>PayPal</b>：呼叫自建介面函數 ZSDFM006_*（建立草稿、取消、刪除），結果寫回 ZFIT002 並顯示在 ALV。</li>
+  </ol>
+  <div class="tip">這種「NACE 列印程式同時是報表」的設計很常見，好處是只維護一份取數邏輯。現代寫法是把取數與輸出放進一個全域類別（例如 <span class="kw">ZCL_SD_DOC_OUTPUT</span>），NACE 入口、報表、背景 JOB 都只是薄薄一層呼叫它，詳見第 5 節與 <a href="#ch07-5">7-5 章</a>的設計模式。</div>
+
+  <h3 id="ch08-2-03">3. ZSDF001 選擇畫面與 ALV 輸出（依截圖）</h3>
+  <p><b>選擇畫面</b>標題為「Quotation No. &amp; So No. Print &amp; Email &amp; Send Paypal」，分兩個區塊：</p>
+  <table>
+    <thead><tr><th>區塊</th><th>欄位</th><th>參考欄位</th><th>說明</th></tr></thead>
+    <tbody>
+      <tr><td rowspan="7">Selection Conditions</td><td>Quotation No./So No.</td><td>VBAK-VBELN</td><td>s_vbeln</td></tr>
+      <tr><td>Order Type</td><td>VBAK-AUART</td><td>s_auart</td></tr>
+      <tr><td>Account No</td><td>VBAK-KUNNR</td><td>s_kunnr（售達方）</td></tr>
+      <tr><td>Sales Organization</td><td>VBAK-VKORG</td><td>s_vkorg，預設 1010，必填（OBLIGATORY）</td></tr>
+      <tr><td>Distribution Channel</td><td>VBAK-VTWEG</td><td>s_vtweg</td></tr>
+      <tr><td>Document Date</td><td>VBAK-AUDAT</td><td>s_audat（背景時被改成「昨天」）</td></tr>
+      <tr><td>Create by</td><td>VBAK-ERNAM</td><td>s_ernam（原本還有 s_erdat，已註解掉）</td></tr>
+      <tr><td>Document Selection</td><td>Quotation ／ So</td><td>—</td><td>單選鈕 rs_quot（預設）／ rs_so</td></tr>
+    </tbody>
+  </table>
+  <p><b>ALV 結果</b>（以銷售訂單模式為例）：工具列自訂按鈕 <b>PRINT</b>、<b>Send Mail</b>、<b>Send Paypal</b>、<b>DeletePaypal</b>；報價模式用 GUI 狀態 STANDARD_QT（沒有 PayPal 按鈕），訂單模式用 STANDARD_SO。欄位順序：</p>
+  <table>
+    <thead><tr><th>欄位（ALV 標題）</th><th>來源</th><th>備註</th></tr></thead>
+    <tbody>
+      <tr><td>Quotation No. ／ So No.</td><td>VBAK-VBELN</td><td>hotspot，點了開 VA03</td></tr>
+      <tr><td>Account No、Account Name</td><td>VBAK-KUNNR、KNA1-NAME1</td><td></td></tr>
+      <tr><td>Document Type、Sales Organization、Distribution Channel</td><td>VBAK-AUART / VKORG / VTWEG</td><td></td></tr>
+      <tr><td>Bill to、Ship to</td><td>VBPA（PARVW = RE / WE）</td><td>結構欄位名 KUNWE（其實放的是 RE）、KUNSH（放 WE），命名容易誤會</td></tr>
+      <tr><td>Effective date</td><td>VBAK-ANGDT</td><td>只有報價模式顯示</td></tr>
+      <tr><td>P.O.NO、Req、Terms</td><td>VBKD-BSTKD、業務員簡稱、TVZBT-VTEXT</td><td>Req 是業務員（取自 LFA1-SORTL）</td></tr>
+      <tr><td>Shipping and Handling、Total tax、Discount、Total Amount</td><td>VBAP-KZWI1、KZWI3＋KZWI6、PRCD_ELEMENTS（ZMU4）、合計</td><td>見第 7 節</td></tr>
+      <tr><td>Paypal invoice ID、status、Message、PayPal payment link</td><td>ZFIT002</td><td>只有訂單模式；連結是 hotspot，點了用瀏覽器開</td></tr>
+      <tr><td>Document Date、Create by</td><td>VBAK-AUDAT、ERNAM</td><td></td></tr>
+    </tbody>
+  </table>
+  <p>Excel 樣本 3EXPORT.xlsx 的欄位與上表一致（報價單號、客戶號、客戶名稱、單據類型、銷售組織、分銷渠道、收貨方×2、報價有效日期、P.O.NO、Req、付款條件、運費、總稅額、折扣金額、總金額、創建日期、創建人），樣本中的單據類型全是 ZQT2、付款條件「30天／45天／60天」。</p>
+
+  <h3 id="ch08-2-04">4. ZSDF002 選擇畫面與 ALV 輸出（依截圖）</h3>
+  <p><b>選擇畫面</b>標題「Invoice Print &amp; Email &amp; Send Paypal」：</p>
+  <table>
+    <thead><tr><th>欄位</th><th>參考欄位</th><th>說明</th></tr></thead>
+    <tbody>
+      <tr><td>Company Code</td><td>T001-BUKRS</td><td>預設 1010，NO-EXTENSION NO INTERVALS（單值）</td></tr>
+      <tr><td>Billing No</td><td>VBRK-VBELN</td><td></td></tr>
+      <tr><td>Billing Type</td><td>VBRK-FKART</td><td>預設 F2</td></tr>
+      <tr><td>Account No</td><td>VBRK-KUNAG</td><td>售達方</td></tr>
+      <tr><td>Billing Date</td><td>VBRK-FKDAT</td><td></td></tr>
+      <tr><td>Sales Organization</td><td>VBRK-VKORG</td><td>預設 1010，必填</td></tr>
+      <tr><td>Distribution Channel</td><td>VBRK-VTWEG</td><td></td></tr>
+      <tr><td>Create on</td><td>VBRK-ERDAT</td><td>背景時改成「昨天」</td></tr>
+      <tr><td>Create by</td><td>VBRK-ERNAM</td><td></td></tr>
+      <tr><td>SendPayPal</td><td>勾選框 cb_xyk</td><td>背景時：只保留付款方式 KNB1-ZWELS = 'F' 的客戶，先建 PayPal 連結再寄信</td></tr>
+    </tbody>
+  </table>
+  <p><b>ALV 結果</b>工具列：<b>PRINT</b>、<b>Send Mail</b>、<b>Send Paypal</b>、<b>Delete Paypal Draft</b>。欄位（截圖＋4EXPORT.xlsx 合併整理）：</p>
+  <table>
+    <thead><tr><th>欄位群</th><th>內容</th></tr></thead>
+    <tbody>
+      <tr><td>單據</td><td>Company Code、Billing No（hotspot → VF03）、Billing type、Sales Organization、Distribution Channel、Billing Date、Due to（到期日）</td></tr>
+      <tr><td>客戶</td><td>Account No、Account Name、Bill to、Methods（付款方式 ZWELS）、Ship to</td></tr>
+      <tr><td>前置單據</td><td>SalesOrder（hotspot → VA03）、SalesOrder Type、Delivery（hotspot → VL03N）、Req（業務員）、Terms、P.O.NO、Days（付款天數）</td></tr>
+      <tr><td>金額</td><td>Shipping and Handling、Total tax、Amount due/Total、Payments/credit、Balance Due</td></tr>
+      <tr><td>PayPal</td><td>PaymentLink（hotspot）、PaypalId、Paypal 狀態、消息文本</td></tr>
+      <tr><td>其他</td><td>創建日期、創建人、郵件寄送日期（ZSDT019-CRDAT）、收件人清單（逗號串接）、OrdRs（訂單原因 AUGRU）、描述（TVAUT-BEZEI）</td></tr>
+    </tbody>
+  </table>
+  <div class="warn">4EXPORT.xlsx 樣本的「收件人」欄裡是<b>真實客戶的 email</b>。從正式機匯出 Excel 當教材或附在需求文件裡，是很常見的個資外洩路徑。測試資料請在 QAS 用假資料，或匯出後先遮罩。</div>
+
+  <h3 id="ch08-2-05">5. NACE 輸出條件與列印程式入口</h3>
+  <p>NACE 的「處理常式」設定三樣東西：<b>程式</b>（TNAPR-PGNAM）、<b>FORM 常式</b>（TNAPR-RONAM）、<b>SmartForm</b>（TNAPR-SFORM）。RSNAST00 用 <span class="kw">PERFORM (ronam) IN PROGRAM (pgnam) USING return_code us_screen</span> 呼叫，並透過 <span class="kw">INCLUDE RVADTABL</span> 宣告的共用工作區把 <span class="kw">NAST</span>、<span class="kw">TNAPR</span> 傳進來。這是新程式裡少數「必須保留 FORM」的地方。設定步驟與輸出類型、存取順序的關係見 <a href="#ch04-3-14">4-3 章第 14 節</a>與 <a href="#ch05-19-16">5-19 章第 16 節</a>。</p>
+  <p>ZSDF001 一支程式就掛了 13 個入口常式，依原始碼整理如下（輸出類型代碼本身在 NACE 設定裡，原始碼看不到，這裡只能列出常式與表單）：</p>
+  <table>
+    <thead><tr><th>入口常式</th><th>所在 include</th><th>動作</th><th>取數／表單</th></tr></thead>
+    <tbody>
+      <tr><td>ENTRY_QUOT_NEU / ENTRY_QUOT_SMAIL</td><td>F01</td><td>報價單列印／寄信</td><td>frm_get_quotdata → 依 AUART 選表單</td></tr>
+      <tr><td>ENTRY_SO_NEU / ENTRY_SO_SMAIL</td><td>F02</td><td>銷售訂單列印／寄信</td><td>frm_get_sodata；寄信前檢查「行銷需求（AUGRU = U09）的 ZEVU 不可寄信」</td></tr>
+      <tr><td>ENTRY_SO_NEUN / ENTRY_SO_SMAILN</td><td>F03</td><td>另一家歐洲子公司的訂單確認</td><td>FRM_GET_SODATAN，表單 ZSDF026B1，含 7% / 19% 增值稅分組</td></tr>
+      <tr><td>ENTRY_SO_ORDER</td><td>F03</td><td>訂單確認（另一版面）</td><td>FRM_GET_ORDER / FRM_PRINT_ORDER</td></tr>
+      <tr><td>ENTRY_SO_DELIVERY</td><td>F03</td><td>交貨單（從 LIPS-VGBEL 反查訂單）</td><td>FRM_GET_DELIVERY，含批次、效期、包裝件數與總重</td></tr>
+      <tr><td>ENTRY_INVOICE_NEU / ENTRY_INVOICE2_NEU</td><td>F04</td><td>發票</td><td>呼叫自建函數 ZSDFM010（表單 ZSDF027）</td></tr>
+      <tr><td>ENTRY_INVOICE3_NEU</td><td>F04</td><td>貸項／借項通知</td><td>ZSDFM010N</td></tr>
+      <tr><td>ENTRY_INVOICE4_NEU</td><td>F04</td><td>零金額發票</td><td>ZSDFM010N</td></tr>
+      <tr><td>ENTRY_INVOICE5_NEU</td><td>F04</td><td>付款請求（Payment request）</td><td>ZSDFM010N（入口內卻呼叫 invoice3 的處理常式，疑似複製未改）</td></tr>
+    </tbody>
+  </table>
+  <p>ZSDF002 則只有 <span class="kw">ENTRY_NEU</span>（列印）與 <span class="kw">ENTRY_NEU_SMAIL</span>（寄信）兩個入口。</p>
+  <p><b>表單選擇（原程式寫死在 CASE 裡）</b>：</p>
+  <table>
+    <thead><tr><th>程式</th><th>訂單類型 AUART</th><th>業務意義</th><th>SmartForm</th></tr></thead>
+    <tbody>
+      <tr><td rowspan="7">ZSDF001</td><td>ZQT1</td><td>報價（OEM）</td><td>ZSDF001；由 VA23 觸發時改用 ZSDF025D_VA23T</td></tr>
+      <tr><td>ZQT2</td><td>報價（直銷）</td><td>ZSDF025D_VA23T（2023 年改為統一使用）</td></tr>
+      <tr><td>ZOEU</td><td>Acknowledgement（OEM 訂單回覆）</td><td>ZSDF002</td></tr>
+      <tr><td>ZEVU、ZFEU</td><td>Evaluation（試用／評估）</td><td>ZSDF003</td></tr>
+      <tr><td>ZDEU</td><td>Demo Order</td><td>ZSDF015</td></tr>
+      <tr><td>ZMTU、ZFOU</td><td>Order Confirmation</td><td>ZSDF004</td></tr>
+      <tr><td>ZPDU</td><td>Product Development Order</td><td>ZSDF005（寄信時直接 CONTINUE，未實作）</td></tr>
+      <tr><td rowspan="4">ZSDF002</td><td>ZMTU、ZFOU、ZDEU、ZEVU、ZFEU</td><td>標準發票</td><td>ZSDF010</td></tr>
+      <tr><td>ZPDU</td><td>產品開發發票</td><td>ZSDF011</td></tr>
+      <tr><td>ZOEU</td><td>OEM 發票</td><td>ZSDF012</td></tr>
+      <tr><td>ZCRU、ZREU</td><td>貸項／退貨</td><td>ZSDF013</td></tr>
+    </tbody>
+  </table>
+  <div class="note">注意 SmartForm 名稱與程式名稱撞名：表單 ZSDF001、ZSDF002 跟這兩支程式同名，但是完全不同的物件（一個在 SMARTFORMS、一個在 SE38）。命名規範最好讓表單與程式分開前綴，例如程式 ZSDR_*、表單 ZSDSF_*。</div>
+  <p><b>現代改寫</b>：FORM 只留兩個薄入口，立刻轉進類別；表單名稱優先讀 <span class="kw">TNAPR-SFORM</span>，讓「換表單」變成設定而不是改程式；錯誤用 <span class="kw">NAST_PROTOCOL_UPDATE</span> 寫進輸出處理記錄，而不是 MESSAGE 直接跳出。</p>
+  <pre><code class="abap">REPORT zsdf001_output.
+
+" RVADTABL 是 SD 列印程式的標準 include：內含 NAST、TNAPR 等「共用工作區」宣告，
+" RSNAST00 就是靠這些共用工作區把輸出條件傳進來，所以必須保留
+INCLUDE rvadtabl.
+
+CLASS lcl_output DEFINITION FINAL.
+  PUBLIC SECTION.
+    CONSTANTS: BEGIN OF c_mode,
+                 print TYPE c LENGTH 1 VALUE 'P',
+                 mail  TYPE c LENGTH 1 VALUE 'M',
+               END OF c_mode.
+    CLASS-METHODS run
+      IMPORTING is_nast        TYPE nast
+                is_tnapr       TYPE tnapr
+                iv_screen      TYPE abap_bool
+                iv_mode        TYPE c
+      RETURNING VALUE(rv_rc)   TYPE sy-subrc.
+ENDCLASS.
+
+CLASS lcl_output IMPLEMENTATION.
+  METHOD run.
+    TRY.
+        DATA(lo_doc) = NEW zcl_sd_doc_output( iv_vbeln  = CONV #( is_nast-objky )
+                                              iv_langu  = is_nast-spras
+                                              iv_screen = iv_screen ).
+        " 表單名稱優先取 NACE 處理常式上設定的 SmartForm（TNAPR-SFORM），不要寫死在程式
+        lo_doc-&gt;set_form( is_tnapr-sform ).
+        CASE iv_mode.
+          WHEN c_mode-print. lo_doc-&gt;print( ).
+          WHEN c_mode-mail.  lo_doc-&gt;send_mail( ).
+        ENDCASE.
+        rv_rc = 0.
+      CATCH zcx_sd_output INTO DATA(lx).
+        " 把錯誤寫進輸出處理記錄（VA03 → 輸出 → 處理記錄 看得到）
+        CALL FUNCTION 'NAST_PROTOCOL_UPDATE'
+          EXPORTING
+            msg_arbgb = lx-&gt;if_t100_message~t100key-msgid
+            msg_nr    = lx-&gt;if_t100_message~t100key-msgno
+            msg_ty    = 'E'
+          EXCEPTIONS
+            OTHERS    = 1.
+        rv_rc = 1.
+    ENDTRY.
+  ENDMETHOD.
+ENDCLASS.
+
+" ── NACE 只認 FORM 常式：這是新程式唯一保留的 FORM，進來後立刻轉進類別 ──
+FORM entry_neu USING return_code TYPE sy-subrc
+                     us_screen   TYPE c.
+  return_code = lcl_output=&gt;run( is_nast   = nast
+                                 is_tnapr  = tnapr
+                                 iv_screen = xsdbool( us_screen IS NOT INITIAL )
+                                 iv_mode   = lcl_output=&gt;c_mode-print ).
+ENDFORM.
+
+FORM entry_smail USING return_code TYPE sy-subrc
+                       us_screen   TYPE c.
+  return_code = lcl_output=&gt;run( is_nast   = nast
+                                 is_tnapr  = tnapr
+                                 iv_screen = xsdbool( us_screen IS NOT INITIAL )
+                                 iv_mode   = lcl_output=&gt;c_mode-mail ).
+ENDFORM.</code></pre>
+  <div class="warn">原程式在 NACE 入口裡把 <span class="kw">rs_quot</span>、<span class="kw">rs_so</span>（選擇畫面的單選鈕）當全域旗標改來改去，並在寄信副程式裡 <span class="kw">COMMIT WORK AND WAIT</span>、<span class="kw">SUBMIT RSCONN01</span>。輸出若設定「儲存時立即處理」（傳輸時間 4），列印程式是在 VA02 等交易的<b>更新流程中</b>被呼叫的，這時自己下 COMMIT WORK 會造成執行時期錯誤或把呼叫端交易切成兩半。讓呼叫端去 commit，SCOT 的排程 JOB 去送信，才是正確分工。</div>
+
+  <h3 id="ch08-2-06">6. 自建表與結構（依 SE11 截圖整理）</h3>
+  <p><b>透明表 ZSDT002（Mail CC maintenance）</b>——「固定副本收件人」名單，用旗標區分用途：</p>
+  <table>
+    <thead><tr><th>欄位</th><th>Key</th><th>資料元素</th><th>型別</th><th>說明</th></tr></thead>
+    <tbody>
+      <tr><td>MANDT</td><td>✔</td><td>MANDT</td><td>CLNT 3</td><td>用戶端</td></tr>
+      <tr><td>MAIL</td><td>✔</td><td>AD_SMTPADR</td><td>CHAR 241</td><td>E-Mail Address</td></tr>
+      <tr><td>UNAME</td><td></td><td>ZENAME</td><td>CHAR 40</td><td>User Name</td></tr>
+      <tr><td>SALE</td><td></td><td>ZESALE</td><td>CHAR 1</td><td>報價／訂單寄信要 CC（ZSDF001 取 <span class="kw">SALE = 'X'</span>）</td></tr>
+      <tr><td>INVOICE</td><td></td><td>ZEINVOICE</td><td>CHAR 1</td><td>發票寄信要 CC（ZSDF002）</td></tr>
+      <tr><td>STATEMENT</td><td></td><td>ZESTATEMENT</td><td>CHAR 1</td><td>月對帳單寄信要 CC（ZSDF003，見 8-3 章）</td></tr>
+      <tr><td>PURCHASE_ORDER</td><td></td><td>ZEPURCHASE_ORDER</td><td>CHAR 1</td><td>採購單寄信要 CC</td></tr>
+    </tbody>
+  </table>
+  <p><b>透明表 ZFIT002（Paypal Interface Head data）</b>——每一個 PayPal 付款單一筆：</p>
+  <table>
+    <thead><tr><th>欄位</th><th>Key</th><th>資料元素</th><th>型別</th><th>說明</th></tr></thead>
+    <tbody>
+      <tr><td>MANDT</td><td>✔</td><td>MANDT</td><td>CLNT 3</td><td></td></tr>
+      <tr><td>ZPAYPALID</td><td>✔</td><td>ZDE_PAYPALID</td><td>CHAR 50</td><td>PayPal invoice ID</td></tr>
+      <tr><td>VBELN</td><td>✔</td><td>VBELN_VF</td><td>CHAR 10</td><td>單據號（訂單或發票都放這裡）</td></tr>
+      <tr><td>SOFLG</td><td></td><td>ZEFLG</td><td>CHAR 1</td><td>X＝這筆是針對「銷售訂單」建立；空白＝針對發票</td></tr>
+      <tr><td>ZSTATUS</td><td></td><td>ZDE_PAYPAL_STAT…</td><td>CHAR 1</td><td>狀態（第 12 節）</td></tr>
+      <tr><td>HEFLINK</td><td></td><td>ZEHEFLINK</td><td>CHAR 1200</td><td>PayPal payment link</td></tr>
+      <tr><td>BSTNK_VF</td><td></td><td>BSTKD</td><td>CHAR 35</td><td>Customer Reference</td></tr>
+      <tr><td>REFERENCE</td><td></td><td>ZEREFERENCE</td><td>CHAR 50</td><td>Reference</td></tr>
+      <tr><td>INVOICE_DATE</td><td></td><td>FKDAT</td><td>DATS 8</td><td>Billing Date</td></tr>
+      <tr><td>NOTE</td><td></td><td>ZENOTE</td><td>CHAR 100</td><td>Note</td></tr>
+      <tr><td>AMOUNT</td><td></td><td>BWERT</td><td>CURR 13,2</td><td>金額</td></tr>
+      <tr><td>CURRENCY_CODE</td><td></td><td>WAERS</td><td>CUKY 5</td><td>幣別</td></tr>
+      <tr><td>MESSAGE</td><td></td><td>BAPI_MSG</td><td>CHAR 220</td><td>介面回傳訊息</td></tr>
+      <tr><td>BELNR / GJAHR / BUKRS</td><td></td><td>BELNR_D / GJAHR / BUKRS</td><td>CHAR 10 / NUMC 4 / CHAR 4</td><td>收款後產生的會計文件（用於清帳）</td></tr>
+      <tr><td>.INCLUDE ZFIS001</td><td></td><td>—</td><td>—</td><td>共用稽核欄位：CRDAT、CRTIM、CRNAM、UDATE、UTIME、UNAME</td></tr>
+    </tbody>
+  </table>
+  <p><b>透明表 ZSDT019（Invoice Print Log）</b>——發票寄信記錄：</p>
+  <table>
+    <thead><tr><th>欄位</th><th>Key</th><th>資料元素</th><th>型別</th><th>說明</th></tr></thead>
+    <tbody>
+      <tr><td>MANDT</td><td>✔</td><td>MANDT</td><td>CLNT 3</td><td></td></tr>
+      <tr><td>CRDAT</td><td>✔</td><td>CRDAT</td><td>DATS 8</td><td>Creation date</td></tr>
+      <tr><td>CRTIM</td><td>✔</td><td>C_TIME</td><td>TIMS 6</td><td>Created At</td></tr>
+      <tr><td>VBELN</td><td>✔</td><td><b>VBELN_VL</b></td><td>CHAR 10</td><td>描述寫 Delivery，<b>實際存的是發票號</b>——資料元素選錯</td></tr>
+      <tr><td>CRNAM</td><td></td><td>CRNAM</td><td>CHAR 12</td><td>Created By</td></tr>
+    </tbody>
+  </table>
+  <p><b>ZSDF001 用的結構</b>：</p>
+  <table>
+    <thead><tr><th>結構</th><th>描述</th><th>欄位數</th><th>重點欄位</th></tr></thead>
+    <tbody>
+      <tr><td>ZSDS001</td><td>Quotation and So Print Head（表單 LS_HEAD）</td><td>43</td><td>VBELN、AUART、ANGDT、KUNNR、NAME1、BSTKD、SORTL、VTEXT；Bill-to 地址 KNAME1/KNAME2/KSTREET/KSTR_SUPPL1/KSTR_SUPPL2/KCITY1/KREGION/KPOST_CODE1/KNAME_CO/KLANDX；金額 YFTPR/TATPR/HJTPR（BWERT CURR 13,2）；ZTERM；Ship-to 地址 SNAME1…SLANDX；VKORG、VTWEG、ERDAT、ERNAM、SMTP_ADDR、HEADFLAG（是否有抬頭長文）、VSART、ZBEZEI、KUNWE、KUNSH、PURCHASE_ORDER（CHAR 255）</td></tr>
+      <tr><td>ZSDS002</td><td>Quotation and SO Print LINE（IT_LINE）</td><td>23</td><td>BHFLG（行底色：0 灰、1 白）、VBELN、POSNR、MATNR（CHAR 40）、POSEX_E、EDATU、ZUNIT（Units/Box，DEC 5）、KWMENG、WAERK、KZWI1/2/3/4/6、DJTPR（單價）、ZEKDJ（單位折扣）、Z_REP1、Z_NAME1、PSTYV、NETWR、FKREL、UEPOS、DISCT（ZEDISCOUNT_AMOUNT，CURR 23,2）</td></tr>
+      <tr><td>ZSDS003</td><td>LINE Description（IT_TLINE1 / IT_TLINE2）</td><td>3</td><td>VBELN、POSNR、TDLINE（CHAR 500）</td></tr>
+      <tr><td>ZSDS004</td><td>Contact email information</td><td>4</td><td>KUNNR、PARTNER2（BU_PARTNER）、UNAME（BU_NAME1TX 80）、MAIL</td></tr>
+      <tr><td>ZSDS015</td><td>依訂單取業務員名稱</td><td>5</td><td>VBELN、Z_NAME1、LIFNR、SORTL、SMTP_ADDR</td></tr>
+      <tr><td>ZSDF026</td><td>Quotation and So Print Head（歐洲版訂單確認／交貨單用）</td><td>123</td><td>地址、稅號 TAXNUM、聯絡人姓名與稱謂、電話傳真、物料 BISMT/MATNR、各種金額文字欄位（ZEINZE、ZZJJ、ZMWST、ZZZJ…）、原產國 HERKL、商品編碼 STAWN、ZTEXT1～4（最長 1000）、LFIMG、CHARG、WERKS、ZT1～ZT9、ZADDRESS（歸檔路徑）、ZWJNAME（檔名）、ZEMADD、ZDYXZ、7% / 19% 分組金額 ZVERS7/ZVERS19/ZVERP7/ZVERP19/ZNETTO7/ZNETTO19/ZWARE7/ZWARE19、VBELN1、VGPOS</td></tr>
+    </tbody>
+  </table>
+  <p><b>ZSDF002 用的結構</b>：</p>
+  <table>
+    <thead><tr><th>結構</th><th>描述</th><th>欄位數</th><th>重點欄位</th></tr></thead>
+    <tbody>
+      <tr><td>ZSDS007</td><td>Invoice Print Head</td><td>53</td><td>VBELN（VBELN_VF）、KUNAG、NAME1、FKART、SORTL、ZTERM、VTEXT、Bill-to 地址 K*、金額 YFTPR/TATPR/ADTPR（應收）/PCTPR（已收／貸項）/BDTPR（餘額）、Ship-to 地址 S*、ZTAG2/ZPRZ2（付款天數與折扣率）、FKDAT、DQDAT（到期日）、BSTNK_VF、AUBEL、AUART、VGBEL、KDFLG（有快遞單號）、TAIT1/TAIT2（有抬頭文字 1/2）、BUKRS、VKORG、VTWEG、KUNWE、KUNSH、ZWELS、ERDAT、ERNAM、BEZEI、LANDX、HEFLINK（/CPD/PWS_URL CHAR 1200）、ZBEZEI</td></tr>
+      <tr><td>ZSDS008</td><td>Invoice Print Line</td><td>28</td><td>BHFLG、VBELN、POSNR、MATNR、ZZBATCH（Lot No.）、FKIMG、DJTPR、KZWI1/2/3/4/6、ZEKDJ、AUBEL、AUPOS、AUART、VGBEL、KUNRE_ANA、KUNWE_ANA、WERKS、LGORT、CHARG、POSEX_E、BSTKD、PSTYV、AUGRU、VSART、BEZEI</td></tr>
+      <tr><td>ZSDS009</td><td>Invoice Print Long Text</td><td>3</td><td>VBELN、POSNR、TDLINE（CHAR 132）</td></tr>
+      <tr><td>ZSDS010</td><td>Invoice Long Text（其實是快遞單號）</td><td>6</td><td>VBELN、POSNR、ETENR、EXPRESS（快遞公司代碼）、UPSFED（顯示名稱）、KDDNO（快遞單號 CHAR 20）</td></tr>
+    </tbody>
+  </table>
+  <p><b>ZEDISCOUNT_AMOUNT 與 AFLE</b>：折扣欄位的資料元素 ZEDISCOUNT_AMOUNT 使用網域 <span class="kw">AFLE13D2O16N_TO_23D2O30N</span>（CURR 23,2，輸出長度 30，轉換常式 AU132）。這是 S/4HANA 1809 起的<b>金額欄位長度擴充（Amount Field Length Extension, AFLE）</b>專用網域：PRCD_ELEMENTS-KWERT 在啟用 AFLE 的系統中可達 23 位數，客製欄位若仍用 CURR 13,2 接值會溢位。</p>
+  <div class="tip">表單結構的欄位型別要跟「來源欄位」一致：金額用來源的資料元素（或 AFLE 網域），不要像 ZSDF026 那樣把金額、數量、稅率都宣告成 CHAR 15 的「已格式化文字」——那樣千分位、小數位、負號與貨幣小數都得在 ABAP 裡自己處理，換一個幣別就錯。SmartForms 的欄位可以直接用 <span class="kw">&amp;field(C)&amp;</span>、<span class="kw">&amp;field(.0)&amp;</span> 等格式選項（見 <a href="#ch04-3-08">4-3 章第 8 節</a>）。</div>
+  <p><b>表單 ZSDF025D_VA23T</b>（依截圖）：套件 ZDEV、語言 ZH、單一頁面 %PAGE1，共 12 個視窗（%WINDOW1～%WINDOW12：抬頭、公司資訊、Bill-to／Ship-to、主視窗 %WINDOW7、合計、頁尾等）。介面 Import 除了標準參數 ARCHIVE_INDEX、ARCHIVE_INDEX_TAB、ARCHIVE_PARAMETERS、CONTROL_PARAMETERS、MAIL_APPL_OBJ、MAIL_RECIPIENT、MAIL_SENDER、OUTPUT_OPTIONS、USER_SETTINGS（預設 'X'）之外，自訂 <b>LS_HEAD TYPE ZSDS001</b>；Tables 頁籤則有 IT_LINE（ZSDS002）、IT_TLINE1、IT_TLINE2（ZSDS003）。</p>
+
+  <h3 id="ch08-2-07">7. 取數邏輯：抬頭、夥伴地址、金額與長文本</h3>
+  <p><b>用到的標準表</b>：</p>
+  <table>
+    <thead><tr><th>資料</th><th>表／欄位</th><th>原程式做法</th><th>問題</th></tr></thead>
+    <tbody>
+      <tr><td>抬頭</td><td>VBAK（VBELN、AUART、ANGDT、KUNNR、VKORG、VTWEG、AUDAT、ERNAM、AUGRU、KNUMV）</td><td>JOIN KNA1、ADRC 取客戶名與地址</td><td>用客戶主檔地址，<b>不是單據上的地址</b></td></tr>
+      <tr><td>採購單號、付款條件、運送方式</td><td>VBKD（POSNR = 000000）、TVZBT、T173T</td><td>FOR ALL ENTRIES</td><td>—</td></tr>
+      <tr><td>Bill-to / Ship-to</td><td>VBPA（PARVW = RE / WE）＋ KNA1-ADRNR → ADRC</td><td>LEFT JOIN</td><td>VBPA 本身有 ADRNR（單據地址），被忽略</td></tr>
+      <tr><td>行項目</td><td>VBAP（KWMENG、KZWI1～KZWI6、Z_REP1、Z_NAME1、FKREL、UEPOS = 000000 只取主行）＋ MARA-ZUNIT</td><td>FOR ALL ENTRIES</td><td>—</td></tr>
+      <tr><td>折扣</td><td>PRCD_ELEMENTS（KSCHL = 'ZMU4'）</td><td>在 LOOP 裡對每張單做 SELECT SUM</td><td>N+1 查詢</td></tr>
+      <tr><td>業務員 email</td><td>VBAP-Z_REP1 → LFA1 → ADR6</td><td>業務員建成「供應商」</td><td>S/4 下應為 BP 角色；ADR6 多筆時無排序</td></tr>
+      <tr><td>收件人</td><td>自建函數 ZSD_GET_PERSON（BP 聯絡人關係與 email，回傳 ZSDS004）</td><td>—</td><td>—</td></tr>
+      <tr><td>國家名</td><td>KNA1-LAND1 → T005T-LANDX</td><td>每張單 SELECT SINGLE</td><td>—</td></tr>
+    </tbody>
+  </table>
+  <p>金額算法（兩支程式相同）：<b>運費 = Σ KZWI1</b>、<b>稅額 = Σ（KZWI3 + KZWI6）</b>（KZWI6 是運費稅）、<b>總額 = Σ（KZWI1 + KZWI2 + KZWI3 + KZWI4 + KZWI6）</b>、<b>單價 = KZWI2 ÷ 數量</b>、<b>單位折扣 = KZWI4 ÷ 數量</b>。KZWI1～KZWI6 是定價程序（V/08）上「小計」欄位的落點，哪個條件累加到哪個 KZWI 是 SD 顧問的設定——程式依賴這個設定，所以<b>定價程序一改，表單金額就會錯</b>，這種相依要寫進程式說明。</p>
+  <p><b>現代改寫</b>：一次 JOIN 取回抬頭、單據夥伴地址與商業資料，訂單類型用列舉，並明確 ORDER BY。</p>
+  <pre><code class="abap">" 報價單 / 銷售訂單抬頭：明列欄位、@ 主機變數、訂單類型用列舉
+DATA(lt_quot_types) = VALUE rsdsselopt_t( ( sign = 'I' option = 'EQ' low = 'ZQT1' )
+                                          ( sign = 'I' option = 'EQ' low = 'ZQT2' ) ).
+
+SELECT FROM vbak AS k
+         LEFT OUTER JOIN vbpa AS pre ON  pre~vbeln = k~vbeln
+                                AND pre~posnr = '000000'
+                                AND pre~parvw = 'RE'          " Bill-to
+         LEFT OUTER JOIN vbpa AS pwe ON  pwe~vbeln = k~vbeln
+                                     AND pwe~posnr = '000000'
+                                     AND pwe~parvw = 'WE'     " Ship-to
+         " 取「單據上的」夥伴地址 VBPA-ADRNR，而不是客戶主檔 KNA1-ADRNR
+         LEFT OUTER JOIN adrc AS ab ON  ab~addrnumber = pre~adrnr
+                                    AND ab~nation     = ' '          " 只取國際版本的預設版
+         LEFT OUTER JOIN adrc AS aw ON  aw~addrnumber = pwe~adrnr
+                                    AND aw~nation     = ' '
+         LEFT OUTER JOIN vbkd AS d  ON  d~vbeln = k~vbeln
+                                    AND d~posnr = '000000'
+  FIELDS k~vbeln, k~auart, k~angdt, k~kunnr, k~vkorg, k~vtweg,
+         k~audat, k~ernam, k~augru, k~knumv, k~waerk,
+         d~bstkd, d~zterm, d~vsart,
+         pre~kunnr AS kunwe,
+         pwe~kunnr AS kunsh,
+         ab~name1 AS kname1, ab~name2 AS kname2, ab~street AS kstreet,
+         ab~str_suppl1 AS kstr_suppl1, ab~str_suppl2 AS kstr_suppl2,
+         ab~city1 AS kcity1, ab~region AS kregion, ab~post_code1 AS kpost_code1,
+         ab~country AS kcountry,
+         aw~name1 AS sname1, aw~street AS sstreet, aw~city1 AS scity1,
+         aw~post_code1 AS spost_code1, aw~country AS scountry
+  WHERE k~vbeln IN @s_vbeln
+    AND k~auart IN @s_auart
+    AND k~auart IN @lt_quot_types
+    AND k~vkorg IN @s_vkorg
+    AND k~vtweg IN @s_vtweg
+    AND k~kunnr IN @s_kunnr
+    AND k~audat IN @s_audat
+    AND k~ernam IN @s_ernam
+  ORDER BY k~vbeln DESCENDING               " HANA 沒有預設排序：要什麼順序就明講
+  INTO TABLE @DATA(lt_head).</code></pre>
+  <div class="warn"><b>地址取錯是 SD 表單最常見的客訴</b>：業務在 VA02 把這張單的收貨地址改成臨時工地，VBPA-ADRNR 會指向一個「單據專用地址」，但原程式 JOIN 的是 KNA1-ADRNR（主檔地址），印出來仍是舊地址。取單據夥伴地址一律從 <b>VBPA-ADRNR</b> 出發。ADRC 的 key 還含 DATE_FROM 與 NATION（國際版本），JOIN 時不限定 NATION 就可能一筆變多筆。</div>
+  <p><b>長文本</b>：行項目描述的取法是三層退路——訂單行文字（物件 VBBP、ID 0001、名稱 = 單號＋項次）→ 物料銷售文字（物件 MVKE、名稱 = 物料 40 碼＋銷售組織＋配銷通路）→ 物料說明 MAKT。抬頭文字用 VBBK / 0004。ZSDF001 在 2023 年拿掉了「只有 VA23 才退到 MAKT」的限制。</p>
+  <pre><code class="abap">CLASS lcl_text DEFINITION FINAL.
+  PUBLIC SECTION.
+    "! 行項目描述：訂單行文字(VBBP) → 物料銷售文字(MVKE) → 物料說明(MAKT)
+    CLASS-METHODS item_description
+      IMPORTING iv_vbeln        TYPE vbeln
+                iv_posnr        TYPE posnr
+                iv_matnr        TYPE matnr
+                iv_vkorg        TYPE vkorg
+                iv_vtweg        TYPE vtweg
+                iv_langu        TYPE sy-langu
+      RETURNING VALUE(rt_lines) TYPE tline_tab.
+  PRIVATE SECTION.
+    CLASS-METHODS read
+      IMPORTING iv_id           TYPE tdid
+                iv_name         TYPE tdobname
+                iv_object       TYPE tdobject
+                iv_langu        TYPE sy-langu
+      RETURNING VALUE(rt_lines) TYPE tline_tab.
+ENDCLASS.
+
+CLASS lcl_text IMPLEMENTATION.
+  METHOD item_description.
+    rt_lines = read( iv_id = '0001' iv_object = 'VBBP' iv_langu = iv_langu
+                     iv_name = CONV #( |{ iv_vbeln }{ iv_posnr }| ) ).
+    IF rt_lines IS NOT INITIAL.
+      RETURN.
+    ENDIF.
+    " MVKE 的 TDNAME = 物料(40) + 銷售組織(4) + 配銷通路(2)；物料 40 碼要用固定長度組字串
+    DATA(lv_name) = CONV tdobname( |{ iv_matnr WIDTH = 40 }{ iv_vkorg WIDTH = 4 }{ iv_vtweg }| ).
+    rt_lines = read( iv_id = '0001' iv_object = 'MVKE' iv_name = lv_name iv_langu = iv_langu ).
+    IF rt_lines IS NOT INITIAL.
+      RETURN.
+    ENDIF.
+    SELECT SINGLE FROM makt
+      FIELDS maktx
+      WHERE matnr = @iv_matnr
+        AND spras = @iv_langu
+      INTO @DATA(lv_maktx).
+    IF sy-subrc = 0.
+      rt_lines = VALUE #( ( tdformat = '*' tdline = lv_maktx ) ).
+    ENDIF.
+  ENDMETHOD.
+
+  METHOD read.
+    CALL FUNCTION 'READ_TEXT'
+      EXPORTING
+        id       = iv_id
+        language = iv_langu
+        name     = iv_name
+        object   = iv_object
+      TABLES
+        lines    = rt_lines
+      EXCEPTIONS
+        OTHERS   = 1.
+    IF sy-subrc &lt;&gt; 0.
+      CLEAR rt_lines.        " 找不到文字是常態，不是錯誤
+    ENDIF.
+  ENDMETHOD.
+ENDCLASS.</code></pre>
+  <div class="note">原程式在迴圈前用 <span class="kw">FOR ALL ENTRIES IN gt_line</span> 讀 MAKT，但<b>沒有先檢查 gt_line 是否為空</b>；若所有單據都沒有主行項目，FOR ALL ENTRIES 會變成「沒有條件」而讀回整張 MAKT 表。任何 FOR ALL ENTRIES 前都要 <span class="kw">IF itab IS NOT INITIAL</span>，或改用 JOIN / 子查詢。</div>
+
+  <h3 id="ch08-2-08">8. SmartForms 呼叫鏈：SSF_FUNCTION_MODULE_NAME → SSF_OPEN → SSFCOMP_OPEN</h3>
+  <p>原開發者把四支標準函數的原始碼存在案例資料夾，正好讓我們看清楚表單呼叫的內部流程：</p>
+  <table>
+    <thead><tr><th>標準函數</th><th>它做了什麼（依原始碼）</th><th>實務意義</th></tr></thead>
+    <tbody>
+      <tr><td><b>SSF_FUNCTION_MODULE_NAME</b></td><td>① 查 <span class="kw">STXFADM</span> 確認表單存在（否則 NO_FORM）② 查 <span class="kw">STXFPCUST</span>：若該 SmartForm 被設定為改用 Adobe（TYPE = 'FP'），改呼叫 <span class="kw">FP_FUNCTION_MODULE_NAME</span> 回傳 Adobe 表單的函數名 ③ 查 <span class="kw">STXFADMI</span> 取函數編號，比對內部版本、<span class="kw">STXFVARI</span> 的產生 release 與系統 ID、<span class="kw">D010SINF</span> 的產生時間，任一不符就呼叫 <span class="kw">FB_GENERATE_FORM</span> 重新產生 ④ 組出 /1BCDWB/SF0000xxxx 函數名</td><td>函數名在每個系統都不同，<b>絕不可寫死</b>；表單傳輸到新系統後第一次呼叫會自動重新產生，所以第一次會比較慢。STXFPCUST 是「SmartForm 不改程式、切換成 Adobe Form」的鉤子</td></tr>
+      <tr><td><b>SSF_OPEN</b></td><td>呼叫 SSF_CREATE_COMPOSER_INPUT 組出 SSFCOMPIN，再呼叫 SSFCOMP_OPEN</td><td>「開一個 Spool 工作」，之後多次呼叫表單都寫進同一個 Spool</td></tr>
+      <tr><td><b>SSF_CREATE_COMPOSER_INPUT</b></td><td>若 <span class="kw">USER_SETTINGS &lt;&gt; space</span>，把 TDDEST、TDIMMED、TDDELETE 改成 '*'（改用使用者預設值）；NO_DIALOG 為空時 DIALOG = 'X'；帶入 DEVICE、PREVIEW、GETOTF、郵件參數與 BCS 語言</td><td><b>USER_SETTINGS 預設是 'X'</b>：你在 OUTPUT_OPTIONS 指定的印表機會被使用者預設蓋掉。要用程式指定的值，必須明確傳 USER_SETTINGS = space</td></tr>
+      <tr><td><b>SSFCOMP_OPEN</b></td><td>檢查是否有未關閉的工作（已開啟又 OPEN 會報錯 150）、初始化輸出選項、XSF/XDF 輸出、沒有 GUI 連線時自動關掉對話框與預覽、初始化字型、點陣圖、OTF</td><td>背景執行沒有 GUI，預覽會被強制關閉；忘了 SSF_CLOSE 下一次 OPEN 就失敗</td></tr>
+    </tbody>
+  </table>
+  <p><b>原程式的列印模式</b>：<span class="kw">TDDEST = 'LP01'</span>、<span class="kw">TDIMMED = 'X'</span>、<span class="kw">NO_OPEN = NO_CLOSE = 'X'</span>，先 SSF_OPEN、迴圈呼叫表單、最後 SSF_CLOSE，讓勾選的多張單據合成一個 Spool。寄信模式則 <span class="kw">NO_DIALOG = 'X'</span>、<span class="kw">TDNEWID = 'X'</span>（每張新 Spool）、<span class="kw">TDIMMED = TDDELETE = space</span>（不立即列印、不刪除，留給下一步轉 PDF）。</p>
+  <pre><code class="abap">METHOD print_batch.
+  " 多張單據合併成一個 Spool：SSF_OPEN 一次 → 呼叫表單 N 次（NO_OPEN / NO_CLOSE）→ SSF_CLOSE 一次
+  DATA lv_fm TYPE rs38l_fnam.
+
+  CALL FUNCTION 'SSF_FUNCTION_MODULE_NAME'
+    EXPORTING
+      formname           = mv_form
+    IMPORTING
+      fm_name            = lv_fm
+    EXCEPTIONS
+      no_form            = 1
+      no_function_module = 2
+      OTHERS             = 3.
+  IF sy-subrc &lt;&gt; 0.
+    RAISE EXCEPTION NEW zcx_sd_output( textid = zcx_sd_output=&gt;form_not_found
+                                       form   = mv_form ).
+  ENDIF.
+
+  DATA(ls_options) = VALUE ssfcompop( tddest  = mv_printer      " 來自使用者預設或 NACE，不要寫死 LP01
+                                      tdimmed = abap_true ).
+  DATA(ls_control) = VALUE ssfctrlop( no_dialog = abap_true
+                                      no_open   = abap_true
+                                      no_close  = abap_true
+                                      langu     = mv_langu ).
+
+  CALL FUNCTION 'SSF_OPEN'
+    EXPORTING
+      output_options     = ls_options
+      control_parameters = ls_control
+      user_settings      = abap_false
+    EXCEPTIONS
+      OTHERS             = 1.
+  IF sy-subrc &lt;&gt; 0.
+    RAISE EXCEPTION NEW zcx_sd_output( textid = zcx_sd_output=&gt;spool_open_failed ).
+  ENDIF.
+
+  LOOP AT mt_docs ASSIGNING FIELD-SYMBOL(&lt;ls_doc&gt;).
+    CALL FUNCTION lv_fm
+      EXPORTING
+        control_parameters = ls_control
+        output_options     = ls_options
+        user_settings      = abap_false
+        ls_head            = &lt;ls_doc&gt;-head
+      TABLES
+        it_line            = &lt;ls_doc&gt;-lines
+        it_tline1          = &lt;ls_doc&gt;-item_texts
+        it_tline2          = &lt;ls_doc&gt;-head_texts
+      EXCEPTIONS
+        OTHERS             = 1.
+    IF sy-subrc &lt;&gt; 0.
+      &lt;ls_doc&gt;-message = |{ &lt;ls_doc&gt;-head-vbeln ALPHA = OUT }：表單產生失敗|.
+    ENDIF.
+  ENDLOOP.
+
+  CALL FUNCTION 'SSF_CLOSE'
+    EXCEPTIONS
+      OTHERS = 1.
+ENDMETHOD.</code></pre>
+  <div class="warn">原程式把印表機寫死為 <span class="kw">LP01</span>（SAP 預設的測試印表機），又傳了 <span class="kw">user_settings = 'X'</span>——兩者互相抵銷，實際印到哪台取決於使用者預設。上線後常見的現象是「在 DEV 印得出來，PRD 印到別的樓層」。印表機應來自 NAST-LDEST（NACE 條件記錄）或使用者參數，不要寫死。原程式在 SSF_FUNCTION_MODULE_NAME 失敗時也沒有檢查 sy-subrc，接著 <span class="kw">CALL FUNCTION lv_fname</span> 會用空的函數名而短傾印（CALL_FUNCTION_NOT_FOUND）。</div>
+
+  <h3 id="ch08-2-09">9. OTF → PDF：從 Spool 繞一圈 vs 直接拿 OTF</h3>
+  <p>原程式的寄信路線是：表單產生 Spool → <span class="kw">RSPO_GET_ATTRIBUTES_SPOOLJOB</span> 讀 TSP01 判斷 Spool 類型 → 類型為 OTF 或 SMART 時呼叫 <span class="kw">CONVERT_OTFSPOOLJOB_2_PDF</span>，類型為 LIST 時呼叫 <span class="kw">CONVERT_ABAPSPOOLJOB_2_PDF</span> → 取得 XSTRING。這條路線能動，但副作用是<b>每寄一封信就在 SP01 留下一個永不列印的 Spool</b>，累積起來佔 TemSe 空間，還需要 Spool 權限。</p>
+  <p>SmartForm 本來就可以不經 Spool 直接交出 OTF：<span class="kw">CONTROL_PARAMETERS-GETOTF = 'X'</span>，從 <span class="kw">JOB_OUTPUT_INFO-OTFDATA</span> 拿 OTF，再用 <span class="kw">CONVERT_OTF</span>（FORMAT = 'PDF'）轉成 XSTRING。這也是 <a href="#ch04-3-13">4-3 章第 13 節</a>的做法。</p>
+  <pre><code class="abap">METHOD render_pdf.
+  " 寄信不必經過 Spool：GETOTF = 'X' 直接拿 OTF，再轉 PDF
+  DATA lv_fm       TYPE rs38l_fnam.
+  DATA ls_result   TYPE ssfcrescl.
+  DATA lt_pdf_line TYPE STANDARD TABLE OF tline WITH EMPTY KEY.
+  DATA lv_size     TYPE i.
+
+  CALL FUNCTION 'SSF_FUNCTION_MODULE_NAME'
+    EXPORTING
+      formname = mv_form
+    IMPORTING
+      fm_name  = lv_fm
+    EXCEPTIONS
+      OTHERS   = 1.
+  IF sy-subrc &lt;&gt; 0.
+    RAISE EXCEPTION NEW zcx_sd_output( textid = zcx_sd_output=&gt;form_not_found
+                                       form   = mv_form ).
+  ENDIF.
+
+  DATA(ls_doc) = is_doc.          " TABLES 參數會傳參考，不能直接傳唯讀的 IMPORTING 參數
+
+  CALL FUNCTION lv_fm
+    EXPORTING
+      control_parameters = VALUE ssfctrlop( no_dialog = abap_true
+                                            getotf    = abap_true
+                                            langu     = mv_langu )
+      output_options     = VALUE ssfcompop( tdnoprev = abap_true )
+      user_settings      = abap_false
+      ls_head            = ls_doc-head
+    IMPORTING
+      job_output_info    = ls_result
+    TABLES
+      it_line            = ls_doc-lines
+      it_tline1          = ls_doc-item_texts
+      it_tline2          = ls_doc-head_texts
+    EXCEPTIONS
+      OTHERS             = 1.
+  IF sy-subrc &lt;&gt; 0.
+    RAISE EXCEPTION NEW zcx_sd_output( textid = zcx_sd_output=&gt;render_failed ).
+  ENDIF.
+
+  CALL FUNCTION 'CONVERT_OTF'
+    EXPORTING
+      format                = 'PDF'
+    IMPORTING
+      bin_filesize          = lv_size
+      bin_file              = rv_pdf            " XSTRING
+    TABLES
+      otf                   = ls_result-otfdata
+      lines                 = lt_pdf_line
+    EXCEPTIONS
+      OTHERS                = 1.
+  IF sy-subrc &lt;&gt; 0 OR rv_pdf IS INITIAL.
+    RAISE EXCEPTION NEW zcx_sd_output( textid = zcx_sd_output=&gt;pdf_failed ).
+  ENDIF.
+ENDMETHOD.</code></pre>
+  <table>
+    <thead><tr><th>比較</th><th>Spool 路線（原程式）</th><th>GETOTF 路線（建議）</th></tr></thead>
+    <tbody>
+      <tr><td>留下 Spool</td><td>會，每封信一個</td><td>不會</td></tr>
+      <tr><td>需要的權限</td><td>S_SPO_ACT 等 Spool 權限</td><td>不需要</td></tr>
+      <tr><td>同時要列印＋寄信</td><td>一次產生即可兩用</td><td>要呼叫表單兩次（或把 OTF 另外送印）</td></tr>
+      <tr><td>適用</td><td>既有 Spool 補寄、ABAP 清單轉 PDF</td><td>新開發的「寄 PDF」</td></tr>
+    </tbody>
+  </table>
+
+  <h3 id="ch08-2-10">10. CL_BCS 寄信：收件人、CC、業務員與寄件者</h3>
+  <p>原程式的寄信規則（依 F01 / F02 整理）：</p>
+  <table>
+    <thead><tr><th>角色</th><th>來源</th><th>規則</th></tr></thead>
+    <tbody>
+      <tr><td>收件人（TO）</td><td>ZSD_GET_PERSON：依客戶取 BP 聯絡人 email（ZSDS004）</td><td>ZEVU、ZFEU、ZFOU 三種訂單<b>不寄給客戶</b>，只寄內部；ZSDF002 前台只選一個客戶時，改用使用者在彈窗勾選的收件人</td></tr>
+      <tr><td>固定副本（CC）</td><td>ZSDT002（SALE = 'X' 或 INVOICE = 'X'）</td><td>全部 CC</td></tr>
+      <tr><td>業務員（CC）</td><td>VBAP-Z_REP1 → LFA1 → ADR6-SMTP_ADDR</td><td>ZQT2、ZEVU、ZFEU、ZMTU、ZFOU、ZDEU 才 CC 業務員</td></tr>
+      <tr><td>寄件者</td><td>寫死的三個系統使用者（客服、OEM、會計各一）</td><td>依訂單類型切換；ZQT1、ZOEU、ZPDU 用 OEM 帳號，其餘用客服帳號；發票一律用會計帳號</td></tr>
+      <tr><td>主旨／附件名</td><td>寫死字串「Quote／Invoice ＋ 單號 ＋ from ＋ 公司名」</td><td>附件名同主旨</td></tr>
+      <tr><td>內文</td><td>HTML，逐行 APPEND 到 BCSY_TEXT</td><td>收件人只有一位時用「Hi ＋ 姓名」，多位時用通用問候；結尾是登入者全名（ZSD_GET_USERNAME）＋ 部門 ＋ 寫死的地址電話網址</td></tr>
+    </tbody>
+  </table>
+  <p>ZSDF002 另外依 PayPal 狀態切換內文：有付款連結且狀態不是草稿（N）時，內文最後插入一個「View &amp; Pay Invoice」按鈕（以 HTML table 與 inline style 做成），連結就是 ZFIT002-HEFLINK；貸項（ZCRU/ZREU）用另一套內文。寄出成功後寫一筆 ZSDT019。</p>
+  <p><b>現代改寫</b>：寄件者、CC、主旨前綴、簽名檔全部從設定取；內文用字串範本，插入的值一律 <span class="kw">escape( )</span>；PDF 用 <span class="kw">CL_BCS_CONVERT=&gt;XSTRING_TO_SOLIX</span>；不在方法內 COMMIT。</p>
+  <pre><code class="abap">METHOD send_mail.
+  " 寄件者、客服/會計 CC 名單、主旨範本都放設定表（ZSDT002 或 TVARVC），程式不寫死帳號
+  TRY.
+      DATA(lo_request) = cl_bcs=&gt;create_persistent( ).
+
+      DATA(lv_no) = |{ is_doc-head-vbeln ALPHA = OUT }|.
+      DATA(lv_subject) = CONV so_obj_des( |{ mo_cfg-&gt;subject_prefix( is_doc-head-auart ) } { lv_no }| ).
+
+      " HTML 內文：插入的值一律 escape，避免客戶名、連結內容破壞 HTML
+      DATA(lv_body) =
+        |&lt;p&gt;{ escape( val = is_doc-greeting format = cl_abap_format=&gt;e_html_text ) },&lt;/p&gt;| &amp;&amp;
+        |&lt;p&gt;Your document { lv_no } is attached for your review.&lt;/p&gt;| &amp;&amp;
+        COND string( WHEN is_doc-pay_link IS NOT INITIAL
+                     THEN |&lt;p&gt;&lt;a href="{ escape( val = is_doc-pay_link format = cl_abap_format=&gt;e_html_attr ) }"&gt;View &amp;amp; Pay&lt;/a&gt;&lt;/p&gt;| ) &amp;&amp;
+        |&lt;p&gt;{ escape( val = mo_cfg-&gt;signature( ) format = cl_abap_format=&gt;e_html_text ) }&lt;/p&gt;|.
+
+      DATA(lo_doc) = cl_document_bcs=&gt;create_document(
+                       i_type    = 'HTM'
+                       i_text    = cl_document_bcs=&gt;string_to_soli( lv_body )
+                       i_subject = lv_subject ).
+
+      lo_doc-&gt;add_attachment(
+        i_attachment_type    = 'PDF'
+        i_attachment_subject = lv_subject
+        i_attachment_size    = CONV #( xstrlen( iv_pdf ) )
+        i_att_content_hex    = cl_bcs_convert=&gt;xstring_to_solix( iv_pdf ) ).
+      lo_request-&gt;set_document( lo_doc ).
+
+      " 寄件者：共用信箱位址（SCOT 需允許此網域），而不是某個系統使用者
+      lo_request-&gt;set_sender( cl_cam_address_bcs=&gt;create_internet_address( mo_cfg-&gt;sender_address( ) ) ).
+
+      LOOP AT it_to INTO DATA(lv_to).
+        lo_request-&gt;add_recipient( i_recipient = cl_cam_address_bcs=&gt;create_internet_address( lv_to )
+                                   i_express   = abap_true ).
+      ENDLOOP.
+      LOOP AT it_cc INTO DATA(lv_cc).
+        lo_request-&gt;add_recipient( i_recipient = cl_cam_address_bcs=&gt;create_internet_address( lv_cc )
+                                   i_copy      = abap_true ).
+      ENDLOOP.
+
+      lo_request-&gt;set_send_immediately( abap_true ).
+      IF lo_request-&gt;send( i_with_error_screen = abap_false ) = abap_false.
+        RAISE EXCEPTION NEW zcx_sd_output( textid = zcx_sd_output=&gt;mail_not_sent ).
+      ENDIF.
+      " 不在這裡 COMMIT WORK、不 SUBMIT RSCONN01：
+      " 由 NACE 觸發時，交易由呼叫端 commit；由報表觸發時，於報表層 commit 一次
+    CATCH cx_bcs INTO DATA(lx_bcs).
+      RAISE EXCEPTION NEW zcx_sd_output( textid   = zcx_sd_output=&gt;mail_not_sent
+                                         previous = lx_bcs ).
+  ENDTRY.
+ENDMETHOD.</code></pre>
+  <div class="warn"><b>寫死寄件者帳號與公司資訊的風險</b>：① 系統使用者被鎖或改名，整批信寄不出去且沒人發現（原程式 <span class="kw">CATCH cx_bcs</span> 之後什麼都不做）② 公司搬家、換電話，要改十幾個 FORM 再走一次傳輸 ③ 程式碼流出時，公司名、地址、網址全部跟著流出——本章素材就是例子。這些值應放在受權限保護的設定表或 SO10 標準文字，內文範本可用 <b>SO10 文字＋替換變數</b> 或 S/4HANA 的 <b>Email Template（Fiori「Maintain Email Templates」）</b>。</div>
+  <div class="tip">原程式在 <span class="kw">frm_send_mail</span> 的 TRY 區塊裡呼叫了 <span class="kw">frm_get_mail</span>，每寄一封信就重讀一次 ZSDT002 並呼叫一次 ZSD_GET_PERSON——取數應該在迴圈外做一次。另外業務員 email 取自 ADR6 時沒有限定 FLGDEFAULT（預設地址）或排序，同一個業務員有兩個 email 時，HANA 每次回傳的順序可能不同，<b>寄給誰是隨機的</b>（Casper 經驗 #1：HANA 沒有預設排序）。</div>
+
+  <h3 id="ch08-2-11">11. 寄送記錄 ZSDT019 與「最後一次寄送」的讀法</h3>
+  <p>ZSDF002 寄信成功後寫 ZSDT019（CRDAT、CRTIM、VBELN、CRNAM），ALV 上的「郵件寄送日期」就是從這裡讀：先 <span class="kw">SORT gt_zsdt019 BY vbeln crdat DESCENDING</span>，再 <span class="kw">READ TABLE … WITH KEY vbeln</span>（沒有 BINARY SEARCH）取第一筆。ZFIT002 也用同樣手法：<span class="kw">SORT BY vbeln crdat DESCENDING crtim DESCENDING</span> 後 READ TABLE 取「最新」的 PayPal 記錄。</p>
+  <p>這種「靠 SORT 讓 READ TABLE 剛好讀到最新一筆」的寫法能動，但意圖隱藏在兩行程式的組合裡，後人只要把 SORT 改成 <span class="kw">BY vbeln</span>、或加上 BINARY SEARCH，就會悄悄讀到任意一筆。把「取最大值」交給資料庫的 GROUP BY / MAX 才是明確的寫法。</p>
+  <pre><code class="abap">" ZSDT019 寄送記錄：原表 key 是 (CRDAT, CRTIM, VBELN)，VBELN 卻套了「交貨單」資料元素 VBELN_VL
+" 建議新表 ZSDT019N：key = MANDT + VBELN(VBELN_VF) + SENT_AT(TIMESTAMPL)，並加 CHANNEL / RECIPIENTS
+METHOD write_send_log.
+  GET TIME STAMP FIELD DATA(lv_ts).
+  DATA(lt_log) = VALUE zsdt019n_tab(
+                   FOR d IN it_sent
+                   ( vbeln      = d-vbeln
+                     sent_at    = lv_ts
+                     channel    = 'MAIL'
+                     recipients = concat_lines_of( table = d-to sep = `;` )
+                     sent_by    = sy-uname ) ).
+  IF lt_log IS NOT INITIAL.
+    INSERT zsdt019n FROM TABLE @lt_log ACCEPTING DUPLICATE KEYS.
+  ENDIF.
+ENDMETHOD.
+
+" 讀「最後一次寄送時間」：不要依賴先 SORT 再 READ TABLE 的隱性順序
+SELECT FROM zsdt019n
+  FIELDS vbeln, MAX( sent_at ) AS last_sent
+  WHERE vbeln IN @lt_vbeln_range
+  GROUP BY vbeln
+  INTO TABLE @DATA(lt_last_sent).</code></pre>
+  <div class="note">原表的 key 設計也值得檢討：① VBELN 用了交貨單的資料元素 VBELN_VL，F1 說明與搜尋說明都會錯 ② 同一秒寄兩次同一張發票會主鍵衝突，MODIFY 會把前一筆蓋掉 ③ 沒有記錄寄給誰，客戶說「沒收到」時無從查起。SOST 雖然有 BCS 的寄送記錄，但無法直接用發票號查詢，所以自建記錄表是合理的，只是欄位要設計完整。</div>
+
+  <h3 id="ch08-2-12">12. PayPal 付款連結：ZFIT002 狀態機與檢核規則</h3>
+  <p><b>業務情境</b>：客戶收到訂單確認或發票 PDF 時，信裡同時附「View &amp; Pay」按鈕，點進 PayPal 的線上帳單頁以信用卡或 ACH 付款；ZFIT002 保留了 BELNR / GJAHR / BUKRS 欄位，推測收款後由另一支程式過帳並清帳。這兩支程式只負責三件事：<b>建立草稿並寄出連結</b>、<b>取消</b>、<b>刪除</b>，實際呼叫 PayPal API 的是自建函數：</p>
+  <table>
+    <thead><tr><th>函數</th><th>用途</th><th>呼叫端</th></tr></thead>
+    <tbody>
+      <tr><td>ZSDFM006_CREATEDRAFT_SO</td><td>依銷售訂單建立 PayPal invoice（回傳 HEFLINK、ZPAYPALID、狀態）</td><td>ZSDF001「Send Paypal」</td></tr>
+      <tr><td>ZSDFM006_CREATEDRAFT</td><td>依發票建立 PayPal invoice</td><td>ZSDF002「Send Paypal」與背景 SendPayPal</td></tr>
+      <tr><td>ZSDFM006_INT_CANCEL_INVOICE</td><td>取消已寄出的 PayPal invoice</td><td>刪除流程第一步</td></tr>
+      <tr><td>ZSDFM006_INT_DELETE_INVOICE</td><td>刪除草稿或已取消的 invoice</td><td>刪除流程第二步</td></tr>
+    </tbody>
+  </table>
+  <p><b>狀態碼</b>（依原程式註解「send post clearing error」整理，P 與 G 的精確定義需以 ZSDFM006 為準）：N 草稿、S 已寄出、P 已付款過帳、G 已清帳、E 錯誤、C 已取消、D 已刪除。<b>檢核規則</b>：</p>
+  <ul>
+    <li>建立（訂單）：該訂單已有 SOFLG = 'X' 且狀態 S / P / G / E 的記錄 → 不可再建（訊息 120）；OEM 訂單 ZOEU 不可建（訊息 123）；這張訂單開出的發票已經有狀態 N / S / P / G / E 的連結 → 不可重複（訊息 122）。</li>
+    <li>建立（發票）：訂單已經寄過連結（狀態不是 N、C）就跳過；發票本身已有有效連結（狀態不是 N、D、C）就跳過；貸項 G2 / RE 不建；建立失敗（ev_ret = 'E'）時標記 LINKERR，<b>這張發票不列印也不寄信</b>，避免寄出沒有連結的信。</li>
+    <li>刪除：只有 N、C、S 可刪；S 要先 Cancel 再 Delete。</li>
+  </ul>
+  <pre><code class="abap">" ZFIT002-ZSTATUS 的狀態機（依原程式註解整理）
+CONSTANTS: BEGIN OF c_pp,
+             draft    TYPE zde_paypal_status VALUE 'N',  " 草稿已建立
+             sent     TYPE zde_paypal_status VALUE 'S',  " 已寄出付款連結
+             posted   TYPE zde_paypal_status VALUE 'P',  " 已付款並過帳
+             cleared  TYPE zde_paypal_status VALUE 'G',  " 已清帳
+             error    TYPE zde_paypal_status VALUE 'E',
+             canceled TYPE zde_paypal_status VALUE 'C',
+             deleted  TYPE zde_paypal_status VALUE 'D',
+           END OF c_pp.
+
+METHOD check_can_create.
+  " 規則 1：OEM 訂單不可建 PayPal 連結
+  IF is_row-auart = 'ZOEU'.
+    RAISE EXCEPTION NEW zcx_paypal( textid = zcx_paypal=&gt;type_not_allowed vbeln = is_row-vbeln ).
+  ENDIF.
+  " 規則 2：訂單本身已有「活著」的連結
+  SELECT SINGLE FROM zfit002
+    FIELDS @abap_true
+    WHERE vbeln = @is_row-vbeln
+      AND soflg = @abap_true
+      AND zstatus IN ( @c_pp-sent, @c_pp-posted, @c_pp-cleared, @c_pp-error )
+    INTO @DATA(lv_exists).
+  IF lv_exists = abap_true.
+    RAISE EXCEPTION NEW zcx_paypal( textid = zcx_paypal=&gt;already_linked vbeln = is_row-vbeln ).
+  ENDIF.
+  " 規則 3：這張訂單開出的發票已經建過連結 → 不可重複收款
+  SELECT SINGLE FROM zfit002 AS z
+    INNER JOIN vbrp AS p ON p~vbeln = z~vbeln
+    FIELDS @abap_true
+    WHERE p~aubel = @is_row-vbeln
+      AND z~soflg = @space
+      AND z~zstatus IN ( @c_pp-draft, @c_pp-sent, @c_pp-posted, @c_pp-cleared, @c_pp-error )
+    INTO @lv_exists.
+  IF lv_exists = abap_true.
+    RAISE EXCEPTION NEW zcx_paypal( textid = zcx_paypal=&gt;invoice_linked vbeln = is_row-vbeln ).
+  ENDIF.
+ENDMETHOD.
+
+METHOD delete_link.
+  " 已寄出(S) 要先 Cancel 再 Delete；草稿(N)、已取消(C) 可直接 Delete
+  CASE cs_row-zstatus.
+    WHEN c_pp-sent.
+      mo_api-&gt;cancel_invoice( cs_row-zpaypalid ).
+      cs_row-zstatus = c_pp-canceled.
+      mo_api-&gt;delete_invoice( cs_row-zpaypalid ).
+    WHEN c_pp-draft OR c_pp-canceled.
+      mo_api-&gt;delete_invoice( cs_row-zpaypalid ).
+    WHEN OTHERS.
+      RAISE EXCEPTION NEW zcx_paypal( textid = zcx_paypal=&gt;status_no_delete vbeln = cs_row-vbeln ).
+  ENDCASE.
+  cs_row-zstatus = c_pp-deleted.
+  CLEAR cs_row-heflink.
+ENDMETHOD.</code></pre>
+  <div class="warn"><b>ZSDF001 的 frm_send_paypal 疑似邏輯顛倒</b>：原程式在 <span class="kw">ev_ret IS INITIAL</span>（通常代表成功）時把剛拿到的 HEFLINK 清空、狀態設成 D（刪除）——這段看起來是從刪除常式複製過來沒改。ZSDF002 的對應程式則是 <span class="kw">IF lv_ret = 'E'</span> 才標記錯誤，兩者不一致。無法從現有素材確認 ev_ret 的約定，但這正是「回傳碼沒有型別與常數定義」造成的問題：改用例外類別（成功就正常返回、失敗就 RAISE）就不會有這種歧義。</div>
+  <p><b>金鑰管理的正確做法</b>：這兩支程式本身沒有金鑰，但同一套源碼的其他介面程式把 app_key、token 直接寫在程式常數裡（見 <a href="#ch08-8">8-8 章</a>）。任何對外 API 都應該：</p>
+  <ol>
+    <li>主機與路徑放 <span class="tcode">SM59</span> 型別 G（HTTP 外部伺服器）目的地；伺服器憑證匯入 <span class="tcode">STRUST</span> 的 SSL client PSE。</li>
+    <li>OAuth client id / secret 放在 SM59 的登入資料（存在安全儲存區 SECSTORE，無法從 SE16 讀出），或用 OAuth 2.0 client 設定（<span class="tcode">OA2C_CONFIG</span>）。</li>
+    <li>目的地名稱本身放設定表，DEV / QAS 指向 PayPal 沙箱、PRD 指向正式環境，<b>傳輸請求裡不帶任何秘密</b>。</li>
+  </ol>
+  <pre><code class="abap">" 金鑰不進程式碼：用 SM59 的 HTTP 目的地（型別 G）保存主機、憑證(STRUST)與認證資訊
+" 目的地名稱本身也放設定表，方便 DEV / QAS / PRD 指向沙箱或正式環境
+METHOD create_draft.
+  cl_http_client=&gt;create_by_destination(
+    EXPORTING  destination = mo_cfg-&gt;paypal_destination( )   " 例：'Z_PAYMENT_API'
+    IMPORTING  client      = DATA(lo_http)
+    EXCEPTIONS OTHERS      = 1 ).
+  IF sy-subrc &lt;&gt; 0.
+    RAISE EXCEPTION NEW zcx_paypal( textid = zcx_paypal=&gt;destination_error ).
+  ENDIF.
+
+  " OAuth access token 由獨立方法向 token 端點取得並快取；client id / secret
+  " 存在 SM59 目的地的登入資料或 SSF 安全儲存區，程式與傳輸請求中都看不到
+  DATA(lv_token) = mo_auth-&gt;get_access_token( ).
+
+  lo_http-&gt;request-&gt;set_method( if_http_request=&gt;co_request_method_post ).
+  cl_http_utility=&gt;set_request_uri( request = lo_http-&gt;request
+                                    uri     = '/v2/invoicing/invoices' ).
+  lo_http-&gt;request-&gt;set_header_field( name = 'Authorization' value = |Bearer { lv_token }| ).
+  lo_http-&gt;request-&gt;set_content_type( 'application/json' ).
+  lo_http-&gt;request-&gt;set_cdata( /ui2/cl_json=&gt;serialize( data        = build_payload( is_invoice )
+                                                        pretty_name = /ui2/cl_json=&gt;pretty_mode-low_case ) ).
+  lo_http-&gt;send( EXCEPTIONS OTHERS = 1 ).
+  IF sy-subrc = 0.
+    lo_http-&gt;receive( EXCEPTIONS OTHERS = 1 ).
+  ENDIF.
+  IF sy-subrc &lt;&gt; 0.
+    lo_http-&gt;get_last_error( IMPORTING message = DATA(lv_err) ).
+    lo_http-&gt;close( ).
+    RAISE EXCEPTION NEW zcx_paypal( textid = zcx_paypal=&gt;http_error text = lv_err ).
+  ENDIF.
+
+  lo_http-&gt;response-&gt;get_status( IMPORTING code = DATA(lv_code) ).
+  DATA(lv_json) = lo_http-&gt;response-&gt;get_cdata( ).
+  lo_http-&gt;close( ).
+  IF lv_code &lt;&gt; 201.
+    RAISE EXCEPTION NEW zcx_paypal( textid = zcx_paypal=&gt;http_error text = |HTTP { lv_code }| ).
+  ENDIF.
+  /ui2/cl_json=&gt;deserialize( EXPORTING json = lv_json CHANGING data = rs_result ).
+ENDMETHOD.</code></pre>
+  <div class="note">PayPal 的 Invoicing API 是一個 REST 服務：先以 client credentials 換 access token，再 POST 建立 invoice、POST send 寄出、POST cancel 取消、DELETE 刪除草稿。詳細端點與回應格式請以 PayPal 官方開發者文件為準；上方程式只示範 SAP 端「如何安全地呼叫外部 REST」，URI 為示意。若公司願意走標準，SAP 另有 <b>SAP Digital Payments add-on</b>，可對接多家支付服務商並與 SD／FI-AR 整合（Casper 經驗 #3：先找標準）。</div>
+
+  <h3 id="ch08-2-13">13. ZSDF002 發票特有邏輯：沖銷、過帳狀態、貸項、快遞單號</h3>
+  <p><b>用到的標準表／函數</b>：VBRK（FKART、FKDAT、KUNAG、ZTERM、BUKRS、RFBSK、SFAKN、KNUMV）、VBRP（FKIMG、KZWI1～6、AUBEL、AUPOS、VGBEL、KUNRE_ANA、KUNWE_ANA、WERKS、LGORT、CHARG）、MCHA-ZZBATCH（客製批號）、VBAK-AUART / BSTNK / AUGRU、VBKD-POSEX_E / VSART、T052（ZTAG1/ZPRZ1/ZTAG2/ZPRZ2）＋ TVZBT、KNB1-ZWELS、VBFA（貸項反查訂單：VBTYP_N = 'O'、VBTYP_V = 'C'）、PRCD_ELEMENTS（折讓稅 ZMR1 / ZMUR，KVSL1 = MWS / ZMR）、自建函數 ZSD_GET_BALANCE（應收餘額）、自建表 ZSDT004 / ZSDT004_D（快遞與包裝，STATUS = 'P' 已過帳）。</p>
+  <p><b>篩選規則</b>（原程式分散在四處，整理如下）：</p>
+  <ol>
+    <li>只取 FKART = F2、RE、G2。</li>
+    <li>非免費訂單（不是 ZEVU / ZDEU / ZFEU）的發票，<b>會計過帳狀態 RFBSK ≠ 'C'</b>（尚未傳到會計）就不列出。</li>
+    <li>被沖銷的發票（存在另一張 VBRK 的 SFAKN 指向它）不列出。</li>
+    <li>背景執行時：刪除 ZREU、ZCRU（貸項不自動寄）；只留 ZMTU、ZFOU；刪除 G2、RE；勾 SendPayPal 時只留 ZWELS = 'F' 的客戶。</li>
+    <li>行項目：FKIMG = 0 不取；F2 發票中 PSTYV = 'ZTAA' 的行不印。</li>
+  </ol>
+  <pre><code class="abap">" ZSDF002 發票清單取數（S/4HANA 版）
+SELECT FROM vbrk AS k
+  FIELDS k~vbeln, k~fkart, k~fkdat, k~kunag, k~zterm, k~bukrs,
+         k~vkorg, k~vtweg, k~erdat, k~ernam, k~rfbsk, k~knumv, k~waerk
+  WHERE k~bukrs IN @s_bukrs
+    AND k~vbeln IN @s_vbeln
+    AND k~fkart IN @s_fkart
+    AND k~fkart IN ( 'F2', 'RE', 'G2' )          " 發票 / 退貨貸項 / 貸項：列舉
+    AND k~vkorg IN @s_vkorg
+    AND k~vtweg IN @s_vtweg
+    AND k~kunag IN @s_kunag
+    AND k~fkdat IN @s_fkdat
+    AND k~erdat IN @s_erdat
+    AND k~ernam IN @s_ernam
+    AND k~fksto = @space                          " 本身未被沖銷
+    AND NOT EXISTS ( SELECT vbeln FROM vbrk        " 也不是沖銷單的「被沖銷對象」
+                       WHERE sfakn = k~vbeln )
+  ORDER BY k~vbeln DESCENDING
+  INTO TABLE @DATA(lt_inv).
+
+" 免費類訂單（ZEVU / ZDEU / ZFEU）的發票照印；其他類型只留已過帳到會計的（RFBSK = 'C'）
+DATA(lt_free_types) = VALUE rsdsselopt_t( ( sign = 'I' option = 'EQ' low = 'ZEVU' )
+                                          ( sign = 'I' option = 'EQ' low = 'ZDEU' )
+                                          ( sign = 'I' option = 'EQ' low = 'ZFEU' ) ).
+IF lt_inv IS NOT INITIAL.
+  SELECT DISTINCT FROM vbrp AS p
+    INNER JOIN vbak AS a ON a~vbeln = p~aubel
+    FIELDS p~vbeln, a~auart, a~augru
+    FOR ALL ENTRIES IN @lt_inv
+    WHERE p~vbeln = @lt_inv-vbeln
+    INTO TABLE @DATA(lt_order_type).
+ENDIF.
+
+LOOP AT lt_inv INTO DATA(ls_inv).
+  DATA(lv_auart) = VALUE auart( lt_order_type[ vbeln = ls_inv-vbeln ]-auart OPTIONAL ).
+  IF lv_auart NOT IN lt_free_types AND ls_inv-rfbsk &lt;&gt; 'C'.
+    DELETE lt_inv.                      " 刪除目前這一列
+  ENDIF.
+ENDLOOP.</code></pre>
+  <p>貸項的金額與數量要轉負號，抬頭三個合計由行項目彙總；快遞公司代碼 U / F / C 轉成 UPS / FedEx / PRO：</p>
+  <pre><code class="abap">" 貸項（ZCRU / ZREU）數量與金額轉負號；原程式對 6 個欄位各寫一次 0 - x
+LOOP AT lt_line ASSIGNING FIELD-SYMBOL(&lt;ls_line&gt;).
+  &lt;ls_line&gt;-djtpr = COND #( WHEN &lt;ls_line&gt;-fkimg &lt;&gt; 0 THEN &lt;ls_line&gt;-kzwi2 / &lt;ls_line&gt;-fkimg ).
+  &lt;ls_line&gt;-zekdj = COND #( WHEN &lt;ls_line&gt;-fkimg &lt;&gt; 0 THEN &lt;ls_line&gt;-kzwi4 / &lt;ls_line&gt;-fkimg ).
+
+  IF &lt;ls_line&gt;-auart = 'ZCRU' OR &lt;ls_line&gt;-auart = 'ZREU'.
+    &lt;ls_line&gt;-fkimg = - &lt;ls_line&gt;-fkimg.
+    &lt;ls_line&gt;-kzwi1 = - &lt;ls_line&gt;-kzwi1.
+    &lt;ls_line&gt;-kzwi2 = - &lt;ls_line&gt;-kzwi2.
+    &lt;ls_line&gt;-kzwi3 = - &lt;ls_line&gt;-kzwi3.
+    &lt;ls_line&gt;-kzwi4 = - &lt;ls_line&gt;-kzwi4.
+    &lt;ls_line&gt;-kzwi6 = - &lt;ls_line&gt;-kzwi6.
+  ENDIF.
+ENDLOOP.
+
+" 抬頭合計：運費(KZWI1)、稅(KZWI3 + KZWI6)、應收總額
+LOOP AT lt_inv ASSIGNING FIELD-SYMBOL(&lt;ls_head&gt;).
+  &lt;ls_head&gt;-yftpr = REDUCE #( INIT s = 0 FOR l IN lt_line WHERE ( vbeln = &lt;ls_head&gt;-vbeln )
+                              NEXT s = s + l-kzwi1 ).
+  &lt;ls_head&gt;-tatpr = REDUCE #( INIT s = 0 FOR l IN lt_line WHERE ( vbeln = &lt;ls_head&gt;-vbeln )
+                              NEXT s = s + l-kzwi3 + l-kzwi6 ).
+  &lt;ls_head&gt;-adtpr = REDUCE #( INIT s = 0 FOR l IN lt_line WHERE ( vbeln = &lt;ls_head&gt;-vbeln )
+                              NEXT s = s + l-kzwi1 + l-kzwi2 + l-kzwi3 + l-kzwi4 + l-kzwi6 ).
+ENDLOOP.
+
+" 快遞公司代碼 → 顯示名稱：用 SWITCH 取代三個 IF
+&lt;ls_track&gt;-upsfed = SWITCH #( &lt;ls_track&gt;-express WHEN 'U' THEN 'UPS'
+                                                 WHEN 'F' THEN 'FedEx'
+                                                 WHEN 'C' THEN 'PRO' ).</code></pre>
+  <div class="warn"><b>原程式的兩個判斷式錯誤</b>：① <span class="kw">IF gs_auart-auart = gc_zevu OR gs_auart = gc_zdeu OR gs_auart = gc_zfeu</span>——後兩個比較的是「整個結構」而不是 AUART 欄位，結構的第一個欄位是 VBELN，所以 ZDEU、ZFEU 永遠不成立，這兩種免費訂單的未過帳發票會被誤刪。② <span class="kw">IF auart = gc_zreu OR auart = gc_zcru AND djtpr NE 0</span>——AND 的優先順序高於 OR，實際意思是「ZREU，或（ZCRU 且單價非零）」，而且 IF 與 ELSE 兩個分支的動作一模一樣，整段判斷形同虛設。混用 AND / OR 時一律加括號。</div>
+  <div class="note">ZSDF001 也有一個同類錯誤：<span class="kw">IF ls_alv-vbeln = '1010' AND ls_alv-auart = 'ZQT2' …</span>——拿單據號去比銷售組織代碼，條件永遠不成立，原意應是 <span class="kw">ls_alv-vkorg = '1010'</span>。這種錯誤語法檢查抓不到，只能靠單元測試或 Code Review。</div>
+
+  <h3 id="ch08-2-14">14. 歐洲版訂單確認：價格條件依稅率分組（ZSDF026B1）</h3>
+  <p>F03 的 FRM_PRINT_DATAN 是為歐洲子公司寫的訂單確認，資料多了稅號（<span class="kw">DFKKBPTAXNUM</span>）、聯絡人（<span class="kw">BUT051</span> 關係類型 ZE01 → <span class="kw">BUT000</span> 姓名 → <span class="kw">TSAD3T</span> 稱謂）、付款條件說明（<span class="kw">T052U</span>，找不到當地語言時退回德文 'D'）、國貿條件（<span class="kw">TINCT</span>）、運送方式（<span class="kw">T173T</span>）、商品稅分類（<span class="kw">MLAN-TAXM1</span>）、原產國等。表頭與表尾文字用 ID ZQ00 的 VBBK 長文本，先試 NAST-SPRAS、找不到再試德文。</p>
+  <p>金額部分：讀 PRCD_ELEMENTS（KSCHL IN ZFRM、ZME3、ZFPM、ZMIZ、MWST、ZME1、ZME2、ZMED，KINAK = 空白），依 MWST 的稅率 7 或 19 把各條件群組加總到 ZVERP7 / ZVERS7 / ZWARE7 與 ZVERP19 / ZVERS19 / ZWARE19。原程式在迴圈裡對內表做了 6 次 <span class="kw">SELECT SUM( kwert ) FROM @lt_price</span>（ABAP 7.52 起才能對內表下 SELECT，1809 剛好可用），寫法新但效率不好。</p>
+  <pre><code class="abap">TYPES: BEGIN OF ty_rate,
+         kposn TYPE prcd_elements-kposn,
+         rate  TYPE prcd_elements-kbetr,
+       END OF ty_rate,
+       ty_rate_tab TYPE SORTED TABLE OF ty_rate WITH UNIQUE KEY kposn.
+
+" 原程式：先把 PRCD_ELEMENTS 讀進內表，再在 LOOP 裡對內表做 6 次 SELECT SUM ... FROM @itab
+" 改寫：一次在資料庫端依「行項目 × 條件類型」彙總，再用 REDUCE 分 7% / 19% 兩組
+SELECT FROM prcd_elements AS p
+         INNER JOIN vbak AS k ON k~knumv = p~knumv
+  FIELDS p~kposn, p~kschl, MAX( p~kbetr ) AS kbetr, SUM( p~kwert ) AS kwert
+  WHERE k~vbeln = @iv_vbeln
+    AND p~kposn &lt;&gt; '000000'
+    AND p~kinak = @space                                   " 只取有效條件
+    AND p~kschl IN ( 'MWST', 'ZFPM', 'ZFRM', 'ZME3', 'ZMIZ', 'ZME1', 'ZME2', 'ZMED' )
+  GROUP BY p~kposn, p~kschl
+  ORDER BY p~kposn, p~kschl
+  INTO TABLE @DATA(lt_cond).
+
+" 每一行的稅率（MWST 的 KBETR）
+DATA(lt_rate) = VALUE ty_rate_tab( FOR c IN lt_cond WHERE ( kschl = 'MWST' )
+                                   ( kposn = c-kposn rate = c-kbetr ) ).
+
+" 依稅率與條件群組加總；條件群組用列舉，不用區間
+DATA(lv_freight_7) = REDUCE vfprc_element_value(
+  INIT s = 0
+  FOR c IN lt_cond
+  WHERE ( kschl = 'ZFPM' )
+  NEXT s = s + COND #( WHEN line_exists( lt_rate[ kposn = c-kposn rate = 7 ] )
+                       THEN c-kwert ELSE 0 ) ).
+
+DATA(lv_goods_19) = REDUCE vfprc_element_value(
+  INIT s = 0
+  FOR c IN lt_cond
+  WHERE ( kschl = 'ZME1' OR kschl = 'ZME2' OR kschl = 'ZMED' )
+  NEXT s = s + COND #( WHEN line_exists( lt_rate[ kposn = c-kposn rate = 19 ] )
+                       THEN c-kwert ELSE 0 ) ).</code></pre>
+  <div class="note">原程式直接比 <span class="kw">KBETR = 7</span>。舊 KONV 的百分比是以千分之一存放（7% 存成 70.00），S/4HANA 的 PRCD_ELEMENTS 對百分比的存放方式不同，原程式能跑表示在該系統中 KBETR 直接是 7；移植或升級時務必先用 SE16 看一筆實際資料再寫判斷。更穩的做法是依<b>稅碼</b>（MWSK1）分組，而不是比稅率數字——稅率一調整（例如疫情期間德國曾暫時調降增值稅），寫死 7 / 19 的程式就全錯。</div>
+  <p>同一段還有兩個值得注意的地方：① 為了配合物料號 40 碼，把最長 1000 字的物料描述切成 255 字一段放進子表（「物料長度增加」修改）；② 依國家組出「歸檔路徑」寫到表單上——路徑是寫死的內部網路磁碟代號。歸檔應交給 ArchiveLink（NACE 的歸檔模式＋ OAC3 連結類型），而不是把檔案伺服器路徑印在單據上。</p>
+
+  <h3 id="ch08-2-15">15. 前台互動：ALV、單一客戶彈窗挑收件人、權限檢查</h3>
+  <p>兩支程式都用 <span class="kw">REUSE_ALV_GRID_DISPLAY_LVC</span>，在 USER_COMMAND 裡用 <span class="kw">GET_GLOBALS_FROM_SLVC_FULLSCR</span> 取回 grid 物件以便 <span class="kw">check_changed_data</span>（讓勾選框的值寫回內表）與 <span class="kw">refresh_table_display</span>。hotspot 點單號開 VA03 / VF03 / VL03N，點連結用 <span class="kw">CL_GUI_FRONTEND_SERVICES=&gt;EXECUTE</span> 開瀏覽器。改寫成 SALV（ALV 基礎見 <a href="#ch02-3">2-3 章</a>）：</p>
+  <pre><code class="abap">" 取代原程式的函數式 LVC 全螢幕 ALV（第 15 節所述）：
+" SALV 全螢幕 + 自訂 GUI 狀態 + hotspot（完整寫法見 2-3 章）
+METHOD display_alv.
+  cl_salv_table=&gt;factory( IMPORTING r_salv_table = mo_salv
+                          CHANGING  t_table      = mt_alv ).
+  mo_salv-&gt;set_screen_status( pfstatus = COND #( WHEN mv_kind = c_kind-quotation
+                                                 THEN 'STANDARD_QT' ELSE 'STANDARD_SO' )
+                              report   = sy-repid
+                              set_functions = mo_salv-&gt;c_functions_all ).
+  mo_salv-&gt;get_selections( )-&gt;set_selection_mode( if_salv_c_selection_mode=&gt;row_column ).
+
+  DATA(lo_cols) = mo_salv-&gt;get_columns( ).
+  lo_cols-&gt;set_optimize( ).
+  CAST cl_salv_column_table( lo_cols-&gt;get_column( 'VBELN' ) )-&gt;set_cell_type( if_salv_c_cell_type=&gt;hotspot ).
+  CAST cl_salv_column_table( lo_cols-&gt;get_column( 'HEFLINK' ) )-&gt;set_cell_type( if_salv_c_cell_type=&gt;hotspot ).
+
+  DATA(lo_events) = mo_salv-&gt;get_event( ).
+  SET HANDLER on_click on_function FOR lo_events.
+  mo_salv-&gt;display( ).
+ENDMETHOD.
+
+METHOD on_click.        " FOR EVENT link_click OF cl_salv_events_table
+  DATA(ls_row) = mt_alv[ row ].
+  CASE column.
+    WHEN 'VBELN'.
+      SET PARAMETER ID 'AUN' FIELD ls_row-vbeln.
+      CALL TRANSACTION 'VA03' WITH AUTHORITY-CHECK AND SKIP FIRST SCREEN.
+    WHEN 'HEFLINK'.
+      IF ls_row-heflink CP 'https://*'.            " 只開 https 連結
+        cl_gui_frontend_services=&gt;execute( EXPORTING document = CONV #( ls_row-heflink )
+                                           EXCEPTIONS OTHERS  = 1 ).
+      ENDIF.
+  ENDCASE.
+ENDMETHOD.</code></pre>
+  <p><b>ZSDF002 的收件人彈窗</b>：只勾一個客戶按 Send Mail / Send Paypal 時，<span class="kw">CALL SCREEN 9000 STARTING AT 30 1</span> 開一個對話框，上面兩個 custom container 各放一個唯讀的 <span class="kw">CL_GUI_TEXTEDIT</span>（收件人 SJR、副本 CSR，自動換行在第 256 字元），按鈕再叫 <span class="kw">REUSE_ALV_POPUP_TO_SELECT</span> 讓使用者勾選，選完把「姓名&lt;email&gt;;」每兩個一行塞回文字框。勾多個客戶時則直接寄給各自的預設收件人。</p>
+  <p>這一整套（Screen 9000、PBO/PAI 模組、兩個 container、兩個 text editor、GUI 狀態 ZSENDMAIL / ZSENDPAYPAL）可以用一個 SALV 彈窗取代：</p>
+  <pre><code class="abap">" 取代 Screen 9000 + CL_GUI_TEXTEDIT + REUSE_ALV_POPUP_TO_SELECT：
+" 用 SALV 彈窗讓使用者勾選收件人，選取模式設為多選
+METHOD pick_recipients.
+  DATA(lt_list) = it_candidates.          " TYPE STANDARD TABLE OF zsds004（KUNNR / PARTNER2 / UNAME / MAIL）
+  TRY.
+      cl_salv_table=&gt;factory( IMPORTING r_salv_table = DATA(lo_salv)
+                              CHANGING  t_table      = lt_list ).
+      lo_salv-&gt;set_screen_popup( start_column = 20 end_column  = 120
+                                 start_line   = 3  end_line    = 15 ).
+      lo_salv-&gt;get_selections( )-&gt;set_selection_mode( if_salv_c_selection_mode=&gt;multiple ).
+      lo_salv-&gt;get_display_settings( )-&gt;set_list_header( CONV #( iv_title ) ).
+      lo_salv-&gt;display( ).
+
+      DATA(lt_rows) = lo_salv-&gt;get_selections( )-&gt;get_selected_rows( ).
+      rt_selected = VALUE #( FOR i IN lt_rows ( lt_list[ i ]-mail ) ).
+    CATCH cx_salv_msg INTO DATA(lx).
+      MESSAGE lx TYPE 'S' DISPLAY LIKE 'E'.
+  ENDTRY.
+ENDMETHOD.</code></pre>
+  <div class="warn">原程式的 <span class="kw">frm_check_9000</span>「請選擇收件人」檢查只有註解、沒有 MESSAGE，使用者一個都不勾也會照寄（只剩 CC）；<span class="kw">frm_set_mail_text</span> 在 <span class="kw">LOOP … WHERE box = 'X'</span> 裡用 <span class="kw">sy-tabix = 1</span> 判斷「第一筆」，但 sy-tabix 是原表的列號，第一個勾選的人不在第 1 列時判斷就失效。</div>
+  <p><b>權限</b>：兩支程式在 AT SELECTION-SCREEN 以 <span class="kw">V_VBAK_VKO</span> 檢查選擇畫面上的銷售組織（先 SELECT TVKO 全部符合的組織，逐一檢查，任何一個沒權限就整支停止）。問題是 VTWEG / SPART / ACTVT 全用 DUMMY、ZSDF002 查的是發票卻用訂單的權限物件（發票應用 <span class="kw">V_VBRK_VKO</span>）。建議改為對查出的資料逐筆檢查：</p>
+  <pre><code class="abap">" 原程式：先 SELECT TVKO 全部符合 s_vkorg 的銷售組織，逐一 AUTHORITY-CHECK，有一個沒權限就整支擋掉
+" 改寫：對「查出來的資料」逐筆檢查，沒權限的列剔除並提示筆數（使用者比較不會卡住）
+DATA(lv_before) = lines( lt_head ).
+LOOP AT lt_head INTO DATA(ls_h).
+  AUTHORITY-CHECK OBJECT 'V_VBAK_VKO'
+    ID 'VKORG' FIELD ls_h-vkorg
+    ID 'VTWEG' FIELD ls_h-vtweg
+    ID 'SPART' DUMMY
+    ID 'ACTVT' FIELD '03'.
+  IF sy-subrc &lt;&gt; 0.
+    DELETE lt_head.                     " 沒權限的單據直接剔除
+  ENDIF.
+ENDLOOP.
+IF lines( lt_head ) &lt; lv_before.
+  MESSAGE |{ lv_before - lines( lt_head ) } 筆因銷售組織權限不足已略過| TYPE 'S'.
+ENDIF.</code></pre>
+
+  <h3 id="ch08-2-16">16. 原程式問題總整理、S/4HANA 差異與上線注意事項</h3>
+  <p><b>背景 JOB 的日期 bug（最嚴重）</b>：ZSDF001 在 START-OF-SELECTION <b>先取數、後</b>把 s_audat 改成「昨天」，所以背景執行時日期條件完全沒生效，實際取的是變式裡的條件（若變式日期空白，就是整個銷售組織的所有報價單全部重寄一次）。ZSDF002 的順序是對的（先改 s_erdat 再取數）。另外「昨天」用 <span class="kw">sy-datum - 1</span>，註解寫「USA 日期」，但 sy-datum 是應用伺服器日期，伺服器若在亞洲、業務在美國，差一天是常態。</p>
+  <pre><code class="abap">START-OF-SELECTION.
+  " 修正：背景執行要「先」改日期條件，「再」取數
+  IF sy-batch = abap_true.
+    DATA lv_local_date TYPE d.
+    DATA lv_local_time TYPE t.
+    GET TIME STAMP FIELD DATA(lv_now).
+    " 業務所在地的時區：放在 TVARVC 或參數表，不要寫死
+    DATA(lv_tz) = lcl_cfg=&gt;sales_time_zone( ).
+    CONVERT TIME STAMP lv_now TIME ZONE lv_tz
+            INTO DATE lv_local_date TIME lv_local_time.
+    " 列舉「昨天」這一天：用 EQ，不用 BT（Casper 經驗 #2）
+    s_audat[] = VALUE #( ( sign = 'I' option = 'EQ' low = lv_local_date - 1 ) ).
+  ENDIF.
+
+  DATA(lo_app) = NEW lcl_app( iv_doc_kind = COND #( WHEN rs_quot = abap_true
+                                                    THEN lcl_app=&gt;c_kind-quotation
+                                                    ELSE lcl_app=&gt;c_kind-order ) ).
+  lo_app-&gt;select_data( ).
+
+  IF sy-batch = abap_true.
+    lo_app-&gt;mark_all( ).
+    lo_app-&gt;send_mail( ).          " 背景只寄信，不印
+  ELSE.
+    lo_app-&gt;display_alv( ).
+  ENDIF.</code></pre>
+  <p><b>其他問題與改進</b>：</p>
+  <table>
+    <thead><tr><th>#</th><th>原程式寫法</th><th>問題</th><th>改進</th></tr></thead>
+    <tbody>
+      <tr><td>1</td><td>TABLES:、WITH HEADER LINE、OCCURS 0、MOVE、DEFINE 巨集組 fieldcat</td><td>舊語法；巨集無法除錯</td><td>內嵌宣告、SALV（見 <a href="#ap-01">附錄</a>）</td></tr>
+      <tr><td>2</td><td>表單名、印表機 LP01、寄件者帳號、公司資訊寫死</td><td>改一個值要改程式走傳輸；資訊外洩</td><td>TNAPR-SFORM、NAST-LDEST、設定表、SO10 / Email Template</td></tr>
+      <tr><td>3</td><td>LOOP 內 SELECT SINGLE / SELECT SUM（國家名、折扣、VSART、餘額、ZWELS）</td><td>N+1 查詢，單據一多就慢</td><td>迴圈外一次 JOIN 或 FOR ALL ENTRIES（先檢查非空）</td></tr>
+      <tr><td>4</td><td>SELECT SINGLE 沒有 ORDER BY（ADR6 email、BUT020、VBFA、LIPS-VGBEL）</td><td>多筆時 HANA 回傳任意一筆，結果不穩定</td><td>明確條件（FLGDEFAULT、CONSNUMBER）或 ORDER BY ＋ UP TO 1 ROWS</td></tr>
+      <tr><td>5</td><td>SORT 後 READ TABLE 取最新一筆（ZFIT002、ZSDT019）</td><td>意圖隱藏，易被改壞</td><td>SQL 的 MAX / GROUP BY</td></tr>
+      <tr><td>6</td><td>SSF_FUNCTION_MODULE_NAME 不檢查 sy-subrc；CATCH cx_bcs 後空白</td><td>失敗無聲無息</td><td>例外類別＋NAST_PROTOCOL_UPDATE／應用日誌 SLG1</td></tr>
+      <tr><td>7</td><td>寄信方法內 COMMIT WORK AND WAIT、SUBMIT RSCONN01</td><td>NACE 更新流程中不可 COMMIT；每封信觸發一次 SAPconnect 發送，負載重</td><td>由呼叫端 commit，SCOT 排程送信</td></tr>
+      <tr><td>8</td><td>Spool 轉 PDF</td><td>Spool 垃圾、需 Spool 權限</td><td>GETOTF ＋ CONVERT_OTF</td></tr>
+      <tr><td>9</td><td>判斷式錯誤（結構與欄位比較、AND/OR 優先順序、vbeln 比 1010）</td><td>靜默的業務錯誤</td><td>加括號、ABAP Unit、Code Inspector（SCI）</td></tr>
+      <tr><td>10</td><td>地址搬移 IF 群重複 4 次（K/S × 兩支程式）</td><td>維護成本</td><td>抽成方法（見下）或 ADDRESS_INTO_PRINTFORM / SmartForms Address 節點</td></tr>
+      <tr><td>11</td><td>業務員建成供應商（LFA1），存在 VBAP 客製欄位</td><td>S/4 無獨立供應商主檔；權限與個資難管</td><td>BP 角色＋標準夥伴功能（例如 VE 業務員夥伴）</td></tr>
+      <tr><td>12</td><td>HTML 內文直接串 HEFLINK、客戶名</td><td>內容含特殊字元即破版；潛在 HTML 注入</td><td>escape( ) 或 CL_BCS 的範本</td></tr>
+    </tbody>
+  </table>
+  <pre><code class="abap">" 原程式對 Bill-to、Ship-to、兩種單據各重複一次「街道2/3 為空時把城市郵遞區號往上塞」的 IF 群
+" 改寫成一個方法，輸入 ADRC 欄位、輸出 5 行地址；S/4HANA 也可直接用標準地址格式化
+METHOD format_address.
+  DATA(lv_city_line) = condense( |{ is_adr-city1 } { is_adr-region } { is_adr-post_code1 }| ).
+  rt_lines = VALUE #( ( CONV #( is_adr-name1 ) )
+                      ( CONV #( is_adr-name2 ) )
+                      ( CONV #( is_adr-street ) )
+                      ( CONV #( is_adr-str_suppl1 ) )
+                      ( CONV #( is_adr-str_suppl2 ) )
+                      ( CONV #( lv_city_line ) ) ).
+  DELETE rt_lines WHERE table_line IS INITIAL.     " 空行自動上移，不需要四種組合的 IF
+ENDMETHOD.</code></pre>
+  <p><b>S/4HANA 差異要點</b>：</p>
+  <ul>
+    <li><b>客戶／供應商 → BP</b>：原程式已部分改用 BUT000、BUT020、BUT051、DFKKBPTAXNUM，但仍 JOIN KNA1、LFA1；XD01 / XK01 在 S/4 已停用，維護走 <span class="tcode">BP</span>。取 email 用 BUT020 → ADR6，並以 ADRT-REMARK（原程式用 'ORD' 備註標記「訂單用信箱」，是個巧妙但脆弱的約定）或更好的「通訊用途」設定區分。</li>
+    <li><b>KONV → PRCD_ELEMENTS</b>：原程式已使用 PRCD_ELEMENTS，正確；金額欄位受 <b>AFLE</b> 影響（ZEDISCOUNT_AMOUNT 就是為此改的）。</li>
+    <li><b>VBUK / VBUP 併入 VBAK / VBAP / LIKP / VBRK</b>：狀態欄位直接從抬頭表讀；本案 RFBSK 本來就在 VBRK。</li>
+    <li><b>物料號 40 碼</b>：READ_TEXT 的 MVKE 文字名稱、表單欄位長度、描述分段都要跟著調整（原程式 2022 年做過一次「物料長度增加」修改）。</li>
+    <li><b>應收餘額</b>：自建 ZSD_GET_BALANCE 若讀 BSID / BSAD，在 S/4 這兩張已是相容性視圖，建議改讀 ACDOCA 或標準 CDS（例如應收未清項目的 I_OperationalAcctgDocItem）。</li>
+    <li><b>輸出管理</b>：S/4HANA 的報價、訂單、發票可改用新的 <b>Output Management</b>（BRFplus 決定、<span class="tcode">OPD</span> 維護輸出參數、Adobe Forms、內建 Email 範本與寄送），NAST / NACE 仍可用但屬相容模式。新專案先評估標準輸出管理能否涵蓋「PDF＋付款連結」的需求，再決定是否延續這種客製程式（Casper 經驗 #3：標準設定 → BAdI → Enhancement → 改標準，每往右一步成本高一個量級）。表單技術選型見 <a href="#ch04-3-17">4-3 章第 17 節</a>與 <a href="#ch05-19-19">5-19 章第 19 節</a>。</li>
+  </ul>
+  <p><b>上線注意事項</b>：</p>
+  <ol>
+    <li><b>SCOT 與寄件網域</b>：CL_BCS 以網際網路地址當寄件者時，SMTP 伺服器必須允許以該網域代發；先在 QAS 用 <span class="tcode">SOST</span> 確認實際送出的寄件者與收件人。</li>
+    <li><b>QAS 絕對不能寄給真客戶</b>：在 SCOT 設定非正式系統只允許內部網域，或在程式設定表加「測試收件人覆寫」開關。這類程式最常見的事故就是測試時把一百張報價單寄給真實客戶。</li>
+    <li><b>背景 JOB 用變式＋動態日期</b>：與其在程式裡改 s_audat，不如在變式中用「動態日期計算」（例如 current date − 1），讓 JOB 行為看得見、可調整。</li>
+    <li><b>PayPal 沙箱與正式分離</b>：SM59 目的地在各系統指向不同端點；傳輸只帶目的地名稱，不帶秘密。第一次上線先用「只建草稿不寄出」的模式跑一週，再開放寄送。</li>
+    <li><b>表單傳輸</b>：SmartForm、SmartStyle、SE78 圖檔、SO10 文字要一起傳；到新系統第一次呼叫會重新產生函數（第 8 節）。</li>
+    <li><b>條件用列舉</b>：訂單類型、條件類型、發票類型原程式都用 IN 列舉，這是對的；背景日期也應是 EQ 單日，不要用 BT 區間（Casper 經驗 #2）。</li>
+  </ol>
+
+  <h3 id="ch08-2-qa">練習與自我檢核</h3>
+  <ol>
+    <li><b>NACE 入口為什麼仍要寫 FORM？</b>新程式要怎麼把它的影響範圍降到最小？<br><i>要點</i>：RSNAST00 以 <span class="kw">PERFORM (TNAPR-RONAM) IN PROGRAM (TNAPR-PGNAM)</span> 呼叫，並透過 RVADTABL 的共用工作區傳 NAST、TNAPR；FORM 只留兩三行，立刻呼叫類別方法，錯誤以 NAST_PROTOCOL_UPDATE 記錄並回傳 return_code。</li>
+    <li><b>找出 ZSDF001 背景 JOB 的日期 bug</b>，說明它在正式機會造成什麼後果，並寫出修正版。<br><i>要點</i>：先取數後改 s_audat → 日期條件無效；可能大量重寄；修正為先算當地日期、以 EQ 設定範圍再取數，或改用變式動態日期。</li>
+    <li><b>USER_SETTINGS = 'X' 對 OUTPUT_OPTIONS 有什麼影響？</b><br><i>要點</i>：SSF_CREATE_COMPOSER_INPUT 會把 TDDEST、TDIMMED、TDDELETE 改成 '*'，改用使用者預設值，程式指定的印表機被忽略；要用程式值必須傳 space。</li>
+    <li><b>SSF_FUNCTION_MODULE_NAME 在什麼情況下會重新產生函數？</b>STXFPCUST 有什麼用途？<br><i>要點</i>：從未產生、內部版本不同、產生時的 release 或系統 ID 不同（傳輸）、表單修改時間晚於函數產生時間；STXFPCUST 可把 SmartForm 名稱導向 Adobe 表單（TYPE = 'FP'）。</li>
+    <li><b>比較 Spool 轉 PDF 與 GETOTF 轉 PDF</b>，各適合什麼情境？<br><i>要點</i>：Spool 路線留下 Spool、需權限，但可一次產生兩用；GETOTF 無副作用，適合純寄信。</li>
+    <li><b>為什麼從 VBPA-ADRNR 取地址比從 KNA1-ADRNR 正確？</b>JOIN ADRC 還要注意哪個欄位？<br><i>要點</i>：單據上手動改過的地址存在 VBPA-ADRNR；ADRC 的 key 含 NATION（國際版本）與 DATE_FROM，未限定可能一筆變多筆。</li>
+    <li><b>指出下列判斷式的錯誤</b>：<span class="kw">IF gs_auart-auart = 'ZEVU' OR gs_auart = 'ZDEU'</span>、<span class="kw">IF a = 'X' OR b = 'Y' AND c &lt;&gt; 0</span>。<br><i>要點</i>：第一個拿整個結構比字串，比到的是第一個欄位；第二個 AND 先於 OR，應加括號表達原意。</li>
+    <li><b>設計 ZFIT002 的狀態轉移</b>：哪些狀態可以刪除？刪除 S 狀態為什麼要兩步？<br><i>要點</i>：N、C 直接刪；S 已寄給客戶，須先 cancel 讓客戶端連結失效再 delete；P、G 已收款不可刪。</li>
+    <li><b>PayPal 的 client secret 應該放在哪裡？</b>列出至少兩種做法與不能放的地方。<br><i>要點</i>：SM59 目的地登入資料（SECSTORE）、OA2C_CONFIG、SSF 安全儲存；不可寫在程式常數、自建明文表、選擇畫面預設值或傳輸請求。</li>
+    <li><b>業務員 email 取自 ADR6，同一人有兩個 email 時會發生什麼？</b>與 Casper 的哪條經驗相關？<br><i>要點</i>：沒有排序或預設旗標，HANA 回傳順序不固定，寄給誰不穩定——HANA 沒有預設排序；應以 FLGDEFAULT 或 ORDER BY 明確指定。</li>
+    <li><b>ZSDT019 的欄位設計有哪些問題？</b>請設計一張新的寄送記錄表。<br><i>要點</i>：VBELN 用錯資料元素（VBELN_VL）、同秒重寄主鍵衝突、沒有收件人與管道欄位；新表 key 用 VBELN_VF＋TIMESTAMPL，加 CHANNEL、RECIPIENTS、SENT_BY。</li>
+    <li><b>S/4HANA 新專案要不要照抄這兩支程式？</b>請依「先標準再客製」的順序說明評估步驟。<br><i>要點</i>：先評估 Output Management（BRFplus／OPD／Adobe／Email Template）與 SAP Digital Payments；不足處再用 BAdI 或輸出管理的擴充點補；最後才考慮完全客製的清單＋寄信程式。</li>
+  </ol>
+</section>

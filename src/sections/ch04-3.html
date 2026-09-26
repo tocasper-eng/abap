@@ -1,0 +1,1351 @@
+<section class="chapter" id="ch04-3" data-title="單據式表單設計：SmartForms（含 SAPscript / Adobe Forms 定位）">
+  <h2 id="ch04-3">第 4-3 章 單據式表單設計：SmartForms（含 SAPscript / Adobe Forms 定位）</h2>
+  <p class="lede">報表給人「看」，單據給人「印」。這一章把 SAP 的表單技術一次講清楚：從最老的 SAPscript（SE71）、目前 ERP 專案最常用的 SmartForms（SMARTFORMS），到 S/4HANA 官方主推的 Adobe Forms（SFP）與 Fiori Output Management。核心是老師的完整案例 <b>Z00_EKKO_EKPO 採購單</b>——自建兩個結構當接口、設計 Page/Window/Table/Template、寫 SMARTSTYLES 樣式、用 Program Lines 算合計、再用 <b>SSF_FUNCTION_MODULE_NAME</b> 動態取得函數名呼叫它。學完之後，你能做出一張可印、可預覽、可轉 PDF、可自動寄信的正式採購單，也知道遇到中文字型缺失、空白頁、金額不對齊、傳輸後函數名跑掉這些坑要怎麼救。</p>
+
+  <div class="meta">
+    <div><b>核心 TCODE</b><span class="tcode">SMARTFORMS</span><span class="tcode">SMARTSTYLES</span><span class="tcode">SE71</span><span class="tcode">SFP</span><span class="tcode">SPAD</span><span class="tcode">SE78</span><span class="tcode">SE73</span><span class="tcode">SO10</span><span class="tcode">SP01</span><span class="tcode">SP02</span><span class="tcode">NACE</span><span class="tcode">OPD</span><span class="tcode">SE11</span><span class="tcode">SE38</span><span class="tcode">SE37</span><span class="tcode">OAER</span><span class="tcode">I18N</span><span class="tcode">RSTXTRAN</span><span class="tcode">SCOT</span><span class="tcode">SOST</span><span class="tcode">SM59</span></div>
+    <div><b>關鍵物件</b>SSF_FUNCTION_MODULE_NAME、SSFCTRLOP、SSFCOMPOP、SSFCRESCL、SSFCRESPD、CONVERT_OTF、CONVERT_OTF_2_PDF、READ_TEXT、SAVE_TEXT、CL_BCS、CL_DOCUMENT_BCS、CL_GUI_FRONTEND_SERVICES、SSF_OPEN／SSF_CLOSE、SSF_DOWNLOAD／SSF_UPLOAD、FP_JOB_OPEN／FP_FUNCTION_MODULE_NAME／FP_JOB_CLOSE、EKKO、EKPO、MAKT、T161／T161T、T001L、ADRC、USER_ADDR、STXH／STXL、TSP01</div>
+  </div>
+
+  <h3 id="ch04-3-01">1. SAP 表單技術的演進與選用建議</h3>
+  <p>SAP 從 R/2 時代到 S/4HANA，列印技術換過三代半。實務上你四種都會遇到，要能一眼分辨並知道該用哪個。</p>
+
+  <table>
+    <thead><tr><th>技術</th><th>TCODE</th><th>年代／定位</th><th>優點</th><th>缺點</th></tr></thead>
+    <tbody>
+      <tr><td><b>SAPscript</b>（Form / Layout Set）</td><td><span class="tcode">SE71</span>（維護）<br><span class="tcode">SE72</span>（樣式）<br><span class="tcode">SE78</span>（圖檔）<br><span class="tcode">I18N</span>（多語入口）</td><td>最老。SAP 標準單據（發票、送貨單）很多還是它</td><td>執行快、資源少、跨語言穩、標準表單多</td><td>編輯器像文字模式、版面靠「視窗＋段落」硬排、<b>Client 相依</b>（要 RSTXTRAN 才能傳輸）、多語言要一份份複製</td></tr>
+      <tr><td><b>SmartForms</b></td><td><span class="tcode">SMARTFORMS</span><br><span class="tcode">SMARTSTYLES</span></td><td>4.6C 起。<b>目前 ECC／S/4 客製單據的主力</b></td><td>圖形化設計、Table 節點自動分頁、不用寫排版指令、<b>Client 獨立</b>、產生 ABAP 函數效能好、可直接輸出 XSF/HTML</td><td>格式太細緻時很難調、複雜表格會卡、沒有互動式表單、設計本身很花時間</td></tr>
+      <tr><td><b>Adobe Forms</b>（Interactive Forms by Adobe）</td><td><span class="tcode">SFP</span></td><td>NW 7.0 起，<b>S/4HANA 官方建議方向</b></td><td>真正的 PDF、可互動（可填、可簽核、可離線）、可寫 JavaScript、版面所見即所得（LiveCycle Designer）、Fragment 可重用</td><td>需要 <b>ADS（Adobe Document Services）</b>，通常裝在 Java Stack／Cloud，沒裝就完全不能用；互動式功能要另外授權</td></tr>
+      <tr><td><b>Fiori Output Management</b>（新輸出管理）</td><td><span class="tcode">OPD</span><br>App: Manage Output Items / Output Parameter Determination</td><td>S/4HANA 1610 起</td><td>用 <b>BRF+</b> 決定輸出參數（取代部分 NACE），表單本體用 Adobe Forms，支援 Email／Printer／XML／IDoc 一致管線</td><td>只有部分 App 走新輸出管理，其餘仍走 NACE；學習曲線高</td></tr>
+    </tbody>
+  </table>
+
+  <div class="tip"><b>老師的選用口訣</b>：<br>
+  ・改標準單據 → 先看它原本是什麼（SE71 就 SAPscript、SMARTFORMS 就 Smart Form），<b>能複製標準的就不要重寫</b>。<br>
+  ・全新客製單據、公司沒裝 ADS → <b>SmartForms</b>。<br>
+  ・要真 PDF、要互動、要離線填單、S/4HANA 新專案 → <b>Adobe Forms</b>。<br>
+  ・「ADOBE FORMS 可寫 Script 能互動，但需要額外的插件；SMARTFORMS 不需插件，但太複雜的格式很難調校。」</div>
+
+  <div class="warn"><b>時間預估要講在前面</b>：老師課堂統計，光是把這張採購單做出來，<b>大多數學員都需要四小時以上</b>。SmartForms 是很費時間的開發工作，估工時千萬不要用「一支報表」的標準去估，一張稍有格式要求的單據抓 2～5 天是正常的。</div>
+
+  <h3 id="ch04-3-02">2. 動手前的三個前置設定（SPAD／RSCPSETEDITOR／SE78）</h3>
+
+  <h4>2-1　SPAD：輸出設備與紙張格式</h4>
+  <p>Smart Form 要印，就一定要有<b>輸出設備（Output Device）</b>。<span class="tcode">SPAD</span> 是 Spool 管理的總入口。<span class="src">（依講義步驟整理）</span></p>
+  <ul>
+    <li>進 <span class="tcode">SPAD</span> → 切到 <b>Full administration</b>（完整管理）才看得到全部頁籤。</li>
+    <li><b>Devices / servers → Output devices</b>：新增印表機。關鍵欄位是 <b>Device Type</b>（裝置類型）與 <b>Host spool access method</b>（存取方式，本機測試常用 <b>L</b>／<b>C</b>，前端印表機用 <b>F</b>）。</li>
+    <li>裝置類型的選擇是中文能不能印出來的關鍵：Windows 前端印表機用 <b>SWIN</b>／<b>SAPWIN</b>；繁中／簡中環境用 <b>CNSAPWIN</b>、<b>CNHP4</b>；要輸出 Unicode PDF 用 <b>PDFUC</b>（一般 PDF 是 <b>PDF1</b>）。</li>
+    <li><b>Device types → Page formats</b>：按 <b>Display → 修改 →  Page Formats → Create</b> 可以新增特殊紙張格式（例如三聯式發票、A4 橫印、連續報表紙）。</li>
+    <li>A4 橫印＝在 Page Format 建一筆寬 297mm × 高 210mm 的格式，再建對應的 <b>Format type</b>（例如 X_65_255），Smart Form 的 Form Attributes 才選得到。</li>
+  </ul>
+  <div class="note">預設可用的紙張：<b>DINA4</b>（直）、<b>DINA4 橫</b>需要自建或用 <b>LETTER</b>／<b>X_PAPER</b> 系列。Smart Form 的 Page 節點只能選「已存在於該裝置類型」的格式，選不到就是 SPAD 沒建。</div>
+
+  <h4>2-2　RSCPSETEDITOR：取消 MS Word 編輯器</h4>
+  <p>SmartForms 的文字節點有兩種編輯器：<b>PC Editor（SAP 內建）</b>與 <b>MS Word 編輯器</b>。SAP HANA 平台之後預設強制走 MS Word。</p>
+  <div class="warn"><b>老師的原話</b>：「取消 MS Word 編輯器（SAP HANA 之後已強制預設為 MS Word，雖然網路上有教如何修改預設，但<b>勿試</b>）。」<br>
+  意思是：<b>知道有 <span class="kw">RSCPSETEDITOR</span> 這支程式（SE38 執行，可切換文字編輯器預設值）就好，正式系統不要亂動</b>——它是 client 全域設定，改了全公司的 SO10、SmartForms、SAPscript 編輯器都跟著變，出問題很難回頭。真的要改請走變更流程並由 Basis 執行。</div>
+  <p>為什麼會想關掉 MS Word？因為用了 MS Word 編輯器之後：</p>
+  <ul>
+    <li>字體大小、段落格式會被 Word 蓋掉，<b>不好設</b>，跟 SMARTSTYLES 的段落格式打架。</li>
+    <li>插入欄位（&amp;FIELD&amp;）的灰底標示行為不一樣，容易插成純文字而印不出值。</li>
+    <li>沒裝 Office 或版本不合的 client 端會開不起來。</li>
+  </ul>
+  <div class="tip">替代做法：在文字節點的編輯畫面選單 <b>Goto → Change Editor</b>，可以「當次」切回 PC Editor（行編輯器）。這比改系統參數安全得多，也是老師實際上課用的方法。</div>
+
+  <h4>2-3　SE78：上傳 Logo 與背景圖</h4>
+  <ul>
+    <li><span class="tcode">SE78</span>（Form Graphics / SAPscript Graphics）→ 樹狀選 <b>GRAPHICS → BMAP → BMAP（Bitmap Images）</b> → 匯入按鈕。</li>
+    <li>只吃 <b>.BMP</b> 與 <b>.TIF</b>；<b>黑白（B/W）</b>檔案小、印得快，<b>彩色（Color）</b>檔案大，會明顯拖慢列印。</li>
+    <li>命名建議 <b>ZLOGO_公司代碼</b>，之後在 Smart Form 的 <b>Graphic 節點</b>選 Object=GRAPHICS、ID=BMAP、Name=ZLOGO_1000。</li>
+    <li>另一條路是 <span class="tcode">OAER</span>（Business Document Navigator）：Class Name = <b>PICTURES</b>、Class Type = <b>OT</b>，可以掛 JPG／GIF 等 SE78 不吃的格式，Smart Form 用 Graphic 節點的「Business Document」來源引用。</li>
+  </ul>
+  <div class="warn">Logo 太大是列印變慢的頭號原因。300dpi 的彩色 BMP 動輒好幾 MB，每頁都要送一次到 Spool。<b>建議：黑白 BMP、寬度不超過 600 px、檔案 &lt; 100 KB。</b></div>
+
+  <h3 id="ch04-3-03">3. SMARTSTYLES：樣式先做，表單才好做</h3>
+  <p>SMARTSTYLES 是「為報表預先設定好樣式」，等同 Word 的樣式表。<b>先做樣式、再做表單</b>，否則你會在每個文字節點手動調字體，改一次要改幾十個地方。老師在課堂上建立的樣式叫 <b>Z00_EKKO_EKPO</b>（與表單同名，方便對應）。</p>
+
+  <h4>3-1　樣式的三個組成</h4>
+  <table>
+    <thead><tr><th>節點</th><th>內容</th><th>重點</th></tr></thead>
+    <tbody>
+      <tr><td><b>Header Data</b>（標題資料）</td><td>Standard Paragraph（預設段落）、Tab Stop 預設值、First Page（第一頁樣式）</td><td><b>一定要指定 Standard Paragraph</b>，否則文字節點沒有預設格式，Active 會出錯</td></tr>
+      <tr><td><b>Paragraph Formats</b>（段落格式）</td><td>2 碼代號（如 HC、B1、L1、AS）。設定對齊、縮排、行距、段前段後、Tab、編號、外框</td><td>對齊：LEFT／RIGHT／CENTER／BLOCK（左右對齊）</td></tr>
+      <tr><td><b>Character Formats</b>（字元格式）</td><td>2 碼代號（如 B1、B2、C1）。設定字體家族、大小、粗體、斜體、底線、上下標、<b>條碼</b></td><td>字元格式可以套在段落中的<b>一部分文字</b>上（&lt;B1&gt;粗體字&lt;/&gt;）</td></tr>
+    </tbody>
+  </table>
+
+  <div class="tip"><b>老師的關鍵提醒</b>：「<b>段落不要設定字體大小，免得失去彈性</b>。」<br>
+  段落只管排版（對齊、縮排、行距），字體大小交給<b>字元格式</b>。這樣同一個段落可以印大標題也可以印小備註，改字級只改字元格式一處。</div>
+
+  <h4>3-2　課堂案例用到的格式</h4>
+  <table>
+    <thead><tr><th>代號</th><th>類型</th><th>用途</th><th>設定</th></tr></thead>
+    <tbody>
+      <tr><td><b>HC</b></td><td>段落</td><td>報表抬頭「採購單」</td><td>對齊 <b>CENTER（置中）</b>，段後間距 2mm</td></tr>
+      <tr><td><b>AS</b></td><td>段落</td><td>一般內文（Standard Paragraph）</td><td>對齊 LEFT，行距 1.2 LN</td></tr>
+      <tr><td><b>AR</b></td><td>段落</td><td>數量／金額欄</td><td>對齊 <b>RIGHT</b>（數字一定要靠右）</td></tr>
+      <tr><td><b>AC</b></td><td>段落</td><td>項次、單位、工廠</td><td>對齊 CENTER</td></tr>
+      <tr><td><b>B1</b></td><td>字元</td><td>大標題字</td><td>字型 16pt Bold</td></tr>
+      <tr><td><b>B2</b></td><td>字元</td><td>表格內文字</td><td>字型 10pt</td></tr>
+    </tbody>
+  </table>
+
+  <h4>3-3　中文字型（最容易踩的坑）</h4>
+  <ul>
+    <li>Smart Style 的字體家族清單來自 <span class="tcode">SE73</span>（SAPscript Font Maintenance）的 <b>System font families</b>。</li>
+    <li><b>Unicode 系統</b>：中文用 <b>ANDALE</b> 系列（ANDALE_J／ANDALE_K／ANDALE_S／ANDALE_T，T 是繁體）或 <b>SAPFONT</b>；非 Unicode 中文系統傳統上用 <b>CNSONG</b>（中易宋體）。</li>
+    <li>選了字型，還要看<b>裝置類型有沒有掛這個字型</b>——SE73 → Printer fonts → 選 Device Type → 看字型清單。<b>沒掛就印出方框或空白。</b></li>
+    <li>轉 PDF 中文變亂碼／方框，九成是輸出設備的 Device Type 用了 <b>PDF1</b>（非 Unicode），改成 <b>PDFUC</b> 或 <b>CNSAPWIN</b> 就好。</li>
+  </ul>
+  <div class="warn"><b>「螢幕預覽正常、印出來變方框」</b>是最典型的字型問題：預覽走的是 SAPGUI 的字型，實體列印走的是 Device Type 掛的印表機字型。<b>驗收一定要真的印一張出來，或至少用目標裝置轉一次 PDF。</b></div>
+
+  <h4>3-4　條碼（Barcode）</h4>
+  <ul>
+    <li>條碼在 SAP 是「特殊的字元格式」：<span class="tcode">SE73</span> → <b>System bar codes</b> 建條碼定義 → 在 SMARTSTYLES 的<b>字元格式</b>裡的 Barcode 欄位選它 → 文字節點把那段欄位套上這個字元格式。</li>
+    <li>舊式條碼（BC_CD39、BC_EAN13…）是「印表機條碼」，靠 Device Type 的印表機指令產生，換印表機就可能印不出來。</li>
+    <li><b>新式條碼（New Bar Code Technology）</b>：SE73 建立時選 <b>New</b>，可用 <b>BC_C128</b>（Code128）、<b>BC_C39</b>、<b>BC_EAN13</b>、<b>BC_PDF417</b>、<b>BC_QR</b>（QR Code，需支援的 kernel）。新式條碼由 SAP 自己算出圖形（PDL barcode），<b>跨印表機穩定得多，新專案一律用新式</b>。</li>
+    <li>條碼欄位常需要「不做轉換常式」，插入欄位時記得加 <b>(K)</b> 選項：<span class="kw">&amp;ls_head-ebeln(K)&amp;</span>，否則 ALPHA 轉換會把前導零吃掉，掃出來的號碼跟系統不一致。</li>
+  </ul>
+
+  <h3 id="ch04-3-04">4. 案例準備：建立兩個結構 Z00_EKKO、Z00_EKPO</h3>
+  <p>單據的資料一定分兩層：<b>檔頭（一筆）用 STRUCTURE，檔身（多筆）用 INTERNAL TABLE</b>。這是所有單據表單的鐵則。所以在 <span class="tcode">SE11</span> 先建兩個結構當作 Form Interface 的型別。</p>
+
+  <h4>4-1　檔頭結構 Z00_EKKO</h4>
+  <table>
+    <thead><tr><th>欄位</th><th>資料元素</th><th>說明</th><th>來源</th></tr></thead>
+    <tbody>
+      <tr><td>EBELN</td><td>EBELN</td><td>採購編號</td><td>EKKO-EBELN</td></tr>
+      <tr><td>BUKRS</td><td>BUKRS</td><td>公司代碼</td><td>EKKO-BUKRS</td></tr>
+      <tr><td>BSART</td><td>ESART</td><td>文件類型</td><td>EKKO-BSART（值域來自 <b>T161</b>）</td></tr>
+      <tr><td>BATXT</td><td>BATXT</td><td>類型名稱</td><td><b>T161T</b>-BATXT（要用 SPRAS 過濾）</td></tr>
+      <tr><td>LIFNR</td><td>ELIFN</td><td>廠商編號</td><td>EKKO-LIFNR</td></tr>
+      <tr><td>MC_NAME1</td><td>AD_MC_NAME</td><td>廠商名稱（搜尋用大寫名）</td><td><b>ADRC</b>／VIEW <b>USER_ADDR</b></td></tr>
+    </tbody>
+  </table>
+  <div class="tip"><b>老師找欄位的方法</b>：不知道文件類型的中文叫什麼，就先看 DOMAIN 的值域表 <b>T161</b>，再找對應的文字表 <b>T161T</b>。SAP 的慣例是「代碼表 + T 結尾＝文字表」（T001／T001T、T024／T024D…）。廠商簡稱可從 <b>ADRC</b>、<b>USER_ADDR</b>（View，內含大量 Business Partner 相關資訊）、<b>USR_ADPR</b> 取得。</div>
+
+  <h4>4-2　檔身結構 Z00_EKPO</h4>
+  <table>
+    <thead><tr><th>欄位</th><th>資料元素</th><th>說明</th><th>對齊</th></tr></thead>
+    <tbody>
+      <tr><td>EBELP</td><td>EBELP</td><td>項次</td><td>靠中</td></tr>
+      <tr><td>MATNR</td><td>MATNR</td><td>物料編號</td><td>靠左</td></tr>
+      <tr><td>MAKTX</td><td>MAKTX</td><td>物料名稱（<b>MAKT</b> 取）</td><td>靠左</td></tr>
+      <tr><td>MENGE</td><td>BSTMG</td><td>採購數量</td><td>靠右</td></tr>
+      <tr><td>MEINS</td><td>BSTME</td><td>單位</td><td>靠中</td></tr>
+      <tr><td>WERKS</td><td>EWERK</td><td>工廠</td><td>靠中</td></tr>
+      <tr><td>LGORT</td><td>LGORT</td><td>儲存位置（值域參考 <b>T001L</b>）</td><td>靠中</td></tr>
+      <tr><td>LGOBE</td><td>LGOBE</td><td>位置說明（<b>T001L</b>-LGOBE）</td><td>靠左</td></tr>
+    </tbody>
+  </table>
+
+  <div class="warn"><b>QUAN 型別一定要設定單位參考欄位！</b> MENGE 是 QUAN（數量），SE11 的 <b>Currency/Quantity Fields</b> 頁籤必須填 Reference table = 自己（Z00_EKPO）、Reference field = <b>MEINS</b>。金額欄（CURR）同理要指向 WAERS。<br>
+  沒設會有兩個後果：(1) 結構<b>啟動不了</b>（Active 報錯）；(2) 就算過了，Smart Form 印出來的數量小數位會錯（QUAN 的小數位是跟著單位走的）。<b>老師特別提醒：「注意有 QUAN 要設定單位。記得要 ACTIVE。」</b></div>
+
+  <p>如果不想建自訂結構，也可以用 <b>APPEND 結構</b>或直接在 Form Interface 用標準表型別（EKKO、EKPO）。但老師建議自建：<b>表單需要的欄位常常來自五、六張表（EKKO＋T161T＋ADRC＋MAKT＋T001L），一個扁平結構把它們全部裝起來，Smart Form 端才單純</b>。</p>
+
+  <h3 id="ch04-3-05">5. Form Attributes 與 Form Interface（表單的接口）</h3>
+  <p><span class="tcode">SMARTFORMS</span> → 輸入 Form 名稱 <b>Z00_EKKO_EKPO</b> → Create。左邊樹狀由上而下有四個固定節點：<b>Global Settings</b>（Form Attributes／Form Interface／Global Definitions）與 <b>Pages and Windows</b>。</p>
+
+  <h4>5-1　Form Attributes（表單屬性）</h4>
+  <table>
+    <thead><tr><th>頁籤</th><th>設定</th></tr></thead>
+    <tbody>
+      <tr><td><b>General Attributes</b></td><td>說明文字、<b>Style</b>（指定你的 SMARTSTYLES，例如 Z00_EKKO_EKPO）、Output Format（<b>Standard Output</b>／XSF／XML for Smart Forms）</td></tr>
+      <tr><td><b>Output Options</b></td><td><b>Page format（A4 / A4 橫 / LETTER）</b>、字元寬度 Characters per inch、行距 Lines per inch、<b>Style</b>（可覆寫）</td></tr>
+      <tr><td><b>Language Attributes</b></td><td>Translate（是否納入翻譯）、語言相依設定。做多國表單這裡要開</td></tr>
+      <tr><td><b>Form Interface</b></td><td>下一小節</td></tr>
+    </tbody>
+  </table>
+  <div class="note">Page format 一旦選錯（A4 選成 LETTER），所有 Window 的座標都要重排。<b>第一步就把紙張定下來</b>，這是老師強調「設定紙張，A4」放在最前面的原因。</div>
+
+  <h4>5-2　Form Interface（表單接口）</h4>
+  <p>這就是「Smart Form 產生出來的那支函數，長什麼樣子」。四個頁籤完全對應 SE37 的函數介面：</p>
+  <table>
+    <thead><tr><th>頁籤</th><th>本案例填什麼</th><th>說明</th></tr></thead>
+    <tbody>
+      <tr><td><b>Import</b></td><td><span class="kw">I_EKKO　TYPE　Z00_EKKO</span></td><td>檔頭一筆。<b>Pass Value 建議打勾</b>（值傳遞，比較安全）</td></tr>
+      <tr><td><b>Export</b></td><td>（本案例不用）</td><td>要把表單裡算出來的東西回傳給程式時才用</td></tr>
+      <tr><td><b>Tables</b></td><td><span class="kw">I_EKPO　TYPE　Z00_EKPO</span></td><td>檔身多筆。<b>注意：這裡填的是「列型別」，不是表型別</b></td></tr>
+      <tr><td><b>Exceptions</b></td><td>（可自訂）</td><td>系統自動附加 FORMATTING_ERROR、INTERNAL_ERROR、SEND_ERROR、USER_CANCELED</td></tr>
+    </tbody>
+  </table>
+  <div class="warn"><b>Tables 參數是舊式介面</b>（帶 header line 的 obsolete 參數種類），但 Smart Forms 的接口就是這樣設計的，<b>只能照用</b>。在<b>呼叫端</b>則不受影響：呼叫時傳一個正常的 <span class="kw">STANDARD TABLE</span> 進去即可，不需要 WITH HEADER LINE。<br>
+  如果你想避開 Tables，也可以把內表包成 <b>Import 參數（型別＝一個 TABLE TYPE）</b>，Smart Form 一樣能 LOOP，這是比較現代的做法。</div>
+
+  <h4>5-3　Global Definitions（全域定義）</h4>
+  <p>五個頁籤，是 Smart Form 裡「寫程式」的地方：</p>
+  <table>
+    <thead><tr><th>頁籤</th><th>作用</th><th>本案例</th></tr></thead>
+    <tbody>
+      <tr><td><b>Global Data</b></td><td>宣告表單內共用的變數／工作區。等同 FORM 內的 DATA</td><td><span class="kw">WA_EKPO TYPE Z00_EKPO</span>（檔身迴圈工作區）<br><span class="kw">LV_MENGE TYPE BSTMG</span>（數量合計）<br><span class="kw">LV_CNT TYPE I</span>（筆數）</td></tr>
+      <tr><td><b>Types</b></td><td>自訂 TYPES（結構、表型別）</td><td>要用 REDUCE／VALUE 建暫存表時很好用</td></tr>
+      <tr><td><b>Field Symbols</b></td><td>宣告 FIELD-SYMBOLS</td><td>動態存取欄位時用</td></tr>
+      <tr><td><b>Initialization</b></td><td>表單一開始執行一次的程式碼。<b>要在 Input/Output parameters 欄位登記你會讀／寫哪些變數</b></td><td>清空合計、算筆數、補預設值</td></tr>
+      <tr><td><b>Form Routines</b></td><td>寫 FORM ... ENDFORM 子程序，供 Program Lines 節點 PERFORM</td><td>把複雜邏輯搬出來，表單樹才乾淨</td></tr>
+      <tr><td><b>Currency/Quantity Fields</b></td><td>當「值欄位」與「幣別/單位欄位」<b>不在同一張表</b>時，在這裡明講對應關係</td><td>見第 12 節</td></tr>
+    </tbody>
+  </table>
+
+  <p>Initialization 節點的內容（注意：Smart Form 內的 Program Lines 是<b>經典 ABAP 片段</b>，不能用 REPORT／FORM 之外的語句，但內嵌宣告與新語法在 7.40+ 完全可用）：</p>
+
+  <pre><code class="abap">" === Global Definitions → Initialization ===
+" Input parameters : I_EKKO, I_EKPO
+" Output parameters: LV_MENGE, LV_CNT, GV_TITLE
+
+CLEAR: lv_menge, lv_cnt.
+
+" 筆數
+lv_cnt = lines( i_ekpo ).
+
+" 用 REDUCE 一次算出數量合計（比在 Table 節點的 Calculations 更彈性）
+lv_menge = REDUCE bstmg( INIT s = CONV bstmg( 0 )
+                         FOR &lt;ls&gt; IN i_ekpo
+                         NEXT s = s + &lt;ls&gt;-menge ).
+
+" 表頭抬頭字串（字串範本）
+gv_title = |採購單　{ i_ekko-ebeln ALPHA = OUT }　（共 { lv_cnt } 項）|.</code></pre>
+
+  <div class="tip">Initialization 的 <b>Input parameters / Output parameters</b> 兩欄一定要填，否則變數在節點裡「看得到但值是空的」。這是初學者最常卡住的地方——Smart Form 的 Program Lines 是<b>封閉作用域</b>，沒登記就傳不進去、也傳不出來。</div>
+
+  <h3 id="ch04-3-06">6. Pages and Windows：頁面與視窗</h3>
+  <p>Smart Form 的版面模型很簡單：<b>一份表單有多個 Page，每個 Page 上擺多個 Window，Window 裡才放內容節點</b>。老師的分法是三段：<b>表頭 → 表身（Main Window，會 loop）→ 表尾</b>。</p>
+
+  <h4>6-1　Page 節點</h4>
+  <table>
+    <thead><tr><th>屬性</th><th>說明</th><th>實務設定</th></tr></thead>
+    <tbody>
+      <tr><td><b>Next Page</b></td><td>這一頁印滿後跳到哪一頁</td><td>單頁循環：<b>%PAGE1 的 Next Page 填 %PAGE1（指向自己）</b>，這樣資料多就自動一直加頁</td></tr>
+      <tr><td><b>Page Counter → Mode</b></td><td>頁碼行為：<b>Increase</b>（＋1）／<b>Hold</b>（不變）／<b>Initialize</b>（歸零重算）</td><td>續頁用 Increase；附件頁若要獨立編號用 Initialize</td></tr>
+      <tr><td><b>Page counter → Numbering type</b></td><td>阿拉伯數字／羅馬數字／字母</td><td>一般 <b>Arabic numerals</b></td></tr>
+      <tr><td><b>Output Options</b></td><td>本頁的 Page format、Print mode（<b>S</b>=單面／<b>D</b>=雙面／<b>T</b>=Tumble）、Print attributes</td><td>雙面列印才設 D</td></tr>
+      <tr><td><b>Conditions</b></td><td>本頁在什麼條件下才輸出</td><td>例如「只有 COPYCOUNT &gt; 1 才印的存查聯」</td></tr>
+    </tbody>
+  </table>
+
+  <div class="tip"><b>「首頁不一樣、續頁只要表格」怎麼做</b>：建 <b>%PAGE1</b>（有 Logo、有廠商資訊、有 Main Window）與 <b>%PAGE2</b>（只有簡化表頭 + Main Window + 表尾）。%PAGE1 的 Next Page = %PAGE2，%PAGE2 的 Next Page = %PAGE2。這是最常見的兩頁式結構。</div>
+
+  <h4>6-2　Window 的四種類型</h4>
+  <table>
+    <thead><tr><th>類型</th><th>特性</th><th>用途</th></tr></thead>
+    <tbody>
+      <tr><td><b>MAIN</b>（主視窗）</td><td><b>每頁最多一個</b>；內容印不完會自動<b>續到下一頁的 MAIN</b>；同一份表單所有頁的 MAIN <b>寬度必須一致</b></td><td>放明細 Table 節點</td></tr>
+      <tr><td><b>Secondary</b>（次視窗）</td><td>固定位置固定大小，<b>內容超出就被截掉，不會續頁</b></td><td>表頭資訊、廠商地址、表尾簽核欄、備註</td></tr>
+      <tr><td><b>Copies Window</b>（副本視窗）</td><td>可設定「只在正本印」「只在副本印」</td><td>「客戶聯／會計聯／存查聯」的差異文字</td></tr>
+      <tr><td><b>Final Window</b>（最終視窗）</td><td>整份表單處理完之後才輸出——<b>此時總金額、總頁數才算得出來</b></td><td>總計金額、「共 x 頁」、大寫金額</td></tr>
+    </tbody>
+  </table>
+
+  <div class="warn"><b>MAIN Window 的三條硬規則</b>：<br>
+  1. 一頁只能有一個 MAIN。<br>
+  2. 所有頁面的 MAIN <b>寬度必須相同</b>，高度可以不同——寬度不同會在 Active 時報錯。<br>
+  3. <b>一個 Page 若沒有 MAIN Window，表單處理到它就停住，不會再往下一頁</b>（因為續頁機制是靠 MAIN 觸發的）。這就是「最後一頁印不出來」「資料只印第一頁」的最常見原因。</div>
+
+  <h4>6-3　精確調整位置</h4>
+  <p>三個視窗（表頭 Secondary、MAIN、表尾 Secondary）拖曳只能粗調，<b>精確調整要在 Window 的 Output Options 頁籤直接輸入數值</b>：<span class="src">（依講義步驟整理）</span></p>
+  <ul>
+    <li><b>Left Margin</b>（左邊界）、<b>Upper Margin</b>（上邊界）、<b>Window Width</b>（寬）、<b>Window Height</b>（高）。</li>
+    <li>單位建議統一用 <b>MM</b>（也可用 CM、TW、PT、CH、LN）。A4 直式可用範圍約 <b>寬 190mm × 高 277mm</b>（左右各留 10mm）。</li>
+    <li>建議配置：表頭 Y=10 H=45、MAIN Y=57 H=180、表尾 Y=240 H=40。<b>三者相加不要超過紙高，重疊會蓋字</b>。</li>
+    <li>Window 的 <b>Conditions</b> 頁籤可設「只在第一頁顯示」（<span class="kw">SFSY-PAGE = 1</span>）、「只在最後一頁顯示」（配合 Final Window）。</li>
+  </ul>
+
+  <h3 id="ch04-3-07">7. Template 與 Table：兩個長得像、用途完全不同的節點</h3>
+  <p>這是 SmartForms 最容易搞混的一組。<b>兩個都畫格子，差別在「列數固不固定」</b>。</p>
+
+  <table>
+    <thead><tr><th>比較項</th><th>Template（範本）</th><th>Table（表格）</th></tr></thead>
+    <tbody>
+      <tr><td>列數</td><td><b>固定</b>，設計時就決定幾行幾列</td><td><b>動態</b>，隨內表筆數增減</td></tr>
+      <tr><td>是否會 LOOP</td><td>不會</td><td><b>會</b>（自帶 Data 頁籤的 LOOP）</td></tr>
+      <tr><td>是否自動跨頁</td><td>不會（放 MAIN 也不會續頁）</td><td><b>會</b>，而且會自動重印 Header</td></tr>
+      <tr><td>結構</td><td>只有格子</td><td><b>Header / Main Area / Footer</b> 三段</td></tr>
+      <tr><td>典型用途</td><td>表頭欄位框、簽核欄、固定格式的收據格</td><td>明細清單</td></tr>
+      <tr><td>放哪個 Window</td><td>Secondary Window（表頭／表尾）</td><td><b>MAIN Window</b></td></tr>
+    </tbody>
+  </table>
+
+  <div class="tip"><b>一句話記法</b>：<b>Template＝固定格子（表頭表尾），Table＝會長高的格子（明細）</b>。老師的採購單就是這樣配：表頭 Secondary Window 放兩個 Template（報表抬頭、採購單頭），MAIN Window 放一個 Table。</div>
+
+  <h4>7-1　Template 的操作要點</h4>
+  <ul>
+    <li>建立：對 Window 按右鍵 → <b>Create → Template</b>。</li>
+    <li><b>Table Painter</b>（表格繪製器）：按 <b>Details</b> 鈕可以逐行逐格輸入精確尺寸——這是老師強調的「每個 TEMPLATE 可以按 Details 鈕，做精確的尺寸設定」。</li>
+    <li><b>Line Type（%LTYPE1、%LTYPE2…）</b>：定義「一種列的欄寬組合」。同一個 Template 可以有多種 Line Type，例如 %LTYPE1 是抬頭（一整欄），%LTYPE2 是明細（六欄）。</li>
+    <li>每個格子（Cell）要指定 <b>Line 與 Column</b>，Template 才知道文字要放哪一格。<b>老師：「記得標明 Line 與 Column」</b>——漏填是「東西不見了」的頭號原因。</li>
+    <li>Pattern（框線）：在 Table Painter 用 <b>Select Pattern</b> 一次套用外框／內框／無框。</li>
+  </ul>
+
+  <p>課堂案例的表頭四個欄位（在 Template 的格子裡各放一個 Text 節點）：</p>
+  <table>
+    <thead><tr><th>格位</th><th>內容（&amp; 括起來的就是欄位）</th></tr></thead>
+    <tbody>
+      <tr><td>L1 C1</td><td>單據編號 <span class="kw">&amp;I_EKKO-EBELN&amp;</span></td></tr>
+      <tr><td>L1 C2</td><td>公司代碼 <span class="kw">&amp;I_EKKO-BUKRS&amp;</span></td></tr>
+      <tr><td>L2 C1</td><td>單據類型 <span class="kw">&amp;I_EKKO-BSART&amp;</span> <span class="kw">&amp;I_EKKO-BATXT&amp;</span></td></tr>
+      <tr><td>L2 C2</td><td>供應廠商 <span class="kw">&amp;I_EKKO-LIFNR&amp;</span> <span class="kw">&amp;I_EKKO-MC_NAME1&amp;</span></td></tr>
+    </tbody>
+  </table>
+
+  <h4>7-2　Table 節點的四個頁籤</h4>
+  <table>
+    <thead><tr><th>頁籤</th><th>設定內容</th></tr></thead>
+    <tbody>
+      <tr><td><b>Data</b></td><td><b>Internal Table</b>：<span class="kw">I_EKPO INTO WA_EKPO</span>（來源內表 → 工作區）。可加 <b>WHERE</b> 條件、<b>Sort Criteria</b>（排序欄位，勾 Event on Sort Begin/End 可做小計）</td></tr>
+      <tr><td><b>Calculations</b></td><td>自動計算欄。填 <b>Operation（TOTAL／MAX／MIN／CNT）／Field name（來源欄位）／Target field name（放結果的全域變數）／Time（At the end 之類）</b>。本案例：TOTAL、<span class="kw">WA_EKPO-MENGE</span> → <span class="kw">LV_MENGE</span></td></tr>
+      <tr><td><b>Table</b>（Table Painter）</td><td>定義 Line Type 與欄寬</td></tr>
+      <tr><td><b>Table Line</b>（Line Types）</td><td>逐列定義：%LTYPE1（表頭列）、%LTYPE2（明細列）的欄數與寬度</td></tr>
+    </tbody>
+  </table>
+
+  <p>Table 節點樹狀下面固定有三個資料夾：</p>
+  <ul>
+    <li><b>Header</b>：表格抬頭。<b>跨頁時會自動重印</b>（可在 Header 資料夾的屬性關掉 <b>At Start of Table only</b>）。放六個 Text 節點：項次／物料編號／採購數量／單位／工廠／儲存位置。</li>
+    <li><b>Main Area</b>：明細列。<b>每個格子的 Text 節點要取 WA_EKPO 的欄位</b>（老師：「Main Area 每個 CELL 格位都有一個 TEXT，而且<b>要取 WA_EKPO</b>」——這是最常寫錯的地方，寫成 I_EKPO-MENGE 會印不出東西）。</li>
+    <li><b>Footer</b>：表格結尾。合計列，數量合計取 <span class="kw">&amp;LV_MENGE&amp;</span>。</li>
+  </ul>
+
+  <p>課堂為了簡化，明細只顯示六欄（省略物料名稱與位置說明）：</p>
+  <table>
+    <thead><tr><th>#</th><th>欄位</th><th>資料元素</th><th>抬頭</th><th>對齊</th></tr></thead>
+    <tbody>
+      <tr><td>1</td><td>WA_EKPO-EBELP</td><td>EBELP</td><td>項次</td><td>靠中</td></tr>
+      <tr><td>2</td><td>WA_EKPO-MATNR</td><td>MATNR</td><td>物料編號</td><td>靠左</td></tr>
+      <tr><td>3</td><td>WA_EKPO-MENGE</td><td>BSTMG</td><td>採購數量</td><td><b>靠右</b></td></tr>
+      <tr><td>4</td><td>WA_EKPO-MEINS</td><td>BSTME</td><td>單位</td><td>靠中</td></tr>
+      <tr><td>5</td><td>WA_EKPO-WERKS</td><td>EWERK</td><td>工廠</td><td>靠中</td></tr>
+      <tr><td>6</td><td>WA_EKPO-LGORT</td><td>LGORT</td><td>儲存位置</td><td>靠中</td></tr>
+    </tbody>
+  </table>
+
+  <div class="warn"><b>數字沒對齊</b>是驗收被退件的常見原因。解法有兩個，<b>要一起用</b>：<br>
+  1. 段落格式設 <b>RIGHT（靠右）</b>；<br>
+  2. 插入欄位時指定輸出長度並靠右：<span class="kw">&amp;WA_EKPO-MENGE(13)&amp;</span> 或 <span class="kw">&amp;WA_EKPO-MENGE(R)&amp;</span>。<br>
+  只設段落靠右，遇到不同長度的數字仍會因為千分位與小數位而看起來歪。</div>
+
+  <h3 id="ch04-3-08">8. Text 節點與「插入欄位」的完整規則</h3>
+  <p>Text 節點是表單裡最多的節點。它有四種 Text Type：</p>
+  <table>
+    <thead><tr><th>Text Type</th><th>說明</th><th>使用場合</th></tr></thead>
+    <tbody>
+      <tr><td><b>Text element</b></td><td>直接在節點裡打字（PC Editor）</td><td>絕大多數情況</td></tr>
+      <tr><td><b>Text module</b></td><td>引用 SmartForms 的 <b>文字模組</b>（SMARTFORMS 的 Text Module 物件，<b>Client 獨立、可翻譯</b>）</td><td>條款、注意事項、公司抬頭，多張表單共用</td></tr>
+      <tr><td><b>Include text</b></td><td>讀 <b>SAPscript 標準長文</b>（SO10／單據長文）</td><td>採購單抬頭文字、項目文字、客戶備註</td></tr>
+      <tr><td><b>Dynamic text</b></td><td>執行期才決定要讀哪一段長文（名稱由變數給）</td><td>依單據動態抓長文</td></tr>
+    </tbody>
+  </table>
+
+  <h4>8-1　Include Text 的四個關鍵欄位</h4>
+  <p>Include Text 節點要填 <b>Text Name / Text Object / Text ID / Language</b>，這四個就是 <b>STXH</b>（長文抬頭表）的主鍵，也是 <b>READ_TEXT</b> 的四個參數。</p>
+  <table>
+    <thead><tr><th>參數</th><th>意義</th><th>採購單常見值</th></tr></thead>
+    <tbody>
+      <tr><td><b>OBJECT</b></td><td>文字物件（屬於哪個模組）</td><td><b>EKKO</b>（採購抬頭）、<b>EKPO</b>（採購項目）、<b>TEXT</b>（SO10 通用文字）、KNA1、VBBK</td></tr>
+      <tr><td><b>ID</b></td><td>文字類型</td><td><b>F01</b>（Header text）、<b>F02</b>（Header note）、<b>F03</b>、<b>ST</b>（SO10 標準文字）</td></tr>
+      <tr><td><b>NAME</b></td><td>文字名稱＝單據鍵</td><td>抬頭：<span class="kw">EBELN</span>；項目：<span class="kw">EBELN &amp;&amp; EBELP</span>（10+5＝15 碼）</td></tr>
+      <tr><td><b>LANGUAGE</b></td><td>語言</td><td><span class="kw">SY-LANGU</span></td></tr>
+    </tbody>
+  </table>
+  <p>找不到 ID／OBJECT 時的標準做法：到單據的長文編輯畫面（例如 ME23N 的 Texts 頁籤）→ 選單 <b>Goto → Header</b>，畫面會直接顯示 Text Name／Language／Text ID／Text Object。</p>
+
+  <pre><code class="abap">" === 在程式端自己讀長文（Smart Form 之外也常用）===
+DATA lt_line TYPE STANDARD TABLE OF tline WITH EMPTY KEY.
+
+DATA(lv_name) = CONV thead-tdname( ls_head-ebeln ).
+
+TRY.
+    CALL FUNCTION 'READ_TEXT'
+      EXPORTING
+        id                      = 'F01'          " 文字 ID
+        language                = sy-langu
+        name                    = lv_name        " 採購單號
+        object                  = 'EKKO'         " 文字物件
+      TABLES
+        lines                   = lt_line
+      EXCEPTIONS
+        id                      = 1
+        language                = 2
+        name                    = 3
+        not_found               = 4
+        object                  = 5
+        reference_check         = 6
+        wrong_access_to_archive = 7
+        OTHERS                  = 8.
+
+    IF sy-subrc = 0.
+      " 用 REDUCE 把多行長文串成一個字串
+      DATA(lv_text) = REDUCE string(
+                        INIT t = ``
+                        FOR &lt;ls_line&gt; IN lt_line
+                        NEXT t = COND #( WHEN t IS INITIAL
+                                         THEN CONV string( &lt;ls_line&gt;-tdline )
+                                         ELSE |{ t }{ cl_abap_char_utilities=&gt;newline }{ &lt;ls_line&gt;-tdline }| ) ).
+    ENDIF.
+  CATCH cx_root INTO DATA(lx_err).
+    MESSAGE lx_err-&gt;get_text( ) TYPE 'S' DISPLAY LIKE 'W'.
+ENDTRY.</code></pre>
+
+  <div class="warn"><b>長文是 Client 相依的</b>（STXH／STXL 有 MANDT）。SO10 建立的標準文字<b>不會跟著 Request 自動傳輸</b>，必須用 <span class="tcode">RSTXTRAN</span> 把它掛進傳輸請求，或在目標環境重建。<b>「開發機好好的，測試機文字不見了」九成是這個原因。</b><br>
+  相對地，SmartForms 的 <b>Text Module</b> 是 Repository 物件、Client 獨立、會跟著 Request 走——<b>能用 Text Module 就不要用 SO10</b>。</div>
+
+  <h4>8-2　插入欄位（Including Fields）的規則</h4>
+  <p>這一段來自 SAP 官方文件，老師特別整段收錄，因為<b>「畫報表是苦差事，若遇到要求細緻的表，一定要仔細閱讀原廠的文件」</b>。</p>
+  <ul>
+    <li>欄位必須<b>用 &amp; 前後包起來</b>：<span class="kw">&amp;I_EKKO-EBELN&amp;</span>。</li>
+    <li>插入方式三選一：(1) 從左邊 <b>Field List 拖曳（Drag&amp;Drop）</b>到游標處；(2) PC Editor 工具列的 <b>Include field</b>（另有 Change field／Delete field）；(3) 直接打字後做 <b>local check</b>。</li>
+    <li><b>成功的唯一判準：欄位會顯示成灰底。</b> 老師原話：「<b>一定要變灰色，才表示有成功哦</b>」「手冊上有些欄位的插入方法是錯誤的，記得只要是欄位一定要是灰色的，就是了」。</li>
+    <li>你自己的欄位必須先定義成 <b>Global Data</b> 或 <b>Form Interface 參數</b>，才插得進去。</li>
+    <li>名稱規則：不得含空白；不得含 <span class="kw">'+()</span>（這些是格式化選項的保留字元）；最長 130 字元但<b>只有前 32 字元有辨識力</b>；不分大小寫；結構欄位用 <b>減號</b> 連接（KNA1-NAME1）。</li>
+    <li>如果 Text 節點引用了 Text module 或 Include text，<b>被引用文字裡的欄位也會一起被複製進來並解析</b>。</li>
+  </ul>
+
+  <h4>8-3　系統欄位 SFSY</h4>
+  <p>表單內可用的欄位字串是 <b>SFSY</b>（不是 SY！）。規則：<b>可以顯示任何 SFSY 欄位；不可以在 Program Lines 裡指派值給 SFSY；條件式可以查詢所有 SFSY 欄位，但 SFSY-FORMPAGES 只能在 Final Window 內查詢、SFSY-JOBPAGES 完全不能查詢</b>。</p>
+  <table>
+    <thead><tr><th>欄位</th><th>意義</th></tr></thead>
+    <tbody>
+      <tr><td><span class="kw">&amp;SFSY-DATE&amp;</span></td><td>日期（格式依使用者主資料）</td></tr>
+      <tr><td><span class="kw">&amp;SFSY-TIME&amp;</span></td><td>時間 HH:MM:SS</td></tr>
+      <tr><td><span class="kw">&amp;SFSY-PAGE&amp;</span></td><td>目前頁碼（格式由 Page 節點的 Page counter 決定）</td></tr>
+      <tr><td><span class="kw">&amp;SFSY-FORMPAGES&amp;</span></td><td><b>本份表單</b>總頁數 → 「第 x 頁／共 y 頁」</td></tr>
+      <tr><td><span class="kw">&amp;SFSY-JOBPAGES&amp;</span></td><td><b>整個列印請求</b>（多份表單合併）的總頁數</td></tr>
+      <tr><td><span class="kw">&amp;SFSY-WINDOWNAME&amp;</span></td><td>目前 Window 名稱</td></tr>
+      <tr><td><span class="kw">&amp;SFSY-PAGENAME&amp;</span></td><td>目前 Page 名稱</td></tr>
+      <tr><td><span class="kw">&amp;SFSY-XSF&amp;</span></td><td>輸出格式是 XSF／HTML 時為 'X'。用來在條件式裡隱藏「只有畫面才需要」的元素（例如按鈕）</td></tr>
+      <tr><td><span class="kw">&amp;SFSY-COPYCOUNT&amp;</span></td><td>1＝正本、2＝第一份副本、3＝第二份副本…</td></tr>
+      <tr><td><span class="kw">&amp;SFSY-COPYCOUNT0&amp;</span></td><td>0＝正本、1＝第一份副本…（差 1）</td></tr>
+      <tr><td><span class="kw">SFSY-SUBRC</span></td><td>可在 Program Lines 查詢。目前只對 include text／text module 有效：<b>0＝找到並印出，4＝找不到</b></td></tr>
+      <tr><td><span class="kw">SFSY-USERNAME</span></td><td>執行列印的使用者登入名稱</td></tr>
+    </tbody>
+  </table>
+  <div class="warn"><b>SFSY-FORMPAGES／SFSY-JOBPAGES 很吃記憶體</b>：為了算出總頁數，系統必須<b>把所有輸出頁面留在主記憶體中</b>，直到整份表單／整個列印工作結束。大量列印（例如一次印五千張出貨單）用「第 x 頁／共 y 頁」可能直接把記憶體吃爆。<b>大批次列印請避開 JOBPAGES。</b></div>
+
+  <h4>8-4　欄位的格式化選項（Formatting Options）</h4>
+  <p>選項寫在欄位名稱後面，<b>大寫字母</b>，部分可組合。數值欄位的評估順序：<span class="kw">(&lt;length&gt;) → &lt; → L → C → R → F</span>；字元欄位：<span class="kw">C → +&lt;offset&gt; 與 (&lt;length&gt;) → R → F</span>。<b>單一欄位輸出上限 255 字元。</b></p>
+  <table>
+    <thead><tr><th>語法</th><th>作用</th></tr></thead>
+    <tbody>
+      <tr><td><span class="kw">&amp;f+&lt;offset&gt;&amp;</span></td><td>跳過前 n 個字元（<b>僅字元欄位</b>）。offset 大於值長度則不顯示</td></tr>
+      <tr><td><span class="kw">&amp;f(&lt;length&gt;)&amp;</span></td><td>設定輸出長度</td></tr>
+      <tr><td><span class="kw">&amp;f(*)&amp;</span></td><td>用 DDIC 定義的輸出長度</td></tr>
+      <tr><td><span class="kw">&amp;f(S)&amp;</span></td><td><b>不印正負號</b></td></tr>
+      <tr><td><span class="kw">&amp;f(&lt;)&amp;</span></td><td>負號印在<b>數字左邊</b>（台灣報表必用，SAP 預設負號在右邊）</td></tr>
+      <tr><td><span class="kw">&amp;f(.N)&amp;</span></td><td>限制小數位數為 N</td></tr>
+      <tr><td><span class="kw">&amp;f(EN)&amp;</span></td><td>以固定指數 N 顯示</td></tr>
+      <tr><td><span class="kw">&amp;f(T)&amp;</span></td><td><b>不印千分位</b>（DEC／CURR／INT／QUAN）</td></tr>
+      <tr><td><span class="kw">&amp;f(Z)&amp;</span></td><td><b>去除前導零</b></td></tr>
+      <tr><td><span class="kw">&amp;f(I)&amp;</span></td><td>初始值不顯示（0 或空白就印空的）</td></tr>
+      <tr><td><span class="kw">&amp;f(K)&amp;</span></td><td><b>停用 DDIC 的轉換常式</b>（條碼、要原始值時用）</td></tr>
+      <tr><td><span class="kw">&amp;f(R)&amp;</span></td><td>靠右對齊（<b>必須同時指定輸出長度才有效</b>）</td></tr>
+      <tr><td><span class="kw">&amp;f(F*)&amp;</span></td><td>左側空白補上填充字元（例如 <span class="kw">&amp;f(F0)&amp;</span> 補零）</td></tr>
+      <tr><td><span class="kw">&amp;f(C)&amp;</span></td><td>壓縮空白，效果同 ABAP 的 <b>CONDENSE</b></td></tr>
+      <tr><td><span class="kw">&amp;f(L)&amp;</span></td><td>日本地區日期格式（JPDAT），<b>只在日文版用</b></td></tr>
+    </tbody>
+  </table>
+  <p>常用組合實例：<span class="kw">&amp;WA_EKPO-MENGE(13.3&lt;)&amp;</span>＝寬 13、三位小數、負號在左；<span class="kw">&amp;I_EKKO-EBELN(Z)&amp;</span>＝採購單號去前導零；<span class="kw">&amp;I_EKKO-LIFNR(K)&amp;</span>＝廠商編號印原始值。</p>
+
+  <h3 id="ch04-3-09">9. 其他節點：Address / Graphic / Folder / Alternative / Loop / Command / Program Lines</h3>
+  <table>
+    <thead><tr><th>節點</th><th>用途</th><th>關鍵設定</th></tr></thead>
+    <tbody>
+      <tr><td><b>Address</b>（地址）</td><td>依<b>各國郵政格式</b>自動排版地址，不用自己拼字串</td><td>Address type：<b>Organization</b>（給 ADRNR，例如廠商 LFA1-ADRNR）／<b>Person</b>（ADRNP）／<b>Workplace</b>。可設 Number of lines、Priority（哪幾行優先保留）、Recipient language</td></tr>
+      <tr><td><b>Graphic</b>（圖形）</td><td>Logo、印章、浮水印、背景</td><td>Object=<b>GRAPHICS</b>、ID=<b>BMAP</b>、Name=SE78 上傳的名稱；Color/Black&amp;White；<b>Resolution</b>；可選 Background picture（滿版背景）</td></tr>
+      <tr><td><b>Folder</b>（資料夾）</td><td>把數個節點群組，並可整組<b>設條件</b>、整組<b>不分頁（Page Protection）</b></td><td>Output Options 勾 <b>Page Protection</b>＝這一組要嘛整組印在同一頁，要嘛整組移到下一頁</td></tr>
+      <tr><td><b>Alternative</b>（替代）</td><td>IF-ELSE。底下自動產生 <b>TRUE / FALSE</b> 兩個資料夾</td><td>Conditions 頁籤寫條件；比在每個節點各寫一次條件清楚得多</td></tr>
+      <tr><td><b>Loop</b>（迴圈）</td><td>對內表迴圈，但<b>不畫格子</b>（Table 才畫格子）</td><td>Data 頁籤：Internal Table … INTO …、WHERE、Sort Criteria。適合「一筆一段文字」的排版</td></tr>
+      <tr><td><b>Command</b>（命令）</td><td>下列印控制指令</td><td>四大功能：<b>Go to New Page</b>（強制換頁）、<b>Reset paragraph numbering</b>、<b>Spool control</b>（新增 spool request／改 spool 屬性）、<b>Print control</b>（送印表機指令）</td></tr>
+      <tr><td><b>Program Lines</b>（程式行）</td><td>在表單中間寫 ABAP</td><td>必填 <b>Input parameters / Output parameters</b>；不能寫 CALL SCREEN、COMMIT WORK 等會破壞輸出流程的語句</td></tr>
+      <tr><td><b>Complex Section</b></td><td>Loop + Program Lines + Template 的組合節點</td><td>較少用，能用 Table 就用 Table</td></tr>
+    </tbody>
+  </table>
+
+  <div class="tip"><b>強制換頁的標準做法</b>：在 MAIN Window 內插入 <b>Command 節點</b> → 勾 <b>Go to New Page</b> → 指定 New page = %PAGE2。再把 Command 節點的 <b>Conditions</b> 設成「每 10 筆換一頁」或「客戶代碼改變時換頁」，就能做出「一個客戶一張單」的批次列印。</div>
+
+  <p>Program Lines 節點的典型內容（放在 Table 的 Main Area 之前，用來做逐列加工）：</p>
+
+  <pre><code class="abap">" === Program Lines：明細列前的加工 ===
+" Input  parameters: WA_EKPO, I_EKKO
+" Output parameters: GV_ROW_COLOR, GV_AMT_TXT, LV_MENGE
+
+" 1) 交錯底色（配合 Table Line 的兩種 Line Type 使用）
+gv_row_color = COND char1( WHEN sy-tabix MOD 2 = 0 THEN 'X' ELSE space ).
+
+" 2) 數量超量標紅字用的旗標
+gv_over = COND char1( WHEN wa_ekpo-menge &gt; 1000 THEN abap_true ELSE abap_false ).
+
+" 3) 單位描述（用 T006A 取中文單位）
+SELECT SINGLE msehl FROM t006a
+  WHERE spras = @sy-langu
+    AND msehi = @wa_ekpo-meins
+  INTO @gv_unit_txt.
+
+" 4) 若沒有物料名稱就補一段預設文字
+gv_maktx = COND maktx( WHEN wa_ekpo-maktx IS INITIAL
+                       THEN |（無物料主檔說明）|
+                       ELSE wa_ekpo-maktx ).</code></pre>
+
+  <div class="warn"><b>Program Lines 裡不要下 SELECT 進迴圈！</b> 上面第 3 點的寫法是為了示範語法；真的要用，請在 <b>Initialization</b> 一次把 T006A 全撈進一個 <b>HASHED TABLE</b>，Program Lines 只做 <span class="kw">lt_t006a[ msehi = wa_ekpo-meins ]</span> 查表。<b>1000 筆明細＝1000 次 DB 存取，列印會慢到被使用者投訴。</b></div>
+
+  <h3 id="ch04-3-10">10. 產生的函數模組：為什麼一定要用 SSF_FUNCTION_MODULE_NAME</h3>
+  <p>Smart Form 按 <b>Active（啟動）</b>時，系統會<b>產生一支真正的函數模組</b>，名稱長得像 <b>/1BCDWB/SF00000009</b>。你的程式其實是在呼叫這支函數。</p>
+
+  <p>老師的第一版程式（08-1）是<b>直接寫死函數名稱</b>——這是教學用的第一步，正式程式<b>絕對不能這樣寫</b>：</p>
+
+  <pre><code class="abap">" 反例（錯誤示範）：寫死產生的函數名（僅供理解用，正式程式禁用）
+CALL FUNCTION '/1BCDWB/SF00000009'   " ← 每張報表的函數都不相同
+  EXPORTING i_ekko = ls_head
+  TABLES    i_ekpo = lt_item
+  EXCEPTIONS formatting_error = 1
+             internal_error   = 2
+             send_error       = 3
+             user_canceled    = 4
+             OTHERS           = 5.</code></pre>
+
+  <div class="warn"><b>為什麼寫死一定會出事：</b><br>
+  1. 這個編號是<b>各系統各自產生的流水號</b>。表單傳輸到 QAS／PRD 之後，那邊重新產生的函數名<b>幾乎一定不同</b>（也可能相同，但你不能賭）。<br>
+  2. 只要有人重新 Active 一次表單，函數就可能<b>重新產生新編號</b>。<br>
+  3. 系統升級、SPAU 調整之後也會重生。<br>
+  → 結果就是「開發機好好的，上線就 dump：<span class="kw">CALL_FUNCTION_NOT_FOUND</span>」。<br>
+  <b>正確做法：一律用 SSF_FUNCTION_MODULE_NAME，用「表單名稱」換「函數名稱」。</b></div>
+
+  <pre><code class="abap">" 正解：動態取得函數名稱
+DATA lv_fm_name TYPE rs38l_fnam.
+
+CALL FUNCTION 'SSF_FUNCTION_MODULE_NAME'
+  EXPORTING
+    formname           = 'Z00_EKKO_EKPO'   " ← 表單名稱（這個才是穩定的）
+*   variant            = ' '
+*   direct_call        = ' '
+  IMPORTING
+    fm_name            = lv_fm_name
+  EXCEPTIONS
+    no_form            = 1
+    no_function_module = 2
+    OTHERS             = 3.
+
+IF sy-subrc &lt;&gt; 0.
+  MESSAGE |找不到表單 Z00_EKKO_EKPO 或其函數尚未產生（RC={ sy-subrc }）| TYPE 'E'.
+ENDIF.
+
+" 之後就用變數呼叫
+CALL FUNCTION lv_fm_name
+  EXPORTING i_ekko = ls_head
+  TABLES    i_ekpo = lt_item
+  EXCEPTIONS formatting_error = 1
+             internal_error   = 2
+             send_error       = 3
+             user_canceled    = 4
+             OTHERS           = 5.</code></pre>
+
+  <div class="tip"><b>把表單名稱做成 PARAMETERS 或 TVARVC 常數</b>，不要寫死在程式裡；這樣同一支列印程式可以切換「正式版／簡化版／英文版」三張表單，維運只要改變式。</div>
+
+  <h3 id="ch04-3-11">11. 完整的呼叫程式（現代 ABAP 改寫版）</h3>
+  <p>講義的原程式 Z202202_60 用了 <span class="kw">SELECT *</span>、<span class="kw">INTO CORRESPONDING FIELDS OF TABLE</span>、<span class="kw">READ TABLE … MODIFY</span> 這些舊寫法。以下是 <b>S/4HANA 1809 以後的現代寫法</b>，邏輯完全等價但更快也更安全。</p>
+
+  <pre><code class="abap">*&amp;---------------------------------------------------------------------*
+*&amp; Report Z00_SF_PO_PRINT ── 採購單 SmartForm 列印（現代版）
+*&amp;---------------------------------------------------------------------*
+REPORT z00_sf_po_print.
+
+CONSTANTS gc_formname TYPE tdsfname VALUE 'Z00_EKKO_EKPO'.
+
+PARAMETERS: p_ebeln TYPE ekko-ebeln OBLIGATORY DEFAULT '4500000001',
+            p_prev  TYPE abap_bool  AS CHECKBOX DEFAULT 'X'.   " 預覽
+
+DATA: gs_head TYPE z00_ekko,
+      gt_item TYPE STANDARD TABLE OF z00_ekpo WITH EMPTY KEY.
+
+*----------------------------------------------------------------------*
+START-OF-SELECTION.
+  PERFORM get_data.
+  IF gt_item IS INITIAL.
+    MESSAGE |採購單 { p_ebeln ALPHA = OUT } 查無項目資料| TYPE 'S' DISPLAY LIKE 'E'.
+    RETURN.
+  ENDIF.
+  PERFORM print_form.
+
+*&amp;---------------------------------------------------------------------*
+FORM get_data.
+
+  " ── 檔頭：明列欄位、@ 逸出主機變數 ──────────────────────────
+  SELECT SINGLE ebeln, bukrs, bsart, lifnr
+    FROM ekko
+    WHERE ebeln = @p_ebeln
+    INTO @DATA(ls_ekko).
+
+  IF sy-subrc &lt;&gt; 0.
+    MESSAGE |採購單 { p_ebeln ALPHA = OUT } 不存在| TYPE 'E'.
+  ENDIF.
+
+  gs_head = CORRESPONDING #( ls_ekko ).
+
+  " ── 單據類型名稱（T161T，一定要帶語言）────────────────────
+  SELECT SINGLE batxt
+    FROM t161t
+    WHERE spras = @sy-langu
+      AND bstyp = 'F'
+      AND bsart = @gs_head-bsart
+    INTO @gs_head-batxt.
+
+  " ── 廠商名稱（LFA1 → ADRC）──────────────────────────────
+  SELECT SINGLE l~adrnr, a~name1
+    FROM lfa1 AS l
+    INNER JOIN adrc AS a ON a~addrnumber = l~adrnr
+    WHERE l~lifnr = @gs_head-lifnr
+    INTO @DATA(ls_vendor).
+  gs_head-mc_name1 = ls_vendor-name1.
+
+  " ── 檔身：排除刪除註記 ────────────────────────────────────
+  SELECT ebelp, matnr, menge, meins, werks, lgort
+    FROM ekpo
+    WHERE ebeln = @p_ebeln
+      AND loekz = @space
+    ORDER BY ebelp                     " 一定要排序，SELECT 不保證順序
+    INTO CORRESPONDING FIELDS OF TABLE @gt_item.
+
+  CHECK gt_item IS NOT INITIAL.        " FOR ALL ENTRIES 空表陷阱防護
+
+  " ── 物料名稱：一次撈成 SORTED TABLE，避免迴圈內 SELECT ──────
+  SELECT matnr, maktx
+    FROM makt
+    FOR ALL ENTRIES IN @gt_item
+    WHERE matnr = @gt_item-matnr
+      AND spras = @sy-langu
+    INTO TABLE @DATA(lt_makt).
+
+  " ── 儲存位置說明 ─────────────────────────────────────────
+  SELECT werks, lgort, lgobe
+    FROM t001l
+    FOR ALL ENTRIES IN @gt_item
+    WHERE werks = @gt_item-werks
+      AND lgort = @gt_item-lgort
+    INTO TABLE @DATA(lt_lgort).
+
+  " ── 用 FIELD-SYMBOL 就地補值（不必 MODIFY）──────────────────
+  LOOP AT gt_item ASSIGNING FIELD-SYMBOL(&lt;ls_item&gt;).
+    &lt;ls_item&gt;-maktx = VALUE #( lt_makt[ matnr = &lt;ls_item&gt;-matnr ]-maktx OPTIONAL ).
+    &lt;ls_item&gt;-lgobe = VALUE #( lt_lgort[ werks = &lt;ls_item&gt;-werks
+                                         lgort = &lt;ls_item&gt;-lgort ]-lgobe OPTIONAL ).
+  ENDLOOP.
+
+ENDFORM.</code></pre>
+
+  <div class="warn"><b>老師原程式的三個陷阱，改寫時一定要處理：</b><br>
+  1. <span class="kw">SELECT SINGLE BATXT FROM T161T WHERE BSART = …</span> <b>沒有帶 SPRAS</b>！T161T 的主鍵是 SPRAS＋BSTYP＋BSART，不帶語言會隨機抓到英文或德文，也可能因為<b>SELECT SINGLE 對非唯一鍵沒有排序保證</b>而每次結果不同。<br>
+  2. <span class="kw">FOR ALL ENTRIES</span> 前面<b>必須確定驅動內表不是空的</b>（原程式有做 <span class="kw">IF LT_EKPO IS NOT INITIAL</span>，很好，要保留）；空表會變成「無 WHERE 條件」全表掃描。<br>
+  3. <span class="kw">SELECT * FROM EKPO</span> 在 S/4HANA 上 EKPO 有 300+ 欄位，全撈是嚴重浪費。<b>一律明列欄位。</b></div>
+
+  <p>接著是列印段，先用最單純的方式（讓 SAP 跳出列印對話框）：</p>
+
+  <pre><code class="abap">*&amp;---------------------------------------------------------------------*
+FORM print_form.
+
+  DATA: ls_ctrl   TYPE ssfctrlop,      " 控制參數
+        ls_output TYPE ssfcompop.      " 輸出選項
+
+  " 取得動態函數名
+  CALL FUNCTION 'SSF_FUNCTION_MODULE_NAME'
+    EXPORTING  formname           = gc_formname
+    IMPORTING  fm_name            = DATA(lv_fm)
+    EXCEPTIONS no_form            = 1
+               no_function_module = 2
+               OTHERS             = 3.
+  IF sy-subrc &lt;&gt; 0.
+    MESSAGE |表單 { gc_formname } 尚未啟動或不存在| TYPE 'E'.
+  ENDIF.
+
+  ls_ctrl-no_dialog = COND #( WHEN p_prev = abap_true THEN abap_false ELSE abap_true ).
+  ls_ctrl-preview   = p_prev.          " 螢幕預覽
+  ls_ctrl-langu     = sy-langu.
+
+  ls_output-tddest  = 'LOCL'.          " 輸出裝置
+  ls_output-tdimmed = abap_true.       " 立即列印
+  ls_output-tdnewid = abap_true.       " 產生新的 spool request
+  ls_output-tdcopies = 1.
+
+  CALL FUNCTION lv_fm
+    EXPORTING
+      control_parameters = ls_ctrl
+      output_options     = ls_output
+      user_settings      = abap_false  " ← 不要用使用者預設印表機
+      i_ekko             = gs_head
+    TABLES
+      i_ekpo             = gt_item
+    EXCEPTIONS
+      formatting_error   = 1
+      internal_error     = 2
+      send_error         = 3
+      user_canceled      = 4
+      OTHERS             = 5.
+
+  CASE sy-subrc.
+    WHEN 0.  MESSAGE |採購單 { p_ebeln ALPHA = OUT } 已送出列印| TYPE 'S'.
+    WHEN 4.  MESSAGE '使用者取消列印' TYPE 'S' DISPLAY LIKE 'W'.
+    WHEN OTHERS.
+      MESSAGE |列印失敗，RC = { sy-subrc }| TYPE 'E'.
+  ENDCASE.
+
+ENDFORM.</code></pre>
+
+  <div class="tip"><b><span class="kw">USER_SETTINGS = 'X'</span> 是預設值，也是最常見的「印到別人印表機」元凶。</b> 它會用<b>使用者主資料（SU3）裡的預設印表機</b>覆蓋你在 OUTPUT_OPTIONS 設的 TDDEST。批次列印一律設 <span class="kw">user_settings = abap_false</span>，才會照程式指定的印表機走。</div>
+
+  <h3 id="ch04-3-12">12. 輸出控制：CONTROL_PARAMETERS 與 OUTPUT_OPTIONS 完整對照</h3>
+
+  <h4>12-1　CONTROL_PARAMETERS（型別 SSFCTRLOP）</h4>
+  <table>
+    <thead><tr><th>欄位</th><th>作用</th></tr></thead>
+    <tbody>
+      <tr><td><b>NO_DIALOG</b></td><td>'X'＝<b>不顯示列印對話框</b>。背景執行必設</td></tr>
+      <tr><td><b>PREVIEW</b></td><td>'X'＝顯示列印預覽</td></tr>
+      <tr><td><b>GETOTF</b></td><td>'X'＝<b>不真的印，把 OTF 資料回傳</b>到 JOB_OUTPUT_INFO-OTFDATA。轉 PDF、寄信都靠它</td></tr>
+      <tr><td><b>NO_OPEN / NO_CLOSE</b></td><td>多份表單合併到<b>同一個 Spool</b> 時使用，配合 SSF_OPEN／SSF_CLOSE</td></tr>
+      <tr><td><b>DEVICE</b></td><td>'PRINTER'（預設）／'TELEFAX'／'MAIL'／'SCREEN'</td></tr>
+      <tr><td><b>LANGU</b></td><td>表單輸出語言</td></tr>
+      <tr><td><b>REPLANGU1/2/3</b></td><td>找不到指定語言時的替代語言</td></tr>
+      <tr><td><b>STARTPAGE</b></td><td>指定從哪一頁開始輸出</td></tr>
+    </tbody>
+  </table>
+
+  <div class="warn"><b>GETOTF = 'X' 時，NO_DIALOG 也要一起設 'X'</b>，否則背景執行會卡在對話框，Job 一直不結束。而且 <b>GETOTF 開了就不會產生 Spool</b>——想「既存 Spool 又拿 OTF」要跑兩次，或先拿 OTF 再自己用 <span class="kw">RSPO_SR_OPEN／WRITE</span> 建 Spool。</div>
+
+  <h4>12-2　OUTPUT_OPTIONS（型別 SSFCOMPOP）</h4>
+  <table>
+    <thead><tr><th>欄位</th><th>作用</th></tr></thead>
+    <tbody>
+      <tr><td><b>TDDEST</b></td><td><b>輸出裝置</b>（印表機代號，如 LOCL、LP01）</td></tr>
+      <tr><td><b>TDIMMED</b></td><td>'X'＝立即列印（Print immediately）</td></tr>
+      <tr><td><b>TDDELETE</b></td><td>'X'＝列印後刪除 Spool</td></tr>
+      <tr><td><b>TDNEWID</b></td><td>'X'＝<b>建立新的 Spool Request</b>（不要跟前一份併在一起）</td></tr>
+      <tr><td><b>TDCOPIES</b></td><td>份數</td></tr>
+      <tr><td><b>TDNOPRINT</b></td><td>'X'＝只產生 Spool 不真的印</td></tr>
+      <tr><td><b>TDFINAL</b></td><td>Spool 是否標記為已完成</td></tr>
+      <tr><td><b>TDTITLE</b></td><td>Spool 標題（在 SP01 顯示，<b>強烈建議帶單號</b>方便追查）</td></tr>
+      <tr><td><b>TDLIFETIME</b></td><td>Spool 保留天數（預設 8）</td></tr>
+      <tr><td><b>TDCOVER / TDCOVTITLE</b></td><td>是否印封面頁與封面標題</td></tr>
+      <tr><td><b>TDARMOD</b></td><td>1＝只印、2＝只歸檔、3＝印＋歸檔（ArchiveLink）</td></tr>
+      <tr><td><b>TDPRINTER</b></td><td>Device type（'SWIN'、'CNSAPWIN'、'PDFUC'…）</td></tr>
+      <tr><td><b>XSF / XSFFORMAT / XSFOUTMODE / XSFOUTDEV</b></td><td>XSF／HTML 輸出用</td></tr>
+    </tbody>
+  </table>
+
+  <h4>12-3　多份表單合併成一個 Spool</h4>
+  <pre><code class="abap">" 一次印 100 張採購單，但只產生「一個」Spool Request
+DATA: ls_ctrl   TYPE ssfctrlop,
+      ls_output TYPE ssfcompop.
+
+ls_ctrl-no_dialog = abap_true.
+ls_output-tddest  = 'LOCL'.
+ls_output-tdnewid = abap_true.
+ls_output-tdimmed = abap_false.
+
+" 1) 開啟一次列印工作
+CALL FUNCTION 'SSF_OPEN'
+  EXPORTING
+    output_options     = ls_output
+    control_parameters = ls_ctrl
+    user_settings      = abap_false
+  EXCEPTIONS
+    formatting_error   = 1
+    internal_error     = 2
+    send_error         = 3
+    user_canceled      = 4
+    OTHERS             = 5.
+
+" 2) 每份表單都設 no_open / no_close
+ls_ctrl-no_open  = abap_true.
+ls_ctrl-no_close = abap_true.
+
+LOOP AT gt_po_list INTO DATA(ls_po).
+  PERFORM get_data USING ls_po-ebeln.
+
+  CALL FUNCTION lv_fm
+    EXPORTING control_parameters = ls_ctrl
+              output_options     = ls_output
+              user_settings      = abap_false
+              i_ekko             = gs_head
+    TABLES    i_ekpo             = gt_item
+    EXCEPTIONS OTHERS            = 5.
+ENDLOOP.
+
+" 3) 關閉列印工作，此時才真的產生 Spool
+CALL FUNCTION 'SSF_CLOSE'
+  IMPORTING  job_output_info = DATA(ls_job_info)
+  EXCEPTIONS OTHERS          = 3.
+
+MESSAGE |已產生 Spool： { ls_job_info-spoolids[ 1 ] }| TYPE 'S'.</code></pre>
+
+  <div class="tip">批次列印一定要用 SSF_OPEN／SSF_CLOSE。不用的話一百張單就會產生一百個 Spool Request，SP01 完全沒辦法管理，印表機也會一直重新暖機。</div>
+
+  <h4>12-4　幣別／數量欄位在不同表時的對應</h4>
+  <p>SAP 官方規則：<b>值欄位與幣別／單位欄位在同一張表時，Smart Forms 會自動辨識並正確格式化；不在同一張表時，你必須明講</b>。做法（在 Global Definitions → <b>Currency/Quantity Fields</b> 頁籤）：</p>
+  <ol>
+    <li>在 Global Data 定義一個與「存幣別的那張表」同型別的工作區，例如 <span class="kw">WA_CURTAB</span>；以及輸出值欄位的工作區 <span class="kw">WA_VALTAB</span>。</li>
+    <li>在 Currency/Quantity Fields 填：<b>Field name</b> = <span class="kw">WA_VALTAB-VALUE</span>，<b>Reference field</b> = <span class="kw">WA_CURTAB-CURRENCY</span>。</li>
+    <li>Table／Loop 節點的 Data 頁籤用 <span class="kw">WA_VALTAB</span> 當工作區。</li>
+    <li>在輸出該欄位<b>之前</b>插入一個 Program Lines 節點，把幣別／單位<b>指派</b>給 <span class="kw">WA_CURTAB-CURRENCY</span>（值可在表單裡 SELECT，或由 Form Interface 傳進來）。</li>
+  </ol>
+  <pre><code class="abap">" === Program Lines：放在輸出金額欄位之前 ===
+" Input parameters : I_EKKO
+" Output parameters: WA_CURTAB
+
+" 讓 WA_VALTAB-VALUE 依採購單的幣別格式化（小數位數才會對）
+wa_curtab-currency = i_ekko-waers.</code></pre>
+  <div class="warn"><b>金額小數位印錯</b>幾乎都是這個問題。JPY（0 位）、TWD（2 位）、KWD（3 位）的小數位數不同，SAP 內部一律存兩位，靠幣別欄位換算。<b>沒掛幣別參考，日圓 1000 會印成 10.00</b>。</div>
+
+  <h3 id="ch04-3-13">13. 轉 PDF、下載、寄 E-mail（完整樣板）</h3>
+  <p>這是 SmartForms 在實務上最常被要求的加值功能：<b>不要印紙，直接寄 PDF 給廠商</b>。流程固定四步：<b>GETOTF 取 OTF → CONVERT_OTF 轉 PDF → 二進位轉 SOLIX → CL_BCS 寄出</b>。</p>
+
+  <h4>13-1　取得 OTF 並轉 PDF</h4>
+  <pre><code class="abap">*&amp;---------------------------------------------------------------------*
+*&amp; 取 OTF → 轉 PDF（回傳 XSTRING 與 SOLIX 表）
+*&amp;---------------------------------------------------------------------*
+FORM build_pdf CHANGING cv_pdf     TYPE xstring
+                        ct_solix   TYPE solix_tab
+                        cv_bytes   TYPE i.
+
+  DATA: ls_ctrl   TYPE ssfctrlop,
+        ls_output TYPE ssfcompop,
+        ls_result TYPE ssfcrescl,          " job_output_info
+        lt_otf    TYPE STANDARD TABLE OF itcoo WITH EMPTY KEY,
+        lt_pdf    TYPE STANDARD TABLE OF tline WITH EMPTY KEY.
+
+  CALL FUNCTION 'SSF_FUNCTION_MODULE_NAME'
+    EXPORTING  formname           = gc_formname
+    IMPORTING  fm_name            = DATA(lv_fm)
+    EXCEPTIONS no_form            = 1
+               no_function_module = 2
+               OTHERS             = 3.
+  IF sy-subrc &lt;&gt; 0.
+    MESSAGE |取不到表單函數| TYPE 'E'.
+  ENDIF.
+
+  " ── 關鍵三個開關 ──────────────────────────────────
+  ls_ctrl-no_dialog = abap_true.     " 不跳對話框
+  ls_ctrl-getotf    = abap_true.     " 要 OTF，不要真的印
+  ls_ctrl-preview   = abap_false.
+  ls_ctrl-langu     = sy-langu.
+
+  ls_output-tddest   = 'LOCL'.       " 仍要給裝置，決定字型與紙張
+  ls_output-tdnoprev = abap_true.
+
+  CALL FUNCTION lv_fm
+    EXPORTING
+      control_parameters = ls_ctrl
+      output_options     = ls_output
+      user_settings      = abap_false
+      i_ekko             = gs_head
+    IMPORTING
+      job_output_info    = ls_result       " ← OTF 在這裡
+    TABLES
+      i_ekpo             = gt_item
+    EXCEPTIONS
+      formatting_error   = 1
+      internal_error     = 2
+      send_error         = 3
+      user_canceled      = 4
+      OTHERS             = 5.
+
+  IF sy-subrc &lt;&gt; 0.
+    MESSAGE |產生表單失敗 RC={ sy-subrc }| TYPE 'E'.
+  ENDIF.
+
+  lt_otf = ls_result-otfdata.
+
+  " ── OTF → PDF ─────────────────────────────────────
+  CALL FUNCTION 'CONVERT_OTF'
+    EXPORTING
+      format                = 'PDF'
+      max_linewidth         = 132
+    IMPORTING
+      bin_filesize          = cv_bytes
+      bin_file              = cv_pdf          " XSTRING，最好用的形式
+    TABLES
+      otf                   = lt_otf
+      lines                 = lt_pdf
+    EXCEPTIONS
+      err_max_linewidth     = 1
+      err_format            = 2
+      err_conv_not_possible = 3
+      err_bad_otf           = 4
+      OTHERS                = 5.
+
+  IF sy-subrc &lt;&gt; 0.
+    MESSAGE |OTF 轉 PDF 失敗 RC={ sy-subrc }| TYPE 'E'.
+  ENDIF.
+
+  " ── XSTRING → SOLIX（寄信附件用）────────────────────
+  ct_solix = cl_bcs_convert=&gt;xstring_to_solix( iv_xstring = cv_pdf ).
+
+ENDFORM.</code></pre>
+
+  <div class="note">另一支常見的函數是 <b>CONVERT_OTF_2_PDF</b>（只吃 OTF 表回傳 tline），以及 <b>CONVERT_OTFSPOOLJOB_2_PDF</b>／<b>CONVERT_ABAPSPOOLJOB_2_PDF</b>（<b>已經有 Spool ID 時</b>直接把 Spool 轉 PDF，適合「重印歷史單據」的需求）。</div>
+
+  <h4>13-2　下載 PDF 到本機</h4>
+  <pre><code class="abap">FORM download_pdf USING iv_pdf TYPE xstring.
+
+  DATA lt_bin TYPE STANDARD TABLE OF x255 WITH EMPTY KEY.
+
+  DATA(lv_len) = xstrlen( iv_pdf ).
+  lt_bin = cl_bcs_convert=&gt;xstring_to_solix( iv_pdf ).
+
+  TRY.
+      cl_gui_frontend_services=&gt;gui_download(
+        EXPORTING
+          bin_filesize = lv_len
+          filename     = |C:\\temp\\PO_{ gs_head-ebeln ALPHA = OUT }.pdf|
+          filetype     = 'BIN'
+        CHANGING
+          data_tab     = lt_bin ).
+
+      MESSAGE '檔案已下載' TYPE 'S'.
+
+    CATCH cx_root INTO DATA(lx).
+      MESSAGE lx-&gt;get_text( ) TYPE 'E'.
+  ENDTRY.
+
+ENDFORM.</code></pre>
+  <div class="warn"><b>背景執行（SM36 排程）不能用 CL_GUI_FRONTEND_SERVICES</b>——沒有 GUI，會 dump。背景要存檔請用 <span class="kw">OPEN DATASET … FOR OUTPUT IN BINARY MODE</span> 寫到<b>應用伺服器</b>（AL11 看得到），或用 <b>ArchiveLink／GOS</b> 掛到單據上。</div>
+
+  <pre><code class="abap">" === 背景可用：寫到應用伺服器 ===
+DATA(lv_path) = |/usr/sap/tmp/PO_{ gs_head-ebeln }_{ sy-datum }.pdf|.
+
+TRY.
+    OPEN DATASET lv_path FOR OUTPUT IN BINARY MODE.
+    IF sy-subrc = 0.
+      TRANSFER gv_pdf TO lv_path.
+      CLOSE DATASET lv_path.
+      MESSAGE |已寫入 { lv_path }| TYPE 'S'.
+    ELSE.
+      MESSAGE |無法開啟 { lv_path }| TYPE 'E'.
+    ENDIF.
+  CATCH cx_sy_file_open cx_sy_file_authority INTO DATA(lx_file).
+    MESSAGE lx_file-&gt;get_text( ) TYPE 'E'.
+ENDTRY.</code></pre>
+
+  <h4>13-3　寄 E-mail（CL_BCS 完整樣板）</h4>
+  <pre><code class="abap">*&amp;---------------------------------------------------------------------*
+*&amp; 把 PDF 當附件寄給廠商（CL_BCS，現代寫法）
+*&amp;---------------------------------------------------------------------*
+FORM send_mail USING it_solix TYPE solix_tab
+                     iv_bytes TYPE i
+                     iv_to    TYPE ad_smtpadr.
+
+  TRY.
+      " 1) 建立信件物件
+      DATA(lo_send) = cl_bcs=&gt;create_persistent( ).
+
+      " 2) 內文（HTML 或純文字）
+      DATA(lt_body) = VALUE bcsy_text(
+        ( line = |&lt;p&gt;您好，&lt;/p&gt;| )
+        ( line = |&lt;p&gt;附件為採購單 &lt;b&gt;{ gs_head-ebeln ALPHA = OUT }&lt;/b&gt;，| )
+        ( line = |請確認交期並回簽。&lt;/p&gt;| )
+        ( line = |&lt;p&gt;此信件由系統自動發送，請勿直接回覆。&lt;/p&gt;| ) ).
+
+      DATA(lo_doc) = cl_document_bcs=&gt;create_document(
+        i_type    = 'HTM'
+        i_text    = lt_body
+        i_subject = CONV so_obj_des( |採購單 { gs_head-ebeln ALPHA = OUT }| ) ).
+
+      " 3) 掛 PDF 附件（附件名稱最多 50 字元）
+      lo_doc-&gt;add_attachment(
+        i_attachment_type    = 'PDF'
+        i_attachment_subject = CONV so_obj_des( |PO_{ gs_head-ebeln ALPHA = OUT }| )
+        i_attachment_size    = CONV so_obj_len( iv_bytes )
+        i_att_content_hex    = it_solix ).
+
+      lo_send-&gt;set_document( lo_doc ).
+
+      " 4) 收件人
+      DATA(lo_recipient) = cl_cam_address_bcs=&gt;create_internet_address( iv_to ).
+      lo_send-&gt;add_recipient( i_recipient = lo_recipient
+                              i_express   = abap_true ).
+
+      " 5) 寄件人（不指定就用目前使用者）
+      lo_send-&gt;set_sender(
+        cl_cam_address_bcs=&gt;create_internet_address( 'noreply@company.com' ) ).
+
+      " 6) 立即送出、要求狀態回報
+      lo_send-&gt;set_send_immediately( abap_true ).
+      lo_send-&gt;set_status_attributes( i_requested_status = 'N'   " 只在失敗時通知
+                                      i_status_mail      = 'N' ).
+
+      DATA(lv_sent) = lo_send-&gt;send( i_with_error_screen = abap_true ).
+
+      IF lv_sent = abap_true.
+        COMMIT WORK.                      " ← CL_BCS 一定要 COMMIT 才會真的寄出
+        MESSAGE |已寄送至 { iv_to }| TYPE 'S'.
+      ELSE.
+        ROLLBACK WORK.
+        MESSAGE '郵件送出失敗' TYPE 'E'.
+      ENDIF.
+
+    CATCH cx_bcs INTO DATA(lx_bcs).
+      ROLLBACK WORK.
+      MESSAGE |寄信失敗：{ lx_bcs-&gt;get_text( ) }| TYPE 'E'.
+  ENDTRY.
+
+ENDFORM.</code></pre>
+
+  <div class="warn"><b>寄信的三個必踩坑</b>：<br>
+  1. <b>忘了 <span class="kw">COMMIT WORK</span></b>：CL_BCS 是把信排進佇列，不 COMMIT 就永遠不會送。<br>
+  2. <b>SCOT 沒設定 SMTP 節點</b>：程式回傳成功但信寄不出去，去 <span class="tcode">SOST</span> 看狀態會顯示「Waiting」。SCOT 還要排程 <span class="kw">RSCONN01</span> 這支發送程式。<br>
+  3. <b>附件名稱超過 50 字元會被截斷</b>；中文附件名在某些郵件伺服器會亂碼，建議用英數。</div>
+
+  <h4>13-4　把 PDF 掛回單據（GOS 附件）</h4>
+  <pre><code class="abap">" 把產生的 PDF 存成 GOS 附件掛在採購單上（ME23N 的迴紋針可看到）
+DATA(ls_object) = VALUE borident( objkey  = gs_head-ebeln
+                                  objtype = 'BUS2012' ).   " 採購訂單
+
+DATA(lt_content) = cl_bcs_convert=&gt;xstring_to_solix( gv_pdf ).
+
+TRY.
+    cl_binary_relation=&gt;create_link(
+      is_object_a = ls_object
+      is_object_b = VALUE borident(
+                      objkey  = cl_gos_document_service=&gt;create_attachment(
+                                  is_object   = ls_object
+                                  iv_filename = |PO_{ gs_head-ebeln }.pdf| )
+                      objtype = 'MESSAGE' )
+      ip_reltype  = 'ATTA' ).
+  CATCH cx_obl_parameter_error cx_obl_model_error INTO DATA(lx_gos).
+    MESSAGE lx_gos-&gt;get_text( ) TYPE 'S' DISPLAY LIKE 'W'.
+ENDTRY.</code></pre>
+  <div class="note">GOS 附件的標準做法還有 <b>SO_DOCUMENT_INSERT_API1</b> ＋ <b>BINARY_RELATION_CREATE_COMMIT</b>，或直接用 ArchiveLink（OUTPUT_OPTIONS-TDARMOD = 3）歸檔。專案上要先確認公司用的是 GOS 還是 ArchiveLink。</div>
+
+  <h3 id="ch04-3-14">14. NACE 輸出決定與 SPOOL 管理</h3>
+  <p>正式專案裡，很少讓使用者「執行一支 Z 程式來印單據」，而是<b>在單據存檔時自動觸發列印</b>。這靠的是 <b>Output Determination（輸出決定）</b>。</p>
+
+  <h4>14-1　NACE 的五層設定</h4>
+  <table>
+    <thead><tr><th>層次</th><th>內容</th><th>說明</th></tr></thead>
+    <tbody>
+      <tr><td>1. Application</td><td>EF＝採購訂單、V1＝銷售、V2＝送貨、V3＝帳單、M1/M2＝MM 收貨</td><td>NACE 第一個畫面就是選它</td></tr>
+      <tr><td>2. Output Type（輸出類型）</td><td>NEU（採購單）、BA00（訂單確認）、LD00（送貨單）、RD00（發票）</td><td>可複製標準的改成 Z*</td></tr>
+      <tr><td>3. Processing Routines（處理程式）</td><td>Medium（1＝印表機、5＝外部傳送/EMail、A＝ALE、6＝EDI）＋ <b>Program</b> ＋ <b>FORM routine</b> ＋ <b>Form / PDF-Form</b></td><td><b>SmartForm 填在「Form」旁的 <b>Smart Form</b> 欄位</b>（不是 SAPscript 的 Form 欄位）</td></tr>
+      <tr><td>4. Access Sequence / Condition Table</td><td>決定「什麼條件下要出這個輸出」</td><td>例如「採購組織＋文件類型」</td></tr>
+      <tr><td>5. Condition Record（<span class="tcode">MN04/MN05</span> 等）</td><td>實際的輸出主資料：印表機、份數、時點（1＝立即、3＝手動、4＝批次）</td><td>沒建 Condition Record，單據存檔就不會出輸出</td></tr>
+    </tbody>
+  </table>
+
+  <p>NACE 呼叫的驅動程式（Print Program）介面是固定的——SAP 標準採購單用 <b>SAPFM06P</b> ＋ FORM routine <b>ENTRY_NEU</b>。客製時複製成 Z 程式：</p>
+
+  <pre><code class="abap">*&amp;---------------------------------------------------------------------*
+*&amp; NACE 驅動程式的固定介面（複製 SAPFM06P 的 ENTRY_NEU）
+*&amp;---------------------------------------------------------------------*
+FORM entry_neu USING ent_retco TYPE sy-subrc
+                     ent_screen TYPE c.
+
+  " NACE 會把處理中的輸出記錄放在 NAST 結構
+  DATA(lv_ebeln) = CONV ekko-ebeln( nast-objky ).
+
+  PERFORM get_data USING lv_ebeln.
+
+  DATA: ls_ctrl   TYPE ssfctrlop,
+        ls_output TYPE ssfcompop.
+
+  " ent_screen = 'X' 代表使用者按了「預覽」
+  ls_ctrl-no_dialog = COND #( WHEN ent_screen = 'X' THEN abap_false ELSE abap_true ).
+  ls_ctrl-preview   = ent_screen.
+
+  " 印表機／份數由 NAST 決定，不要自己寫死
+  ls_output-tddest   = nast-ldest.
+  ls_output-tdcopies = nast-anzal.
+  ls_output-tdimmed  = nast-dimme.
+  ls_output-tddelete = nast-delet.
+  ls_output-tdtitle  = |PO { lv_ebeln }|.
+
+  CALL FUNCTION 'SSF_FUNCTION_MODULE_NAME'
+    EXPORTING formname = gc_formname
+    IMPORTING fm_name  = DATA(lv_fm)
+    EXCEPTIONS OTHERS  = 3.
+
+  CALL FUNCTION lv_fm
+    EXPORTING control_parameters = ls_ctrl
+              output_options     = ls_output
+              user_settings      = abap_false
+              i_ekko             = gs_head
+    TABLES    i_ekpo             = gt_item
+    EXCEPTIONS formatting_error  = 1
+               internal_error    = 2
+               send_error        = 3
+               user_canceled     = 4
+               OTHERS            = 5.
+
+  " 【重要】一定要回傳 return code，否則 NAST 狀態會一直停在「未處理」
+  ent_retco = sy-subrc.
+
+ENDFORM.</code></pre>
+
+  <div class="warn"><b>NACE 驅動程式最常見的錯</b>：忘了設 <span class="kw">ent_retco</span>。回傳 0 才會把 NAST 標記為「已成功處理（綠燈）」，非 0 會變紅燈並可在 ME23N 的 Messages 重送。忘了設，單據會一直重複列印或永遠顯示未處理。</div>
+
+  <h4>14-2　SPOOL 相關 TCODE</h4>
+  <table>
+    <thead><tr><th>TCODE</th><th>用途</th></tr></thead>
+    <tbody>
+      <tr><td><span class="tcode">SP01</span></td><td>Spool Request 總覽（看內容、重印、刪除、看輸出狀態）</td></tr>
+      <tr><td><span class="tcode">SP02</span></td><td>只看自己的 Spool</td></tr>
+      <tr><td><span class="tcode">SPAD</span></td><td>Spool 管理：輸出裝置、裝置類型、紙張格式、字元集</td></tr>
+      <tr><td><span class="tcode">SPIC</span></td><td>Spool 一致性檢查</td></tr>
+      <tr><td><span class="tcode">SP12</span></td><td>TemSe 管理（Spool 實體資料的儲存區）</td></tr>
+      <tr><td><b>TSP01 / TSP02 / TST01</b></td><td>Spool 的資料表，程式要查 Spool ID 時用</td></tr>
+    </tbody>
+  </table>
+  <div class="tip">除錯時最好用的一招：SP01 選一筆 Spool → <b>Goto → Display Requests → Settings → 勾 Output Text（Raw／OTF）</b>，可以看到原始 OTF 指令，直接看出是哪一個 Window、哪一段文字沒印出來。</div>
+
+  <h3 id="ch04-3-15">15. 傳輸、多語言與跨系統搬運</h3>
+  <ul>
+    <li><b>Smart Form 與 Smart Style 都是 Repository 物件、Client 獨立</b>，會跟著 Request（工作台請求）走。建立時要指定 <b>Package</b>（Z 開頭）與 Request。</li>
+    <li><b>產生的函數模組不傳輸</b>——它是目標系統在第一次啟動表單時自己產生的。<b>這正是必須用 SSF_FUNCTION_MODULE_NAME 的根本原因。</b></li>
+    <li><b>SO10 標準文字是 Client 相依</b>，要用 <span class="tcode">RSTXTRAN</span> 掛進傳輸請求。</li>
+    <li><b>SE78 的圖檔</b>也是 Repository 物件會傳，但檔案很大時建議在各環境分別上傳。</li>
+    <li><b>沒有傳輸連線時</b>（例如要把表單給客戶）：用 <b>SSF_DOWNLOAD</b> 匯出成 XML，在目標系統用 <b>SSF_UPLOAD</b> 匯入；也可以在 SMARTFORMS 選單 <b>Utilities → Download form / Upload form</b>。Smart Style 對應的是 <b>SSFS_DOWNLOAD / SSFS_UPLOAD</b>。</li>
+  </ul>
+
+  <pre><code class="abap">" 檢查表單在目前系統是否存在且可用（上線前的自我檢查程式）
+DATA(lt_forms) = VALUE stringtab( ( `Z00_EKKO_EKPO` ) ( `Z00_DELIVERY` ) ( `Z00_INVOICE` ) ).
+
+LOOP AT lt_forms INTO DATA(lv_form).
+
+  CALL FUNCTION 'SSF_FUNCTION_MODULE_NAME'
+    EXPORTING  formname           = CONV tdsfname( lv_form )
+    IMPORTING  fm_name            = DATA(lv_fm)
+    EXCEPTIONS no_form            = 1
+               no_function_module = 2
+               OTHERS             = 3.
+
+  DATA(lv_msg) = SWITCH string( sy-subrc
+                   WHEN 0 THEN |OK  → { lv_fm }|
+                   WHEN 1 THEN |NG 表單不存在|
+                   WHEN 2 THEN |NG 表單存在但函數未產生（請重新 Active）|
+                   ELSE        |NG 未知錯誤| ).
+
+  WRITE: / lv_form, lv_msg.
+ENDLOOP.</code></pre>
+
+  <h4>15-1　多語言表單</h4>
+  <ul>
+    <li>Smart Form 的<b>原始語言</b>在 Form Attributes 決定。翻譯走 <span class="tcode">SE63</span>（Translation → ABAP Objects → Other Long Texts → <b>SSF</b>）。</li>
+    <li>執行時語言由 <span class="kw">CONTROL_PARAMETERS-LANGU</span> 決定；找不到就用 <b>REPLANGU1/2/3</b> 的替代語言。</li>
+    <li>「要給廠商看的語言」通常不是登入語言，而是<b>廠商主資料的語言</b>（LFA1-SPRAS）或客戶的 KNA1-SPRAS。<b>不要直接用 SY-LANGU。</b></li>
+    <li>Text Module 可以逐語言維護，是多語表單的最佳實務；不要在文字節點裡硬寫中文再複製一份英文表單。</li>
+  </ul>
+
+  <pre><code class="abap">" 依廠商主資料的語言列印，找不到才用登入語言
+SELECT SINGLE spras FROM lfa1
+  WHERE lifnr = @gs_head-lifnr
+  INTO @DATA(lv_vendor_langu).
+
+ls_ctrl-langu = COND spras( WHEN lv_vendor_langu IS NOT INITIAL
+                            THEN lv_vendor_langu
+                            ELSE sy-langu ).
+ls_ctrl-replangu1 = 'E'.        " 找不到就退回英文
+ls_ctrl-replangu2 = '1'.        " 再退回繁體中文</code></pre>
+
+  <h3 id="ch04-3-16">16. 常見坑總整理（老師與現場經驗）</h3>
+  <table>
+    <thead><tr><th>症狀</th><th>原因</th><th>解法</th></tr></thead>
+    <tbody>
+      <tr><td>欄位印不出來，印成一串 <span class="kw">&amp;I_EKKO-EBELN&amp;</span> 文字</td><td>插入欄位時<b>沒有變成灰底</b>，被當成純文字</td><td>刪掉重插：拖曳 Field List，或用 PC Editor 的 Include field。<b>灰色才算成功</b></td></tr>
+      <tr><td>明細只印第一筆</td><td>Main Area 的 Text 節點取了 <b>I_EKPO-xxx</b> 而不是工作區 <b>WA_EKPO-xxx</b></td><td>全部改成 Table 節點 Data 頁籤指定的工作區</td></tr>
+      <tr><td>只印第一頁，後面資料不見</td><td>該 Page <b>沒有 MAIN Window</b>，或 Next Page 沒設</td><td>每個要續頁的 Page 都要有 MAIN，Next Page 指向自己或續頁</td></tr>
+      <tr><td>頁面重複／無限迴圈印個不停</td><td>Page 的 Next Page 互相指來指去，或 Command 節點的換頁條件永遠成立</td><td>檢查 Next Page 鏈；換頁條件加上「不是最後一筆」的判斷</td></tr>
+      <tr><td>最後多出一張空白頁</td><td>MAIN Window 高度太大，或表尾 Template 的高度超過剩餘空間；也可能是 Table Footer 被擠到下一頁</td><td>縮小 MAIN 高度；表尾改放 <b>Final Window</b>；Folder 加 Page Protection</td></tr>
+      <tr><td>Active 時報「Main window width differs」</td><td>不同 Page 的 MAIN 寬度不一致</td><td>把所有 Page 的 MAIN 寬度改成完全相同的數值</td></tr>
+      <tr><td>總計是 0 或少一筆</td><td>合計欄位放在一般 Window，此時明細還沒跑完</td><td>把總計搬到 <b>Table Footer</b> 或 <b>Final Window</b></td></tr>
+      <tr><td>「共 y 頁」印成 0 或空白</td><td>SFSY-FORMPAGES <b>只能在 Final Window 使用</b></td><td>把「第 x 頁／共 y 頁」放進 Final Window</td></tr>
+      <tr><td>中文變方框／問號</td><td>Device Type 沒掛中文字型；或用了 PDF1 而非 PDFUC</td><td>SE73 檢查字型；換 CNSAPWIN／PDFUC；Smart Style 改用 ANDALE_T／CNSONG</td></tr>
+      <tr><td>金額／數量對不齊</td><td>只設段落靠右，沒設輸出長度</td><td>段落 RIGHT ＋ <span class="kw">&amp;field(13.2)&amp;</span> 一起用</td></tr>
+      <tr><td>日圓金額多兩位小數</td><td>值欄位與幣別欄位不同表，沒在 Currency/Quantity Fields 建對應</td><td>見第 12-4 節</td></tr>
+      <tr><td>採購單號前面多一堆 0</td><td>沒做 ALPHA 轉換輸出</td><td>欄位加 <span class="kw">(Z)</span>，或在 Program Lines 用 <span class="kw">|{ ebeln ALPHA = OUT }|</span></td></tr>
+      <tr><td>QAS/PRD dump：CALL_FUNCTION_NOT_FOUND</td><td>寫死了 /1BCDWB/SFxxxxxxxx</td><td>改用 SSF_FUNCTION_MODULE_NAME</td></tr>
+      <tr><td>測試機文字不見</td><td>SO10 標準文字是 Client 相依，沒傳</td><td>RSTXTRAN，或改用 SmartForms Text Module</td></tr>
+      <tr><td>印到別人的印表機</td><td><span class="kw">USER_SETTINGS = 'X'</span> 蓋掉了 TDDEST</td><td>設 <span class="kw">user_settings = abap_false</span></td></tr>
+      <tr><td>背景 Job 一直不結束</td><td>NO_DIALOG 沒設，卡在列印對話框</td><td><span class="kw">ls_ctrl-no_dialog = abap_true</span></td></tr>
+      <tr><td>列印非常慢</td><td>Logo 是高解析彩色 BMP；或 Program Lines 在迴圈內 SELECT</td><td>Logo 換黑白小檔；資料一次撈好放 HASHED TABLE</td></tr>
+      <tr><td>條碼掃不出來</td><td>用舊式印表機條碼、或 ALPHA 轉換吃掉前導零</td><td>改用新式條碼 BC_C128；欄位加 <span class="kw">(K)</span></td></tr>
+      <tr><td>預覽正常、實體列印跑版</td><td>預覽用 SAPGUI 字型，列印用 Device Type 字型</td><td>驗收一定要用<b>目標印表機</b>實印或轉 PDF 檢查</td></tr>
+    </tbody>
+  </table>
+
+  <h3 id="ch04-3-17">17. S/4HANA 補充：Adobe Forms 與 Fiori 列印</h3>
+  <p>SmartForms 在 S/4HANA <b>仍完全支援</b>，既有客製不需要改寫。但 <b>SAP 對新開發的建議方向是 Adobe Forms</b>，S/4HANA 的新輸出管理（Output Management）也是以 Adobe Forms 為基礎。</p>
+
+  <h4>17-1　Adobe Forms 的呼叫流程</h4>
+  <p>結構和 SmartForms 很像，但多了「開工作／關工作」的包裝：</p>
+  <pre><code class="abap">*&amp;---------------------------------------------------------------------*
+*&amp; Adobe Forms（SFP）標準呼叫樣板
+*&amp;---------------------------------------------------------------------*
+DATA: ls_outputparams TYPE sfpoutputparams,
+      ls_docparams    TYPE sfpdocparams,
+      ls_formoutput   TYPE fpformoutput.
+
+" 1) 開啟列印工作
+ls_outputparams-nodialog = abap_true.       " 不跳對話框
+ls_outputparams-preview  = abap_false.
+ls_outputparams-getpdf   = 'X'.             " ← 要 PDF 二進位
+ls_outputparams-dest     = 'LOCL'.
+
+CALL FUNCTION 'FP_JOB_OPEN'
+  CHANGING   ie_outputparams = ls_outputparams
+  EXCEPTIONS cancel          = 1
+             usage_error     = 2
+             system_error    = 3
+             internal_error  = 4
+             OTHERS          = 5.
+IF sy-subrc &lt;&gt; 0.
+  MESSAGE |FP_JOB_OPEN 失敗 RC={ sy-subrc }| TYPE 'E'.
+ENDIF.
+
+" 2) 由表單名稱取得產生的函數名（等同 SmartForms 的 SSF_FUNCTION_MODULE_NAME）
+CALL FUNCTION 'FP_FUNCTION_MODULE_NAME'
+  EXPORTING  i_name     = 'Z00_PO_ADOBE'
+  IMPORTING  e_funcname = DATA(lv_fp_fm)
+  EXCEPTIONS OTHERS     = 3.
+
+" 3) 呼叫表單
+ls_docparams-langu   = sy-langu.
+ls_docparams-country = 'TW'.
+
+CALL FUNCTION lv_fp_fm
+  EXPORTING  /1bcdwb/docparams  = ls_docparams
+             i_ekko             = gs_head
+             i_ekpo             = gt_item      " Adobe 可直接吃內表參數
+  IMPORTING  /1bcdwb/formoutput = ls_formoutput
+  EXCEPTIONS usage_error        = 1
+             system_error       = 2
+             internal_error     = 3
+             OTHERS             = 4.
+
+" 4) 關閉列印工作
+CALL FUNCTION 'FP_JOB_CLOSE'
+  EXCEPTIONS usage_error    = 1
+             system_error   = 2
+             internal_error = 3
+             OTHERS         = 4.
+
+" ls_formoutput-pdf 就是 XSTRING 格式的 PDF，可直接寄信或下載
+IF ls_formoutput-pdf IS NOT INITIAL.
+  DATA(lt_solix) = cl_bcs_convert=&gt;xstring_to_solix( ls_formoutput-pdf ).
+ENDIF.</code></pre>
+
+  <table>
+    <thead><tr><th>比較</th><th>SmartForms</th><th>Adobe Forms</th></tr></thead>
+    <tbody>
+      <tr><td>維護 TCODE</td><td>SMARTFORMS</td><td><b>SFP</b></td></tr>
+      <tr><td>取函數名</td><td>SSF_FUNCTION_MODULE_NAME</td><td><b>FP_FUNCTION_MODULE_NAME</b></td></tr>
+      <tr><td>工作包裝</td><td>SSF_OPEN／SSF_CLOSE（選用）</td><td><b>FP_JOB_OPEN／FP_JOB_CLOSE（必要）</b></td></tr>
+      <tr><td>拿 PDF</td><td>GETOTF → CONVERT_OTF</td><td><b>GETPDF → FORMOUTPUT-PDF（一步到位）</b></td></tr>
+      <tr><td>介面／內容分離</td><td>介面與版面綁在一起</td><td><b>Interface 與 Form 是兩個獨立物件</b>，一個介面可給多張表單用</td></tr>
+      <tr><td>設計工具</td><td>SAP GUI 內建的樹狀編輯器</td><td><b>Adobe LiveCycle Designer</b>（所見即所得）</td></tr>
+      <tr><td>前置需求</td><td>無</td><td><b>ADS（Adobe Document Services）</b>必須先安裝設定</td></tr>
+    </tbody>
+  </table>
+
+  <div class="note">老師的講義寫「Adobe Form T-CODE: SPF 沒安裝沒辦法試」——正確 TCODE 是 <b>SFP</b>（Form Builder），沒有 ADS 時能建立表單但無法產生／預覽 PDF，會出 <b>ADS_ERROR</b>。要測試可以請 Basis 確認 <span class="tcode">SM59</span> 有沒有 <b>ADS</b> 這個 HTTP 目的地，或執行標準程式 <b>FP_TEST_00</b>／<b>FP_PDF_TEST_00</b> 做連線檢測。</div>
+
+  <h4>17-2　Fiori／新輸出管理</h4>
+  <ul>
+    <li>S/4HANA 1610 起，部分應用（銷售訂單、交貨單、帳單、採購單）改走 <b>Output Control（新輸出管理）</b>：用 <b>BRF+</b> 決定 Output Type、Channel（Printer／Email／XML／IDoc）、Receiver、Form Template。</li>
+    <li>設定入口：<span class="tcode">OPD</span>（Output Parameter Determination）、Fiori App「<b>Manage Output Items</b>」「<b>Output Parameter Determination</b>」、以及 SPRO 的 Cross-Application Components → Output Control。</li>
+    <li>表單本體只支援 <b>Adobe Forms（Form Template）</b>與 <b>Fragment</b>；<b>新輸出管理不支援 SmartForms／SAPscript</b>。</li>
+    <li>NACE 並沒有被移除，很多模組（MM 的收貨單、PP 的工單）仍走 NACE。<b>專案上要先確認該單據走的是哪一套</b>，設定的地方完全不同。</li>
+    <li>Fiori 前端列印走 <b>Print Queue</b>（App「Maintain Print Queues」）＋ <b>SAP Cloud Print Manager</b>，跟傳統 SPAD 的印表機是兩條路。</li>
+  </ul>
+
+  <div class="warn"><b>不要在 S/4HANA 上把 SmartForms 全部改寫成 Adobe Forms。</b> 遷移成本高、風險大，SAP 也明確表示 SmartForms 繼續支援。合理策略是：<b>既有的維持、新的用 Adobe、走新輸出管理的單據只能用 Adobe</b>。</div>
+
+  <h4>17-3　S/4HANA 取數要注意的表格變化</h4>
+  <div class="warn">單據列印程式常需要抓會計或庫存資料，S/4HANA 的資料模型改了：<br>
+  ・<b>BSEG／BKPF／BSIS／BSAS…→ ACDOCA</b>（Universal Journal）。舊表多半變成相容 View，直接查會慢。<br>
+  ・<b>MSEG／MKPF → MATDOC</b>；MB5B 之類的邏輯建議改用 CDS View。<br>
+  ・<b>庫存 MARD/MCHB → NSDM_V_MARD</b> 等相容 View，實體資料在 MATDOC。<br>
+  ・新開發建議<b>直接用 CDS View</b>（例如 <span class="kw">I_PurchaseOrderItem</span>、<span class="kw">I_Product</span>）取數，欄位語意清楚也自帶關聯。</div>
+
+  <pre><code class="abap">" S/4HANA 建議：用標準 CDS View 取採購單資料（欄位語意化、自帶文字關聯）
+SELECT po~PurchaseOrder,
+       po~CompanyCode,
+       po~PurchaseOrderType,
+       po~Supplier,
+       item~PurchaseOrderItem,
+       item~Material,
+       item~OrderQuantity,
+       item~PurchaseOrderQuantityUnit,
+       item~Plant,
+       item~StorageLocation,
+       txt~ProductName
+  FROM I_PurchaseOrder      AS po
+  INNER JOIN I_PurchaseOrderItem AS item
+          ON item~PurchaseOrder = po~PurchaseOrder
+  LEFT OUTER JOIN I_ProductDescription AS txt
+          ON  txt~Product  = item~Material
+          AND txt~Language = @sy-langu
+  WHERE po~PurchaseOrder = @p_ebeln
+    AND item~PurchasingDocumentDeletionCode = @space
+  ORDER BY item~PurchaseOrderItem
+  INTO TABLE @DATA(lt_po_cds).
+
+" 再對映到表單接口結構
+gt_item = CORRESPONDING #( lt_po_cds MAPPING ebelp = purchaseorderitem
+                                              matnr = material
+                                              maktx = productname
+                                              menge = orderquantity
+                                              meins = purchaseorderquantityunit
+                                              werks = plant
+                                              lgort = storagelocation ).</code></pre>
+
+  <h3 id="ch04-3-18">18. SAPscript 的最低限度認識（改標準單據時會遇到）</h3>
+  <p>老師說「因為有了 SMARTFORM，所以不會也無所謂」——但實務上你改 SAP 標準單據時還是會撞到它，所以留一個最小知識集：</p>
+  <table>
+    <thead><tr><th>項目</th><th>內容</th></tr></thead>
+    <tbody>
+      <tr><td>TCODE</td><td><span class="tcode">SE71</span> Form／<span class="tcode">SE72</span> Style／<span class="tcode">SE73</span> Font／<span class="tcode">SE78</span> Graphic／<span class="tcode">SO10</span> 標準文字／<span class="tcode">I18N</span> 國際化入口</td></tr>
+      <tr><td>結構</td><td>Header → Paragraph Formats → Character Formats → <b>Windows</b> → <b>Pages</b> → <b>Page Windows</b> → <b>Text Elements</b></td></tr>
+      <tr><td>呼叫流程</td><td><b>OPEN_FORM → START_FORM →（多次）WRITE_FORM → END_FORM → CLOSE_FORM</b></td></tr>
+      <tr><td>文字元素</td><td>用 <span class="kw">/E 元素名稱</span> 定義，程式用 <span class="kw">WRITE_FORM ELEMENT = '…'</span> 呼叫</td></tr>
+      <tr><td>常用行格式</td><td><span class="kw">/:</span> 控制指令（IF、CASE、DEFINE、NEW-PAGE、PROTECT、BOX、POSITION、SIZE）、<span class="kw">/*</span> 註解、<span class="kw">*</span> 預設段落、<span class="kw">/=</span> 續行</td></tr>
+      <tr><td>致命差異</td><td><b>Client 相依</b>，傳輸要 RSTXTRAN；改標準表單要先<b>複製成 Z</b>（SE71 → Utilities → Copy from Client）</td></tr>
+    </tbody>
+  </table>
+  <div class="tip">要知道某張標準單據用的是 SAPscript 還是 Smart Form，最快的方法：<span class="tcode">NACE</span> → 選 Application → Output Types → Processing Routines，看填的是 <b>Form</b>（SAPscript）還是 <b>Smart Form</b> 欄位。</div>
+
+  <h3 id="ch04-3-qa">練習與自我檢核</h3>
+  <ol>
+    <li><b>【09-3 課堂作業】仿作 Z00_EKKO_EKPO。</b> 自行設計一張採購單（欄位可簡化，<b>不計美觀，只要求設計重點</b>），必須真的有資料印出來。<br>
+      驗收方式：老師會<b>用程式執行</b>你的表單，因此至少要交出第 08-1 節那種「直接呼叫函數名」的版本；<b>08-2 的動態函數名版本請務必自己練成</b>，那才是正式程式的寫法。<br>
+      提示：(1) SE11 建 Z00_EKKO / Z00_EKPO 並記得 Active、QUAN 掛單位；(2) Form Interface 的 Import 放檔頭、Tables 放檔身；(3) Global Data 宣告 WA_EKPO 與 LV_MENGE；(4) 表頭 Secondary Window 用 Template，明細用 MAIN Window 的 Table；(5) <b>欄位一定要是灰色的</b>。</li>
+
+    <li>為什麼「直接寫 <span class="kw">CALL FUNCTION '/1BCDWB/SF00000009'</span>」在開發機會成功、上線就 dump？請說出 <b>SSF_FUNCTION_MODULE_NAME</b> 的兩個 EXCEPTION（NO_FORM＝1、NO_FUNCTION_MODULE＝2）分別代表什麼情況。<br>
+      <i>答案要點：產生的函數名是各系統自行編號的流水號，傳輸不會帶過去；重新 Active 也會換號。1＝表單根本不存在，2＝表單存在但函數還沒產生（需重新啟動表單）。</i></li>
+
+    <li><b>Template 與 Table 的差別是什麼？</b> 表頭的四個欄位（單據編號、公司代碼、單據類型、供應廠商）應該用哪一個？明細清單應該用哪一個？為什麼明細一定要放在 MAIN Window？<br>
+      <i>答案要點：Template 固定列數不會 LOOP 也不會跨頁；Table 動態列數、自帶 Header/Main Area/Footer、會自動續頁並重印表頭。續頁機制由 MAIN Window 觸發，沒有 MAIN 的頁面不會往下翻。</i></li>
+
+    <li>Table 的 Main Area 裡，格子要取 <span class="kw">I_EKPO-MENGE</span> 還是 <span class="kw">WA_EKPO-MENGE</span>？取錯會發生什麼事？</li>
+
+    <li>合計數量 <span class="kw">LV_MENGE</span> 有兩種算法：(a) Table 節點的 <b>Calculations</b> 頁籤設 TOTAL；(b) Program Lines 用 <b>REDUCE</b>。各寫一次，並說明「合計要顯示在哪個節點才不會是 0」。<br>
+      <i>答案要點：要放在 Table Footer 或 Final Window，放在一般 Window 時明細還沒跑完。</i></li>
+
+    <li>寫一個欄位輸出，要求：採購數量寬 13 位、小數 3 位、負號在左、不要千分位。<br>
+      <i>答案：<span class="kw">&amp;WA_EKPO-MENGE(13.3&lt;T)&amp;</span></i></li>
+
+    <li>「第 x 頁／共 y 頁」要用哪兩個系統欄位？為什麼 <b>SFSY-FORMPAGES</b> 只能放在 Final Window？大量列印時為什麼不建議用 <b>SFSY-JOBPAGES</b>？</li>
+
+    <li>把採購單轉成 PDF 寄給廠商，請依序寫出四個關鍵動作與對應的物件／函數。<br>
+      <i>答案要點：CONTROL_PARAMETERS-GETOTF='X' 與 NO_DIALOG='X' → job_output_info-otfdata → CONVERT_OTF（FORMAT='PDF'）→ cl_bcs_convert=&gt;xstring_to_solix → CL_BCS/CL_DOCUMENT_BCS 送出 → <b>COMMIT WORK</b>。</i></li>
+
+    <li>使用者反映「單據都印到會計部的印表機」。程式明明有設 <span class="kw">OUTPUT_OPTIONS-TDDEST = 'LP01'</span>，為什麼？<br>
+      <i>答案：USER_SETTINGS 預設 'X'，會用 SU3 的使用者預設印表機蓋掉。設 abap_false。</i></li>
+
+    <li>採購單抬頭長文（ME23N 的 Texts）要印在表單上，Include Text 節點的 <b>Text Object / Text ID / Text Name</b> 各要填什麼？如果改用程式端的 <b>READ_TEXT</b>，四個參數又是什麼？為什麼這段文字傳到測試機會不見？</li>
+
+    <li>你的表單在開發機預覽中文完全正常，印出來全是方框。列出三個要檢查的地方。<br>
+      <i>答案要點：(1) SPAD 輸出設備的 Device Type 是否支援中文（CNSAPWIN／PDFUC）；(2) SE73 該 Device Type 是否掛了中文字型；(3) Smart Style 的字元格式選的字體家族（ANDALE_T／CNSONG）在該裝置有沒有對應。</i></li>
+
+    <li>一次列印 500 張出貨單，要求：只產生一個 Spool Request、背景執行不跳對話框、不使用使用者預設印表機。請寫出關鍵的三個設定與兩支函數。<br>
+      <i>答案要點：SSF_OPEN／SSF_CLOSE 包住迴圈，中間每次呼叫設 no_open = no_close = 'X'；ls_ctrl-no_dialog = abap_true；user_settings = abap_false。</i></li>
+
+    <li>S/4HANA 上有人要求你「把所有 SmartForms 改寫成 Adobe Forms」，你會怎麼回應？請說出 Adobe Forms 的前置需求、兩個 TCODE 差異、以及「什麼情況非改不可」。<br>
+      <i>答案要點：需要 ADS；SMARTFORMS vs SFP、SSF_FUNCTION_MODULE_NAME vs FP_FUNCTION_MODULE_NAME；只有走新輸出管理（Output Control / BRF+）的單據非用 Adobe Forms 不可，其餘 SmartForms 繼續支援。</i></li>
+  </ol>
+</section>

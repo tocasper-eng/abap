@@ -1,0 +1,1239 @@
+<section class="chapter" id="ch05-10" data-title="BC412 Enjoy SAP Controls（容器、ALV Grid、Tree、TextEdit、拖放）">
+  <h2 id="ch05-10">第 5-10 章 BC412 Enjoy SAP Controls（容器、ALV Grid、Tree、TextEdit、拖放）</h2>
+  <p class="lede">BC410 教的是 Screen Painter 裡「畫得出來」的傳統畫面元素；BC412 教的是畫不出來、只能用程式碼「種」進畫面的 <b>Enjoy SAP 控制項</b>：容器、圖片、HTML 瀏覽器、文字編輯器、ALV Grid、三種樹、右鍵選單，以及把它們串起來的分割畫面與拖放（Drag &amp; Drop）。這一章依原課程十個單元的順序，把控制框架（Control Framework, CFW）的底層機制——代理物件、Automation Queue、flush、系統事件與應用事件——講透，再逐一落地到每一種控制項，全部程式改寫為 S/4HANA 1809+（ABAP 7.53）可直接使用的寫法。它與 <a href="#ch03-2">3-2 章 OOALV 與 Screen</a> 互補：3-2 章教你「把 ALV 放上畫面」，本章教你「理解控制項為什麼這樣運作、還能放什麼」。</p>
+
+  <div class="meta">
+    <div><b>核心 TCODE</b><span class="tcode">SE51</span><span class="tcode">SE41</span><span class="tcode">SE24</span><span class="tcode">SE80</span><span class="tcode">SE38</span><span class="tcode">SE93</span><span class="tcode">SMW0</span><span class="tcode">OAWD</span><span class="tcode">DWDM</span><span class="tcode">SE11</span><span class="tcode">ST22</span><span class="tcode">SAT</span></div>
+    <div><b>關鍵物件</b>CL_GUI_CFW、CL_GUI_OBJECT、CL_GUI_CONTROL、CL_GUI_CONTAINER、CL_GUI_CUSTOM_CONTAINER、CL_GUI_DIALOGBOX_CONTAINER、CL_GUI_DOCKING_CONTAINER、CL_GUI_SPLITTER_CONTAINER、CL_GUI_EASY_SPLITTER_CONTAINER、CL_GUI_PICTURE、CL_GUI_HTML_VIEWER、CL_GUI_TEXTEDIT、CL_GUI_ALV_GRID、CL_GUI_TOOLBAR、CL_CTMENU、CL_DRAGDROP、CL_DRAGDROPOBJECT、CL_SIMPLE_TREE_MODEL、CL_COLUMN_TREE_MODEL、CL_LIST_TREE_MODEL、CL_ALV_EVENT_TOOLBAR_SET、CL_BDS_DOCUMENT_SET、CNTL_SIMPLE_EVENTS、LVC_T_FCAT、LVC_S_LAYO、LVC_S_PRNT、LVC_S_STBL、LVC_T_SORT、LVC_T_FILT、LVC_T_SGRP、UI_FUNCTIONS、DISVARIANT、STB_BUTTON、TREEMSNODT、TREEMSNOTA、TREEMCNODT、TREEMCITEM、TREEMCITAB、TREEMLNODT、TREEMLITAB、TREEMHHDR、DP_CREATE_URL、DP_PUBLISH_WWW_URL、SCUSTOM、SPFLI、SFLIGHT、SBOOK</div>
+  </div>
+
+  <h3 id="ch05-10-01">1. 課程定位與教材對照</h3>
+  <p><b>BC412：ABAP Dialog Programming Using Enjoy SAP Controls</b>，屬於 SAP ABAP Workbench 課程體系中的<b>進階（300 級）</b>課程，前置課程是 <a href="#ch05-1">5-1 章 BC400</a>、<a href="#ch05-2">5-2 章 BC401 ABAP Objects</a>、<a href="#ch05-9">5-9 章 BC410 Dynpro</a>。本專區只有强晟 2007 年的中文自學筆記（共 300 頁，依原廠教材逐頁整理），<b>沒有英文原廠 BC412 教材</b>，因此下表只列筆記頁碼。筆記附錄提到原廠教材另有「40 多頁全域類別原始碼」，强晟沒有抄錄，本章也無從對照。</p>
+  <table>
+    <thead><tr><th>單元</th><th>主題</th><th>課（Lesson）</th><th>强晟筆記頁碼</th><th>本章小節</th></tr></thead>
+    <tbody>
+      <tr><td>第 1 單元</td><td>課程概覽</td><td>課程目標</td><td>p1–p5</td><td>本節</td></tr>
+      <tr><td>第 2 單元</td><td>介紹 Enjoy SAP 控制項</td><td>在簡單報表中放一個 ALV Grid</td><td>p6–p8</td><td>2</td></tr>
+      <tr><td rowspan="5">第 3 單元</td><td rowspan="5">控制框架基礎</td><td>L1 概覽（CFW 架構、類別階層）</td><td>p9–p18</td><td>3</td></tr>
+      <tr><td>L2 控制項與畫面</td><td>p19–p37</td><td>4</td></tr>
+      <tr><td>L3 修改控制項屬性（Picture／HTML Viewer）</td><td>p38–p53</td><td>5</td></tr>
+      <tr><td>L4 Automation Queue</td><td>p54–p63</td><td>6</td></tr>
+      <tr><td>L5 控制項事件</td><td>p64–p91</td><td>7</td></tr>
+      <tr><td>第 4 單元</td><td>SAP 容器</td><td>L1 概念／L2 Custom／L3 Dialogbox／L4 Docking／L5 Splitter／L6 Easy Splitter</td><td>p92–p122</td><td>8</td></tr>
+      <tr><td>第 5 單元</td><td>上下文選單（Context Menu）</td><td>—</td><td>p123–p131</td><td>9</td></tr>
+      <tr><td>第 6 單元</td><td>文字編輯控制項（TextEdit）</td><td>L1 介紹／L2 資料傳輸／L3 處理文字／L4 上下文選單</td><td>p132–p146</td><td>10</td></tr>
+      <tr><td rowspan="3">第 7 單元</td><td rowspan="3">SAP Grid 控制項（ALV Grid）</td><td>L1 介紹、L2 傳輸資料與附加資訊</td><td>p147–p169</td><td>11</td></tr>
+      <tr><td>L3 改寫 Grid 版面（Field Catalog）</td><td>p170–p191</td><td>12</td></tr>
+      <tr><td>L4 事件</td><td>p192–p198</td><td>13</td></tr>
+      <tr><td rowspan="2">第 8 單元</td><td rowspan="2">樹控制項（Tree）</td><td>L1 簡介、L2 建立實例、L3 建立階層</td><td>p199–p229</td><td>14</td></tr>
+      <tr><td>L4 樹模型附加功能、L5 事件、L6 列樹與列表樹</td><td>p230–p256</td><td>15</td></tr>
+      <tr><td>第 9 單元</td><td>拖放功能（Drag &amp; Drop）</td><td>—</td><td>p257–p284</td><td>16</td></tr>
+      <tr><td>第 10 單元</td><td>在複雜使用者對話中整合不同控制項</td><td>綜合案例</td><td>p285–p298</td><td>17</td></tr>
+      <tr><td>附錄／後記</td><td>BC412 使用的全域類別（筆記未抄錄）</td><td>—</td><td>p299–p300</td><td>18（S/4HANA 現況）</td></tr>
+    </tbody>
+  </table>
+  <p><b>2007 版與現在的差異</b>：</p>
+  <ul>
+    <li>筆記以 R/3 4.6C～ECC 5.0/6.0、SAP GUI 6.40 為背景，程式碼全是 <span class="kw">CALL METHOD</span>、<span class="kw">TYPE-POOLS</span>、<span class="kw">CATCH SYSTEM-EXCEPTIONS</span>、<span class="kw">CONCATENATE</span> 的舊寫法；本章一律改成 7.52 的函數式方法呼叫、<span class="kw">NEW #( )</span>、<span class="kw">VALUE #( )</span>、<span class="kw">TRY … CATCH</span>。</li>
+    <li>控制項本身（CL_GUI_* 類別）在 S/4HANA 仍然存在且可用，但只活在 <b>SAP GUI（Windows／Java／HTML）</b>裡；ABAP Cloud（Steampunk、Public Cloud）沒有釋出任何 CL_GUI_* 類別。</li>
+    <li>筆記說 HTML Viewer「在 Windows 上使用 IE 瀏覽器元件」——SAP GUI 7.70 起已可改用 Edge（WebView2）作為瀏覽器控制項，IE 元件已退場，這段敘述已過時。</li>
+    <li>筆記沒有 CL_SALV_TABLE（2004 年後才普及）與 CL_GUI_ALV_TREE／CL_SALV_TREE；本章在相關處補上。</li>
+  </ul>
+  <div class="tip">學習順序建議：先讀 <a href="#ch03-2">3-2 章</a> 把一支 OOALV 跑起來，再讀本章第 3～7 節理解 CFW 的底層，最後依需要挑讀容器、TextEdit、Tree、拖放。原廠示範程式可用 <span class="tcode">DWDM</span>（Enjoy Demo Center，對應筆記說的「環境 → 範例 → 控制項範例」）以及套件 <b>SLIS</b>（BCALV_* 系列）、<b>SEU_TREE_MODEL</b>、<b>SEU_TREE_CONTROL</b> 找到。</div>
+
+  <h3 id="ch05-10-02">2. 介紹 Enjoy SAP 控制項：最小可跑的 ALV Grid</h3>
+  <p>Basis 4.6A 起，ABAP Workbench 提供一批 <b>Enjoy SAP 控制項</b>，把對話功能從應用伺服器「搬」到展示層（SAP GUI）。每個控制項在 ABAP 端都有一個全域類別（前綴 <span class="kw">CL_GUI_</span>），程式透過<b>方法呼叫</b>指揮控制項，展示層上的使用者動作則以<b>事件</b>回報給 ABAP 程式。強晟在前言點出本課最重要的一句：<b>這些控制項在 Screen Painter 裡沒有，只能用程式碼加到畫面上。</b></p>
+  <p>原課程第 2 單元用一張圖說明實作 ALV Grid 的三件事：① Screen Painter 畫一個 <b>Custom Control 區域</b>（例：CCA1）；② PBO 裡建立 <b>Custom Container</b> 並綁到這個區域；③ 建立 <b>ALV Grid</b> 並以容器為 parent，呼叫 <span class="kw">set_table_for_first_display</span> 傳資料。</p>
+  <pre><code class="abap">*&amp;---------------------------------------------------------------*
+*&amp; ZBC412_GRID_FIRST：第 2 單元的最小 ALV Grid（S/4HANA 寫法）
+*&amp; 畫面 0100：Custom Control 區域名稱 CCA1、OK_CODE 欄位 OK_CODE
+*&amp;---------------------------------------------------------------*
+REPORT zbc412_grid_first.
+
+DATA go_container TYPE REF TO cl_gui_custom_container.
+DATA go_alv       TYPE REF TO cl_gui_alv_grid.
+DATA gt_spfli     TYPE STANDARD TABLE OF spfli WITH EMPTY KEY.
+DATA ok_code      TYPE sy-ucomm.
+
+START-OF-SELECTION.
+  SELECT carrid, connid, countryfr, cityfrom, airpfrom,
+         countryto, cityto, airpto, fltime, deptime, arrtime,
+         distance, distid, fltype, period
+    FROM spfli
+    ORDER BY carrid, connid                "HANA 沒有預設排序，顯示順序要自己保證
+    INTO CORRESPONDING FIELDS OF TABLE @gt_spfli.
+  CALL SCREEN 100.
+
+MODULE status_0100 OUTPUT.
+  SET PF-STATUS 'S100'.
+  SET TITLEBAR  'T100'.
+  IF go_container IS NOT BOUND.            "只在第一次 PBO 建立
+    go_container = NEW #( container_name = 'CCA1' ).
+    go_alv       = NEW #( i_parent = go_container ).
+    go_alv-&gt;set_table_for_first_display(
+      EXPORTING i_structure_name = 'SPFLI'
+      CHANGING  it_outtab        = gt_spfli ).
+  ENDIF.
+ENDMODULE.
+
+MODULE user_command_0100 INPUT.
+  CASE ok_code.
+    WHEN 'BACK' OR 'EXIT' OR 'CANC'.
+      LEAVE TO SCREEN 0.
+  ENDCASE.
+  CLEAR ok_code.
+ENDMODULE.</code></pre>
+  <pre><code class="abap">* 畫面 0100 的 Flow Logic（SE51 → Flow Logic 頁籤）
+PROCESS BEFORE OUTPUT.
+  MODULE status_0100.
+
+PROCESS AFTER INPUT.
+  MODULE user_command_0100.</code></pre>
+  <div class="warn"><b>教材錯字</b>：筆記 p8 把類別寫成 <span class="kw">cl_gui_cutom_container</span>，正確是 <b>CL_GUI_CUSTOM_CONTAINER</b>。另外，用 <span class="kw">NEW #( )</span> 建立控制項時，若建構子拋出<b>傳統例外</b>（cntl_error、create_error…），因為 NEW 無法接 EXCEPTIONS，會直接短傾（ST22）；需要優雅處理的地方請改用下一節的 <span class="kw">CREATE OBJECT … EXCEPTIONS</span>。</div>
+  <div class="note">只是要「顯示一張表」而不需要編輯、不需要跟其他控制項互動時，先想 <b>CL_SALV_TABLE</b>（<a href="#ch02-3">2-3 章</a>）——連畫面都不用畫。這是 Casper 的第三條原則「<b>先找標準，再想客製</b>」在 UI 層的版本：SALV → CL_GUI_ALV_GRID → 自組多控制項畫面，每往右一步，維護成本高一級。</div>
+
+  <h3 id="ch05-10-03">3. 控制框架（CFW）架構：代理物件、兩個世界、類別階層</h3>
+  <p>SAP GUI 的使用者對話原本以「畫面（Dynpro）」為單位：ABAP 行程與畫面行程透過 SAP GUI 的服務（視窗管理、對話層級、資料傳輸）溝通，<b>畫面總是以一個整體單元傳輸</b>。R/3 4.5 起可在 SAP GUI 視窗中使用圖形元素（控制項）；<b>4.6A 起，所有控制項的通訊通道統一為 SAP Control Framework（CFW）</b>。</p>
+  <ul>
+    <li><b>CFW 由兩個服務組成</b>：應用伺服器上 runtime system 的 <b>CFW 服務</b>，以及 SAP GUI 上的 <b>Automation Controller（自動化控制器）</b>。</li>
+    <li>CFW 維護三份資料：① 所有需要通訊的控制項實例清單；② <b>Automation Queue（自動化佇列）</b>；③ 應用程式要處理的控制項事件清單。</li>
+    <li>控制項安裝在展示層，可以是 <b>ActiveX</b>（Windows）或 <b>Java Beans</b>（SAP GUI for Java）；Automation Controller 透過 OLE 或 Java 介面跟它們溝通，兩者之間走 <b>GUI RFC</b>。</li>
+    <li>CFW 的目標：<b>最佳化控制項與應用程式之間的通訊</b>（少來回、批次送）。</li>
+  </ul>
+  <p><b>控制項與 ABAP 物件——兩個世界、四個實例</b>：用一個控制項時，實際上有兩個物件：ABAP 程式裡的<b>代理物件（Proxy，也稱 Control Wrapper）</b>，以及展示層上的<b>控制項實例</b>。ABAP 程式<b>永遠只跟代理物件說話</b>（呼叫方法、設定／讀取屬性），代理物件再透過 CFW 在展示層執行；展示層傳來的動作，CFW 會定位到對應的代理物件，再由它通知 ABAP 程式。加上容器也是一個控制項，所以「一個 ALV 放在一個容器裡」實際是 <b>ABAP 端 2 個 ＋ 展示層 2 個 ＝ 4 個實例</b>。</p>
+  <table>
+    <thead><tr><th>類別</th><th>角色</th></tr></thead>
+    <tbody>
+      <tr><td>CL_GUI_OBJECT</td><td>所有代理類別的根；提供 <span class="kw">free</span> 等共用方法</td></tr>
+      <tr><td>CL_GUI_CONTROL</td><td>控制項共同父類別；<span class="kw">set_registered_events</span>、<span class="kw">set_visible</span> 等</td></tr>
+      <tr><td>CL_GUI_CONTAINER</td><td>容器共同父類別；所有 CL_GUI_*_CONTAINER 都由此衍生，是「有特殊功能的控制項包裝者」</td></tr>
+      <tr><td>CL_GUI_CFW</td><td>服務類別：<span class="kw">flush</span>、<span class="kw">dispatch</span>、<span class="kw">set_new_ok_code</span>、<span class="kw">get_living_dynpro_controls</span>…可直接在程式中呼叫</td></tr>
+      <tr><td>CL_GUI_PICTURE、CL_GUI_HTML_VIEWER、CL_GUI_TEXTEDIT、CL_GUI_ALV_GRID、CL_GUI_TOOLBAR、CL_GUI_SIMPLE_TREE…</td><td>各控制項的代理類別</td></tr>
+    </tbody>
+  </table>
+  <div class="tip">要看繼承階層，在 <span class="tcode">SE24</span> 開類別後按「類別瀏覽器／Superclass」，或在 <span class="tcode">SE80</span> 的類別樹展開。實務上最常見的誤會是想直接實例化父類別（例如 CL_GUI_ALV_GRID_BASE）——<b>永遠實例化最底層的具體類別</b>，筆記 p157 也特別強調。</div>
+
+  <h3 id="ch05-10-04">4. 控制項與畫面：Custom Control 區域、容器、LIFETIME、只建立一次</h3>
+  <p>控制項不能單獨存在於展示層，<b>必須有一個畫面和一個容器</b>：畫面上保留一塊區域（就像子畫面區域），程式把 <span class="kw">CL_GUI_CUSTOM_CONTAINER</span> 的實例指派到這塊區域，再把要顯示的控制項放進容器。前兩步讓控制項融入一般的畫面處理（PBO、PAI、視窗縮放）。</p>
+  <p><b>建立 Custom Control 區域</b> <span class="src">（依講義步驟整理）</span>：<span class="tcode">SE51</span> → Layout（圖形化版面編輯器）→ 左側元素工具列點「Custom Control」→ 在畫面上按住左鍵拖出區域 → 命名（例：CONTROL_AREA1）。屬性「<b>Resizing Vertical／Horizontal</b>」讓區域隨視窗縮放，並可用「<b>Min. Lines／Min. Columns</b>」設定最小尺寸；<b>最大尺寸就是畫的時候的大小</b>。</p>
+  <p><b>LIFETIME 參數</b>（容器建構子的選填參數）三選一：</p>
+  <table>
+    <thead><tr><th>常數</th><th>意義</th></tr></thead>
+    <tbody>
+      <tr><td>cl_gui_container=&gt;lifetime_imode</td><td>只要內部階段（internal session）還開著、沒執行 <span class="kw">LEAVE PROGRAM</span>，控制項就活著</td></tr>
+      <tr><td>cl_gui_container=&gt;lifetime_dynpro</td><td>跟畫面實例同生死（留在畫面堆疊中就活著）；<b>也控制可見性</b>——只在建立它的畫面啟用時顯示</td></tr>
+      <tr><td>cl_gui_container=&gt;lifetime_default</td><td>沿用容器的生存期；若本身就是容器（沒有上層容器），則視為 lifetime_imode</td></tr>
+    </tbody>
+  </table>
+  <p><b>確保控制項只建立一次</b>——這是本單元最重要的觀念。容器畫面的下一個畫面通常是自己，每按一次 Enter 都會 PAI → PBO 再跑一次；若每次 PBO 都 <span class="kw">CREATE OBJECT</span>，就會不斷把<b>新實例</b>接到畫面上，PAI 對舊實例呼叫的方法結果永遠看不到。筆記用 <span class="kw">IF my_container IS INITIAL</span> 當開關，現代寫法用 <span class="kw">IS NOT BOUND</span>。</p>
+  <pre><code class="abap">*&amp;---------------------------------------------------------------*
+*&amp; 建立容器與 HTML Viewer：用 CREATE OBJECT 接住傳統例外
+*&amp;---------------------------------------------------------------*
+DATA go_container TYPE REF TO cl_gui_custom_container.
+DATA go_html      TYPE REF TO cl_gui_html_viewer.
+
+MODULE init_control_processing OUTPUT.
+  CHECK go_container IS NOT BOUND.         "只建立一次（取代筆記的 first_time 旗標）
+
+  CREATE OBJECT go_container
+    EXPORTING
+      container_name              = 'CONTROL_AREA1'
+      lifetime                    = cl_gui_container=&gt;lifetime_dynpro
+    EXCEPTIONS
+      cntl_error                  = 1
+      cntl_system_error           = 2
+      create_error                = 3
+      lifetime_error              = 4
+      lifetime_dynpro_dynpro_link = 5
+      OTHERS                      = 6.
+  IF sy-subrc &lt;&gt; 0.
+    MESSAGE |容器建立失敗（sy-subrc = { sy-subrc }），請檢查 SAP GUI 安裝| TYPE 'A'.
+  ENDIF.
+
+  CREATE OBJECT go_html
+    EXPORTING
+      parent = go_container                "控制項一律以容器為 parent
+    EXCEPTIONS
+      cntl_error = 1
+      OTHERS     = 2.
+  IF sy-subrc &lt;&gt; 0.
+    MESSAGE 'HTML Viewer 建立失敗' TYPE 'A'.  "講義：控制項建立失敗用 A 型訊息終止
+  ENDIF.
+ENDMODULE.</code></pre>
+  <div class="note"><b>CREATE OBJECT 與 NEW 的選擇</b>：筆記花了好幾頁解釋 <span class="kw">DATA … TYPE REF TO</span>、<span class="kw">CREATE OBJECT</span>、建構子只能有 IMPORTING 參數與 EXCEPTIONS（BC401 的內容，詳見 <a href="#ch05-2">5-2 章</a>）。7.40 以後一般物件用 <span class="kw">NEW #( )</span>；但 CL_GUI_* 的建構子大多宣告了<b>傳統例外</b>，要處理就只能用 CREATE OBJECT 的 EXCEPTIONS 子句——這不是舊語法，而是正確的選擇。</div>
+  <div class="warn">到這一步畫面上<b>還是一片空白</b>——控制項建好了但沒有內容。筆記 p37 特別提醒：還需要把可顯示的資料（URL、內表）交給控制項，下一節處理。</div>
+
+  <h3 id="ch05-10-05">5. Picture 與 HTML Viewer：URL、資料提供者、顯示模式、釋放資源</h3>
+  <p>SAP 圖片控制項（<span class="kw">CL_GUI_PICTURE</span>）與 HTML 瀏覽器（<span class="kw">CL_GUI_HTML_VIEWER</span>）都用 <b>URL</b> 指向要顯示的資料。URL 在 ABAP 裡就是字元變數。資料來源分兩類：</p>
+  <table>
+    <thead><tr><th>來源</th><th>存放位置</th><th>怎麼變成 URL</th></tr></thead>
+    <tbody>
+      <tr><td>外部</td><td>本機檔案、網路共用、HTTP、FTP</td><td>直接寫 URL，控制項<b>自己</b>去讀（與應用伺服器無關）。格式：<span class="kw">服務://主機.網域:埠/目錄/檔名</span>，如 file://c:/public/pictures/logo.gif、http://www.sap.com/index.html</td></tr>
+      <tr><td>SAP Web Repository</td><td><span class="tcode">SMW0</span>（工具 → Web 開發 → Web Repository）</td><td>HTML Viewer 的 <span class="kw">load_html_document</span>／<span class="kw">load_mime_object</span>；Picture 用函數 <span class="kw">DP_PUBLISH_WWW_URL</span></td></tr>
+      <tr><td>Business Document Server（BDS）</td><td><span class="tcode">OAWD</span>（辦公室 → 業務文件）</td><td>CL_BDS_DOCUMENT_SET 的 <span class="kw">get_with_url</span></td></tr>
+      <tr><td>資料庫叢集表／內表</td><td>先讀進內表</td><td>函數 <span class="kw">DP_CREATE_URL</span>（或 HTML Viewer 的 <span class="kw">load_data</span>）送到<b>資料提供者（Data Provider）</b>，它回傳一個 URL</td></tr>
+    </tbody>
+  </table>
+  <p><b>資料提供者</b>是 SAP GUI 裡的一個控制項：資料送給它後在本機管理，並回傳指向這份資料的 URL；圖片與 HTML 控制項用這個 URL 存取時，它的表現就跟外部資料源一樣。</p>
+  <p><b>HTML Viewer 顯示資料的方法</b>（通常要呼叫兩個）：外部來源 <span class="kw">show_url</span>／<span class="kw">show_url_in_browser</span>；SMW0 <span class="kw">load_html_document</span>／<span class="kw">load_mime_object</span>；資料提供者 <span class="kw">load_data</span> ＋ <span class="kw">show_data</span>（或 show_url）。<b>Picture 的方法</b>：<span class="kw">load_picture_from_url</span>（GIF、JPG、BMP）、顯示 SAP 圖示用 <span class="kw">load_picture_from_sap_icons</span>（筆記寫成單數 _icon）、清除用 <span class="kw">clear_picture</span>、外觀用 <span class="kw">set_3d_border</span>、<span class="kw">set_display_mode</span>。</p>
+  <table>
+    <thead><tr><th>顯示模式常數（CL_GUI_PICTURE=&gt;…）</th><th>效果</th></tr></thead>
+    <tbody>
+      <tr><td>display_mode_normal</td><td>原尺寸；大於區域自動出捲軸，小於則留白</td></tr>
+      <tr><td>display_mode_normal_center</td><td>原尺寸、置中</td></tr>
+      <tr><td>display_mode_stretch</td><td>拉伸填滿整個區域（會變形）</td></tr>
+      <tr><td>display_mode_fit</td><td>縮放到區域內、<b>保持長寬比</b>（不變形）</td></tr>
+      <tr><td>display_mode_fit_center</td><td>同 fit，再置中</td></tr>
+    </tbody>
+  </table>
+  <pre><code class="abap">*&amp;---------------------------------------------------------------*
+*&amp; Picture：從 SMW0 顯示公司 Logo；HTML Viewer：把內表 HTML 送出
+*&amp;---------------------------------------------------------------*
+DATA go_pic  TYPE REF TO cl_gui_picture.
+DATA go_html TYPE REF TO cl_gui_html_viewer.
+
+METHOD show_logo.                               "在本地類別 lcl_app 中
+  DATA lv_url TYPE cndp_url.
+  go_pic = NEW #( parent = io_container ).
+
+  " SMW0 的二進位物件 ZLOGO 發佈到資料提供者，取得 URL
+  CALL FUNCTION 'DP_PUBLISH_WWW_URL'
+    EXPORTING
+      objid    = 'ZLOGO'
+      lifetime = cndp_lifetime_transaction
+    IMPORTING
+      url      = lv_url
+    EXCEPTIONS
+      OTHERS   = 1.
+  IF sy-subrc &lt;&gt; 0.
+    RETURN.
+  ENDIF.
+
+  go_pic-&gt;load_picture_from_url( EXPORTING  url    = lv_url
+                                 EXCEPTIONS error  = 1
+                                            OTHERS = 2 ).
+  go_pic-&gt;set_display_mode( display_mode = cl_gui_picture=&gt;display_mode_fit_center ).
+ENDMETHOD.
+
+METHOD show_html.
+  DATA lt_html TYPE STANDARD TABLE OF w3html WITH EMPTY KEY.
+  DATA lv_url  TYPE c LENGTH 250.
+  go_html = NEW #( parent = io_container ).
+
+  lt_html = VALUE #(
+    ( line = `&lt;html&gt;&lt;body&gt;&lt;h3&gt;BC412 Demo&lt;/h3&gt;` )
+    ( line = |&lt;p&gt;使用者：{ sy-uname }，日期：{ sy-datum DATE = USER }&lt;/p&gt;| )
+    ( line = `&lt;a href="SAPEVENT:SHOW_FLIGHT?CARRID=LH"&gt;看 LH 航班&lt;/a&gt;` )
+    ( line = `&lt;/body&gt;&lt;/html&gt;` ) ).
+
+  go_html-&gt;load_data( IMPORTING assigned_url = lv_url
+                      CHANGING  data_table   = lt_html ).
+  go_html-&gt;show_url( url = lv_url ).
+ENDMETHOD.
+
+METHOD cleanup.                                 "離開畫面前釋放前端資源
+  IF go_pic IS BOUND.
+    go_pic-&gt;free( ).
+    FREE go_pic.                                "再清掉代理物件參照，交給垃圾回收
+  ENDIF.
+ENDMETHOD.</code></pre>
+  <div class="note"><b>讀屬性可以，改屬性不行</b>：代理物件的公開實例屬性（如 <span class="kw">display_mode</span>）可以用 <span class="kw">go_pic-&gt;display_mode</span> 讀，但<b>不要直接改</b>——修改不會傳到展示層。一律用包裝方法（set_display_mode）。筆記 p47 有一句「傳遞要顯示圖片的 URL（從資料提供者返回）」寫了兩遍，强晟自己也納悶，其實是原文把「內部來源（資料提供者回傳的 URL）」與「外部來源（直接給 URL）」兩種情況翻成了同一句。</div>
+  <div class="warn"><b>釋放資源</b>：<span class="kw">free( )</span> 繼承自 CL_GUI_OBJECT，釋放<b>展示層</b>資源；<span class="kw">CLEAR</span>／<span class="kw">FREE</span> 參照變數則讓<b>應用伺服器</b>上的代理物件在下次垃圾回收時釋放。兩件事都要做，否則長時間開著的交易會越來越慢（詳見 <a href="#ch03-2-14">3-2 章第 14 節</a>）。HTML Viewer 在 S/4HANA 搭配 SAP GUI 7.70+ 時可選 Edge（WebView2），舊的 IE 相依 HTML 內容（ActiveX、舊版 JavaScript）要重新測試。</div>
+
+  <h3 id="ch05-10-06">6. Automation Queue 與 flush：效能與除錯的關鍵</h3>
+  <p>每次跟展示層控制項溝通都要走網路，而且跟一般畫面元素的傳輸是分開的。為了效能，<b>代理物件上的方法呼叫與屬性讀取都先緩衝在 Automation Queue</b>，直到同步點才一次送到前端（稱為 <b>flush</b>），前端收集到的回傳值也在同一步傳回。整個 CFW 只有<b>一個</b>自動化佇列，flush 時所有控制項的操作一起送出。</p>
+  <ul>
+    <li><b>自動 flush</b>：畫面 PBO 結束時由 runtime 自動 flush。有子畫面時，只在<b>最上層主畫面</b>的 PBO 結束後 flush 一次（巢狀子畫面亦同）。</li>
+    <li><b>相依呼叫要手動 flush</b>：第二個方法需要第一個方法的結果時，中間必須 <span class="kw">cl_gui_cfw=&gt;flush( )</span>；否則讀回的變數還是空的。</li>
+    <li><b>不必每次都 flush</b>：若查詢的值已在佇列中（方法 A 設了屬性 a1=v1，方法 B 要讀 a1），CFW 直接從佇列回答，不必跟前端通訊。只在絕對需要時才 flush。</li>
+    <li><b>控制項之間搬資料</b>：「先從控制項 1 讀、再寫到控制項 2」放在同一個佇列裡，複製會直接在前端完成，不必經過應用伺服器。大量資料交換時一定要這樣做。</li>
+    <li>佇列為空時 flush 不會產生任何來回。</li>
+  </ul>
+  <p>筆記舉的例子很有畫面感：衛星連線下每次來回 0.5 秒，一個畫面 10 次來回就要等 5 秒以上。<b>PAI 的建議結構</b>：先把所有控制項的屬性<b>一次讀完</b> → flush 一次 → 再一次設定所有屬性 → 交給 PBO 結束時的自動 flush。對照「讀 1 → flush → 設 1 → flush → 讀 2 → flush → 設 2 → flush」的寫法，前者只要兩次同步。</p>
+  <pre><code class="abap">*&amp;---------------------------------------------------------------*
+*&amp; PAI：兩個 TextEdit 先讀完 → flush 一次 → 再處理
+*&amp;---------------------------------------------------------------*
+MODULE user_command_0100 INPUT.
+  DATA lt_note1 TYPE STANDARD TABLE OF tdline WITH EMPTY KEY.
+  DATA lt_note2 TYPE STANDARD TABLE OF tdline WITH EMPTY KEY.
+
+  " ① 讀取：這兩行只是排進佇列，此刻 lt_note1 / lt_note2 仍是空的
+  go_edit1-&gt;get_text_as_r3table( IMPORTING table = lt_note1 EXCEPTIONS OTHERS = 1 ).
+  go_edit2-&gt;get_text_as_r3table( IMPORTING table = lt_note2 EXCEPTIONS OTHERS = 1 ).
+
+  " ② 同步點：一次來回把兩份結果帶回來
+  cl_gui_cfw=&gt;flush( EXCEPTIONS cntl_system_error = 1
+                                cntl_error        = 2
+                                OTHERS            = 3 ).
+  IF sy-subrc &lt;&gt; 0.
+    MESSAGE |前端同步失敗（{ sy-subrc }），請洽管理員檢查 SAP GUI| TYPE 'A'.
+  ENDIF.
+
+  " ③ 現在才能用結果做判斷，設定類的呼叫交給 PBO 結束時自動 flush
+  IF lt_note1 IS INITIAL AND lt_note2 IS INITIAL.
+    go_edit1-&gt;set_readonly_mode( readonly_mode = cl_gui_textedit=&gt;false ).
+  ENDIF.
+  CLEAR ok_code.
+ENDMODULE.</code></pre>
+  <div class="warn"><b>例外在哪裡爆？</b> 方法呼叫只是排隊，真正的前端錯誤要到 flush 時才發生；佇列處理中任何一步出錯，<b>整個佇列中止</b>並在 flush 拋出例外。所以 <span class="kw">cl_gui_cfw=&gt;flush</span> 的 EXCEPTIONS <b>一定要接</b>。控制項沒裝好時，每次 flush 都會失敗——此時用 A 或 X 型訊息徹底終止，交給管理員修前端安裝。</div>
+  <div class="tip"><b>除錯兩招</b>：① ABAP 除錯器設定勾選「<b>Automation Controller：總是同步處理請求</b>」，每個方法呼叫後都自動 flush，錯誤會停在真正出錯那一行；確認後再在適當位置補 flush 與 sy-subrc 檢查。② SAP GUI 選項的 Trace 勾選 <b>Automation</b>，所有自動化呼叫與參數寫進 trace 檔，錯誤以 HRESULT 記錄；還能數出每個 PBO/PAI 有幾次同步，刪掉多餘的 flush。注意 trace 裡看到的是前端的自動化方法名，跟 ABAP 方法名不同，一個 ABAP 方法可能對應多個自動化呼叫。</div>
+
+  <h3 id="ch05-10-07">7. 控制項事件：事件過濾、系統事件與應用事件、dispatch</h3>
+  <p>展示層控制項觸發的事件，經過好幾層才到 ABAP：<b>控制項 → SAP GUI 的 Automation Controller（以特殊功能碼＋附加資料送出）→ Basis 的 CFW 服務 → ABAP 代理物件 → 以 ABAP Objects 的 RAISE EVENT 通知已註冊的處理方法</b>。每一層都有必要設定：</p>
+  <ol>
+    <li><b>ABAP 端</b>：寫事件處理方法（<span class="kw">METHODS on_xxx FOR EVENT xxx OF cl_gui_…</span>），並用 <span class="kw">SET HANDLER</span> 把它和觸發物件連起來。命名慣例 <span class="kw">on_&lt;事件名&gt;</span>；處理方法的參數只能取自事件宣告，<b>不必全收</b>；每個實例事件都有隱含參數 <span class="kw">SENDER</span>，可以知道是誰觸發的。</li>
+    <li><b>前端過濾器</b>：Automation Controller 是事件過濾器，<b>初始狀態一個事件都不傳</b>。要處理哪些事件，必須把事件 ID 填進 <span class="kw">CNTL_SIMPLE_EVENTS</span> 內表（欄位 EVENTID、APPL_EVENT），用 <span class="kw">set_registered_events</span> 送給代理物件，下次 flush 時送到前端。</li>
+  </ol>
+  <p><b>事件 ID 常數</b>在各控制項類別的屬性裡找（SE24 → 屬性頁籤）。筆記吐槽：Picture 叫 <span class="kw">eventid_picture_click</span>，HTML Viewer 卻叫 <span class="kw">m_id_sapevent</span>——SAP 早期命名不統一，用之前一定要去類別裡確認。<b>ALV Grid 例外</b>：它的代理物件會自己向 CFW 註冊事件，程式只要 SET HANDLER 即可。</p>
+  <table>
+    <thead><tr><th></th><th>系統事件（System Event，預設）</th><th>應用事件（Application Event，APPL_EVENT = 'X'）</th></tr></thead>
+    <tbody>
+      <tr><td>觸發 PAI？</td><td><b>不觸發</b>；Basis 服務直接通知代理物件</td><td>控制權回到容器畫面，<b>觸發 PAI</b></td></tr>
+      <tr><td>畫面欄位</td><td>不會傳回程式（只活在 OO 世界裡）</td><td>PAI 開頭照常從畫面傳到程式</td></tr>
+      <tr><td>處理方法何時執行</td><td>立即</td><td>PAI 結束時由 CFW 自動呼叫 <span class="kw">cl_gui_cfw=&gt;dispatch</span>；也可在 PAI 中<b>提前手動 dispatch</b></td></tr>
+      <tr><td>想回到 PAI</td><td>在處理方法裡呼叫 <span class="kw">cl_gui_cfw=&gt;set_new_ok_code</span>，處理完會以新功能碼觸發 PAI（此時事件處理<b>早於</b>欄位傳輸）</td><td>—</td></tr>
+    </tbody>
+  </table>
+  <pre><code class="abap">*&amp;---------------------------------------------------------------*
+*&amp; Picture 事件：處理類別 + 前端過濾器 + 應用事件 + dispatch
+*&amp;---------------------------------------------------------------*
+CLASS lcl_handler DEFINITION.
+  PUBLIC SECTION.
+    CLASS-METHODS on_picture_click
+      FOR EVENT picture_click OF cl_gui_picture
+      IMPORTING mouse_pos_x mouse_pos_y sender.
+    CLASS-METHODS on_sapevent
+      FOR EVENT sapevent OF cl_gui_html_viewer
+      IMPORTING action getdata.
+ENDCLASS.
+
+CLASS lcl_handler IMPLEMENTATION.
+  METHOD on_picture_click.
+    MESSAGE |點在圖片座標 X={ mouse_pos_x }、Y={ mouse_pos_y }| TYPE 'I'.
+  ENDMETHOD.
+  METHOD on_sapevent.
+    " HTML 裡的 &lt;a href="SAPEVENT:SHOW_FLIGHT?CARRID=LH"&gt; 會觸發本事件
+    IF action = 'SHOW_FLIGHT'.
+      cl_gui_cfw=&gt;set_new_ok_code( new_code = 'SHOW' ).  "系統事件 → 主動回到 PAI
+    ENDIF.
+  ENDMETHOD.
+ENDCLASS.
+
+MODULE init_events OUTPUT.
+  CHECK gv_events_done = abap_false.
+  " ① 前端過濾器：7.02 起不必再寫 TYPE-POOLS cntl
+  go_pic-&gt;set_registered_events(
+    EXPORTING  events = VALUE cntl_simple_events(
+                 ( eventid = cl_gui_picture=&gt;eventid_picture_click
+                   appl_event = abap_true ) )        "登記為應用事件
+    EXCEPTIONS OTHERS = 1 ).
+  go_html-&gt;set_registered_events(
+    events = VALUE #( ( eventid = cl_gui_html_viewer=&gt;m_id_sapevent ) ) ).
+  " ② ABAP 端的 SET HANDLER
+  SET HANDLER lcl_handler=&gt;on_picture_click FOR go_pic.
+  SET HANDLER lcl_handler=&gt;on_sapevent      FOR go_html.
+  gv_events_done = abap_true.
+ENDMODULE.
+
+MODULE user_command_0100 INPUT.
+  " 先做畫面欄位檢查，再處理應用事件（dispatch 放在檢查之後）
+  cl_gui_cfw=&gt;dispatch( ).
+  CASE ok_code.
+    WHEN 'SHOW'.  "…
+  ENDCASE.
+  CLEAR ok_code.
+ENDMODULE.</code></pre>
+  <div class="warn"><b>筆記強調的四個坑</b>：① <b>單擊與雙擊不能同時用</b>——單擊總是先觸發，第二個事件在傳到應用伺服器時會遺失。② 應用事件若在檢查模組（<span class="kw">FIELD … MODULE</span>）<b>之前</b> dispatch，就不能依賴畫面欄位值；想先檢查就把 dispatch 放在檢查之後（或交給 PAI 結束時自動 dispatch）。③ 檢查模組發出 E／W 訊息，使用者改完輸入後又按了別的功能碼，<b>新功能碼會覆蓋原本的控制項事件</b>，之後 dispatch 什麼都不會發生（若新功能來自畫面按鈕或選單，原事件不會遺失）。④ 註冊前端過濾器也要放在「只做一次」的保護裡。</div>
+  <div class="note">Picture 控制項的事件：<span class="kw">picture_click</span>、<span class="kw">picture_dblclick</span>（點在圖片／圖示上）、<span class="kw">control_click</span>、<span class="kw">control_dblclick</span>（點在區域空白處）、<span class="kw">context_menu</span>／<span class="kw">context_menu_selected</span>、拖放的 <span class="kw">ondrag</span>／<span class="kw">ondrop</span>／<span class="kw">ondropcomplete</span>／<span class="kw">ongetflavor</span>。HTML Viewer 有四個：<span class="kw">navigate_complete</span>（頁面完全載入，回傳 URL）、<span class="kw">sapevent</span>（HTML 中 <span class="kw">sapevent:&lt;action&gt;?&lt;data&gt;</span>）、<span class="kw">ctxmenu_request</span>、<span class="kw">ctxmenu_selected</span>。</div>
+
+  <h3 id="ch05-10-08">8. SAP 容器全家族：Custom／Dialogbox／Docking／Splitter／Easy Splitter</h3>
+  <p>容器是「能裝其他控制項的控制項」，負責跟畫面溝通；容器本身也是控制項，所以<b>可以巢狀</b>；放在容器裡的控制項通常跟容器一樣大。所有容器都繼承 CL_GUI_CONTROL → CL_GUI_CONTAINER，介面統一。</p>
+  <table>
+    <thead><tr><th>容器類別</th><th>依附對象</th><th>重點參數／方法</th><th>適用情境</th></tr></thead>
+    <tbody>
+      <tr><td>CL_GUI_CUSTOM_CONTAINER</td><td>畫面上的 Custom Control 區域</td><td>container_name（必填）、parent、repid、dynnr、lifetime；<span class="kw">link</span> 重新連結</td><td>最常用；版面由 SE51 決定</td></tr>
+      <tr><td>CL_GUI_DIALOGBOX_CONTAINER</td><td>整個畫面之上的<b>非模態</b>可移動對話框</td><td>width、height、caption、top、left；<span class="kw">set_caption</span>；事件 <span class="kw">close</span></td><td>浮動明細視窗</td></tr>
+      <tr><td>CL_GUI_DOCKING_CONTAINER</td><td>黏在畫面四邊之一</td><td>side（預設左邊）、extension、ratio；<span class="kw">dock_at</span>、<span class="kw">get_extension</span>／<span class="kw">set_extension</span>、<span class="kw">link</span></td><td>不必畫 Custom Control；甚至可黏在選擇畫面上</td></tr>
+      <tr><td>CL_GUI_SPLITTER_CONTAINER</td><td>另一個容器之內</td><td>rows、columns（初始 0×0，最大 16×16）；<span class="kw">get_container</span>、<span class="kw">set_row_height</span>、<span class="kw">set_column_width</span>、<span class="kw">set_row_mode</span>／<span class="kw">set_column_mode</span>（絕對像素／相對百分比，預設相對）、<span class="kw">set_row_sash</span>／<span class="kw">set_column_sash</span>（分隔條固定或可移動）、<span class="kw">set_border</span>、<span class="kw">add_control</span>／<span class="kw">remove_control</span></td><td>主檔／明細多格版面</td></tr>
+      <tr><td>CL_GUI_EASY_SPLITTER_CONTAINER</td><td>另一個容器之內</td><td>orientation（orientation_vertical／orientation_horizontal）；<span class="kw">set_sash_position</span>；儲存格在屬性 <span class="kw">top_left_container</span>、<span class="kw">bottom_right_container</span></td><td>只要切兩半時最省事</td></tr>
+    </tbody>
+  </table>
+  <p><b>對話層級與頂層容器</b>：容器建立時就被指定一個對話層級（dialog level），之後不能改。對話層級由 <span class="kw">CALL SCREEN nnnn STARTING AT … ENDING AT …</span> 產生；類別建構子會建立 <b>SCREEN0～SCREEN9</b> 十個頂層容器（CL_GUI_CONTAINER=&gt;SCREEN0…），分別對應層級 0～9，作為 Custom／Docking／Dialogbox 容器的 parent。容器裡的控制項只在容器顯示時才顯示；要用 <span class="kw">link</span> 搬到新畫面、或在函數模組裡建立容器時，必須知道它屬於哪一層。</p>
+  <p>Custom Container 在 CFW 中由四個值唯一決定：<b>程式名、畫面號、區域名、對話層級</b>。沒給 parent／repid／dynnr 時，系統取執行當下的值。<span class="kw">link</span> 可把容器改接到同一程式或其他程式的另一個畫面區域，<b>但只能是同一對話層級</b>。</p>
+  <pre><code class="abap">*&amp;---------------------------------------------------------------*
+*&amp; Docking ＋ Splitter ＋ Easy Splitter：一個畫面切出三塊
+*&amp;---------------------------------------------------------------*
+DATA go_dock  TYPE REF TO cl_gui_docking_container.
+DATA go_split TYPE REF TO cl_gui_splitter_container.
+DATA go_easy  TYPE REF TO cl_gui_easy_splitter_container.
+
+MODULE init_layout_0100 OUTPUT.
+  CHECK go_dock IS NOT BOUND.
+
+  " ① Docking：黏在畫面左側，占 35%（不必在 SE51 畫 Custom Control）
+  go_dock = NEW #( side  = cl_gui_docking_container=&gt;dock_at_left
+                   ratio = 35 ).
+
+  " ② Splitter：在 docking 裡切 2 列 1 欄
+  go_split = NEW #( parent  = go_dock
+                    rows    = 2
+                    columns = 1 ).
+  go_split-&gt;set_row_mode( mode = cl_gui_splitter_container=&gt;mode_relative ).
+  go_split-&gt;set_row_height( id = 1 height = 30 ).          "上格 30%
+  go_split-&gt;set_row_sash( id    = 1
+                          type  = cl_gui_splitter_container=&gt;type_movable
+                          value = cl_gui_splitter_container=&gt;false ).  "鎖住分隔條
+
+  DATA(lo_top)    = go_split-&gt;get_container( row = 1 column = 1 ).
+  DATA(lo_bottom) = go_split-&gt;get_container( row = 2 column = 1 ).
+
+  " ③ Easy Splitter：下格再左右切兩半
+  go_easy = NEW #( parent      = lo_bottom
+                   orientation = cl_gui_easy_splitter_container=&gt;orientation_horizontal ).
+  go_easy-&gt;set_sash_position( sash_position = 50 ).
+
+  " 之後把控制項放進 lo_top、go_easy-&gt;top_left_container、go_easy-&gt;bottom_right_container
+ENDMODULE.
+
+*&amp; Dialogbox 容器：使用者按 X 關閉時要自己 free
+CLASS lcl_box_handler DEFINITION.
+  PUBLIC SECTION.
+    CLASS-METHODS on_close FOR EVENT close OF cl_gui_dialogbox_container
+      IMPORTING sender.
+ENDCLASS.
+CLASS lcl_box_handler IMPLEMENTATION.
+  METHOD on_close.
+    sender-&gt;free( ).            "不 free，視窗關不掉
+    CLEAR go_box.
+  ENDMETHOD.
+ENDCLASS.
+" go_box = NEW #( width = 600 height = 300 top = 80 left = 200 caption = '航班明細' ).
+" SET HANDLER lcl_box_handler=&gt;on_close FOR go_box.</code></pre>
+  <div class="warn"><b>教材錯字修正</b>：筆記 p104 寫 <span class="kw">cl_gui_dialogbox_control</span>，應為 <b>CL_GUI_DIALOGBOX_CONTAINER</b>；p114、p120 的 <span class="kw">cl_gui_spliter_container</span>、<span class="kw">cl_gui_easy_spliter_container</span> 少了一個 t，應為 SPLITTER；p111 的 get_extensions／set_extensions 實際方法名為單數 <span class="kw">get_extension</span>／<span class="kw">set_extension</span>。分隔條常數名稱（type_movable、mode_relative）請以 SE24 中 CL_GUI_SPLITTER_CONTAINER 的屬性頁為準。</div>
+  <div class="tip">Splitter <b>只能</b>放在另一個已依附畫面的容器（Custom 或 Docking）裡，自己不能直接貼到畫面上；Splitter 的每一格本身就是 CL_GUI_CONTAINER，拿到後直接當 parent 用。更多實戰（主檔 → 明細兩個 ALV 連動）見 <a href="#ch03-2-13">3-2 章第 13 節</a>。</div>
+
+  <h3 id="ch05-10-09">9. 上下文選單（Context Menu）：CL_CTMENU</h3>
+  <p>游標在控制項上按<b>滑鼠右鍵或 Shift+F10</b>，系統依游標所在的控制項觸發 <span class="kw">context_menu</span> 類事件；使用者選了其中一項，再觸發 <span class="kw">context_menu_selected</span> 類事件並帶回功能碼。<b>當功能只作用在某個物件而非整個畫面時</b>，就用上下文選單（例：修改圖片的顯示模式）。</p>
+  <p>原課程給的人因工程規則：<b>子選單不超過兩層</b>；一般最多十項，但要先確保包含所有按鈕功能；<b>用分隔線</b>結構化；<b>與物件相關的功能放最上面</b>。</p>
+  <table>
+    <thead><tr><th>控制項</th><th>要求選單的事件</th><th>選擇功能的事件</th><th>備註</th></tr></thead>
+    <tbody>
+      <tr><td>Picture</td><td>context_menu</td><td>context_menu_selected</td><td>事件<b>不傳選單參照</b>，要自己 NEW CL_CTMENU，再用 <span class="kw">display_context_menu</span> 送出</td></tr>
+      <tr><td>HTML Viewer</td><td>ctxmenu_request</td><td>ctxmenu_selected</td><td>同 Picture，用 display_context_menu／track_context_menu</td></tr>
+      <tr><td>TextEdit</td><td>context_menu</td><td>context_menu_selected</td><td>自帶本地選單（第 10 節）</td></tr>
+      <tr><td>ALV Grid</td><td>context_menu_request</td><td>user_command</td><td>事件帶回 e_object（CL_CTMENU）</td></tr>
+      <tr><td>Tree</td><td>context_menu</td><td>context_menu_selected</td><td>樹控制項自己向前端註冊，不必 set_registered_events</td></tr>
+    </tbody>
+  </table>
+  <p>建立選單內容的兩種方法：① <b>靜態</b>——在 <span class="tcode">SE41</span> Menu Painter 建一個<b>類型為「Context Menu」的 GUI Status</b>，用 <span class="kw">cl_ctmenu=&gt;load_gui_status</span> 載入（參數 program、status、disable（UI_FUNCTIONS 型別的停用清單）、menu）；② <b>動態</b>——<span class="kw">add_function</span>、<span class="kw">add_separator</span>、<span class="kw">add_submenu</span>、<span class="kw">hide_functions</span>／<span class="kw">show_functions</span>、<span class="kw">disable_functions</span>／<span class="kw">enable_functions</span>。</p>
+  <pre><code class="abap">*&amp;---------------------------------------------------------------*
+*&amp; Picture 右鍵選單：切換顯示模式；ALV Grid 右鍵選單：加一個功能
+*&amp;---------------------------------------------------------------*
+CLASS lcl_menu DEFINITION.
+  PUBLIC SECTION.
+    CLASS-METHODS on_pic_menu FOR EVENT context_menu OF cl_gui_picture
+      IMPORTING sender.
+    CLASS-METHODS on_pic_selected FOR EVENT context_menu_selected OF cl_gui_picture
+      IMPORTING fcode sender.
+    CLASS-METHODS on_grid_menu FOR EVENT context_menu_request OF cl_gui_alv_grid
+      IMPORTING e_object.
+ENDCLASS.
+
+CLASS lcl_menu IMPLEMENTATION.
+  METHOD on_pic_menu.
+    DATA(lo_menu) = NEW cl_ctmenu( ).
+    " 靜態：載入 SE41 建立的 Context Menu 類 GUI Status
+    cl_ctmenu=&gt;load_gui_status( program = sy-repid
+                                status  = 'CTX_PIC'
+                                menu    = lo_menu ).
+    " 動態：再補兩項
+    lo_menu-&gt;add_separator( ).
+    lo_menu-&gt;add_function( fcode = 'FIT'     text = '等比例縮放' ).
+    lo_menu-&gt;add_function( fcode = 'STRETCH' text = '填滿區域' ).
+    sender-&gt;display_context_menu( context_menu = lo_menu ).
+  ENDMETHOD.
+
+  METHOD on_pic_selected.
+    sender-&gt;set_display_mode( display_mode = SWITCH #( fcode
+      WHEN 'FIT'     THEN cl_gui_picture=&gt;display_mode_fit
+      WHEN 'STRETCH' THEN cl_gui_picture=&gt;display_mode_stretch
+      ELSE                cl_gui_picture=&gt;display_mode_normal ) ).
+  ENDMETHOD.
+
+  METHOD on_grid_menu.
+    " ALV 已經準備好標準選單，直接往 e_object 加；選擇後觸發 user_command
+    e_object-&gt;add_separator( ).
+    e_object-&gt;add_function( fcode = 'ZSHOW_BOOK' text = '顯示此航班的訂位' ).
+  ENDMETHOD.
+ENDCLASS.
+
+" 前端過濾器（Picture 要自己註冊兩個事件）＋ SET HANDLER
+" go_pic-&gt;set_registered_events( events = VALUE #(
+"   ( eventid = cl_gui_picture=&gt;eventid_context_menu )
+"   ( eventid = cl_gui_picture=&gt;eventid_context_menu_selected ) ) ).
+" SET HANDLER lcl_menu=&gt;on_pic_menu lcl_menu=&gt;on_pic_selected FOR go_pic.
+" SET HANDLER lcl_menu=&gt;on_grid_menu FOR go_alv.</code></pre>
+  <div class="warn">筆記 p127 的 <span class="kw">CLASS-METHOD:</span> 少了 S，正確是 <b>CLASS-METHODS</b>。另外 <span class="kw">load_gui_status</span> 的 program 參數：GUI Status 在目前程式時筆記說用 sy-cprog，但在函數群組或類別方法中呼叫時 sy-cprog 是「主程式」，不一定是 status 所在的程式；請明確寫出擁有該 status 的程式名。</div>
+
+  <h3 id="ch05-10-10">10. 文字編輯控制項（CL_GUI_TEXTEDIT）</h3>
+  <p>TextEdit 是<b>純文字</b>編輯器：不能設定格式、不能插圖；可用<b>暫時性</b>的附加資訊（例如醒目提示），這些由展示層管理、不回傳給程式。畫面由三部分組成：<b>應用工具列</b>（尋找／取代、復原、重做、另存本機檔…）、<b>編輯視窗</b>、<b>狀態列</b>（選取範圍資訊、游標位置、插入／覆寫切換）；工具列與狀態列都可以隱藏。同樣的功能也出現在它自帶的<b>本地上下文選單</b>裡。</p>
+  <p><b>資料交換兩種格式</b>：</p>
+  <ul>
+    <li><b>R/3 Table</b>：內表一行 ＝ 編輯器一行（換行即新列）。方法 <span class="kw">set_text_as_r3table</span>、<span class="kw">get_text_as_r3table</span>、<span class="kw">set_selected_text_as_r3table</span>、<span class="kw">get_selected_text_as_r3table</span>。</li>
+    <li><b>Stream</b>：一樣放在內表，但以資料流傳輸，換行以控制字元存在流裡。方法 <span class="kw">set_text_as_stream</span>、<span class="kw">get_text_as_stream</span>、<span class="kw">set_selected_text_as_stream</span>、<span class="kw">get_selected_text_as_stream</span>。</li>
+  </ul>
+  <p>get_*_as_r3table 會<b>忽略換行資訊</b>（軟換行的處理方式在建構子中定義）；內表行長度小於控制項定義會<b>截斷</b>，大於則補空白。set 系列會覆蓋現有文字（selected 版本只覆蓋選取範圍）。</p>
+  <table>
+    <thead><tr><th>用途</th><th>方法</th></tr></thead>
+    <tbody>
+      <tr><td>本機檔案</td><td><span class="kw">open_local_file</span>、<span class="kw">save_as_local_file</span>（沒給 file_name 就跳對話框）</td></tr>
+      <tr><td>尋找／取代／刪除</td><td><span class="kw">find_and_replace</span>、<span class="kw">replace_all</span>、<span class="kw">find_and_select_text</span>、<span class="kw">delete_text</span></td></tr>
+      <tr><td>保護文字</td><td><span class="kw">set_readonly_mode</span>（整篇唯讀）、<span class="kw">protect_lines</span>（保護行）、<span class="kw">protect_selection</span>（保護選取）——被保護的行背景變色，輸入時會嗶聲</td></tr>
+      <tr><td>文字區塊／導覽</td><td><span class="kw">get_selection_pos</span>、<span class="kw">set_selection_pos</span>、<span class="kw">select_lines</span>、<span class="kw">go_to_line</span>；選取的文字可依 ABAP 規則註解／取消註解</td></tr>
+      <tr><td>外觀</td><td><span class="kw">set_toolbar_mode</span>、<span class="kw">set_statusbar_mode</span>；布林常數用 <span class="kw">cl_gui_textedit=&gt;true／false</span></td></tr>
+      <tr><td>自訂右鍵功能</td><td><span class="kw">register_event_context_menu</span> ＋ 處理 <span class="kw">context_menu</span>／<span class="kw">context_menu_selected</span>（fcode 參數帶回功能碼）</td></tr>
+    </tbody>
+  </table>
+  <pre><code class="abap">*&amp;---------------------------------------------------------------*
+*&amp; TextEdit：72 字元固定換行、前兩行保護、讀回後存成 SAP 長文字
+*&amp;---------------------------------------------------------------*
+TYPES ty_line  TYPE c LENGTH 72.
+DATA go_edit   TYPE REF TO cl_gui_textedit.
+
+MODULE init_editor OUTPUT.
+  CHECK go_edit IS NOT BOUND.
+  DATA(lo_cont) = NEW cl_gui_custom_container( container_name = 'MY_CONTAINER_AREA' ).
+  go_edit = NEW #( parent                     = lo_cont
+                   wordwrap_mode              = cl_gui_textedit=&gt;wordwrap_at_fixed_position
+                   wordwrap_position          = 72
+                   wordwrap_to_linebreak_mode = cl_gui_textedit=&gt;true ).
+  go_edit-&gt;set_statusbar_mode( statusbar_mode = cl_gui_textedit=&gt;false ).
+
+  DATA(lt_init) = VALUE string_table(
+    ( |訂單：{ gv_vbeln ALPHA = OUT }　建立者：{ sy-uname }| )
+    ( `------------------------------------------------------------` ) ).
+  go_edit-&gt;set_text_as_r3table( table = lt_init ).
+  go_edit-&gt;protect_lines( from_line    = 1
+                          to_line      = 2
+                          protect_mode = cl_gui_textedit=&gt;true ).
+ENDMODULE.
+
+METHOD save_note.                                  "PAI 按「儲存」時呼叫
+  DATA lt_text TYPE STANDARD TABLE OF ty_line WITH EMPTY KEY.
+  go_edit-&gt;get_text_as_r3table( IMPORTING table = lt_text EXCEPTIONS OTHERS = 1 ).
+  cl_gui_cfw=&gt;flush( ).                            "不 flush，lt_text 是空的！
+
+  DATA lt_lines TYPE STANDARD TABLE OF tline WITH EMPTY KEY.
+  lt_lines = VALUE #( FOR lv IN lt_text ( tdformat = '*' tdline = lv ) ).
+  DATA(ls_head)  = VALUE thead( tdobject = 'VBBK'  tdname = gv_vbeln
+                                tdid     = '0001'  tdspras = sy-langu ).
+  CALL FUNCTION 'SAVE_TEXT'
+    EXPORTING  header   = ls_head
+               insert   = abap_true
+    TABLES     lines    = lt_lines
+    EXCEPTIONS OTHERS   = 1.
+  IF sy-subrc = 0.
+    CALL FUNCTION 'COMMIT_TEXT'.
+    go_edit-&gt;set_textmodified_status( status = 0 ).  "重設「已修改」旗標
+  ENDIF.
+ENDMETHOD.</code></pre>
+  <div class="warn"><b>教材修正</b>：筆記 p137 的 <span class="kw">set_text_selected_text_as_r3table</span> 多了一段，正確是 <b>set_selected_text_as_r3table</b>；p145 的參數名 <span class="kw">local_tntried</span> 是掃描錯字，請以 SE24 中 register_event_context_menu 的參數清單為準（控制是否顯示預設本地選單，值用 cl_gui_textedit=&gt;true／false），p145 的 flase 也應是 false。SAVE_TEXT 的 TDOBJECT／TDID 組合必須先在 <span class="tcode">SE75</span> 存在，上例 VBBK／0001 只是示意。</div>
+  <div class="tip">常用鍵盤指令：Ins 插入／覆寫切換、PgUp／PgDn 翻頁、Ctrl+Z 復原、Ctrl+Y 重做、Ctrl+F 尋找取代、Ctrl+G 找下一個、Ctrl+A 全選、Ctrl+End 選到行尾（筆記原表）。實務上 TextEdit 最常見的用途是「單據備註」：讀 <span class="kw">READ_TEXT</span> → 放進 TextEdit → 使用者修改 → <span class="kw">SAVE_TEXT</span>，比自己設計多行輸入欄位省事太多。</div>
+
+  <h3 id="ch05-10-11">11. ALV Grid（一）：特性、資料保持與 set_table_for_first_display</h3>
+  <p>ALV Grid 以標準方式顯示與列印<b>非階層</b>清單。使用者可自行調整版面並存成<b>顯示變式（Display Variant／Layout）</b>；開發者決定使用者能否存「使用者專屬」或「全域」變式。應用工具列預設就有這些功能，<b>不必自己寫</b>：明細（模態對話框顯示所選列）、升冪／降冪排序、尋找、篩選、合計（總和、平均、最大、最小）、小計、列印、預覽、匯出、版面設定、圖形、使用者文件。開發者可以隱藏任何一項，也可以加上自己的功能。</p>
+  <p><b>畫面三區</b>：頂端應用工具列（可隱藏部分或全部）→ 一行標題 → 資料區（Grid）。資料區超出範圍自動出捲軸；<b>鍵欄（key column）</b>顏色不同且水平捲動時固定不動（任何欄位都能設成鍵欄）；可選儲存格、儲存格群、整列、整欄，設定「儲存格選擇」時會自動多一欄列選擇按鈕。<b>列印版面</b>沿用傳統 ABAP 清單：邏輯封面頁、內容頁（各有頁首、頁尾）、封底頁，都能用事件處理。</p>
+  <div class="warn"><b>最重要的一句（筆記 p158）：代理物件不複製資料，只保存指向你內表的指標。</b>排序、篩選等互動都直接作用在呼叫程式的內表上——<b>在 Grid 上排序會改變你的內表順序</b>，其他操作才是唯讀。所以：① 輸出內表必須是<b>全域或與代理物件同生命週期</b>，不能是區域變數；② 在 user_command 裡用 <span class="kw">get_selected_rows</span> 拿到的 index，要對應「目前內表」的順序；③ 這也是 Casper 提醒的「<b>HANA 沒有預設排序</b>」的延伸：SELECT 要 ORDER BY，而且別假設內表順序在使用者操作後還維持原樣。</div>
+  <p>呼叫程式必須提供代理物件無法封裝的三類資訊：<b>要顯示的資料</b>、<b>如何顯示的規則（Field Catalog）</b>、<b>附加設定</b>。相關全域型別：</p>
+  <table>
+    <thead><tr><th>用途</th><th>型別</th><th>set_table_for_first_display 參數</th></tr></thead>
+    <tbody>
+      <tr><td>輸出資料（標準表）</td><td>任意</td><td>it_outtab（CHANGING）</td></tr>
+      <tr><td>自動產生 Field Catalog</td><td>DDIC 結構名</td><td>i_structure_name</td></tr>
+      <tr><td>Field Catalog</td><td>LVC_T_FCAT（行 LVC_S_FCAT）</td><td>it_fieldcatalog（CHANGING）</td></tr>
+      <tr><td>版面</td><td>LVC_S_LAYO</td><td>is_layout</td></tr>
+      <tr><td>列印</td><td>LVC_S_PRNT</td><td>is_print</td></tr>
+      <tr><td>顯示變式</td><td>DISVARIANT</td><td>is_variant、i_save、i_default</td></tr>
+      <tr><td>隱藏標準功能</td><td>UI_FUNCTIONS</td><td>it_toolbar_excluding</td></tr>
+      <tr><td>初始排序／篩選</td><td>LVC_T_SORT／LVC_T_FILT</td><td>it_sort、it_filter（CHANGING）</td></tr>
+      <tr><td>欄位群組</td><td>LVC_T_SGRP</td><td>it_special_groups</td></tr>
+    </tbody>
+  </table>
+  <p><b>顯示變式的三種管理模式</b>：① is_variant、i_save 都空白（預設）＝只能改當前版面；② 傳 DISVARIANT（report = sy-repid；同一程式有多個 Grid 時用 <b>handle</b> 區分）、i_save 空白＝還能選既有變式；③ 再給 i_save：<b>'U'</b> 只能存使用者專屬、<b>'X'</b> 只能存全域、<b>'A'</b> 兩者皆可。<b>LVC_S_PRNT</b> 的 print = 'X' 直接列印不上畫面；reservelns 保留頁尾行數；grpchgedit 控制中斷處印橫線（預設）或換頁（'X'）；prntlstinf = 'X' 連篩選條件與合計行一起印。</p>
+  <pre><code class="abap">*&amp;---------------------------------------------------------------*
+*&amp; ALV Grid 的完整初始化：變式、版面、列印、隱藏功能、初始排序
+*&amp;---------------------------------------------------------------*
+DATA gt_sflight TYPE STANDARD TABLE OF sflight WITH EMPTY KEY.   "全域：與 Grid 同生命週期
+
+METHOD init_grid.
+  go_alv = NEW #( i_parent      = io_container
+                  i_appl_events = abap_false ).   "預設＝系統事件；'X'＝全部登記為應用事件
+
+  DATA(ls_layout) = VALUE lvc_s_layo( zebra      = abap_true
+                                      cwidth_opt = abap_true
+                                      sel_mode   = 'A'          "可多選列與儲存格
+                                      grid_title = |航班清單（{ lines( gt_sflight ) } 筆）| ).
+
+  DATA(lt_exclude) = VALUE ui_functions( ( cl_gui_alv_grid=&gt;mc_fc_info )
+                                         ( cl_gui_alv_grid=&gt;mc_fc_graph )
+                                         ( cl_gui_alv_grid=&gt;mc_fc_views ) ).
+
+  DATA(lt_sort) = VALUE lvc_t_sort( ( spos = 1 fieldname = 'CARRID' up = abap_true subtot = abap_true )
+                                    ( spos = 2 fieldname = 'FLDATE' up = abap_true ) ).
+
+  go_alv-&gt;set_table_for_first_display(
+    EXPORTING
+      i_structure_name     = 'SFLIGHT'
+      is_variant           = VALUE disvariant( report = sy-repid handle = 'FLT1' )
+      i_save               = 'A'
+      is_layout            = ls_layout
+      is_print             = VALUE lvc_s_prnt( prntlstinf = abap_true )
+      it_toolbar_excluding = lt_exclude
+    CHANGING
+      it_outtab            = gt_sflight
+      it_sort              = lt_sort
+    EXCEPTIONS
+      invalid_parameter_combination = 1
+      program_error                 = 2
+      too_many_lines                = 3
+      OTHERS                        = 4 ).
+ENDMETHOD.
+
+METHOD refresh.                                   "資料變了，但結構沒變
+  go_alv-&gt;refresh_table_display(
+    is_stable      = VALUE lvc_s_stbl( row = abap_true col = abap_true )  "保留捲動位置
+    i_soft_refresh = abap_true ).                                        "保留排序與篩選
+ENDMETHOD.</code></pre>
+  <div class="warn"><b>教材修正</b>：① 筆記 p162 註解「i_appl_events = '' 都註冊成應用事件」寫反了——<b>空白（預設）是系統事件，'X' 才是應用事件</b>。② p167 說用 <span class="kw">it_toolbar</span> 參數隱藏功能，正確參數名是 <b>it_toolbar_excluding</b>。③ p157 的 cl_gui_alv_gird 應為 <b>CL_GUI_ALV_GRID</b>。另外：功能碼常數以 <span class="kw">mc_fc_</span> 開頭、整組選單以 <span class="kw">mc_mb_</span> 開頭；要停用全部功能用 <span class="kw">mc_fc_excl_all</span>；要整條工具列消失則用 LVC_S_LAYO-NO_TOOLBAR。<b>修改了內表的行結構</b>就不能只 refresh，必須重新呼叫 set_table_for_first_display（系統要重建 Field Catalog）。</div>
+
+  <h3 id="ch05-10-12">12. ALV Grid（二）：Field Catalog、顏色、圖示、單位</h3>
+  <p><b>不寫 Field Catalog 也能改版面</b>（筆記 p170 的「偷懶但聰明」解法）：要多欄位就換一個 DDIC 結構；隱藏或調順序交給標準顯示變式；只要前幾欄就在本地型別用 INCLUDE；動態資料表就用欄位符號傳結構。這些方案可重用、可統一維護。</p>
+  <p><b>三種情形</b>（筆記 p176～p177）：</p>
+  <table>
+    <thead><tr><th>情形</th><th>資料表與 DDIC 的關係</th><th>做法</th><th>欄位順序</th></tr></thead>
+    <tbody>
+      <tr><td>1</td><td>內表欄位 ＝ 某個 DDIC 結構的全部欄位，且都要顯示</td><td>只傳 i_structure_name</td><td>固定</td></tr>
+      <tr><td>2</td><td>同上，但要改屬性或<b>加欄位</b></td><td>i_structure_name ＋ it_fieldcatalog（只放要改／加的列），或先 <span class="kw">LVC_FIELDCATALOG_MERGE</span> 再改</td><td>可調</td></tr>
+      <tr><td>3</td><td>沒有對應的 DDIC 型別，或只要一部分欄位、來自多個結構</td><td>程式自己組完整的 it_fieldcatalog</td><td>可調</td></tr>
+    </tbody>
+  </table>
+  <p>Field Catalog 每一列對應內表一欄，<b>FIELDNAME</b> 必填。其他欄位分兩組：<b>參照組</b>（REF_TABLE、REF_FIELD——填了就從 DDIC 帶入全部型別資訊，再用第二組個別覆寫）與<b>屬性組</b>（沒填參照組就必須自己填）。例：內表欄位叫 SEATSFREE，但要借 SFLIGHT-SEATSOCC 的資料元素標題，就填 fieldname = 'SEATSFREE'、ref_table = 'SFLIGHT'、ref_field = 'SEATSOCC'。</p>
+  <table>
+    <thead><tr><th>分類</th><th>LVC_S_FCAT 欄位</th></tr></thead>
+    <tbody>
+      <tr><td>輸出選項</td><td>CHECKBOX（顯示為勾選框，不可輸入）、COL_POS、DO_SUM、NO_SUM、HOTSPOT、EMPHASIZE（'C'＋顏色碼＋強調＋反白，如 C510）、KEY、LOWERCASE、NO_OUT（隱藏但仍出現在排序篩選對話框）、OUTPUTLEN、TECH（技術欄，連欄位選擇都看不到）</td></tr>
+      <tr><td>格式化</td><td>DECIMALS_O、DECMLFIELD、EDIT_MASK（同 WRITE USING EDIT MASK）、EXPONENT、ICON、LZERO、JUST（' '／R／L／C）、NO_SIGN、NO_ZERO、ROUND、ROUNDFIELD、SYMBOL</td></tr>
+      <tr><td>文字</td><td>COLDDICTXT／SELDDICTXT／TIPDDICTXT（'L'／'M'／'S' 選 DDIC 長中短文字）、COLTEXT、SELTEXT、TOOLTIP（自由文字，填了就忽略前三者）、REPTEXT、SCRTEXT_L／M／S</td></tr>
+      <tr><td>技術屬性</td><td>DD_OUTLEN、INTLEN、ROLLNAME（F1 說明用的資料元素）、INTTYPE（沒有 DDIC 參照時用）</td></tr>
+      <tr><td>單位</td><td>CFIELDNAME／CURRENCY（金額）、QFIELDNAME／QUANTITY（數量）——給了固定值 CURRENCY／QUANTITY 就忽略 CFIELDNAME／QFIELDNAME</td></tr>
+      <tr><td>其他</td><td>DRAGDROPID（拖放）、REPREP（Report-to-Report 介面）、SP_GROUP（欄位群組）、TXT_FIELD（以另一欄的文字取代數值顯示）、EDIT（可編輯）</td></tr>
+    </tbody>
+  </table>
+  <pre><code class="abap">*&amp;---------------------------------------------------------------*
+*&amp; 情形 2：DDIC 結構 + 自訂欄位；列顏色、圖示、幣別格式
+*&amp;---------------------------------------------------------------*
+TYPES: BEGIN OF ty_out.
+         INCLUDE TYPE sflight.
+TYPES:   seatsfree TYPE s_seatsocc,        "自算欄位：空位
+         status    TYPE icon_d,            "紅綠燈圖示（DDIC 網域 ICON）
+         rowcolor  TYPE c LENGTH 4,        "列顏色，必須是最後的欄位慣例
+       END OF ty_out.
+DATA gt_out TYPE STANDARD TABLE OF ty_out WITH EMPTY KEY.
+
+METHOD build_output.
+  SELECT carrid, connid, fldate, price, currency, planetype,
+         seatsmax, seatsocc, paymentsum, seatsmax_b, seatsocc_b, seatsmax_f, seatsocc_f
+    FROM sflight
+    WHERE carrid IN @s_carrid                 "多筆 EQ 列舉比 BT 區間安全（航空公司代碼不連續）
+    ORDER BY carrid, connid, fldate
+    INTO CORRESPONDING FIELDS OF TABLE @gt_out.
+
+  LOOP AT gt_out ASSIGNING FIELD-SYMBOL(&lt;o&gt;).
+    &lt;o&gt;-seatsfree = &lt;o&gt;-seatsmax - &lt;o&gt;-seatsocc.
+    &lt;o&gt;-status    = COND #( WHEN &lt;o&gt;-seatsfree = 0  THEN icon_red_light
+                            WHEN &lt;o&gt;-seatsfree &lt; 20 THEN icon_yellow_light
+                            ELSE                         icon_green_light ).
+    &lt;o&gt;-rowcolor  = COND #( WHEN &lt;o&gt;-seatsfree = 0 THEN 'C610' ).   "C＋顏色 6（負值紅）＋1 強調＋0
+  ENDLOOP.
+ENDMETHOD.
+
+METHOD build_fieldcat.
+  DATA lt_fcat TYPE lvc_t_fcat.
+  CALL FUNCTION 'LVC_FIELDCATALOG_MERGE'
+    EXPORTING  i_structure_name = 'SFLIGHT'
+    CHANGING   ct_fieldcat      = lt_fcat
+    EXCEPTIONS OTHERS           = 1.
+
+  LOOP AT lt_fcat ASSIGNING FIELD-SYMBOL(&lt;f&gt;).
+    CASE &lt;f&gt;-fieldname.
+      WHEN 'MANDT'.    &lt;f&gt;-tech       = abap_true.
+      WHEN 'PRICE'.    &lt;f&gt;-cfieldname = 'CURRENCY'.   "JPY 無小數、USD 兩位小數
+                       &lt;f&gt;-do_sum     = abap_true.
+      WHEN 'SEATSOCC'. &lt;f&gt;-emphasize  = 'C300'.
+    ENDCASE.
+  ENDLOOP.
+
+  " 自訂欄位：借 SEATSOCC 的 DDIC 屬性，只改標題
+  lt_fcat = VALUE #( BASE lt_fcat
+    ( fieldname = 'SEATSFREE' ref_table = 'SFLIGHT' ref_field = 'SEATSOCC'
+      coltext   = '空位' col_pos = 5 )
+    ( fieldname = 'STATUS' icon = abap_true coltext = '狀態' col_pos = 1 outputlen = 4 ) ).
+
+  rt_fcat = lt_fcat.
+ENDMETHOD.
+
+" is_layout = VALUE lvc_s_layo( info_fname = 'ROWCOLOR' )   "告訴 Grid 哪一欄是列顏色
+" set_table_for_first_display( is_layout = … CHANGING it_outtab = gt_out it_fieldcatalog = lt_fcat )</code></pre>
+  <div class="note"><b>顏色碼規則</b>：列顏色欄位值為 <span class="kw">'C' ＋ 顏色(1–7) ＋ 強調(0/1) ＋ 反白(0/1)</span>，顏色常數來自型別群組 COL（col_heading=1、col_normal=2、col_total=3、col_key=4、col_positive=5、col_negative=6、col_group=7）。筆記 p174 用 <span class="kw">CONCATENATE 'C' col_negative '10'</span>，現代寫法是字串範本 <span class="kw">|C{ col_negative }10|</span>。要做到<b>單一儲存格</b>上色，改用 LVC_T_SCOL 型別的欄位並在 LVC_S_LAYO-CTAB_FNAME 指定。<b>教材錯字</b>：p178 的 lvc_t_fact 應為 <b>LVC_T_FCAT</b>。</div>
+
+  <h3 id="ch05-10-13">13. ALV Grid（三）：事件、列印事件、擴充工具列</h3>
+  <table>
+    <thead><tr><th>事件</th><th>何時觸發</th><th>主要參數</th></tr></thead>
+    <tbody>
+      <tr><td>double_click</td><td>資料區雙擊</td><td>e_row（index＝內表列號）、e_column（fieldname＝欄位名）、es_row_no</td></tr>
+      <tr><td>hotspot_click</td><td>點擊 HOTSPOT 欄</td><td>同上（e_row_id、e_column_id）</td></tr>
+      <tr><td>toolbar</td><td>工具列插入 Grid 之前（set_table_for_first_display、refresh_table_display 時；也可呼叫 <span class="kw">set_toolbar_interactive</span> 重新觸發）</td><td>e_object（CL_ALV_EVENT_TOOLBAR_SET，屬性 MT_TOOLBAR，行型別 STB_BUTTON）</td></tr>
+      <tr><td>menu_button</td><td>使用者點了類型 1 或 2 的按鈕</td><td>e_object（CL_CTMENU）、e_ucomm</td></tr>
+      <tr><td>user_command</td><td>使用者選了自訂功能（含右鍵選單功能）</td><td>e_ucomm</td></tr>
+      <tr><td>print_top_of_list／print_top_of_page／print_end_of_page／print_end_of_list</td><td>列印清單時；對應傳統的 START-OF-SELECTION／TOP-OF-PAGE／END-OF-PAGE／END-OF-SELECTION</td><td>處理方法內可用 WRITE、SKIP、ULINE</td></tr>
+      <tr><td>subtotal_text</td><td>小計列</td><td>定義小計的附加文字</td></tr>
+    </tbody>
+  </table>
+  <p>STB_BUTTON-BUTN_TYPE：<b>0</b> 一般按鈕、<b>1</b> 選單＋預設按鈕、<b>2</b> 選單、<b>3</b> 分隔線、<b>4</b> 單選按鈕、<b>5</b> 勾選框、<b>6</b> 選單項目。</p>
+  <pre><code class="abap">*&amp;---------------------------------------------------------------*
+*&amp; ALV Grid 事件處理：雙擊、熱點、工具列、使用者命令、列印頁首
+*&amp;---------------------------------------------------------------*
+CLASS lcl_grid_handler DEFINITION.
+  PUBLIC SECTION.
+    METHODS:
+      on_double_click  FOR EVENT double_click  OF cl_gui_alv_grid IMPORTING e_row e_column,
+      on_hotspot       FOR EVENT hotspot_click OF cl_gui_alv_grid IMPORTING e_row_id e_column_id,
+      on_toolbar       FOR EVENT toolbar       OF cl_gui_alv_grid IMPORTING e_object e_interactive,
+      on_user_command  FOR EVENT user_command  OF cl_gui_alv_grid IMPORTING e_ucomm,
+      on_print_top     FOR EVENT print_top_of_page OF cl_gui_alv_grid.
+ENDCLASS.
+
+CLASS lcl_grid_handler IMPLEMENTATION.
+  METHOD on_double_click.
+    READ TABLE gt_out INDEX e_row-index ASSIGNING FIELD-SYMBOL(&lt;o&gt;).
+    CHECK sy-subrc = 0.
+    MESSAGE |{ &lt;o&gt;-carrid } { &lt;o&gt;-connid } { &lt;o&gt;-fldate DATE = USER }，點在欄位 { e_column-fieldname }| TYPE 'S'.
+  ENDMETHOD.
+
+  METHOD on_hotspot.
+    READ TABLE gt_out INDEX e_row_id-index ASSIGNING FIELD-SYMBOL(&lt;o&gt;).
+    CHECK sy-subrc = 0 AND e_column_id-fieldname = 'CONNID'.
+    SET PARAMETER ID 'CAR' FIELD &lt;o&gt;-carrid.
+    SET PARAMETER ID 'CON' FIELD &lt;o&gt;-connid.
+    " CALL TRANSACTION … WITH AUTHORITY-CHECK（7.40 SP02+ 建議寫法）
+  ENDMETHOD.
+
+  METHOD on_toolbar.
+    e_object-&gt;mt_toolbar = VALUE #( BASE e_object-&gt;mt_toolbar
+      ( butn_type = 3 )                                        "分隔線
+      ( function  = 'ZBOOK' icon = icon_okay butn_type = 0
+        text      = '訂位'  quickinfo = '替選取的航班訂位' ) ).
+  ENDMETHOD.
+
+  METHOD on_user_command.
+    CASE e_ucomm.
+      WHEN 'ZBOOK' OR 'ZSHOW_BOOK'.
+        go_alv-&gt;get_selected_rows( IMPORTING et_index_rows = DATA(lt_rows) ).
+        IF lt_rows IS INITIAL.
+          MESSAGE '請先選取航班' TYPE 'S' DISPLAY LIKE 'W'.
+          RETURN.
+        ENDIF.
+        "… 依 lt_rows 的 index 讀 gt_out（注意：使用者排序過，index 對應的是目前順序）
+    ENDCASE.
+  ENDMETHOD.
+
+  METHOD on_print_top.
+    WRITE: / |航班清單　列印者：{ sy-uname }　日期：{ sy-datum DATE = USER }|.
+    ULINE.
+  ENDMETHOD.
+ENDCLASS.
+
+" DATA(go_handler) = NEW lcl_grid_handler( ).
+" SET HANDLER go_handler-&gt;on_double_click go_handler-&gt;on_hotspot go_handler-&gt;on_toolbar
+"             go_handler-&gt;on_user_command go_handler-&gt;on_print_top FOR go_alv.
+" go_alv-&gt;set_toolbar_interactive( ).   "SET HANDLER 在第一次顯示之後才掛，就要手動再觸發 toolbar</code></pre>
+  <div class="warn"><b>筆記 p196 的 <span class="kw">stb button</span> 少了底線</b>，正確是 <b>STB_BUTTON</b>；p196～p197 的 <span class="kw">CLASS-METHOD</span> 應為 CLASS-METHODS。<b>SET HANDLER 的時機</b>：toolbar 事件在 set_table_for_first_display 當下觸發，若 handler 在那之後才掛，工具列上就看不到自訂按鈕——要嘛先 SET HANDLER 再顯示，要嘛事後呼叫 <span class="kw">set_toolbar_interactive</span>。示範程式請看套件 SLIS（BCALV_GRID_* 系列）或 <span class="tcode">DWDM</span>。</div>
+  <div class="tip">需要<b>可編輯 ALV</b>（EDIT、<span class="kw">data_changed</span> 事件、<span class="kw">check_changed_data</span>）時，這是 CL_GUI_ALV_GRID 仍無可取代的場景——CL_SALV_TABLE 官方不支援編輯。只讀報表則優先用 SALV（<a href="#ch02-3">2-3 章</a>、<a href="#ch05-6">5-6 章 BC405</a>）。</div>
+
+  <h3 id="ch05-10-14">14. 樹控制項（一）：三種樹、樹模型、節點表與階層關係</h3>
+  <p>樹控制項適合顯示<b>階層資料</b>：導覽、值清單、項目清單。跟 ALV Grid 一樣是顯示與管理用，<b>不能輸入資料</b>，但使用者可以跟單列、多列區域、列內元素、表頭元素互動。畫面分三區：<b>階層區</b>（節點）、選用的<b>附加資料區</b>（表格或清單）、選用的<b>標題區</b>。</p>
+  <table>
+    <thead><tr><th></th><th>Simple Tree</th><th>Column Tree</th><th>List Tree</th></tr></thead>
+    <tbody>
+      <tr><td>樹模型類別（4.6C+，建議用）</td><td>CL_SIMPLE_TREE_MODEL</td><td>CL_COLUMN_TREE_MODEL</td><td>CL_LIST_TREE_MODEL</td></tr>
+      <tr><td>控制項代理類別（模型內部使用）</td><td>CL_GUI_SIMPLE_TREE</td><td>CL_GUI_COLUMN_TREE</td><td>CL_GUI_LIST_TREE</td></tr>
+      <tr><td>使用的區域</td><td>只有階層區，無標題</td><td>階層區＋表頭＋附加資料區（<b>表格式</b>，各列欄位對齊）</td><td>階層區＋表頭＋附加資料區（<b>每列結構可不同</b>，靠左排列、寬度隨內容）</td></tr>
+      <tr><td>節點內容</td><td>圖示＋文字</td><td>只有圖示；文字是第一欄的 item</td><td>只有圖示；文字是 item，可指定字型大小</td></tr>
+      <tr><td>節點表型別</td><td>TREEMSNODT／TREEMSNOTA</td><td>TREEMCNODT／TREEMCNOTA（多 ITEMSINCOM）</td><td>TREEMLNODT（多 ITEMSINCOM、LAST_ITEM）</td></tr>
+      <tr><td>示範程式（SEU_TREE_MODEL）</td><td>SAPSIMPLE_TREE_MODEL_DEMO</td><td>SAPCOLUMN_TREE_MODEL_DEMO</td><td>SAPLIST_TREE_MODEL_DEMO</td></tr>
+    </tbody>
+  </table>
+  <p><b>為什麼要樹模型？</b>模型是「應用資料 ↔ 樹控制項代理」之間的<b>中間層</b>：在一張階層表中管理節點、允許任意長度的技術節點鍵、提供尋找與列印、以最佳化的方式在程式與前端之間傳資料。通訊鏈是「ABAP 程式 → 樹模型 → 代理物件 → 前端樹控制項」，程式只要實例化三個模型類別，<b>不必碰 CL_GUI_*_TREE</b>。注意：<b>樹只能顯示字元型資料</b>，數值、日期要自己格式化。</p>
+  <p><b>節點表必填的六欄</b>（TREEMSNODT）：NODE_KEY（唯一）、RELATKEY（參考節點）、RELATSHIP（關係）、ISFOLDER（展開時換圖示）、EXPANDER（空資料夾也顯示可展開）、TEXT。其他：HIDDEN、DISABLED、N_IMAGE（未展開圖示）、EXP_IMAGE（展開圖示）、STYLE、NO_BRANCH（只在「傳統 GUI 顯示」有效）、DRAGDROPID、USEROBJECT（任意物件參照）。<b>根節點</b>的 RELATKEY、RELATSHIP 保持初始值。</p>
+  <table>
+    <thead><tr><th>RELATSHIP 常數（CL_SIMPLE_TREE_MODEL=&gt;…）</th><th>放在參考節點的…</th></tr></thead>
+    <tbody>
+      <tr><td>relat_first_child／relat_last_child</td><td>第一個／最後一個子節點</td></tr>
+      <tr><td>relat_prev_sibling／relat_next_sibling</td><td>緊鄰的前一個／後一個兄弟（不知道或不想用父節點 ID 時很好用）</td></tr>
+      <tr><td>relat_first_sibling／relat_last_sibling</td><td>同層的最前面／最後面</td></tr>
+    </tbody>
+  </table>
+  <pre><code class="abap">*&amp;---------------------------------------------------------------*
+*&amp; Simple Tree Model：航空公司 → 航線（兩層），一次 ADD_NODES
+*&amp;---------------------------------------------------------------*
+DATA go_tree TYPE REF TO cl_simple_tree_model.
+
+METHOD build_tree.
+  go_tree = NEW #( node_selection_mode = cl_simple_tree_model=&gt;node_sel_mode_single ).
+  go_tree-&gt;create_tree_control( parent = io_container ).   "此時才指定容器
+
+  SELECT carrid, connid, cityfrom, cityto
+    FROM spfli
+    ORDER BY carrid, connid                               "不排序，樹的順序每次可能不同
+    INTO TABLE @DATA(lt_spfli).
+
+  DATA lt_nodes TYPE treemsnota.
+  lt_nodes = VALUE #( ( node_key = 'ROOT' isfolder = abap_true text = '航線' ) ).
+
+  LOOP AT lt_spfli INTO DATA(ls_s) GROUP BY ls_s-carrid INTO DATA(lv_carrid).
+    INSERT VALUE #( node_key  = lv_carrid
+                    relatkey  = 'ROOT'
+                    relatship = cl_simple_tree_model=&gt;relat_last_child   "last_child：節點表順序＝畫面順序
+                    isfolder  = abap_true
+                    text      = lv_carrid ) INTO TABLE lt_nodes.
+    LOOP AT GROUP lv_carrid INTO DATA(ls_c).
+      INSERT VALUE #( node_key  = |{ ls_c-carrid };{ ls_c-connid }|   "應用鍵＋分隔符組節點 ID
+                      relatkey  = lv_carrid
+                      relatship = cl_simple_tree_model=&gt;relat_last_child
+                      isfolder  = abap_true
+                      expander  = abap_true                        "航班日期等使用者展開再讀
+                      text      = |{ ls_c-connid } { ls_c-cityfrom } → { ls_c-cityto }| )
+             INTO TABLE lt_nodes.
+    ENDLOOP.
+  ENDLOOP.
+
+  go_tree-&gt;add_nodes( EXPORTING  node_table = lt_nodes
+                      EXCEPTIONS error_in_node_table = 1
+                                 OTHERS              = 2 ).
+  go_tree-&gt;expand_node( node_key = 'ROOT' ).
+ENDMETHOD.</code></pre>
+  <div class="warn"><b>節點表的兩條鐵律（筆記 p228～p229）</b>：① 節點依節點表順序處理，<b>參考節點必須排在新節點前面</b>（先父後子）；② 關係在傳送當下依「當時的狀態」驗證——筆記的例子：AA、LH、QA 都以 relat_first_child 掛在 ROOT 下，結果畫面順序變成 QA、LH、AA，跟節點表相反。<b>結論：一律用 relat_last_child</b>，節點表順序就等於畫面順序。節點 ID 要訂規則，例如把應用鍵用分隔符串起來；型別 TM_NODEKEY 的實際長度請在 <span class="tcode">SE11</span> 確認，組合鍵過長會被截斷。</div>
+  <div class="note">4.6A／4.6B 沒有 TREEMSNODT 等全域型別，要自己以 TREEV_NODE（item 用 TREEV_ITEM）為基礎定義，並在 ADD_NODES 的 TABLE_STRUCTURE_NAME 參數傳型別名——這些在 S/4HANA 已不需要。筆記 p220 的 DEAGDEOPID 是 DRAGDROPID 的掃描錯字。</div>
+
+  <h3 id="ch05-10-15">15. 樹控制項（二）：尋找列印、事件、延遲載入、工具列、Column／List Tree</h3>
+  <p><b>樹模型附加功能</b>：<span class="kw">print_tree</span>（all_nodes = ' ' 只印畫面上可見的節點、'X' 全印；title、preview）先從節點表產生 ABAP 列印清單、送 spool 再進清單畫面。<span class="kw">find</span> 跳出對話框讓使用者輸入字串或樣式，回傳 result_type（與 <span class="kw">cl_simple_tree_model=&gt;find_match</span> 比對）與 result_node_key；<span class="kw">find_next</span> 從上次命中處繼續、不再跳對話框。命中節點可累積到內表後用 <span class="kw">select_nodes</span> 一次標記、<span class="kw">unselect_nodes</span> 清除——<b>要做多選命中，建立模型時就要設 node_sel_mode_multiple</b>。</p>
+  <p><b>事件</b>：雙擊節點觸發 <span class="kw">node_double_click</span>（註冊用 <span class="kw">eventid_node_double_click</span>，參數 node_key）。事件發生時要從節點 ID 反推應用資料：用 <span class="kw">SPLIT … AT ';'</span> 拆回應用鍵。筆記特別提醒：SPLIT 的目標要是字元型；分隔符比目標欄位少時，剩下的目標欄位會被<b>填空白（即使是 N 型別）</b>，所以要先初始化目標；字元處理要確保 Unicode 相容。</p>
+  <p><b>只在使用者要求時才讀資料——EXPAND_NO_CHILDREN</b>：EXPANDER = 'X' 的節點被展開時才觸發，樹模型<b>自己</b>判斷：只有該資料夾的子節點還沒傳給模型時才把事件傳給程式。所以先傳一個「基本集合」（例如兩層），其餘在事件中從資料庫讀出再 add_nodes——這就是「增量後續讀取」。</p>
+  <pre><code class="abap">*&amp;---------------------------------------------------------------*
+*&amp; 延遲載入＋雙擊＋樹上方的工具列（CL_GUI_TOOLBAR）
+*&amp;---------------------------------------------------------------*
+CLASS lcl_tree_handler DEFINITION.
+  PUBLIC SECTION.
+    CLASS-METHODS:
+      on_expand       FOR EVENT expand_no_children OF cl_simple_tree_model IMPORTING node_key,
+      on_dblclick     FOR EVENT node_double_click  OF cl_simple_tree_model IMPORTING node_key,
+      on_function_sel FOR EVENT function_selected  OF cl_gui_toolbar       IMPORTING fcode.
+ENDCLASS.
+
+CLASS lcl_tree_handler IMPLEMENTATION.
+  METHOD on_expand.
+    DATA: lv_carrid TYPE s_carr_id,
+          lv_connid TYPE s_conn_id.
+    CLEAR: lv_carrid, lv_connid.                        "先初始化（筆記提醒）
+    SPLIT node_key AT ';' INTO lv_carrid lv_connid.
+
+    SELECT fldate, seatsmax, seatsocc
+      FROM sflight
+      WHERE carrid = @lv_carrid AND connid = @lv_connid
+      ORDER BY fldate
+      INTO TABLE @DATA(lt_fl).
+
+    go_tree-&gt;add_nodes( node_table = VALUE treemsnota( FOR f IN lt_fl
+      ( node_key  = |{ node_key };{ f-fldate }|
+        relatkey  = node_key
+        relatship = cl_simple_tree_model=&gt;relat_last_child
+        n_image   = icon_date
+        text      = |{ f-fldate DATE = USER }　空位 { f-seatsmax - f-seatsocc }| ) ) ).
+  ENDMETHOD.
+
+  METHOD on_dblclick.
+    SPLIT node_key AT ';' INTO TABLE DATA(lt_key).
+    IF lines( lt_key ) = 3.
+      MESSAGE |雙擊航班 { node_key }| TYPE 'S'.
+    ENDIF.
+  ENDMETHOD.
+
+  METHOD on_function_sel.
+    CASE fcode.
+      WHEN 'FIND'.
+        go_tree-&gt;find( IMPORTING result_type = DATA(lv_type) result_node_key = DATA(lv_key) ).
+        IF lv_type = cl_simple_tree_model=&gt;find_match.
+          go_tree-&gt;set_selected_node( node_key = lv_key ).
+        ENDIF.
+      WHEN 'PRINT'.
+        go_tree-&gt;print_tree( all_nodes = abap_true preview = abap_true ).
+    ENDCASE.
+  ENDMETHOD.
+ENDCLASS.
+
+METHOD register_tree_events.
+  go_tree-&gt;set_registered_events( events = VALUE #(
+    ( eventid = cl_simple_tree_model=&gt;eventid_node_double_click appl_event = abap_true )
+    ( eventid = cl_simple_tree_model=&gt;eventid_expand_no_children ) ) ).
+  SET HANDLER lcl_tree_handler=&gt;on_expand lcl_tree_handler=&gt;on_dblclick FOR go_tree.
+
+  " 工具列：放在縱向 splitter 的上格，並鎖住分隔條
+  go_toolbar = NEW cl_gui_toolbar( parent = io_top_cell ).
+  go_toolbar-&gt;add_button( fcode = 'FIND'  icon = icon_search butn_type = cntb_btype_button
+                          quickinfo = '尋找節點' ).
+  go_toolbar-&gt;add_button( fcode = 'PRINT' icon = icon_print  butn_type = cntb_btype_button
+                          text = '列印' ).
+  go_toolbar-&gt;set_registered_events( events = VALUE #(
+    ( eventid = cl_gui_toolbar=&gt;m_id_function_selected ) ) ).
+  SET HANDLER lcl_tree_handler=&gt;on_function_sel FOR go_toolbar.
+ENDMETHOD.</code></pre>
+  <p><b>CL_GUI_TOOLBAR</b>：display_mode 用 <span class="kw">cl_gui_toolbar=&gt;m_mode_horizontal／m_mode_vertical</span>；按鈕型別來自型別群組 CNTB：<span class="kw">cntb_btype_button</span>（按鈕）、<span class="kw">cntb_btype_menu</span>（選單）、<span class="kw">cntb_btype_dropdown</span>（帶選單的按鈕）、<span class="kw">cntb_btype_sep</span>（分隔線）、<span class="kw">cntb_btype_check</span>（多態按鈕）；使用者點選觸發 <span class="kw">function_selected</span>（參數 FCODE）。筆記建議：工具列放在縱向 Splitter 上格、給足空間、鎖住分隔條不讓使用者拖動。</p>
+  <p><b>Column Tree 的處理順序</b>：① NEW 模型（hierarchy_column_name 給階層欄技術名、hierarchy_header 用 TREEMHHDR 填 heading／width）→ ② <span class="kw">create_tree_control</span>（給容器）→ ③ 每欄 <span class="kw">add_column</span>（name、width、header_text）→ ④ 每個節點先填 item 表（TREEMCITAB，行 TREEMCITEM：ITEM_NAME、CLASS、TEXT、FONT、DISABLED、EDITABLE、HIDDEN、T_IMAGE、CHOSEN、STYLE）再 <span class="kw">add_node</span>（item_table）；批次時用 <span class="kw">add_nodes</span>（TREEMCNOTA）＋ <span class="kw">add_items</span>（TREEMCITAC，第一欄要放節點 ID）。每個 item 由（節點 ID、欄名）唯一決定，像二維座標。CLASS 常數：<span class="kw">item_class_text／button／checkbox／link</span>——要回應滑鼠動作的元素建議顯示成 link。<b>List Tree</b> 則每個節點用 TREEMLITAB 傳 item，並指定 LAST_HITEM（階層區顯示幾個 item）；對齊用 <span class="kw">align_auto／align_left／align_right</span>；建構子可設 with_headers、list_header、item_selection。</p>
+  <pre><code class="abap">*&amp;---------------------------------------------------------------*
+*&amp; Column Tree Model：兩欄（航線／說明），用 add_node + item_table
+*&amp;---------------------------------------------------------------*
+DATA go_ctree TYPE REF TO cl_column_tree_model.
+
+METHOD build_column_tree.
+  go_ctree = NEW #( node_selection_mode   = cl_column_tree_model=&gt;node_sel_mode_single
+                    item_selection        = abap_true
+                    hierarchy_column_name = 'COL1'
+                    hierarchy_header      = VALUE treemhhdr( heading = '航線' width = 30 ) ).
+  go_ctree-&gt;create_tree_control( parent = io_container ).
+  go_ctree-&gt;add_column( name = 'COL2' width = 40 header_text = '說明' ).
+
+  go_ctree-&gt;add_node(
+    node_key   = 'ROOT'
+    isfolder   = abap_true
+    item_table = VALUE treemcitab(
+      ( item_name = 'COL1' class = cl_column_tree_model=&gt;item_class_text text = '航線' ) ) ).
+
+  go_ctree-&gt;add_node(
+    node_key          = 'LH'
+    relative_node_key = 'ROOT'
+    relationship      = cl_column_tree_model=&gt;relat_last_child
+    isfolder          = abap_true
+    item_table        = VALUE treemcitab(
+      ( item_name = 'COL1' class = cl_column_tree_model=&gt;item_class_text text = '漢莎航空' )
+      ( item_name = 'COL2' class = cl_column_tree_model=&gt;item_class_link text = '法蘭克福 → 紐約' ) ) ).
+ENDMETHOD.</code></pre>
+  <div class="warn"><b>教材錯字</b>：p237 的 <span class="kw">cl_gui_toobar</span> 應為 <b>CL_GUI_TOOLBAR</b>；p240 內文說註冊事件用 <span class="kw">cl_simple_tree_model=&gt;m_id_function_selected</span>，但這是工具列的事件，應為 <b>cl_gui_toolbar=&gt;m_id_function_selected</b>（筆記同頁的程式碼寫對了）；p246 TREEV_ITME 應為 TREEV_ITEM；p256 說 SEU_TREE_* 套件是「SAP 網格控件」的知識庫物件，應為<b>樹控制項</b>。另有 <span class="kw">SAPSIMPLE_TREE_CONTROL_DEMO</span>、<span class="kw">SAPCOLUMN_TREE_CONTROL_DEMO</span>、<span class="kw">SAPLIST_TREE_CONTROL_DEMO</span>、<span class="kw">SAPLIST_TREE_CONTROL_DEMO_HDR</span>（套件 SEU_TREE_CONTROL）可直接執行。</div>
+  <div class="tip">現代替代：需要「樹＋ALV 欄位」時，考慮 <b>CL_SALV_TREE</b>（只讀、API 跟 SALV 一致）或 <b>CL_GUI_ALV_TREE</b>（可自訂事件）；它們會替你處理欄位格式化，不必自己把數值轉字元。</div>
+
+  <h3 id="ch05-10-16">16. 拖放（Drag &amp; Drop）：Flavor、控制類型、資料傳輸物件與三個事件</h3>
+  <p>原課程的範例情境：① 從 ALV Grid 拖一筆<b>客戶</b>到 Simple Tree 的<b>航線節點</b> ＝ 替客戶訂位（複製）；② 從訂位樹拖一個<b>訂位節點</b>到一張<b>回收桶圖片</b> ＝ 取消訂位（移動）。課程只做控制項層面，<b>不更新資料庫</b>。實作至少四步：</p>
+  <ol>
+    <li><b>定義行為類型（Flavor）</b>：每個 flavor 有名稱（任意）、是拖曳來源（dragsrc）還是放下目標（droptarget）、滑鼠效果（effect：<span class="kw">cl_dragdrop=&gt;copy／move／none</span>）、控制項內部的效果（effect_in_ctrl）。多個 flavor 收在一個 <b>CL_DRAGDROP</b> 實例裡，這個實例就是一個「控制類型（行為表）」。</li>
+    <li><b>把控制項（或子物件）指派給控制類型</b>：<span class="kw">get_handle</span> 取得整數 handle，再依控制項各自的方式掛上——Grid 用 LVC_S_LAYO-S_DRAGDROP（ROW_DDID／CNTR_DDID／GRID_DDID／COL_DDID）或 Field Catalog 的 DRAGDROPID；樹節點填 DRAGDROPID；Picture 直接 <span class="kw">set_dragdrop_picture</span> 傳 CL_DRAGDROP 實例。</li>
+    <li><b>定義資料傳輸類別</b>：系統在每次拖放產生一個「拖放服務實例」（CL_DRAGDROPOBJECT），它的 <span class="kw">object</span> 屬性可指向任何物件；所以要寫一個（通常是本地）類別，在 PUBLIC SECTION 放要傳的資料。</li>
+    <li><b>寫處理方法</b>：至少來源的 <b>drag</b> 與目標的 <b>drop</b>，需要時再加來源的 <b>drop_complete</b>（放下完成後回頭更新來源，例如「移動」後把來源節點刪掉）。</li>
+  </ol>
+  <p>放下時系統的判斷流程：找出來源與目標子物件 → 依指派找出兩者<b>共同</b>的 flavor 名稱 → 依 flavor 的 effect 決定滑鼠效果（兩種都允許時，<b>按 Ctrl 是複製、否則是移動</b>）→ 處理方法中可讀 <span class="kw">drag_drop_object-&gt;flavor</span> 分流。若兩個 flavor 效果相同而無法判斷，就要在 <span class="kw">ongetflavor</span> 類事件中於執行時指定。</p>
+  <pre><code class="abap">*&amp;---------------------------------------------------------------*
+*&amp; ① 行為表 ② 指派 handle ③ 資料傳輸類別
+*&amp;---------------------------------------------------------------*
+CLASS lcl_dd_data DEFINITION.                     "資料傳輸類別（筆記的 lcl_booking）
+  PUBLIC SECTION.
+    DATA ms_customer TYPE scustom.
+    DATA mv_node_key TYPE tm_nodekey.
+ENDCLASS.
+
+DATA go_dd_src TYPE REF TO cl_dragdrop.           "控制類型「來源」
+DATA go_dd_trg TYPE REF TO cl_dragdrop.           "控制類型「目標」
+
+METHOD init_dragdrop.
+  go_dd_src = NEW #( ).
+  go_dd_trg = NEW #( ).
+
+  " 來源：BOOK（複製）、CANC（移動）
+  go_dd_src-&gt;add( flavor = 'BOOK' dragsrc = abap_true droptarget = abap_false
+                  effect = cl_dragdrop=&gt;copy effect_in_ctrl = cl_dragdrop=&gt;none ).
+  go_dd_src-&gt;add( flavor = 'CANC' dragsrc = abap_true droptarget = abap_false
+                  effect = cl_dragdrop=&gt;move effect_in_ctrl = cl_dragdrop=&gt;none ).
+  " 目標：同名 flavor 才配得起來
+  go_dd_trg-&gt;add( flavor = 'BOOK' dragsrc = abap_false droptarget = abap_true
+                  effect = cl_dragdrop=&gt;copy effect_in_ctrl = cl_dragdrop=&gt;none ).
+  go_dd_trg-&gt;add( flavor = 'CANC' dragsrc = abap_false droptarget = abap_true
+                  effect = cl_dragdrop=&gt;move effect_in_ctrl = cl_dragdrop=&gt;none ).
+
+  go_dd_src-&gt;get_handle( IMPORTING handle = gv_handle_src ).
+  go_dd_trg-&gt;get_handle( IMPORTING handle = gv_handle_trg ).
+
+  " Grid：整列都是來源 → 在 set_table_for_first_display 的 is_layout 帶入
+  gs_layout_cust-s_dragdrop-row_ddid = gv_handle_src.
+  " 樹：航線節點是目標、訂位節點是來源 → 建節點時填 dragdropid
+  "   VALUE treemsnodt( node_key = … dragdropid = gv_handle_trg )
+  " 回收桶圖片：直接傳整個控制類型
+  go_bin_pic-&gt;set_dragdrop_picture( dragdrop = go_dd_trg ).
+ENDMETHOD.</code></pre>
+  <pre><code class="abap">*&amp;---------------------------------------------------------------*
+*&amp; ④ 三個事件：Grid 的 ondrag、樹的 drop、樹的 drop_complete
+*&amp;---------------------------------------------------------------*
+CLASS lcl_dd_handler DEFINITION.
+  PUBLIC SECTION.
+    CLASS-METHODS:
+      on_grid_drag     FOR EVENT ondrag OF cl_gui_alv_grid
+                       IMPORTING e_row e_dragdropobj,
+      on_tree_drag     FOR EVENT drag OF cl_simple_tree_model
+                       IMPORTING node_key drag_drop_object,
+      on_tree_drop     FOR EVENT drop OF cl_simple_tree_model
+                       IMPORTING node_key drag_drop_object,
+      on_tree_drop_cpl FOR EVENT drop_complete OF cl_simple_tree_model
+                       IMPORTING node_key drag_drop_object.
+ENDCLASS.
+
+CLASS lcl_dd_handler IMPLEMENTATION.
+  METHOD on_grid_drag.                            "來源：把被拖的客戶放進傳輸物件
+    DATA(lo_data) = NEW lcl_dd_data( ).
+    READ TABLE gt_scustom INDEX e_row-index INTO lo_data-&gt;ms_customer.
+    e_dragdropobj-&gt;object = lo_data.              "交給拖放服務實例，方法結束後仍可取回
+  ENDMETHOD.
+
+  METHOD on_tree_drag.                            "來源：訂位節點只需要傳節點 ID
+    drag_drop_object-&gt;object = NEW lcl_dd_data( ).
+  ENDMETHOD.
+
+  METHOD on_tree_drop.                            "目標：航線節點收到客戶 → 新增訂位節點
+    CASE drag_drop_object-&gt;flavor.
+      WHEN 'BOOK'.
+        TRY.
+            DATA(lo_data) = CAST lcl_dd_data( drag_drop_object-&gt;object ).   "向下轉型
+          CATCH cx_sy_move_cast_error.
+            drag_drop_object-&gt;abort( ).           "型別不對 → 中止整個拖放
+            RETURN.
+        ENDTRY.
+        DATA(lv_new) = CONV tm_nodekey( |{ node_key };{ lo_data-&gt;ms_customer-id }| ).
+        go_tree-&gt;add_node( node_key          = lv_new
+                           relative_node_key = node_key
+                           relationship      = cl_simple_tree_model=&gt;relat_last_child
+                           isfolder          = abap_false
+                           drag_drop_id      = gv_handle_src
+                           text              = |{ lo_data-&gt;ms_customer-name }| ).
+        gv_undo_node_key = lv_new.                "記住最後一筆，供「復原」使用
+      WHEN OTHERS.
+        drag_drop_object-&gt;abort( ).
+    ENDCASE.
+  ENDMETHOD.
+
+  METHOD on_tree_drop_cpl.                        "來源：放進回收桶後把訂位節點刪掉
+    IF drag_drop_object-&gt;flavor = 'CANC'.
+      go_tree-&gt;delete_node( node_key = node_key ).
+      "… 依 node_key 拆回應用鍵，視需要更新資料（BC414：更新模組／LUW）
+    ELSE.
+      drag_drop_object-&gt;abort( ).
+    ENDIF.
+  ENDMETHOD.
+ENDCLASS.</code></pre>
+  <div class="warn"><b>教材修正</b>：p262 的 <span class="kw">ref_flac_trg</span>、<span class="kw">dragscr</span>、p266 的 <span class="kw">ref_flav_try</span> 都是筆誤（應為 ref_flav_trg、dragsrc）；p276 的 <span class="kw">ENDMOTHOD</span> 應為 ENDMETHOD；p279 的 <span class="kw">PUBLIC SECITON</span>、<span class="kw">lcl_event_hander</span> 也是錯字。筆記用 <span class="kw">CATCH SYSTEM-EXCEPTIONS move_cast_error = 1 … ENDCATCH</span> 包住 <span class="kw">?=</span>，這是過時寫法，現代寫法為 <span class="kw">TRY … CAST … CATCH cx_sy_move_cast_error</span>（見 <a href="#ap-01">附錄 舊語法對照</a>）。add_node 的 drag_drop_id 參數名稱請以 SE24 的方法簽章為準。</div>
+  <div class="tip"><b>WAN 環境的效能最佳化</b>（筆記 p283～p284）：拖放判斷完全在前端進行，系統必須把<b>所有控制類型表</b>傳到前端；<b>表越少越好</b>——一張表裡放很多 flavor，比很多張只放一個 flavor 的表傳得快。課程範例（四個控制類型、各一個 flavor）好懂但不是最佳解；原則是「<b>行為相同的子物件共用同一個 CL_DRAGDROP 實例</b>」。人因原則：每個拖放動作都要提供復原，至少「移動」要能復原。</div>
+  <div class="warn"><b>S/4HANA 現況</b>：控制項拖放依賴 SAP GUI for Windows／Java 的前端元件，<b>在 SAP GUI for HTML（WebGUI，含從 Fiori Launchpad 開啟的 GUI 交易）中支援非常有限</b>。若使用者主要透過 Fiori Launchpad 使用，請先在 WebGUI 實測；新需求的拖放互動應以 SAPUI5／Fiori（例如 sap.m.Table 的 DragDropConfig）實作。</div>
+
+  <h3 id="ch05-10-17">17. 綜合案例：在一個畫面整合選擇條件、Grid、Tree、拖放與清單</h3>
+  <p>第 10 單元把全部技術串成一支<b>單畫面交易</b>：① 表格顯示客戶，並可用客戶號碼限縮；② 為任意數量的客戶預訂任意數量的航班；③ 可復原最後一筆預訂；④ 雙擊訂位節點時產生行程（訂位確認）。重點是<b>傳統畫面技術與控制項各取所長</b>：</p>
+  <table>
+    <thead><tr><th>需求</th><th>選用技術</th><th>理由</th></tr></thead>
+    <tbody>
+      <tr><td>程式類型</td><td><b>模組池（Module Pool）</b>，命名 SAPMZ…／SAPMY…，拆成 TOP／O01（PBO）／I01（PAI）／F01 等 Include</td><td>不需要報表事件；程式碼量大，拆 Include 好維護（詳見 <a href="#ch04-2">4-2 章</a>、<a href="#ch05-9">5-9 章</a>）</td></tr>
+      <tr><td>客戶號碼條件</td><td><b>選擇畫面當子畫面</b>（SELECTION-SCREEN … AS SUBSCREEN ＋ CALL SUBSCREEN）</td><td>SELECT-OPTIONS 自帶搜尋說明、多值輸入；控制項主要用來顯示，不適合做輸入條件</td></tr>
+      <tr><td>容器</td><td><b>Docking Container</b>（下方 ratio 90、右側 ratio 30，講義預設值）</td><td>使用者可自己調整各區大小</td></tr>
+      <tr><td>客戶清單</td><td>ALV Grid；<b>只有條件改變時才 refresh</b></td><td>傳到前端的資料量要省</td></tr>
+      <tr><td>航線</td><td>Simple Tree Model；<b>最多先讀兩層</b>，其餘 expand_no_children 再讀</td><td>執行時效率</td></tr>
+      <tr><td>訂位</td><td>Grid → Tree 拖放（複製）；新節點 ID 存全域，供復原</td><td>—</td></tr>
+      <tr><td>復原</td><td>GUI Status 按鈕或 CL_GUI_TOOLBAR；刪節點前先跳確認視窗</td><td>—</td></tr>
+      <tr><td>行程</td><td>雙擊訂位節點（應用事件）→ <b>模態對話框中的 ABAP 清單</b></td><td>直接用清單的格式化能力與標準清單 Status（含列印）</td></tr>
+    </tbody>
+  </table>
+  <pre><code class="abap">*&amp;---------------------------------------------------------------*
+*&amp; SAPMZBC412_BOOK：TOP / PBO / PAI 骨架（S/4HANA 寫法）
+*&amp;---------------------------------------------------------------*
+*----- TOP Include
+PROGRAM sapmzbc412_book.
+DATA gv_id        TYPE s_customer.
+DATA gt_scustom   TYPE SORTED TABLE OF scustom WITH UNIQUE KEY id.
+DATA gt_cust_disp TYPE STANDARD TABLE OF scustom WITH EMPTY KEY.
+DATA gt_cust_old  TYPE RANGE OF s_customer.          "上次的條件（筆記：DATA … LIKE RANGE OF）
+DATA ok_code      TYPE sy-ucomm.
+
+SELECTION-SCREEN BEGIN OF SCREEN 1100 AS SUBSCREEN.
+  SELECT-OPTIONS so_cust FOR gv_id.
+SELECTION-SCREEN END OF SCREEN 1100.
+
+LOAD-OF-PROGRAM.                                      "模組池的初始化時點
+  SELECT id, name, city, country, telephone, custtype
+    FROM scustom
+    ORDER BY id
+    INTO CORRESPONDING FIELDS OF TABLE @gt_scustom
+    UP TO 500 ROWS.
+  so_cust[] = VALUE #( ( sign = 'I' option = 'BT' low = '00000001' high = '00000100' ) ).
+
+*----- O01 Include（PBO）
+MODULE init_container_processing_0100 OUTPUT.
+  CHECK go_dock_bottom IS NOT BOUND.
+  go_dock_bottom = NEW #( side = cl_gui_docking_container=&gt;dock_at_bottom ratio = 90 ).
+  go_dock_right  = NEW #( side = cl_gui_docking_container=&gt;dock_at_right  ratio = 30 ).
+ENDMODULE.
+
+MODULE init_alv_processing_0100 OUTPUT.
+  IF so_cust[] &lt;&gt; gt_cust_old.                       "條件沒變就不重傳資料
+    gt_cust_disp = VALUE #( FOR c IN gt_scustom WHERE ( id IN so_cust ) ( c ) ).
+    gt_cust_old  = so_cust[].
+    IF go_alv IS NOT BOUND.
+      go_alv = NEW #( i_parent = go_dock_bottom ).
+      go_alv-&gt;set_table_for_first_display( EXPORTING i_structure_name = 'SCUSTOM'
+                                                     is_layout        = gs_layout_cust
+                                           CHANGING  it_outtab        = gt_cust_disp ).
+    ELSE.
+      go_alv-&gt;refresh_table_display( ).
+    ENDIF.
+  ENDIF.
+ENDMODULE.
+
+*----- 畫面 0100 Flow Logic
+* PROCESS BEFORE OUTPUT.
+*   MODULE status_0100.
+*   CALL SUBSCREEN sub_sel INCLUDING sy-repid '1100'.
+*   MODULE init_container_processing_0100.
+*   MODULE init_alv_processing_0100.
+* PROCESS AFTER INPUT.
+*   CALL SUBSCREEN sub_sel.
+*   MODULE user_command_0100.
+
+*----- I01 Include（PAI）
+MODULE user_command_0100 INPUT.
+  CASE ok_code.
+    WHEN 'UNDO'.
+      CHECK gv_undo_node_key IS NOT INITIAL.
+      DATA lv_answer TYPE c LENGTH 1.
+      CALL FUNCTION 'POPUP_TO_CONFIRM'
+        EXPORTING
+          titlebar       = '復原訂位'
+          text_question  = |確定要取消最後一筆訂位嗎？|
+          default_button = '2'
+        IMPORTING
+          answer         = lv_answer
+        EXCEPTIONS
+          OTHERS         = 1.
+      IF sy-subrc = 0 AND lv_answer = '1'.
+        go_tree-&gt;delete_node( node_key = gv_undo_node_key ).
+        CLEAR gv_undo_node_key.
+      ENDIF.
+    WHEN 'BACK' OR 'EXIT' OR 'CANC'.
+      LEAVE TO SCREEN 0.
+  ENDCASE.
+  CLEAR ok_code.
+ENDMODULE.</code></pre>
+  <pre><code class="abap">*&amp;---------------------------------------------------------------*
+*&amp; 行程：雙擊訂位節點（應用事件）→ CALL SCREEN 200 模態對話框 → 清單
+*&amp;---------------------------------------------------------------*
+METHOD on_booking_dblclick.            "node_double_click 處理方法中
+  SPLIT node_key AT ';' INTO gv_carrid gv_connid gv_fldate gv_custid.
+  CALL SCREEN 200 STARTING AT 10 5 ENDING AT 90 20.
+ENDMETHOD.
+
+*----- 畫面 0200（Modal Dialog Box）的 PBO，畫面本身不放任何元素
+MODULE create_list_0200 OUTPUT.
+  SUPPRESS DIALOG.                                   "不顯示畫面 200 本身
+  LEAVE TO LIST-PROCESSING AND RETURN TO SCREEN 0.   "改顯示清單，關閉後回到 0100
+  SET PF-STATUS space.                               "標準清單 Status（含列印）
+
+  READ TABLE gt_scustom WITH TABLE KEY id = gv_custid ASSIGNING FIELD-SYMBOL(&lt;c&gt;).
+  SELECT SINGLE cityfrom, cityto, deptime, arrtime
+    FROM spfli
+    WHERE carrid = @gv_carrid AND connid = @gv_connid
+    INTO @DATA(ls_route).
+  WRITE: / '行程確認' COLOR COL_HEADING,
+         / |旅客：{ COND #( WHEN &lt;c&gt; IS ASSIGNED THEN &lt;c&gt;-name ) }|,
+         / |航班：{ gv_carrid } { gv_connid }　{ gv_fldate DATE = USER }|,
+         / |航線：{ ls_route-cityfrom } → { ls_route-cityto }|.
+ENDMODULE.</code></pre>
+  <div class="note"><b>選擇條件的兩個提醒</b>：① 講義用區間（BT）示範預設值只是為了方便；實務上客戶號、料號這類<b>有編碼規則、可能不連續、有 ALPHA 前導零</b>的鍵，<b>多筆 EQ 列舉比 BT 區間安全</b>——區間比的是字典序，不是業務語意（Casper 的第二條經驗）。② 條件比較 <span class="kw">so_cust[] &lt;&gt; gt_cust_old</span> 讓 Grid 只在條件真的改變時才重送，這是控制項程式最常被忽略的效能細節。</div>
+  <div class="warn"><b>教材修正</b>：p296 的 <span class="kw">POPUP_TO_CONFIRM_STEP</span> 已被標為過時，請改用 <b>POPUP_TO_CONFIRM</b>；p293 的 <span class="kw">MODUEL</span> 是錯字。筆記 p298 的延伸功能（新增客戶、動態顯示／隱藏復原鍵、找出某客戶所有訂位並列印、儲存後在下一畫面顯示完整確認、以拖放刪除任意訂位）需要另一個全域內表記錄已插入的訂位，儲存時再以<b>非同步更新</b>寫入資料庫——那是 <a href="#ch05-11">5-11 章 BC414</a> 的主題。</div>
+
+  <h3 id="ch05-10-18">18. S/4HANA 現況、替代方案與舊語法對照</h3>
+  <p>BC412 的技術在 S/4HANA 1809+ 的 SAP GUI 交易中<b>全部仍可使用</b>，而且大量標準交易（ME21N、MIGO、VA01 的 Enjoy 畫面）本身就是這些控制項組成的。但它們有三個先天限制：只活在 SAP GUI、WebGUI 支援度不一、ABAP Cloud 完全不可用。選型建議：</p>
+  <table>
+    <thead><tr><th>需求</th><th>首選（先標準）</th><th>其次</th><th>最後才用</th></tr></thead>
+    <tbody>
+      <tr><td>唯讀清單報表</td><td>標準 Fiori App／標準報表</td><td>CL_SALV_TABLE（全螢幕或放進容器）</td><td>CL_GUI_ALV_GRID</td></tr>
+      <tr><td>可編輯表格</td><td>標準交易／Fiori Elements（RAP）</td><td>CL_GUI_ALV_GRID（EDIT ＋ data_changed）</td><td>Table Control</td></tr>
+      <tr><td>階層顯示</td><td>Fiori Elements Tree Table</td><td>CL_SALV_TREE／CL_GUI_ALV_TREE</td><td>CL_SIMPLE／COLUMN／LIST_TREE_MODEL</td></tr>
+      <tr><td>長文字編輯</td><td>標準單據的文字頁籤</td><td>CL_GUI_TEXTEDIT ＋ READ_TEXT／SAVE_TEXT</td><td>—</td></tr>
+      <tr><td>圖片、HTML、拖放</td><td>SAPUI5／Fiori</td><td>CL_GUI_PICTURE、CL_GUI_HTML_VIEWER、CL_DRAGDROP（僅 SAP GUI for Windows 穩定）</td><td>—</td></tr>
+    </tbody>
+  </table>
+  <table>
+    <thead><tr><th>筆記中的舊寫法</th><th>本章的現代寫法</th></tr></thead>
+    <tbody>
+      <tr><td>CALL METHOD obj-&gt;meth EXPORTING … RECEIVING …</td><td>函數式呼叫 obj-&gt;meth( … )；有 RETURNING 時直接用在運算式中</td></tr>
+      <tr><td>CREATE OBJECT（不需接傳統例外時）</td><td>NEW #( … )；需要 EXCEPTIONS 時保留 CREATE OBJECT</td></tr>
+      <tr><td>TYPE-POOLS cntl／col／icon／cntb</td><td>7.02 起不必宣告，直接用型別與常數</td></tr>
+      <tr><td>IF first_time IS INITIAL／IF ref IS INITIAL</td><td>IF ref IS NOT BOUND</td></tr>
+      <tr><td>wa_events-eventid = … INSERT wa_events INTO TABLE it_events</td><td>VALUE cntl_simple_events( ( eventid = … appl_event = … ) )</td></tr>
+      <tr><td>CATCH SYSTEM-EXCEPTIONS move_cast_error = 1 … ref ?= obj</td><td>TRY. CAST #( ) / ?= CATCH cx_sy_move_cast_error. ENDTRY.</td></tr>
+      <tr><td>CONCATENATE 'C' col_negative '10' INTO wa-color</td><td>|C{ col_negative }10|</td></tr>
+      <tr><td>DATA BEGIN OF … INCLUDE STRUCTURE … DATA END OF</td><td>TYPES BEGIN OF … INCLUDE TYPE … END OF</td></tr>
+      <tr><td>MODIFY itab FROM wa TRANSPORTING color WHERE …</td><td>LOOP AT … ASSIGNING FIELD-SYMBOL(&lt;f&gt;) 直接改</td></tr>
+      <tr><td>POPUP_TO_CONFIRM_STEP</td><td>POPUP_TO_CONFIRM</td></tr>
+      <tr><td>MESSAGE a016(bc412) WITH x y</td><td>MESSAGE |…{ x }…| TYPE 'A'（或保留訊息類別以利翻譯）</td></tr>
+    </tbody>
+  </table>
+  <pre><code class="abap">*&amp;---------------------------------------------------------------*
+*&amp; 先標準再客製：唯讀清單直接用 CL_SALV_TABLE 放進 BC412 的任何容器
+*&amp;---------------------------------------------------------------*
+METHOD show_salv_in_container.
+  TRY.
+      cl_salv_table=&gt;factory(
+        EXPORTING r_container  = io_container          "Custom／Docking／Splitter 儲存格皆可
+        IMPORTING r_salv_table = DATA(lo_salv)
+        CHANGING  t_table      = gt_sflight ).          "一樣是指標：內表必須全域
+      lo_salv-&gt;get_functions( )-&gt;set_all( abap_true ).
+      lo_salv-&gt;get_columns( )-&gt;set_optimize( abap_true ).
+      lo_salv-&gt;get_display_settings( )-&gt;set_striped_pattern( abap_true ).
+      lo_salv-&gt;display( ).
+    CATCH cx_salv_msg INTO DATA(lx).
+      MESSAGE lx-&gt;get_text( ) TYPE 'E'.
+  ENDTRY.
+ENDMETHOD.</code></pre>
+  <div class="warn"><b>ABAP Cloud 與 ADT</b>：在 ABAP Cloud（BTP ABAP Environment、S/4HANA Cloud Public Edition 的 Developer Extensibility）中，CL_GUI_*、CALL SCREEN、Dynpro 全都不可用，UI 一律走 RAP ＋ Fiori Elements（見 <a href="#ch05-23">5-23 章 Web Dynpro</a> 的演進說明）。在 On-Premise 用 <a href="#ch05-5">ADT／Eclipse</a> 開發時，程式碼可在 ADT 寫，但 Screen Painter、Menu Painter 仍會開啟內嵌的 SAP GUI 視窗。</div>
+  <div class="tip">三條實務經驗在本章的對應：① <b>HANA 沒有預設排序</b>——Grid、Tree 的資料來源 SELECT 一律 ORDER BY；Grid 排序會改變內表，「取第一筆」前要重新確認順序。② <b>列舉優於區間</b>——SELECT-OPTIONS 子畫面的預設值與使用者教育。③ <b>先標準再客製</b>——SALV 能做的不要自組 CL_GUI_ALV_GRID，標準交易或 Fiori App 能做的不要寫 BC412 式的多控制項畫面。</div>
+
+  <h3 id="ch05-10-qa">練習與自我檢核</h3>
+  <p><b>實作練習</b>（沿用原課程的 SFLIGHT 資料模型，程式名 ZBC412_##）：</p>
+  <ol>
+    <li>畫面 0100 放一個 Custom Control，顯示 SMW0 中的公司 Logo；右鍵選單可在 fit／stretch／normal 三種顯示模式間切換；點圖片時以訊息顯示滑鼠座標（系統事件），雙擊空白處時觸發 PAI（應用事件）。</li>
+    <li>用 Docking（左）＋ Splitter（2×1）做出「上：航空公司 Simple Tree、下：TextEdit 備註」，右側主區放 ALV Grid；雙擊樹上的航線，Grid 只顯示該航線的 SFLIGHT。</li>
+    <li>在第 2 題的 Grid 加上：列顏色（客滿紅色）、紅綠燈圖示欄、PRICE 依 CURRENCY 格式化、自訂工具列按鈕「訂位」、列印頁首。</li>
+    <li>把航線樹改成 Column Tree（欄：航線、起訖城市、班次數），航班日期以 expand_no_children 延遲載入。</li>
+    <li>實作第 16 節的拖放：Grid 客戶 → 樹航線節點（複製＝訂位）、訂位節點 → 回收桶圖片（移動＝取消），並提供復原。</li>
+  </ol>
+  <p><b>自我檢核</b>：</p>
+  <table>
+    <thead><tr><th>#</th><th>問題</th><th>參考答案要點</th></tr></thead>
+    <tbody>
+      <tr><td>1</td><td>一個 ALV Grid 放在 Custom Container 裡，執行時總共有幾個實例？分別在哪裡？</td><td>4 個：ABAP 端兩個代理物件（容器、Grid），展示層兩個控制項實例；ABAP 只跟代理物件溝通，透過 CFW／Automation Controller 送到前端。</td></tr>
+      <tr><td>2</td><td>為什麼建立控制項的程式碼一定要包在「只做一次」的判斷裡？不包會怎樣？</td><td>容器畫面的下一畫面通常是自己，每次 PAI 後都會再跑 PBO；每次 CREATE 都會把新實例接到畫面，PAI 對舊實例的方法呼叫看不到結果，還會累積前端資源。用 IS NOT BOUND 判斷。</td></tr>
+      <tr><td>3</td><td>get_text_as_r3table 之後馬上讀內表卻是空的，原因與解法？</td><td>方法呼叫只排進 Automation Queue，要到 flush 才真正執行並回傳；需要結果時立刻 cl_gui_cfw=&gt;flush( )，且要接它的 EXCEPTIONS。PAI 中先把所有讀取排好再 flush 一次。</td></tr>
+      <tr><td>4</td><td>系統事件與應用事件的差異？何時要用 dispatch、何時用 set_new_ok_code？</td><td>系統事件不觸發 PAI、畫面欄位不傳回；應用事件觸發 PAI，處理方法在 PAI 結束時（或手動 cl_gui_cfw=&gt;dispatch）執行。系統事件處理完想回到 PAI 用 set_new_ok_code。</td></tr>
+      <tr><td>5</td><td>為什麼 Picture 控制項設了 SET HANDLER 卻收不到 picture_click？</td><td>前端過濾器初始不傳任何事件，必須先用 set_registered_events 註冊 eventid_picture_click（ALV Grid 例外，代理會自己註冊）。</td></tr>
+      <tr><td>6</td><td>ALV Grid 的輸出內表可以宣告成區域變數嗎？使用者在 Grid 上排序後，內表會怎樣？</td><td>不行，代理物件只保存指標，內表要與 Grid 同生命週期。排序直接作用在內表上，所以內表順序會改變；讀選取列 index 時要以目前順序為準，也呼應「HANA 無預設排序、取第一筆前先確認排序」。</td></tr>
+      <tr><td>7</td><td>i_save 的 'U'、'X'、'A' 各代表什麼？is_variant 的 handle 何時必填？</td><td>U：只能存使用者專屬；X：只能存全域；A：兩者皆可。同一程式有多個 Grid 時用 handle 區分各自的變式。</td></tr>
+      <tr><td>8</td><td>refresh_table_display 的 is_stable 與 i_soft_refresh 各有什麼作用？什麼情況不能只 refresh？</td><td>is_stable（row/col = 'X'）保留捲動位置；i_soft_refresh = 'X' 只重送資料、保留排序篩選。內表行結構改變時必須重新 set_table_for_first_display。</td></tr>
+      <tr><td>9</td><td>建立樹節點時為什麼建議一律用 relat_last_child？節點表順序有什麼限制？</td><td>節點依節點表順序處理，參考節點必須先出現；first_child 會讓後加入的節點插到前面，畫面順序與節點表相反。last_child 讓兩者一致。</td></tr>
+      <tr><td>10</td><td>EXPAND_NO_CHILDREN 解決什麼問題？要搭配節點的哪個欄位？</td><td>延遲載入（增量後續讀取），只在使用者展開時才讀資料庫、傳子節點；節點要設 EXPANDER = 'X'，樹模型只在該資料夾尚無子節點時才傳事件。</td></tr>
+      <tr><td>11</td><td>拖放的最少實作步驟？WAN 環境下怎麼最佳化？</td><td>定義 flavor（CL_DRAGDROP-&gt;add）→ get_handle 指派給子物件 → 資料傳輸類別 → drag／drop（必要時 drop_complete）處理方法。控制類型表越少越好，行為相同的子物件共用同一個 CL_DRAGDROP 實例。</td></tr>
+      <tr><td>12</td><td>筆記 p162 關於 i_appl_events 的註解錯在哪？</td><td>寫成「空白＝全部註冊成應用事件」，實際上空白（預設）是系統事件，'X' 才是應用事件。</td></tr>
+      <tr><td>13</td><td>一個只讀的航班清單，要不要用 BC412 的 CL_GUI_ALV_GRID？</td><td>不必；先找標準（Fiori App／標準報表），再用 CL_SALV_TABLE（可放進任何容器）；只有需要編輯或細控事件時才用 CL_GUI_ALV_GRID——Casper 的「先標準再客製」。</td></tr>
+      <tr><td>14</td><td>S/4HANA 專案若使用者都從 Fiori Launchpad 進 GUI 交易，BC412 技術有什麼風險？</td><td>會以 SAP GUI for HTML 執行，部分控制項功能（特別是拖放、部分樹與前端檔案操作）受限，上線前務必在 WebGUI 實測；新需求優先 Fiori Elements／RAP；ABAP Cloud 完全不能用 CL_GUI_*。</td></tr>
+    </tbody>
+  </table>
+</section>

@@ -1,0 +1,965 @@
+<section class="chapter" id="ch05-7" data-title="BC406 進階清單處理（互動式清單、進階選擇畫面、程式介面）">
+  <h2>第 5-7 章 BC406 進階清單處理（互動式清單、進階選擇畫面、程式介面）</h2>
+  <p class="lede">BC406「Advanced Techniques of List Processing」是 BC405 報表程式的進階篇：選擇畫面的區塊、子畫面與頁籤；Menu Painter 的 GUI 標題與 GUI 狀態；互動式清單的 HIDE、READ LINE、MODIFY LINE、動態排序與 sy-lsind 導覽；以及 SUBMIT、CALL TRANSACTION、ABAP Memory／SAP Memory 的程式間呼叫與傳資料。這一章依强晟筆記的七個單元逐一整理，並把每個技術對照到 S/4HANA 的現代寫法——尤其是「傳統 WRITE 清單 → CL_SALV_TABLE 事件」的轉換。</p>
+  <div class="meta">
+    <div><b>核心 TCODE</b><span class="tcode">SE38</span><span class="tcode">SE80</span><span class="tcode">SE41</span><span class="tcode">SE51</span><span class="tcode">SE91</span><span class="tcode">SE93</span><span class="tcode">BIBS</span><span class="tcode">SHDB</span><span class="tcode">SU53</span><span class="tcode">SU01</span></div>
+    <div><b>關鍵語法</b>SELECTION-SCREEN BEGIN OF BLOCK／LINE／SCREEN／TABBED BLOCK、CALL SELECTION-SCREEN、AT SELECTION-SCREEN ON／ON BLOCK／ON END OF／OUTPUT／ON VALUE-REQUEST、SET TITLEBAR、SET PF-STATUS … EXCLUDING、AT LINE-SELECTION、AT USER-COMMAND、TOP-OF-PAGE DURING LINE-SELECTION、HIDE、READ LINE、MODIFY LINE、GET CURSOR、SUBMIT、CALL TRANSACTION、LEAVE TO TRANSACTION、EXPORT／IMPORT … MEMORY ID、SET／GET PARAMETER ID</div>
+    <div><b>系統欄位</b>sy-lsind、sy-listi、sy-lilli、sy-lisel、sy-ucomm、sy-dynnr、sy-title、sy-pfkey、sy-subrc、sy-cucol、sy-curow</div>
+    <div><b>關鍵物件</b>SFLIGHT、SPFLI、SBOOK、SCARR、SCUSTOM、S_CARRID、T100、TPARA、BDCDATA、BDCMSGCOLL、CTU_PARAMS、SMP_DYNTXT、RSPARAMS、CL_SALV_TABLE、CL_SALV_EVENTS_TABLE、CL_GUI_FRONTEND_SERVICES</div>
+  </div>
+
+  <h3 id="ch05-7-01">1. 課程定位與教材對照</h3>
+  <p>BC406 的課程目標有三個：<b>為清單建立使用者介面、建立進階互動式清單、從清單呼叫可執行程式</b>。學完應能：建立選擇畫面的進階元素、建立清單狀態（GUI Status）、處理使用者命令、建立互動式清單、在互動式清單中處理多行選取、從清單呼叫可執行程式。</p>
+  <p>本章素材只有强晟 2007 年 7 月的中文自學筆記（v1.0，共 102 頁），沒有對應的原廠英文教材，因此下表只列筆記頁碼：</p>
+  <table>
+    <thead><tr><th>單元</th><th>主題</th><th>强晟筆記頁碼</th><th>本章小節</th></tr></thead>
+    <tbody>
+      <tr><td>第一單元</td><td>課程概覽</td><td>p4</td><td>本節</td></tr>
+      <tr><td>第二單元</td><td>清單基礎（建立清單、選擇畫面、事件、清單的使用者對話、HIDE 技術）</td><td>p5～p21</td><td>2、3、4</td></tr>
+      <tr><td>第三單元</td><td>進階選擇畫面（概覽、子畫面、頁籤）</td><td>p22～p37</td><td>5、6、7</td></tr>
+      <tr><td>第四單元</td><td>程式介面：L1 GUI 標題與 GUI 狀態概覽（p39～p50）、L2 建立 GUI 狀態（p51～p58）、L3 使用 GUI 狀態（p59～p61）</td><td>p38～p61</td><td>8、9</td></tr>
+      <tr><td>第五單元</td><td>互動式清單進階：L1 多行選取（p63～p67）、L2 清單排序（p68～p71）、L3 清單順序控制與訊息（p72～p74）</td><td>p62～p74</td><td>10、11、12</td></tr>
+      <tr><td>第六單元</td><td>呼叫程式與傳遞資料：L1 同步程式呼叫（p76～p79）、L2 記憶體管理（p80～p87）、L3 傳遞資料（p88～p99）</td><td>p75～p99</td><td>13、14、15、16</td></tr>
+      <tr><td>第七單元</td><td>附錄：線上文件路徑 ILB-1/2、GUI-1～4、ILS-1～3、SUB-2</td><td>p100～p101</td><td>17（連同 S/4HANA 替代方案）</td></tr>
+    </tbody>
+  </table>
+  <ul>
+    <li><b>課程等級</b>：屬 BC4xx 系列開發課程，是 BC400（入門）→ BC405（報表程式）之後的進階選修。强晟在前言說「它其實可以跟 BC405 合併成一本」，而第二單元也正是 BC405 的總複習——讀者可以拿來快速複習 <a href="#ch05-6">5-6 章 BC405</a>。</li>
+    <li><b>2007 版與新版差異</b>：筆記基於 R/3 4.6～NetWeaver 7.0，程式大量使用 <span class="kw">LIKE</span>、<span class="kw">RANGES</span>、<span class="kw">FORM</span>／<span class="kw">PERFORM</span>、<span class="kw">WS_UPLOAD</span>／<span class="kw">WS_DOWNLOAD</span>。後來的 SAP 課程體系已不再單獨開 BC406，內容分散併入 BC405 與 BC410（此為依課程目錄的觀察，請以 SAP Learning 最新目錄為準）。本章程式一律改寫成 S/4HANA 1809+（ABAP 7.53）語法。</li>
+    <li><b>技術現況</b>：選擇畫面、GUI Status、SUBMIT、CALL TRANSACTION、ABAP／SAP Memory 在 S/4HANA 仍是日常工具；但以 <span class="kw">WRITE</span> 產生的<b>傳統互動式清單</b>已被 ALV（<span class="kw">CL_SALV_TABLE</span>）取代，新程式不建議再寫 HIDE／READ LINE 那一套。仍要學，是因為維護舊程式時一定會遇到。</li>
+  </ul>
+  <div class="warn">筆記第六單元在目錄叫「調用可執行程式」，內文標題卻是「調用程式和傳遞資料」，兩者是同一單元。筆記中也有幾處錯誤（例如 SUBMIT 記憶體圖的標籤、訊息類型對照表錯位、<span class="kw">GET PARAMETER</span> 漏了 <span class="kw">ID</span>），本章在相關小節逐一修正並說明。</div>
+
+  <h3 id="ch05-7-02">2. 清單基礎回顧：可執行程式的執行流程與事件</h3>
+  <p>當使用者啟動一支<b>可執行程式（類型 1）</b>時，應用伺服器會為程式上下文與資料物件（變數、結構）配置記憶體，接著整個流程由 <b>ABAP Runtime</b> 控制：</p>
+  <ol>
+    <li>若程式有選擇畫面，Runtime 在程式一開始就把它送到展示層（SAP GUI）。</li>
+    <li>使用者按「執行」後，選擇畫面上輸入的值自動放進對應的資料物件，控制權交回程式。</li>
+    <li>最簡單的情況下只有一個處理區塊：讀資料庫 → 資料庫回傳 → Runtime 把資料放進資料物件 → 程式用 <span class="kw">WRITE</span> 輸出到<b>清單緩衝區（list buffer）</b>。</li>
+    <li>處理區塊結束時，Runtime 把清單當作一個畫面送到展示層。</li>
+  </ol>
+  <table>
+    <thead><tr><th>事件</th><th>觸發時機</th><th>用途</th></tr></thead>
+    <tbody>
+      <tr><td><span class="kw">LOAD-OF-PROGRAM</span></td><td>類型 1、M、F、S 的程式載入內部會話時，<b>每個內部會話只執行一次</b></td><td>程式層級的一次性初始化</td></tr>
+      <tr><td><span class="kw">INITIALIZATION</span></td><td>僅可執行程式；選擇畫面顯示之前</td><td>預設 PARAMETERS／SELECT-OPTIONS 的值（例如本月第一天）</td></tr>
+      <tr><td><span class="kw">AT SELECTION-SCREEN OUTPUT</span></td><td>選擇畫面顯示前（PBO）</td><td>動態修改畫面（見第 6 節）</td></tr>
+      <tr><td><span class="kw">AT SELECTION-SCREEN</span></td><td>使用者按 Enter 或執行（PAI）</td><td>輸入檢查、權限檢查</td></tr>
+      <tr><td><span class="kw">START-OF-SELECTION</span></td><td>選擇畫面處理完之後；若用邏輯資料庫，GET 事件在它之後觸發</td><td>主要處理邏輯</td></tr>
+      <tr><td><span class="kw">END-OF-SELECTION</span></td><td>所有資料讀完、清單顯示前</td><td>彙總輸出</td></tr>
+      <tr><td><span class="kw">TOP-OF-PAGE</span></td><td>清單換新頁時（基本清單）</td><td>表頭</td></tr>
+      <tr><td><span class="kw">TOP-OF-PAGE DURING LINE-SELECTION</span></td><td>細節清單換新頁時</td><td>細節清單表頭</td></tr>
+      <tr><td><span class="kw">AT LINE-SELECTION</span></td><td>使用者雙擊或按 F2（功能碼 <b>PICK</b>）</td><td>產生細節清單</td></tr>
+      <tr><td><span class="kw">AT USER-COMMAND</span></td><td>使用者觸發 GUI 狀態中的功能碼（PICK 與系統功能碼除外）</td><td>處理自訂按鈕</td></tr>
+    </tbody>
+  </table>
+  <pre><code class="abap">REPORT zbc406_events.
+
+PARAMETERS pa_car TYPE s_carr_id DEFAULT 'LH'.
+
+DATA gs_spfli TYPE spfli.        " HIDE 用的全域欄位（第 4 節說明）
+
+LOAD-OF-PROGRAM.
+  " 每個內部會話只跑一次
+
+INITIALIZATION.
+  " 選擇畫面顯示前：預設值、頁籤標題等
+
+AT SELECTION-SCREEN.
+  " PAI：輸入檢查（第 6 節）
+
+START-OF-SELECTION.
+  SELECT carrid, connid, cityfrom, cityto
+    FROM spfli
+    WHERE carrid = @pa_car
+    ORDER BY carrid, connid              " HANA 沒有預設排序，清單順序要自己決定
+    INTO TABLE @DATA(gt_spfli).
+
+  LOOP AT gt_spfli INTO DATA(ls_spfli).
+    WRITE: / ls_spfli-carrid, ls_spfli-connid, ls_spfli-cityfrom, ls_spfli-cityto.
+  ENDLOOP.
+
+END-OF-SELECTION.
+  " 所有資料讀完之後
+
+TOP-OF-PAGE.
+  WRITE: / 'Carrier', 12 'Conn.', 20 'From', 42 'To'.
+  ULINE.
+
+TOP-OF-PAGE DURING LINE-SELECTION.
+  WRITE: / |細節清單 第 { sy-lsind } 層|.
+  ULINE.
+
+AT LINE-SELECTION.
+  " 雙擊／F2（PICK）
+
+AT USER-COMMAND.
+  " 其他功能碼</code></pre>
+  <div class="warn"><b>HANA 沒有預設排序。</b>R/3 時代在 Oracle／DB2 上「剛好照主鍵順序」出來的清單，搬到 HANA 之後順序可能每次都不一樣。所有要顯示給使用者看的清單、所有「取第一筆」的邏輯，都要在 <span class="kw">SELECT</span> 加 <span class="kw">ORDER BY</span> 或對內表明確 <span class="kw">SORT</span>。Casper 在成本評價專案遇過：同時存在 item category H 與 cost component E 兩種角度，沒排序時一下抓到 H、一下抓到 E，最後的解法是固定抓 H。</div>
+
+  <h3 id="ch05-7-03">3. PARAMETERS 與 SELECT-OPTIONS 的附加選項</h3>
+  <p>選擇畫面讓使用者輸入值的範圍，通常用來限定要從資料庫讀出的資料集合。它和一般 Dynpro 一樣有群組框、核取方塊、選項按鈕，並提供兩種輸入元素：<span class="kw">PARAMETERS</span>（單一欄位）與 <span class="kw">SELECT-OPTIONS</span>（範圍群組）。引用 ABAP 字典欄位時，字典的搜尋說明（Search Help）會自動帶到選擇畫面；選擇文字可以翻譯，依使用者登入語言顯示；可以建立<b>變式（Variant）</b>。</p>
+  <p><b>SELECT-OPTIONS 的本質是一個內表</b>：<span class="kw">SELECT-OPTIONS so FOR f</span> 宣告一個名為 so 的內表，欄位為 <b>SIGN、OPTION、LOW、HIGH</b>，LOW／HIGH 的型別與 f 相同。</p>
+  <ul>
+    <li><b>SIGN</b>：I（包含）或 E（排除）。</li>
+    <li><b>OPTION</b>：關係運算子 EQ、NE、LE、LT、GE、GT；模式運算子 CP、NP；範圍運算子 BT、NB。</li>
+    <li>範圍的更多說明：選擇畫面選單「跳至 → 選擇畫面說明」（附錄 ILB-1）。</li>
+  </ul>
+  <table>
+    <thead><tr><th>附加</th><th>適用</th><th>說明</th></tr></thead>
+    <tbody>
+      <tr><td><span class="kw">TYPE</span> ／ <span class="kw">LIKE</span></td><td>PARAMETERS</td><td>和 DATA 一樣宣告型別。<b>參數名稱最多 8 個字元</b>；選擇文字用「跳至 → 文字元素 → 選擇文字」維護</td></tr>
+      <tr><td><span class="kw">DEFAULT</span></td><td>兩者</td><td>預設值；SELECT-OPTIONS 可用 <span class="kw">DEFAULT a TO b OPTION … SIGN …</span> 改掉預設的 EQ／I</td></tr>
+      <tr><td><span class="kw">MEMORY ID pid</span></td><td>兩者</td><td>以 SAP Memory 的 SET/GET 參數帶預設值；SELECT-OPTIONS 只帶進 LOW</td></tr>
+      <tr><td><span class="kw">OBLIGATORY</span></td><td>兩者</td><td>必填，畫面顯示必填標記，不輸入不能離開</td></tr>
+      <tr><td><span class="kw">AS CHECKBOX</span></td><td>PARAMETERS</td><td>1 字元欄位，值為空白或 'X'，用 IF 判斷</td></tr>
+      <tr><td><span class="kw">RADIOBUTTON GROUP grp</span></td><td>PARAMETERS</td><td>選項按鈕，<b>群組名稱最多 4 個字元</b>，同組只能選一個，用 CASE 判斷</td></tr>
+      <tr><td><span class="kw">LOWER CASE</span></td><td>兩者</td><td>不轉大寫。對字典欄位無效——字典網域的「小寫」屬性優先</td></tr>
+      <tr><td><span class="kw">NO-EXTENSION</span></td><td>SELECT-OPTIONS</td><td>禁止多重選擇（只能輸入單值或一個範圍）</td></tr>
+      <tr><td><span class="kw">NO INTERVALS</span></td><td>SELECT-OPTIONS</td><td>不顯示 HIGH 欄位，但仍可在多重選擇畫面輸入範圍</td></tr>
+    </tbody>
+  </table>
+  <pre><code class="abap">SELECTION-SCREEN BEGIN OF BLOCK b1 WITH FRAME TITLE TEXT-b01.
+  PARAMETERS pa_car  TYPE s_carr_id MEMORY ID car OBLIGATORY.
+  SELECT-OPTIONS so_conn FOR gs_spfli-connid NO-EXTENSION.
+  SELECT-OPTIONS so_date FOR gs_sflight-fldate
+                 DEFAULT '20260101' TO '20261231' OPTION BT SIGN I.
+  PARAMETERS pa_desc TYPE c LENGTH 30 LOWER CASE.   " 非字典欄位才有效
+SELECTION-SCREEN END OF BLOCK b1.
+
+SELECTION-SCREEN BEGIN OF BLOCK b2 WITH FRAME TITLE TEXT-b02.
+  PARAMETERS: pa_list RADIOBUTTON GROUP out DEFAULT 'X',
+              pa_alv  RADIOBUTTON GROUP out,
+              pa_test AS CHECKBOX DEFAULT 'X'.
+SELECTION-SCREEN END OF BLOCK b2.
+
+START-OF-SELECTION.
+  " SELECT-OPTIONS 直接用 IN 帶進 ABAP SQL
+  SELECT carrid, connid, fldate, price, currency, seatsmax, seatsocc
+    FROM sflight
+    WHERE carrid = @pa_car
+      AND connid IN @so_conn
+      AND fldate IN @so_date
+    ORDER BY carrid, connid, fldate
+    INTO TABLE @DATA(gt_sflight).
+
+  CASE abap_true.
+    WHEN pa_list. " WRITE 清單
+    WHEN pa_alv.  " CL_SALV_TABLE
+  ENDCASE.</code></pre>
+  <div class="note">筆記中强晟猜「SPA/GPA 大概是 SET PARAMETERS／GET PARAMETERS 的縮寫」。官方文件的說法是 <b>SPA/GPA parameters</b>（SAP Memory 中的 SET/GET 參數），參數 ID 定義在資料表 <b>TPARA</b>，最長 20 個字元；在字典資料元素的「Further Characteristics」頁籤可以看到它掛的參數 ID（例如 CARRID 掛 CAR、VBELN 掛 AUN）。</div>
+  <div class="warn"><b>列舉比區間安全。</b>SELECT-OPTIONS 的 BT 比的是<b>字典序</b>不是業務語意。物料號碼有 ALPHA 前導零、號碼段不連續、編碼規則改過時，BT 就會漏抓或多抓。能列舉（多筆 I／EQ）就列舉；給使用者的預設值也盡量不要用大範圍 BT。</div>
+  <div class="note">若程式屬性掛了<b>邏輯資料庫</b>，會先處理邏輯資料庫的選擇畫面，程式自己的 PARAMETERS／SELECT-OPTIONS 接在其後。邏輯資料庫在 S/4HANA 已屬過時技術，詳見 <a href="#ch05-6">5-6 章</a>。</div>
+
+  <h3 id="ch05-7-04">4. 互動式清單：細節清單、sy-lsind 與 HIDE 技術</h3>
+  <p>基本清單顯示後，使用者可以進一步操作。<b>細節清單</b>把資訊分散在多張相關清單中，好讀又省效能——附加資料只在使用者真的要看時才讀資料庫。也可以再叫出額外的選擇畫面讓使用者輸入更多條件。</p>
+  <ul>
+    <li>每張基本清單最多可有 <b>20 層</b>細節清單，每層都有自己的清單緩衝區。</li>
+    <li>按「返回」（綠箭頭）或「取消」（紅叉）回到上一層，並<b>初始化剛離開那一層的清單緩衝區</b>。</li>
+    <li>按「結束」（黃箭頭）則中斷清單處理，回到標準選擇畫面。</li>
+    <li><span class="kw">START-OF-SELECTION</span>、<span class="kw">GET</span>、<span class="kw">END-OF-SELECTION</span>、<span class="kw">TOP-OF-PAGE</span>、<span class="kw">END-OF-PAGE</span> 只能用來建立<b>基本清單</b>；細節清單用 <span class="kw">AT LINE-SELECTION</span> 與 <span class="kw">AT USER-COMMAND</span>，表頭用 <span class="kw">TOP-OF-PAGE DURING LINE-SELECTION</span>。</li>
+    <li>每個細節清單事件在程式中<b>只能出現一次</b>，由所有層級共用，所以要用 <span class="kw">CASE sy-lsind</span> 判斷目前正在產生第幾層。</li>
+  </ul>
+  <p><b>HIDE 技術</b>：<span class="kw">HIDE global_field</span> 把全域欄位目前的值存進「目前這一行」的隱藏區域（hide area）。</p>
+  <ul>
+    <li>使用者選一行時，所有用 HIDE 存過的全域欄位會<b>自動回填</b>成該行存的值。</li>
+    <li>要保留的值不必用 WRITE 顯示出來。</li>
+    <li>欄位可以是結構，但<b>不支援深層結構</b>（含內表元件的結構）。</li>
+    <li>AT LINE-SELECTION／AT USER-COMMAND 依<b>游標所在行</b>（sy-lilli）回填；用 <span class="kw">READ LINE</span> 讀行時則依指定行號回填。</li>
+  </ul>
+  <p><b>有效行檢查</b>：隱藏區域只有「有效行」才有資料（表頭、分隔線沒有）。清單建立完畢後先把測試欄位清空；產生細節清單前檢查它有沒有被回填；細節清單建好後<b>再清空一次</b>，避免使用者返回後點到無效行時，還沿用上一次的值。</p>
+  <pre><code class="abap">REPORT zbc406_hide.
+
+DATA gs_spfli   TYPE spfli.      " HIDE 必須用全域欄位
+DATA gs_sflight TYPE sflight.
+
+PARAMETERS pa_car TYPE s_carr_id DEFAULT 'LH'.
+
+START-OF-SELECTION.
+  SELECT * FROM spfli
+    WHERE carrid = @pa_car
+    ORDER BY carrid, connid
+    INTO TABLE @DATA(gt_spfli).
+
+  LOOP AT gt_spfli INTO gs_spfli.
+    WRITE: / gs_spfli-carrid, gs_spfli-connid, gs_spfli-cityfrom, gs_spfli-cityto.
+    HIDE: gs_spfli-carrid, gs_spfli-connid.    " 存進這一行的 hide area
+  ENDLOOP.
+  CLEAR gs_spfli.                              " 有效行測試欄位先清空
+
+AT LINE-SELECTION.
+  CASE sy-lsind.
+    WHEN 1.                                    " 正在產生第 1 層細節清單
+      CHECK gs_spfli-carrid IS NOT INITIAL.    " 點到表頭／空白行 → 不處理
+      SELECT carrid, connid, fldate, seatsmax, seatsocc
+        FROM sflight
+        WHERE carrid = @gs_spfli-carrid
+          AND connid = @gs_spfli-connid
+        ORDER BY fldate
+        INTO CORRESPONDING FIELDS OF TABLE @DATA(lt_sflight).
+      LOOP AT lt_sflight INTO gs_sflight.
+        WRITE: / gs_sflight-fldate, gs_sflight-seatsmax, gs_sflight-seatsocc.
+        HIDE gs_sflight-fldate.
+      ENDLOOP.
+      CLEAR: gs_spfli, gs_sflight.             " 建完再清一次
+    WHEN 2.
+      CHECK gs_sflight-fldate IS NOT INITIAL.
+      " 第 2 層：列出 SBOOK 訂位明細 …
+      CLEAR gs_sflight.
+  ENDCASE.</code></pre>
+  <div class="tip">HIDE 的資料是「行」綁定的，因此<b>同一行 HIDE 的欄位要能唯一定位一筆資料</b>（例如 CARRID + CONNID），不要只 HIDE 一個非鍵欄位。這個觀念換到 SALV 就變成：雙擊事件給你 <span class="kw">row</span>，你要用它去讀內表的那一筆，而內表必須是和畫面同一個排序（第 17 節）。</div>
+
+  <h3 id="ch05-7-05">5. 進階選擇畫面：版面設計與多個選擇畫面</h3>
+  <p>選擇畫面是程式與使用者之間的介面，可以用來限制從資料庫讀出的資料量。PARAMETERS 與 SELECT-OPTIONS 會自動產生<b>預設選擇畫面 1000</b>；此外可以用 <span class="kw">SELECTION-SCREEN BEGIN OF SCREEN nnnn</span> 定義額外的選擇畫面，再用 <span class="kw">CALL SELECTION-SCREEN</span> 呼叫。邏輯資料庫的選擇畫面長相取決於 <span class="kw">NODES</span> 指定的節點，選擇畫面版本則是預設選擇畫面的子集。</p>
+  <ul>
+    <li><span class="kw">BEGIN OF BLOCK … WITH FRAME TITLE …</span>：把邏輯上相關的欄位框成一組，<b>最多巢狀五層</b>。</li>
+    <li><span class="kw">BEGIN OF LINE … END OF LINE</span>：同一行放多個參數與註解。</li>
+    <li><span class="kw">COMMENT</span>：必須給位置與長度；位置可用 <b>pos_low</b>／<b>pos_high</b>（對應 SELECT-OPTIONS 的 LOW／HIGH 欄位位置）。<span class="kw">COMMENT … FOR FIELD f</span> 讓游標停在註解上按 F1 也出現 f 的說明，且 f 被變式隱藏時註解一起隱藏。</li>
+    <li><span class="kw">POSITION pos</span>：設定下一個輸出位置（只能在 BEGIN OF LINE … END OF LINE 之間）。</li>
+    <li>設計前可用交易 <span class="tcode">BIBS</span> 看 SAP 的畫面設計規範範例。</li>
+    <li><span class="kw">CALL SELECTION-SCREEN nnnn</span>：使用者按執行 sy-subrc = 0，按取消 sy-subrc = 4。加 <span class="kw">STARTING AT left upper ENDING AT right lower</span> 以對話框（modal dialog）顯示。</li>
+  </ul>
+  <pre><code class="abap">" --- 預設選擇畫面 1000 的版面 ---
+SELECTION-SCREEN BEGIN OF BLOCK b1 WITH FRAME TITLE TEXT-b01.
+  SELECTION-SCREEN BEGIN OF LINE.
+    SELECTION-SCREEN COMMENT 1(20) TEXT-c01 FOR FIELD pa_car.
+    SELECTION-SCREEN POSITION pos_low.
+    PARAMETERS pa_car TYPE s_carr_id.
+    SELECTION-SCREEN COMMENT 40(30) gv_cname.        " 動態註解：航空公司名稱
+  SELECTION-SCREEN END OF LINE.
+  SELECT-OPTIONS so_date FOR gs_sflight-fldate.
+SELECTION-SCREEN END OF BLOCK b1.
+
+" --- 額外的選擇畫面 1100（不會自動顯示）---
+SELECTION-SCREEN BEGIN OF SCREEN 1100 TITLE TEXT-t11.
+  PARAMETERS pa_seat TYPE s_seatsmax DEFAULT 10.
+  PARAMETERS pa_mail AS CHECKBOX.
+SELECTION-SCREEN END OF SCREEN 1100.
+
+AT SELECTION-SCREEN OUTPUT.
+  IF pa_car IS NOT INITIAL.
+    SELECT SINGLE carrname FROM scarr WHERE carrid = @pa_car INTO @gv_cname.
+  ENDIF.
+
+AT USER-COMMAND.                  " 例如清單上的「條件」按鈕
+  CASE sy-ucomm.
+    WHEN 'COND'.
+      CALL SELECTION-SCREEN 1100 STARTING AT 10 5 ENDING AT 70 12.
+      IF sy-subrc = 0.            " 0 = 執行，4 = 取消
+        " 用 pa_seat 重新篩選清單 …
+      ENDIF.
+  ENDCASE.</code></pre>
+  <div class="note">其他元素（核取方塊、選項按鈕、下拉清單 <span class="kw">AS LISTBOX VISIBLE LENGTH</span>、按鈕 <span class="kw">PUSHBUTTON</span>）的寫法請看 <span class="kw">SELECTION-SCREEN</span> 關鍵字文件，或附錄 ILB-2 的路徑；基本用法在 <a href="#ch03-1">3-1 章 選擇畫面</a> 有完整範例。</div>
+
+  <h3 id="ch05-7-06">6. 選擇畫面事件與輸入檢查（含權限檢查）</h3>
+  <p>選擇畫面處理是<b>事件驅動</b>的。每個事件以事件關鍵字開頭，遇到下一個事件區塊、副程式或對話模組定義時結束。</p>
+  <table>
+    <thead><tr><th>事件</th><th>屬於</th><th>說明</th></tr></thead>
+    <tbody>
+      <tr><td><span class="kw">AT SELECTION-SCREEN OUTPUT</span></td><td>PBO</td><td>畫面顯示前，動態修改畫面（LOOP AT SCREEN）</td></tr>
+      <tr><td><span class="kw">AT SELECTION-SCREEN ON HELP-REQUEST FOR f</span></td><td>POH</td><td>自訂 F1 說明</td></tr>
+      <tr><td><span class="kw">AT SELECTION-SCREEN ON VALUE-REQUEST FOR f</span></td><td>POV</td><td>自訂 F4 輸入說明</td></tr>
+      <tr><td><span class="kw">AT SELECTION-SCREEN ON f</span></td><td>PAI</td><td>檢查單一欄位；出錯時<b>只有該欄位</b>重新開放輸入</td></tr>
+      <tr><td><span class="kw">AT SELECTION-SCREEN ON BLOCK b</span></td><td>PAI</td><td>檢查一個區塊的欄位組合；出錯時該區塊欄位重新開放輸入</td></tr>
+      <tr><td><span class="kw">AT SELECTION-SCREEN ON END OF so</span></td><td>PAI</td><td>SELECT-OPTIONS 多重選擇對話框按確定時</td></tr>
+      <tr><td><span class="kw">AT SELECTION-SCREEN</span></td><td>PAI</td><td>最後觸發；出錯（MESSAGE E／W）時<b>所有欄位</b>重新開放輸入</td></tr>
+    </tbody>
+  </table>
+  <p>有多個選擇畫面時，用 <b>sy-dynnr</b> 判斷目前檢查的是哪一個。這些檢查同樣適用於邏輯資料庫的選擇條件與程式自己的條件。</p>
+  <pre><code class="abap">PARAMETERS pa_car TYPE s_carr_id MODIF ID car.
+SELECT-OPTIONS so_conn FOR gs_spfli-connid.
+PARAMETERS pa_adv AS CHECKBOX USER-COMMAND adv.     " 勾選即觸發 PAI → PBO
+PARAMETERS pa_max TYPE s_seatsmax MODIF ID adv.
+
+" ① 權限檢查：出錯時只有 pa_car 可以重新輸入
+AT SELECTION-SCREEN ON pa_car.
+  AUTHORITY-CHECK OBJECT 'S_CARRID'
+    ID 'CARRID' FIELD pa_car
+    ID 'ACTVT'  FIELD '03'.                    " 03 = 顯示
+  IF sy-subrc &lt;&gt; 0.
+    MESSAGE e045(bc406) WITH pa_car.           " 無權限讀取航空公司 &amp;1
+  ENDIF.
+
+" ② SELECT-OPTIONS 多重選擇視窗按確定時
+AT SELECTION-SCREEN ON END OF so_conn.
+  IF lines( so_conn ) &gt; 50.
+    MESSAGE e000(0k) WITH '航班條件請勿超過 50 筆'.
+  ENDIF.
+
+" ③ 自訂 F4：依字母順序列出航空公司
+AT SELECTION-SCREEN ON VALUE-REQUEST FOR pa_car.
+  SELECT carrid, carrname FROM scarr
+    ORDER BY carrid                              " F4 清單也要明確排序
+    INTO TABLE @DATA(lt_f4).
+  CALL FUNCTION 'F4IF_INT_TABLE_VALUE_REQUEST'
+    EXPORTING
+      retfield    = 'CARRID'
+      dynpprog    = sy-repid
+      dynpnr      = sy-dynnr
+      dynprofield = 'PA_CAR'
+      value_org   = 'S'
+    TABLES
+      value_tab   = lt_f4
+    EXCEPTIONS
+      OTHERS      = 1.
+
+" ④ 動態畫面：沒勾「進階」就隱藏 MODIF ID ADV 的欄位
+AT SELECTION-SCREEN OUTPUT.
+  LOOP AT SCREEN INTO DATA(ls_screen).
+    IF ls_screen-group1 = 'ADV'.
+      ls_screen-active = COND #( WHEN pa_adv = abap_true THEN '1' ELSE '0' ).
+      MODIFY SCREEN FROM ls_screen.
+    ENDIF.
+  ENDLOOP.</code></pre>
+  <div class="note">原教材 p32 寫法是 <span class="kw">CHECK sy-subrc NE 0.</span> 後接 <span class="kw">MESSAGE e045(bc406)</span>——邏輯正確（sy-subrc 不為 0 才往下發訊息），但 CHECK 在事件區塊中會直接離開整個事件，後面若還有其他檢查就不會執行，可讀性也差。現代寫法改用 IF。另外原文的 <span class="kw">LIKE wa_sflight-carrid</span> 改成 <span class="kw">TYPE s_carr_id</span>。權限失敗時請使用者跑 <span class="tcode">SU53</span> 看缺哪個權限值。</div>
+
+  <h3 id="ch05-7-07">7. 選擇畫面上的子畫面與頁籤（Tabstrip）</h3>
+  <p>頁籤可以把大型選擇畫面分成幾個邏輯群組，更好用。原教材列的前提是 GUI 4.0 以上、Windows 95／NT 3.51 以上（今天都不是問題）。要做頁籤選擇畫面需要三樣東西：</p>
+  <ol>
+    <li>選擇畫面上一個容納頁籤的<b>子畫面區域</b>：<span class="kw">SELECTION-SCREEN BEGIN OF TABBED BLOCK blk FOR n LINES</span>，n 是子畫面區域的行數。</li>
+    <li>每一頁的<b>標題</b>：<span class="kw">SELECTION-SCREEN TAB (len) name USER-COMMAND ucomm [DEFAULT [PROGRAM prog] SCREEN dynnr]</span>。用了 DEFAULT 就必須指定 SCREEN；PROGRAM 只有子畫面來自別的程式時才要寫。</li>
+    <li>每一頁的內容，是一個<b>定義成子畫面的選擇畫面</b>：<span class="kw">SELECTION-SCREEN BEGIN OF SCREEN nnnn AS SUBSCREEN [NESTING LEVEL m] [NO INTERVALS]</span>。</li>
+  </ol>
+  <ul>
+    <li><b>系統會自動產生</b> <span class="kw">CONTROLS: blk TYPE TABSTRIP</span>——<b>不要自己寫</b>，寫了會語法錯誤。</li>
+    <li>頁籤標題變數（tab1、tab2）不用宣告，它們是頁籤控制的一部分，在 INITIALIZATION 給文字。</li>
+    <li>系統也會自動產生與頁籤區塊同名的結構，含 <b>prog</b>、<b>dynnr</b>、<b>activetab</b> 三個欄位，可在執行時改變頁籤與子畫面的對應，或指定預設開啟的頁籤（附錄 SUB-2）。</li>
+    <li>在 AT SELECTION-SCREEN 中，sy-ucomm 會是使用者點的那個頁籤的命令值（例如 UCOMM1／UCOMM2）。</li>
+    <li><b>NESTING LEVEL</b>：縮小子畫面尺寸以免出現捲軸。頁籤外面沒有群組框就用 0；每多一層包住頁籤的群組框就加 1。</li>
+    <li><b>NO INTERVALS</b>：隱藏這個子畫面上所有 SELECT-OPTIONS 的 HIGH 欄位。</li>
+    <li>定義成子畫面的選擇畫面也能嵌進一般 Dynpro 的子畫面區域（<span class="kw">CALL SUBSCREEN</span>），見 <a href="#ch05-9">5-9 章 BC410</a>。</li>
+  </ul>
+  <pre><code class="abap">REPORT zbc406_tabstrip.
+
+DATA gs_sflight TYPE sflight.
+
+" 頁 1：航線條件
+SELECTION-SCREEN BEGIN OF SCREEN 101 AS SUBSCREEN NESTING LEVEL 0.
+  PARAMETERS pa_car TYPE s_carr_id.
+  SELECT-OPTIONS so_conn FOR gs_sflight-connid.
+SELECTION-SCREEN END OF SCREEN 101.
+
+" 頁 2：航班條件（不顯示 HIGH）
+SELECTION-SCREEN BEGIN OF SCREEN 102 AS SUBSCREEN NESTING LEVEL 0 NO INTERVALS.
+  SELECT-OPTIONS so_date FOR gs_sflight-fldate.
+  PARAMETERS pa_free AS CHECKBOX.
+SELECTION-SCREEN END OF SCREEN 102.
+
+" 標準選擇畫面 1000 上的頁籤區塊（不要自己寫 CONTROLS）
+SELECTION-SCREEN BEGIN OF TABBED BLOCK tab_block FOR 5 LINES.
+  SELECTION-SCREEN TAB (15) tab1 USER-COMMAND ucomm1 DEFAULT SCREEN 101.
+  SELECTION-SCREEN TAB (15) tab2 USER-COMMAND ucomm2 DEFAULT SCREEN 102.
+SELECTION-SCREEN END OF BLOCK tab_block.
+
+INITIALIZATION.
+  tab1 = TEXT-001.                  " Connection
+  tab2 = TEXT-002.                  " Flight
+  tab_block-prog      = sy-repid.
+  tab_block-dynnr     = 102.        " 預設開在第 2 頁
+  tab_block-activetab = 'UCOMM2'.
+
+AT SELECTION-SCREEN.
+  CASE sy-dynnr.                    " 分辨是哪個子畫面在做 PAI
+    WHEN 101.
+      IF pa_car IS INITIAL AND so_conn IS INITIAL.
+        MESSAGE w000(0k) WITH '未指定航線，將讀取全部資料'.
+      ENDIF.
+    WHEN 1000.
+      " sy-ucomm = 'UCOMM1' / 'UCOMM2' 表示使用者切換頁籤
+  ENDCASE.</code></pre>
+
+  <h3 id="ch05-7-08">8. 程式介面（一）：GUI 標題與 GUI 狀態的觀念</h3>
+  <p><b>GUI 狀態（GUI Status）</b>由<b>選單列、標準工具列、應用工具列、功能鍵設定</b>組成；每個畫面可以有多個 GUI 狀態（例如編輯器有「顯示」與「修改」兩個狀態）。GUI 標題與狀態都在 <b>Menu Painter</b>（<span class="tcode">SE41</span>，或從 <span class="tcode">SE80</span> 物件清單／ABAP 編輯器導覽進入）維護，並併入程式的使用者介面；<b>新增標題或狀態後必須重新產生（啟用）介面</b>。</p>
+  <table>
+    <thead><tr><th>元素</th><th>限制與規則</th></tr></thead>
+    <tbody>
+      <tr><td><b>GUI 標題</b></td><td>名稱最多 20 字元、內容最多 70 字元；可用 &amp; 或 &amp;1～&amp;9 當佔位符，執行時用 <span class="kw">SET TITLEBAR t WITH v1 … v9</span> 代入；沒重設就一直沿用；目前標題在 <b>sy-title</b>；可翻譯，找不到登入語言時顯示原始語言</td></tr>
+      <tr><td><b>選單列</b></td><td>最多 <b>8 個選單</b>，其中 6 個可自由分配；「系統」「說明」兩個選單自動附加在每個選單列，功能固定、不能修改或隱藏</td></tr>
+      <tr><td><b>選單</b></td><td>每個選單最多 <b>15 個項目</b>（功能、分隔線、子選單）；最多串接 <b>3 層</b>，第 3 層只能放功能與分隔線；可用靜態文字或動態文字（程式中 20 字元欄位）</td></tr>
+      <tr><td><b>包含選單</b></td><td>引用其他程式的選單，需在「短文件」欄位填來源程式與狀態名稱；只能從選單列存取</td></tr>
+      <tr><td><b>標準工具列</b></td><td>所有畫面都一樣，圖示固定對應保留功能鍵；當前畫面不可用的功能自動變灰</td></tr>
+      <tr><td><b>應用工具列</b></td><td>最多 <b>35 個按鈕</b>，可插入分隔線分組；按鈕上的功能<b>必須先分配功能鍵</b>；應該是選單功能的子集</td></tr>
+      <tr><td><b>功能鍵設定</b></td><td>由「保留功能鍵」（SAP 固定，只能啟用／停用，不能改按鍵與文字）、「建議功能鍵」（符合 SAP 人因工程標準）、「自由分配功能鍵」組成</td></tr>
+    </tbody>
+  </table>
+  <p><b>功能（Function）</b>以<b>功能碼</b>唯一識別，可指派給功能鍵、按鈕、選單項目。重要屬性：</p>
+  <table>
+    <thead><tr><th>功能類型</th><th>意義</th></tr></thead>
+    <tbody>
+      <tr><td>' '（空白）</td><td>一般應用功能，觸發 PAI／AT USER-COMMAND</td></tr>
+      <tr><td>E</td><td>Exit Command（Dynpro 中觸發 <span class="kw">MODULE … AT EXIT-COMMAND</span>，略過欄位檢查）</td></tr>
+      <tr><td>P</td><td>頁籤的本地功能（在展示層切換頁籤，不回應用伺服器）</td></tr>
+      <tr><td>S、H</td><td>保留給 SAP 內部（系統功能、說明）</td></tr>
+      <tr><td>T</td><td>交易碼：觸發時離開目前程式、呼叫該交易</td></tr>
+    </tbody>
+  </table>
+  <ul>
+    <li>靜態文字的功能可指定<b>圖示名稱</b>，放在應用工具列時顯示圖示；此時「功能文字」變成快速資訊（tooltip），「資訊文字」在按下時顯示於狀態列，「圖示文字」同時顯示在圖示旁。</li>
+    <li>動態文字的功能用字典結構 <b>SMP_DYNTXT</b> 指定文字。</li>
+    <li>選單只顯示「功能文字」；「快速路徑」屬性指定用鍵盤選取的字母。</li>
+    <li>技術上，GUI 狀態只是對選單列、按鍵分配、應用工具列的<b>引用</b>；同一個選單列可被多個狀態共用。所有選單與按鍵都引用程式的<b>功能清單</b>（可用 F4 查）；狀態中的功能可以是啟用或未啟用。</li>
+    <li>建議功能鍵清單：Menu Painter「公用程式 → 說明文字 → 標準／建議」（附錄 GUI-4）；內部按鍵號碼（例如 Ctrl+P 對應哪個號碼）見 GUI-3。</li>
+  </ul>
+
+  <h3 id="ch05-7-09">9. 程式介面（二）：建立與使用 GUI 狀態、AT USER-COMMAND</h3>
+  <p><b>建立狀態</b>有三個入口：物件瀏覽器的物件清單、Menu Painter、ABAP 編輯器的導覽（在 <span class="kw">SET PF-STATUS 'LIST'</span> 上雙擊）。狀態類型決定技術屬性：<b>Dialog Status</b>（全畫面）、<b>Dialog Box</b>（對話框）、<b>Context Menu</b>（右鍵選單）。</p>
+  <ul>
+    <li><b>引用技術</b>：先建一個狀態的選單列、應用工具列、功能鍵，其他狀態引用它們。Menu Painter 維護這些引用，修改會自動套用到所有引用的狀態——大型應用確保一致性的利器。</li>
+    <li><b>全新建立</b>：自己建選單列、功能與其他元素，修改只影響自己。兩種技術可以混用。</li>
+    <li><b>調整範本</b>：「其他（Extras）→ 調整範本（Adjust Template）」可把清單或選擇畫面的標準功能碼、或其他程式的狀態合併進來。寫清單程式時通常從「清單狀態」範本開始。</li>
+    <li>新加入的功能一開始都是<b>未啟用</b>，只啟用跟目前狀態相關的功能；建立新功能時可決定是否套用到所有指向同一物件的狀態。</li>
+    <li>選單項目：左欄輸入功能碼，若功能已存在且有文字會自動帶出；在文字欄輸入「-」即分隔線；只輸入名稱不輸入功能碼即成子選單，雙擊展開。</li>
+    <li>分配到標準工具列的功能會<b>自動</b>分配到對應的保留功能鍵；Menu Painter 的「資訊」圖示可以看目前狀態每個功能鍵對應什麼。</li>
+  </ul>
+  <p><b>使用狀態</b>：</p>
+  <ul>
+    <li>狀態名稱與標題名稱最多 20 字元，<b>一律大寫</b>；不重設就沿用原狀態。目前狀態在 <b>sy-pfkey</b>。</li>
+    <li>清單沒設 GUI 介面時顯示標準介面；<span class="kw">SET PF-STATUS space</span> 強制回到標準清單狀態。</li>
+    <li><span class="kw">SET PF-STATUS 'XXX' OF PROGRAM 'YYY'</span> 可借用別支程式的狀態。</li>
+    <li><span class="kw">EXCLUDING fcode</span> 在執行時停用功能；停用多個時要用<b>內表</b>傳入。</li>
+  </ul>
+  <p><b>功能碼的流程</b>：使用者從清單選一個功能 → 觸發功能碼 → 功能碼觸發事件。系統功能碼（如 <b>PRI</b> 列印、<b>%EX</b> 結束）是保留的，<b>不會觸發互動事件</b>，系統直接執行；<b>PICK</b> 觸發 AT LINE-SELECTION；其他所有功能碼觸發 <b>AT USER-COMMAND</b>，在其中用 CASE 判斷 sy-ucomm。觸發時，游標所在行的 hide area 同樣會回填到全域欄位。</p>
+  <pre><code class="abap">START-OF-SELECTION.
+  " 原教材：DATA t_fcodes LIKE TABLE OF sy-ucomm. APPEND 'SAVE' TO … （且有 APPEDN 錯字）
+  DATA lt_excl TYPE STANDARD TABLE OF sy-ucomm WITH EMPTY KEY.
+  lt_excl = VALUE #( ( 'SAVE' ) ( 'CANC' ) ).     " 多個功能碼一定要用內表
+  IF pa_test = abap_true.
+    APPEND 'POST' TO lt_excl.                  " 測試模式不允許過帳
+  ENDIF.
+  SET PF-STATUS 'LIST' EXCLUDING lt_excl.
+  SET TITLEBAR 'T100' WITH pa_car sy-datum.    " 標題內容：航空公司 &amp;1 的航班（&amp;2）
+
+  lcl_report=>display_flights( ).
+
+AT USER-COMMAND.
+  CASE sy-ucomm.
+    WHEN 'SRTU' OR 'SRTD'.
+      lcl_report=>sort_list( sy-ucomm ).       " 第 11 節
+    WHEN 'MARK'.
+      lcl_report=>select_all( abap_true ).     " 第 10 節
+    WHEN 'DMRK'.
+      lcl_report=>select_all( abap_false ).
+    WHEN 'DETL'.
+      lcl_report=>show_selected( ).
+    WHEN 'VA03'.
+      lcl_report=>call_va03( ).                " 第 13 節
+  ENDCASE.</code></pre>
+  <div class="note">上例的 <span class="kw">lcl_report</span> 是本地類別，事件區塊（AT USER-COMMAND 等）本身不能搬進類別，但事件裡只做「分派」，實際邏輯寫在方法中——這是 S/4HANA 新程式取代 <span class="kw">FORM</span> 的標準做法（見 <a href="#ch02-4">2-4 章 模組化</a>）。</div>
+
+  <h3 id="ch05-7-10">10. 多行選取：READ LINE 與 MODIFY LINE</h3>
+  <p>使用者常需要一次看多筆記錄的細節（例如多位客戶的地址、多位員工的銷售量）。提供多行選取時，<b>也要一併提供「全選」與「全不選」</b>（例如兩個按鈕）。做法是在每一行輸出一個核取方塊（<span class="kw">WRITE … AS CHECKBOX</span>），再逐行讀回清單緩衝區。</p>
+  <p><b>READ LINE n</b>：</p>
+  <ul>
+    <li>該行所有 hide area 的值回填到對應欄位；該行內容同時放進 <b>sy-lisel</b>——<b>只有 255 字元</b>，清單過寬時只拿得到前 255 字元。</li>
+    <li><span class="kw">INDEX i</span>：讀第 i 層清單；省略則讀<b>最後顯示的清單 sy-listi</b>。</li>
+    <li><span class="kw">FIELD VALUE f1 [INTO g1]</span>：從該行讀出欄位 f1 的<b>畫面上的值</b>放進 g1（省略 INTO 則填回 f1）。清單緩衝區裡一律是字元（型別 c），所以讀回的值會轉成 c。</li>
+    <li><span class="kw">LINE VALUE INTO wa</span>：整行複製到工作區。</li>
+    <li>行不存在時 sy-subrc ≠ 0，常用來當迴圈結束條件。</li>
+  </ul>
+  <p><b>MODIFY LINE n</b> ／ <b>MODIFY CURRENT LINE</b>：</p>
+  <ul>
+    <li>MODIFY CURRENT LINE 修改最後一次用行選取或 READ LINE 讀到的那一行（即使它在另一層清單）。</li>
+    <li><span class="kw">LINE FORMAT fm1 fm2 …</span>：改整行格式（顏色、INPUT OFF 等）。</li>
+    <li><span class="kw">FIELD VALUE f1 FROM g1</span>：用變數 g1 取代該行欄位 f1 的內容（轉成 c）；同一欄位在行中出現多次時<b>只換第一個</b>。</li>
+    <li><span class="kw">LINE VALUE FROM wa</span>：用工作區取代整行。</li>
+  </ul>
+  <pre><code class="abap">CLASS lcl_report DEFINITION.
+  PUBLIC SECTION.
+    CLASS-METHODS: display_flights,
+                   select_all   IMPORTING iv_mark TYPE abap_bool,
+                   show_selected.
+ENDCLASS.
+
+DATA gv_mark    TYPE c LENGTH 1.          " 清單上的核取方塊
+DATA gs_sflight TYPE sflight.             " HIDE 欄位
+
+CLASS lcl_report IMPLEMENTATION.
+  METHOD display_flights.
+    SELECT * FROM sflight
+      WHERE carrid = @pa_car
+      ORDER BY carrid, connid, fldate
+      INTO TABLE @DATA(lt_sflight).
+    LOOP AT lt_sflight INTO gs_sflight.
+      CLEAR gv_mark.
+      WRITE: / gv_mark AS CHECKBOX,
+               gs_sflight-carrid, gs_sflight-connid, gs_sflight-fldate,
+               gs_sflight-seatsocc.
+      HIDE: gs_sflight-carrid, gs_sflight-connid, gs_sflight-fldate.
+    ENDLOOP.
+    CLEAR gs_sflight.
+  ENDMETHOD.
+
+  METHOD select_all.                      " 全選／全不選
+    DATA(lv_line) = 1.
+    DO.
+      CLEAR gs_sflight.
+      READ LINE lv_line INDEX 0.          " 讀基本清單第 lv_line 行（回填 hide）
+      IF sy-subrc &lt;&gt; 0.
+        EXIT.
+      ENDIF.
+      IF gs_sflight-carrid IS NOT INITIAL. " 只改有效行
+        MODIFY LINE lv_line INDEX 0 FIELD VALUE gv_mark FROM iv_mark.
+      ENDIF.
+      lv_line += 1.                        " += 需 7.54；7.52 請寫 lv_line = lv_line + 1
+    ENDDO.
+  ENDMETHOD.
+
+  METHOD show_selected.                   " 收集勾選的行 → 細節清單
+    DATA lt_keys TYPE STANDARD TABLE OF sflight WITH EMPTY KEY.
+    DATA(lv_line) = 1.
+    DO.
+      CLEAR: gs_sflight, gv_mark.
+      READ LINE lv_line INDEX 0 FIELD VALUE gv_mark.
+      IF sy-subrc &lt;&gt; 0.
+        EXIT.
+      ENDIF.
+      IF gv_mark = abap_true AND gs_sflight-carrid IS NOT INITIAL.
+        APPEND gs_sflight TO lt_keys.
+        MODIFY CURRENT LINE FIELD VALUE gv_mark FROM space
+                            LINE FORMAT COLOR COL_POSITIVE.   " 已處理 → 標綠
+      ENDIF.
+      lv_line = lv_line + 1.
+    ENDDO.
+    IF lt_keys IS INITIAL.
+      MESSAGE i000(0k) WITH '請至少勾選一筆'.
+      RETURN.
+    ENDIF.
+    LOOP AT lt_keys INTO DATA(ls_key).
+      WRITE: / ls_key-carrid, ls_key-connid, ls_key-fldate.   " 細節清單 sy-lsind = 1
+    ENDLOOP.
+  ENDMETHOD.
+ENDCLASS.</code></pre>
+  <div class="tip">注意 <span class="kw">FIELD VALUE</span> 讀回的是<b>畫面上看到的字元值</b>，而不是原始內表的值——日期會帶格式、數量會帶千分位。要拿來做資料庫條件時，<b>一律用 HIDE 回填的全域欄位</b>，不要用 FIELD VALUE 讀出來的字串。</div>
+
+  <h3 id="ch05-7-11">11. 清單排序：GET CURSOR 與動態 SORT</h3>
+  <p>要讓清單更有彈性，就要提供<b>動態排序</b>——排序依據在執行時才知道。資料先緩存在內表，再用動態 SORT：<span class="kw">SORT itab BY (f1) [ASCENDING|DESCENDING] (f2) …</span>，括號內是存放欄位名稱的變數。使用者排序後通常不在乎原本的清單，所以新清單應顯示在<b>同一層</b>。</p>
+  <p><b>GET CURSOR FIELD f [VALUE v] [LINE l]</b>：取得游標所在欄位的<b>名稱</b>（放在 f）與畫面上的值（放在 v）。</p>
+  <ul>
+    <li>sy-subrc = 0：游標在欄位上；sy-subrc = 4：不在欄位上。</li>
+    <li>回傳的是完整名稱，例如 <b>WA_SBOOK-LUGGWEIGHT</b>，要去掉工作區／內表名稱與連字號才能拿來排序。</li>
+    <li><b>不要把 VALUE 取得的值當 SELECT 條件</b>——非字元欄位會型別轉換，可能產生無法預期的結果，請改用 HIDE。</li>
+    <li>其他參數見附錄 ILS-3。</li>
+  </ul>
+  <p>程式步驟：先檢查游標是否在有效行（否則發訊息）→ 取欄位名 → 排序 → 重新輸出 → <b>最後一行才把 sy-lsind 減 1</b>。</p>
+  <pre><code class="abap">DATA gt_sbook TYPE STANDARD TABLE OF sbook WITH EMPTY KEY.
+DATA gs_sbook TYPE sbook.                      " HIDE 欄位
+
+METHOD sort_list.                               " IMPORTING iv_ucomm TYPE sy-ucomm
+  CHECK gs_sbook-bookid IS NOT INITIAL.         " 游標必須在有效行
+
+  DATA lv_field TYPE c LENGTH 61.
+  GET CURSOR FIELD lv_field.
+  IF sy-subrc &lt;&gt; 0.
+    MESSAGE i061(bc406).                        " 請把游標放在欄位上
+    RETURN.
+  ENDIF.
+
+  " 原教材：CHECK fieldname(8) = 'WA_SBOOK'. fieldname = fieldname+9.（寫死長度）
+  SPLIT lv_field AT '-' INTO DATA(lv_prefix) DATA(lv_comp).
+  CHECK lv_prefix = 'GS_SBOOK' AND lv_comp IS NOT INITIAL.
+
+  " 動態 SORT 給錯欄位名會直接 DUMP，先用 RTTI 驗證
+  DATA(lo_struct) = CAST cl_abap_structdescr(
+                      cl_abap_typedescr=&gt;describe_by_data( gs_sbook ) ).
+  IF NOT line_exists( lo_struct-&gt;components[ name = lv_comp ] ).
+    RETURN.
+  ENDIF.
+
+  IF iv_ucomm = 'SRTD'.
+    SORT gt_sbook BY carrid connid fldate (lv_comp) DESCENDING.
+  ELSE.
+    SORT gt_sbook BY carrid connid fldate (lv_comp) ASCENDING.
+  ENDIF.
+
+  display_bookings( ).                          " 重新 WRITE + HIDE
+  sy-lsind = sy-lsind - 1.                       " 最後一行：蓋掉原本那層
+  CLEAR gs_sbook.
+ENDMETHOD.</code></pre>
+
+  <h3 id="ch05-7-12">12. 清單順序控制與互動式清單中的訊息</h3>
+  <p><b>清單導覽（sy-lsind）</b>：</p>
+  <ul>
+    <li>sy-lsind 是目前正在產生的清單層級。在事件中設 <span class="kw">sy-lsind = 1</span> 可讓新清單顯示在第 1 層，取代原本的內容。</li>
+    <li><b>不能設成比系統目前已配置的層級還大的值</b>——不能直接跳到更高層。</li>
+    <li>改 sy-lsind <b>應該放在清單輸出前（事件區塊）的最後一個敘述</b>：改了它不會立刻切換層級，新層級是在整個清單緩衝區輸出完、事件結束時才指定的；高於該層級的 hide area 與清單緩衝區都會自動初始化。不懂這個行為就寫不出正確的清單程式。</li>
+  </ul>
+  <p><b>訊息類型對清單處理的影響</b>（筆記 p73 的對照表在轉檔時錯位，以下為修正後的版本）：</p>
+  <table>
+    <thead><tr><th>類型</th><th>在細節清單事件（AT LINE-SELECTION／AT USER-COMMAND）</th><th>在建立基本清單的事件（START-OF-SELECTION 等）</th></tr></thead>
+    <tbody>
+      <tr><td><b>A</b></td><td>程式終止</td><td>程式終止</td></tr>
+      <tr><td><b>E</b></td><td>丟棄目前正在建立的細節清單，回到上一層清單</td><td>顯示訊息並終止程式</td></tr>
+      <tr><td><b>W</b></td><td>同 E</td><td>同 E</td></tr>
+      <tr><td><b>I</b></td><td>資訊對話框，按確定後程式繼續</td><td>同左</td></tr>
+      <tr><td><b>S</b></td><td>下一個畫面的狀態列顯示成功訊息，程式繼續</td><td>同左</td></tr>
+      <tr><td><b>X</b></td><td>Short dump（MESSAGE_TYPE_X）</td><td>Short dump</td></tr>
+    </tbody>
+  </table>
+  <ul>
+    <li>完整語法：<span class="kw">MESSAGE ID mid TYPE mtype NUMBER nnn WITH v1 v2 v3 v4</span>。</li>
+    <li><span class="kw">REPORT … MESSAGE-ID mid</span> 指定程式的預設訊息類別，MESSAGE 沒寫類別時用它。</li>
+    <li>訊息類別名稱最多 20 字元，所有訊息存在資料表 <b>T100</b>，用 <span class="tcode">SE91</span> 維護。</li>
+  </ul>
+  <pre><code class="abap">REPORT zbc406_msg MESSAGE-ID bc406.
+
+START-OF-SELECTION.
+  SELECT carrid, connid, fldate FROM sflight
+    WHERE carrid = @pa_car
+    ORDER BY carrid, connid, fldate
+    INTO TABLE @DATA(gt_flights).
+  IF gt_flights IS INITIAL.
+    " 基本清單階段不要發 E：會直接終止。實務慣用 S + DISPLAY LIKE 'E' 回選擇畫面
+    MESSAGE '查無符合條件的航班' TYPE 'S' DISPLAY LIKE 'E'.
+    LEAVE LIST-PROCESSING.
+  ENDIF.
+
+AT LINE-SELECTION.
+  IF gs_sflight-carrid IS INITIAL.
+    MESSAGE e061.                  " 丟棄這層細節清單，回上一層
+  ENDIF.
+
+  " 動態訊息：類別、類型、號碼都在執行時決定
+  DATA(ls_msg) = VALUE symsg( msgid = 'BC406' msgty = 'I' msgno = '045'
+                              msgv1 = gs_sflight-carrid ).
+  MESSAGE ID ls_msg-msgid TYPE ls_msg-msgty NUMBER ls_msg-msgno
+          WITH ls_msg-msgv1 ls_msg-msgv2 ls_msg-msgv3 ls_msg-msgv4.</code></pre>
+
+  <h3 id="ch05-7-13">13. 呼叫程式（一）：SUBMIT、CALL TRANSACTION、LEAVE TO TRANSACTION</h3>
+  <p>從執行中的 ABAP 程式啟動另一支程式有兩種方式：<b>中斷</b>目前程式去執行另一支、執行完再回來；或<b>結束</b>目前程式改跑新程式。同一個使用者會話中，完整的 ABAP 程式只能<b>依序</b>執行，稱為<b>同步呼叫</b>。要平行執行必須用函數模組的 <span class="kw">CALL FUNCTION … STARTING NEW TASK</span>（aRFC，見 <a href="#ch04-1">4-1 章</a>）。</p>
+  <table>
+    <thead><tr><th>敘述</th><th>行為</th><th>內部會話</th><th>ABAP Memory</th></tr></thead>
+    <tbody>
+      <tr><td><span class="kw">SUBMIT prog AND RETURN</span></td><td>執行可執行程式，結束後回到 SUBMIT 的下一行</td><td>開新的內部會話，疊在堆疊頂端</td><td>保留，可傳資料</td></tr>
+      <tr><td><span class="kw">SUBMIT prog</span></td><td>結束呼叫端，改跑 prog</td><td><b>取代</b>呼叫端的內部會話</td><td>保留</td></tr>
+      <tr><td><span class="kw">CALL TRANSACTION tcode</span></td><td>在呼叫鏈中插入該交易，結束後回來</td><td>開新的內部會話</td><td>保留，可傳資料</td></tr>
+      <tr><td><span class="kw">LEAVE TO TRANSACTION tcode</span></td><td>結束目前程式、啟動交易，等同在命令列輸入 /n tcode</td><td><b>移除堆疊中全部</b>內部會話，重開一個</td><td><b>清空</b>，不能傳資料</td></tr>
+      <tr><td><span class="kw">LEAVE PROGRAM</span></td><td>結束目前程式</td><td>若是被 CALL TRANSACTION／SUBMIT AND RETURN 叫起來的，回呼叫端下一行；否則回到原始應用選單</td><td>—</td></tr>
+    </tbody>
+  </table>
+  <ul>
+    <li><span class="kw">VIA SELECTION-SCREEN</span>：顯示被呼叫程式的標準選擇畫面（沒加則跳過）。</li>
+    <li><span class="kw">AND SKIP FIRST SCREEN</span>：不顯示交易的第一個畫面，但<b>它的流程邏輯仍會執行</b>（必填欄位要先用 SAP Memory 帶好值）。</li>
+    <li>CALL TRANSACTION 啟動使用更新技術的交易時，可用 <span class="kw">UPDATE</span> 指定更新模式：非同步 A（預設）、同步 S、本地 L（見 <a href="#ch05-11">5-11 章 BC414</a>）。</li>
+  </ul>
+  <pre><code class="abap">METHOD call_va03.                       " 從清單叫出銷售訂單
+  CHECK gv_vbeln IS NOT INITIAL.        " HIDE 回填的訂單號碼
+
+  SET PARAMETER ID 'AUN' FIELD gv_vbeln.   " VBELN 的參數 ID 是 AUN（內部格式，含前導零）
+  TRY.
+      CALL TRANSACTION 'VA03' WITH AUTHORITY-CHECK AND SKIP FIRST SCREEN.
+    CATCH cx_sy_authorization_error.
+      MESSAGE |您沒有交易 VA03 的執行權限| TYPE 'I' DISPLAY LIKE 'E'.
+  ENDTRY.
+ENDMETHOD.
+
+" 結束目前程式、換到另一支交易（ABAP Memory 會被清空）
+LEAVE TO TRANSACTION 'ZBC406_MENU'.
+
+" 被呼叫端結束自己：回到 CALL TRANSACTION / SUBMIT AND RETURN 的下一行
+LEAVE PROGRAM.</code></pre>
+  <div class="warn">S/4HANA 的安全檢查（Code Inspector／ATC）會對沒有 <span class="kw">WITH AUTHORITY-CHECK</span> 或 <span class="kw">WITHOUT AUTHORITY-CHECK</span> 的 <span class="kw">CALL TRANSACTION</span> 發出警告。舊寫法是否檢查 S_TCODE 取決於資料表 TCDCOUPLES 的設定（<span class="tcode">SE97</span> 維護），新寫法（7.40 起提供）一律檢查 S_TCODE，失敗時拋出 <span class="kw">CX_SY_AUTHORIZATION_ERROR</span>。新程式請明確寫 WITH AUTHORITY-CHECK。</div>
+
+  <h3 id="ch05-7-14">14. 記憶體模型：外部會話、內部會話、ABAP Memory、SAP Memory</h3>
+  <p>從程式的角度，主記憶體的組織如下（筆記 p80 的圖）：</p>
+  <table>
+    <thead><tr><th>層次</th><th>內容</th><th>數量限制</th></tr></thead>
+    <tbody>
+      <tr><td><b>使用者終端會話</b>（一次登入）</td><td><b>SAP Memory</b>：所有外部會話共用</td><td>—</td></tr>
+      <tr><td><b>外部會話</b>（一個 SAP GUI 視窗；「系統 → 建立會話」或 /o tcode）</td><td><b>ABAP Memory</b>：每個外部會話各自一份</td><td>每次登入最多 <b>6 個</b>（2007 年的值；現行由參數 rdisp/max_alt_modes 控制，預設 6、上限 16）</td></tr>
+      <tr><td><b>內部會話</b>（以堆疊存放）</td><td>每支執行中的程式占一個內部會話；程式資料只在自己的內部會話可見</td><td>每個外部會話最多 <b>9 個</b></td></tr>
+    </tbody>
+  </table>
+  <p><b>程式呼叫與返回時堆疊的變化</b>：</p>
+  <ul>
+    <li><b>CALL TRANSACTION／SUBMIT … AND RETURN</b>：開新的內部會話放在堆疊頂端；程式正常結束或 LEAVE PROGRAM 時，最上層內部會話被移除，呼叫端繼續。</li>
+    <li><b>LEAVE TO TRANSACTION</b>：移除堆疊中全部內部會話，開一個含新程式的上下文；<b>ABAP Memory 被清空</b>。</li>
+    <li><b>SUBMIT（無 AND RETURN）</b>：用被呼叫程式的內部會話<b>取代</b>呼叫端的內部會話。</li>
+  </ul>
+  <div class="note"><b>教材修正：</b>筆記 p85 的 SUBMIT 圖在「呼叫後」把新會話標成「程式 &lt;t_code&gt;」，應該是「程式 &lt;program&gt;」（被 SUBMIT 的程式），那是從 LEAVE TO TRANSACTION 的圖複製過來沒改到。</div>
+  <p><b>呼叫函數模組</b>時：系統先檢查這次呼叫的函數模組跟之前呼叫過的是否屬於同一個函數群組。</p>
+  <ul>
+    <li>不是 → 把該函數群組載入<b>呼叫端的內部會話</b>，當作程式群組的附加，並初始化函數群組的全域資料。</li>
+    <li>是 → 直接存取已載入的函數群組全域資料，<b>不會重新載入</b>。</li>
+    <li>同一內部會話中，同一函數群組的所有函數模組共用全域資料；每個用到它的內部會話都要各自載入一次。</li>
+  </ul>
+  <div class="tip">這就是為什麼某些 BAPI 在同一支程式裡連續呼叫時會「記得」上一次的資料（函數群組的全域緩衝區沒清）。連續建單時若出現怪現象，檢查該 BAPI 是否有提供 buffer refresh 的函數（例如物料的 <span class="kw">MATERIAL_BUFFER_REFRESH_ALL</span> 系列），或每筆呼叫後正確 <span class="kw">BAPI_TRANSACTION_COMMIT</span>（見 <a href="#ch04-1">4-1 章</a>）。</div>
+
+  <h3 id="ch05-7-15">15. 程式間傳遞資料：SUBMIT WITH、ABAP Memory、SAP Memory</h3>
+  <p>跨內部會話傳資料有五種方式：被呼叫程式的介面（通常是標準選擇畫面）、<b>ABAP Memory</b>、<b>SAP Memory</b>、資料庫表、展示層伺服器的本機檔案。課程示範前三種；資料庫表／共用緩衝區見 <span class="kw">EXPORT／IMPORT</span> 關鍵字文件；展示層檔案原教材指向 <span class="kw">WS_UPLOAD</span>／<span class="kw">WS_DOWNLOAD</span>。</p>
+  <div class="warn"><span class="kw">WS_UPLOAD</span>／<span class="kw">WS_DOWNLOAD</span> 早已過時，S/4HANA 請用 <span class="kw">CL_GUI_FRONTEND_SERVICES=&gt;GUI_UPLOAD</span>／<span class="kw">GUI_DOWNLOAD</span>（只能在前景執行），背景作業要讀寫應用伺服器檔案則用 <span class="kw">OPEN DATASET</span>，詳見 <a href="#ch04-4">4-4 章</a>。</div>
+  <p><b>(1) 透過選擇畫面介面</b>：呼叫時指定<b>變式</b>（<span class="kw">USING SELECTION-SET</span>），或逐一指定輸入欄位的值（<span class="kw">WITH</span>）。WITH 的 EQ、NE…、I、E 意義與 SELECT-OPTIONS 相同；要傳多值就傳一個範圍內表。原教材用 <span class="kw">RANGES</span> 宣告，已過時，改用 <span class="kw">TYPE RANGE OF</span>。在 ABAP 編輯器用「樣式（Pattern）」插入 SUBMIT，會自動帶出被呼叫程式的 PARAMETERS／SELECT-OPTIONS 名稱，避免打錯。<span class="kw">SUBMIT … WITH p1 = f1 p2 = f2 AND RETURN</span> 會跳過選擇畫面直接顯示結果。</p>
+  <pre><code class="abap">DATA lt_conn TYPE RANGE OF s_conn_id.
+
+" 列舉比區間安全：明列要的航班，而不是 BT 0001～0999
+lt_conn = VALUE #( sign = 'I' option = 'EQ' ( low = '0017' ) ( low = '0064' ) ( low = '0400' ) ).
+
+" ① 直接帶值、跳過選擇畫面、跑完回來
+SUBMIT zbc406_flights
+  WITH pa_car  =  'LH'
+  WITH so_conn IN lt_conn
+  WITH pa_test =  abap_true
+  AND RETURN.
+
+" ② 帶值但讓使用者再確認選擇畫面
+SUBMIT zbc406_flights WITH pa_car = 'LH' VIA SELECTION-SCREEN AND RETURN.
+
+" ③ 用變式
+SUBMIT zbc406_flights USING SELECTION-SET 'MONTHLY' AND RETURN.
+
+" ④ 動態參數表（欄位名稱執行時決定）
+DATA(lt_params) = VALUE rsparams_tt(
+  ( selname = 'PA_CAR'  kind = 'P' low = 'LH' )
+  ( selname = 'SO_CONN' kind = 'S' sign = 'I' option = 'EQ' low = '0400' ) ).
+SUBMIT zbc406_flights WITH SELECTION-TABLE lt_params AND RETURN.
+
+" ⑤ 不顯示清單，把輸出抓回來
+SUBMIT zbc406_flights WITH pa_car = 'LH' EXPORTING LIST TO MEMORY AND RETURN.
+DATA lt_list TYPE STANDARD TABLE OF abaplist WITH EMPTY KEY.
+CALL FUNCTION 'LIST_FROM_MEMORY'
+  TABLES
+    listobject = lt_list
+  EXCEPTIONS
+    not_found  = 1
+    OTHERS     = 2.
+IF sy-subrc = 0.
+  DATA lt_ascii TYPE STANDARD TABLE OF char255 WITH EMPTY KEY.
+  CALL FUNCTION 'LIST_TO_ASCI'
+    TABLES
+      listasci   = lt_ascii
+      listobject = lt_list
+    EXCEPTIONS
+      OTHERS     = 1.
+  CALL FUNCTION 'LIST_FREE_MEMORY' TABLES listobject = lt_list.
+ENDIF.</code></pre>
+  <div class="tip">若被呼叫的是 ALV 報表（EXPORTING LIST TO MEMORY 抓不到 ALV Grid 的資料），可在 SUBMIT 前呼叫 <span class="kw">cl_salv_bs_runtime_info=&gt;set( display = abap_false metadata = abap_false data = abap_true )</span>，SUBMIT 後用 <span class="kw">cl_salv_bs_runtime_info=&gt;get_data_ref( )</span> 取回內表，最後 <span class="kw">clear_all( )</span>。背景執行則用 <span class="kw">SUBMIT … VIA JOB … NUMBER …</span> 搭配 JOB_OPEN／JOB_CLOSE（見 <a href="#ch04-4">4-4 章</a>）。</div>
+
+  <p><b>(2) ABAP Memory 與 SAP Memory 的差別</b>：</p>
+  <table>
+    <thead><tr><th></th><th>SAP Memory</th><th>ABAP Memory</th></tr></thead>
+    <tbody>
+      <tr><td>範圍</td><td>整個使用者終端會話，<b>所有外部會話共用</b></td><td>單一外部會話內的所有內部會話；<b>不能跨外部會話</b></td></tr>
+      <tr><td>內容</td><td>參數 ID 對應的欄位值（受限、字元型）</td><td>任何 ABAP 變數：欄位、結構、內表、複雜物件</td></tr>
+      <tr><td>語法</td><td><span class="kw">SET／GET PARAMETER ID</span>、<span class="kw">MEMORY ID</span></td><td><span class="kw">EXPORT … TO MEMORY ID</span>、<span class="kw">IMPORT … FROM MEMORY ID</span>、<span class="kw">FREE MEMORY ID</span></td></tr>
+      <tr><td>典型用途</td><td>畫面欄位預設值（使用者上次輸入的公司代碼、訂單號碼）</td><td>SUBMIT／CALL TRANSACTION 前後傳內表</td></tr>
+      <tr><td>釋放</td><td>登出</td><td>關閉外部會話（關視窗或 /i）時自動初始化；LEAVE TO TRANSACTION 時清空</td></tr>
+    </tbody>
+  </table>
+  <p><b>ABAP Memory 規則</b>：EXPORT 在 ABAP Memory 建立一個<b>資料叢集（data cluster）</b>，可存任意數量的變數與目前值；<b>ID 最長 60 字元</b>，用來區分不同叢集；對已存在的叢集再 EXPORT 會<b>覆蓋</b>舊值；IMPORT 可只取叢集中的一部分；匯出與匯入的資料物件<b>型別必須相同</b>，名稱原則上相同，用 <span class="kw">p = dobj</span> 可對應到不同名稱。</p>
+  <pre><code class="abap">" ---- 呼叫端 ----
+DATA gt_sel TYPE STANDARD TABLE OF sflight WITH EMPTY KEY.
+" … gt_sel 已收集使用者勾選的航班 …
+EXPORT flights = gt_sel
+       carrid  = pa_car
+  TO MEMORY ID 'ZBC406_SEL_FLIGHTS'.          " ID 最長 60 字元，建議加程式前綴避免撞名
+SUBMIT zbc406_receiver AND RETURN.            " ABAP Memory 在同一外部會話內有效
+
+" ---- 被呼叫端 ZBC406_RECEIVER ----
+DATA lt_flights TYPE STANDARD TABLE OF sflight WITH EMPTY KEY.   " 型別必須與匯出相同
+DATA lv_carrid  TYPE s_carr_id.
+
+START-OF-SELECTION.
+  IMPORT flights = lt_flights
+         carrid  = lv_carrid
+    FROM MEMORY ID 'ZBC406_SEL_FLIGHTS'.       " IMPORT 不能用內嵌宣告
+  IF sy-subrc &lt;&gt; 0.
+    MESSAGE '請從主程式進入' TYPE 'S' DISPLAY LIKE 'E'.
+    LEAVE PROGRAM.
+  ENDIF.
+  FREE MEMORY ID 'ZBC406_SEL_FLIGHTS'.         " 用完就釋放</code></pre>
+  <div class="warn">舊式簡寫 <span class="kw">EXPORT itab TO MEMORY ID …</span>（不寫 <span class="kw">p = dobj</span>）在類別中已不允許，一律寫成 <span class="kw">EXPORT name = dobj</span>。另外 ABAP Memory <b>不能用在 LEAVE TO TRANSACTION</b>——呼叫時已被清空。</div>
+  <p><b>SAP Memory 的三種定義方式</b>：</p>
+  <ol>
+    <li>在 PARAMETERS 或 SELECT-OPTIONS 加 <span class="kw">MEMORY ID par_id</span>。</li>
+    <li>畫面輸入欄位引用字典時，自動沿用資料元素的參數 ID；在 Screen Painter 的欄位屬性勾 <b>SET</b>（把輸入值寫進參數）或 <b>GET</b>（用參數值預填）。要查欄位掛哪個參數 ID：F1 → 技術資訊。</li>
+    <li>程式中直接 <span class="kw">SET PARAMETER ID 'par_id' FIELD var</span> 寫入、<span class="kw">GET PARAMETER ID 'par_id' FIELD var</span> 讀出。</li>
+  </ol>
+  <pre><code class="abap">" 筆記 p95 寫成「GET PARAMETER 'par_id' FIELD var」漏了 ID，正確如下
+DATA lv_bukrs TYPE bukrs.
+GET PARAMETER ID 'BUK' FIELD lv_bukrs.         " 使用者上次輸入的公司代碼
+IF sy-subrc &lt;&gt; 0 OR lv_bukrs IS INITIAL.
+  lv_bukrs = '1710'.
+ENDIF.
+
+DATA(lv_matnr) = CONV matnr( '100-100' ).
+" 外部格式 → 內部格式（ALPHA / MATN1），否則交易畫面帶進去的值會對不上
+CALL FUNCTION 'CONVERSION_EXIT_MATN1_INPUT'
+  EXPORTING  input  = lv_matnr
+  IMPORTING  output = lv_matnr
+  EXCEPTIONS OTHERS = 1.
+SET PARAMETER ID 'MAT' FIELD lv_matnr.
+SET PARAMETER ID 'WRK' FIELD '1710'.
+TRY.
+    CALL TRANSACTION 'MMBE' WITH AUTHORITY-CHECK AND SKIP FIRST SCREEN.
+  CATCH cx_sy_authorization_error.
+    MESSAGE 'No authorization for MMBE' TYPE 'I'.
+ENDTRY.</code></pre>
+
+  <h3 id="ch05-7-16">16. 用內表驅動交易：CALL TRANSACTION USING（BDCDATA）</h3>
+  <p><span class="kw">CALL TRANSACTION 'T_CODE' USING bi_itab</span> 執行交易，並用內表 bi_itab 的內容填入畫面欄位。內表必須是 <b>BDCDATA</b> 型別並正確填寫。</p>
+  <ul>
+    <li><span class="kw">MODE</span>：A 全部顯示（預設）、E 出錯才顯示、N 都不顯示（另有 P＝可除錯的背景模式）。</li>
+    <li><span class="kw">UPDATE</span>：A 非同步、S 同步、L 本地。</li>
+    <li><span class="kw">MESSAGES INTO mess_itab</span>：把執行時的系統訊息寫進內表，型別必須是 <b>BDCMSGCOLL</b>。</li>
+    <li>用 sy-subrc 判斷交易是否正確執行。</li>
+    <li>適用情境：前景執行但欄位沒辦法用 GET 參數正確填入時；想在背景處理交易（通常必須用內表傳功能碼）時；也是與非 SAP 系統交換資料的可行方式。</li>
+  </ul>
+  <table>
+    <thead><tr><th>欄位</th><th>說明</th><th>填寫規則</th></tr></thead>
+    <tbody>
+      <tr><td><b>PROGRAM</b></td><td>程式名稱</td><td>只在「畫面起始記錄」填</td></tr>
+      <tr><td><b>DYNPRO</b></td><td>畫面號碼</td><td>只在畫面起始記錄填</td></tr>
+      <tr><td><b>DYNBEGIN</b></td><td>起始記錄標記</td><td>畫面起始記錄為 'X'，其餘為空白</td></tr>
+      <tr><td><b>FNAM</b></td><td>欄位名稱</td><td>欄位記錄填；<b>區分大小寫</b></td></tr>
+      <tr><td><b>FVAL</b></td><td>欄位值</td><td>欄位記錄填；使用者看到的外部格式</td></tr>
+    </tbody>
+  </table>
+  <p>填法：每個要自動處理的畫面先放一筆<b>畫面識別記錄</b>（只填 PROGRAM、DYNPRO、DYNBEGIN），接著每個要填的欄位一筆記錄（FNAM、FVAL），可選填：一般輸入欄位（資料）、命令欄位 <b>BDC_OKCODE</b>（功能碼，相當於使用者按功能鍵、按鈕或選單）、游標位置 <b>BDC_CURSOR</b>（欄位名）。錄製畫面流程用 <span class="tcode">SHDB</span>。</p>
+  <pre><code class="abap">" 筆記 p99 範例：用 BDCDATA 呼叫交易 BCDEMO 修改客戶名稱與城市
+" 程式名與畫面號碼在講義中為截圖，此處以 SAPMZBC406 / 0100 示意
+DATA lt_bdc TYPE STANDARD TABLE OF bdcdata WITH EMPTY KEY.
+DATA lt_msg TYPE STANDARD TABLE OF bdcmsgcoll WITH EMPTY KEY.
+
+lt_bdc = VALUE #(
+  ( program = 'SAPMZBC406' dynpro = '0100' dynbegin = 'X' )
+  ( fnam = 'BDC_CURSOR'    fval = 'SCUSTOM-NAME' )
+  ( fnam = 'SCUSTOM-NAME'  fval = lv_current_name )
+  ( fnam = 'SCUSTOM-CITY'  fval = lv_current_city )
+  ( fnam = 'BDC_OKCODE'    fval = 'SAVE' ) ).
+
+DATA(ls_opt) = VALUE ctu_params( dismode  = 'N'           " 不顯示畫面
+                                 updmode  = 'S'           " 同步更新，回來時已寫入 DB
+                                 defsize  = abap_true ).  " 標準畫面大小，避免解析度影響
+TRY.
+    CALL TRANSACTION 'BCDEMO' WITH AUTHORITY-CHECK
+      USING lt_bdc
+      OPTIONS FROM ls_opt
+      MESSAGES INTO lt_msg.
+  CATCH cx_sy_authorization_error.
+    MESSAGE 'No authorization for BCDEMO' TYPE 'E'.
+ENDTRY.
+DATA(lv_rc) = sy-subrc.
+
+LOOP AT lt_msg INTO DATA(ls_msg) WHERE msgtyp CA 'EA'.
+  MESSAGE ID ls_msg-msgid TYPE 'S' NUMBER ls_msg-msgnr
+          WITH ls_msg-msgv1 ls_msg-msgv2 ls_msg-msgv3 ls_msg-msgv4
+          INTO DATA(lv_text).
+  WRITE: / lv_rc, lv_text.
+ENDLOOP.</code></pre>
+  <div class="warn"><b>先找標準，再想客製。</b>CALL TRANSACTION USING 是「模擬人按畫面」，在 S/4HANA 很脆弱：Fiori 化、畫面欄位調整、新增必填欄位都會讓它失效（例如 XD01／XK01 已被 BP 取代，錄好的 BDC 直接不能用）。有 BAPI 或 released API 時一律優先用 BAPI（<a href="#ch04-1">4-1 章</a>），其次才是 BDC（<a href="#ch04-4">4-4 章</a>）。另外 <span class="kw">MODE／UPDATE</span> 與 <span class="kw">OPTIONS FROM</span> 二選一，不能同時寫。</div>
+
+  <h3 id="ch05-7-17">17. S/4HANA 現況：從 WRITE 互動式清單到 CL_SALV_TABLE 事件</h3>
+  <p>BC406 的每一個互動技術，在 ALV 世界都有對應。新程式請直接用 SALV（完整教學見 <a href="#ch02-3">2-3 章 ALV</a>、需要編輯時用 <a href="#ch03-2">3-2 章 OOALV</a>）：</p>
+  <table>
+    <thead><tr><th>BC406 傳統清單</th><th>CL_SALV_TABLE 對應</th></tr></thead>
+    <tbody>
+      <tr><td>HIDE ＋ AT LINE-SELECTION</td><td><span class="kw">CL_SALV_EVENTS_TABLE</span> 的 <b>DOUBLE_CLICK</b>（row、column）或 <b>LINK_CLICK</b>（熱點）</td></tr>
+      <tr><td>SET PF-STATUS ＋ AT USER-COMMAND</td><td><span class="kw">set_screen_status( )</span> ＋ <b>ADDED_FUNCTION</b> 事件（e_salv_function）</td></tr>
+      <tr><td>WRITE AS CHECKBOX ＋ READ LINE 逐行讀</td><td><span class="kw">get_selections( )-&gt;set_selection_mode( )</span> ＋ <span class="kw">get_selected_rows( )</span></td></tr>
+      <tr><td>GET CURSOR ＋ 動態 SORT ＋ sy-lsind - 1</td><td>ALV 工具列內建排序、篩選、小計，不必自己寫</td></tr>
+      <tr><td>多層細節清單（sy-lsind 1～20）</td><td>在事件中再開一個 SALV（可用 <span class="kw">set_screen_popup( )</span> 以彈出視窗顯示）</td></tr>
+      <tr><td>MODIFY LINE 改顏色</td><td>內表加顏色欄位（LVC_T_SCOL）＋ <span class="kw">get_columns( )-&gt;set_color_column( )</span></td></tr>
+      <tr><td>TOP-OF-PAGE</td><td><span class="kw">set_top_of_list( )</span>（CL_SALV_FORM_LAYOUT_GRID）</td></tr>
+    </tbody>
+  </table>
+  <pre><code class="abap">REPORT zbc406_salv.
+
+PARAMETERS pa_car TYPE s_carr_id DEFAULT 'LH'.
+
+CLASS lcl_app DEFINITION.
+  PUBLIC SECTION.
+    METHODS run.
+  PRIVATE SECTION.
+    TYPES tt_spfli TYPE STANDARD TABLE OF spfli WITH EMPTY KEY.
+    DATA mt_spfli TYPE tt_spfli.
+    DATA mo_alv   TYPE REF TO cl_salv_table.
+    METHODS on_double_click FOR EVENT double_click OF cl_salv_events_table
+      IMPORTING row column.
+    METHODS on_added_function FOR EVENT added_function OF cl_salv_events
+      IMPORTING e_salv_function.
+    METHODS show_flights IMPORTING it_keys TYPE tt_spfli.
+ENDCLASS.
+
+CLASS lcl_app IMPLEMENTATION.
+  METHOD run.
+    SELECT * FROM spfli WHERE carrid = @pa_car
+      ORDER BY carrid, connid                      " 畫面順序 = 內表順序，row 才對得上
+      INTO TABLE @mt_spfli.
+    TRY.
+        cl_salv_table=&gt;factory( IMPORTING r_salv_table = mo_alv
+                                CHANGING  t_table      = mt_spfli ).
+      CATCH cx_salv_msg INTO DATA(lx).
+        MESSAGE lx TYPE 'E'.
+    ENDTRY.
+    " GUI 狀態：先用 SE41 從程式 SAPLSALV_METADATA_STATUS 複製狀態 SALV_STANDARD，
+    " 再加自己的按鈕 DETL（相當於 BC406 的 SET PF-STATUS）
+    mo_alv-&gt;set_screen_status( pfstatus      = 'SALV_STANDARD'
+                               report        = sy-repid
+                               set_functions = mo_alv-&gt;c_functions_all ).
+    mo_alv-&gt;get_selections( )-&gt;set_selection_mode( if_salv_c_selection_mode=&gt;row_column ).
+    SET HANDLER on_double_click on_added_function FOR mo_alv-&gt;get_event( ).
+    mo_alv-&gt;display( ).
+  ENDMETHOD.
+
+  METHOD on_double_click.                          " 取代 HIDE + AT LINE-SELECTION
+    show_flights( VALUE tt_spfli( ( mt_spfli[ row ] ) ) ).
+  ENDMETHOD.
+
+  METHOD on_added_function.                        " 取代 AT USER-COMMAND
+    CASE e_salv_function.
+      WHEN 'DETL'.                                 " 取代 READ LINE 逐行讀核取方塊
+        DATA(lt_rows) = mo_alv-&gt;get_selections( )-&gt;get_selected_rows( ).
+        IF lt_rows IS INITIAL.
+          MESSAGE '請至少選一行' TYPE 'S' DISPLAY LIKE 'W'.
+          RETURN.
+        ENDIF.
+        show_flights( VALUE tt_spfli( FOR r IN lt_rows ( mt_spfli[ r ] ) ) ).
+    ENDCASE.
+  ENDMETHOD.
+
+  METHOD show_flights.                             " 取代 sy-lsind = 1 的細節清單
+    DATA(lt_keys) = it_keys.
+    CHECK lt_keys IS NOT INITIAL.
+    SELECT f~carrid, f~connid, f~fldate, f~seatsmax, f~seatsocc
+      FROM sflight AS f
+      INNER JOIN @lt_keys AS k                    " 內表當資料來源需 7.52
+        ON f~carrid = k~carrid AND f~connid = k~connid
+      ORDER BY f~carrid, f~connid, f~fldate
+      INTO TABLE @DATA(lt_flights).
+    TRY.
+        cl_salv_table=&gt;factory( IMPORTING r_salv_table = DATA(lo_popup)
+                                CHANGING  t_table      = lt_flights ).
+        lo_popup-&gt;set_screen_popup( start_column = 10 end_column = 110
+                                    start_line   = 3  end_line   = 20 ).
+        lo_popup-&gt;display( ).
+      CATCH cx_salv_msg.
+    ENDTRY.
+  ENDMETHOD.
+ENDCLASS.
+
+START-OF-SELECTION.
+  NEW lcl_app( )-&gt;run( ).</code></pre>
+  <div class="warn"><b>技術現況總結：</b>
+    <br>① <b>傳統 WRITE 互動式清單</b>（HIDE、READ LINE、MODIFY LINE、GET CURSOR、sy-lsind）仍可執行，但新開發請用 SALV；在 Fiori 啟動台跑時 WRITE 清單只能透過 SAP GUI for HTML，體驗差。
+    <br>② <b>選擇畫面、GUI Status、SUBMIT、CALL TRANSACTION、ABAP／SAP Memory</b> 在 S/4HANA SAP GUI 程式中照常使用。
+    <br>③ 若是要給 Fiori／雲端使用者的報表，方向是 <b>CDS View ＋ Fiori Elements（List Report）</b> 或 RAP，選擇畫面變成 Filter Bar、細節清單變成 Object Page、GUI 按鈕變成 Action。ABAP Cloud（Tier 1）中 WRITE、選擇畫面、SUBMIT、CALL TRANSACTION 都<b>不可用</b>。
+    <br>④ 邏輯資料庫（GET 事件、NODES）已過時，改用 ABAP SQL 或 CDS。</div>
+
+  <h3 id="ch05-7-qa">練習與自我檢核</h3>
+  <ol>
+    <li><b>AT LINE-SELECTION 與 AT USER-COMMAND 各由什麼觸發？PRI、%EX 會觸發哪一個？</b><br>參考答案：AT LINE-SELECTION 由功能碼 PICK（雙擊／F2）觸發；AT USER-COMMAND 由 PICK 與系統功能碼以外的所有功能碼觸發。PRI、%EX 是系統保留功能碼，兩個都不觸發，系統直接執行。</li>
+    <li><b>為什麼產生細節清單後要 CLEAR HIDE 的欄位？</b><br>參考答案：hide area 只有有效行才有值。若不清空，使用者返回後點到表頭或空白行時，全域欄位還保留上一次的值，程式會誤以為選到一筆有效資料。</li>
+    <li><b>一張基本清單最多幾層細節清單？按綠箭頭、紅叉、黃箭頭分別會怎樣？</b><br>參考答案：20 層。綠箭頭／紅叉回上一層並初始化離開那層的清單緩衝區；黃箭頭中斷清單處理、回標準選擇畫面。</li>
+    <li><b>寫一個頁籤選擇畫面時，為什麼不能自己寫 CONTROLS？如何讓畫面預設開在第 2 頁？</b><br>參考答案：系統自動產生 <span class="kw">CONTROLS blk TYPE TABSTRIP</span>，重複宣告會語法錯誤。在 INITIALIZATION 設 <span class="kw">blk-prog = sy-repid</span>、<span class="kw">blk-dynnr</span> 為第 2 頁子畫面號碼、<span class="kw">blk-activetab</span> 為第 2 頁的 USER-COMMAND。</li>
+    <li><b>AT SELECTION-SCREEN ON pa_car 與 AT SELECTION-SCREEN 發 E 訊息的差別？</b><br>參考答案：前者只讓 pa_car 重新可輸入；後者讓所有欄位重新可輸入。ON BLOCK 則是該區塊的欄位。</li>
+    <li><b>應用工具列最多幾個按鈕？選單列最多幾個選單、可自由分配幾個？選單最多幾個項目、幾層？</b><br>參考答案：35 個按鈕；8 個選單，6 個可自由分配（系統、說明固定）；每個選單 15 個項目，最多 3 層。</li>
+    <li><b>在第 1 層細節清單中按排序鈕，想讓排序後的清單取代原本的第 1 層而不是變成第 2 層，要怎麼做？sy-lsind 要何時改？</b><br>參考答案：重新輸出後設 <span class="kw">sy-lsind = sy-lsind - 1</span>，且放在輸出前的最後一個敘述（或事件最後）；新層級在事件結束、清單輸出完才生效，不能設成比現有層級更大的值。</li>
+    <li><b>READ LINE 的 FIELD VALUE 讀回的值能直接當 SELECT 條件嗎？sy-lisel 有什麼限制？</b><br>參考答案：不建議。清單緩衝區一律是字元型，讀回的是格式化後的顯示值，型別轉換可能出錯，應改用 HIDE 回填的欄位。sy-lisel 只有 255 字元。</li>
+    <li><b>在細節清單事件中發 E 訊息與在 START-OF-SELECTION 發 E 訊息的結果有何不同？實務上 START-OF-SELECTION 查無資料該怎麼寫？</b><br>參考答案：細節清單中 E 會丟棄目前細節清單、回上一層；基本清單階段 E 會終止程式。查無資料慣用 <span class="kw">MESSAGE … TYPE 'S' DISPLAY LIKE 'E'</span> 加 <span class="kw">LEAVE LIST-PROCESSING</span> 回到選擇畫面。</li>
+    <li><b>SUBMIT、SUBMIT AND RETURN、CALL TRANSACTION、LEAVE TO TRANSACTION 對內部會話堆疊與 ABAP Memory 的影響？</b><br>參考答案：SUBMIT AND RETURN、CALL TRANSACTION 在堆疊頂端新增內部會話，ABAP Memory 保留；SUBMIT 取代呼叫端的內部會話；LEAVE TO TRANSACTION 移除全部內部會話並清空 ABAP Memory，因此不能用 ABAP Memory 傳資料。</li>
+    <li><b>SAP Memory 與 ABAP Memory 的範圍各是什麼？同一使用者開兩個視窗，能用 EXPORT TO MEMORY 在兩個視窗間傳內表嗎？</b><br>參考答案：SAP Memory 是整個登入（所有外部會話共用），只存參數 ID 的值；ABAP Memory 限單一外部會話內。兩個視窗是兩個外部會話，不能用 ABAP Memory 互傳（可改用資料庫表、共用物件或 SAP Memory 傳單一值）。</li>
+    <li><b>每次登入最多幾個外部會話？每個外部會話最多幾個內部會話？</b><br>參考答案：外部會話預設 6 個（rdisp/max_alt_modes，上限 16）；內部會話 9 個。</li>
+    <li><b>BDCDATA 五個欄位是什麼？畫面識別記錄要填哪幾個？怎麼表示按下「儲存」？</b><br>參考答案：PROGRAM、DYNPRO、DYNBEGIN、FNAM、FVAL；畫面識別記錄填 PROGRAM、DYNPRO、DYNBEGIN = 'X'；以 FNAM = 'BDC_OKCODE'、FVAL = 功能碼（例如 SAVE 或 =BU）表示。訊息收在 BDCMSGCOLL。</li>
+    <li><b>實作題</b>：把第 10 節的「核取方塊 ＋ READ LINE」程式改寫成 CL_SALV_TABLE 版本，支援多選、雙擊看航班、自訂按鈕 DETL，並確保 SELECT 有 ORDER BY。<br>參考答案要點：見第 17 節範例；重點是 <span class="kw">set_selection_mode( row_column )</span>、<span class="kw">get_selected_rows( )</span>、<span class="kw">DOUBLE_CLICK</span>／<span class="kw">ADDED_FUNCTION</span> 事件；內表順序要與畫面一致，否則 row 會對到錯的資料（HANA 無預設排序）。</li>
+    <li><b>思考題</b>：使用者要求「在清單上勾選客戶後，按鈕一鍵修改客戶主檔」，你會用 CALL TRANSACTION USING XD02 的 BDC 嗎？<br>參考答案要點：不會。S/4HANA 客戶主檔改由 BP 維護，XD02 的 BDC 已不可行；依「先找標準再客製」原則，先找 BP 的 API（CL_MD_BP_MAINTAIN、CMD_EI_API，見 4-1 章），必要時再考慮其他做法。</li>
+  </ol>
+</section>

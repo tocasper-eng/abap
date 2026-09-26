@@ -1,0 +1,864 @@
+<section class="chapter" id="ch05-22" data-title="IDoc 介面（ALE/EDI）與 BIT750 SAP Application Interface Framework（AIF）">
+  <h2>第 5-22 章 IDoc 介面（ALE/EDI）與 BIT750 SAP Application Interface Framework（AIF）</h2>
+  <p class="lede">這一章把兩份原廠素材合在一起讀：一份是 SAP 1999 年的《IDoc Interface / Electronic Data Interchange》說明文件（4.6B，267 頁），把 IDoc 的結構、埠、夥伴設定檔、Process Code、出入站流程、狀態碼、測試與監控、自訂 IDoc 類型講得最完整；另一份是 2022 年的 <b>BIT750 SAP Application Interface Framework（AIF）</b>課程，教你怎麼讓<b>業務人員</b>自己監控、修正介面錯誤。前者是「IDoc 怎麼跑」，後者是「IDoc 出錯了誰來修、怎麼修」。<a href="#ch04-1">4-1 章</a>談 RFC 與 BAPI 的即時呼叫，本章補上非同步、以訊息為單位的 ALE/EDI 世界，兩章互補。</p>
+  <div class="meta">
+    <div><b>核心 TCODE</b><span class="tcode">WEDI</span><span class="tcode">SALE</span><span class="tcode">BD54</span><span class="tcode">SCC4</span><span class="tcode">BD64</span><span class="tcode">SM59</span><span class="tcode">WE21</span><span class="tcode">WE20</span><span class="tcode">WE31</span><span class="tcode">WE30</span><span class="tcode">WE81</span><span class="tcode">WE82</span><span class="tcode">WE60</span><span class="tcode">WE41</span><span class="tcode">WE42</span><span class="tcode">WE40</span><span class="tcode">WE47</span><span class="tcode">WE57</span><span class="tcode">BD51</span><span class="tcode">WE19</span><span class="tcode">WE02</span><span class="tcode">WE05</span><span class="tcode">WE09</span><span class="tcode">WE07</span><span class="tcode">WE14</span><span class="tcode">BD20</span><span class="tcode">BD87</span><span class="tcode">BD50</span><span class="tcode">BD52</span><span class="tcode">BD61</span><span class="tcode">BD21</span><span class="tcode">BD10</span><span class="tcode">BD12</span><span class="tcode">SM58</span><span class="tcode">SARA</span><span class="tcode">CMOD</span><span class="tcode">/AIF/CUST</span><span class="tcode">/AIF/IFMON</span><span class="tcode">/AIF/ERR</span><span class="tcode">/AIF/VMAP</span><span class="tcode">/AIF/IDOC_GEN</span><span class="tcode">/AIF/PERS_CGR</span><span class="tcode">/AIF/LFA_UPLOAD_FILE</span><span class="tcode">/AIF/REP_AC_DEF</span></div>
+    <div><b>關鍵物件</b>EDIDC、EDID4、EDIDS、EDIDD、EDI_DC40、EDI_DD40、EDI_DS40、BDIDOCSTAT、BDWFRETVAR、EDPP1、EDP12、EDP13、EDP21、TEDE1、TEDE2、TEDS1、TEDS3、EDIMSG、TNAPR、NAST、MASTER_IDOC_DISTRIBUTE、IDOC_INBOUND_ASYNCHRONOUS、IDOC_INBOUND_WRITE_TO_DB、IDOC_START_INBOUND、IDOC_INPUT_ORDERS、IDOC_OUTPUT_ORDERS、EDI_DOCUMENT_DEQUEUE_LATER、RSNAST00、RSEOUT00、RBDAPP01、RBDMIDOC、RBDMANI2、RSEIDOCM、SYSTAT01、/AIF/CL_ENABLER_XML、/AIF/CL_ENABLER_PROXY、/AIF/SEND_WITH_PROXY、/AIF/IDOC_INB_PROCESS_FUNC_0、/AIF/IDOC_ACTION_FUNCTION、/AIF/FILE_TEMPL_CHECK</div>
+  </div>
+
+  <h3 id="ch05-22-01">1. 課程定位與教材對照</h3>
+  <p>本章使用兩份原廠英文素材（沒有强晟中文筆記）：</p>
+  <ul>
+    <li><b>《IDoc Interface / Electronic Data Interchange》（HELP.BCSRVEDI，Release 4.6B，1999 年 12 月）</b>：SAP 線上說明文件的 PDF 版，屬於 BC-SRV-EDI 元件。它不是教室課程，但它就是後來 BIT300（ALE）、BIT320／BIT350（IDoc 開發）這幾門課的技術母本。</li>
+    <li><b>BIT750 SAP Application Interface Framework</b>（Participant Handbook，Course Version 03，2022 年，5 天）：對象是應用顧問、開發顧問、技術顧問、開發者與系統架構師。以難度來說屬於 <b>300 等級</b>——預設你已經懂 ABAP、DDIC 結構、BAPI（<a href="#ch04-1">4-1 章</a>）與 IDoc 基礎（本章第 2～15 節）。</li>
+  </ul>
+  <p>本章小節順序：<b>先照 IDoc 說明文件的章節順序講 IDoc 本體（第 2～15 節），再照 BIT750 的 Unit 順序講 AIF（第 16～19 節）</b>，最後是 S/4HANA 的現況。</p>
+  <table>
+    <thead><tr><th>素材</th><th>原單元</th><th>原文頁碼</th><th>本章小節</th></tr></thead>
+    <tbody>
+      <tr><td rowspan="10">IDoc 說明文件（4.6B）</td><td>Processing IDocs（出站／入站／狀態處理、例外處理、舊版相容）</td><td>p10–p38</td><td>2、8、10、13</td></tr>
+      <tr><td>Configuring Ports（File、tRFC、CPI-C、Internet、ABAP-PI、XML）</td><td>p39–p69</td><td>5</td></tr>
+      <tr><td>Defining Partners（Process Code、夥伴設定檔、API）</td><td>p70–p92</td><td>6、7</td></tr>
+      <tr><td>Processing Tests（測試工具與五種測試程式、CATT）</td><td>p93–p106</td><td>15</td></tr>
+      <tr><td>Monitoring（統計、清單、顯示、搜尋、主動監控）</td><td>p107–p125</td><td>14</td></tr>
+      <tr><td>Archiving IDocs（SARA、封存物件 IDOC）</td><td>p126–p143</td><td>14</td></tr>
+      <tr><td>Structure, Documentation and Definition of IDoc Types</td><td>p144–p173</td><td>3、4</td></tr>
+      <tr><td>Extending an IDoc Type（Z1ORDERS 範例）</td><td>p174–p192</td><td>12</td></tr>
+      <tr><td>Defining and Using a New Basic Type（TESTER01 範例、出入站函數模組）</td><td>p193–p261</td><td>9、11</td></tr>
+      <tr><td>IDoc Administration、Forward Inbound、檔名產生、夥伴類型檢查</td><td>p262–p267</td><td>13、14</td></tr>
+      <tr><td rowspan="14">BIT750（Col03）</td><td>Unit 1 Introduction to AIF（有無 AIF 的錯誤處理）</td><td>p9–p26</td><td>16</td></tr>
+      <tr><td>Unit 2 General Functionality（Namespace、Interface、Engine、Recipient）＋練習情境</td><td>p27–p54</td><td>16</td></tr>
+      <tr><td>Unit 3 Basic Interface Development（Mapping、Check、Fix Value、Test Tool）</td><td>p55–p74</td><td>17</td></tr>
+      <tr><td>Unit 4 Advanced Structure and Field Mapping（Indirect、Value Mapping、Conditional）</td><td>p75–p93</td><td>17</td></tr>
+      <tr><td>Unit 5 Actions（Commit Mode／Level、Restart、Fields to Restore）</td><td>p95–p110</td><td>17</td></tr>
+      <tr><td>Unit 6 Additional Monitoring Features（Index Table、Alert、Hide）</td><td>p111–p126</td><td>18</td></tr>
+      <tr><td>Unit 7 AIF XML Runtime</td><td>p127–p134</td><td>18</td></tr>
+      <tr><td>Unit 8 Processing and Monitoring IDocs with AIF</td><td>p135–p156</td><td>19</td></tr>
+      <tr><td>Unit 9 Proxy Interfaces</td><td>p157–p164</td><td>18</td></tr>
+      <tr><td>Unit 10 File Adapter</td><td>p165–p174</td><td>18</td></tr>
+      <tr><td>Unit 11 Additional Features for Simplified Monitoring（Custom Objects）</td><td>p175–p184</td><td>18</td></tr>
+      <tr><td>Unit 12 Interface Variants</td><td>p185–p192</td><td>18</td></tr>
+      <tr><td>Unit 13 Analyzer</td><td>p193–p202</td><td>17</td></tr>
+      <tr><td>Unit 14 Additional Information（自動重處理、Trace、授權、Interface Determination）</td><td>p203–p214</td><td>18</td></tr>
+    </tbody>
+  </table>
+  <div class="note"><b>1999 版與現在的差異</b>：① 說明文件裡的 R/2、CPI-C 埠、Release 2.1/2.2/3.x 的相容設定、SAPphone 電話資料、CATT 測試，今天都已退場（CATT 由 eCATT 取代）；② 文件多用「Initial Node of the IDoc Interface → ⋯」的選單路徑，本章一律補上對應 TCODE（區域選單 <span class="tcode">WEDI</span>）；③ 文件中的範例程式碼是 4.6 時代寫法（<span class="kw">TABLES</span> 宣告、表頭行、<span class="kw">OCCURS</span>、FORM 副程式、<span class="kw">CALL TRANSACTION 'VA01'</span>），本章全部改寫成 7.52 現代語法，入站改呼叫 BAPI；④ 資料記錄表在 4.0 以後是 <b>EDID4</b>（文件只說「三個資料表」沒點名，舊版為 EDID2/EDID3），結構名稱 EDIDD；⑤ BIT750 是 2022 年教材，本身已是 S/4HANA 時代內容。</div>
+
+  <h3 id="ch05-22-02">2. IDoc 介面全景：EDI、ALE 與三種資料流</h3>
+  <p>IDoc（Intermediate Document）介面是 SAP 用來在<b>兩個不同系統之間交換商業資料</b>的標準機制，由兩部分組成：<b>資料結構</b>（IDoc 本身）與<b>處理邏輯</b>（出站、入站、狀態處理）。雙方系統都必須認得 IDoc 格式；IDoc 可以不經由應用程式直接進入 SAP Business Workflow 處理。需要 IDoc 介面的三種情境：</p>
+  <ul>
+    <li><b>EDI（Electronic Data Interchange）</b>：與客戶、供應商交換訂單、出貨通知、發票等電子單據，中間通常隔一個 EDI 子系統（負責 IDoc ↔ EDIFACT／ANSI X12 轉換）。</li>
+    <li><b>ALE（Application Link Enabling）</b>：SAP 與 SAP 之間分散式資料交換，典型是主資料同步（物料 MATMAS、客戶 DEBMAS、供應商 CREMAS）。</li>
+    <li><b>其他應用系統</b>：PC 程式、外部 Workflow、MES、WMS 等任何能讀寫 IDoc 格式的系統。</li>
+  </ul>
+  <p>IDoc 介面支援<b>三種資料流</b>：</p>
+  <table>
+    <thead><tr><th>資料流</th><th>方向</th><th>傳送內容</th></tr></thead>
+    <tbody>
+      <tr><td><b>出站處理</b>（Outbound）</td><td>SAP → 接收系統</td><td>控制記錄＋資料記錄</td></tr>
+      <tr><td><b>入站處理</b>（Inbound）</td><td>上游系統 → SAP</td><td>控制記錄＋資料記錄</td></tr>
+      <tr><td><b>狀態處理</b>（Status）</td><td>接收系統 → SAP，回報出站 IDoc 的處理狀態</td><td>狀態記錄（例外：用 IDoc 類型 <span class="kw">SYSTAT01</span> 回報時，是一張正常的入站 IDoc）</td></tr>
+    </tbody>
+  </table>
+  <p>出錯時由 <b>Workflow 工作項目（work item）</b>啟動例外處理，送進「被允許的處理人員（permitted agent）」的整合收件匣——這是 1999 年的設計，也是 BIT750 說「錯誤都丟給 IT 看」的由來（第 16 節）。</p>
+  <div class="tip">面試口訣：<b>ALE 是「業務分散的方法論」，IDoc 是「信封加內容的資料格式」，tRFC 是「ALE 預設的傳輸管道」</b>。ALE 不一定要用 IDoc（也可以 BAPI），IDoc 也不一定走 ALE（EDI 走檔案埠）。RFC 各型態的差別見 <a href="#ch04-1-03">4-1 章第 3 節</a>與 <a href="#ch05-12">5-12 章 BC415</a>。</div>
+
+  <h3 id="ch05-22-03">3. IDoc 結構：控制記錄、資料記錄、狀態記錄</h3>
+  <p>每張 IDoc 由三種<b>記錄類型（record type）</b>組成，資料庫中各存一張表；對外（送給子系統）時則用三個「外部結構」：</p>
+  <table>
+    <thead><tr><th>記錄類型</th><th>資料庫表</th><th>外部結構（4.x 起）</th><th>內容與重要欄位</th></tr></thead>
+    <tbody>
+      <tr><td><b>控制記錄</b>（Control Record）</td><td>EDIDC</td><td>EDI_DC40</td><td>「信封／信頭」：DOCNUM（IDoc 號碼）、DIRECT（1＝出站、2＝入站）、MESTYP（訊息類型）、IDOCTP（基本類型）、CIMTYP（擴充）、SNDPOR/SNDPRT/SNDPRN（傳送埠、夥伴類型、夥伴號碼）、RCVPOR/RCVPRT/RCVPRN、<b>STATUS（目前最後狀態）</b>、CREDAT/CRETIM、MANDT</td></tr>
+      <tr><td><b>資料記錄</b>（Data Record）</td><td>EDID4（結構 EDIDD）</td><td>EDI_DD40</td><td>SEGNAM（區段名）、SEGNUM（區段序號）、PSGNUM（<b>父區段</b>序號）、HLEVEL（階層）、<b>SDATA（區段內容，最長 1000 bytes）</b></td></tr>
+      <tr><td><b>狀態記錄</b>（Status Record）</td><td>EDIDS</td><td>EDI_DS40</td><td>DOCNUM、STATUS、COUNTR（序號）、LOGDAT/LOGTIM、STATXT、STAMID/STAMNO/STAPA1～4（訊息）、<b>SEGNUM／SEGFLD（出錯的區段與欄位）</b>、REPID/ROUTID</td></tr>
+    </tbody>
+  </table>
+  <p>三個重點觀念：</p>
+  <ul>
+    <li><b>控制記錄的 STATUS 永遠是最新狀態</b>。所以監控程式（統計、清單）為了效能只讀 EDIDC；只有「評估歷史」「測試 IDoc」這類要看全部狀態的程式才讀 EDIDS，較慢。</li>
+    <li><b>狀態記錄不是 IDoc 的一部分</b>，它不隨 IDoc 傳送，而是另外由「狀態處理」送回。</li>
+    <li>區段的父子關係靠 <b>PSGNUM</b> 與 <b>HLEVEL</b> 實現。例如 E1EDPT1（明細文字）在 EXPINV01 是 E1EDP01 的子區段，在 DESADV01 卻是 E1EDP07 的子區段——同一個區段可以在不同 IDoc 類型有不同父親。</li>
+  </ul>
+  <p>如果 IDoc 類型定義某區段為<b>必要區段</b>，但實際產生的 IDoc 沒有填，語法檢查會報錯，並把缺漏區段記在狀態記錄的 SEGNUM 欄位。語法檢查的開關在夥伴設定檔（出站、入站分開設定）。</p>
+
+  <pre><code class="abap">*&amp;---------------------------------------------------------------------*
+*&amp; 查某張 IDoc 的控制記錄與「最新一筆」狀態記錄
+*&amp; 重點：EDIDS 同一 DOCNUM 有多筆狀態，HANA 沒有預設排序，
+*&amp;       「取最後一筆」一定要自己 ORDER BY COUNTR DESCENDING
+*&amp;---------------------------------------------------------------------*
+PARAMETERS p_docnum TYPE edi_docnum OBLIGATORY.
+
+SELECT SINGLE docnum, direct, mestyp, idoctp, cimtyp,
+              sndprt, sndprn, rcvprt, rcvprn, status, credat, cretim
+  FROM edidc
+  WHERE docnum = @p_docnum
+  INTO @DATA(ls_ctrl).
+IF sy-subrc &lt;&gt; 0.
+  MESSAGE |IDoc { p_docnum ALPHA = OUT } 不存在| TYPE 'E'.
+ENDIF.
+
+SELECT docnum, countr, status, logdat, logtim, statxt,
+       stamid, stamno, stapa1, stapa2, stapa3, stapa4, segnum, segfld
+  FROM edids
+  WHERE docnum = @p_docnum
+  ORDER BY countr DESCENDING          "沒有這行，UP TO 1 ROWS 抓到哪筆都有可能
+  INTO TABLE @DATA(lt_status)
+  UP TO 1 ROWS.
+
+IF lt_status IS NOT INITIAL.
+  DATA(ls_last) = lt_status[ 1 ].
+  MESSAGE |{ ls_ctrl-mestyp }/{ ls_ctrl-idoctp } 目前狀態 { ls_ctrl-status }，| &amp;&amp;
+          |最後訊息 { ls_last-stamid }{ ls_last-stamno }（區段序號 { ls_last-segnum }）| TYPE 'I'.
+ENDIF.</code></pre>
+  <div class="warn"><b>Casper 的實務經驗：HANA 沒有預設排序。</b>舊系統在 Oracle／DB2 上「SELECT 出來剛好照主鍵排」的習慣，搬到 HANA 就會出事。讀 EDIDS 取最新狀態、讀 EDID4 依 SEGNUM 重組區段樹，都必須明確 <span class="kw">ORDER BY</span>（EDID4 請 <span class="kw">ORDER BY docnum, counter, segnum</span>）。這和成本評價「一下抓到 H、一下抓到 E」是同一類問題。</div>
+
+  <h3 id="ch05-22-04">4. IDoc 類型、區段與訊息類型：WE31／WE30／WE81／WE82</h3>
+  <p>先把名詞分清楚，這是整個 IDoc 開發最容易混淆的地方：</p>
+  <table>
+    <thead><tr><th>名詞</th><th>意義</th><th>TCODE</th><th>例子</th></tr></thead>
+    <tbody>
+      <tr><td><b>基本類型</b>（Basic Type）</td><td>SAP 標準交付或客戶自建的 IDoc 結構（由哪些區段、什麼階層、出現幾次組成）。3.x 叫 basic IDoc type</td><td><span class="tcode">WE30</span></td><td>ORDERS01、ORDERS05、MATMAS05、DEBMAS07</td></tr>
+      <tr><td><b>擴充</b>（Extension）</td><td>客戶在基本類型的某個「參考區段」下掛上自己的子區段；3.x 叫 extension type</td><td><span class="tcode">WE30</span></td><td>Z1ORDERS</td></tr>
+      <tr><td><b>IDoc 類型</b></td><td>基本類型，或「基本類型＋擴充」的組合</td><td>—</td><td>ORDERS01＋Z1ORDERS</td></tr>
+      <tr><td><b>區段類型</b>（Segment Type）</td><td>區段名稱，<b>與版本無關</b></td><td><span class="tcode">WE31</span></td><td>E1EDK01、Z1TEST1</td></tr>
+      <tr><td><b>區段定義</b>（Segment Definition）</td><td>區段在特定版本的樣子，是夥伴系統「看到」的外部名稱；最後三碼是版本（例 E2EDK01005）</td><td><span class="tcode">WE31</span></td><td>未發布的區段定義版本號為 000</td></tr>
+      <tr><td><b>訊息類型</b>（Message Type／Logical Message）</td><td>商業意義，依 EDIFACT 命名；可再用訊息代碼（Message Code）與訊息功能（Message Function）細分</td><td><span class="tcode">WE81</span></td><td>ORDERS、ORDCHG、DESADV、INVOIC、MATMAS</td></tr>
+      <tr><td><b>訊息類型 ↔ IDoc 類型</b></td><td><b>多對多</b>關係，夥伴設定檔會檢查兩者是否「對得上」</td><td><span class="tcode">WE82</span></td><td>ORDERS ↔ ORDERS01＋Z1ORDERS，Release 45A</td></tr>
+    </tbody>
+  </table>
+  <p><b>命名空間</b>（4.0 起也支援 /SAP/、/客戶/ 字首）：</p>
+  <table>
+    <thead><tr><th>物件</th><th>SAP 名稱開頭</th><th>客戶名稱開頭</th></tr></thead>
+    <tbody>
+      <tr><td>基本類型</td><td>A–X 或 SAP 字首</td><td>Y–Z 或客戶字首</td></tr>
+      <tr><td>擴充</td><td>SAP 不交付</td><td>無限制</td></tr>
+      <tr><td>區段</td><td>E1</td><td>Z1 或客戶字首</td></tr>
+      <tr><td>訊息類型</td><td>A–X</td><td>Y–Z 或客戶字首</td></tr>
+    </tbody>
+  </table>
+  <p><b>版本與發布（Release）規則</b>：每個版本只能有一個版本物件；後繼者必須包含前任的全部內容再「至少多一樣」（區段多一個欄位、基本類型多一個區段）。<b>要建後繼者，前任必須先發布；發布後就不能再改</b>，只有在尚無後繼者時才能取消發布。發布順序：<b>先區段，再基本類型／擴充</b>。</p>
+  <p><b>客戶擴充 vs 客戶自建</b>：擴充過的基本類型在升級後仍被支援（SAP 保證基本類型不會少區段，所以向上相容）；自建的基本類型則不受升級影響，但可能要自己維護。</p>
+  <p>講義的<b>區段設計準則</b>（到今天仍適用）：</p>
+  <ul>
+    <li><b>不要重新發明輪子</b>：先找既有區段，參考 EDIFACT／ANSI X12；代碼值用 ISO（國家 ISO 3166、幣別 ISO 4217、單位 ISO 31）。</li>
+    <li>邏輯上相關的欄位放同一區段、相關區段組成區段群組；必要欄位放區段前面；儘量避免<b>限定詞（qualifier）</b>——它難以文件化、也讓區段失去通用性。</li>
+    <li>區段所有欄位總長上限 <b>1000 字元</b>；區段越大，有效資料對管理資料的比率越好，並預留未來擴充空間。</li>
+    <li>IDoc 類型要扁平（不要太多代），必要區段往前放；<b>一個區段在一個 IDoc 類型中只能出現一次定義</b>（但可以設定重複次數）。</li>
+    <li>別忘了對應的函數模組：入站模組必須能處理所有允許的區段，出站模組必須依正確順序與階層產生區段，否則語法檢查會報錯。</li>
+  </ul>
+  <p><b>欄位格式規則</b>：區段欄位只放英數字元（用字元型資料元素）、不分大小寫、靠左對齊；日期 <span class="kw">YYYYMMDD</span>（1996/2/28 → 19960228）、時間 <span class="kw">HHMMSS</span>（下午 8:35 → 203500）；定點數只用小數點、無千分位，<b>負號放在數值後面</b>（-2,097,152.64 → <span class="kw">2097152.64-</span>）；浮點數一律帶指數（-23.4 → <span class="kw">-2.34E+01</span>）。</p>
+  <div class="warn"><b>WE31 的鐵律</b>：區段的「匯出長度（export length）」不要改——資料對外以該長度的字元欄位傳送，內部卻依資料元素型別存放，長度不一致會截掉資料。<b>永遠用 <span class="tcode">WE31</span> 建區段，不要直接在 SE11 建同名結構</b>。區段啟用時系統會同時啟用 DDIC 中對應的結構（Z1xxx 與 Z2xxx 版本結構）。</div>
+
+  <pre><code class="abap">*&amp;---------------------------------------------------------------------*
+*&amp; 區段結構 ↔ SDATA：寫入與讀出的標準手法
+*&amp; Z1MATSTK 是 WE31 建的區段（欄位全為字元型），SDATA 是 1000 bytes 字元欄位
+*&amp;---------------------------------------------------------------------*
+DATA lt_edidd TYPE STANDARD TABLE OF edidd WITH EMPTY KEY.
+DATA ls_seg   TYPE z1matstk.
+
+" 寫：結構 → SDATA（區段名一定要大寫，否則語法檢查報錯）
+ls_seg = VALUE #( matnr = 'FG-1000' werks = '1710' dispo = '001' ekgrp = '001' ).
+APPEND VALUE #( segnam = 'Z1MATSTK'
+                sdata  = ls_seg ) TO lt_edidd.   "字元型扁平結構可直接指派給 SDATA
+
+" 讀：SDATA → 結構（入站函數模組的基本動作）
+LOOP AT lt_edidd ASSIGNING FIELD-SYMBOL(&lt;ls_edidd&gt;) WHERE segnam = 'Z1MATSTK'.
+  ls_seg = &lt;ls_edidd&gt;-sdata.
+  " 注意：IDoc 裡的數量、日期都是「字元」，要自己轉型並檢查格式
+  " 例如數量 '12.5-' 代表 -12.5（負號在後）
+ENDLOOP.
+
+" HLEVEL、PSGNUM 不用自己填：IDoc 介面會依 IDoc 類型定義自動補上</code></pre>
+
+  <h3 id="ch05-22-05">5. 埠（Port）與 RFC 目的地：WE21</h3>
+  <p><b>埠是 IDoc 通訊的根本前提</b>：每個外部系統至少要有一個埠。埠定義「用什麼技術、送到哪裡」，並透過<b>埠版本</b>告訴 SAP 對方的版本（版本 1＝Release 2.1/2.2、版本 2＝3.0/3.1 與 R/2、版本 3＝4.x，預設值）。</p>
+  <table>
+    <thead><tr><th>埠類型（<span class="tcode">WE21</span>）</th><th>適用場景</th><th>重點</th></tr></thead>
+    <tbody>
+      <tr><td><b>交易式 RFC（tRFC）</b></td><td>ALE 分散情境（SAP 對 SAP）</td><td>指向 <span class="tcode">SM59</span> 的 RFC 目的地（通常型別 3）；傳送狀態在 <span class="tcode">SM58</span>；夥伴類型應為 <b>LS（邏輯系統）</b></td></tr>
+      <tr><td><b>File</b></td><td>大多數 EDI 子系統</td><td>作業系統層的目錄與檔名；建議用 <span class="kw">EDI_PATH_CREATE_CLIENT_DOCNUM</span>（或邏輯目錄版 <span class="kw">EDI_LPATH_CREATE_CLIENT_DOCNUM</span>）產生唯一檔名，避免未處理的檔案被覆蓋；可設定出站後觸發接收系統</td></tr>
+      <tr><td><b>XML（檔案）</b></td><td>電子商務</td><td>IDoc 以 XML 檔輸出，標籤名稱對應記錄類型與區段（例如 <span class="kw">&lt;EDIDC_40-MESTYP&gt;</span>）；可選擇是否附 DTD；特殊字元（ä、ö、ü）可轉換但長度會變</td></tr>
+      <tr><td><b>ABAP 程式介面（ABAP-PI）</b></td><td>自己寫傳送邏輯</td><td>出站：填你寫的函數模組名，範本是 <span class="kw">OWN_FUNCTION</span>（成功寫狀態 18、失敗寫 20）；入站：你的模組必須呼叫 <span class="kw">IDOC_INBOUND_ASYNCHRONOUS</span></td></tr>
+      <tr><td>Internet</td><td>寄到 e-mail 位址</td><td>透過 SAPconnect，IDoc 為 MIME 附件；入站由 <span class="kw">SX_OBJECT_RECEIVE</span> 接收</td></tr>
+      <tr><td>CPI-C</td><td>R/2 系統</td><td><b>已淘汰</b>；入站需排程 RSEINB10</td></tr>
+    </tbody>
+  </table>
+  <p><b>入站不需要在夥伴設定檔指定埠</b>，但系統必須「認得」上游系統的埠（埠定義提供上游系統的唯一識別），其技術參數通常會被上游覆蓋。</p>
+  <div class="warn"><b>S/4HANA 現況</b>：CPI-C／R/2、Internet 埠已無實務意義。現在常見的是 <b>tRFC 埠</b>（SAP 對 SAP、或透過 SAP Integration Suite／PI 的 IDoc adapter）與 <b>XML HTTP 埠</b>（把 IDoc 以 XML 經 HTTP 送到 Integration Suite 或其他中介軟體，需 <span class="tcode">SM59</span> 型別 G 目的地）。舊版相容用的「長名稱轉換表」與 DOCTYP 對照，只有在跟極舊系統或 EDI 子系統溝通時才會碰到（舊版限制：訊息類型 6 碼、IDoc 類型 8 碼、區段 7 碼）。</div>
+
+  <h3 id="ch05-22-06">6. 夥伴設定檔：WE20</h3>
+  <p>夥伴設定檔（Partner Profile）決定「跟誰、交換什麼訊息、走哪個埠、用哪個 Process Code 處理、出錯通知誰」。它由<b>四張表</b>構成：</p>
+  <table>
+    <thead><tr><th>部分</th><th>資料表</th><th>鍵值</th><th>主要內容</th></tr></thead>
+    <tbody>
+      <tr><td><b>一般夥伴設定</b></td><td>EDPP1</td><td>夥伴號碼、夥伴類型</td><td>狀態（A 啟用／I 停用／T 範本）、夥伴等級、permitted agent、封存指示</td></tr>
+      <tr><td><b>出站參數</b></td><td>EDP13</td><td>夥伴（號碼、類型、功能）＋訊息（類型、代碼、功能）＋測試指示＋client</td><td>接收埠、輸出模式（立即送／收集）、基本類型＋擴充、IDoc View、區段版本、語法檢查、EDI 標準</td></tr>
+      <tr><td><b>訊息控制（MC）附加參數</b></td><td>EDP12</td><td>夥伴＋應用（Application）＋輸出類型（Output Type）＋變更指示</td><td>出站 Process Code（決定用哪個函數模組把單據轉成 IDoc）</td></tr>
+      <tr><td><b>入站參數</b></td><td>EDP21</td><td>夥伴＋訊息＋測試指示</td><td>入站 Process Code、立即處理或背景處理、語法檢查、permitted agent</td></tr>
+    </tbody>
+  </table>
+  <p>常見夥伴類型：<b>LS</b>（邏輯系統，ALE 用）、<b>KU</b>（客戶）、<b>LI</b>（供應商）、<b>US</b>（SAP 使用者）、B（銀行）。夥伴功能沿用主資料／訊息控制的角色，例如採購單給供應商用 <b>VD／LF</b>，銷售訂單的下單方 <b>SP／AG</b>、收貨方 <b>SH／WE</b>（講義提醒：<span class="tcode">WE19</span> 的「All fields」畫面是整個 IDoc 介面唯一顯示<b>未翻譯</b>夥伴功能的地方，例如 AG）。</p>
+  <p>MC 附加參數常見對照（應用／夥伴功能／輸出類型／變更 → 邏輯訊息）：EA/VD/NEU → REQOTE、<b>EF/VD/NEU → ORDERS</b>、EF/VD/NEU＋變更 → ORDCHG、V1/SP/AN00 → QUOTES、V1/SP/BA00 → ORDRSP、V2/SH/LAVA → DESADV、V3/SH/AUS1 → EXPINV、V3/BP/RD00 → INVOIC。不確定時，去訊息狀態表 NAST 用單據號碼查就知道正確的應用、夥伴功能與輸出類型。</p>
+  <div class="warn"><b>夥伴設定檔不能傳輸（not transportable）</b>——它必須在主資料建好之後，於<b>正式系統直接維護</b>。這也是上線 Cutover 清單裡常漏掉的一項。大量建立時可用 <span class="tcode">WE20</span> 的「快速輸入」（從 Customizing 預設值帶入），或用 API 函數模組 <span class="kw">EDI_AGREE_PARTNER_INSERT</span>、<span class="kw">EDI_AGREE_OUT_MESSTYPE_INSERT</span>、<span class="kw">EDI_AGREE_IN_MESSTYPE_INSERT</span>、<span class="kw">EDI_AGREE_OUT_IDOC_INSERT</span>（EDP12）批次寫入；讀取用 <span class="kw">EDI_PARTNER_READ_COMPLETE</span>、<span class="kw">EDI_PARTNER_READ_OUTGOING</span>、<span class="kw">EDI_PARTNER_READ_INCOMING</span>，測試用 <span class="kw">EDI_PARTNER_TEST_OUTGOING</span>／<span class="kw">_INCOMING</span>。夥伴設定檔還可用 IDoc 類型 SYPART01（訊息 SYPART）送給外部系統。</div>
+
+  <pre><code class="abap">*&amp;---------------------------------------------------------------------*
+*&amp; 上線前健檢：列出某訊息類型的出站／入站夥伴設定
+*&amp; 條件用列舉（IN ( ... )）而不是區間，夥伴號碼有前導零時才不會漏抓
+*&amp;---------------------------------------------------------------------*
+PARAMETERS p_mestyp TYPE edi_mestyp DEFAULT 'ORDERS'.
+
+SELECT rcvprn, rcvprt, rcvpfc, mestyp, rcvpor, outmod, idoctyp, cimtyp
+  FROM edp13
+  WHERE mestyp = @p_mestyp
+    AND rcvprt IN ( 'LS', 'KU', 'LI' )
+  ORDER BY rcvprt, rcvprn
+  INTO TABLE @DATA(lt_out).
+
+SELECT sndprn, sndprt, sndpfc, mestyp, evcode
+  FROM edp21
+  WHERE mestyp = @p_mestyp
+  ORDER BY sndprt, sndprn
+  INTO TABLE @DATA(lt_in).
+
+cl_demo_output=&gt;new( )-&gt;write_data( lt_out )-&gt;write_data( lt_in )-&gt;display( ).
+" EDP21-EVCODE 就是入站 Process Code
+" EDP13-OUTMOD：1／2＝立即送出（啟動／不啟動子系統），3／4＝收集 IDoc（啟動／不啟動子系統）</code></pre>
+  <div class="note">欄位名稱為標準 DDIC 定義（EDP13 以 RCV* 表示接收夥伴、EDP21 以 SND* 表示傳送夥伴）。<span class="kw">cl_demo_output</span> 只適合測試用，正式報表請用 <span class="kw">CL_SALV_TABLE</span>（見 <a href="#ch02-3">2-3 章</a>）。</div>
+
+  <h3 id="ch05-22-07">7. Process Code：出站、入站、系統、狀態四種</h3>
+  <p>夥伴設定檔<b>從不直接指定</b>函數模組或 Workflow，一律透過 <b>Process Code</b> 間接指向。好處是：要把舊處理換成新處理時，只改 Process Code 的對應，所有使用它的夥伴一次生效。</p>
+  <table>
+    <thead><tr><th>種類</th><th>TCODE／表</th><th>用途</th><th>範例</th></tr></thead>
+    <tbody>
+      <tr><td><b>出站</b></td><td><span class="tcode">WE41</span>／TEDE1</td><td>訊息控制出站時，指向「把應用單據寫成 IDoc」的函數模組；可切換是否走 ALE 服務（關掉可省記憶體）</td><td>ME10（採購單 → ORDERS）、SD08（內部帳單轉送）</td></tr>
+      <tr><td><b>入站</b></td><td><span class="tcode">WE42</span>／TEDE2</td><td>指向讀 IDoc、產生應用單據的函數模組或 Workflow</td><td><b>ORDE</b>（ORDERS → <span class="kw">IDOC_INPUT_ORDERS</span>）、ED08（轉送入站到其他系統，Workflow 範本 WS30000483）、TXT1、STA1（SYSTAT01）</td></tr>
+      <tr><td><b>系統</b></td><td><span class="tcode">WE40</span></td><td>IDoc 介面本身出錯時觸發的例外 Workflow；集中設定，不分夥伴</td><td>EDII、EDIO、EDIP、EDIX、EDIY、EDIM</td></tr>
+      <tr><td><b>狀態</b></td><td>狀態值維護 <span class="tcode">WE47</span></td><td>外部系統回報錯誤狀態時觸發</td><td>EDIS、EDIR</td></tr>
+    </tbody>
+  </table>
+  <table>
+    <thead><tr><th>系統／狀態 Process Code</th><th>情況</th><th>標準工作（Standard Task）</th></tr></thead>
+    <tbody>
+      <tr><td>EDII</td><td>入站處理錯誤（Process Code 不存在、轉 ALE 服務失敗）</td><td>TS00008068</td></tr>
+      <tr><td>EDIO</td><td>出站處理錯誤（RFC 轉送失敗、寫檔失敗）</td><td>TS00007989</td></tr>
+      <tr><td>EDIP</td><td>出站「收集 IDoc」整疊失敗（埠不存在等）</td><td>TS60001307</td></tr>
+      <tr><td>EDIX／EDIY</td><td>出站／入站語法錯誤（夥伴設定檔有開語法檢查時）</td><td>TS00008070／TS00008074</td></tr>
+      <tr><td>EDIM</td><td>無法對應到 IDoc 的錯誤（例如檔案打不開，IDoc 根本還沒產生）</td><td>TS30000020</td></tr>
+      <tr><td>EDIN</td><td>訊息控制下 IDoc 無法產生（MC 附加參數沒 Process Code、寫應用資料到 IDoc 失敗）</td><td>TS70008037</td></tr>
+      <tr><td>EDIL</td><td>狀態檔讀取不完整</td><td>TS70008373</td></tr>
+      <tr><td>EDIS</td><td>EDI 子系統回報錯誤狀態，只能<b>顯示</b>狀態記錄</td><td>TS30000078</td></tr>
+      <tr><td>EDIR</td><td>同 EDIS，但執行工作項目時可以<b>重送</b>出站 IDoc（重送時不重讀夥伴設定檔，而是用控制記錄的資料——換了埠也還是送到原埠）</td><td>TS70008125</td></tr>
+    </tbody>
+  </table>
+  <div class="tip">不知道某訊息該用哪個 Process Code？<span class="tcode">WE20</span> 輸入訊息類型後按 F4，系統依「Process Code ↔ 邏輯訊息」的對應列出可用值；或 <span class="tcode">WEDI</span> → Documentation → Process codes。自建 Process Code 時，一定要在 <span class="tcode">WE41</span>／<span class="tcode">WE42</span> 的「Logical Message」導覽中把它掛到訊息類型上，F4 才找得到。</div>
+
+  <h3 id="ch05-22-08">8. 出站處理：訊息控制（MC）、直接出站與 ALE 分散模型</h3>
+  <p>應用把資料送進 IDoc 介面有兩條路：</p>
+  <p><b>(1) 經由訊息控制（Message Control，MC，又稱 Output Determination）</b>——SD、MM 的單據（採購單、訂單確認、出貨通知、發票）走這條。條件技術（condition table → access sequence → output type → procedure）決定「找到」哪些訊息；找到後由 <span class="kw">RSNAST00</span> 依表 <b>TNAPR</b> 呼叫程式 <span class="kw">RSNASTED</span> 的 <span class="kw">EDI_PROCESSING</span>，讀夥伴設定檔、依 Process Code 找到產生 IDoc 的函數模組（慣例名 <span class="kw">IDOC_OUTPUT_&lt;訊息類型&gt;</span>，例如 <span class="kw">IDOC_OUTPUT_ORDERS</span>）。訊息控制的傳輸媒介 6＝EDI。</p>
+  <table>
+    <thead><tr><th>MC 發送時間</th><th>IDoc 介面輸出模式</th><th>EDI 等價</th></tr></thead>
+    <tbody>
+      <tr><td>4（隨應用更新立即）</td><td>立即送出 IDoc＋啟動子系統</td><td>Real time</td></tr>
+      <tr><td>1（下次選取執行時送）</td><td>立即送出 IDoc＋啟動子系統</td><td>Fast batch</td></tr>
+      <tr><td>1</td><td>收集 IDoc＋啟動子系統</td><td>Batch</td></tr>
+      <tr><td>1</td><td>收集 IDoc＋不啟動子系統</td><td>Batch（何時到達由接收系統的排程決定，你無法控制）</td></tr>
+    </tbody>
+  </table>
+  <p>選「收集 IDoc」時，必須排程 <span class="kw">RSEOUT00</span>（<span class="tcode">WE14</span>）把 IDoc 送出；發送時間選 1 時，要排程 <span class="kw">RSNAST00</span> 處理 NAST 記錄。</p>
+  <p><b>(2) 直接出站</b>——沒有接訊息控制的元件，以及大多數 ALE 情境（主資料分散）。應用程式自己產生「主 IDoc（master IDoc）」交給 <span class="kw">MASTER_IDOC_DISTRIBUTE</span>；它檢查控制記錄後呼叫 <span class="kw">COMMUNICATION_IDOC_CREATE</span>「過濾」出每個接收者需要的「通訊 IDoc（communication IDoc）」，再交 <span class="kw">EDI_OUTPUT_NEW</span> 做後續處理。講義的例子：CO-PC 產品成本估算傳到另一套系統的 CO-PA。</p>
+  <p><b>ALE 設定的最小清單</b>（講義此處只提原則，以下<span class="src">（依講義步驟整理）</span>並補上現行 TCODE）：</p>
+  <ol>
+    <li><span class="tcode">SALE</span>（ALE IMG）→ <span class="tcode">BD54</span> 定義邏輯系統（命名慣例 <span class="kw">&lt;SID&gt;CLNT&lt;client&gt;</span>）→ <span class="tcode">SCC4</span> 把邏輯系統指派給 client。</li>
+    <li><span class="tcode">SM59</span> 建 RFC 目的地（型別 3），<span class="tcode">WE21</span> 建 tRFC 埠。</li>
+    <li><span class="tcode">BD64</span> 維護<b>分散模型</b>（哪個訊息類型從哪個邏輯系統送到哪個邏輯系統、可加過濾條件），並「產生夥伴設定檔」與「分送模型」到接收端。</li>
+    <li>主資料的觸發方式：手動送 <span class="tcode">BD10</span>（物料 MATMAS）、<span class="tcode">BD12</span>（客戶 DEBMAS）、<span class="tcode">BD14</span>（供應商 CREMAS）；或用<b>變更指標</b>——<span class="tcode">BD61</span> 總開關、<span class="tcode">BD50</span> 依訊息類型啟用、<span class="tcode">BD52</span> 指定哪些欄位變更要記錄、<span class="tcode">BD21</span>（程式 <span class="kw">RBDMIDOC</span>）依變更指標產生 IDoc。</li>
+  </ol>
+  <pre><code class="abap">*&amp;---------------------------------------------------------------------*
+*&amp; 背景工作：依變更指標產生 MATMAS IDoc（等同 BD21）
+*&amp; 通常排在 SM36 每 15 分鐘一次；這裡示範由程式觸發
+*&amp;---------------------------------------------------------------------*
+SUBMIT rbdmidoc
+  WITH mestyp = 'MATMAS'
+  AND RETURN.
+
+" 產生後若夥伴設定為「收集 IDoc」，還要跑 RSEOUT00（WE14）才會真的送出
+SUBMIT rseout00
+  WITH mestyp = 'MATMAS'
+  AND RETURN.
+" 參數名稱以各程式選擇畫面為準（F1 → 技術資訊）；正式環境建議直接在 SM36 排變式</code></pre>
+  <div class="warn"><b>S/4HANA 現況</b>：SD、MM 的 NAST 訊息控制仍存在，但採購單、銷售單據、帳單等已逐步改用<b>新輸出管理（Output Management，BRFplus 決定規則＋Output Parameter Determination）</b>，IDoc 是它的輸出通道之一（channel IDOC），設定路徑與 <span class="kw">RSNAST00</span> 那一套不同。導入專案要先確認該單據用的是哪一套輸出控制，再決定 IDoc 怎麼觸發。</div>
+
+  <h3 id="ch05-22-09">9. 自建出站 IDoc 程式：MASTER_IDOC_DISTRIBUTE</h3>
+  <p>講義範例 <span class="kw">IDOC_OUTPUT_TESTER</span> 是「掛在訊息控制下」的出站函數模組（介面：IMPORTING OBJECT（NAST）、CONTROL_RECORD_IN（EDIDC）；EXPORTING OBJECT_TYPE（WFAS1-ASGTP，例如 BUS2012）、CONTROL_RECORD_OUT；TABLES INT_EDIDD），從 EKKO／EKPO／EKET／LFB1 讀資料填 E1HEAD、E1ITEM，由 Process Code TESTOUT 指到它。實務上更常寫的是 ALE 式的「報表直接送」，以下用自建訊息類型 ZMATSTK、基本類型 ZMATSTK01、區段 Z1MATSTK 示範：</p>
+  <pre><code class="abap">*&amp;---------------------------------------------------------------------*
+*&amp; ZMM_IDOC_ZMATSTK_OUT：把工廠層物料 MRP 資料送給外部 MES
+*&amp; 前置：WE31 區段 Z1MATSTK、WE30 基本類型 ZMATSTK01、WE81/WE82 訊息 ZMATSTK、
+*&amp;       BD64 分散模型（或直接指定接收者）、WE20 出站參數
+*&amp;---------------------------------------------------------------------*
+REPORT zmm_idoc_zmatstk_out.
+
+DATA gv_matnr TYPE matnr.
+PARAMETERS     p_werks  TYPE werks_d OBLIGATORY.
+SELECT-OPTIONS s_matnr  FOR gv_matnr NO INTERVALS.   "只允許列舉，不給區間
+PARAMETERS     p_rcvprn TYPE edi_rcvprn.              "空白＝交給 BD64 分散模型決定接收者
+
+START-OF-SELECTION.
+  SELECT matnr, werks, dispo, ekgrp
+    FROM marc
+    WHERE werks = @p_werks
+      AND matnr IN @s_matnr
+    ORDER BY matnr                                  "HANA 無預設排序，IDoc 內順序要固定
+    INTO TABLE @DATA(lt_plant).
+  IF lt_plant IS INITIAL.
+    MESSAGE '沒有符合條件的物料' TYPE 'S' DISPLAY LIKE 'E'.
+    RETURN.
+  ENDIF.
+
+  " 1. 控制記錄：訊息類型＋基本類型＋接收者
+  DATA(ls_control) = VALUE edidc( mestyp = 'ZMATSTK'
+                                  idoctp = 'ZMATSTK01'
+                                  rcvprt = COND #( WHEN p_rcvprn IS NOT INITIAL THEN 'LS' )
+                                  rcvprn = p_rcvprn ).
+
+  " 2. 資料記錄：一筆物料一個 Z1MATSTK 區段
+  DATA lt_edidd TYPE STANDARD TABLE OF edidd WITH EMPTY KEY.
+  DATA ls_seg   TYPE z1matstk.
+  LOOP AT lt_plant INTO DATA(ls_plant).
+    ls_seg = CORRESPONDING #( ls_plant ).
+    APPEND VALUE #( segnam = 'Z1MATSTK' sdata = ls_seg ) TO lt_edidd.
+  ENDLOOP.
+
+  " 3. 交給 ALE：一張主 IDoc → 依接收者產生 n 張通訊 IDoc
+  DATA lt_comm TYPE STANDARD TABLE OF edidc WITH EMPTY KEY.
+  CALL FUNCTION 'MASTER_IDOC_DISTRIBUTE'
+    EXPORTING
+      master_idoc_control            = ls_control
+    TABLES
+      communication_idoc_control     = lt_comm
+      master_idoc_data               = lt_edidd
+    EXCEPTIONS
+      error_in_idoc_control          = 1
+      error_writing_idoc_status      = 2
+      error_in_idoc_data             = 3
+      sending_logical_system_unknown = 4
+      OTHERS                         = 5.
+  IF sy-subrc &lt;&gt; 0.
+    ROLLBACK WORK.
+    MESSAGE ID sy-msgid TYPE 'I' NUMBER sy-msgno
+            WITH sy-msgv1 sy-msgv2 sy-msgv3 sy-msgv4 DISPLAY LIKE 'E'.
+    RETURN.
+  ENDIF.
+
+  " 4. 釋放 IDoc 鎖並提交；沒有 COMMIT WORK，tRFC 不會送出、IDoc 停在狀態 30／01
+  LOOP AT lt_comm INTO DATA(ls_comm).
+    CALL FUNCTION 'EDI_DOCUMENT_DEQUEUE_LATER'
+      EXPORTING
+        docnum = ls_comm-docnum
+      EXCEPTIONS
+        OTHERS = 0.
+  ENDLOOP.
+  COMMIT WORK.
+
+  MESSAGE |已產生 { lines( lt_comm ) } 張 IDoc：| &amp;&amp;
+          |{ REDUCE string( INIT s = `` FOR c IN lt_comm NEXT s = |{ s } { c-docnum ALPHA = OUT }| ) }| TYPE 'S'.</code></pre>
+  <div class="warn"><b>三個常見錯誤</b>：① 沒有 <span class="kw">COMMIT WORK</span>——<span class="kw">MASTER_IDOC_DISTRIBUTE</span> 自己不提交，IDoc 會「消失」或卡在 <span class="tcode">SM58</span>（tRFC 原理見 <a href="#ch04-1-03">4-1 章第 3 節</a>）；② 大量迴圈送 IDoc 卻不釋放鎖，跑到一半鎖表滿（SM12）；③ <span class="kw">SEGNAM</span> 小寫或區段未在 <span class="tcode">WE82</span> 指派，出站語法檢查失敗（狀態 26）。在 BAdI 或 User Exit 裡呼叫時，<b>不要自己 COMMIT</b>，讓應用的 LUW 一起提交（LUW 觀念見 <a href="#ch05-11">5-11 章 BC414</a>）。</div>
+
+  <h3 id="ch05-22-10">10. 入站處理：從接收到過帳</h3>
+  <p>入站分兩步，這是 IDoc 可靠性的關鍵設計：<b>第一步先把 IDoc「收下」存進資料庫</b>（只要認得上游系統的埠就接受），讓外部系統能快速、可靠地完成傳送；<b>第二步才獨立地轉成應用單據</b>。</p>
+  <ol>
+    <li>依埠類型由不同模組接收：tRFC 埠 → <span class="kw">IDOC_INBOUND_ASYNCHRONOUS</span>（4.0 長名稱，參數 IDOC_CONTROL_REC_40／IDOC_DATA_REC_40，結構 EDI_DC40／EDI_DD40；4.0 前是 <span class="kw">INBOUND_IDOC_PROCESS</span>）；File 埠 → <span class="kw">EDI_DATA_INCOMING</span>；同步 RFC → <span class="kw">IDOC_INBOUND_SINGLE</span>（舊版 <span class="kw">IDOC_INBOUND_SYNCHRONOUS</span>）；Internet → <span class="kw">SX_OBJECT_RECEIVE</span>。</li>
+    <li><span class="kw">IDOC_INBOUND_WRITE_TO_DB</span> 寫入資料庫，並依 Process Code 判斷是否走 ALE 服務。</li>
+    <li><span class="kw">IDOC_START_INBOUND</span> 依入站 Process Code 啟動<b>函數模組</b>（直接路徑）或 <b>Workflow</b>（間接路徑，單步或多步工作）。除了 tRFC 埠以外，都會觸發 Workflow 事件，啟動標準工作 TS30200090（所以要在 IMG 啟用一次「IDoc 入站的事件接收者連結」）。</li>
+  </ol>
+  <p>講義例子：供應商收到 ORDERS01 採購單，Process Code <b>ORDE</b> 指向 <span class="kw">IDOC_INPUT_ORDERS</span>，把 IDoc 轉成銷售訂單（直接路徑）。只在 Basis 層處理的 TXTRAW02（文字郵件，單步工作 TS30000008，收件者取自區段 E1TXTAD）則只能走 Workflow。</p>
+  <p><b>入站函數模組要讓 ALE 認得，必須三處註冊</b>（這也是 AIF 情境 2/3 要改的三個地方，見第 19 節）：</p>
+  <table>
+    <thead><tr><th>步驟</th><th>TCODE</th><th>內容</th></tr></thead>
+    <tbody>
+      <tr><td>① 函數模組屬性</td><td><span class="tcode">BD51</span></td><td>輸入類型：0＝大量處理、1＝逐張處理、2＝逐張且在交易中鎖 IDoc；是否允許對話（Dialog possible）</td></tr>
+      <tr><td>② 函數模組 ↔ 訊息類型／IDoc 類型</td><td><span class="tcode">WE57</span></td><td>模組（類型 F）、基本類型、擴充、訊息類型、方向 2、BOR 物件類型（例如 BUS2032 銷售訂單）；此即「ALE 註冊」，存在 TBD52 等表</td></tr>
+      <tr><td>③ 入站 Process Code</td><td><span class="tcode">WE42</span></td><td>選「Processing with ALE」＋「Processing by function module」，指定函數模組、最大嘗試次數、IDoc 物件類型與事件 inputErrorOccurred／inputFinished；再掛到邏輯訊息</td></tr>
+      <tr><td>④ 夥伴設定檔</td><td><span class="tcode">WE20</span></td><td>入站參數填這個 Process Code，選「立即處理」或「由背景程式觸發」</td></tr>
+    </tbody>
+  </table>
+  <p>選「由背景程式觸發」時，IDoc 會停在狀態 <b>64</b>，由 <span class="kw">RBDAPP01</span>（<span class="tcode">BD20</span>）排程處理——大量主資料或需要序列化時常用，可避免尖峰時段壓垮系統。</p>
+  <div class="note">講義提醒：入站測試時，若函數模組內用 <span class="kw">CALL TRANSACTION</span>，必須把匯入參數 <span class="kw">INPUT_METHOD</span> 搭配 <span class="kw">MODE</span> 使用，才能在 <span class="tcode">WE19</span> 選「前景」或「出錯才前景」除錯；否則交易永遠在背景跑。</div>
+
+  <h3 id="ch05-22-11">11. 自建入站函數模組範本</h3>
+  <p>入站函數模組有<b>固定的 ALE 介面</b>（Release 3.0 起）。講義的 <span class="kw">IDOC_INPUT_TESTER</span> 用 BDC 呼叫 <span class="kw">VA01</span> 建立銷售訂單，並示範寫狀態與回傳 Workflow 變數。下面保留完全相同的介面，但內部改成現代語法、改呼叫 BAPI，並延續第 9 節的 ZMATSTK 範例（對應 <a href="#ch04-1-10">4-1 章第 10 節</a>的 <span class="kw">BAPI_MATERIAL_SAVEDATA</span>）：</p>
+  <pre><code class="abap">FUNCTION z_idoc_input_zmatstk.
+*"----------------------------------------------------------------------
+*"*"Local Interface:（ALE 入站函數模組的標準介面，不可更改）
+*"  IMPORTING
+*"     VALUE(INPUT_METHOD) LIKE  BDWFAP_PAR-INPUTMETHD
+*"     VALUE(MASS_PROCESSING) LIKE  BDWFAP_PAR-MASS_PROC
+*"  EXPORTING
+*"     VALUE(WORKFLOW_RESULT) LIKE  BDWF_PARAM-RESULT
+*"     VALUE(APPLICATION_VARIABLE) LIKE  BDWF_PARAM-APPL_VAR
+*"     VALUE(IN_UPDATE_TASK) LIKE  BDWFAP_PAR-UPDATETASK
+*"     VALUE(CALL_TRANSACTION_DONE) LIKE  BDWFAP_PAR-CALLTRANS
+*"  TABLES
+*"      IDOC_CONTRL STRUCTURE  EDIDC
+*"      IDOC_DATA STRUCTURE  EDIDD
+*"      IDOC_STATUS STRUCTURE  BDIDOCSTAT
+*"      RETURN_VARIABLES STRUCTURE  BDWFRETVAR
+*"      SERIALIZATION_INFO STRUCTURE  BDI_SER
+*"  EXCEPTIONS
+*"      WRONG_FUNCTION_CALLED
+*"----------------------------------------------------------------------
+  CONSTANTS: lc_wf_ok    TYPE bdwf_param-result VALUE '0',
+             lc_wf_error TYPE bdwf_param-result VALUE '99999'.   "99999＝觸發例外 Workflow
+
+  DATA ls_seg    TYPE z1matstk.
+  DATA ls_return TYPE bapiret2.
+  DATA lt_status TYPE STANDARD TABLE OF bdidocstat WITH EMPTY KEY.
+
+  in_update_task        = abap_false.
+  call_transaction_done = abap_false.
+  workflow_result       = lc_wf_ok.
+
+  LOOP AT idoc_contrl ASSIGNING FIELD-SYMBOL(&lt;ls_ctrl&gt;).
+    IF &lt;ls_ctrl&gt;-mestyp &lt;&gt; 'ZMATSTK'.
+      RAISE wrong_function_called.            "Process Code 指錯時立即中止
+    ENDIF.
+
+    DATA(lv_error) = abap_false.
+    CLEAR lt_status.
+
+    LOOP AT idoc_data ASSIGNING FIELD-SYMBOL(&lt;ls_data&gt;)
+         WHERE docnum = &lt;ls_ctrl&gt;-docnum
+           AND segnam = 'Z1MATSTK'.
+      ls_seg = &lt;ls_data&gt;-sdata.
+
+      CLEAR ls_return.
+      CALL FUNCTION 'BAPI_MATERIAL_SAVEDATA'
+        EXPORTING
+          " 已啟用 40 碼物料號碼的系統請改填 material_long
+          headdata   = VALUE bapimathead( material = ls_seg-matnr mrp_view = abap_true
+                                          purchase_view = abap_true )
+          plantdata  = VALUE bapi_marc( plant = ls_seg-werks mrp_ctrler = ls_seg-dispo
+                                        pur_group = ls_seg-ekgrp )
+          plantdatax = VALUE bapi_marcx( plant = ls_seg-werks mrp_ctrler = abap_true
+                                         pur_group = abap_true )
+        IMPORTING
+          return     = ls_return.
+
+      IF ls_return-type CA 'EAX'.
+        lv_error = abap_true.
+        APPEND VALUE #( docnum = &lt;ls_ctrl&gt;-docnum
+                        status = '51'                          "應用單據未過帳
+                        msgty  = 'E'
+                        msgid  = ls_return-id
+                        msgno  = ls_return-number
+                        msgv1  = ls_return-message_v1
+                        msgv2  = ls_return-message_v2
+                        msgv3  = ls_return-message_v3
+                        msgv4  = ls_return-message_v4
+                        segnum = &lt;ls_data&gt;-segnum             "讓 BD87 直接標出錯的區段
+                        uname  = sy-uname
+                        repid  = sy-repid ) TO lt_status.
+        EXIT.
+      ENDIF.
+    ENDLOOP.
+
+    IF lv_error = abap_true.
+      CALL FUNCTION 'BAPI_TRANSACTION_ROLLBACK'.              "BD51 請設「逐張處理」，才不會連帶回滾別張
+      APPEND LINES OF lt_status TO idoc_status.
+      APPEND VALUE #( wf_param = 'Error_IDOCs' doc_number = &lt;ls_ctrl&gt;-docnum ) TO return_variables.
+      workflow_result = lc_wf_error.
+    ELSE.
+      APPEND VALUE #( docnum = &lt;ls_ctrl&gt;-docnum
+                      status = '53'                            "應用單據已過帳
+                      msgty  = 'S'
+                      msgid  = 'M3'
+                      msgno  = '801'
+                      msgv1  = ls_seg-matnr
+                      uname  = sy-uname
+                      repid  = sy-repid ) TO idoc_status.
+      APPEND VALUE #( wf_param = 'Processed_IDOCs' doc_number = &lt;ls_ctrl&gt;-docnum ) TO return_variables.
+      APPEND VALUE #( wf_param = 'Appl_Object'     doc_number = ls_seg-matnr ) TO return_variables.
+    ENDIF.
+  ENDLOOP.
+  " 不要 COMMIT WORK：函數模組回傳後，ALE 層會寫入狀態記錄並統一提交
+ENDFUNCTION.</code></pre>
+  <div class="warn"><b>講義範例的錯誤（改寫時已修正）</b>：① 出站範例 HEADER_E1HEAD_FILL 把配銷通路寫成 <span class="kw">E1HEAD-VKORG = '10'</span>，覆蓋了前一行的銷售組織 '1000'，正確應為 <span class="kw">E1HEAD-VTWEG = '10'</span>；同一段還多了一個沒有對應 SELECT 的 <span class="kw">ENDSELECT</span>；② 入站範例 write_status_record 中 <span class="kw">SY-MSwGID</span> 是排版錯字（應為 SY-MSGID），<span class="kw">GET PARAMETER ID 'AUN' FIELD DOCUMENT NUMBER</span> 應為 <span class="kw">BELEGNUMMER</span>；ERRTAB 的定義結尾誤寫成 END OF BDCDATA；③ 擴充的入站範例說明「同一個 exit 會被 <span class="kw">IDOC_OUTPUT_ORDERS</span> 為每個區段呼叫」——入站應為 <span class="kw">IDOC_INPUT_ORDERS</span>，是複製出站段落時沒改。另外 Z1TEST1 的欄位出站範例寫 CONTINENT、入站說明卻寫 KONTINENT，以區段實際定義為準。</div>
+  <div class="note">講義說明：直接入站一定經過 ALE 層，這個設定在 TEDE2-EDIVRS＝6，由 <span class="kw">IDOC_START_INBOUND</span> 讀取後呼叫 ALE；ALE 再依 TBD52-FUNCNAME 找到函數模組。<span class="kw">BDIDOCSTAT</span> 的 msgid／msgno 用你自己的訊息類別（SE91）最好，範例中的 M3/801 只是示意。</div>
+
+  <h3 id="ch05-22-12">12. 擴充 IDoc 類型：Extension 與 Customer Exit</h3>
+  <p>標準基本類型少了欄位時，<b>先確認是不是只是標準函數模組沒填</b>（基本類型裡已經有對應欄位，只要擴充函數模組即可，不用擴充 IDoc 類型）。真的要加區段時，講義的檢查清單如下，範例是在 ORDERS01 的 E1EDP19 下掛 Z1TEST1：</p>
+  <ol>
+    <li><span class="tcode">WE31</span> 建區段 Z1TEST1（欄位 CONTINENT）。</li>
+    <li><span class="tcode">WE30</span> 建擴充 Z1ORDERS（新建、複製或作為後繼者；要跟 4.0 以前的夥伴溝通，名稱不可超過 8 碼），選基本類型 ORDERS01，游標放在<b>參考區段</b> E1EDP19 上新增子區段，設定必要與否、最小／最大次數。規則：擴充不能包含基本類型已有的區段；前任的父區段在後繼者仍須是父區段；參考區段與擴充區段之間不能剪貼。</li>
+    <li><span class="tcode">WE82</span> 指派 ORDERS ↔ ORDERS01＋Z1ORDERS，Release 45A。</li>
+    <li><b>出站</b>：<span class="tcode">CMOD</span> 建專案（例 ZM06E001），指派 SAP 增強 <b>MM06E001</b>，實作 function exit <b>EXIT_SAPLEINM_002</b>（include <b>ZXM06U02</b>，主程式 SAPLXM06）；WE20 出站參數填擴充 Z1ORDERS，Process Code <b>ME10</b>，應用 EF、輸出類型 NEU。</li>
+    <li><b>入站</b>：<span class="tcode">CMOD</span> 專案（例 ZEDA0001）指派 <b>VEDA0001</b>，實作 <b>EXIT_SAPLVEDA_001</b>（include <b>ZXVEDU03</b>，主程式 SAPLXVED）；<span class="tcode">WE57</span> 把 <span class="kw">IDOC_INPUT_ORDERS</span> 也登錄給 ORDERS01＋Z1ORDERS（物件類型 BUS2032）；WE20 入站 Process Code <b>ORDE</b>。</li>
+    <li>用 <span class="tcode">WE19</span> 測試（出站：ME21N 建採購單、訊息發送時間 4，看 Z1TEST1-CONTINENT 是否為 'Europe'）→ 通過後<b>先發布區段、再發布擴充</b>。</li>
+  </ol>
+  <pre><code class="abap">*&amp;---------------------------------------------------------------------*
+*&amp; Include ZXM06U02（EXIT_SAPLEINM_002）：採購單出站 IDoc 追加 Z1TEST1
+*&amp; 這個 exit 在「每產生一個區段後」都會被呼叫一次，所以一定要先判斷
+*&amp; 剛剛產生的是哪個區段（講義原本用 CASE int_edidd-segnam 判斷表頭行）
+*&amp; 參數名稱請以 SMOD 中 exit 的實際簽章為準（講義 4.6B 為 INT_EDIDD）
+*&amp;---------------------------------------------------------------------*
+DATA ls_z1test1 TYPE z1test1.
+
+IF int_edidd[] IS NOT INITIAL.
+  DATA(ls_last) = int_edidd[ lines( int_edidd ) ].
+  IF ls_last-segnam = 'E1EDP19'.                 "只在參考區段之後追加
+    ls_z1test1-continent = 'Europe'.
+    APPEND VALUE #( segnam = 'Z1TEST1'
+                    sdata  = ls_z1test1 ) TO int_edidd.
+  ENDIF.
+ENDIF.
+" HLEVEL、PSGNUM 不用填，IDoc 介面會依擴充定義自動決定位置
+" 講義提醒：區段的全域宣告放在客戶 TOP include（ZXM06TOP），且區段一定用 WE31 建</code></pre>
+  <div class="warn"><b>S/4HANA 現況</b>：CMOD／SMOD 的 customer exit 仍可用（見 <a href="#ch03-3">3-3 章</a>、<a href="#ch05-14">5-14 章 BC425</a>），但新開發優先找 BAdI：例如 <b>IDOC_DATA_MAPPER</b>（出站 IDoc 資料對應）、<b>IDOC_CREATION_CHECK</b>（決定是否產生出站 IDoc），以及各應用自己的 IDoc BAdI（在 SE18／SE84 以訊息類型搜尋）。這正是 Casper 的第三條經驗：<b>先找標準設定 → BAdI／Enhancement Spot → Enhancement Point → 修改標準</b>，每往右一步成本高一個量級（BAdI 詳見 <a href="#ch03-4">3-4 章</a>）。</div>
+  <p><b>IDoc View</b>：同一個 IDoc 類型常服務多個訊息，區段多於實際需要；出站時可定義 View（<span class="tcode">WEDI</span> → Development → IDoc view）只填必要區段以提升效能，但前提是出站程式有支援（呼叫 <span class="kw">EDI_PARTNER_READ_OUTGOING</span> 判斷有無 View、<span class="kw">EDI_VIEW_READ</span> 取區段清單）。標準交付的 View 只有 DELVRY01 與 INVOIC01。View 一定要包含限定區段與必要區段；定義 View 需要授權物件 <span class="kw">S_IDOCDEFT</span>。</p>
+
+  <h3 id="ch05-22-13">13. 狀態碼與例外處理</h3>
+  <p>狀態記錄記下 IDoc 經過的每一站。背熟下表，看 <span class="tcode">WE02</span> 就像看病歷（講義只提到部分代碼，下表依 SAP 標準狀態值 <span class="tcode">WE47</span>／TEDS1 補齊常用者）：</p>
+  <table>
+    <thead><tr><th>出站</th><th>意義</th><th>入站</th><th>意義</th></tr></thead>
+    <tbody>
+      <tr><td>01</td><td>IDoc 已產生</td><td>50</td><td>IDoc 已加入</td></tr>
+      <tr><td>02</td><td><b>傳給埠時出錯</b>（例：E0099 OPEN error，目錄不存在或檔案系統滿）</td><td><b>51</b></td><td><b>應用單據未過帳</b>（最常見的業務錯誤）</td></tr>
+      <tr><td><b>03</b></td><td>資料已成功傳給埠（tRFC 時可看到交易 ID）</td><td>52</td><td>應用單據未完整過帳</td></tr>
+      <tr><td>04～11</td><td>EDI 子系統回報：控制資訊錯、轉換錯、語法錯、交換處理錯、發送錯（06/08/10/12 為對應成功）</td><td><b>53</b></td><td><b>應用單據已過帳</b></td></tr>
+      <tr><td>18／20</td><td>觸發 EDI 子系統成功／失敗</td><td>56</td><td>含錯誤的 IDoc 已加入（常是夥伴設定檔找不到）</td></tr>
+      <tr><td>25／26</td><td>忽略語法錯誤繼續處理／出站語法檢查錯誤</td><td>60／61</td><td>入站語法檢查錯誤／忽略語法錯誤繼續</td></tr>
+      <tr><td>29</td><td>ALE 服務錯誤</td><td>62／63</td><td>已傳給應用／傳給應用時出錯</td></tr>
+      <tr><td><b>30</b></td><td><b>IDoc 準備發送</b>（收集模式，等 RSEOUT00）</td><td><b>64</b></td><td><b>IDoc 準備傳給應用</b>（背景模式，等 RBDAPP01）</td></tr>
+      <tr><td>31</td><td>錯誤，不再處理</td><td>65</td><td>ALE 服務錯誤</td></tr>
+      <tr><td>32／33</td><td>IDoc 已編輯／被編輯前的原件</td><td>66</td><td>等待前一張 IDoc（序列化）</td></tr>
+      <tr><td>39／40／41</td><td>已到目標系統／目標系統未建／已建應用單據（ALE audit）</td><td>68</td><td>錯誤，不再處理</td></tr>
+      <tr><td>42</td><td>由測試交易產生</td><td>69／70</td><td>IDoc 已編輯／被編輯前的原件</td></tr>
+      <tr><td></td><td></td><td>74</td><td>由測試交易產生</td></tr>
+    </tbody>
+  </table>
+  <p><b>例外處理的處理人員怎麼決定（Role Resolution）</b>：</p>
+  <ol>
+    <li>出站／入站參數（該夥伴＋該訊息）有填 permitted agent → 通知他。</li>
+    <li>否則用一般夥伴設定（該夥伴）的 permitted agent。</li>
+    <li>找不到夥伴設定檔（或 IDoc 根本還沒產生）→ 通知 <b>IDoc 管理員</b>（<span class="tcode">WEDI</span> → Control → IDoc Administration 的全域參數；<b>SAP 強烈建議一定要填</b>）。</li>
+  </ol>
+  <p>實際收到工作項目的人，是「標準工作的可能處理人（possible agents）」與「設定檔的被允許處理人（permitted agents）」的<b>交集</b>；把標準工作設成「一般工作（general task）」就代表人人都可能。處理人可以是組織單位，不一定是個人。負責解析的函數：<span class="kw">EDI_ROLE_FOR_PROCESSING</span>、<span class="kw">EDI_ROLE_FOR_MESSAGE</span>、<span class="kw">EDI_ROLE_FOR_NAST_MESSAGE</span>、<span class="kw">EDI_ROLE_FOR_IDOC_ACT_MONIT</span>。例外工作集中在工作群組 TG70000015（IDoc 介面）與 TG20000011（物流），可用 <span class="tcode">SWLD</span> 瀏覽、<span class="tcode">PFTC</span> 維護。</p>
+  <p><b>SYSTAT01 狀態回報</b>：夥伴以 IDoc（訊息 STATUS、Process Code <b>STA1</b>、單步工作 TS30000206）回報你送出的 IDoc 狀態。若部分狀態無法對應到出站 IDoc，SYSTAT01 本身得狀態 52；全部失敗得 51，並觸發事件 STATUSIDOCERROR（工作 TS30000207）。講義特別提醒：<b>不要把 SYSTAT01 資料記錄中「關於別張 IDoc 的狀態」和 SYSTAT01 自己的狀態記錄搞混</b>。</p>
+  <div class="note"><b>編輯 IDoc</b>：在 IDoc 顯示畫面 Data record → Display/Change 修改錯誤欄位，存檔後 IDoc 變成 69（入站）／32（出站），原件另存一張 70／33。要作廢時用「Set delete indicator」（狀態 68／31）。這些都會留下稽核軌跡，所以正式環境應以<b>授權控管誰能改 IDoc</b>。</div>
+
+  <h3 id="ch05-22-14">14. 監控、重處理與封存</h3>
+  <table>
+    <thead><tr><th>工具</th><th>TCODE／程式</th><th>用途</th></tr></thead>
+    <tbody>
+      <tr><td>IDoc 清單／顯示</td><td><span class="tcode">WE02</span>、<span class="tcode">WE05</span></td><td>依時間、訊息、夥伴、IDoc 號碼、類型、狀態、埠、EDI 參考號選取；樹狀顯示控制／資料／狀態記錄；System → Links 看已連結的應用單據（物件關係服務）；燈號顏色可在 <span class="tcode">WELI</span> 調整</td></tr>
+      <tr><td>IDoc 搜尋（依商業內容）</td><td><span class="tcode">WE09</span>（資料庫）／封存另有交易</td><td>回答「哪幾張 IDoc 裡有物料 XY 的訂單？」；最多兩個區段欄位值（AND），或只給值全文搜 SDATA；可開快速模式（每張只找一次）</td></tr>
+      <tr><td>IDoc 統計</td><td><span class="tcode">WE07</span></td><td>依狀態群組（TEDS3）統計；另有評估歷史、ALE audit（兩系統間的資料流，依天分組）、測試 IDoc 統計</td></tr>
+      <tr><td>ALE 狀態監控與重處理</td><td><span class="tcode">BD87</span></td><td>依狀態分樹，選取後直接重處理；實務最常用</td></tr>
+      <tr><td>重處理程式</td><td><span class="kw">RBDMANI2</span>（入站 51 錯誤重跑）、<span class="kw">RBDAPP01</span>（<span class="tcode">BD20</span>，處理 64）、<span class="kw">RSEOUT00</span>（<span class="tcode">WE14</span>，送出 30）、<span class="kw">RBDAGAIN</span>（出站錯誤重送）</td><td>可排背景工作，例如「鎖定錯誤」每 30 分鐘自動重試</td></tr>
+      <tr><td>主動監控</td><td><span class="kw">RSEIDOCM</span></td><td>排程執行，某狀態群組的 IDoc 數超過「臨界數量」就送工作項目（TS30200108）給指定人員；不負責重處理</td></tr>
+      <tr><td>tRFC 監控</td><td><span class="tcode">SM58</span></td><td>狀態 03 但對方沒收到時，看這裡的 LUW</td></tr>
+      <tr><td>封存</td><td><span class="tcode">SARA</span>，封存物件 <b>IDOC</b></td><td>只有「可封存狀態」（<span class="tcode">WE47</span> 設定）的 IDoc 能封存；封存後可讀回、列出號碼、搜尋內容</td></tr>
+    </tbody>
+  </table>
+  <p>講義主動監控的例子：重要客戶每個工作日 8:00–18:00 以 EDI 下單、隔天 16:00 交貨，數量必須在交貨日中午前確認。於是每天 8:00 排 <span class="kw">RSEIDOCM</span>（工作類別 B、每日執行），變式：時間範圍前一天、狀態群組 F（入站：應用錯誤）、<b>臨界數量 0</b>、訊息 ORDERS、傳送夥伴＝該客戶、通知 SMITH——只要有一張失敗就通知，讓他中午前手動補單。</p>
+  <pre><code class="abap">*&amp;---------------------------------------------------------------------*
+*&amp; ZIDOC_ERROR_MONITOR：近 N 天入站錯誤 IDoc 清單（含最後一則錯誤訊息）
+*&amp; 狀態條件用列舉，不用 BETWEEN '51' AND '69'（區間會把 53、62、64 一起抓進來）
+*&amp;---------------------------------------------------------------------*
+REPORT zidoc_error_monitor.
+
+PARAMETERS: p_days   TYPE i DEFAULT 7,
+            p_mestyp TYPE edi_mestyp.
+
+START-OF-SELECTION.
+  DATA(lv_from) = CONV sy-datum( sy-datum - p_days ).
+  " 訊息類型沒填＝空的 RANGE＝不限制
+  DATA lr_mestyp TYPE RANGE OF edidc-mestyp.
+  IF p_mestyp IS NOT INITIAL.
+    lr_mestyp = VALUE #( ( sign = 'I' option = 'EQ' low = p_mestyp ) ).
+  ENDIF.
+
+  SELECT docnum, status, mestyp, idoctp, sndprt, sndprn, credat, cretim
+    FROM edidc
+    WHERE direct = '2'
+      AND status IN ( '51', '52', '56', '60', '63', '65' )
+      AND credat &gt;= @lv_from
+      AND mestyp IN @lr_mestyp
+    ORDER BY credat DESCENDING, cretim DESCENDING, docnum DESCENDING
+    INTO TABLE @DATA(lt_idoc).
+  IF lt_idoc IS INITIAL.
+    MESSAGE '期間內沒有錯誤 IDoc' TYPE 'S'.
+    RETURN.
+  ENDIF.
+
+  " 每張 IDoc 的最後一筆狀態：先依 DOCNUM、COUNTR 由大到小排，再取每組第一筆
+  SELECT docnum, countr, stamid, stamno, stapa1, stapa2, statxt
+    FROM edids
+    FOR ALL ENTRIES IN @lt_idoc
+    WHERE docnum = @lt_idoc-docnum
+    INTO TABLE @DATA(lt_stat).
+  SORT lt_stat BY docnum ASCENDING countr DESCENDING.
+  DELETE ADJACENT DUPLICATES FROM lt_stat COMPARING docnum.
+
+  TYPES: BEGIN OF ty_out,
+           docnum TYPE edidc-docnum,
+           status TYPE edidc-status,
+           mestyp TYPE edidc-mestyp,
+           sndprn TYPE edidc-sndprn,
+           credat TYPE edidc-credat,
+           msg    TYPE string,
+         END OF ty_out.
+  DATA lt_out TYPE STANDARD TABLE OF ty_out WITH EMPTY KEY.
+
+  LOOP AT lt_idoc INTO DATA(ls_i).
+    DATA(ls_out) = VALUE ty_out( docnum = ls_i-docnum  status = ls_i-status
+                                 mestyp = ls_i-mestyp  sndprn = ls_i-sndprn
+                                 credat = ls_i-credat ).
+    READ TABLE lt_stat INTO DATA(ls_s) WITH KEY docnum = ls_i-docnum.
+    IF sy-subrc = 0.
+      ls_out-msg = |{ ls_s-stamid }{ ls_s-stamno } { ls_s-stapa1 } { ls_s-stapa2 }|.
+    ENDIF.
+    APPEND ls_out TO lt_out.
+  ENDLOOP.
+
+  TRY.
+      cl_salv_table=&gt;factory( IMPORTING r_salv_table = DATA(lo_alv)
+                              CHANGING  t_table      = lt_out ).
+      lo_alv-&gt;get_functions( )-&gt;set_all( abap_true ).
+      lo_alv-&gt;get_columns( )-&gt;set_optimize( abap_true ).
+      lo_alv-&gt;display( ).
+    CATCH cx_salv_msg INTO DATA(lx_salv).
+      MESSAGE lx_salv-&gt;get_text( ) TYPE 'E'.
+  ENDTRY.
+  " 修正資料後到 BD87 選取重處理；或排 RBDMANI2 背景工作自動重試</code></pre>
+
+  <h3 id="ch05-22-15">15. 測試：WE19 測試工具與五種測試程式</h3>
+  <p>測試程式讓你「跳過處理鏈的某一段」來定位錯誤，也能在<b>單一系統內</b>模擬整個商業流程（客戶端下採購單 → 供應商端過帳訂單）。測試產生的 IDoc 有特殊狀態：<b>入站 74、出站 42</b>。</p>
+  <table>
+    <thead><tr><th>測試功能</th><th>前提</th><th>結果</th></tr></thead>
+    <tbody>
+      <tr><td><b>測試工具 <span class="tcode">WE19</span></b></td><td>無</td><td>手動產生（或以舊 IDoc、IDoc 類型、檔案為範本）入站或出站 IDoc，可增刪區段、改資料</td></tr>
+      <tr><td>從 MC 測試出站</td><td>NAST 中已有訊息狀態記錄（MC 發送時間設 1）</td><td>呼叫 <span class="kw">RSNAST00</span> 產生出站 IDoc 並依夥伴設定送出</td></tr>
+      <tr><td>從 IDoc 測試出站（<span class="tcode">WE14</span>）</td><td>出站 IDoc 狀態 30（輸出模式設「收集」）</td><td>以 <span class="kw">RSEOUT00</span> 送出，夥伴設定檔生效</td></tr>
+      <tr><td>入站狀態檔（<span class="tcode">WE17</span>）</td><td>狀態檔指向既有出站 IDoc；可先用「產生狀態檔」自己做一個</td><td>把狀態記錄掛到出站 IDoc，依狀態觸發例外處理；作者欄位記錄 <span class="kw">USER_ADDED</span>／MSEIDOC1</td></tr>
+      <tr><td>入站：修改後的出站檔（<span class="tcode">WE12</span>）</td><td>File 埠產生的出站檔</td><td>把出站檔改成入站檔（換傳送／接收者，預設夥伴類型 US＝你的使用者、埠 SAP&lt;SID&gt;）再做入站；原檔不變可重複用</td></tr>
+      <tr><td>入站：原始入站檔（<span class="tcode">WE16</span>）</td><td>正確的入站檔（方向 2、傳送接收者正確）</td><td>讀檔入站，<b>成功後檔案會被刪除</b></td></tr>
+    </tbody>
+  </table>
+  <p><span class="tcode">WE19</span> 入站有三種送法：<b>標準入站</b>（完整走夥伴設定檔與 Process Code）、<b>入站函數模組</b>（直接呼叫指定的 ALE 函數模組，<b>可開 Debug</b>——開發新入站模組時最好用）、<b>入站檔案</b>（先存 68 再寫檔）。出站可以指定重複次數（一次產生多份）。講義舊版的 CATT 測試目錄（SYIDOC01／TXTRAW01／Process Code TXT1）已不再使用。</p>
+  <div class="tip">實務技巧：拿一張正式環境失敗的入站 IDoc，在測試系統用 <span class="tcode">WE19</span>「以既有 IDoc 為範本」複製（先把 IDoc 以 <span class="tcode">WE09</span> 或檔案匯出），選「入站函數模組」＋Debug，就能完整重現錯誤而不用請對方重送。記得把控制記錄的傳送者／接收者換成測試系統的邏輯系統。</div>
+
+  <h3 id="ch05-22-16">16. AIF 是什麼：業務人員也能處理介面錯誤</h3>
+  <p>BIT750 開宗明義：介面的本質永遠是「把資料帶進系統（IDoc、檔案⋯）→ 產生單據（例如銷售訂單）→ 讓人接著處理」。出錯是常態，而且<b>錯誤多半是業務性的</b>：</p>
+  <ul>
+    <li>收到的資料品質差、原始建檔打錯字；識別資訊無效（信用卡號、IBAN）；缺資料（地址）。</li>
+    <li>格式轉換錯：日期 MM/DD/YYYY vs DD.MM.YYYY、小數點 100.00 vs 100,00、負數 (100) vs -100 vs 100-。</li>
+    <li>缺對照資料：客戶主檔不存在、值對應表缺值。</li>
+    <li>技術問題：資料被鎖、被移動或刪除；記憶體不足。</li>
+  </ul>
+  <p><b>沒有 AIF</b>：IT 人員在佇列或 <span class="tcode">BD87</span> 看到錯誤，發現是業務問題，還得找出該負責的業務人員（錯誤不規則出現時更難找），溝通來回耗時耗錢；最糟的是 IT 乾脆等對方每週自動重送。<b>有 AIF</b>：負責的業務人員直接在 AIF 的監控畫面看到錯誤、自己修正、自己重處理，IT 專心做 IT 的事——結果是責任清楚、解決更快、資料品質更高、介面 TCO 降低。</p>
+  <p>AIF 兩大能力：<b>介面開發（Design Time）</b>——主要靠 Customizing 完成對應、檢查、動作，可重用、可做變體、可獨立測試；<b>監控與錯誤處理（Runtime &amp; Operations）</b>——業務（power user）監控、可自訂授權、介面狀態總覽、依內容分派給不同人（例如依銷售組織分派）。</p>
+  <table>
+    <thead><tr><th>使用情境</th><th>說明</th></tr></thead>
+    <tbody>
+      <tr><td>情境 1 Runtime＋Monitoring</td><td>「經典」用法：介面用 AIF 開發、也用 AIF 監控，綜效最大</td></tr>
+      <tr><td>情境 2 Monitoring only</td><td>既有介面不改，只用 AIF 監控；需要一個「包覆用」的 AIF 介面告訴框架要監控什麼。見效最快</td></tr>
+      <tr><td>情境 3 Runtime only</td><td>重用 AIF 的檢查、對應、動作，但不需要監控（例如同步呼叫，錯誤由呼叫端處理）</td></tr>
+    </tbody>
+  </table>
+  <p>支援的底層技術：Proxy（XI Runtime）、AIF XML Runtime、檔案、<b>ALE／IDoc</b>、Web Service、Enterprise Service、BDoc；另可自寫程式擴充到 CIF、qRFC、bgRFC、MWB 等，而不必修改監控畫面。</p>
+  <p><b>Namespace</b>（6 碼 CHAR，名稱不限）：所有介面、值對應、固定值、檢查、動作都必須屬於某個 namespace；Customizing 在 namespace 層級上鎖、授權也以 namespace 為單位。AIF 交付的範例 namespace <b>/AIF/ 是唯讀的，不能拿來開發</b>。建議用 <span class="kw">&lt;專案&gt;_&lt;應用元件&gt;</span>（XY_FIN、XY_CRM、XY 放共用物件）或依方向分（INB001、OUT001）。</p>
+  <p><b>Interface</b>（名稱 10 碼＋版本）：唯一識別是 <b>namespace＋介面名＋版本</b>；AIF 不交付任何標準介面，清單預設是空的。必須定義 <b>RAW 結構</b>與 <b>SAP 結構</b>，而且都要存在於 ABAP Dictionary：</p>
+  <table>
+    <thead><tr><th>方向</th><th>來源結構</th><th>目的結構</th></tr></thead>
+    <tbody>
+      <tr><td>入站</td><td>RAW（長得像對方送來的資料；Proxy 時就是輸入參數型別）</td><td>SAP（依要呼叫的 BAPI／方法設計，通常要自己建）</td></tr>
+      <tr><td>出站</td><td>SAP（觸發端能提供的資料，例如選擇畫面欄位）</td><td>RAW（對方要的格式；Proxy 時就是輸出參數型別）</td></tr>
+    </tbody>
+  </table>
+  <p>何時開新版本？處理邏輯要改但目的不變、或要在指定日期切換而不能動一般設定時。<b>AIF 預設選最高版本</b>，也可用 Interface Determination 依內容決定版本（第 18 節）。</p>
+  <p><b>四個 Engine</b>（考題必考）：</p>
+  <table>
+    <thead><tr><th>Engine</th><th>決定什麼</th><th>標準選項</th></tr></thead>
+    <tbody>
+      <tr><td><b>Application</b></td><td>訊息在監控畫面如何被處理（依傳輸技術）</td><td>Proxy、IDoc、XML、Test File、ECH、BDC、CIF、qRFC、tRFC</td></tr>
+      <tr><td><b>Persistence</b></td><td>訊息內容存在哪、如何讀取／更新</td><td>同上各技術；XML＝AIF 自己的持久層</td></tr>
+      <tr><td><b>Selection</b></td><td>監控畫面要顯示哪些訊息、表頭資料從哪來</td><td>AIF Index Tables、IDoc Control Records、ECH、tRFC Status Tables</td></tr>
+      <tr><td><b>Logging</b></td><td>日誌訊息從哪讀</td><td>AIF Application Log、IDoc Status Records、ECH、tRFC</td></tr>
+    </tbody>
+  </table>
+  <p><b>Recipient</b>：定義「哪些業務人員負責哪些介面」，也決定使用者在 Interface Monitor 看得到什麼。可指派使用者或角色，可設「Include in Overview」、「Technical User」（連處理中、技術錯誤也看得到），並可加 e-mail、SMS 外部位址。通知走 SAP Alert Management：<b>一個介面只在第一筆錯誤時寄信，舊警示被確認或逾期後才會寄下一封</b>。</p>
+  <p>監控入口：<b>Interface Monitor</b>（<span class="tcode">/AIF/IFMON</span>，有 SAP GUI 與 Web 版）顯示使用者負責的介面總覽與日曆（紅＝有錯、黃＝有警告、綠＝只有成功或取消），可設定自動重新整理秒數；<b>Message Summary</b> 統計某則日誌訊息出現次數，可<b>批次重處理／取消</b>；<b>Monitoring and Error Handling</b>（<span class="tcode">/AIF/ERR</span>）分析、修正、重啟或取消訊息。Customizing 入口 <span class="tcode">/AIF/CUST</span>。</p>
+
+  <h3 id="ch05-22-17">17. AIF 介面開發：Mapping、Check、Value Mapping、Action</h3>
+  <p>課程練習情境：建一個 XML 介面，收到旅行社資料後<b>建立航空客戶並替他們訂機位</b>（RAW 結構 ZAIF_S###_RAW_FLIGHT，含 TRAVEL_AGENCY、CUSTOMER_DATA（客戶底下再掛 FLIGHT_BOOKINGS）、SALES_AGENT；SAP 結構 ZAIF_S###_SAP_FLIGHT，含 CUSTOMERS（BAPISCUNEW）與 FLIGHT_BOOKINGS（BAPISBONEW）平行兩張表）。</p>
+  <p><b>Structure Mapping</b>：說明來源結構哪個節點對到目的結構哪個節點。來源選根結構時欄位留一個空白字元；兩邊結構相同時勾 <b>Move Corresponding Fields</b>（連子結構、子表一起搬；再勾 Copy Fields only 則只搬欄位）。<b>只有根與第一層能直接對應</b>，第二層以下、或兩邊層次不同（來源的明細在表頭底下、目的卻在同一層）都要用 <b>Indirect Mapping</b>：先對應父結構 → 在父結構的欄位對應中把子結構指為 Sub-Table → 為子結構建一筆勾選 Indirect Mapping 的結構對應。來源兩表平行、目的卻是巢狀時，還要設 <b>Selection Field／Operator／Comparison Field</b>（例如依客戶 ID 7411 篩出屬於他的機位）。</p>
+  <p><b>Field Mapping</b>：目的欄位＋最多 <b>5 個來源欄位</b>（Field Name 1～5；引用目的結構欄位要加 <b>@</b>；直接給固定值用 <b>%值</b>，例如 %5）；可設 Offset／Length、分隔字串（多欄位不設定時預設串接）、Field Name for Data Link（出錯時標紅哪個欄位）、值對應、轉換常式（例 <b>ALPHA</b>、MATN1，須搭配方向：External→Internal 或反向；不填方向則忽略）或 Data Element for Conversion（例 <b>DATS</b> 把 STRING 日期轉 DATS）、檢查（預設檢查目的欄位，勾 Check Before Mapping 改檢查來源）。</p>
+  <p><b>Check</b>：輸入最多 5 個欄位值、輸出成功與否，與情境無關所以可跨介面重用。內建簡單檢查（只含數字、非空白、全大寫、允許字元、運算子＋樣式）、資料庫檢查（表名＋WHERE，檢查存在或檢查欄位值）、或自寫函數模組（<b>簽章必須與範本 <span class="kw">/AIF/FILE_TEMPL_CHECK</span> 相同</b>）。一個可重用檢查可含多個單一檢查，彼此以 <b>OR</b> 連接。可設專屬錯誤訊息（訊息類別＋號碼＋最多 4 個變數，%value 為常數）。結構層級的檢查失敗有兩種反應：<b>Ignore data</b>（略過該行繼續）或 <b>Treat as error</b>（該行停止並記錯）。</p>
+  <p><b>Fix Value</b>：namespace 層級的可重用常數（例：所有介面的客戶折扣 10% 改成 5%，改一處全部生效）。考題陷阱：<b>本地固定值與可重用固定值同時存在時，AIF 採用全域（可重用）那個</b>。</p>
+  <p><b>Value Mapping</b>：最多 5 個輸入值 → 1 個輸出值，可跨 namespace 重用。三種做法：① 對照表（在 <span class="tcode">/AIF/VMAP</span> 維護，可選「Customizing」隨傳輸、或「Master」在正式系統由業務維護）；② 直接 SELECT 資料庫表；③ 自寫函數模組。可設缺值時用預設或報錯；<b>業務人員可從錯誤畫面直接導向 /AIF/VMAP，欄位已預填，補上缺值後重啟訊息</b>。參數以 <b>$1～$5</b> 引用 Field Name 1～5 的值。<b>Conditional Mapping</b>：以 Check 為條件，成功時改用替代欄位／替代值對應／空值。</p>
+  <p><b>Test Tool 與 Analyzer</b>：AIF 測試工具可建測試檔、填資料、按 Transform 看對應結果、按 Process 真正執行動作（重按不會在監控產生新訊息，視為重處理）；XML 介面還能「Process in XML Runtime」產生真訊息。<b>Analyzer 只能用在由測試工具建立並執行的訊息</b>，可逐步看對應順序（黃＝該步設定、紅＝設定用到的欄位、藍＝被改變的欄位）、查欄位在哪被用到／被改，但不能在執行中改欄位值。</p>
+  <p><b>Action</b>：介面的業務邏輯，由一或多個動作函數（依 Function Number 順序執行）組成，可跨 namespace 重用（只要介面能提供該 DDIC 型別的資料）。定義時先填一般資訊（名稱、Commit Mode、Commit Level、可選的 Init Function、主元件型別），再定義函數。</p>
+  <table>
+    <thead><tr><th>設定</th><th>選項與行為</th></tr></thead>
+    <tbody>
+      <tr><td><b>Commit Mode</b></td><td>Commit Work／Commit Work and Wait／No Commit Work</td></tr>
+      <tr><td><b>Commit Level</b></td><td>每個函數後、每個動作（全部資料集）後、每個動作（每筆資料集）後、不提交（交給介面層）。<b>「函數執行到一半」不是選項</b>。出錯時 AIF 會 Rollback；重啟時已提交成功的函數不會再執行（例：兩個客戶，第一個成功、第二個失敗，修正後重啟只會建第二個）</td></tr>
+      <tr><td><b>Stop Processing on Error</b></td><td>動作函數層：函數 10 出錯則該行的 20、30 不執行；指派動作層：動作 10 出錯則該行動作 20 不執行</td></tr>
+      <tr><td><b>Restart Always</b></td><td>重啟時即使上次成功也再執行（只針對出錯的行）。<b>內部編號的函數（例如建立單據）通常只該執行一次</b></td></tr>
+      <tr><td><b>Fields to Restore</b></td><td>第一個函數建客戶（內部編號）成功、第二個建發票失敗；重啟時不會再建客戶，客戶號碼從 Field to Restore 取回傳給第二個函數</td></tr>
+      <tr><td><b>Changeable Fields</b></td><td>設定哪些欄位業務可在監控中修改（仍需授權）；修改前後值、時間記錄在 <span class="tcode">/AIF/EDCHANGES</span>；介面層級要先在 Namespace-Specific Features 建介面專屬項目才看得到設定</td></tr>
+    </tbody>
+  </table>
+  <pre><code class="abap">FUNCTION z_aif_act_create_flcust.
+*"----------------------------------------------------------------------
+*" AIF 動作函數：建立航空客戶（課程情境）
+*" 介面請以範本 /AIF/FILE_TEMPL_PROCESS 複製後再改名，下列簽章為示意：
+*"  IMPORTING
+*"     VALUE(TESTRUN) TYPE  C
+*"     VALUE(SENDING_SYSTEM) TYPE  /AIF/AIF_BUSINESS_SYSTEM_KEY OPTIONAL
+*"  TABLES
+*"      RETURN_TAB STRUCTURE  BAPIRET2
+*"  CHANGING
+*"     VALUE(DATA)
+*"     VALUE(CURR_LINE)
+*"     VALUE(SUCCESS) TYPE  /AIF/SUCCESSFLAG
+*"     VALUE(OLD_MESSAGES) TYPE  /AIF/BAL_T_MSG
+*"----------------------------------------------------------------------
+  " CURR_LINE 是「目前這一行」，型別就是動作的主元件型別
+  FIELD-SYMBOLS &lt;ls_cust&gt; TYPE zaif_s001_customer_detail.
+  ASSIGN curr_line TO &lt;ls_cust&gt;.
+  IF sy-subrc &lt;&gt; 0.
+    RETURN.
+  ENDIF.
+
+  DATA lt_return TYPE STANDARD TABLE OF bapiret2 WITH EMPTY KEY.
+  CALL FUNCTION 'BAPI_FLCUST_CREATEFROMDATA'
+    EXPORTING
+      customer_data  = &lt;ls_cust&gt;-customer_data     "BAPISCUNEW
+      test_run       = testrun                     "AIF 測試執行時不真的建立
+    IMPORTING
+      customernumber = &lt;ls_cust&gt;-id                "設為 Field to Restore，重啟時才拿得到
+    TABLES
+      return         = lt_return.
+
+  " 訊息交回 AIF：會寫進應用日誌，業務在 /AIF/ERR 看得到；E/A 類訊息視為失敗
+  APPEND LINES OF lt_return TO return_tab.
+  " 不要自己 COMMIT WORK／ROLLBACK：由動作的 Commit Mode／Commit Level 控制
+ENDFUNCTION.</code></pre>
+  <div class="note">動作函數簽章的權威來源是系統裡的範本函數模組（SE37 顯示 <span class="kw">/AIF/FILE_TEMPL_PROCESS</span>），請直接「複製」再改名；SUCCESS 旗標的值域見資料元素 /AIF/SUCCESSFLAG。講義只說明動作「由一或多個函數模組組成、可呼叫 BAPI」，未列出簽章。</div>
+
+  <h3 id="ch05-22-18">18. AIF 進階：Index Table、Alert、XML Runtime、Proxy、檔案、自訂物件</h3>
+  <p><b>Index Table（僅適用 Selection Engine＝AIF Index Tables）</b>：所有訊息預設記在標準單一索引表，可依 namespace、介面、版本、時間、狀態查。要依業務欄位（例如工廠、公司代碼）查詢，就建<b>介面專屬的單一索引表</b>（在 Namespace-Specific Features 的 Message Index Table Name 指定；訊息量大時建議每個介面一張）；關鍵欄位位於表格中時用<b>多重索引表</b>（Multi Index Table，Selection Type＝Multiple selection）。多重索引欄位不參與監控分組，<b>也不能用來決定 Recipient——只有單一索引欄位可以</b>。要在 <span class="tcode">/AIF/ERR</span> 加上自訂查詢欄位，得寫一支 <b>Module Pool 程式，用 SELECTION-SCREEN 語法（不能用 Screen Painter）定義成子畫面</b>，再掛到 Namespace-Specific Features 的 Program Name／Screen Number（選擇畫面見 <a href="#ch03-1">3-1 章</a>）。</p>
+  <p><b>依關鍵欄位分派 Recipient 與警示</b>：例如發票介面，公司代碼 1000 給 RECIPIENT_1、2000 給 RECIPIENT_2。前提是該欄位是單一索引欄位且勾 Relevant for Recipient Determination；複製 <span class="kw">/AIF/T_ALRT_DEF</span> 建自己的「收件者指派表」並加上該欄位，在 Configure Alerts 指定。預設警示類別 <span class="kw">/AIF/ALERT_CAT_DEF</span>；要給業務更多提示可在 <span class="tcode">ALRTCATDEF</span> 建自己的類別，容器元素與預設類別同名時 AIF 會自動帶值。郵件通知三選一：<b>下一個警示才寄</b>（預設）、不寄、<b>每筆錯誤都寄</b>；設定以 recipient 為單位（同一介面你屬於兩個 recipient 時，關掉一個仍會收到另一個的信）。<b>Hide Structures／Hide Fields</b> 可在介面或 namespace 層級隱藏機敏資料。</p>
+  <p><b>AIF XML Runtime</b>：步驟是建來源／目的結構 → 定義介面 → Application 與 Persistence Engine 設 XML → 結構對應 → 以 <span class="kw">/AIF/CL_ENABLER_XML=&gt;TRANSFER_TO_AIF</span>（單筆）或 <span class="kw">TRANSFER_TO_AIF_MULT</span>（多筆；仍逐筆處理，同一次呼叫可以有成功也有失敗）交給 AIF。處理以 <b>Runtime Configuration Group</b>（<span class="tcode">/AIF/PERS_CGR</span>，namespace＋3 碼）控制：預設每個 run 100 筆、每個 packet 20 筆；250 筆會產生 3 個 run（100／100／50），第三個 run 有 2 個 20 筆與 1 個 10 筆的 packet。勾 Run Scheduled 則以背景工作非同步執行（以 SY-UNAME 放行，需有 AIF 處理授權），勾 Schedule Packages 則 packet 另開工作；群組停用時訊息只入佇列，由 <span class="kw">/AIF/PERS_RUN_EXECUTE</span> 觸發（預設 run 滿了才執行）。</p>
+  <pre><code class="abap">*&amp;---------------------------------------------------------------------*
+*&amp; 報表觸發 AIF XML 介面（出站或入站皆可）
+*&amp; 前提：介面的 Application / Persistence Engine 都設為 XML
+*&amp;---------------------------------------------------------------------*
+DATA ls_raw TYPE zaif_s001_raw_flight.
+
+ls_raw-travel_agency = VALUE #( agencynum = '00000100' name = 'Happy Travel' ).
+ls_raw-customer_data = VALUE #(
+  ( customer_details = VALUE #( id = '00007411' name = 'Casper Lin' city = 'Taipei' )
+    flight_bookings  = VALUE #( ( fldate = '20261015' class = 'Y'
+                                  airport_from = 'TPE' airport_to = 'FRA' ) ) ) ).
+
+TRY.
+    /aif/cl_enabler_xml=&gt;transfer_to_aif(
+      is_any_structure = ls_raw          "參數名請以 SE24 方法簽章為準
+      iv_queue_ns      = 'ZFLGT'         "Runtime Configuration Group：namespace
+      iv_queue_name    = '001' ).        "Runtime Configuration Group：3 碼識別
+    COMMIT WORK.
+  CATCH cx_root INTO DATA(lx_aif).       "實際例外類別請以方法簽章為準
+    MESSAGE lx_aif-&gt;get_text( ) TYPE 'E'.
+ENDTRY.</code></pre>
+  <p><b>Proxy 介面</b>：服務介面在 ESR 或 MDR 定義（通常不是 AIF 開發者的工作），後端產生 Proxy 類別。<b>入站 Proxy</b>：方法實作只要呼叫 <span class="kw">/AIF/CL_ENABLER_PROXY=&gt;PROCESS_MESSAGE</span>，傳入輸入結構與例外類別名；engines 用預設值（NetWeaver 7.40 不經 PI 時改為 New Web Services）。<b>出站 Proxy</b>：Application／Persistence 設 XML（AIF 才存得到來源資料以便顯示、重處理），由報表或函數模組呼叫 <span class="kw">/AIF/SEND_WITH_PROXY</span> 並傳 namespace、介面名、版本與來源資料。考題陷阱：<span class="kw">/AIF/BROADCAST_WITH_PROXY</span>、<span class="kw">/AIF/TRANSMIT_WITH_PROXY</span>、<span class="kw">/AIF/CL_PROCESS_PROXY</span> 都是<b>不存在的干擾選項</b>。</p>
+  <pre><code class="abap">*&amp;---------------------------------------------------------------------*
+*&amp; 入站 Proxy 方法：整個實作就一行，其餘全在 AIF Customizing
+*&amp;---------------------------------------------------------------------*
+METHOD zii_flight_booking_in~flight_booking_in.
+  /aif/cl_enabler_proxy=&gt;process_message(
+    is_input               = input
+    iv_exception_classname = 'ZCX_FLIGHT_BOOKING_FAULT' ).
+  " 千萬不要在這裡 TRY ... CATCH 掉 PROCESS_MESSAGE 的例外，
+  " 也不要讓 Proxy 方法沒有例外類別：否則 AIF 的錯誤傳不回 Proxy 框架，
+  " 訊息會顯示「成功」，之後的重啟與編輯都會出問題（講義 Unit 9 特別警告）
+ENDMETHOD.</code></pre>
+  <p><b>File Adapter</b>：建立對應檔案的 RAW 結構（檔案是表格時，RAW 要含一個以欄位結構為列型別的表格；若 RAW 只代表一行，則<b>每一行產生一則訊息</b>）→ SAP 結構 → 介面（Application／Persistence＝XML、Selection＝AIF Index Tables、Logging＝AIF Application Log）→ 對應與動作 → File Adapter 設定（檔案型態 binary／text；內容 Flat、Complex（要設子結構判定）、User Defined（自寫對應函數）、XML（XSLT 或 Simple Transformation）；文字型態：分隔字元（CSV）、固定長度、每行一欄）。<b>Block Size</b>：1000 筆不設則成 1 則訊息，設 100 則成 10 則；只有扁平結構能設。交易：<span class="tcode">/AIF/LFA_UPLOAD_FILE</span>（手動單檔，伺服器或本機，可預覽）、<span class="tcode">/AIF/LFA_CHECK_SEND</span>（伺服器大量上傳，可排程，讀完搬到另一資料夾避免重讀）。</p>
+  <p><b>Custom Objects（簡化錯誤處理）</b>：針對「某則日誌訊息＋某介面」建立 Custom Function（跳到其他交易，<span class="tcode">/AIF/CUST_FUNC</span>）、Custom Hint（處理說明，<span class="tcode">/AIF/CUST_HINTS</span>）、Custom Data Link（訊息連到資料欄位，<span class="tcode">/AIF/CUST_LINK</span>）、Custom Message Text（換成業務看得懂的文字，<span class="tcode">/AIF/CUST_TEXT</span>）。可見性：只限自己（預設）／使用者清單／所有人；範圍：此介面此訊息（預設）／此介面所有訊息／所有介面此訊息／全部。改過可見性或範圍後，只能到維護交易改，不能在監控畫面改。</p>
+  <p><b>Interface Variant</b>：原介面不能改時，依傳送者追加額外的對應或檢查（例：三個傳送者各自有不同的公司代碼推導邏輯）；<b>變體只能「加」，不能略過原介面已做的事</b>（包括檢查）。</p>
+  <p><b>其他（Unit 14）</b>：自動重處理用 <span class="tcode">/AIF/REP_AC_DEF</span>（定義重處理動作，函數 <span class="kw">/AIF/RESTART_MSG</span>）與 <span class="tcode">/AIF/REP_AC_ASGN</span>（依介面指定哪種錯誤自動重啟、最多幾次、最短／最長等待時間），例如「Object is locked by user &amp;1」；Trace Level 預設 0，可在 view <span class="kw">/AIF/V_FINF_TL</span> 設定或從監控以較高層級重啟分析。授權：角色範本 SAP_AIF_ADMIN、SAP_AIF_ALL、SAP_AIF_ARCHITEXT（原文拼法）、SAP_AIF_DEVELOPER、SAP_AIF_POWER_USER、SAP_AIF_PROCESSING、SAP_AIF_TEST_TEMPL、SAP_AIF_USER；授權物件 <span class="kw">/AIF/PROC</span>（處理）、<span class="kw">/AIF/CUST</span>（Customizing）、<span class="kw">/AIF/ERR</span>（錯誤處理，可唯讀）、以及 /AIF/TECH、/AIF/EMC、/AIF/CFUNC、/AIF/HINTS、/AIF/IFDET、/AIF/VMAP、/AIF/LFA、/AIF/CDLOG、/AIF/CTEXT、/AIF/CLINK；資料內容層級授權（例如業務 A 只看 VKORG 1）需要對應的單一索引欄位。<b>Interface Determination</b>：同一 RAW 結構有多個 XML 介面、或同一「訊息類型／基本類型」有多個 IDoc 介面時，依欄位值決定用哪個介面；Proxy 只限入站（本地整合引擎）、IDoc 只限入站且不適用標準 IDoc runtime、XML 入出站皆可；自訂引擎類別實作 <span class="kw">/AIF/IF_INF_DET_ENGINE</span> 或繼承 <span class="kw">/AIF/CL_INF_DET_ENGINE_BASE</span>。</p>
+
+  <h3 id="ch05-22-19">19. 用 AIF 處理與監控 IDoc：四種情境</h3>
+  <p>先回顧標準 IDoc：入站通常經 RFM <span class="kw">IDOC_INBOUND_ASYNCHRONOUS</span> 把資料以字元形式存進資料庫（此時還不分物料、訂單）；技術傳輸與業務過帳分離，好處是錯誤可以在接收端處理。夥伴＋訊息類型決定 Process Code（<span class="tcode">WE20</span>）；能用的函數模組必須先在 <span class="tcode">WE57</span> 與訊息類型／基本類型連結，才能掛到 <span class="tcode">WE42</span> 的 Process Code。</p>
+  <p>IDoc 區段在 DDIC 是一個個獨立結構，而 AIF 介面需要「一個根結構」當 RAW／SAP 結構，所以既有的 IDoc 結構不能直接用。<b>產生報表 <span class="tcode">/AIF/IDOC_GEN</span></b> 會依基本類型（含擴充）產生根結構，並直接建好 engines 設定正確的介面。</p>
+  <table>
+    <thead><tr><th>情境</th><th>做什麼</th><th>Application／Persistence</th><th>Selection</th><th>Logging</th></tr></thead>
+    <tbody>
+      <tr><td><b>1 監控</b></td><td>只用 AIF 監控既有 IDoc，不影響處理；沒有索引表，資料取自控制記錄</td><td>IDoc／IDoc</td><td>IDoc Control Records</td><td>IDoc Status Records</td></tr>
+      <tr><td><b>2 經 AIF 處理後呼叫標準 IDoc 函數</b></td><td>可用檢查、值對應、警示、Interface Monitor；RAW＝SAP 結構，最簡單用 Move Corresponding</td><td>IDoc／IDoc</td><td>AIF Index Tables</td><td>AIF Application Log</td></tr>
+      <tr><td><b>3 IDoc／BAPI 實作與監控</b></td><td>動作裡自由呼叫 BAPI 或函數；SAP 結構要自己建，<b>通常需要結構對應</b>；適合自建基本類型＋呼叫 BAPI</td><td>IDoc／IDoc</td><td>AIF Index Tables</td><td>AIF Application Log</td></tr>
+      <tr><td><b>4 監控＋Enabler</b></td><td>純監控但可用警示、介面專屬索引表與選擇畫面、Interface Monitor；每次 IDoc 狀態更新時呼叫 AIF IDoc Enabler，依 Interface Determination 找到介面就寫索引表與警示，找不到則 ALE 照常處理不中斷；可把既有 IDoc 匯入索引表</td><td>IDoc／IDoc</td><td>AIF Index Tables</td><td>IDoc Status Records（或 AIF Application Log）</td></tr>
+    </tbody>
+  </table>
+  <p><b>情境 2／3 必須改標準 IDoc Customizing</b>（AIF 不知道你要哪些訊息走 AIF，所以不交付設定）：① <span class="tcode">WE57</span> 把 AIF 函數模組 <span class="kw">/AIF/IDOC_INB_PROCESS_FUNC_0</span>（任何訊息類型都能用）指派給該基本類型＋訊息類型；② <span class="tcode">WE42</span> 建入站 Process Code 指到它；③ <span class="tcode">WE20</span> 把夥伴設定檔的 Process Code 換成這個。課程例子：邏輯系統 ZAIF_S001 送來的 FLCUSTOMER_CREATEFROMDATA 就會轉給 AIF。</p>
+  <pre><code class="abap">FUNCTION z_aif_act_idoc_orders.
+*"----------------------------------------------------------------------
+*" AIF IDoc 情境 2 的動作函數：先讓 AIF 做完檢查與值對應，
+*" 再把資料交還給「原本的」標準 IDoc 入站函數模組過帳
+*" （簽章同第 17 節，由 /AIF/FILE_TEMPL_PROCESS 複製）
+*"----------------------------------------------------------------------
+  CALL FUNCTION '/AIF/IDOC_ACTION_FUNCTION'
+    EXPORTING
+      iv_idoc_function = 'IDOC_INPUT_ORDERS'   "原本 Process Code ORDE 指向的函數模組
+    TABLES
+      return_tab       = return_tab
+    CHANGING
+      data             = data.
+  " 講義：情境 2 的動作程式碼「永遠都是這一段」，只換 iv_idoc_function
+ENDFUNCTION.</code></pre>
+  <p><b>出站 IDoc</b>：情境 1 同樣只監控（資料取自控制記錄）；情境 2 用產生報表選「scenario 4」建第一個介面，再跑一次產生第二個（記得改 IDoc 名稱）。考題：<b>AIF 可用於入站與出站 IDoc</b>；可行的 IDoc 情境包括「修改在建立 AIF 介面之前就已存在的錯誤 IDoc」「依 IDoc 內容把錯誤分派給不同收件者」「先對應再呼叫原 IDoc 函數模組」，但<b>「把一張 IDoc 拆成兩則訊息」不是 AIF 的情境</b>。</p>
+  <div class="tip">導入建議：已上線的 IDoc 介面先從<b>情境 4（或 1）</b>開始——不動任何處理邏輯，只把 51 錯誤依公司代碼、工廠分派給對應的業務窗口，並用 Custom Hint 寫下「遇到這個訊息該怎麼修」。等業務習慣在 <span class="tcode">/AIF/IFMON</span> 自己處理後，再把高頻錯誤的介面改成情境 2，加上 Check 與 Value Mapping 從源頭擋掉髒資料。</div>
+
+  <h3 id="ch05-22-20">20. S/4HANA 的現況與選型</h3>
+  <table>
+    <thead><tr><th>主題</th><th>1999 文件／2007 年代</th><th>S/4HANA（1809+）現況</th></tr></thead>
+    <tbody>
+      <tr><td>IDoc 本身</td><td>ALE／EDI 主力</td><td><b>仍完整支援</b>（on-premise／Private Cloud），大量標準訊息照用；WE／BD 系列交易不變</td></tr>
+      <tr><td>客戶／供應商主資料</td><td>DEBMAS／CREMAS 直接寫 KNA1／LFA1</td><td>必須經 <b>CVI</b> 與商業夥伴 BP 同步（見 <a href="#ch04-1-13">4-1 章第 13 節</a>）；入站 DEBMAS／CREMAS 仍可用但會建立／更新 BP，新整合建議改用 BP 相關 API</td></tr>
+      <tr><td>出站觸發</td><td>NAST 訊息控制（RSNAST00）</td><td>多數單據改用新輸出管理（BRFplus），IDoc 為其中一個通道；NAST 仍可切回使用</td></tr>
+      <tr><td>中介軟體</td><td>EDI 子系統、Business Connector、XI／PI</td><td>SAP Integration Suite（Cloud Integration）的 IDoc adapter，或 PI／PO；XML HTTP 埠</td></tr>
+      <tr><td>錯誤處理</td><td>Workflow 工作項目、BD87</td><td><b>AIF 已隨 S/4HANA 內建</b>，許多 SAP 標準介面直接用它監控；Fiori 也有 AIF 的訊息監控應用（名稱依版本）。自建介面使用 AIF 的授權範圍請向 SAP 確認</td></tr>
+      <tr><td>新開發 API</td><td>自建 IDoc 類型、BAPI</td><td>優先找 SAP Business Accelerator Hub 上已發布的 OData／SOAP API、事件（Event Mesh），再考慮 IDoc；S/4HANA Cloud Public Edition 只開放白名單內的 IDoc</td></tr>
+      <tr><td>開發擴充</td><td>CMOD customer exit</td><td>BAdI（IDOC_DATA_MAPPER、IDOC_CREATION_CHECK 等）優先</td></tr>
+    </tbody>
+  </table>
+  <p><b>選型建議（先標準、再客製）</b>：</p>
+  <ol>
+    <li>SAP 已有標準訊息類型與 Process Code（ORDERS、DESADV、INVOIC、MATMAS⋯）→ 直接用，缺欄位先找 BAdI，最後才做 Extension。</li>
+    <li>需要即時回應（查庫存、查價）→ 不是 IDoc 的強項，改用 RFC／BAPI 或 OData（<a href="#ch04-1">4-1 章</a>）。</li>
+    <li>需要非同步、保證送達、可重處理、有業務監控 → IDoc＋AIF，或 bgRFC＋AIF。</li>
+    <li>自建 IDoc 類型只在「對方指定格式、且沒有可用的標準 API」時才做。</li>
+  </ol>
+  <div class="warn"><b>Casper 的三條實務經驗在介面專案的樣子</b>：① <b>HANA 沒有預設排序</b>——出站讀資料、入站重組區段、找最新狀態都要 ORDER BY，否則同一張單兩次送出的區段順序可能不同，EDI 子系統比對就會失敗；② <b>列舉優於區間</b>——BD64 分散模型的過濾條件、監控程式的狀態條件、選擇畫面的物料條件，都用多筆 EQ 列舉；用區間會因 ALPHA 前導零、號碼段不連續而漏送或多送主資料；③ <b>先找標準再客製</b>——介面需求第一步是去 <span class="tcode">WE60</span> 看標準 IDoc 文件、去 API Hub 找已發布 API，而不是打開 <span class="tcode">WE31</span>。</div>
+
+  <h3 id="ch05-22-qa">練習與自我檢核</h3>
+  <ol>
+    <li><b>IDoc 的三種記錄各存在哪個資料表？哪一種不會隨 IDoc 傳給對方？</b><br>參考答案：控制記錄 EDIDC、資料記錄 EDID4（結構 EDIDD）、狀態記錄 EDIDS；狀態記錄不隨 IDoc 傳送，而是另外經狀態處理（或 SYSTAT01）回報。</li>
+    <li><b>為什麼監控程式多半只讀 EDIDC 就能知道狀態？</b><br>參考答案：控制記錄的 STATUS 欄位永遠存最新狀態；只有評估歷史、測試 IDoc 統計需要全部狀態時才讀 EDIDS。</li>
+    <li><b>說明基本類型、擴充、區段類型、區段定義、訊息類型的差別，以及各用哪個 TCODE 維護。</b><br>參考答案：基本類型／擴充 WE30；區段類型（版本無關）與區段定義（版本相依、外部名稱）WE31；訊息類型（商業意義）WE81；兩者多對多指派 WE82。</li>
+    <li><b>夥伴設定檔由哪四張表構成？為什麼上線清單一定要列它？</b><br>參考答案：EDPP1（一般）、EDP13（出站）、EDP12（MC 附加）、EDP21（入站）；夥伴設定檔不能傳輸，必須在正式系統建完主資料後維護。</li>
+    <li><b>系統 Process Code EDIS 與 EDIR 差在哪？</b><br>參考答案：都處理子系統回報的錯誤狀態；EDIS（TS30000078）只能顯示，EDIR（TS70008125）還能重送出站 IDoc，但重送用控制記錄資料，不重讀夥伴設定檔。</li>
+    <li><b>寫一支程式用 MASTER_IDOC_DISTRIBUTE 送 IDoc，送完卻在 WE02 看不到／卡在 SM58，最可能漏了什麼？</b><br>參考答案：漏了 COMMIT WORK（tRFC 在提交時才送出）；大量送時還要釋放 IDoc 鎖（EDI_DOCUMENT_DEQUEUE_LATER）。</li>
+    <li><b>自建入站函數模組要在哪三個地方註冊，再到哪裡掛給夥伴？</b><br>參考答案：BD51 函數屬性（輸入類型）、WE57 函數 ↔ 訊息類型／基本類型（ALE 註冊，含 BOR 物件）、WE42 入站 Process Code；最後 WE20 入站參數。</li>
+    <li><b>入站函數模組如何通知 ALE 這張 IDoc 失敗？</b><br>參考答案：在 IDOC_STATUS 附加狀態 51 的記錄（含訊息與 SEGNUM），RETURN_VARIABLES 附加 Error_IDOCs，WORKFLOW_RESULT 設 99999；不要自己 COMMIT。</li>
+    <li><b>講義 IDOC_OUTPUT_TESTER 範例中的 E1HEAD 填值有什麼錯？</b><br>參考答案：配銷通路寫成 E1HEAD-VKORG = '10'，把銷售組織 '1000' 覆蓋掉，應為 E1HEAD-VTWEG = '10'；另有一個多餘的 ENDSELECT。</li>
+    <li><b>IDoc 狀態 30、64、51、53、69、70 分別代表什麼？各用什麼程式／交易往下處理？</b><br>參考答案：30 出站準備發送（RSEOUT00／WE14）；64 入站準備傳給應用（RBDAPP01／BD20）；51 應用單據未過帳（修正後 BD87 或 RBDMANI2）；53 已過帳；69 IDoc 已編輯（可再處理）、70 被編輯前的原件。</li>
+    <li><b>AIF 的四個 Engine 是哪四個？（干擾選項：Adapter、Monitoring、Process、Integration）</b><br>參考答案：Application、Persistence、Selection、Logging。</li>
+    <li><b>AIF 何時需要 Indirect Mapping？Field Mapping 最多幾個來源欄位？固定值與目的欄位引用各用什麼符號？</b><br>參考答案：結構在第二層以下或兩邊層次不同時；最多 5 個；固定值 %、引用目的結構欄位 @，值對應中以 $1～$5 引用參數。</li>
+    <li><b>動作的 Commit Level 有哪幾種？「Fields to Restore」解決什麼問題？</b><br>參考答案：每個函數後、每個動作（全部資料集）後、每個動作（每筆資料集）後、不提交；沒有「函數中途」。Fields to Restore 讓重啟時不再執行已成功的內部編號函數，仍能取回它產生的號碼（例如客戶號碼）給後續函數用。</li>
+    <li><b>AIF IDoc 情境 2 與情境 3 的差別？兩者都要改哪三個標準設定？</b><br>參考答案：情境 2 動作裡呼叫原標準 IDoc 函數（透過 /AIF/IDOC_ACTION_FUNCTION），RAW＝SAP 結構；情境 3 動作自由呼叫 BAPI，需自建 SAP 結構與結構對應。都要改 WE57（指派 /AIF/IDOC_INB_PROCESS_FUNC_0）、WE42（Process Code）、WE20（夥伴改用新 Process Code）。</li>
+    <li><b>入站 Proxy 呼叫 /AIF/CL_ENABLER_PROXY=&gt;PROCESS_MESSAGE 時，為什麼不能 CATCH 它的例外？</b><br>參考答案：例外被吃掉（或方法沒有例外類別）時，AIF 的錯誤無法傳回 Proxy 框架，訊息被標為成功，之後的重啟與編輯都不正確。</li>
+    <li><b>實作題</b>：寫一支 SALV 報表，列出過去 3 天某訊息類型的入站錯誤 IDoc 與最後一則錯誤訊息，並說明你如何確保「最後一則」真的是最後一則。<br>參考答案要點：EDIDC 以 DIRECT = '2'、STATUS IN（列舉）與 CREDAT 篩選；EDIDS 取回後依 DOCNUM、COUNTR DESCENDING 排序再 DELETE ADJACENT DUPLICATES，或 SQL 端 ORDER BY COUNTR DESCENDING；不能依賴 HANA 的回傳順序（第 14 節範例）。</li>
+  </ol>
+</section>

@@ -1,0 +1,1088 @@
+<section class="chapter" id="ch05-18" data-title="BC460 SAPscript 表單">
+  <h2>第 5-18 章 BC460 SAPscript 表單：Form Design and Text Management</h2>
+  <p class="lede">SAPscript 是 SAP 最古老的表單技術，SAP 早就宣布「不再開發」，但它從來沒有被移除：S/4HANA 裡仍有大量標準單據（採購單 MEDRUCK、發票 RVINVOICE01、交貨單 RVDELNOTE、FI 對帳單與支票）預設走 SAPscript，而 SO10 標準文字、READ_TEXT 長文字 API 更是所有表單技術（包括 SmartForms、Adobe Forms）共用的底層。這一章依 BC460 原廠教材的 11 個單元，把 SE71 表單結構、SE72 樣式、SE78 圖形、SO10 標準文字、符號與控制命令、OPEN_FORM／WRITE_FORM／CLOSE_FORM 列印程式、NACE 輸出設定整理成一份能「看懂、改得動、知道何時該搬家」的手冊，並以現代 ABAP 重寫列印程式，最後和 SmartForms、Adobe Forms、S/4HANA Output Management（BRF+）做完整比較。</p>
+
+  <div class="meta">
+    <div><b>核心 TCODE</b><span class="tcode">SE71</span><span class="tcode">SE72</span><span class="tcode">SE73</span><span class="tcode">SE75</span><span class="tcode">SE76</span><span class="tcode">SE77</span><span class="tcode">SE78</span><span class="tcode">SO10</span><span class="tcode">SE38</span><span class="tcode">NACE</span><span class="tcode">SPAD</span><span class="tcode">SP01</span><span class="tcode">SPRO</span><span class="tcode">SMARTFORMS</span><span class="tcode">SFP</span><span class="tcode">OPD</span></div>
+    <div><b>關鍵物件</b>OPEN_FORM、START_FORM、WRITE_FORM、WRITE_FORM_LINES、CONTROL_FORM、END_FORM、CLOSE_FORM、ITCPO、ITCPP、ITCSY、ITCOO、CONVERT_OTF、READ_TEXT、SAVE_TEXT、INIT_TEXT、EDIT_TEXT、SELECT_TEXT、DELETE_TEXT、COMMIT_TEXT、THEAD、TLINE、ADDRESS_INTO_PRINTFORM、TTXSY、TTDTG、STXH、STXL、STXBITMAPS、NAST、TNAPR、RSNAST00、RSTXLDMC、RSTXDBUG、RSTXSCRP、RSTXTRAN、RSTXPDFT4、MEDRUCK、RVINVOICE01、SAPFM06P、RVADIN01</div>
+  </div>
+
+  <h3 id="ch05-18-01">1. 課程定位與教材對照</h3>
+  <p>本章素材只有 SAP 原廠英文教材 <b>BC460 SAPscript: Form Design and Text Management</b>（Course Version 18、3 天課程、Material Number 50149147、© 2022）。强晟的 2007/2008 筆記沒有這門課，所以對照表只列原廠教材。頁碼同時列出 PDF 頁（p）與講義印刷頁碼，方便對照原檔。</p>
+  <table>
+    <thead><tr><th>單元</th><th>主題</th><th>原廠教材 Unit / Lesson</th><th>PDF 頁（印刷頁）</th><th>本章小節</th></tr></thead>
+    <tbody>
+      <tr><td>Unit 1</td><td>Introduction</td><td>L1 Introducing SAPscript</td><td>p9–14（1–6）</td><td>§2</td></tr>
+      <tr><td>Unit 2</td><td>SAPscript Overview</td><td>L1 Describing SAPscript</td><td>p15–22（7–14）</td><td>§2</td></tr>
+      <tr><td>Unit 3</td><td>Form Elements</td><td>L1 Creating Form Elements</td><td>p23–50（15–42）</td><td>§3、§4</td></tr>
+      <tr><td>Unit 4</td><td>Graphical Editor and Line Editor</td><td>L1 Formatting Text with the SAPscript Editor／L2 Maintaining Text Elements</td><td>p51–66（43–58）</td><td>§5</td></tr>
+      <tr><td>Unit 5</td><td>Symbols and Control Statements</td><td>L1 Controlling Output with Symbols and Control Statements</td><td>p67–84（59–76）</td><td>§6、§7、§8</td></tr>
+      <tr><td>Unit 6</td><td>Print Program</td><td>L1 Controlling Print Settings with the Print Program</td><td>p85–98（77–90）</td><td>§9、§10、§11</td></tr>
+      <tr><td>Unit 7</td><td>Styles</td><td>L1 Creating and Applying Styles</td><td>p99–102（91–94）</td><td>§12</td></tr>
+      <tr><td>Unit 8</td><td>The Next Generation</td><td>L1 Smart Forms and Interactive Forms</td><td>p103–112（95–104）</td><td>§13</td></tr>
+      <tr><td>Unit 9</td><td>Modifications</td><td>L1 Modifying Standard Print Programs and Forms</td><td>p113–122（105–114）</td><td>§14</td></tr>
+      <tr><td>Unit 10</td><td>Maintenance</td><td>L1 Maintaining System and Printer Fonts</td><td>p123–128（115–120）</td><td>§15</td></tr>
+      <tr><td>Unit 11</td><td>Appendix</td><td>L1 Function Modules and Programming Details</td><td>p129–136（121–128）</td><td>§16</td></tr>
+      <tr><td>Unit 11</td><td>Appendix</td><td>L2 Customizing Forms（Forms in the IMG）</td><td>p137–144（129–136）</td><td>§17</td></tr>
+      <tr><td>Unit 11</td><td>Appendix</td><td>L3 Adding Graphical Elements to Forms</td><td>p145–147（137–139）</td><td>§18</td></tr>
+    </tbody>
+  </table>
+  <p><b>課程等級與前置</b>：BC460 屬 BC4xx「ABAP Workbench」系列中的<b>表單專題課</b>，前置知識是 BC400（ABAP 基礎、能寫報表與 SELECT）。講義本身沒有標 100/200/300 等級數字，依內容深度相當於 BC400 之後的 200 級專題。同系列的表單課還有 <a href="#ch05-19">5-19 章 BC470 SmartForms</a> 與 <a href="#ch05-20">5-20 章 BC480 Adobe PDF Forms</a>。</p>
+  <p><b>版本差異</b>：Col18 雖然是 2022 年的印刷版，內文幾乎原封不動沿用 R/3 4.x 時代的文字——到處是「As of Release 4.0」「Windows 95/NT 4.0」「Tools → SAPscript」這類說法，Unit 8 還寫 SAP 已不再發展 SAPscript。<b>這正說明了 SAPscript 的定位：只維護、不進化</b>。本章把這些舊版敘述保留作歷史脈絡，但所有操作與程式碼都以 S/4HANA 1809+ 的現況為準。</p>
+  <div class="warn"><b>S/4HANA 現況一句話</b>：SAPscript 在 S/4HANA（含 2023/2025 版 on-premise 與 Private Cloud）<b>仍可用、仍受支援</b>，許多標準輸出（NAST 訊息控制下的 MM 採購單、SD 單據、FI 對帳單／付款憑單）依然是 SAPscript；但 <b>ABAP Cloud／Public Cloud 完全不能用</b>，S/4HANA 新的 Output Management（BRF+）也以 Adobe Forms 為主。新開發請直接用 Adobe Forms（見 5-20 章）；SAPscript 知識的用途是「維護舊表單、判斷何時該遷移」。</div>
+  <div class="note">教材小瑕疵：Course Overview 的 Target Audience 寫成「Data Manager／Data Consultant」，這是原廠範本誤植——BC460 的實際對象是 ABAP 開發人員與負責表單的顧問。另外 Unit 10 的 TOC 標題顯示為「concept_0_1644908302632.dita」，是原廠排版系統漏換標題，內容就是「System and Printer Fonts」。</div>
+
+  <h3 id="ch05-18-02">2. SAPscript 概觀：Form、列印程式與 Composer（Unit 1–2）</h3>
+  <p>每家公司都要大量輸出<b>版面固定、資料變動</b>的文件：發票、交貨單、薪資單、支票、訂單確認、催款單。版面事先定義好，但要把地址、訂單明細這些資料「合併」進去，而且往往是大量批次列印。SAPscript 就是為這個需求設計的<b>整合式文字輸入與表單列印工具</b>，廣泛用在 FI、SD、MM 與線上文件。</p>
+  <p>教材列出的優點：PC 編輯器支援亞洲語言；表單可依國家產生不同地址格式、同時處理多幣別；所有單據統一設計風格；可在 SAP 支援的所有前端執行。</p>
+  <p><b>三個角色、一條流水線</b>（Figure 14–15）：</p>
+  <table>
+    <thead><tr><th>元件</th><th>負責什麼</th><th>維護工具</th></tr></thead>
+    <tbody>
+      <tr><td><b>Form（表單）</b></td><td>定義文件的外觀與結構：頁面、視窗、段落／字元格式、預設文字模組與變數位置。改版面（搬字、換字型、改 Tab）只要改 Form</td><td><span class="tcode">SE71</span>（舊選單 Tools → SAPscript → Form）</td></tr>
+      <tr><td><b>Print Program（列印程式）</b></td><td>① 從資料庫或使用者輸入取資料 ② 選擇表單，決定印哪些文字元素、順序與次數 ③ 決定輸出裝置、份數、是否立即列印</td><td><span class="tcode">SE38</span>／<span class="tcode">SE80</span>（ABAP 報表或 Module Pool）</td></tr>
+      <tr><td><b>Composer（排版器）</b></td><td>接收列印程式透過程式介面送來的每一個指令，依 Form 的版面排版、把符號換成實際值（系統日期、列印程式的資料），處理換行換頁、控制命令與長文字，最後產生 <b>OTF（Output Text Format）</b> 放進 Spool</td><td>系統核心，不能改</td></tr>
+    </tbody>
+  </table>
+  <div class="tip">背口訣：<b>「程式管資料與順序，表單管長相，Composer 管排版與換頁。」</b>SAPscript 的列印順序完全由列印程式呼叫 WRITE_FORM 的順序決定——這是它與 SmartForms 最大的不同（SmartForms 的流程邏輯在表單裡，列印程式只負責取資料）。</div>
+  <p>多數使用者只會碰到 SAPscript 的<b>編輯器</b>（例如在 <span class="tcode">VA02</span> 輸入表頭文字、<span class="tcode">MM02</span> 輸入採購長文字），這些長文字就是 SAPscript 文字，存在 STXH（表頭）／STXL（內容，壓縮存放）中，稍後 §16 用 READ_TEXT 讀取。</p>
+
+  <h3 id="ch05-18-03">3. Form 元素（一）：Header、Pages、Windows、Page Windows（Unit 3）</h3>
+  <p>一張典型表單（教材以 <b>Booking Confirmation</b> 訂位確認函為例，Figure 16）包含：收件地址、寄件人、本文、業務資料（訂位明細），而且文字與資料常常會跨好幾頁。SAPscript 用以下子物件組織表單：</p>
+  <ul>
+    <li><b>Header（表頭資料）</b>：Administrative Data 與 Basic Settings。</li>
+    <li><b>Page Layout</b>：Pages、Windows、Page Windows（圖形 Form Painter 把三者合併成單一「Layout」元件）。</li>
+    <li><b>Paragraph Formats</b>、<b>Character Formats</b>（§4）。</li>
+    <li><b>Documentation</b>：表單各元件的說明長文字。</li>
+  </ul>
+
+  <h4>Header 必填項目</h4>
+  <table>
+    <thead><tr><th>區塊</th><th>內容</th><th>重點</th></tr></thead>
+    <tbody>
+      <tr><td>Administrative Data</td><td>表單名稱、Client、語言、最後修改日、狀態</td><td>狀態：<b>New</b>（剛建立，不能印）→ <b>Active</b>（Form → Activate 後才能印）→ <b>Revised</b>（改過存檔但未啟用；<b>列印時仍用 Active 版</b>）。Utilities → Reset 可撤銷未啟用的修改</td></tr>
+      <tr><td>Basic Settings</td><td>First Page、Default Paragraph、Tab 預設間距、Page Format（DINA4／LETTER）與方向、Lines/inch（LPI）、Characters/inch（CPI）、字型家族與大小</td><td><b>First Page 與 Default Paragraph 是必填</b>。單位用 CH（字元）或 LN（行）時會自動換算成 CPI／LPI</td></tr>
+    </tbody>
+  </table>
+  <p>Header 設定只在「該元件沒有自己的設定時」才生效——例如某視窗沒指定預設段落，就用 Header 的 Default Paragraph。這是 SAPscript 的<b>繼承規則</b>：字元格式 → 段落格式 → 視窗預設段落 → Header。</p>
+
+  <h4>Pages：頁面與頁序</h4>
+  <p>一張表單可以有多個頁面。頁序是<b>靜態</b>決定的：Header 的 <b>First Page</b> ＋ 每頁屬性的 <b>Next Page</b>。沒有 Next Page，列印就在當頁結束。常見設計：<span class="kw">FIRST</span>（有抬頭、地址）→ Next Page = <span class="kw">NEXT</span>，<span class="kw">NEXT</span> 的 Next Page 指向自己。頁面屬性另有 <b>Page Counter</b>（遞增／不變／重設）與 <b>Print Attributes</b>（紙匣、單雙面）。</p>
+
+  <h4>Windows 與 Page Windows：邏輯與實體分開</h4>
+  <p>頁面上的各個輸出區塊叫 <b>Window</b>。同一個視窗可能出現在很多頁，所以 SAPscript 區分：</p>
+  <ul>
+    <li><b>Window（邏輯視窗）</b>：定義在整張表單層級，裡面的文字（Text Elements）對整張表單有效。</li>
+    <li><b>Page Window（頁面視窗）</b>：把邏輯視窗「擺」到某一頁，給定位置（距上、距左）與大小（寬、高），單位可用 CM、MM、IN、PT、TW、CH、LN。同一個視窗在不同頁可以有不同位置大小。</li>
+  </ul>
+  <table>
+    <thead><tr><th>視窗類型</th><th>行為</th><th>注意</th></tr></thead>
+    <tbody>
+      <tr><td><b>MAIN</b></td><td>放長度不定、會跨頁的本文（例如某客戶的所有訂位）。當頁滿了 SAPscript 自動在下一頁的 MAIN 繼續輸出</td><td>各頁的 MAIN 位置、高度可不同，但<b>寬度必須一致</b>。要印標籤或多欄文件，可在同一頁建多個 Main Window（Edit → Windows → Create → Main window，編號 00、01…）</td></tr>
+      <tr><td><b>VAR</b></td><td>每頁都會輸出該視窗的內容，大小位置可逐頁不同</td><td><b>放不下的文字直接遺失</b>，不會續到下一頁</td></tr>
+      <tr><td><b>CONST</b></td><td>各頁尺寸相同</td><td>Release 4.0 以前的類型，行為與 VAR 相同，新表單不必用</td></tr>
+    </tbody>
+  </table>
+  <p>圖形 Form Painter 分成三塊：<b>表單元素</b>（例如頁面）、<b>元素清單</b>（該頁的視窗）、<b>屬性清單</b>（位置、大小、類型、預設段落）。Design／Text 按鈕切換設計模式（拖拉視窗）與文字模式；Options 可放大、設定格線與自動對齊。<span class="src">（依講義步驟整理）</span></p>
+  <div class="warn">在 S/4HANA 的 SAP GUI 裡，圖形 Form Painter 需要前端元件支援，部分新版 GUI／Web GUI 環境打不開時，改用 SE71 → Settings → Form Painter 取消勾選 <b>Graphical Form Painter</b>，退回英數模式（alphanumeric），功能完全相同。</div>
+
+  <h3 id="ch05-18-04">4. Form 元素（二）：段落格式、字元格式、文件與測試列印（Unit 3）</h3>
+  <h4>Paragraph Formats（段落格式）</h4>
+  <p>段落格式以 1–2 碼的鍵值命名（例如 <span class="kw">P1</span>、<span class="kw">HD</span>、<span class="kw">IT</span>），屬性分四組（Standard → Font → Tabs → Outline）：</p>
+  <table>
+    <thead><tr><th>屬性組</th><th>內容</th></tr></thead>
+    <tbody>
+      <tr><td>Standard</td><td>左／右邊界、首行縮排、行距、段前／段後間距、對齊（左、右、置中、左右對齊 Justified）、<b>Page Protection</b>（段落內不自動換頁）、Next Paragraph Same Page</td></tr>
+      <tr><td>Font</td><td>字型家族（Courier、Helvetica、Times）、字級（<b>以 1/10 點為單位</b>，120 = 12pt）、粗體、斜體、底線（間距、粗細、濃度）。家族留空、字級 0、粗斜底線設 Retain → 沿用 Header 的字型</td></tr>
+      <tr><td>Tabs</td><td>可定義任意多個 Tab 位置，對齊方式：<b>LEFT、RIGHT、CENTER、SIGN、DECIMAL</b>。SIGN＝數字靠右並預留負號位置；DECIMAL＝小數點對齊。段落 Tab 之外仍有 Header 的標準 Tab</td></tr>
+      <tr><td>Outline</td><td>自動編號：阿拉伯數字、羅馬數字、字母、固定符號；可建多層（1.、1.1、1.2）</td></tr>
+    </tbody>
+  </table>
+
+  <h4>Character Formats（字元格式）</h4>
+  <p>用在段落內的一段字串，語法 <code>&lt;B&gt;粗體&lt;/&gt;</code>。標準屬性：</p>
+  <ul>
+    <li><b>Protected</b>：整段字串不斷行，一定印在同一行。</li>
+    <li><b>Hidden</b>：不列印。</li>
+    <li><b>Superscript／Subscript</b>：上移／下移半行。</li>
+    <li><b>Barcode</b>：把字串編碼成條碼列印（條碼種類在 SE73 維護，見 §15）。</li>
+  </ul>
+  <p>字型屬性同段落，用 on/off 選鈕明確指定時會覆蓋段落與 Header 設定；選 Retain 或留空則沿用。</p>
+
+  <h4>Documentation 與 Test Print</h4>
+  <ul>
+    <li><b>Form documentation</b> 按鈕列出所有元件（頁、視窗、文字元素），可逐一寫說明長文字。改標準表單的副本時，把「改了什麼、為什麼」寫在這裡，是對下一任維護者最好的交代。</li>
+    <li><b>Utilities → Test print</b>：不執行列印程式直接預覽。但它<b>不等於</b>實際輸出：程式符號顯示為一串 X、具名文字元素的順序與實際不同、控制命令會被印出來。4.6C 起預覽可顯示圖形。</li>
+  </ul>
+  <div class="tip">真正驗證表單一定要用<b>列印程式＋預覽</b>（OPEN_FORM 的 OPTIONS-TDPREVIEW = 'X'，或 NACE 訊息的 Print Preview）。Test print 只適合快速檢查視窗位置與框線。</div>
+
+  <h3 id="ch05-18-05">5. 圖形編輯器、行編輯器與 Text Elements（Unit 4）</h3>
+  <p>SAPscript 有兩種編輯器，用來輸入三類文字：應用程式長文字（例如物料文字）、標準文字（SO10）、表單內的文字。</p>
+  <table>
+    <thead><tr><th>比較</th><th>Graphical Editor（PC Editor）</th><th>Line Editor（行編輯器）</th></tr></thead>
+    <tbody>
+      <tr><td>操作方式</td><td>WYSIWYG，按鈕與清單框選段落／字元格式</td><td>左側 <b>Format 欄（Tag Column）</b>輸入段落鍵值，字元格式從選單套</td></tr>
+      <tr><td>換段／換行</td><td>Enter 新段落；<b>Shift+Enter</b> 段內換行</td><td>Enter 新段落；<b>F6</b> 段內換行（Tag 欄出現 <span class="kw">/</span>）</td></tr>
+      <tr><td>預設段落</td><td>沿用前一段格式</td><td>Tag 欄 <span class="kw">*</span> 表示預設段落</td></tr>
+      <tr><td>語法檢查</td><td>內建</td><td>4.0A 起內建</td></tr>
+      <tr><td>其他</td><td>Edit → Command → Insert Command 插入命令／符號，會先語法檢查</td><td>Insert 模式（F3 結束）、雙擊選取、5 個使用者剪貼簿（Goto → User Clipboard）</td></tr>
+    </tbody>
+  </table>
+  <p>在 <span class="tcode">SO10</span> 或編輯器內用 Goto → Change Editor 切換。S/4HANA 的新版 GUI 預設是 PC Editor（以 MS Word 控制項為基礎）；若公司前端不允許，可請 Basis 執行 <span class="kw">RSCPSETEDITOR</span> 切回行編輯器（詳見 <a href="#ch04-3-02">4-3 章 §2</a>）。</p>
+
+  <h4>Tag 欄與特殊字元速查</h4>
+  <table>
+    <thead><tr><th>寫法</th><th>意義</th></tr></thead>
+    <tbody>
+      <tr><td><span class="kw">*</span></td><td>預設段落格式</td></tr>
+      <tr><td><span class="kw">/</span></td><td>換行（段內）</td></tr>
+      <tr><td><span class="kw">=</span></td><td>延續行：保護長行不被重新格式化，並去掉上一行末端的隱含空白</td></tr>
+      <tr><td><span class="kw">/*</span></td><td>註解行，排版時忽略</td></tr>
+      <tr><td><span class="kw">/:</span></td><td><b>控制命令行</b>，只由 Composer 解讀，不受編輯器排版影響；<b>一行寫完，不可跨行</b></td></tr>
+      <tr><td><span class="kw">/E</span></td><td><b>文字元素（Text Element）</b>開頭，後接元素名稱</td></tr>
+      <tr><td><span class="kw">,,</span></td><td>跳到下一個 Tab 位置</td></tr>
+      <tr><td><code>&lt;NN&gt;…&lt;/&gt;</code></td><td>字元格式（NN 為 1–2 碼鍵值）</td></tr>
+      <tr><td><code>&lt;(&gt;…&lt;)&gt;</code></td><td>取消特殊字元辨識（例如要印出 &amp; 或 &lt; 本身）</td></tr>
+      <tr><td><code>&amp;符號&amp;</code></td><td>符號（變數），排版時才替換</td></tr>
+    </tbody>
+  </table>
+
+  <h4>Text Elements：列印程式與表單的「接頭」</h4>
+  <p>視窗內的文字用 <b>文字元素</b>切塊。教材的例子把 MAIN 視窗切成三塊：稱謂與開場白、表格表頭、單筆明細。<b>輸出哪幾塊、順序、次數，全由列印程式決定</b>；表頭甚至可以在不同頁、不同區域重複輸出（§10）。</p>
+  <ul>
+    <li><b>Named text element（具名）</b>：Tag 欄 <span class="kw">/E</span> 開頭，行編輯器中名稱以紅色顯示，PC 編輯器中以粗體灰底顯示；到下一個 <span class="kw">/E</span> 為止。只有被 WRITE_FORM 呼叫才會印。</li>
+    <li><b>Default text element（預設）</b>：視窗最前面、沒有 <span class="kw">/E</span> 的文字（例如非 MAIN 視窗裡的地址、頁碼）。<b>自動輸出</b>，列印程式無法控制。</li>
+  </ul>
+  <p>下面是本章範例表單 <span class="kw">ZBC460_BOOKING</span> 的 MAIN 視窗文字（以行編輯器呈現，左欄是 Tag，接著是內容）：</p>
+  <pre><code class="text">/E   INTRO
+P1   &amp;GS_CUSTOMER-FORM&amp; &amp;GS_CUSTOMER-NAME&amp;,
+P1   感謝您的訂位，以下為您的航班明細：
+/E   ITEM_HEADER
+HD   航空,,航班,,日期,,艙等,,金額
+/:   BOX FRAME 10 TW
+/E   ITEM_LINE
+IT   &amp;GS_BOOKING-CARRID&amp;,,&amp;GS_BOOKING-CONNID(Z)&amp;,,&amp;GS_BOOKING-FLDATE&amp;,,
+=    &amp;GS_BOOKING-CLASS&amp;,,&amp;GS_BOOKING-LOCCURAM&amp; &amp;GS_BOOKING-LOCCURKEY&amp;
+/E   TOTAL
+/:   PROTECT
+TO   ,,,,,,,,合計：&amp;GV_TOTAL&amp; &amp;GV_CURRENCY&amp;
+TO   &amp;MFG&amp;
+/:   ENDPROTECT</code></pre>
+  <p>在 Form Painter 的 Page Layout（圖形）或 Change Windows（英數）畫面選視窗，按 Edit → Text Elements 即可進入該視窗的編輯器。</p>
+
+  <h3 id="ch05-18-06">6. 符號（Symbols）與格式選項（Unit 5）</h3>
+  <p>符號是排版當下才填值的佔位符，寫成 <code>&amp;名稱&amp;</code>。規則：<b>不分大小寫、名稱不能有空白、整個符號必須在同一行內，不可跨行</b>。可用 Include → Symbols 選取。四種符號的差別在「值從哪裡來」：</p>
+  <table>
+    <thead><tr><th>類型</th><th>值的來源</th><th>範例</th><th>維護位置</th></tr></thead>
+    <tbody>
+      <tr><td><b>System symbols</b></td><td>SAP 系統自動提供，任何文件可用</td><td><code>&amp;DATE&amp;</code>、<code>&amp;TIME&amp;</code>、<code>&amp;PAGE&amp;</code>、<code>&amp;NEXTPAGE&amp;</code>、<code>&amp;SAPSCRIPT-FORMPAGES&amp;</code>（本份文件總頁數）、<code>&amp;SAPSCRIPT-JOBPAGES&amp;</code>、<code>&amp;ULINE&amp;</code>、<code>&amp;SPACE&amp;</code>、<code>&amp;DEVICE&amp;</code></td><td>表 <b>TTXSY</b>（4.5A 起可查）</td></tr>
+      <tr><td><b>Standard symbols</b></td><td>應用面定義、<b>依語言</b>維護的固定詞句</td><td><code>&amp;SGDH&amp;</code>（開頭稱謂 Dear Sir/Madam）、<code>&amp;MFG&amp;</code>（結尾敬語 Yours faithfully）</td><td>表 <b>TTDTG</b>（SE71 → Settings／延伸表格維護）</td></tr>
+      <tr><td><b>Program symbols</b></td><td>列印程式的資料物件</td><td><code>&amp;GS_BOOKING-FLDATE&amp;</code>、<code>&amp;VBDKR-VBELN&amp;</code></td><td>列印程式（Include → Symbols → Program Symbols 可列出；Goto → Print Program → Symbol Definition 跳到定義處）</td></tr>
+      <tr><td><b>Text symbols</b></td><td>只在該文字模組內有效，以 <span class="kw">DEFINE</span> 指定</td><td><code>/: DEFINE &amp;COMPANY&amp; = '台灣分公司'</code></td><td>文字本身（DEFINE 的值隨文字存檔；從 Include → Symbols → Text symbols 給的值只是暫時的）</td></tr>
+    </tbody>
+  </table>
+  <div class="warn"><b>教材過時處修正</b>：講義說程式符號要「在 ABAP Dictionary 定義、並在列印程式用 <span class="kw">TABLES</span> 宣告」。這是 R/3 時代的寫法。實際上 Composer 讀的是列印程式的<b>全域資料物件</b>，用 <span class="kw">DATA</span> 宣告的全域結構（型別參照 DDIC）一樣可用，而且欄位會依 DDIC 的屬性（轉換常式、小數位、幣別參考）格式化。依本圖書館規範新程式<b>不再使用 TABLES</b>。真正要記住的坑是：<b>符號只能讀「全域」資料——方法裡的區域變數、類別屬性，Composer 都看不到</b>，所以即使列印程式用類別寫，給表單的工作區仍必須是全域 DATA（§9 範例）。</div>
+
+  <h4>格式選項</h4>
+  <p>符號預設「完整輸出、去掉尾端空白」。可加以下選項（可組合）：</p>
+  <table>
+    <thead><tr><th>寫法</th><th>效果</th></tr></thead>
+    <tbody>
+      <tr><td><code>&amp;SYM+4&amp;</code></td><td>Offset：從格式化後的第 5 個字元開始</td></tr>
+      <tr><td><code>&amp;SYM(10)&amp;</code></td><td>Length：輸出 10 個字元</td></tr>
+      <tr><td><code>&amp;SYM(I)&amp;</code></td><td>欄位是初始值就什麼都不印</td></tr>
+      <tr><td><code>&amp;SYM(Z)&amp;</code></td><td>去掉前導零（等同 ALPHA OUTPUT 的效果，但只看數字）</td></tr>
+      <tr><td><code>&amp;SYM(C)&amp;</code></td><td>壓縮連續空白為一個，並去掉前導空白</td></tr>
+      <tr><td><code>&amp;SYM(R)&amp;</code></td><td>靠右對齊（通常搭配長度，例如 <code>(R12)</code>）</td></tr>
+      <tr><td><code>&amp;SYM(S)&amp;</code></td><td>不印正負號</td></tr>
+      <tr><td><code>&amp;SYM(T)&amp;</code></td><td>不印千分位符號（補充，講義未列）</td></tr>
+      <tr><td><code>&amp;SYM(.2)&amp;</code>、<code>&amp;SYM(12.2)&amp;</code></td><td>小數位數／總長度與小數位數（講義寫作 (x,y)，實際語法用小數點分隔）</td></tr>
+      <tr><td><code>&amp;'前綴'SYM'後綴'&amp;</code></td><td>符號有值時才一併印出前後文字；符號為空則整段不印——做「有值才顯示標籤」非常好用</td></tr>
+    </tbody>
+  </table>
+  <pre><code class="text">/*   格式選項實例（行編輯器）
+P1   發票號碼：&amp;VBDKR-VBELN(Z)&amp;
+P1   &amp;'客戶 PO：'VBDKR-BSTNK_VF&amp;          ← 沒有客戶 PO 就整行字都不印
+P1   單價：&amp;KOMVD-KBETR(12.2)&amp;  數量：&amp;VBDPR-FKIMG(I.0)&amp;
+P1   地址摘要：&amp;GS_CUSTOMER-STREET(C)&amp;
+P1   第 &amp;PAGE&amp; 頁／共 &amp;SAPSCRIPT-FORMPAGES(C)&amp; 頁
+/:   IF &amp;NEXTPAGE&amp; EQ 0
+P1   ─── 以下空白 ───
+/:   ENDIF</code></pre>
+  <div class="tip">4.0C 起可在表單文字中檢查未知符號（Text → Check）。上線前一定要跑一次：拼錯的程式符號在實際列印時會<b>原樣印出 &amp;GS_BOKING-FLDATE&amp;</b>，客戶一眼就看到。</div>
+
+  <h3 id="ch05-18-07">7. 控制命令（一）：文字模組、DEFINE、地址與日期格式（Unit 5）</h3>
+  <p>控制命令在 Tag 欄以 <span class="kw">/:</span> 開頭，由 Composer 解讀，用來：插入文字、給文字符號賦值、強制或禁止換頁、重設大綱編號、依條件輸出。<b>一個命令不可超過一行</b>。</p>
+
+  <h4>Text Modules 與 SO10 標準文字</h4>
+  <p>表單常有固定文字塊：公司頁尾（銀行帳號、董事名單）、物料清單說明、法律條款。這些應<b>獨立存放</b>，可在多張表單共用、改一處全部生效。文字的唯一鍵是 <b>Client ＋ NAME ＋ LANGUAGE ＋ OBJECT ＋ ID</b>：</p>
+  <ul>
+    <li><b>Text Object</b>：文字的業務情境，例如 <span class="kw">TEXT</span>（標準文字）、<span class="kw">MATERIAL</span>（物料文字）、<span class="kw">VBBK</span>（銷售單表頭）、<span class="kw">EKKO</span>（採購單表頭）。</li>
+    <li><b>Text ID</b>：物件下的細分類，例如標準文字用 <span class="kw">ST</span>、物料的銷售文字 <span class="kw">0001</span>。</li>
+    <li>文字物件與 ID 在 <span class="tcode">SE75</span> 維護（表 TTXOB／TTXID），並設定儲存模式（§16）。</li>
+    <li>OBJECT = TEXT 的標準文字用 <span class="tcode">SO10</span>（舊選單 Tools → SAPscript → Standard text）維護。</li>
+  </ul>
+
+  <pre><code class="text">/*  ① 插入標準文字：頁尾（公司資訊），用表單的段落 FT 當預設格式
+/:  INCLUDE ZBC460_FOOTER OBJECT TEXT ID ST LANGUAGE &amp;NAST-SPRAS&amp; PARAGRAPH FT
+/*  ② 插入銷售單表頭文字（單據別長文字），名稱用程式符號組出
+/:  INCLUDE &amp;VBDKR-VBELN&amp; OBJECT VBBK ID 0001 LANGUAGE &amp;VBDKR-SPRAS_VF&amp;
+/*  ③ 文字符號：DEFINE 要在第一次使用前
+/:  DEFINE &amp;HOTLINE&amp; = '0800-000-123'
+P1  客服專線：&amp;HOTLINE&amp;
+/*  ④ 地址：依收件國家郵政規則排版，一定要給 FROMCOUNTRY
+/:  ADDRESS PARAGRAPH AS
+/:    TITLE    &amp;GS_CUSTOMER-FORM&amp;
+/:    NAME     &amp;GS_CUSTOMER-NAME&amp;
+/:    STREET   &amp;GS_CUSTOMER-STREET&amp;
+/:    POSTCODE &amp;GS_CUSTOMER-POSTCODE&amp;
+/:    CITY     &amp;GS_CUSTOMER-CITY&amp;
+/:    COUNTRY  &amp;GS_CUSTOMER-COUNTRY&amp;
+/:    FROMCOUNTRY 'TW'
+/:  ENDADDRESS
+/*  ⑤ 日期、時間與國別格式
+/:  SET DATE MASK = 'YYYY/MM/DD'
+/:  SET TIME MASK = 'HH:MM'
+/:  SET COUNTRY 'US'
+P1  列印時間：&amp;DATE&amp; &amp;TIME&amp;</code></pre>
+  <ul>
+    <li><b>INCLUDE</b>：可在任何視窗插入目前 Client 的文字模組，也可在文字模組中再 INCLUDE。只給名稱時，OBJECT／ID 預設為 TEXT／ST、語言為表單語言。<span class="kw">PARAGRAPH</span> 指定插入文字的預設段落。</li>
+    <li><b>DEFINE</b>：值「錨定」在文字裡，下次打開仍在；同一符號可多次 DEFINE 改值。</li>
+    <li><b>ADDRESS … ENDADDRESS</b>：依 COUNTRY 參數的郵政規則排版，參考欄位在結構 <b>ADRS</b>；Composer 內部呼叫函數 <b>ADDRESS_INTO_PRINTFORM</b>。教材強調：<b>一定要給 FROMCOUNTRY</b>，否則寄件國被當成收件國，例如 COUNTRY = 德國且沒給 FROMCOUNTRY 時，郵遞區號會印成「D-80801」這種國際格式。實務上若有位址號碼（ADRNR），可改用 <span class="kw">ADDRESSNUMBER</span> 參數直接從中央地址管理（ADRC）讀。</li>
+    <li><b>SET DATE MASK</b>：<span class="kw">DD</span>、<span class="kw">MM</span>、<span class="kw">YYYY</span>、<span class="kw">DDD</span>（縮寫星期 Mon）、<span class="kw">DDDD</span>（完整星期 Monday）、<span class="kw">MMM／MMMM</span>（月份名稱）。教材例：<code>'DDDD, the DD MMMM YYYY'</code> → Monday, the 26 November 2007。</li>
+    <li><b>SET COUNTRY</b>：改用某國的日期／小數格式（表 T005X），不依使用者主檔——對外單據要依「客戶國別」而不是「列印者」的格式時必用。</li>
+  </ul>
+
+  <h3 id="ch05-18-08">8. 控制命令（二）：換頁、條件、框線、PERFORM 與除錯（Unit 5）</h3>
+  <h4>換頁與頁面保護</h4>
+  <ul>
+    <li>MAIN 滿了 SAPscript 會<b>自動換頁</b>。要手動換頁用 <code>/: NEW-PAGE</code>，可指定下一頁 <code>/: NEW-PAGE NEXT</code>；不指定就用 Form 定義的 Next Page。</li>
+    <li><code>/: PROTECT … /: ENDPROTECT</code>：夾住的行一定印在同一頁。當頁放得下就照常印；放不下則 PROTECT <b>等同 NEW-PAGE</b>，整塊移到下一頁。合計列、簽核欄一定要包。</li>
+  </ul>
+
+  <h4>條件輸出 IF／CASE</h4>
+  <p>比較運算子：<span class="kw">= EQ</span>、<span class="kw">&lt; LT</span>、<span class="kw">&gt; GT</span>、<span class="kw">&lt;= LE</span>、<span class="kw">&gt;= GE</span>、<span class="kw">&lt;&gt; NE</span>，邏輯 <span class="kw">NOT AND OR</span>；可用 ELSE、ELSEIF。<span class="kw">CASE</span> 只能對「一個符號」做多值等值判斷。</p>
+  <div class="warn"><b>SAPscript 的比較是「文字比較」，不是數值比較。</b>教材的例子：<code>DEFINE &amp;VAR1&amp; = '2'</code>、<code>DEFINE &amp;VAR2&amp; = '10'</code>，直接寫 <code>IF &amp;VAR1&amp; &gt; &amp;VAR2&amp;</code> 會成立（因為字元 '2' &gt; '1'）。講義的解法是加長度 <code>&amp;VAR1(2)&amp;</code>；但要注意長度只會在右邊補空白，'2 ' 與 '10' 比較時靠的是對齊方式，數字要可靠比較，應同時用<b>固定長度＋右對齊</b>（例如 <code>&amp;VAR1(R5)&amp;</code>），或更好的做法——<b>在列印程式算好一個旗標欄位再給表單判斷</b>。這和 Casper 的第二條經驗同源：<b>字典序不是業務語意</b>，區間比較（BT）在號碼有前導零、長度不一時一樣會出錯，能列舉就列舉。</div>
+  <pre><code class="text">/*  條件、CASE、手動換頁、框線
+/:  IF &amp;VBDKR-FKART&amp; = 'G2' OR &amp;VBDKR-FKART&amp; = 'RE'
+HD  貸項通知單 Credit Memo
+/:  ELSE
+HD  發票 Invoice
+/:  ENDIF
+/:  CASE &amp;GS_BOOKING-CLASS&amp;
+/:  WHEN 'F'
+P1  頭等艙
+/:  WHEN 'C'
+P1  商務艙
+/:  WHEN OTHERS
+P1  經濟艙
+/:  ENDCASE
+/:  IF &amp;GV_NEW_PAGE_FLAG&amp; = 'X'
+/:    NEW-PAGE NEXT
+/:  ENDIF
+/*  以目前視窗左上角為原點，畫一個 18cm x 1cm、1pt 粗、10% 灰底的框
+/:  POSITION WINDOW
+/:  SIZE WIDTH '18' CM HEIGHT '1' CM
+/:  BOX FRAME 20 TW INTENSITY 10
+/*  畫一條水平線（高度 0 的框）
+/:  BOX XPOS '0' CM YPOS '1.2' CM WIDTH '18' CM HEIGHT 0 TW FRAME 10 TW</code></pre>
+  <h4>BOX／POSITION／SIZE</h4>
+  <ul>
+    <li><code>BOX [XPOS] [YPOS] [WIDTH] [HEIGHT] [FRAME] [INTENSITY]</code>：以 POSITION 設定的原點為基準，在 (XPOS, YPOS) 畫寬 WIDTH、高 HEIGHT 的框；FRAME 是線粗，INTENSITY 是底色灰階百分比。不給位置大小就是整個視窗。</li>
+    <li><code>POSITION [XORIGIN] [YORIGIN] [WINDOW] [PAGE]</code>：設定 BOX 的原點；WINDOW／PAGE 表示以目前視窗／頁面的左上角為原點。</li>
+    <li><code>SIZE [WIDTH] [HEIGHT] [WINDOW] [PAGE]</code>：設定 BOX 預設的寬高。</li>
+    <li>單位 TW（twip，1/20 點）、PT、CM、MM、IN、CH、LN；數值要加單引號，例如 <code>'18' CM</code>。</li>
+  </ul>
+
+  <h4>PERFORM：不改列印程式也能多抓資料</h4>
+  <p>標準列印程式沒讀你要的欄位（例如客戶 E-mail、倉管員名稱）時，<b>不要先改列印程式</b>——SAPscript 可以用 PERFORM 命令呼叫客製程式裡的副程式，讀完資料再傳回表單。表單端寫法如下（以行編輯器呈現）：</p>
+  <table>
+    <thead><tr><th>Tag</th><th>內容</th></tr></thead>
+    <tbody>
+      <tr><td>/:</td><td><code>PERFORM GET_CUSTOMER_EMAIL IN PROGRAM ZBC460_SCRIPT_EXITS</code></td></tr>
+      <tr><td>/:</td><td><code>USING &amp;GS_CUSTOMER-ID&amp;</code></td></tr>
+      <tr><td>/:</td><td><code>CHANGING &amp;LV_EMAIL&amp;</code></td></tr>
+      <tr><td>/:</td><td><code>ENDPERFORM</code></td></tr>
+      <tr><td>P1</td><td><code>&amp;'E-mail：'LV_EMAIL&amp;</code></td></tr>
+    </tbody>
+  </table>
+  <p>介面規則：被呼叫的副程式必須用結構 <b>ITCSY</b>（兩個欄位 <span class="kw">NAME</span>、<span class="kw">VALUE</span>）的內表接參數；USING 列出的符號（名稱與<b>已格式化</b>的值）進 IN_TAB，CHANGING 列出的符號以<b>文字符號</b>的身分從 OUT_TAB 收回。</p>
+  <pre><code class="abap">REPORT zbc460_script_exits.
+*&amp;---------------------------------------------------------------------*
+*&amp; 給 SAPscript 表單「/: PERFORM」命令呼叫的副程式集（見上表）。
+*&amp; 介面由 SAPscript 規定（TABLES ... STRUCTURE itcsy），所以這裡是
+*&amp; 本圖書館「新程式不用 FORM」規範的合法例外；內容照樣寫現代 ABAP。
+*&amp;---------------------------------------------------------------------*
+FORM get_customer_email TABLES in_tab  STRUCTURE itcsy
+                               out_tab STRUCTURE itcsy.
+
+  " IN_TAB-NAME 是符號名（大寫、不含 &amp;），VALUE 是『已格式化』的字串（CHAR255）
+  READ TABLE in_tab INTO DATA(ls_in) WITH KEY name = 'GS_CUSTOMER-ID'.
+  IF sy-subrc &lt;&gt; 0.
+    RETURN.
+  ENDIF.
+
+  " 格式化後的值可能有千分位、去零、左右空白 → 先還原成內部格式
+  DATA(lv_custid) = CONV s_customer( condense( ls_in-value ) ).
+
+  SELECT SINGLE email
+    FROM scustom
+    WHERE id = @lv_custid
+    INTO @DATA(lv_email).
+
+  READ TABLE out_tab ASSIGNING FIELD-SYMBOL(&lt;ls_out&gt;) WITH KEY name = 'LV_EMAIL'.
+  IF sy-subrc = 0.
+    &lt;ls_out&gt;-value = COND #( WHEN sy-dbcnt = 1 THEN lv_email ELSE `` ).
+  ENDIF.
+ENDFORM.</code></pre>
+  <div class="warn"><b>PERFORM 的三個坑</b>：① USING 傳進來的是<b>格式化後的字串</b>，金額會帶千分位（依使用者設定可能是 1.234,50），數量會有小數點，直接 CONV 成數值型別會 DUMP；要嘛傳沒有格式的欄位，要嘛自己去掉分隔符。② OUT_TAB 名稱一律大寫、不含 &amp;。③ 每印一次文字元素就執行一次，放在 ITEM_LINE 裡就是「每一行明細打一次資料庫」——大量列印時請改在列印程式一次讀好，或在副程式裡做靜態快取。</div>
+
+  <h4>SAPscript Debugger</h4>
+  <p><span class="tcode">SE71</span> 初始畫面 Utilities → <b>Activate Debugger</b>（或執行程式 <b>RSTXDBUG</b>）後，<b>之後每次列印表單都會進入 SAPscript 除錯器</b>，可逐一看 WRITE_FORM 呼叫、每個符號的值、控制命令。要關閉必須<b>明確結束 SAPscript 除錯</b>（再次執行 RSTXDBUG 或從除錯器選單離開），否則會一直被攔。ABAP 列印程式本身仍用一般的 ABAP 除錯器（見 <a href="#ch05-4">5-4 章 BC403 除錯</a>）。</p>
+
+  <h4>控制命令總表（講義＋官方文件補充）</h4>
+  <table>
+    <thead><tr><th>命令</th><th>用途</th><th>講義有無</th></tr></thead>
+    <tbody>
+      <tr><td>INCLUDE</td><td>插入文字模組</td><td>有</td></tr>
+      <tr><td>DEFINE</td><td>文字符號賦值</td><td>有</td></tr>
+      <tr><td>ADDRESS … ENDADDRESS</td><td>依國別格式化地址</td><td>有</td></tr>
+      <tr><td>SET DATE MASK／SET TIME MASK／SET COUNTRY</td><td>日期、時間、國別格式</td><td>有</td></tr>
+      <tr><td>NEW-PAGE</td><td>手動換頁</td><td>有</td></tr>
+      <tr><td>PROTECT … ENDPROTECT</td><td>整塊不跨頁</td><td>有</td></tr>
+      <tr><td>IF／ELSEIF／ELSE／ENDIF、CASE／WHEN／ENDCASE</td><td>條件輸出</td><td>有</td></tr>
+      <tr><td>BOX／POSITION／SIZE</td><td>框線、底色</td><td>有</td></tr>
+      <tr><td>PERFORM … ENDPERFORM</td><td>呼叫外部副程式</td><td>有</td></tr>
+      <tr><td>STYLE</td><td>切換樣式（§12）</td><td>有</td></tr>
+      <tr><td>BITMAP</td><td>動態插入圖形（§18）</td><td>有（Appendix）</td></tr>
+      <tr><td>TOP … ENDTOP／BOTTOM … ENDBOTTOM</td><td>在表單內直接定義 MAIN 的頁首／頁尾區</td><td>補充</td></tr>
+      <tr><td>NEW-WINDOW</td><td>跳到下一個 Main Window（標籤、多欄）</td><td>補充</td></tr>
+      <tr><td>RESET</td><td>重設大綱編號</td><td>講義僅提「Resetting outline paragraphs」</td></tr>
+      <tr><td>SUMMING</td><td>對程式符號做累計（例如頁小計）</td><td>補充</td></tr>
+      <tr><td>SET SIGN LEFT／RIGHT</td><td>負號位置</td><td>補充</td></tr>
+      <tr><td>HEX … ENDHEX、PRINT-CONTROL</td><td>直接送印表機控制碼</td><td>補充（通常不建議用）</td></tr>
+    </tbody>
+  </table>
+
+  <h3 id="ch05-18-09">9. 列印程式（一）：函數模組與完整範例（Unit 6）</h3>
+  <p>列印程式（ABAP 報表或 Module Pool）負責：從資料庫取資料、定義處理邏輯（文字元素的順序與重複）、選定表單、選定輸出裝置（印表機、螢幕、傳真、E-mail）與列印屬性（立即輸出、份數、頁範圍）。Composer 則負責換行換頁、控制命令與符號格式化、長文字插入、產生 Spool 的頁面描述（OTF）。</p>
+  <table>
+    <thead><tr><th>函數模組</th><th>用途</th><th>重點參數</th></tr></thead>
+    <tbody>
+      <tr><td><b>OPEN_FORM</b></td><td>開始表單列印，<b>必須最先呼叫</b></td><td>FORM、LANGUAGE、DEVICE（PRINTER／TELEFAX／SCREEN）、DIALOG、OPTIONS（結構 <b>ITCPO</b>）</td></tr>
+      <tr><td>START_FORM</td><td>在同一個 Spool 裡開始一份表單（可換表單）</td><td>FORM、LANGUAGE、STARTPAGE</td></tr>
+      <tr><td><b>WRITE_FORM</b></td><td>輸出文字元素</td><td>ELEMENT、WINDOW（預設 MAIN）、TYPE（TOP／BODY／BOTTOM，預設 BODY）、FUNCTION（SET／APPEND／DELETE，預設 SET）</td></tr>
+      <tr><td>WRITE_FORM_LINES</td><td>直接把一個 TLINE 內表當文字輸出</td><td>HEADER、LINES、WINDOW、TYPE、FUNCTION</td></tr>
+      <tr><td>CONTROL_FORM</td><td>從程式送控制命令</td><td>COMMAND（不含 <span class="kw">/:</span>）</td></tr>
+      <tr><td>END_FORM</td><td>結束一份表單（<b>不結束列印</b>）</td><td>RESULT</td></tr>
+      <tr><td><b>CLOSE_FORM</b></td><td>結束列印，回傳結果</td><td>RESULT（結構 <b>ITCPP</b>）、OTFDATA（ITCOO）</td></tr>
+    </tbody>
+  </table>
+  <p><b>DEVICE</b>：<span class="kw">PRINTER</span> 經 Spool 列印；<span class="kw">TELEFAX</span> 經 Spool 或 SAPconnect 傳真；<span class="kw">SCREEN</span> 只在 GUI 顯示、<b>不能列印</b>。<b>DIALOG</b> = 空白時不跳出印表機參數對話框（背景作業、NACE 輸出必須如此）。</p>
+  <p><b>ITCPO 常用欄位</b>：TDDEST（輸出裝置）、TDIMMED（立即列印）、TDNEWID（新 Spool）、TDDELETE（列印後刪除）、TDCOPIES（份數）、TDPREVIEW（預覽）、TDGETOTF（回傳 OTF 不列印）、TDDATASET／TDSUFFIX1／TDSUFFIX2（Spool 名稱）、TDCOVER（封面頁）、TDRECEIVER（收件人）、TDARMOD（歸檔模式）。<b>ITCPP</b> 則回傳 TDSPOOLID（Spool 編號）、TDPAGES（頁數）、實際使用的裝置等。</p>
+
+  <p>下面是本章範例表單 <span class="kw">ZBC460_BOOKING</span>（視窗 HEADER、ADDRESS、MAIN、FOOTER）的完整列印程式。它照 BC460 的航空訂位情境，把客戶的訂位印成一份訂位確認函：</p>
+  <pre><code class="abap">REPORT zbc460_booking_print.
+*&amp;---------------------------------------------------------------------*
+*&amp; SAPscript 程式符號只能讀【全域】資料物件：給表單用的工作區一定要
+*&amp; 宣告在這裡（不能放在方法的區域變數或類別屬性）。不再使用 TABLES。
+*&amp;---------------------------------------------------------------------*
+DATA: gs_customer TYPE scustom,             " 表單：&amp;GS_CUSTOMER-NAME&amp;
+      gs_booking  TYPE sbook,               " 表單：&amp;GS_BOOKING-FLDATE&amp;
+      gv_total    TYPE sbook-loccuram,      " 表單：&amp;GV_TOTAL&amp;
+      gv_currency TYPE sbook-loccurkey.     " 表單：&amp;GV_CURRENCY&amp;
+
+PARAMETERS: p_cust TYPE scustom-id OBLIGATORY,
+            p_form TYPE tdform DEFAULT 'ZBC460_BOOKING',
+            p_dest TYPE rspopname,
+            p_prev AS CHECKBOX DEFAULT abap_true.
+SELECT-OPTIONS s_fldate FOR gs_booking-fldate.
+
+CLASS lcl_print DEFINITION FINAL.
+  PUBLIC SECTION.
+    METHODS run.
+  PRIVATE SECTION.
+    DATA mt_booking TYPE STANDARD TABLE OF sbook WITH EMPTY KEY.
+    METHODS get_data   RETURNING VALUE(rv_ok) TYPE abap_bool.
+    METHODS open_form  RETURNING VALUE(rv_ok) TYPE abap_bool.
+    METHODS print_body.
+    METHODS close_form.
+ENDCLASS.
+
+CLASS lcl_print IMPLEMENTATION.
+  METHOD run.
+    IF get_data( ) = abap_false.
+      MESSAGE |客戶 { p_cust ALPHA = OUT } 在指定期間沒有有效訂位| TYPE 'S' DISPLAY LIKE 'W'.
+      RETURN.
+    ENDIF.
+    IF open_form( ) = abap_true.
+      print_body( ).
+      close_form( ).
+    ENDIF.
+  ENDMETHOD.
+
+  METHOD get_data.
+    SELECT SINGLE id, name, form, street, postcode, city, country, langu, email
+      FROM scustom
+      WHERE id = @p_cust
+      INTO CORRESPONDING FIELDS OF @gs_customer.
+    IF sy-subrc &lt;&gt; 0.
+      RETURN.
+    ENDIF.
+
+    " HANA 沒有預設排序：明細順序一定要 ORDER BY，否則每次印出來順序不同
+    SELECT carrid, connid, fldate, bookid, class, loccuram, loccurkey, passname
+      FROM sbook
+      WHERE customid  = @p_cust
+        AND fldate    IN @s_fldate
+        AND cancelled = @abap_false
+      ORDER BY fldate, carrid, connid, bookid
+      INTO CORRESPONDING FIELDS OF TABLE @mt_booking.
+
+    rv_ok = xsdbool( mt_booking IS NOT INITIAL ).
+  ENDMETHOD.
+
+  METHOD open_form.
+    DATA(ls_options) = VALUE itcpo( tddest    = p_dest
+                                    tdpreview = p_prev
+                                    tdimmed   = abap_true
+                                    tdnewid   = abap_true
+                                    tdcopies  = 1 ).
+    CALL FUNCTION 'OPEN_FORM'
+      EXPORTING
+        device   = 'PRINTER'
+        dialog   = xsdbool( p_dest IS INITIAL )   " 沒指定印表機才跳對話框
+        form     = p_form
+        language = COND syst_langu( WHEN gs_customer-langu IS NOT INITIAL
+                                    THEN gs_customer-langu ELSE sy-langu )
+        options  = ls_options
+      EXCEPTIONS
+        canceled = 1
+        device   = 2
+        form     = 3
+        options  = 4
+        unclosed = 5
+        OTHERS   = 6.
+    CASE sy-subrc.
+      WHEN 0.
+        rv_ok = abap_true.
+      WHEN 1.
+        MESSAGE '使用者取消列印' TYPE 'S'.
+      WHEN 3.
+        MESSAGE |表單 { p_form } 不存在或未啟用（SE71 Form → Activate）| TYPE 'S' DISPLAY LIKE 'E'.
+      WHEN OTHERS.
+        MESSAGE |OPEN_FORM 失敗，sy-subrc = { sy-subrc }| TYPE 'S' DISPLAY LIKE 'E'.
+    ENDCASE.
+  ENDMETHOD.
+
+  METHOD print_body.
+    " ① 非 MAIN 視窗：ADDRESS 視窗內容整個換成 ADDRESS 元素
+    CALL FUNCTION 'WRITE_FORM'
+      EXPORTING element  = 'ADDRESS'
+                window   = 'ADDRESS'
+                function = 'SET'
+      EXCEPTIONS OTHERS  = 1.
+
+    " ② MAIN：開場白（WINDOW=MAIN、TYPE=BODY 是預設值）
+    CALL FUNCTION 'WRITE_FORM'
+      EXPORTING element = 'INTRO'
+      EXCEPTIONS OTHERS = 1.
+
+    " ③ 第一頁表頭印在 BODY，同時設進 TOP → 換頁後自動重印表頭
+    CALL FUNCTION 'WRITE_FORM'
+      EXPORTING element = 'ITEM_HEADER'
+      EXCEPTIONS OTHERS = 1.
+    CALL FUNCTION 'WRITE_FORM'
+      EXPORTING element  = 'ITEM_HEADER'
+                type     = 'TOP'
+                function = 'SET'
+      EXCEPTIONS OTHERS  = 1.
+
+    " ④ 明細：每圈把資料放進全域工作區，再叫 Composer 印 ITEM_LINE
+    CLEAR gv_total.
+    LOOP AT mt_booking INTO gs_booking.
+      gv_total = gv_total + gs_booking-loccuram.   " 7.54+ 可寫 gv_total += ...
+      CALL FUNCTION 'WRITE_FORM'
+        EXPORTING element = 'ITEM_LINE'
+        EXCEPTIONS OTHERS = 1.
+    ENDLOOP.
+
+    " ⑤ 明細結束 → 刪除 TOP 表頭（從下一頁起生效）
+    CALL FUNCTION 'WRITE_FORM'
+      EXPORTING element  = 'ITEM_HEADER'
+                type     = 'TOP'
+                function = 'DELETE'
+      EXCEPTIONS OTHERS  = 1.
+
+    " ⑥ 合計：不同航空公司的當地幣別可能不同，混幣別就不能加總
+    gv_currency = VALUE #( mt_booking[ 1 ]-loccurkey OPTIONAL ).
+    DATA(lv_mixed) = xsdbool( REDUCE i( INIT n = 0
+                                        FOR b IN mt_booking
+                                        WHERE ( loccurkey &lt;&gt; gv_currency )
+                                        NEXT n = n + 1 ) &gt; 0 ).
+    IF lv_mixed = abap_false.
+      CALL FUNCTION 'WRITE_FORM'
+        EXPORTING element = 'TOTAL'
+        EXCEPTIONS OTHERS = 1.
+    ENDIF.
+  ENDMETHOD.
+
+  METHOD close_form.
+    DATA ls_result TYPE itcpp.
+    CALL FUNCTION 'CLOSE_FORM'
+      IMPORTING
+        result                   = ls_result
+      EXCEPTIONS
+        unopened                 = 1
+        bad_pageformat_for_print = 2
+        OTHERS                   = 3.
+    IF sy-subrc = 0 AND ls_result-tdspoolid IS NOT INITIAL.
+      MESSAGE |已產生 Spool { ls_result-tdspoolid }，共 { ls_result-tdpages } 頁| TYPE 'S'.
+    ENDIF.
+  ENDMETHOD.
+ENDCLASS.
+
+START-OF-SELECTION.
+  NEW lcl_print( )-&gt;run( ).</code></pre>
+  <div class="note">舊式列印程式對照（只做文字說明，不保留舊碼）：舊程式通常是 <span class="kw">TABLES: scustom, sbook.</span> 宣告工作區、<span class="kw">SELECT … ENDSELECT</span> 在迴圈裡一邊讀一邊 WRITE_FORM、<span class="kw">PERFORM open_form / print_item / close_form</span> 切副程式。本章改寫為：全域 DATA 結構給符號用、一次 SELECT 進內表並 ORDER BY、區域類別封裝流程、以 COND／VALUE／REDUCE 取代中間變數。舊→新對照另見 <a href="#ap-01">附錄 ap-01</a>。</div>
+
+  <h3 id="ch05-18-10">10. 列印程式（二）：MAIN 的 TOP／BODY／BOTTOM、非 MAIN 視窗、Composer 換頁（Unit 6）</h3>
+  <h4>MAIN 視窗的三個區域</h4>
+  <p>MAIN 可分成 <b>TOP、BODY、BOTTOM</b> 三區。TOP、BOTTOM 的高度由其內容決定，佔用的空間從 BODY 扣掉；功能類似 ABAP 清單的頁首頁尾。三區內容都能在列印中<b>動態設定、變更</b>，SAPscript 會在每一頁有 MAIN 的地方自動輸出目前的 TOP／BOTTOM。</p>
+  <table>
+    <thead><tr><th>情境</th><th>WRITE_FORM 參數</th><th>生效時機與注意</th></tr></thead>
+    <tbody>
+      <tr><td>MAIN 輸出本文</td><td>ELEMENT、WINDOW = MAIN（預設）、TYPE = BODY（預設），FUNCTION 無關</td><td>當頁 MAIN 滿就自動換頁</td></tr>
+      <tr><td>設定表頭</td><td>TYPE = 'TOP'、FUNCTION = 'SET'</td><td>BODY 還沒有內容 → 當頁就印；BODY 已有內容 → <b>下一頁才開始印</b></td></tr>
+      <tr><td>刪除表頭</td><td>TYPE = 'TOP'、FUNCTION = 'DELETE'</td><td><b>下一頁起生效</b>；BODY 已有內容的當頁無法撤回</td></tr>
+      <tr><td>非 MAIN 視窗附加</td><td>WINDOW = 視窗名、FUNCTION = 'APPEND'，TYPE 無關</td><td>放不下的內容<b>遺失</b>，不會跨頁</td></tr>
+      <tr><td>非 MAIN 視窗取代</td><td>FUNCTION = 'SET'（預設）</td><td>該視窗原內容整個換掉</td></tr>
+      <tr><td>非 MAIN 視窗刪除</td><td>FUNCTION = 'DELETE'</td><td>刪掉指定元素</td></tr>
+    </tbody>
+  </table>
+  <p>教材 Figure 98 解釋為什麼 §9 範例要把表頭「先印在 BODY，再設到 TOP」：很多應用表單第一頁先有稱謂與開場白，表頭要緊接在開場白後面，所以第一頁只能印在 BODY；從第二頁起才由 TOP 自動重印。</p>
+
+  <h4>Composer 的運作規則（Figure 102）</h4>
+  <ul>
+    <li><b>MAIN 視窗主導換頁</b>。非 MAIN 視窗的文字元素要等到換頁時才處理——所以「頁尾合計」若放在非 MAIN 視窗，要在換頁前把值準備好。</li>
+    <li>換頁觸發只有兩種：MAIN 溢位（自動）、MAIN 中的 NEW-PAGE（手動）。</li>
+    <li>非 MAIN 視窗開頭的預設文字元素，在視窗被處理時印一次；但 MAIN 開頭的預設文字元素，<b>換頁後不會在下一頁的 MAIN 重印</b>。</li>
+  </ul>
+
+  <h4>多份表單合併成一個 Spool：START_FORM／END_FORM</h4>
+  <p>要把多份「相同表單、不同資料」（例如 200 位客戶的對帳單）放進<b>同一個 Spool</b>：先 OPEN_FORM，每份用 START_FORM 開始、END_FORM 結束，最後 CLOSE_FORM。<b>END_FORM 不能取代 CLOSE_FORM</b>，END_FORM 之後只能接 START_FORM 或 CLOSE_FORM。START_FORM 可另給 FORM／LANGUAGE（換表單、換語言）與 STARTPAGE（不從預設首頁開始）。</p>
+  <pre><code class="abap">*&amp;---------------------------------------------------------------------*
+*&amp; 多位客戶 → 一個 Spool；每份各自從第 1 頁起算，並用 CONTROL_FORM 保護明細
+*&amp;---------------------------------------------------------------------*
+DATA gt_customers TYPE STANDARD TABLE OF scustom WITH EMPTY KEY.
+
+SELECT id, name, form, street, postcode, city, country, langu
+  FROM scustom
+  WHERE id IN @s_cust                       " 建議用列舉清單，不要用 BT 區間
+  ORDER BY id                               " 輸出順序＝裝訂順序，一定要排序
+  INTO CORRESPONDING FIELDS OF TABLE @gt_customers.
+
+CALL FUNCTION 'OPEN_FORM'                   " 只開一次（不給 FORM，交給 START_FORM）
+  EXPORTING device  = 'PRINTER'
+            dialog  = abap_true
+            options = VALUE itcpo( tdnewid = abap_true )
+  EXCEPTIONS OTHERS = 1.
+IF sy-subrc &lt;&gt; 0.
+  RETURN.
+ENDIF.
+
+LOOP AT gt_customers INTO gs_customer.
+  CALL FUNCTION 'START_FORM'
+    EXPORTING form      = 'ZBC460_BOOKING'
+              language  = gs_customer-langu
+              startpage = 'FIRST'
+    EXCEPTIONS OTHERS   = 1.
+  CHECK sy-subrc = 0.
+
+  CALL FUNCTION 'WRITE_FORM'
+    EXPORTING element = 'ADDRESS' window = 'ADDRESS'
+    EXCEPTIONS OTHERS = 1.
+
+  " 從程式下控制命令（不含 '/:'），效果等同在表單寫 PROTECT ... ENDPROTECT
+  CALL FUNCTION 'CONTROL_FORM' EXPORTING command = 'PROTECT' EXCEPTIONS OTHERS = 1.
+  CALL FUNCTION 'WRITE_FORM'   EXPORTING element = 'ITEM_LINE' EXCEPTIONS OTHERS = 1.
+  CALL FUNCTION 'CONTROL_FORM' EXPORTING command = 'ENDPROTECT' EXCEPTIONS OTHERS = 1.
+
+  " 側欄備註：追加到非 MAIN 視窗 NOTES，放不下的會遺失
+  CALL FUNCTION 'WRITE_FORM'
+    EXPORTING element = 'VIP_NOTE' window = 'NOTES' function = 'APPEND'
+    EXCEPTIONS OTHERS = 1.
+
+  CALL FUNCTION 'END_FORM' EXCEPTIONS OTHERS = 1.   " 結束「這一份」，不是結束列印
+ENDLOOP.
+
+CALL FUNCTION 'CLOSE_FORM' EXCEPTIONS OTHERS = 1.   " END_FORM 取代不了 CLOSE_FORM</code></pre>
+  <div class="tip">Casper 的第二條經驗在這裡最常發生：使用者用「客戶 1000 到 1999」的區間跑批次對帳單，結果漏了 ALPHA 前導零不一致或編碼規則改過的客戶。批次列印的選擇條件請優先讓使用者貼上<b>列舉清單</b>（多筆 EQ），或至少印出「本次列印客戶清單」讓人核對。</div>
+
+  <h3 id="ch05-18-11">11. 延伸實務：OTF 轉 PDF、預覽與 E-mail（Unit 6 補充）</h3>
+  <p>Composer 的產物是 OTF。講義只講列印到 Spool，但現在最常見的需求是「產生 PDF 寄給客戶」。做法：OPEN_FORM 時設 <b>ITCPO-TDGETOTF = 'X'</b>，CLOSE_FORM 就會從 OTFDATA 回傳 OTF（不產生 Spool），再用 <b>CONVERT_OTF</b> 轉 PDF，用 CL_BCS 寄出（BCS 詳細用法見 <a href="#ch04-4">4-4 章</a>，SmartForms 版見 <a href="#ch04-3-13">4-3 章 §13</a>）。</p>
+  <pre><code class="abap">*&amp;---------------------------------------------------------------------*
+*&amp; SAPscript → OTF → PDF → E-mail 附件
+*&amp;---------------------------------------------------------------------*
+DATA: lt_otf    TYPE STANDARD TABLE OF itcoo WITH EMPTY KEY,
+      lt_dummy  TYPE STANDARD TABLE OF tline WITH EMPTY KEY,
+      lv_pdf    TYPE xstring,
+      lv_size   TYPE i.
+
+CALL FUNCTION 'OPEN_FORM'
+  EXPORTING device   = 'PRINTER'
+            dialog   = abap_false
+            form     = 'ZBC460_BOOKING'
+            language = sy-langu
+            options  = VALUE itcpo( tdgetotf = abap_true )   " 回傳 OTF、不進 Spool
+  EXCEPTIONS OTHERS  = 1.
+IF sy-subrc &lt;&gt; 0.
+  RETURN.
+ENDIF.
+
+" ... WRITE_FORM 同 §9 ...
+
+CALL FUNCTION 'CLOSE_FORM'
+  TABLES     otfdata = lt_otf
+  EXCEPTIONS OTHERS  = 1.
+
+CALL FUNCTION 'CONVERT_OTF'
+  EXPORTING  format       = 'PDF'
+  IMPORTING  bin_filesize = lv_size
+             bin_file     = lv_pdf
+  TABLES     otf          = lt_otf
+             lines        = lt_dummy
+  EXCEPTIONS OTHERS       = 1.
+IF sy-subrc &lt;&gt; 0 OR lv_pdf IS INITIAL.
+  MESSAGE 'OTF 轉 PDF 失敗' TYPE 'E'.
+ENDIF.
+
+TRY.
+    DATA(lo_send) = cl_bcs=&gt;create_persistent( ).
+    DATA(lo_doc)  = cl_document_bcs=&gt;create_document(
+                      i_type    = 'RAW'
+                      i_subject = |訂位確認函 { gs_customer-name }|
+                      i_text    = VALUE soli_tab( ( line = '附件為您的訂位確認函，請查收。' ) ) ).
+    lo_doc-&gt;add_attachment(
+      i_attachment_type    = 'PDF'
+      i_attachment_subject = |Booking_{ gs_customer-id ALPHA = OUT }|
+      i_att_content_hex    = cl_bcs_convert=&gt;xstring_to_solix( lv_pdf ) ).
+    lo_send-&gt;set_document( lo_doc ).
+    lo_send-&gt;add_recipient( cl_cam_address_bcs=&gt;create_internet_address(
+                              CONV #( gs_customer-email ) ) ).
+    lo_send-&gt;set_send_immediately( abap_true ).
+    lo_send-&gt;send( ).
+    COMMIT WORK.                                   " 沒有 COMMIT，SOST 裡看不到
+  CATCH cx_bcs INTO DATA(lx_bcs).
+    MESSAGE lx_bcs-&gt;get_text( ) TYPE 'E'.
+ENDTRY.</code></pre>
+  <div class="tip">現場快速把既有 Spool 轉 PDF：<span class="tcode">SP01</span> 找到 Spool 編號後執行報表 <b>RSTXPDFT4</b>；或在 Spool 顯示畫面的指令列輸入 <b>PDF!</b>。中文表單轉 PDF 若出現方框或亂碼，多半是裝置類型不支援 Unicode 字型，請 Basis 在 <span class="tcode">SPAD</span> 改用支援 Unicode 的裝置類型（例如 SWINCF 系列或對應語系的 PDF 裝置類型），不要自己在表單裡硬換字型。</div>
+
+  <h3 id="ch05-18-12">12. Styles：SE72 樣式（Unit 7）</h3>
+  <p><b>Style</b> 是獨立於表單的一組段落格式＋字元格式定義。系統內建多種樣式（例如給 E-mail、線上文件用的）。用途：</p>
+  <ul>
+    <li>SO10 標準文字、長文字可在編輯器 Format → Change Style… 指定樣式，不必依附某張表單就有格式可用。</li>
+    <li>在文字中用 <code>/: STYLE ZBC460_STD</code> 快速切換樣式；也可在 INCLUDE 時帶 STYLE 參數。</li>
+    <li>一旦指定樣式，<b>樣式的段落與字元格式會覆蓋目前表單的定義</b>，表單內的同名格式不再生效。</li>
+  </ul>
+  <p>維護：<span class="tcode">SE72</span>（舊選單 Tools → Form Printout → SAPscript → Style；從 SE71／SO10 走 Environment → Style）。樣式可新建、修改、搜尋、列出全部。樣式翻譯用 <span class="tcode">SE77</span>，表單翻譯用 <span class="tcode">SE76</span>。</p>
+  <pre><code class="text">/*  SO10 標準文字 ZBC460_FOOTER：本身指定樣式 ZBC460_STD（段落 FT、字元 B）
+/:  STYLE ZBC460_STD
+FT  &lt;B&gt;範例股份有限公司&lt;/&gt;  統一編號 12345678
+FT  銀行：範例銀行 台北分行  帳號 000-123-456789
+/*  在表單中插入時切回表單自己的格式：
+/:  INCLUDE ZBC460_FOOTER OBJECT TEXT ID ST PARAGRAPH FT
+/:  STYLE *</code></pre>
+  <div class="note"><code>/: STYLE *</code> 表示切回表單本身的格式定義（官方文件語法，講義未提）。SmartForms 的樣式是另一套物件（<span class="tcode">SMARTSTYLES</span>，見 <a href="#ch04-3-03">4-3 章 §3</a>），兩者不能互用。</div>
+
+  <h3 id="ch05-18-13">13. 下一代：SmartForms、Adobe Forms 與 S/4HANA Output Management（Unit 8）</h3>
+  <p>講義 Unit 8 的重點：</p>
+  <ul>
+    <li><b>SAP Smart Forms</b> 用來簡化、現代化 SAPscript 的表單製作。在 <b>SAP Form Builder</b>（<span class="tcode">SMARTFORMS</span>）中維護：左側導覽樹（節點＝頁、視窗、圖形…，下方可顯示欄位清單）、中間維護畫面（各頁籤屬性、文字編輯器、Table Painter）、右側 Form Painter（可 Utilities → Form Painter on/off）。</li>
+    <li>啟用時系統<b>自動產生函數模組</b>，由資料擷取程式呼叫——不再需要維護「列印程式的排版邏輯」。SAPscript 的控制命令被節點概念取代；SAPscript 要在表單與列印程式做一大堆工作才能印的複雜表格，SmartForms 用 Table 節點（動態格線）就能做到；另支援 XML 輸出。</li>
+    <li><b>Table vs Template</b>：兩者都用 Table Painter 設計、都有多種行類型；Table 的長度與版面到執行期才決定（依讀到的筆數），Template 則在 Form Painter 完全固定，儲存格數量不可變，多用於外部表單的固定格子。</li>
+    <li><b>The Future of SAPscript</b>：SAPscript 可與 SmartForms 並存、SAP 仍支援，<b>但不再發展，長期應轉成 SmartForms</b>。4.6C 起 SMARTFORMS 的 Utilities 選單可「Migrate SAPscript form」，但表格等原本靠列印程式完成的邏輯，遷移後必須自己重做。</li>
+    <li><b>SAP Interactive Forms by Adobe</b>（NetWeaver 2004 起）：離線情境（產生可填寫的 PDF，填完送回系統自動抽取資料）、線上情境（嵌入 Web Dynpro 等 Web 應用）、列印情境（概念同 SmartForms，但架構不同）。設計時在 <span class="tcode">SFP</span>／<span class="tcode">SE80</span> 建 <b>Interface</b>（定義程式可傳入的資料、全域資料與初始化程式碼）與 <b>Form</b>（Context 選用介面的哪些部分、加入文字模組與圖片；Layout 在 <b>Adobe LiveCycle Designer</b> 設計，Script Editor 可用 JavaScript 或 FormCalc），啟用後同樣產生函數模組。執行期由 <b>Adobe Document Services（ADS）</b>透過 SOAP Web Service 負責渲染。</li>
+  </ul>
+  <div class="warn"><b>講義過時處修正</b>：① 講義說「PPF 是 Output Control（訊息控制）的後繼者」、「ADS 必須部署在 J2EE Engine」。在 S/4HANA 裡，SAP 推出的是以 <b>BRF+</b> 決定輸出的 <b>S/4HANA Output Management</b>（又稱 Output Control，設定用 <span class="tcode">OPD</span> 與 SPRO → Cross-Application Components → Output Control），PPF 仍用在 CRM、部分 TM／EWM 情境；ADS 則可用 on-premise Java 堆疊，或改用雲端的 <b>SAP Forms Service by Adobe</b>（BTP）。② 講義 Adobe 設計工具寫 Adobe LiveCycle Designer，新版名稱為 <b>Adobe LiveCycle Designer for SAP</b>／<b>Adobe Experience Manager Forms Designer</b>，概念相同。</div>
+
+  <h4>四種輸出技術比較</h4>
+  <table>
+    <thead><tr><th>項目</th><th>SAPscript</th><th>SmartForms</th><th>Adobe Forms（SFP）</th><th>S/4HANA Output Management</th></tr></thead>
+    <tbody>
+      <tr><td>本質</td><td>表單＋列印程式＋Composer</td><td>表單產生函數模組</td><td>Interface＋Form 產生函數模組，ADS 渲染</td><td>不是表單工具，是「決定何時、用哪個範本、送到哪裡」的框架</td></tr>
+      <tr><td>維護 TCODE</td><td>SE71／SE72／SE78／SO10</td><td>SMARTFORMS／SMARTSTYLES</td><td>SFP（Fiori：Maintain Form Templates）</td><td>OPD（BRF+ 決定表）、SPRO Output Control</td></tr>
+      <tr><td>流程邏輯在哪</td><td><b>列印程式</b>（WRITE_FORM 順序）</td><td>表單（節點、Loop、條件）</td><td>表單 Context＋Layout Script</td><td>BRF+ 規則</td></tr>
+      <tr><td>Client 相依</td><td>是（標準在 client 000）</td><td>否（Repository 物件）</td><td>否</td><td>設定依 Client</td></tr>
+      <tr><td>輸出格式</td><td>OTF → Spool／PDF</td><td>OTF、XSF/XML、HTML</td><td>PDF、PCL、PostScript、ZPL、互動 PDF</td><td>依範本技術</td></tr>
+      <tr><td>訊息控制</td><td>NAST（NACE）</td><td>NAST（NACE）</td><td>NAST 或新 Output Management</td><td>取代 NAST（表 APOC_D_OR_ROOT 等）</td></tr>
+      <tr><td>ABAP Cloud</td><td>不可用</td><td>不可用</td><td>可（Forms Service by Adobe）</td><td>可（Public Cloud 標準）</td></tr>
+      <tr><td>新開發建議</td><td>✗ 只維護</td><td>△ 既有專案延續可接受</td><td>✓ 首選</td><td>✓ S/4 標準單據預設</td></tr>
+    </tbody>
+  </table>
+  <p>三種表單技術的呼叫方式對照如下（SmartForms 細節見 <a href="#ch04-3-10">4-3 章 §10–11</a>、<a href="#ch05-19">5-19 章</a>；Adobe 見 <a href="#ch05-20">5-20 章</a>）：</p>
+  <pre><code class="abap">*&amp;---------------------------------------------------------------------*
+*&amp; 同一份「訂位確認函」用三種技術輸出的骨架比較
+*&amp;---------------------------------------------------------------------*
+" ① SAPscript：表單名直接給 OPEN_FORM，順序由程式的 WRITE_FORM 決定（見 §9）
+
+" ② SmartForms：表單會產生 /1BCDWB/SF0000xxxx 函數，名稱各系統不同 → 先查名
+DATA lv_sf_fm TYPE rs38l_fnam.
+CALL FUNCTION 'SSF_FUNCTION_MODULE_NAME'
+  EXPORTING  formname = 'ZSF_BC460_BOOKING'
+  IMPORTING  fm_name  = lv_sf_fm
+  EXCEPTIONS OTHERS   = 1.
+IF sy-subrc = 0.
+  CALL FUNCTION lv_sf_fm
+    EXPORTING  is_customer = gs_customer          " 表單介面參數（自訂）
+               it_booking  = lt_booking
+    EXCEPTIONS OTHERS      = 1.
+ENDIF.
+
+" ③ Adobe Forms：FP_JOB_OPEN → 產生的函數 → FP_JOB_CLOSE
+DATA: lv_fp_fm  TYPE funcname,
+      ls_outpar TYPE sfpoutputparams,
+      ls_docpar TYPE sfpdocparams.
+TRY.
+    CALL FUNCTION 'FP_FUNCTION_MODULE_NAME'
+      EXPORTING i_name     = 'ZAF_BC460_BOOKING'
+      IMPORTING e_funcname = lv_fp_fm.
+  CATCH cx_fp_api INTO DATA(lx_fp).
+    MESSAGE lx_fp-&gt;get_text( ) TYPE 'E'.
+ENDTRY.
+ls_outpar-preview = abap_true.
+CALL FUNCTION 'FP_JOB_OPEN'
+  CHANGING   ie_outputparams = ls_outpar
+  EXCEPTIONS OTHERS          = 1.
+ls_docpar-langu = sy-langu.
+CALL FUNCTION lv_fp_fm
+  EXPORTING  /1bcdwb/docparams = ls_docpar
+             is_customer       = gs_customer
+             it_booking        = lt_booking
+  EXCEPTIONS OTHERS            = 1.
+CALL FUNCTION 'FP_JOB_CLOSE' EXCEPTIONS OTHERS = 1.</code></pre>
+  <div class="tip">遷移決策口訣：<b>「不動就不遷，要大改就換 Adobe。」</b>SAPscript 表單如果只是改個 Logo、加一行字，就在原表單的 Z 副本上改；如果要重做版面、加條碼、改多語系，或該單據在 S/4HANA 已有新 Output Management 的標準 Adobe 範本，就直接改用標準範本＋客製，不要把 SAPscript 移植成 SmartForms 再移植一次。</div>
+
+  <h3 id="ch05-18-14">14. 修改標準表單與列印程式（Unit 9）</h3>
+  <p>表單可以由客戶單據自動觸發列印，例如客戶下單 → 系統建立訂單 → 存檔時產生訂單確認並寄給客戶。表單名稱與列印程式在 <b>Customizing</b> 中指定給應用元件（§17）；要換表單或列印程式，也是在 Customizing 改。</p>
+  <p>SAP 為所有應用提供標準表單與對應列印程式，<b>大多數需求只改表單就夠</b>，不必動列印程式。講義的判斷表（Table 1）：</p>
+  <table>
+    <thead><tr><th>需求</th><th>是否要改 SAP 列印程式</th></tr></thead>
+    <tbody>
+      <tr><td>結構性變更（新增視窗處理順序、改頁序邏輯）</td><td>必須改</td></tr>
+      <tr><td>需要新的文字元素</td><td>必須改（誰來呼叫 WRITE_FORM？）</td></tr>
+      <tr><td>只是用同一列印程式印（版面、字型、位置、固定文字）</td><td>不必改</td></tr>
+      <tr><td>需要額外表單</td><td>可視需要改</td></tr>
+      <tr><td>需要額外資料</td><td>可視需要改（優先考慮 PERFORM）</td></tr>
+    </tbody>
+  </table>
+  <div class="note">講義此表原文最後一列重複了「Structural changes / Change necessary」，應是排版重複，已合併；「Print program will be used to print」一列語意不完整，依上下文應指「沿用原列印程式列印（只改表單）」。</div>
+
+  <h4>改法的優先順序（與 Casper 的第三條經驗一致）</h4>
+  <ol>
+    <li><b>先看標準設定</b>：Customizing 能不能換一張現成的標準表單？輸出條件（NACE 條件記錄）能不能解決？</li>
+    <li><b>只改表單</b>：SE71 → Utilities → <b>Copy from Client</b>，把標準表單（預設來源 client 000）複製成 Z/Y 名稱，改副本。</li>
+    <li><b>表單＋PERFORM</b>：缺資料時在表單用 PERFORM 呼叫 Z 程式的副程式（§8）。</li>
+    <li><b>Customer Exit／Include</b>：部分標準列印程式預留了給客戶用的 Include（升級不會覆蓋），例如 SD 單據列印程式的使用者出口。</li>
+    <li><b>複製列印程式</b>：結構真的變了才把列印程式複製成 Z/Y（SE38 Copy，連同 Include），並在 Customizing 指向新程式。</li>
+    <li><b>修改 SAP 標準</b>：Modification，升級時不受保護——幾乎沒有理由走到這一步。</li>
+  </ol>
+  <p>動手前先盤點：到底要哪些額外欄位？在目前使用的資料表裡嗎？還是要讀新表？那些欄位真的有資料嗎？並在 Customizing 記下目前實際使用的表單與程式。改完後把新表單／程式登錄回 Customizing，<b>一定要測試</b>。增強的完整觀念見 <a href="#ch05-14">5-14 章 BC425</a>、<a href="#ch03-3">3-3 章</a>、<a href="#ch03-4">3-4 章</a>。</p>
+
+  <h4>Client 相依與傳輸</h4>
+  <ul>
+    <li><b>SAPscript 表單、樣式、文字都是 Client 相依</b>。但 client 000 有特殊地位：目前 Client 找不到表單時，系統會自動去 client 000 找；SAP 標準表單全部放在 client 000。</li>
+    <li>傳輸：表單與樣式透過 Workbench Organizer（WBO），第一次存檔即要求傳輸單（物件 R3TR FORM、R3TR STYL）。匯出時從<b>釋放傳輸單的那個 Client</b> 取物件，所以要確定物件存在於該 Client。</li>
+    <li>標準文字（SO10）等 SAPscript 文字<b>不會自動進傳輸單</b>，要手動加入 Customizing 傳輸單：物件 <code>R3TR TEXT TEXT,ZBC460_FOOTER,ST,M</code>（格式 <code>R3TR TEXT &lt;OBJECT&gt;,&lt;NAME&gt;,&lt;ID&gt;,&lt;語言&gt;</code>）；或用報表 <b>RSTXTRAN</b> 把標準文字掛進傳輸單（最常用）。</li>
+    <li>跨系統搬移（沒有傳輸路徑時）可用 <b>RSTXSCRP</b> 把表單／樣式／標準文字匯出成本機檔案再匯入。</li>
+  </ul>
+  <div class="warn">SO10 的標準文字常被當成「主資料」直接在 PRD 修改（例如公司地址、銀行帳號），結果 DEV／QAS 與 PRD 不一致，下次傳輸又把舊內容蓋回去。請與業務約定：標準文字要嘛一律走傳輸，要嘛明確劃為「PRD 直接維護」並從傳輸流程排除，不要兩種混用。</div>
+
+  <h3 id="ch05-18-15">15. 維護：系統字型、印表機字型、條碼與 Print Controls（Unit 10）</h3>
+  <p>所有 SAPscript 用的字型與條碼都在字型維護交易 <span class="tcode">SE73</span>（舊選單 Tools → Form Printout → Administration → Font）管理：</p>
+  <ul>
+    <li><b>Font Family</b>：字型家族名稱，標示為等寬（non-proportional）或比例字（proportional）。</li>
+    <li><b>System Fonts</b>：表單與樣式可選用的字型，與輸出裝置無關。</li>
+    <li><b>Printer Fonts</b>：各裝置類型（印表機、螢幕、傳真…）實際可用的字型。</li>
+    <li>SAPscript 會自動把文件中的系統字型轉換成印表機字型；每個家族可設替代字型。可檢視「某系統字型在所有裝置類型上的轉換」或「某裝置類型上所有系統字型的轉換」。</li>
+    <li>印表機驅動程式把 OTF 轉成印表機能懂的控制序列，控制序列多半以 <b>Print Controls</b> 定義；驅動程式在 Spool 管理 <span class="tcode">SPAD</span> 指派給裝置類型。</li>
+  </ul>
+  <p><b>條碼</b>：字元格式的 Barcode 屬性讓 SAPscript 輸出條碼。<b>System Bar Codes</b> 與裝置無關；支援條碼的印表機類型用 <b>Printer Bar Codes</b> 對應到 Print Control。列印時依序送出：<b>條碼前置 Print Control（prefix）→ 條碼資料（例如 8 位數）→ 條碼後置 Print Control（suffix）</b>。</p>
+  <p><b>Print Control</b> 是用符號名稱表示的裝置控制序列，在 <span class="tcode">SPAD</span>（舊選單 Tools → CCMS → Print → Spool Administration）依裝置類型維護；字型維護裡只填 Print Control 的符號名稱。</p>
+  <div class="tip">新條碼需求（QR Code、DataMatrix、GS1-128）不要在 SAPscript 裡硬做：SAPscript 的條碼依賴印表機本身的條碼能力或條碼 DIMM；SmartForms 在較新的 NetWeaver 版本支援「新條碼技術」（在 SE73 建 System Bar Code 時選新技術，含 QR Code／DataMatrix，適用版本請查相關 SAP Note），Adobe Forms 則原生支援各種 2D 條碼。這也是「要大改就換 Adobe」的典型理由。</div>
+
+  <h3 id="ch05-18-16">16. 文字 API：READ_TEXT、SAVE_TEXT 與更新機制（Unit 11 Lesson 1）</h3>
+  <p>SAPscript 程式介面是一組建立、修改、管理 SAPscript 文字的函數模組：用編輯器初始化與修改文字、泛用搜尋、讀取／儲存／刪除、在資料庫中更新。每份文字由<b>文字表頭 THEAD</b>（管理資料：OBJECT、NAME、ID、SPRAS…）與<b>行內表 TLINE</b>（TDFORMAT＝Tag 欄、TDLINE＝內容）組成。</p>
+  <table>
+    <thead><tr><th>函數模組</th><th>用途</th><th>講義重點</th></tr></thead>
+    <tbody>
+      <tr><td>INIT_TEXT</td><td>初始化新文字的 HEADER／LINES</td><td><b>只 CLEAR HEADER 不夠</b>，一定要用 INIT_TEXT</td></tr>
+      <tr><td>EDIT_TEXT</td><td>呼叫長文字編輯器</td><td>可控制顯示／修改模式；按 Save 會自動呼叫 SAVE_TEXT，用 SAVE = SPACE 關閉</td></tr>
+      <tr><td>SELECT_TEXT</td><td>依鍵值找出符合的文字表頭清單</td><td>可用 <span class="kw">*</span> 泛用搜尋；文字依 Client 存放</td></tr>
+      <tr><td><b>READ_TEXT</b></td><td>從文字記憶體或資料庫讀到 HEADER／LINES</td><td>OBJECT、NAME、ID、LANGUAGE 四鍵<b>不可泛用</b></td></tr>
+      <tr><td><b>SAVE_TEXT</b></td><td>存到文字記憶體或資料庫</td><td>回傳 FUNCTION：I 新增、U 修改、D 刪除</td></tr>
+      <tr><td>DELETE_TEXT</td><td>刪除</td><td><b>可泛用</b>；依文字物件立即刪除或記在文字記憶體</td></tr>
+      <tr><td>COMMIT_TEXT</td><td>把文字記憶體寫入更新程序</td><td>執行後文字記憶體清空</td></tr>
+    </tbody>
+  </table>
+  <h4>儲存模式：V（Update）與 D（Direct）</h4>
+  <ul>
+    <li>儲存模式是<b>整個文字物件（text class）的屬性</b>：V＝透過更新程序、D＝直接寫資料庫不經更新；由開發者在 SE75（舊選單 Tools → SAPscript → Administration → Settings）設定。</li>
+    <li>V 模式下所有函數都在<b>文字記憶體</b>中運作。要真正寫進資料庫必須<b>同時</b>：呼叫 <b>COMMIT_TEXT</b>，再執行 ABAP <b>COMMIT WORK</b>。兩者缺一，所有文字變更都遺失。<b>COMMIT_TEXT 不能取代 COMMIT WORK</b>；每個 LUW 只能各呼叫一次，而且要放在流程最後。</li>
+    <li>大量處理（傳輸、Client 複製、組織重整）可在 SAVE_TEXT／DELETE_TEXT 用參數 <b>SAVEMODE_DIRECT = 'X'</b> 暫時以 D 模式寫入，只對該次呼叫有效。<b>絕對不可以把一般更新與 SAVEMODE_DIRECT 混用</b>。</li>
+  </ul>
+  <pre><code class="abap">*&amp;---------------------------------------------------------------------*
+*&amp; 讀銷售單表頭文字 → 字串；再寫一段 SO10 標準文字（V 模式完整流程）
+*&amp;---------------------------------------------------------------------*
+TYPES tt_tline TYPE STANDARD TABLE OF tline WITH EMPTY KEY.
+DATA lt_lines TYPE tt_tline.
+
+" ① READ_TEXT：四個鍵都要給，不可用 *
+CALL FUNCTION 'READ_TEXT'
+  EXPORTING
+    id        = '0001'
+    language  = sy-langu
+    name      = CONV tdobname( lv_vbeln )     " 名稱通常＝單號（含前導零）
+    object    = 'VBBK'
+  TABLES
+    lines     = lt_lines
+  EXCEPTIONS
+    not_found = 1
+    OTHERS    = 2.
+IF sy-subrc = 0.
+  " TDFORMAT '*' 或 空白 是段落續行；'/' 是換行。簡化處理：全部以換行串接
+  DATA(lv_text) = concat_lines_of(
+                    table = VALUE string_table( FOR l IN lt_lines ( CONV string( l-tdline ) ) )
+                    sep   = cl_abap_char_utilities=&gt;newline ).
+ENDIF.
+
+" ② SAVE_TEXT（V 模式）：SAVE_TEXT → COMMIT_TEXT → COMMIT WORK，缺一不可
+DATA(ls_header) = VALUE thead( tdobject = 'TEXT'
+                               tdname   = 'ZBC460_FOOTER'
+                               tdid     = 'ST'
+                               tdspras  = sy-langu ).
+DATA(lt_new) = VALUE tt_tline(
+  ( tdformat = '*' tdline = '範例股份有限公司  統一編號 12345678' )
+  ( tdformat = '/' tdline = '客服專線 0800-000-123' ) ).
+DATA lv_function TYPE c LENGTH 1.
+
+CALL FUNCTION 'SAVE_TEXT'
+  EXPORTING
+    header   = ls_header
+    insert   = abap_false                     " 已存在就覆蓋；新文字可給 abap_true
+  IMPORTING
+    function = lv_function                    " I=新增、U=修改、D=刪除
+  TABLES
+    lines    = lt_new
+  EXCEPTIONS
+    OTHERS   = 1.
+IF sy-subrc = 0.
+  CALL FUNCTION 'COMMIT_TEXT'.                " 文字記憶體 → 更新程序
+  COMMIT WORK.                                " 真正寫入 STXH／STXL
+ENDIF.</code></pre>
+  <div class="warn">長文字存在 STXH（表頭）與 STXL（<b>壓縮的叢集資料</b>），<b>不能直接 SELECT STXL 讀內容</b>，一定要透過 READ_TEXT（大量讀取可用 <span class="kw">READ_TEXT_TABLE</span> 或 CDS／AMDP 另案處理）。報表裡在 LOOP 中對每筆單據呼叫 READ_TEXT 是常見效能殺手，請先用 STXH 篩出「真的有文字」的單據再讀。</div>
+
+  <h3 id="ch05-18-17">17. 表單的 Customizing：NACE、TNAPR 與 S/4HANA Output Management（Unit 11 Lesson 2）</h3>
+  <p>講義用 IMG 路徑示範三個模組如何指定「列印程式＋表單」（<span class="src">（依講義步驟整理）</span>）：</p>
+  <table>
+    <thead><tr><th>情境</th><th>IMG 路徑（SPRO）</th><th>常見標準物件</th></tr></thead>
+    <tbody>
+      <tr><td>SD 發票</td><td>Sales and Distribution → Basic Functions → Output Control → Output Determination → Output Determination Using the Condition Technique → Maintain Output Determination for Sales Documents → Maintain Output Types → 選輸出類型 → <b>Processing Routines</b>（講義稱 Output programs）</td><td>程式 RVADIN01、表單 RVINVOICE01（輸出類型 RD00）</td></tr>
+      <tr><td>MM 採購單</td><td>Materials Management → Purchasing → Messages → Forms for Messages → Assign Form and Output Program for Purchase Order</td><td>程式 SAPFM06P、表單 MEDRUCK（輸出類型 NEU）</td></tr>
+      <tr><td>FI 對帳單</td><td>Financial Accounting → Financial Accounting Global Settings → Correspondence → Define Form Names for Correspondence Print</td><td>例如 F140_ACC_STAT_01</td></tr>
+      <tr><td>FI 付款（支票）</td><td>Financial Accounting → AR and AP → Business Transactions → Outgoing Payments → Automatic Outgoing Payments → Payment Method/Bank Selection for Payment Transaction → Set Up Payment Program（<span class="tcode">FBZP</span>）：<b>Pmnt methods in country</b> 改列印程式、<b>Paying company codes → Form data</b> 改表單</td><td>例如付款方式 C（支票）</td></tr>
+    </tbody>
+  </table>
+  <p>在 SD 的 Processing Routines 畫面，每列是「輸出類型＋傳輸媒介（1 列印、2 傳真、5 外部傳送…）」對應到<b>列印程式、進入副程式（Form Routine，通常 ENTRY）、表單</b>。這些設定其實就是表 <b>TNAPR</b>（KAPPL、KSCHL、NACHA、PGNAM、RONAM、FONAM＝SAPscript 表單、SFORM＝SmartForms 表單）。實務上統一從 <span class="tcode">NACE</span>（選應用 V1 銷售、V3 發票、EF 採購…）→ Output Types → Processing Routines 進入，與 <a href="#ch04-3-14">4-3 章 §14</a> 的 SmartForms 設定完全同一個地方。</p>
+  <p>訊息被觸發後會在 <b>NAST</b> 留一筆（KAPPL、OBJKY＝單據號、KSCHL、PARNR、SPRAS、NACHA、VSZTP 發送時點、VSTAT 處理狀態 0 未處理／1 成功／2 失敗），由 <b>RSNAST00</b>（或存檔當下）以 <code>PERFORM (RONAM) IN PROGRAM (PGNAM)</code> 呼叫列印程式的進入副程式。</p>
+  <pre><code class="abap">REPORT zsd_invoice_sapscript.
+*&amp;---------------------------------------------------------------------*
+*&amp; NACE 的列印程式：Processing Routine = ENTRY、Form = ZRVINVOICE01
+*&amp; RSNAST00 以「外部副程式呼叫」進入，介面固定 → 進入點「必須」是 FORM；
+*&amp; FORM 只做轉交，邏輯放在類別。
+*&amp; NAST / TNAPR 是 RSNAST00 透過「共用介面工作區」傳進來的，這是
+*&amp; TABLES 在 S/4HANA 仍無法用 DATA 取代的唯一情境（不可改成 DATA）。
+*&amp;---------------------------------------------------------------------*
+TABLES nast.     " 介面工作區：由 RSNAST00 填好
+TABLES tnapr.    " 介面工作區：目前這筆的程式／表單設定
+
+DATA: gs_vbrk TYPE vbrk,                    " 表單符號用（全域）
+      gs_vbrp TYPE vbrp.
+
+CLASS lcl_invoice_output DEFINITION FINAL.
+  PUBLIC SECTION.
+    METHODS constructor IMPORTING iv_preview TYPE abap_bool.
+    METHODS process RETURNING VALUE(rv_rc) TYPE sy-subrc.
+  PRIVATE SECTION.
+    DATA mv_preview TYPE abap_bool.
+    METHODS log IMPORTING iv_text TYPE csequence.
+ENDCLASS.
+
+CLASS lcl_invoice_output IMPLEMENTATION.
+  METHOD constructor.
+    mv_preview = iv_preview.
+  ENDMETHOD.
+
+  METHOD process.
+    DATA(lv_vbeln) = CONV vbeln_vf( nast-objky ).
+    SELECT SINGLE vbeln, fkart, fkdat, waerk, netwr, kunrg, bukrs
+      FROM vbrk
+      WHERE vbeln = @lv_vbeln
+      INTO CORRESPONDING FIELDS OF @gs_vbrk.
+    IF sy-subrc &lt;&gt; 0.
+      log( |發票 { lv_vbeln } 不存在| ).
+      rv_rc = 1.
+      RETURN.
+    ENDIF.
+
+    CALL FUNCTION 'OPEN_FORM'
+      EXPORTING
+        device   = 'PRINTER'
+        dialog   = abap_false
+        form     = tnapr-fonam                " 表單名來自 NACE 設定，不寫死
+        language = nast-spras
+        options  = VALUE itcpo( tddest    = nast-ldest
+                                tdimmed   = nast-dimme
+                                tddelete  = nast-delet
+                                tdcopies  = nast-anzal
+                                tdnewid   = abap_true
+                                tdpreview = mv_preview )
+      EXCEPTIONS
+        OTHERS   = 1.
+    IF sy-subrc &lt;&gt; 0.
+      log( |OPEN_FORM 失敗：表單 { tnapr-fonam }| ).
+      rv_rc = sy-subrc.
+      RETURN.
+    ENDIF.
+
+    CALL FUNCTION 'WRITE_FORM' EXPORTING element = 'HEADER' window = 'HEADER'
+      EXCEPTIONS OTHERS = 1.
+
+    SELECT posnr, matnr, arktx, fkimg, vrkme, netwr
+      FROM vbrp
+      WHERE vbeln = @lv_vbeln
+      ORDER BY posnr                           " HANA：明細一定要排序
+      INTO TABLE @DATA(lt_items).
+    LOOP AT lt_items INTO DATA(ls_item).
+      gs_vbrp = CORRESPONDING #( ls_item ).
+      CALL FUNCTION 'WRITE_FORM' EXPORTING element = 'ITEM_LINE'
+        EXCEPTIONS OTHERS = 1.
+    ENDLOOP.
+
+    CALL FUNCTION 'CLOSE_FORM' EXCEPTIONS OTHERS = 1.
+    rv_rc = sy-subrc.
+  ENDMETHOD.
+
+  METHOD log.
+    " 寫進 NAST 處理記錄，使用者在 VF03 → 輸出 → Processing log 看得到
+    CALL FUNCTION 'NAST_PROTOCOL_UPDATE'
+      EXPORTING msg_arbgb = '00'
+                msg_nr    = '001'
+                msg_ty    = 'E'
+                msg_v1    = CONV symsgv( iv_text )
+      EXCEPTIONS OTHERS   = 1.
+  ENDMETHOD.
+ENDCLASS.
+
+*----------------------------------------------------------------------*
+* NACE 進入點：return_code = 0 → NAST 狀態 1（成功），否則 2（失敗）
+*----------------------------------------------------------------------*
+FORM entry USING return_code TYPE sy-subrc
+                 us_screen   TYPE c.
+  return_code = NEW lcl_invoice_output( iv_preview = xsdbool( us_screen IS NOT INITIAL ) )-&gt;process( ).
+ENDFORM.</code></pre>
+  <div class="warn"><b>S/4HANA 的輸出管理現況</b>：S/4HANA 導入了以 BRF+ 決定輸出的新 <b>Output Management</b>。依 SAP 的規劃，<b>計費單據（Billing Document）、採購單、銷售單等在 S/4HANA 新安裝時預設走新框架</b>，範本以 Adobe Forms（含 fragmented forms）為主；舊的 NAST／NACE 訊息控制仍然存在，可在 SPRO「Manage Application Object Type Activation」依物件切回 NAST 以延用 SAPscript／SmartForms。哪些單據支援、哪一版開始預設，請以 SAP Note <b>2228611</b>（Output Management in SAP S/4HANA）與各版本的 Simplification List 為準。換句話說：<b>升級轉換（Brownfield）上來的系統多半還在 NAST＋SAPscript；新導入（Greenfield）的系統多半已是 BRF+＋Adobe</b>。動手前先確認你的單據走哪一條路。</div>
+  <p>盤點系統裡還在用的 SAPscript 表單，是規劃遷移的第一步：</p>
+  <pre><code class="abap">*&amp;---------------------------------------------------------------------*
+*&amp; SAPscript 盤點：哪些輸出類型還綁 SAPscript？過去一年實際印了幾次？
+*&amp;---------------------------------------------------------------------*
+" ① 輸出設定中仍指定 SAPscript 表單（FONAM）而非 SmartForms（SFORM）的
+SELECT kappl, kschl, nacha, pgnam, ronam, fonam, sform
+  FROM tnapr
+  WHERE fonam &lt;&gt; @space
+  ORDER BY kappl, kschl, nacha
+  INTO TABLE @DATA(lt_script_outputs).
+
+" ② 過去一年各輸出類型的實際使用量（決定遷移優先順序）
+DATA(lv_from) = CONV sy-datum( sy-datum - 365 ).
+SELECT kappl, kschl, COUNT( * ) AS cnt
+  FROM nast
+  WHERE erdat &gt;= @lv_from
+  GROUP BY kappl, kschl
+  ORDER BY cnt DESCENDING, kappl, kschl
+  INTO TABLE @DATA(lt_usage).
+
+" ③ 客製 SAPscript 表單清單（表單定義存在 STXH，TDOBJECT = 'FORM'）
+SELECT DISTINCT tdname
+  FROM stxh
+  WHERE tdobject = 'FORM'
+    AND ( tdname LIKE 'Z%' OR tdname LIKE 'Y%' )
+  ORDER BY tdname
+  INTO TABLE @DATA(lt_z_forms).
+
+cl_demo_output=&gt;new( )-&gt;write( lt_script_outputs )-&gt;write( lt_usage )-&gt;write( lt_z_forms )-&gt;display( ).</code></pre>
+  <div class="tip">盤點結果交給業務時，建議做成三欄：<b>「過去一年有印、有客製」→ 優先評估；「有客製、沒在印」→ 直接停用；「標準表單、有在印」→ 看 S/4 是否已有標準 Adobe 範本</b>。這也是「先標準、再客製」的具體落地。</div>
+
+  <h3 id="ch05-18-18">18. 圖形元素：SE78、RSTXLDMC 與 BITMAP（Unit 11 Lesson 3）</h3>
+  <p>講義依版本列出三種插入圖形的方式：</p>
+  <table>
+    <thead><tr><th>版本</th><th>做法</th><th>現況</th></tr></thead>
+    <tbody>
+      <tr><td>4.5 以前</td><td>圖檔須為前端的 <b>TIFF 6.0</b>；用報表 <b>RSTXLDMC</b> 上傳成標準文字（系統建議名稱 <span class="kw">ZHEX-MACRO-*</span>，* 為檔案類型，例如 BMON → ZHEX-MACRO-BMON；ID <span class="kw">ST</span>、登入語言），再在表單新增視窗用 INCLUDE 插入；上傳時可指定位置，未指定就印在目前頁面視窗；用 Test print 產生 Spool 在支援圖形的印表機驗證</td><td>仍可用，但已無必要</td></tr>
+      <tr><td>4.5 起</td><td>Form Painter Page Layout：Edit → Graphic → Create graphic，匯入 <b>BMP</b>；圖形管理在 SE71 初始畫面 Environment → Administration → Graphic</td><td>—</td></tr>
+      <tr><td>4.6 起</td><td>Form Painter 的 <b>Graphic 頁籤</b>：Graphic → Create → Import，給檔案路徑與系統內名稱，再把圖形視窗擺到位置。要縮放不必重新匯入，重建圖形時給較低解析度（DPI）即可。4.6C 起預覽可顯示圖形</td><td><b>現行做法</b></td></tr>
+    </tbody>
+  </table>
+  <p>所有匯入的圖形由 SAPscript 圖形管理 <span class="tcode">SE78</span>（舊選單 Tools → Form Printout → Administration → Graphic）統一管理，存於表 <b>STXBITMAPS</b>，物件 <span class="kw">GRAPHICS</span>、ID <span class="kw">BMAP</span>，類型 <span class="kw">BMON</span>（黑白）／<span class="kw">BCOL</span>（彩色）。SE78 的圖同時給 SmartForms 使用；Adobe Forms 則通常把圖直接嵌在 Layout 或以 MIME 物件方式引用。</p>
+  <pre><code class="text">/*  用控制命令動態插入圖形（講義引用 SAP Note 307414）
+/*  依公司代碼換 Logo：圖名 ZLOGO_1000、ZLOGO_2000 事先在 SE78 匯入
+/:  DEFINE &amp;LOGO&amp; = 'ZLOGO_&amp;VBDKR-BUKRS&amp;'
+/:  BITMAP &amp;LOGO&amp; OBJECT GRAPHICS ID BMAP TYPE BCOL DPI 150
+/*  若公司代碼沒有專屬 Logo，改印預設圖
+/:  IF &amp;VBDKR-BUKRS&amp; = ' '
+/:    BITMAP 'ZLOGO_DEFAULT' OBJECT GRAPHICS ID BMAP TYPE BCOL DPI 150
+/:  ENDIF</code></pre>
+  <div class="warn">SE78 匯入的圖也是<b>Client 相依</b>且<b>不會自動進傳輸單</b>：匯入後要記得在 SE78 將圖形加入傳輸單（Transport 功能），漏了這一步，QAS／PRD 印出來就是一塊空白。部署清單上請把「SE78 圖形」列為獨立一項檢查。</div>
+
+  <h3 id="ch05-18-19">19. 除錯清單與常見問題（綜合）</h3>
+  <table>
+    <thead><tr><th>症狀</th><th>可能原因</th><th>查法／解法</th></tr></thead>
+    <tbody>
+      <tr><td>改了表單印出來沒變</td><td>表單是 Revised 狀態沒 Activate；或改到別的 Client；或 NACE 指到另一張表單</td><td>SE71 看狀態；TNAPR／NACE 確認 FONAM；確認語言版本（每種語言各一版）</td></tr>
+      <tr><td>印出 <code>&amp;GS_XXX-YYY&amp;</code> 原字</td><td>符號拼錯；變數不是全域；列印程式沒宣告</td><td>Text → Check；確認列印程式的全域 DATA；SAPscript Debugger 看符號值</td></tr>
+      <tr><td>非 MAIN 視窗文字被截掉</td><td>VAR 視窗放不下直接遺失</td><td>加大視窗或改放 MAIN</td></tr>
+      <tr><td>表頭在第一頁重複兩次／第二頁沒有表頭</td><td>TOP 設定時機錯誤（BODY 已有內容才 SET，下一頁才生效）</td><td>照 §9：先印 BODY、再 SET TOP；明細後 DELETE TOP</td></tr>
+      <tr><td>合計列被拆到兩頁</td><td>沒有 PROTECT</td><td>表單 PROTECT…ENDPROTECT 或程式 CONTROL_FORM</td></tr>
+      <tr><td>明細順序每次不同</td><td>HANA 沒有預設排序</td><td>SELECT 一定 ORDER BY；「取第一筆」的邏輯先明確排序</td></tr>
+      <tr><td>數字 IF 判斷怪怪的</td><td>SAPscript 比較是文字比較</td><td>在列印程式算旗標；或固定長度＋右對齊</td></tr>
+      <tr><td>中文變方框或亂碼</td><td>裝置類型／字型不支援</td><td>SPAD 換 Unicode 裝置類型；SE73 確認字型對應</td></tr>
+      <tr><td>QAS 沒有 Logo／頁尾</td><td>SE78 圖、SO10 文字沒傳輸</td><td>RSTXTRAN、R3TR TEXT、SE78 傳輸</td></tr>
+      <tr><td>NAST 狀態 2（紅燈）</td><td>ENTRY 回傳非 0</td><td>單據輸出畫面 → Processing log；在列印程式用 NAST_PROTOCOL_UPDATE 寫清楚原因</td></tr>
+    </tbody>
+  </table>
+  <div class="note">SAPscript 相關 TCODE 一次記：<span class="tcode">SE71</span> 表單、<span class="tcode">SE72</span> 樣式、<span class="tcode">SE73</span> 字型與條碼、<span class="tcode">SE75</span> 文字物件與 ID、<span class="tcode">SE76</span> 表單翻譯、<span class="tcode">SE77</span> 樣式翻譯、<span class="tcode">SE78</span> 圖形、<span class="tcode">SO10</span> 標準文字、<span class="tcode">NACE</span> 輸出設定、<span class="tcode">SPAD</span> Spool 管理、<span class="tcode">SP01</span> Spool 查詢。常用報表：RSTXDBUG（SAPscript 除錯）、RSTXLDMC（TIFF 上傳）、RSTXTRAN（標準文字進傳輸）、RSTXSCRP（匯出／匯入檔案）、RSTXPDFT4（Spool 轉 PDF）、RSNAST00（處理輸出）。</div>
+
+  <h3 id="ch05-18-qa">練習與自我檢核</h3>
+  <ol>
+    <li><b>（Unit 2）</b>用一句話說明列印程式、表單、Composer 各自的責任。<br><i>要點</i>：程式取資料並以 WRITE_FORM 決定印哪些文字元素、順序與次數、選裝置；表單定義版面與格式；Composer 排版、換頁、替換符號、產生 OTF 進 Spool。</li>
+    <li><b>（Unit 3）</b>MAIN 與 VAR 視窗有什麼差別？為什麼各頁 MAIN 的寬度必須相同？<br><i>要點</i>：MAIN 內容可跨頁續印、主導換頁；VAR 每頁輸出、放不下即遺失。續印的文字已按寬度斷行，寬度不同就無法接續。</li>
+    <li><b>（Unit 3）</b>表單狀態 Revised 時列印會用哪一版？<br><i>要點</i>：仍用 Active 版；要 Form → Activate 才生效。</li>
+    <li><b>（Unit 4）</b>Default text element 與 named text element 的差別？<br><i>要點</i>：預設元素（視窗開頭無 /E）自動輸出、程式不能控制；具名元素（/E 名稱）只有被 WRITE_FORM 呼叫才輸出。</li>
+    <li><b>（Unit 5）</b>寫出四種符號並各舉一例，說明 &amp;MFG&amp; 存在哪個表。<br><i>要點</i>：系統（&amp;PAGE&amp;，TTXSY）、標準（&amp;SGDH&amp;／&amp;MFG&amp;，TTDTG、依語言）、程式（&amp;VBDKR-VBELN&amp;）、文字（DEFINE）。</li>
+    <li><b>（Unit 5）</b>為什麼程式符號在「全類別化」的列印程式中容易失效？<br><i>要點</i>：Composer 只讀全域資料物件；方法區域變數與類別屬性看不到，必須提供全域 DATA 工作區。</li>
+    <li><b>（Unit 5）</b>ADDRESS 命令為什麼要給 FROMCOUNTRY？<br><i>要點</i>：沒給時寄件國被當成收件國，國內地址會被格式化成國際格式（例 D-80801）。</li>
+    <li><b>（Unit 5）</b>以 PERFORM 從表單呼叫副程式時，參數結構是什麼？USING 的值有什麼要注意？<br><i>要點</i>：ITCSY（NAME、VALUE），IN_TAB／OUT_TAB；USING 值是格式化後字串（千分位、小數點），要自行還原。</li>
+    <li><b>（Unit 6）</b>要讓明細表頭在每一頁都出現、明細結束後消失，WRITE_FORM 要怎麼下？<br><i>要點</i>：首頁 BODY 印一次；TYPE='TOP' FUNCTION='SET'；明細後 TYPE='TOP' FUNCTION='DELETE'（下一頁起生效）。</li>
+    <li><b>（Unit 6）</b>END_FORM 與 CLOSE_FORM 的差別？<br><i>要點</i>：END_FORM 結束一份表單（同一 Spool 可再 START_FORM），CLOSE_FORM 結束整個列印；END_FORM 不能取代 CLOSE_FORM。</li>
+    <li><b>（Unit 6 延伸）</b>如何把 SAPscript 輸出成 PDF 寄出？<br><i>要點</i>：ITCPO-TDGETOTF='X' → CLOSE_FORM 取 OTFDATA → CONVERT_OTF FORMAT='PDF' → CL_BCS 附件 → COMMIT WORK。</li>
+    <li><b>（Unit 7）</b>表單套用 Style 後，表單原本的段落格式還有效嗎？<br><i>要點</i>：無效，樣式定義覆蓋表單定義；/: STYLE * 切回。</li>
+    <li><b>（Unit 8）</b>SAPscript 與 SmartForms 在「流程邏輯放哪裡」有何不同？新開發該選哪個？<br><i>要點</i>：SAPscript 在列印程式；SmartForms／Adobe 在表單（產生函數模組）。新開發選 Adobe Forms，S/4 標準單據優先用新 Output Management 的標準範本。</li>
+    <li><b>（Unit 9）</b>客戶要求在標準採購單加印一個 Z 表的欄位，依「先標準再客製」列出你的處理步驟。<br><i>要點</i>：確認有無標準欄位／設定 → 複製 MEDRUCK 為 Z 表單 → 用 PERFORM 呼叫 Z 程式讀 Z 表 → 在 NACE（EF／NEU）改指 Z 表單 → 測試與傳輸（含 SO10、SE78）；不複製 SAPFM06P 除非結構變更。</li>
+    <li><b>（Unit 9）</b>為什麼 SO10 標準文字在 QAS 找不到？怎麼傳？<br><i>要點</i>：文字不自動進傳輸單；RSTXTRAN 或手動加 R3TR TEXT TEXT,名稱,ST,語言。</li>
+    <li><b>（Unit 10）</b>條碼列印時送給印表機的三段內容是什麼？<br><i>要點</i>：prefix Print Control → 條碼資料 → suffix Print Control；在 SPAD 依裝置類型維護。</li>
+    <li><b>（Unit 11 L1）</b>V 模式下只呼叫 SAVE_TEXT 會怎樣？<br><i>要點</i>：只在文字記憶體，必須 COMMIT_TEXT＋COMMIT WORK，否則變更全遺失；COMMIT_TEXT 不能取代 COMMIT WORK；SAVEMODE_DIRECT 不可與一般更新混用。</li>
+    <li><b>（Unit 11 L2）</b>NACE 的 Processing Routine 對應哪個資料表？列印程式怎麼取得 NAST？<br><i>要點</i>：TNAPR（PGNAM、RONAM、FONAM、SFORM）；RSNAST00 以外部 PERFORM 呼叫 ENTRY，NAST／TNAPR 經共用介面工作區（TABLES）傳入。</li>
+    <li><b>（Unit 11 L3）</b>公司 Logo 要依公司代碼切換，怎麼做？<br><i>要點</i>：SE78 匯入多張圖（GRAPHICS／BMAP／BCOL），表單用 /: BITMAP 搭配符號動態指定名稱；記得傳輸 SE78 圖形。</li>
+    <li><b>（實務）</b>某批次對帳單每次跑出來客戶順序不同，而且使用者說「1000 到 1999 的客戶有幾位沒印到」。請指出兩個根因。<br><i>要點</i>：① SELECT 未 ORDER BY，HANA 無預設排序；② 用 BT 區間選客戶，字典序與前導零造成漏抓，應改列舉清單並印出核對清單。</li>
+  </ol>
+</section>

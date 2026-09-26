@@ -1,0 +1,626 @@
+<section class="chapter" id="ch07-4" data-title="OOP 範例庫（四）：物件導向設計原則（SOLID）實作">
+  <h2>第 7-4 章 OOP 範例庫（四）：物件導向設計原則（SOLID）實作</h2>
+  <p class="lede">這一章對應書中第 6 章「設計原則」的 10 支隨書範例（6.1～6.10）。三組範例各打一個原則：物料類別＋註冊表＋工廠示範<b>開放封閉原則（OCP）</b>、長方形與正方形示範<b>里氏替換原則（LSP）</b>、訂單操作類與資料庫／XML 讀取類示範<b>依賴反轉原則（DIP）</b>。每一組都照「觀念 → 改寫後範例 → 與原範例的差異 → 實務提醒」講，並把勘誤表第 6～9 條直接修進內文。讀完你會發現：SAP 自己的 BAdI、Enhancement Spot，本身就是 OCP 的大型實作，跟 Casper「先標準再客製」的口訣是同一件事。</p>
+  <div class="meta">
+    <div><b>核心 TCODE</b><span class="tcode">SE24</span><span class="tcode">SE11</span><span class="tcode">SE54</span><span class="tcode">SM30</span><span class="tcode">SE38</span><span class="tcode">SE80</span><span class="tcode">SE18</span><span class="tcode">SE19</span><span class="tcode">SAAB</span><span class="tcode">ST22</span></div>
+    <div><b>關鍵物件</b>ZCL_MATERIAL、ZCL_MATERIAL_RAW／FIN／SEMI、ZCL_MATL_SPL_FACTORY、ZINSP_DESC_T、ZCL_RECTANGLE、ZCL_SQUARE、ZIF_READ_ORDER、ZCL_ORDER_OPERATOR、ZCL_READ_ORDER_DB、ZCL_READ_ORDER_XML、MARA-MTART、CX_SY_CREATE_OBJECT_ERROR、CL_ABAP_UNIT_ASSERT、CL_SALV_TABLE</div>
+  </div>
+
+  <h3 id="ch07-4-01">1. 範例索引</h3>
+  <p>素材位置：<span class="kw">L36_ABAP_OOP_SAMPLE-master\ABAP_OOP_SAMPLE-master\ABAP_OOP_Sample_6.xx.txt</span>。書本內文不在資料夾中，本章對原則的說明是依範例程式、勘誤表與 SOLID 的通用定義整理；凡是範例沒給、由本章補齊的類別（例如 6.9／6.10 用到的訂單類別本體），都會標明「依範例推定」。</p>
+  <table>
+    <thead><tr><th>範例</th><th>原 REPORT／類別</th><th>主題（一句話）</th><th>原則</th><th>講解小節</th></tr></thead>
+    <tbody>
+      <tr><td>6.1</td><td>REPORT ZREP_CLS_021</td><td>用 IF／ELSEIF 依物料類型（ROH／FERT）寫死處理邏輯——反例</td><td>OCP（違反）</td><td><a href="#ch07-4-03">第 3 節</a></td></tr>
+      <tr><td>6.2</td><td>方法 GET_MATERIAL_OBJ（片段）</td><td>查 MARA-MTART → 查註冊表 ZINSP_DESC_T → 動態建立物料子類別</td><td>OCP</td><td><a href="#ch07-4-06">第 6 節</a></td></tr>
+      <tr><td>6.3</td><td>REPORT ZREP_CLS_022</td><td>呼叫端只認識抽象類別 ZCL_MATERIAL，透過工廠取得物件</td><td>OCP</td><td><a href="#ch07-4-07">第 7 節</a></td></tr>
+      <tr><td>6.4</td><td>ZCL_MATERIAL、ZCL_MATERIAL_FIN、ZCL_MATERIAL_RAW、ZCL_MATERIAL_SEMI、ZCL_MATL_SPL_FACTORY</td><td>抽象物料類別、三個具體子類與工廠類別的完整 code-based 原始碼</td><td>OCP</td><td><a href="#ch07-4-04">第 4 節</a>、<a href="#ch07-4-06">第 6 節</a></td></tr>
+      <tr><td>6.5</td><td>ZCL_RECTANGLE</td><td>長方形類別：SET_WIDTH／SET_HEIGHT／GET_AREA</td><td>LSP</td><td><a href="#ch07-4-09">第 9 節</a></td></tr>
+      <tr><td>6.6</td><td>ZCL_SQUARE（INHERITING FROM ZCL_RECTANGLE）</td><td>正方形重定義兩個 setter，寬高同步</td><td>LSP（違反）</td><td><a href="#ch07-4-09">第 9 節</a></td></tr>
+      <tr><td>6.7</td><td>REPORT ZREP_CLS_023</td><td>用長方形跑「寬 3 高 6 面積 18」，ASSERT 通過</td><td>LSP</td><td><a href="#ch07-4-10">第 10 節</a></td></tr>
+      <tr><td>6.8</td><td>REPORT ZREP_CLS_023（同名）</td><td>同一段邏輯換成正方形，面積變 36，ASSERT 失敗</td><td>LSP（違反）</td><td><a href="#ch07-4-10">第 10 節</a></td></tr>
+      <tr><td>6.9</td><td>REPORT ZREP_CLS_024；ZCL_ORDER_OPERATOR_1、ZCL_READ_ORDER_DB_1</td><td>訂單操作類直接依賴「從資料庫讀訂單」的具體類別——反例</td><td>DIP（違反）</td><td><a href="#ch07-4-12">第 12 節</a></td></tr>
+      <tr><td>6.10</td><td>REPORT ZREP_CLS_025；ZIF_READ_ORDER、ZCL_ORDER_OPERATOR、ZCL_READ_ORDER_DB、ZCL_READ_ORDER_XML</td><td>訂單操作類改依賴介面，資料來源從 DB 換成 XML 不必改操作類</td><td>DIP</td><td><a href="#ch07-4-13">第 13 節</a></td></tr>
+    </tbody>
+  </table>
+  <div class="note">原則本身的語法基礎（抽象類別、介面、重定義、轉型）請先看 <a href="#ch05-2-09">5-2 章第 9～11 節</a> 與本部 <a href="#ch07-3">7-3 章（繼承與多型）</a>；工廠／單例的原廠講法在 <a href="#ch05-2-19">5-2 章第 19 節</a>，完整設計模式在下一章 <a href="#ch07-5">7-5 章</a>。</div>
+
+  <h3 id="ch07-4-02">2. SOLID 五原則總覽與本章勘誤</h3>
+  <p>SOLID 是五個物件導向設計原則的字首。書中第 6 章的隨書範例只涵蓋其中三個（OCP、LSP、DIP），另外兩個在本節用 ABAP 的角度補充，讓整套原則完整：</p>
+  <table>
+    <thead><tr><th>字母</th><th>原則</th><th>一句話</th><th>在 ABAP／SAP 的樣子</th><th>本章範例</th></tr></thead>
+    <tbody>
+      <tr><td>S</td><td>單一職責 Single Responsibility</td><td>一個類別只有一個「會讓它改變的理由」</td><td>讀資料、商業邏輯、畫面輸出分開：DAO 類、邏輯類、SALV 顯示</td><td>範例無；本章改寫時把 <span class="kw">WRITE</span> 移出商業類別即是 SRP</td></tr>
+      <tr><td>O</td><td>開放封閉 Open–Closed</td><td>對擴充開放、對修改封閉</td><td>BAdI、Enhancement Spot、註冊表＋動態建立</td><td>6.1～6.4</td></tr>
+      <tr><td>L</td><td>里氏替換 Liskov Substitution</td><td>子類別物件放到父類別的位置，程式行為仍正確</td><td>REDEFINITION 不可改變父類的「行為契約」</td><td>6.5～6.8</td></tr>
+      <tr><td>I</td><td>介面隔離 Interface Segregation</td><td>不要逼實作者實作用不到的方法</td><td>小介面組合；7.40 起介面方法可宣告 <span class="kw">DEFAULT IGNORE／FAIL</span></td><td>範例無，見下方程式</td></tr>
+      <tr><td>D</td><td>依賴反轉 Dependency Inversion</td><td>高層模組與低層模組都依賴抽象（介面）</td><td>依賴 ZIF_…，由外部注入實作；ABAP Unit 用測試替身</td><td>6.9～6.10</td></tr>
+    </tbody>
+  </table>
+  <p><b>本章相關勘誤</b>（勘誤表 2018/11/29 版第 6～9 條）：</p>
+  <table>
+    <thead><tr><th>勘誤</th><th>頁次</th><th>原文</th><th>更正</th><th>本章處理</th></tr></thead>
+    <tbody>
+      <tr><td>6</td><td>p181</td><td>「子類必須實現<b>父類</b>的方法」</td><td>應為「子類必須實現<b>介面</b>的方法」</td><td>下方「介面繼承」說明</td></tr>
+      <tr><td>7</td><td>p187</td><td>「開放－<b>關閉</b>」原則</td><td>應為「開放－<b>封閉</b>」原則</td><td>全章一律用「開放封閉」</td></tr>
+      <tr><td>8</td><td>p190</td><td>圖 6-18「將 ROH 和 FERT 添加到表中（<b>SE11</b>）」</td><td>應為 <b>SM30</b></td><td><a href="#ch07-4-05">第 5 節</a></td></tr>
+      <tr><td>9</td><td>p210</td><td>範例 6.10 註解「傳入…<b>資料庫</b>讀取訂單類的實例」（第二段）</td><td>應為「<b>XML</b> 讀取訂單類的實例」</td><td><a href="#ch07-4-13">第 13 節</a></td></tr>
+    </tbody>
+  </table>
+  <p><b>介面繼承 vs. 實作繼承（勘誤 6）</b>：介面繼承是「介面只定義功能（方法簽章），實作類別沿用介面的屬性與方法名稱，並且<b>必須實作介面</b>的所有方法」；實作繼承（<span class="kw">INHERITING FROM</span>）則是連程式碼一起繼承，子類別<b>可以</b>重定義、不是「必須」（除非父類方法是 <span class="kw">ABSTRACT</span>）。原文寫成「必須實現父類的方法」會讓讀者誤以為一般繼承也有強制實作義務。</p>
+  <pre><code class="abap">" ISP 補充範例：把「肥介面」拆成小介面，實作者只挑需要的
+INTERFACE zif_material_print PUBLIC.
+  METHODS get_insp_desc RETURNING VALUE(rv_text) TYPE string.
+ENDINTERFACE.
+
+INTERFACE zif_material_stock PUBLIC.
+  METHODS get_stock_info RETURNING VALUE(rv_text) TYPE string.
+ENDINTERFACE.
+
+" 半成品需要兩種能力，原料只需要列印說明
+CLASS zcl_semi_demo DEFINITION PUBLIC FINAL CREATE PUBLIC.
+  PUBLIC SECTION.
+    INTERFACES: zif_material_print, zif_material_stock.
+ENDCLASS.
+
+" 另一種作法（7.40 SP08 起）：介面方法標 DEFAULT IGNORE，
+" 實作類別沒實作也能啟用，呼叫時什麼都不做
+INTERFACE zif_material_ext PUBLIC.
+  METHODS get_extra_note DEFAULT IGNORE
+    RETURNING VALUE(rv_text) TYPE string.
+ENDINTERFACE.</code></pre>
+
+  <h3 id="ch07-4-03">3. 反例：用 IF／ELSEIF 寫死物料類型（範例 6.1）</h3>
+  <p><b>觀念</b>：範例 6.1 是典型的「程序式分支」：讀出物料類型 MARA-MTART 後，用 IF／ELSEIF 判斷是原料（ROH）就提示檢查採購合約、是成品（FERT）就提示檢查銷售合約。問題不在它今天能不能跑，而在<b>明天多一種物料類型（例如半成品 HALB）時，你必須打開這支已經上線的程式改 IF</b>——每改一次就要重測、重傳輸，改的人越多，分支越長。這正是 OCP 要避免的「對修改開放」。</p>
+  <pre><code class="abap">" 範例 6.1 的現代寫法（仍是反例，用來對照）
+REPORT zrep_cls_021.
+
+PARAMETERS p_matnr TYPE matnr OBLIGATORY.
+
+START-OF-SELECTION.
+  SELECT SINGLE mtart
+    FROM mara
+    WHERE matnr = @p_matnr
+    INTO @DATA(lv_mtart).
+  IF sy-subrc &lt;&gt; 0.
+    MESSAGE |物料 { p_matnr ALPHA = OUT } 不存在| TYPE 'S' DISPLAY LIKE 'E'.
+    RETURN.
+  ENDIF.
+
+  " 每新增一種物料類型，就得回來改這裡 —— 違反開放封閉
+  DATA(lv_text) = SWITCH string( lv_mtart
+    WHEN 'ROH'  THEN `此物料為原料，需檢查採購合約`
+    WHEN 'FERT' THEN `此物料為成品，需檢查銷售合約`
+    ELSE             |物料類型 { lv_mtart } 未定義處理方式| ).
+
+  MESSAGE lv_text TYPE 'I'.</code></pre>
+  <p><b>與原範例的差異</b>：原範例用 <span class="kw">PARAMETERS … LIKE mara-matnr</span>、<span class="kw">SELECT SINGLE … INTO gv_material_type</span>（無 <span class="kw">@</span>）與 <span class="kw">WRITE</span> 清單輸出；宣告了 <span class="kw">gv_material</span> 卻沒用到；找不到物料或類型不是 ROH／FERT 時畫面一片空白，沒有任何提示。改寫版用 <span class="kw">TYPE matnr</span>（帶 ALPHA／MATN1 轉換）、內嵌宣告與 <span class="kw">SWITCH</span>，並補上 ELSE 分支。</p>
+  <div class="warn">改成 <span class="kw">SWITCH</span> 只是「比較好讀的 IF」，<b>並沒有</b>解決 OCP 問題——新增類型時依然要改這段程式。真正的解法是把「每種類型各自的行為」搬進各自的類別，並把「哪個類型對應哪個類別」搬到資料（註冊表）裡，見下面第 4～7 節。</div>
+
+  <h3 id="ch07-4-04">4. 物料類別家族：抽象類別 ZCL_MATERIAL 與三個子類（範例 6.4 上半）</h3>
+  <p><b>觀念</b>：把「會變的部分」抽成多型。抽象類別 ZCL_MATERIAL 宣告所有物料共通的方法，每種物料類型一個 FINAL 子類別，各自重定義。呼叫端只持有 <span class="kw">REF TO zcl_material</span>，執行時才決定實際是哪個子類（動態綁定，見 <a href="#ch05-2-10">5-2 章第 10 節</a>）。</p>
+  <pre><code class="abap">CLASS zcl_material DEFINITION PUBLIC ABSTRACT CREATE PUBLIC.
+  PUBLIC SECTION.
+    METHODS constructor IMPORTING iv_matnr TYPE matnr OPTIONAL.
+    " 抽象方法：強迫每個子類提供自己的檢驗說明
+    METHODS get_insp_desc ABSTRACT RETURNING VALUE(rv_text) TYPE string.
+  PROTECTED SECTION.
+    DATA mv_material TYPE matnr.
+ENDCLASS.
+
+CLASS zcl_material IMPLEMENTATION.
+  METHOD constructor.
+    mv_material = iv_matnr.
+  ENDMETHOD.
+ENDCLASS.
+
+CLASS zcl_material_raw DEFINITION PUBLIC INHERITING FROM zcl_material FINAL CREATE PUBLIC.
+  PUBLIC SECTION.
+    METHODS get_insp_desc REDEFINITION.
+ENDCLASS.
+CLASS zcl_material_raw IMPLEMENTATION.
+  METHOD get_insp_desc.
+    rv_text = |{ mv_material ALPHA = OUT }：此物料為原料，需檢查採購合約|.
+  ENDMETHOD.
+ENDCLASS.
+
+CLASS zcl_material_fin DEFINITION PUBLIC INHERITING FROM zcl_material FINAL CREATE PUBLIC.
+  PUBLIC SECTION.
+    METHODS get_insp_desc REDEFINITION.
+    METHODS show_material_fin RETURNING VALUE(rv_text) TYPE string.  "成品獨有
+ENDCLASS.
+CLASS zcl_material_fin IMPLEMENTATION.
+  METHOD get_insp_desc.
+    rv_text = |{ mv_material ALPHA = OUT }：此物料為成品，需檢查銷售合約|.
+  ENDMETHOD.
+  METHOD show_material_fin.
+    rv_text = `成品類別新增的方法`.
+  ENDMETHOD.
+ENDCLASS.
+
+CLASS zcl_material_semi DEFINITION PUBLIC INHERITING FROM zcl_material FINAL CREATE PUBLIC.
+  PUBLIC SECTION.
+    METHODS get_insp_desc REDEFINITION.
+ENDCLASS.
+CLASS zcl_material_semi IMPLEMENTATION.
+  METHOD get_insp_desc.
+    rv_text = |{ mv_material ALPHA = OUT }：此物料為半成品，需列印生產過程及庫存資訊|.
+  ENDMETHOD.
+ENDCLASS.</code></pre>
+  <p><b>與原範例的差異</b>：</p>
+  <ul>
+    <li>原範例的 <span class="kw">PRINT_INSP_DESC</span> 在抽象類別裡是<b>空實作</b>（不是 ABSTRACT 方法），子類忘了重定義也能啟用，執行時什麼都不印。改成 <span class="kw">ABSTRACT</span> 方法，讓編譯器替你把關。</li>
+    <li>原範例在類別方法裡直接 <span class="kw">WRITE</span>，把「商業判斷」和「清單輸出」綁在一起，換成 ALV、Fiori 或背景作業時都得改類別（違反 SRP）。改寫版回傳字串，由呼叫端決定怎麼顯示；方法名也因此由 PRINT_ 改為 GET_。</li>
+    <li>原範例的 <span class="kw">MV_MATERIAL</span> 宣告了但從來沒被賦值（工廠建立物件時沒把物料號碼傳進去）。改寫版加上建構子傳入物料號碼。</li>
+    <li>SE24 產生的 <span class="kw">* &lt;SIGNATURE&gt;</span> 註解區塊與被註解掉的 <span class="kw">CALL METHOD SUPER-&gt;PRINT_INSP_DESC</span> 省略；需要呼叫父類實作時寫 <span class="kw">super-&gt;get_insp_desc( )</span>（但抽象方法沒有父類實作可呼叫）。</li>
+  </ul>
+  <div class="warn">成品類別多了一個 <span class="kw">SHOW_MATERIAL_FIN</span>。呼叫端手上是 <span class="kw">REF TO zcl_material</span>，看不到這個方法，必須先判斷型別再向下轉型：<span class="kw">IF lo_mat IS INSTANCE OF zcl_material_fin.</span>（7.50 起）→ <span class="kw">CAST zcl_material_fin( lo_mat )-&gt;show_material_fin( )</span>。如果呼叫端到處都在做這種判斷，代表抽象設計不夠，又走回第 3 節的 IF 分支老路了。</div>
+
+  <h3 id="ch07-4-05">5. 註冊表 ZINSP_DESC_T：用 SM30 維護「類型 → 類別」對應（勘誤 8）</h3>
+  <p><b>觀念</b>：OCP 的關鍵一步是把「哪個物料類型用哪個類別」從程式碼搬到<b>資料</b>。範例用一張自建表 ZINSP_DESC_T 當註冊表（registry），欄位名可從範例的 SELECT 看出：<span class="kw">MATERIAL_TYPE</span>（物料類型）與 <span class="kw">CLASS_TYPE</span>（類別名）。</p>
+  <table>
+    <thead><tr><th>欄位</th><th>Key</th><th>資料元素（建議）</th><th>說明</th></tr></thead>
+    <tbody>
+      <tr><td>MANDT</td><td>✔</td><td>MANDT</td><td>用戶端，讓 SM30 依用戶端維護</td></tr>
+      <tr><td>MATERIAL_TYPE</td><td>✔</td><td>MTART</td><td>物料類型，check table 可設 T134</td></tr>
+      <tr><td>CLASS_TYPE</td><td></td><td>SEOCLSNAME</td><td>要建立的類別名（原範例程式用 CHAR30 接）；check table 可設 SEOCLASS</td></tr>
+    </tbody>
+  </table>
+  <p>建立與維護步驟 <span class="src">（依講義步驟整理）</span>：</p>
+  <ol>
+    <li><span class="tcode">SE11</span> 建表 ZINSP_DESC_T，交付類別（Delivery Class）建議 <b>C</b>（客製化資料，會進客製化請求 Customizing Request），技術設定可設完全緩衝（筆數極少、幾乎只讀）。</li>
+    <li>SE11 選單 Utilities → Table Maintenance Generator（或 <span class="tcode">SE54</span>）產生維護畫面：授權群組、函數群組、一步式（One step）維護。</li>
+    <li>用 <span class="tcode">SM30</span> 輸入 ZINSP_DESC_T，新增兩筆：<b>ROH → ZCL_MATERIAL_RAW</b>、<b>FERT → ZCL_MATERIAL_FIN</b>（之後要支援半成品，只要再加 <b>HALB → ZCL_MATERIAL_SEMI</b>）。</li>
+  </ol>
+  <div class="warn"><b>勘誤 8</b>：書中圖 6-18 標題寫「將 ROH 和 FERT 添加到表中（SE11）」，應為 <b>SM30</b>。SE11 是定義表結構的地方，維護表內容要用 SM30（前提是已產生表維護程式）；在 SE11／SE16 直接改資料不是正規作法，也不會記錄到客製化請求。</div>
+  <div class="tip">呼應 Casper 經驗第 2 條「列舉優於區間」：註冊表是「一個類型一列」的<b>列舉</b>，不是「MTART 在 A～M 之間用某類別」的區間。區間比的是字典序，新增的類型代碼剛好落在區間裡就會被誤套；列舉則是沒登記就明確找不到，行為可預期。</div>
+
+  <h3 id="ch07-4-06">6. 工廠方法 GET_MATERIAL_OBJ：查註冊表＋動態建立（範例 6.2、6.4 下半）</h3>
+  <p><b>觀念</b>：工廠類別 ZCL_MATL_SPL_FACTORY 提供靜態方法 GET_MATERIAL_OBJ：① 依物料號碼查 MARA 取得物料類型 → ② 依物料類型查註冊表取得類別名 → ③ 用 <span class="kw">CREATE OBJECT … TYPE (變數)</span> 動態建立物件，以父類型別回傳。之後新增物料類型，<b>工廠本身一行都不用改</b>。</p>
+  <pre><code class="abap">CLASS zcl_matl_spl_factory DEFINITION PUBLIC FINAL CREATE PRIVATE.
+  PUBLIC SECTION.
+    "! 依物料類型建立對應的物料物件；未登記時回傳未繫結的參考
+    CLASS-METHODS get_material_obj
+      IMPORTING iv_material_id     TYPE matnr
+      RETURNING VALUE(ro_material) TYPE REF TO zcl_material
+      RAISING   cx_sy_create_object_error.
+ENDCLASS.
+
+CLASS zcl_matl_spl_factory IMPLEMENTATION.
+  METHOD get_material_obj.
+    " ① 物料號碼 → 物料類型
+    SELECT SINGLE mtart
+      FROM mara
+      WHERE matnr = @iv_material_id
+      INTO @DATA(lv_mtart).
+    IF sy-subrc &lt;&gt; 0.
+      RETURN.
+    ENDIF.
+
+    " ② 物料類型 → 類別名（以完整主鍵讀取，結果唯一，不受 HANA 排序影響）
+    SELECT SINGLE class_type
+      FROM zinsp_desc_t
+      WHERE material_type = @lv_mtart
+      INTO @DATA(lv_class).
+    IF sy-subrc &lt;&gt; 0.
+      RETURN.   "未登記：由呼叫端決定如何提示
+    ENDIF.
+
+    " ③ 動態建立。類別名必須大寫；類別不存在、是抽象類、
+    "    或不是 ZCL_MATERIAL 的子類，都會丟 CX_SY_CREATE_OBJECT_ERROR
+    DATA(lv_type_name) = to_upper( condense( lv_class ) ).
+    CREATE OBJECT ro_material TYPE (lv_type_name)
+      EXPORTING iv_matnr = iv_material_id.
+  ENDMETHOD.
+ENDCLASS.</code></pre>
+  <p><b>與原範例的差異</b>：</p>
+  <ul>
+    <li>原範例宣告了 <span class="kw">lv_material</span>、<span class="kw">lv_method_name</span> 兩個沒用到的變數；用 <span class="kw">TRANSLATE … TO UPPER CASE</span> 轉大寫，改寫為 <span class="kw">to_upper( )</span>。</li>
+    <li>原範例的第二個 <span class="kw">IF sy-subrc = 0</span> 同時承接「查不到物料」與「註冊表沒登記」兩種情況，靠的是 sy-subrc 碰巧沒被覆蓋；結構一改就可能判斷錯。改寫版每個 SELECT 後立即檢查。</li>
+    <li>原範例在工廠內 <span class="kw">CATCH cx_sy_create_object_error</span> 後用 <span class="kw">MESSAGE … TYPE 'I'</span> 彈窗——工廠是模型層，不該碰畫面（背景作業或 RFC 呼叫時彈窗會出問題），而且吞掉例外後呼叫端只拿到未繫結參考，分不出是「沒登記」還是「類別名打錯」。改寫版在簽章宣告 <span class="kw">RAISING</span>，讓呼叫端處理。</li>
+    <li>原範例建立物件時沒傳物料號碼，子類的 MV_MATERIAL 永遠是空的；改寫版以 <span class="kw">EXPORTING iv_matnr</span> 傳給建構子。</li>
+    <li>書中範例 6.2 與 6.4 下半段是同一個方法，只差一句註解措辭，本章合併講解。</li>
+  </ul>
+  <div class="note"><b>為什麼這裡還是 CREATE OBJECT？</b> 本部規定以 <span class="kw">NEW</span> 取代 <span class="kw">CREATE OBJECT</span>，但 <span class="kw">NEW</span> 運算子只接受<b>靜態</b>型別（<span class="kw">NEW zcl_x( )</span> 或 <span class="kw">NEW #( )</span>），類別名放在變數裡的<b>動態建立</b>，到 7.5x 為止仍只能用 <span class="kw">CREATE OBJECT … TYPE (name)</span>。這是現代 ABAP 中 CREATE OBJECT 唯一的正當用途。動態型別與 RTTI 的其他寫法見 <a href="#ch05-2-20">5-2 章第 20 節</a>。</div>
+  <div class="warn">Casper 經驗第 1 條「HANA 沒有預設排序」：這裡兩個 SELECT SINGLE 都是用<b>完整主鍵</b>讀（MARA 的 MATNR、註冊表的 MANDT＋MATERIAL_TYPE），結果唯一，所以安全。如果日後註冊表加了「工廠」「有效日期」之類的鍵欄位，而程式只用部分鍵讀 SELECT SINGLE，HANA 回哪一筆就不保證了——那時必須改成 <span class="kw">ORDER BY</span> 明確排序後取第一筆（<span class="kw">UP TO 1 ROWS</span>），否則同一個物料今天建出 A 類、明天建出 B 類。</div>
+
+  <h3 id="ch07-4-07">7. 呼叫端程式：只認識抽象類別（範例 6.3）</h3>
+  <p><b>觀念</b>：呼叫端不必建立工廠實例，直接用類別名呼叫靜態方法取得物件，再呼叫抽象方法。它從頭到尾<b>不知道</b>有 RAW、FIN、SEMI 這些子類——這就是「對修改封閉」：新增子類時，這支報表不用動。</p>
+  <pre><code class="abap">REPORT zrep_cls_022.
+
+PARAMETERS p_matnr TYPE matnr OBLIGATORY.
+
+START-OF-SELECTION.
+  TRY.
+      " 不必建立工廠實例，直接呼叫靜態方法取得子類物件
+      DATA(lo_material) = zcl_matl_spl_factory=&gt;get_material_obj( p_matnr ).
+
+      IF lo_material IS NOT BOUND.
+        MESSAGE |物料 { p_matnr ALPHA = OUT } 不存在，或其物料類型未在 ZINSP_DESC_T 登記|
+          TYPE 'S' DISPLAY LIKE 'W'.
+        RETURN.
+      ENDIF.
+
+      " 多型：實際執行哪個子類的實作，由註冊表決定
+      MESSAGE lo_material-&gt;get_insp_desc( ) TYPE 'I'.
+
+      " 子類獨有的方法要先確認型別再向下轉型（7.50 起的 IS INSTANCE OF）
+      IF lo_material IS INSTANCE OF zcl_material_fin.
+        MESSAGE CAST zcl_material_fin( lo_material )-&gt;show_material_fin( ) TYPE 'S'.
+      ENDIF.
+
+    CATCH cx_sy_create_object_error INTO DATA(lx_create).
+      " 註冊表登記的類別名打錯、類別未啟用、或不是 ZCL_MATERIAL 的子類
+      MESSAGE lx_create-&gt;get_text( ) TYPE 'S' DISPLAY LIKE 'E'.
+  ENDTRY.</code></pre>
+  <p><b>與原範例的差異</b>：原範例 <span class="kw">CATCH cx_root</span> 一網打盡，還留了一個空的 <span class="kw">CLEANUP</span> 區塊（在最外層 TRY 中沒有意義，CLEANUP 只在例外「往外傳」時才執行）；輸出用 <span class="kw">WRITE</span>。改寫版只抓工廠宣告的例外，其他非預期錯誤就讓它 DUMP 到 <span class="tcode">ST22</span>，比默默印一行字好追。</p>
+  <p><b>擴充演練——新增半成品只需兩步</b>：① <span class="tcode">SE24</span> 建立 ZCL_MATERIAL_SEMI（範例 6.4 已提供）；② <span class="tcode">SM30</span> 在 ZINSP_DESC_T 加一筆 <b>HALB → ZCL_MATERIAL_SEMI</b>。報表 ZREP_CLS_022、工廠 ZCL_MATL_SPL_FACTORY、既有子類<b>全部不動、不必重測</b>。這就是勘誤 7 所說：「開放－封閉」原則，即軟體擴充時<b>只新增程式碼，而不是修改原有程式碼</b>。</p>
+
+  <h3 id="ch07-4-08">8. OCP 在 SAP 標準裡的樣子：BAdI 就是官方版的註冊表</h3>
+  <p>把第 4～7 節的結構和 SAP 增強框架並排，你會發現幾乎一對一：</p>
+  <table>
+    <thead><tr><th>書中範例</th><th>SAP 新式 BAdI（<a href="#ch03-4-09">3-4 章第 9～11 節</a>）</th></tr></thead>
+    <tbody>
+      <tr><td>抽象類別 ZCL_MATERIAL 的方法簽章</td><td>BAdI 介面（SE18 定義的 Interface）</td></tr>
+      <tr><td>子類 ZCL_MATERIAL_RAW／FIN／SEMI</td><td>BAdI 實作類別（SE19 建立的 Implementation）</td></tr>
+      <tr><td>註冊表 ZINSP_DESC_T（類型 → 類別）</td><td>Enhancement Spot 的實作登記＋過濾器值（Filter）</td></tr>
+      <tr><td>工廠 GET_MATERIAL_OBJ 動態建立</td><td><span class="kw">GET BADI … FILTERS</span> 由框架找出並建立實作</td></tr>
+      <tr><td>呼叫端 ZREP_CLS_022 不認識子類</td><td>SAP 標準程式不認識你的 Z 實作，卻會呼叫它</td></tr>
+    </tbody>
+  </table>
+  <pre><code class="abap">" 同一件事改用新式 BAdI 實作（ZBADI_MATL_INSP 為示意名稱，
+" 過濾器 MTART；每個物料類型在 SE19 建一個帶過濾值的實作）
+DATA lo_badi TYPE REF TO zbadi_matl_insp.
+
+TRY.
+    GET BADI lo_badi
+      FILTERS mtart = lv_mtart.
+    DATA lv_text TYPE string.
+    CALL BADI lo_badi-&gt;get_insp_desc
+      RECEIVING rv_text = lv_text.
+    MESSAGE lv_text TYPE 'I'.
+  CATCH cx_badi_not_implemented.
+    MESSAGE |物料類型 { lv_mtart } 沒有對應的 BAdI 實作| TYPE 'S' DISPLAY LIKE 'W'.
+ENDTRY.</code></pre>
+  <div class="tip"><b>Casper 經驗第 3 條「先找標準，再想客製」＝對擴充開放、對修改封閉。</b> 標準設定 → BAdI／Enhancement Spot → Enhancement Point → 修改標準，這條升級路線本身就是 OCP：越左邊越是「在 SAP 預留的擴充點上加新程式碼」，越右邊越是「打開別人已上線的程式來改」。修改標準（Modification）之所以成本高一個量級，正是因為違反了「對修改封閉」——每次升級都要在 <span class="tcode">SPAU</span> 重新比對。自己寫 Z 程式時也一樣：先設計出擴充點（註冊表、介面、BAdI），日後需求變動就只是「加」，不是「改」。</div>
+  <div class="note">什麼時候用自建註冊表、什麼時候自建 BAdI？註冊表簡單、業務顧問用 SM30 就能維護，適合「同一套程式、不同組織單位要不同行為」；BAdI 有 SE18／SE19 的工具支援、可跨套件交付、有 Fallback Class，適合「要讓別的團隊或客戶擴充」。兩者都比第 3 節的 IF／SWITCH 好。</div>
+
+  <h3 id="ch07-4-09">9. 里氏替換原則：長方形與正方形（範例 6.5、6.6）</h3>
+  <p><b>觀念</b>：LSP 說的是「凡是用父類別的地方，換成子類別物件，程式仍然正確」。數學上正方形是一種長方形，所以直覺上 ZCL_SQUARE 繼承 ZCL_RECTANGLE 很合理；但長方形的<b>行為契約</b>是「設定寬度不會改變高度」，正方形為了保持四邊相等，重定義 setter 讓寬高連動，就把這個契約打破了。「is-a」要看<b>行為</b>，不是看名詞。</p>
+  <pre><code class="abap">" 範例 6.5：長方形（改寫：屬性改為 PROTECTED，避免外部繞過 setter）
+CLASS zcl_rectangle DEFINITION PUBLIC CREATE PUBLIC.
+  PUBLIC SECTION.
+    METHODS set_width  IMPORTING iv_width  TYPE i.
+    METHODS set_height IMPORTING iv_height TYPE i.
+    METHODS get_area   RETURNING VALUE(rv_area) TYPE i.
+  PROTECTED SECTION.
+    DATA mv_width  TYPE i.
+    DATA mv_height TYPE i.
+ENDCLASS.
+
+CLASS zcl_rectangle IMPLEMENTATION.
+  METHOD set_width.
+    mv_width = iv_width.
+  ENDMETHOD.
+  METHOD set_height.
+    mv_height = iv_height.
+  ENDMETHOD.
+  METHOD get_area.
+    rv_area = mv_width * mv_height.
+  ENDMETHOD.
+ENDCLASS.
+
+" 範例 6.6：正方形繼承長方形，重定義兩個 setter 讓寬高同步
+CLASS zcl_square DEFINITION PUBLIC INHERITING FROM zcl_rectangle FINAL CREATE PUBLIC.
+  PUBLIC SECTION.
+    METHODS set_width  REDEFINITION.
+    METHODS set_height REDEFINITION.
+ENDCLASS.
+
+CLASS zcl_square IMPLEMENTATION.
+  METHOD set_width.
+    mv_width  = iv_width.
+    mv_height = iv_width.     "改寬也改高 → 打破長方形的契約
+  ENDMETHOD.
+  METHOD set_height.
+    mv_height = iv_height.
+    mv_width  = iv_height.
+  ENDMETHOD.
+ENDCLASS.</code></pre>
+  <p><b>與原範例的差異</b>：原範例把 <span class="kw">MV_WIDTH</span>／<span class="kw">MV_HEIGHT</span> 放在 <span class="kw">PUBLIC SECTION</span>，外部可以直接 <span class="kw">lo-&gt;mv_width = 5</span> 繞過正方形的 setter，連「正方形寬高相等」都保證不了。改成 PROTECTED（子類仍可存取）；若要讓外部讀，可用 <span class="kw">PUBLIC SECTION … DATA … READ-ONLY</span>。其餘邏輯與原範例相同，這兩支範例本來就是「刻意示範錯誤設計」。</p>
+
+  <h3 id="ch07-4-10">10. 驗證 LSP 被打破：從 ASSERT 到 ABAP Unit（範例 6.7、6.8）</h3>
+  <p><b>觀念</b>：範例 6.7 用長方形跑「寬 3、高 6，面積應為 18」，<span class="kw">ASSERT</span> 通過；範例 6.8 把同一段程式換成正方形，<span class="kw">set_height( 6 )</span> 把寬也改成 6，面積變 36，ASSERT 失敗、程式短傾印（ASSERTION_FAILED）。同一段「以長方形為前提」的程式，換成子類就壞掉——LSP 被違反的鐵證。</p>
+  <p>比起在報表裡寫 ASSERT，更好的作法是把「長方形的行為契約」寫成 <b>ABAP Unit 測試</b>，並讓每個子類都跑同一組測試（契約測試）。ABAP Unit 的原廠說明見 <a href="#ch05-2-17">5-2 章第 17 節</a>。</p>
+  <pre><code class="abap">" 放在 ZCL_RECTANGLE 的 Local Test Classes（SE24／ADT 的 Test Classes 頁籤）
+CLASS ltc_rectangle_contract DEFINITION FINAL FOR TESTING
+  RISK LEVEL HARMLESS DURATION SHORT.
+  PRIVATE SECTION.
+    METHODS check_contract IMPORTING io_rect TYPE REF TO zcl_rectangle.
+    METHODS rectangle_keeps_contract FOR TESTING.   "對應範例 6.7
+    METHODS square_keeps_contract    FOR TESTING.   "對應範例 6.8
+ENDCLASS.
+
+CLASS ltc_rectangle_contract IMPLEMENTATION.
+  METHOD check_contract.
+    " 長方形的契約：寬、高互不影響
+    io_rect-&gt;set_width( 3 ).
+    io_rect-&gt;set_height( 6 ).
+    cl_abap_unit_assert=&gt;assert_equals(
+      act = io_rect-&gt;get_area( )
+      exp = 18
+      msg = |{ cl_abap_classdescr=&gt;get_class_name( io_rect ) } 不符合長方形的行為契約| ).
+  ENDMETHOD.
+
+  METHOD rectangle_keeps_contract.
+    check_contract( NEW zcl_rectangle( ) ).        "通過：18
+  ENDMETHOD.
+
+  METHOD square_keeps_contract.
+    check_contract( NEW zcl_square( ) ).           "失敗：實際 36
+  ENDMETHOD.
+ENDCLASS.</code></pre>
+  <p><b>與原範例的差異</b>：</p>
+  <ul>
+    <li>範例 6.7 與 6.8 的 REPORT 名稱<b>都是 ZREP_CLS_023</b>，實際上是同一支程式的兩個版本；兩支都宣告了 <span class="kw">go_rectangle</span> 與 <span class="kw">go_square</span> 但各只用到一個。</li>
+    <li>範例 6.8 直接用 <span class="kw">go_square</span> 呼叫，嚴格說還不是「替換」。真正的 LSP 情境是<b>變數型別仍是長方形</b>、物件卻是正方形：<span class="kw">DATA lo_rect TYPE REF TO zcl_rectangle. lo_rect = NEW zcl_square( ).</span>——呼叫端以為自己拿的是長方形，結果行為不同。上面的契約測試正是這樣寫（參數型別是 ZCL_RECTANGLE）。</li>
+    <li>原範例的 <span class="kw">CREATE OBJECT go_square.</span> 改為 <span class="kw">NEW zcl_square( )</span>；<span class="kw">WRITE: / 'Area is:', lv_area.</span> 改由測試框架報告結果。</li>
+  </ul>
+  <div class="warn"><span class="kw">ASSERT</span> 在正式程式中失敗會直接短傾印，使用者看到的是 ST22 的 ASSERTION_FAILED。要在正式程式留斷言，請用 <span class="kw">ASSERT ID &lt;checkpoint group&gt; CONDITION …</span> 搭配 <span class="tcode">SAAB</span> 控制是否啟用；驗證設計契約則交給 ABAP Unit（<span class="kw">Ctrl+Shift+F10</span> 執行，或 ATC 一併跑）。</div>
+
+  <h3 id="ch07-4-11">11. 修正 LSP：共同介面＋不可變物件</h3>
+  <p>正方形不該繼承「可以分別改寬高」的長方形。常見兩種修法：① 抽出共同介面 ZIF_SHAPE，只保證「能算面積」，長方形與正方形各自實作、互不繼承；② 讓形狀成為<b>不可變物件</b>（值在建構子給定、沒有 setter），就不存在「改寬連帶改高」的問題。</p>
+  <pre><code class="abap">INTERFACE zif_shape PUBLIC.
+  METHODS get_area RETURNING VALUE(rv_area) TYPE i.
+ENDINTERFACE.
+
+CLASS zcl_rect_v2 DEFINITION PUBLIC FINAL CREATE PUBLIC.
+  PUBLIC SECTION.
+    INTERFACES zif_shape.
+    METHODS constructor IMPORTING iv_width TYPE i iv_height TYPE i.
+    DATA mv_width  TYPE i READ-ONLY.
+    DATA mv_height TYPE i READ-ONLY.
+ENDCLASS.
+CLASS zcl_rect_v2 IMPLEMENTATION.
+  METHOD constructor.
+    mv_width  = iv_width.
+    mv_height = iv_height.
+  ENDMETHOD.
+  METHOD zif_shape~get_area.
+    rv_area = mv_width * mv_height.
+  ENDMETHOD.
+ENDCLASS.
+
+CLASS zcl_square_v2 DEFINITION PUBLIC FINAL CREATE PUBLIC.
+  PUBLIC SECTION.
+    INTERFACES zif_shape.
+    METHODS constructor IMPORTING iv_side TYPE i.
+    DATA mv_side TYPE i READ-ONLY.
+ENDCLASS.
+CLASS zcl_square_v2 IMPLEMENTATION.
+  METHOD constructor.
+    mv_side = iv_side.
+  ENDMETHOD.
+  METHOD zif_shape~get_area.
+    rv_area = mv_side * mv_side.
+  ENDMETHOD.
+ENDCLASS.</code></pre>
+  <p>使用端只依賴介面，任何形狀都能放進來替換，而不改變正確性：</p>
+  <pre><code class="abap">TYPES tt_shape TYPE STANDARD TABLE OF REF TO zif_shape WITH EMPTY KEY.
+
+DATA(lt_shapes) = VALUE tt_shape(
+  ( NEW zcl_rect_v2( iv_width = 3 iv_height = 6 ) )
+  ( NEW zcl_square_v2( iv_side = 6 ) ) ).
+
+DATA(lv_total) = REDUCE i( INIT s = 0
+                           FOR lo_shape IN lt_shapes
+                           NEXT s = s + lo_shape-&gt;get_area( ) ).
+
+MESSAGE |面積合計：{ lv_total }| TYPE 'I'.   "18 + 36 = 54</code></pre>
+  <div class="tip">SAP 業務物件上的 LSP 陷阱更常見：例如寫一個「採購單」父類，再讓「寄售採購單」「外包採購單」繼承並重定義過帳邏輯，結果某個子類在 <span class="kw">post( )</span> 裡偷偷不做 GR／IR 檢查——呼叫端依父類假設寫的對帳程式就會出錯。判斷準則：子類的前置條件不可以更嚴、後置條件不可以更鬆、不可以丟父類沒宣告的例外。做不到，就改用組合或介面，不要硬繼承。</div>
+
+  <h3 id="ch07-4-12">12. 依賴反轉：反例——操作類直接依賴資料庫讀取類（範例 6.9）</h3>
+  <p><b>觀念</b>：DIP 有兩句話：「高層模組不應依賴低層模組，兩者都應依賴抽象」「抽象不應依賴細節，細節應依賴抽象」。範例 6.9 中，高層的「訂單操作類」ZCL_ORDER_OPERATOR_1 的 <span class="kw">READ_ORDER</span> 方法參數型別直接寫死成低層的具體類別 <span class="kw">ZCL_READ_ORDER_DB_1</span>——今天訂單來源從資料庫改成 XML、Excel 或 OData，就必須打開操作類修改方法簽章與內容。</p>
+  <p>範例只提供了呼叫端報表，兩個類別的本體沒有附上；依呼叫方式推定其結構如下（<span class="src">依範例推定</span>）：</p>
+  <pre><code class="abap">" 反例（依範例 6.9 推定）：參數型別綁死在具體類別
+CLASS zcl_order_operator_1 DEFINITION PUBLIC CREATE PUBLIC.
+  PUBLIC SECTION.
+    METHODS read_order    IMPORTING io_reader TYPE REF TO zcl_read_order_db_1.
+    METHODS process_order.
+  PRIVATE SECTION.
+    DATA mo_reader TYPE REF TO zcl_read_order_db_1.
+ENDCLASS.
+
+" 範例 6.9 呼叫端的現代寫法
+REPORT zrep_cls_024.
+
+START-OF-SELECTION.
+  " 建立訂單操作類與資料庫讀取類的實例
+  DATA(lo_operator) = NEW zcl_order_operator_1( ).
+  DATA(lo_reader)   = NEW zcl_read_order_db_1( ).
+
+  " 傳入的只能是 ZCL_READ_ORDER_DB_1（或其子類）—— 換資料來源就得改操作類
+  lo_operator-&gt;read_order( lo_reader ).
+  lo_operator-&gt;process_order( ).</code></pre>
+  <p><b>與原範例的差異</b>：</p>
+  <ul>
+    <li>原範例用 <span class="kw">CREATE OBJECT</span> 建立後再 <span class="kw">IF … IS NOT INITIAL</span> 檢查——<span class="kw">NEW</span>／CREATE OBJECT 成功後參考必定已繫結，失敗會丟例外而不是回傳空參考，這個 IF 永遠成立，可省略。</li>
+    <li>原範例寫成 <span class="kw">CALL METHOD go_order_operator-&gt;read_order( go_read_order_from_db ).</span>，把 CALL METHOD 與函數式括號混用（語法允許但不建議），而下一行的 process_order 又用函數式，風格不一致。改為一律函數式呼叫。</li>
+    <li>原範例 <span class="kw">CATCH cx_sy_dyn_call_error</span> 且 CATCH 區塊是空的：這個例外只會在<b>動態</b>呼叫（<span class="kw">CALL METHOD (name)</span>）時發生，靜態呼叫根本不會丟，這段 TRY 沒有作用，空 CATCH 還會掩蓋問題；改寫版刪除。</li>
+  </ul>
+
+  <h3 id="ch07-4-13">13. 依賴反轉：介面 ZIF_READ_ORDER 與 DB／XML 兩種實作（範例 6.10，勘誤 9）</h3>
+  <p><b>觀念</b>：在高層與低層之間插入介面 ZIF_READ_ORDER。操作類只認識介面；資料庫讀取類、XML 讀取類都「往上」實作這個介面——依賴的箭頭從「高層 → 低層」反轉成「低層 → 抽象 ← 高層」，這就是「反轉」二字的由來。以下類別本體同樣依範例 6.10 的呼叫方式推定（<span class="src">依範例推定</span>），訂單資料以 VBAK 為例：</p>
+  <pre><code class="abap">INTERFACE zif_read_order PUBLIC.
+  TYPES: BEGIN OF ty_order,
+           vbeln TYPE vbak-vbeln,
+           erdat TYPE vbak-erdat,
+           kunnr TYPE vbak-kunnr,
+           netwr TYPE vbak-netwr,
+           waerk TYPE vbak-waerk,
+         END OF ty_order,
+         tt_order TYPE STANDARD TABLE OF ty_order WITH EMPTY KEY.
+  METHODS read_order RETURNING VALUE(rt_order) TYPE tt_order.
+ENDINTERFACE.
+
+" 低層實作一：從資料庫讀
+CLASS zcl_read_order_db DEFINITION PUBLIC FINAL CREATE PUBLIC.
+  PUBLIC SECTION.
+    INTERFACES zif_read_order.
+ENDCLASS.
+CLASS zcl_read_order_db IMPLEMENTATION.
+  METHOD zif_read_order~read_order.
+    SELECT vbeln, erdat, kunnr, netwr, waerk
+      FROM vbak
+      WHERE erdat &gt;= @( sy-datum - 7 )
+      ORDER BY vbeln                    "HANA 無預設排序，一定要明確排序
+      INTO TABLE @rt_order
+      UP TO 500 ROWS.
+  ENDMETHOD.
+ENDCLASS.
+
+" 低層實作二：從 XML 字串讀（asXML 格式，用恆等轉換 ID 反序列化）
+CLASS zcl_read_order_xml DEFINITION PUBLIC FINAL CREATE PUBLIC.
+  PUBLIC SECTION.
+    INTERFACES zif_read_order.
+    METHODS constructor IMPORTING iv_xml TYPE string.
+  PRIVATE SECTION.
+    DATA mv_xml TYPE string.
+ENDCLASS.
+CLASS zcl_read_order_xml IMPLEMENTATION.
+  METHOD constructor.
+    mv_xml = iv_xml.
+  ENDMETHOD.
+  METHOD zif_read_order~read_order.
+    TRY.
+        CALL TRANSFORMATION id
+          SOURCE XML mv_xml
+          RESULT orders = rt_order.
+      CATCH cx_transformation_error INTO DATA(lx_xml).
+        MESSAGE lx_xml-&gt;get_text( ) TYPE 'S' DISPLAY LIKE 'E'.
+        CLEAR rt_order.
+    ENDTRY.
+  ENDMETHOD.
+ENDCLASS.
+
+" 高層：訂單操作類只依賴介面
+CLASS zcl_order_operator DEFINITION PUBLIC FINAL CREATE PUBLIC.
+  PUBLIC SECTION.
+    METHODS read_order    IMPORTING io_reader TYPE REF TO zif_read_order.
+    METHODS process_order RETURNING VALUE(rt_order) TYPE zif_read_order=&gt;tt_order.
+  PRIVATE SECTION.
+    DATA mt_order TYPE zif_read_order=&gt;tt_order.
+ENDCLASS.
+CLASS zcl_order_operator IMPLEMENTATION.
+  METHOD read_order.
+    mt_order = io_reader-&gt;read_order( ).     "多型：DB 或 XML 由傳入物件決定
+  ENDMETHOD.
+  METHOD process_order.
+    " 業務處理示意：只留金額大於 0 的訂單
+    rt_order = VALUE #( FOR ls IN mt_order WHERE ( netwr &gt; 0 ) ( ls ) ).
+  ENDMETHOD.
+ENDCLASS.</code></pre>
+  <div class="warn">上面 ZCL_READ_ORDER_XML 在 CATCH 裡用 MESSAGE 只是為了讓範例短；正式程式應該在介面方法宣告 <span class="kw">RAISING</span> 自訂例外（例如 ZCX_ORDER_READ），讓每個實作把各自的錯誤（SQL、XML 解析、檔案不存在）轉成同一種例外往上丟——否則「依賴抽象」只做了一半，呼叫端還得知道每種實作會丟什麼。</div>
+  <p>呼叫端（範例 6.10 的現代寫法）：</p>
+  <pre><code class="abap">REPORT zrep_cls_025.
+
+PARAMETERS p_xml AS CHECKBOX.   "勾選：改從 XML 讀訂單
+
+START-OF-SELECTION.
+  DATA(lo_operator) = NEW zcl_order_operator( ).
+
+  " 只有「建立哪個實作」這一行會隨資料來源改變
+  DATA lo_reader TYPE REF TO zif_read_order.
+  IF p_xml = abap_true.
+    " 底層功能修改時，不必修改訂單操作類，只要換掉傳入的實作
+    " 傳入的是實作介面的 XML 讀取訂單類實例（勘誤 9）
+    lo_reader = NEW zcl_read_order_xml( iv_xml = zcl_order_xml_source=&gt;get( ) ).
+  ELSE.
+    " 傳入的是實作介面的資料庫讀取訂單類實例
+    lo_reader = NEW zcl_read_order_db( ).
+  ENDIF.
+
+  lo_operator-&gt;read_order( lo_reader ).
+  DATA(lt_order) = lo_operator-&gt;process_order( ).
+
+  TRY.
+      cl_salv_table=&gt;factory( IMPORTING r_salv_table = DATA(lo_alv)
+                              CHANGING  t_table      = lt_order ).
+      lo_alv-&gt;get_functions( )-&gt;set_all( abap_true ).
+      lo_alv-&gt;display( ).
+    CATCH cx_salv_msg INTO DATA(lx_salv).
+      MESSAGE lx_salv-&gt;get_text( ) TYPE 'E'.
+  ENDTRY.</code></pre>
+  <p><b>與原範例的差異</b>：</p>
+  <ul>
+    <li><b>勘誤 9</b>：原範例第二段（傳入 <span class="kw">go_read_order_xml</span> 的那段）註解寫「傳入參數為實現介面的<b>資料庫</b>讀取訂單類的實例」，是從第一段複製過來忘了改，應為「<b>XML</b> 讀取訂單類的實例」。</li>
+    <li>原範例第二個 IF 前的註解「建立訂單操作類和資料庫讀取訂單類的物件實例」也是重複貼上，實際那段是在「呼叫」而非「建立」。</li>
+    <li>原範例宣告了介面參考 <span class="kw">gi_read_order TYPE REF TO zif_read_order</span> 卻完全沒用，而是宣告兩個具體類別的變數 go_read_order_db／go_read_order_xml 分別傳入——呼叫端自己其實仍依賴具體類別。改寫版讓呼叫端只持有一個介面參考 lo_reader，真正把「選擇實作」集中到一個地方。</li>
+    <li>原範例用 <span class="kw">CALL METHOD … ( … ).</span> 混合寫法、沒有任何輸出；改寫版輸出用 <span class="kw">CL_SALV_TABLE</span>。<span class="kw">ZCL_ORDER_XML_SOURCE=&gt;GET( )</span> 為示意，代表「從檔案／介面取得 XML 字串」的來源。</li>
+  </ul>
+  <div class="note">範例的注入方式是<b>方法注入</b>（read_order( reader )）。實務上更常見的是<b>建構子注入</b>：<span class="kw">NEW zcl_order_operator( io_reader = lo_reader )</span>，保證物件一建立就有可用的依賴，不會出現「忘了先呼叫 read_order 就呼叫 process_order」的時序錯誤。</div>
+
+  <h3 id="ch07-4-14">14. DIP 的紅利：用測試替身做單元測試</h3>
+  <p>依賴介面最大的實務好處是<b>可測試</b>。ZCL_ORDER_OPERATOR 只認識 ZIF_READ_ORDER，測試時就能塞一個「假的讀取類」給它，不必連資料庫、不必準備 XML 檔，也不受 HANA 回傳順序影響，每次測試結果都一樣。</p>
+  <pre><code class="abap">" ZCL_ORDER_OPERATOR 的 Local Test Classes
+CLASS ltd_reader DEFINITION FINAL FOR TESTING.      "測試替身（Test Double）
+  PUBLIC SECTION.
+    INTERFACES zif_read_order.
+ENDCLASS.
+CLASS ltd_reader IMPLEMENTATION.
+  METHOD zif_read_order~read_order.
+    rt_order = VALUE #( ( vbeln = '0000000001' netwr = '100.00' waerk = 'TWD' )
+                        ( vbeln = '0000000002' netwr = '0.00'   waerk = 'TWD' ) ).
+  ENDMETHOD.
+ENDCLASS.
+
+CLASS ltc_order_operator DEFINITION FINAL FOR TESTING
+  RISK LEVEL HARMLESS DURATION SHORT.
+  PRIVATE SECTION.
+    METHODS zero_amount_is_filtered FOR TESTING.
+ENDCLASS.
+CLASS ltc_order_operator IMPLEMENTATION.
+  METHOD zero_amount_is_filtered.
+    DATA(lo_cut) = NEW zcl_order_operator( ).        "CUT = Class Under Test
+    lo_cut-&gt;read_order( NEW ltd_reader( ) ).
+    DATA(lt_result) = lo_cut-&gt;process_order( ).
+
+    cl_abap_unit_assert=&gt;assert_equals( act = lines( lt_result ) exp = 1 ).
+    cl_abap_unit_assert=&gt;assert_true(
+      act = xsdbool( line_exists( lt_result[ vbeln = '0000000001' ] ) ) ).
+  ENDMETHOD.
+ENDCLASS.</code></pre>
+  <div class="tip">不想手寫替身類別時，可用 ABAP Test Double Framework：<span class="kw">cl_abap_testdouble=&gt;create( 'ZIF_READ_ORDER' )</span> 產生替身，再用 <span class="kw">cl_abap_testdouble=&gt;configure_call( )</span> 設定回傳值（7.40 SP09 起）。要替換的是資料庫本身時（例如想測 ZCL_READ_ORDER_DB 的 SQL），則用 <span class="kw">cl_osql_test_environment</span>（OSQL Test Double Framework，7.51 起）。</div>
+
+  <h3 id="ch07-4-15">15. 設計原則檢查清單與常見誤用</h3>
+  <table>
+    <thead><tr><th>你在程式裡看到</th><th>可能違反</th><th>處方</th></tr></thead>
+    <tbody>
+      <tr><td>一長串 <span class="kw">CASE mtart／bsart／auart</span>，而且常常要回來加 WHEN</td><td>OCP</td><td>子類＋註冊表／BAdI 過濾器（第 4～8 節）</td></tr>
+      <tr><td>類別方法裡有 <span class="kw">WRITE</span>、<span class="kw">MESSAGE TYPE 'I'</span>、<span class="kw">CALL SCREEN</span></td><td>SRP</td><td>商業類別只回傳資料或丟例外，畫面交給呼叫端</td></tr>
+      <tr><td>子類重定義後，呼叫端需要 <span class="kw">IS INSTANCE OF</span> 判斷「如果是某子類就別這樣呼叫」</td><td>LSP</td><td>改用組合或共同介面（第 11 節）</td></tr>
+      <tr><td>實作類別有一堆空方法只為了通過啟用</td><td>ISP</td><td>拆小介面，或 <span class="kw">DEFAULT IGNORE</span>（第 2 節）</td></tr>
+      <tr><td>方法參數型別是 <span class="kw">REF TO zcl_具體類</span>，而且想換實作</td><td>DIP</td><td>改為 <span class="kw">REF TO zif_…</span>，由外部注入（第 13 節）</td></tr>
+      <tr><td>單元測試非得連資料庫、準備真實單據才能跑</td><td>DIP</td><td>把資料存取抽到介面後面，用測試替身（第 14 節）</td></tr>
+    </tbody>
+  </table>
+  <div class="warn"><b>別為原則而原則。</b> 只會有兩種情況、而且五年內不會變的判斷，一個 <span class="kw">SWITCH</span> 就夠了；為它建抽象類、三個子類、註冊表、SM30 維護畫面，反而增加維護成本（YAGNI）。原則是用來處理「已知會變動」的地方：物料類型、訂單類型、組織單位、外部系統介面——這些在 SAP 專案裡偏偏又是最常變的。</div>
+  <div class="note">書中下一章把這些原則組合成設計模式：範例 6.2 的工廠方法、6.10 的「依介面切換實作」分別對應簡單工廠與策略模式，見 <a href="#ch07-5">7-5 章</a>。</div>
+
+  <h3 id="ch07-4-qa">練習與自我檢核</h3>
+  <ol>
+    <li><b>範例 6.1 違反哪個原則？新增物料類型 HALB 時需要改哪些地方？</b><br>參考答案要點：違反開放封閉原則；必須修改報表 ZREP_CLS_021 的 IF／ELSEIF，並重測、重新傳輸這支已上線的程式。</li>
+    <li><b>在第 4～7 節的設計中，新增 HALB 需要做哪兩件事？哪些物件完全不用改？</b><br>參考答案要點：① SE24 建立 ZCL_MATERIAL_SEMI 繼承 ZCL_MATERIAL 並重定義方法；② SM30 在 ZINSP_DESC_T 加 HALB → ZCL_MATERIAL_SEMI。報表、工廠、其他子類都不改。</li>
+    <li><b>勘誤 8 說圖 6-18 的 SE11 應為 SM30，兩者差在哪？</b><br>參考答案要點：SE11 定義表結構；SM30 維護表內容（需先用 Table Maintenance Generator／SE54 產生維護程式），且客製化表的變更會記錄到客製化請求。</li>
+    <li><b>為什麼 GET_MATERIAL_OBJ 仍用 CREATE OBJECT 而不是 NEW？哪些情況會丟 CX_SY_CREATE_OBJECT_ERROR？</b><br>參考答案要點：NEW 只能用靜態型別，類別名在變數中必須用 CREATE OBJECT … TYPE (name)。類別不存在／未啟用、類別是抽象類、類別不是 ZCL_MATERIAL 的子類、建構子不可見等情況都會丟。</li>
+    <li><b>原範例把 CX_SY_CREATE_OBJECT_ERROR 在工廠內 CATCH 並彈訊息，有什麼問題？</b><br>參考答案要點：模型層不該碰 UI（背景／RFC 時會出問題）；吞掉例外後呼叫端分不出「未登記」與「類別名錯」；應以 RAISING 宣告，讓呼叫端處理。</li>
+    <li><b>正方形繼承長方形為什麼違反 LSP？範例 6.8 的 ASSERT 會得到多少？</b><br>參考答案要點：長方形的契約是寬高互不影響；正方形 set_height( 6 ) 同時把寬改成 6，面積 36 ≠ 18，ASSERT 失敗（ASSERTION_FAILED 短傾印）。</li>
+    <li><b>範例 6.8 為什麼還不算「完整的」LSP 示範？請寫出真正的替換情境。</b><br>參考答案要點：它直接用 ZCL_SQUARE 型別的變數；真正的替換是 <span class="kw">DATA lo_rect TYPE REF TO zcl_rectangle. lo_rect = NEW zcl_square( ).</span> 然後以長方形的假設使用它。</li>
+    <li><b>請指出範例 6.9 的兩個多餘或無效的寫法。</b><br>參考答案要點：CREATE OBJECT 後的 IS NOT INITIAL 檢查永遠成立；CATCH cx_sy_dyn_call_error 對靜態呼叫無效且是空 CATCH；另外 CALL METHOD 與函數式括號混用。</li>
+    <li><b>勘誤 9 修正了範例 6.10 的什麼？除此之外 6.10 還有什麼沒做到位？</b><br>參考答案要點：第二段註解「資料庫讀取訂單類」應為「XML 讀取訂單類」。另外宣告了介面參考 gi_read_order 卻沒用，呼叫端仍以具體類別變數傳入。</li>
+    <li><b>DIP 對 ABAP Unit 有什麼幫助？請說明 ltd_reader 的角色。</b><br>參考答案要點：操作類只依賴介面，測試時可注入不連資料庫的測試替身 ltd_reader，資料固定、結果可重現，也不受 HANA 無預設排序影響。</li>
+    <li><b>勘誤 6：介面繼承與實作繼承在「必須實作」這件事上差在哪？</b><br>參考答案要點：實作介面的類別必須實作介面所有方法（除非標 DEFAULT IGNORE／FAIL 或類別為抽象）；一般繼承的子類只有在父類方法是 ABSTRACT 時才必須重定義。</li>
+    <li><b>用一句話說明「先找標準，再想客製」和開放封閉原則的關係。</b><br>參考答案要點：BAdI／Enhancement Spot 是 SAP 預留的「擴充點」（對擴充開放），修改標準等於打開已上線的程式來改（違反對修改封閉），所以升級成本高一個量級。</li>
+    <li><b>自建註冊表若加上「工廠」鍵欄位但程式仍只用 MATERIAL_TYPE 讀 SELECT SINGLE，會發生什麼事？</b><br>參考答案要點：部分鍵讀取可能有多筆，HANA 不保證回傳哪一筆，同一物料可能今天建出 A 類、明天建出 B 類；必須補齊鍵條件，或 ORDER BY 明確排序後取一筆。</li>
+  </ol>
+</section>

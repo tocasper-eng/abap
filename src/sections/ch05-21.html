@@ -1,0 +1,1165 @@
+<section class="chapter" id="ch05-21" data-title="BC490 ABAP 效能調校">
+  <h2>第 5-21 章 BC490 ABAP 效能調校</h2>
+  <p class="lede">BC490 是 ABAP 開發者的「體檢與開刀」課：先用工具量出程式慢在哪裡（CPU、資料庫、記憶體還是網路），再依問題分類改寫 SQL、設計索引、使用緩衝、選對內表型別。本章以原廠 Col19 教材的九個單元為骨架，逐一對照强晟 2008 年筆記（R/3 4.6～ECC 6.0、Oracle 為例），並補上 S/4HANA 時代必備的 SQL Monitor、SWLT、ATC、Code Pushdown、CDS 與 AMDP。貫穿全章的一句話：<b>資料庫是整個 SAP 系統唯一不能靠加機器擴充的資源——能不打資料庫就不打，要打就一次打準。</b></p>
+
+  <div class="meta">
+    <div><b>核心 TCODE</b><span class="tcode">ST05</span><span class="tcode">SAT</span><span class="tcode">SE30</span><span class="tcode">ST12</span><span class="tcode">SQLM</span><span class="tcode">SQLMD</span><span class="tcode">SWLT</span><span class="tcode">ATC</span><span class="tcode">SCI</span><span class="tcode">STAD</span><span class="tcode">ST03N</span><span class="tcode">ST04</span><span class="tcode">DBACOCKPIT</span><span class="tcode">ST02</span><span class="tcode">ST10</span><span class="tcode">ST22</span><span class="tcode">SM50</span><span class="tcode">SM66</span><span class="tcode">SM51</span><span class="tcode">DB01</span><span class="tcode">DB02</span><span class="tcode">DB05</span><span class="tcode">DB13</span><span class="tcode">DB20</span><span class="tcode">SE11</span><span class="tcode">SE12</span><span class="tcode">SHMA</span><span class="tcode">SHMM</span><span class="tcode">AL12</span><span class="tcode">RZ11</span><span class="tcode">RZ12</span></div>
+    <div><b>關鍵物件</b>CL_ABAP_RUNTIME、IF_ABAP_RUNTIME、CL_SHM_AREA、IF_AMDP_MARKER_HDB、MONI、DDLOG、TCOLL、HOTSPOT_DEF、VBAK、VBAP、KNA1、BKPF、BSEG、BSID、RESB、TCURR、T100、KEKO、COSS、參數 rsdb/max_blocking_factor、rsdb/max_in_blocking_factor、rstr/*、stat/*、ztta/roll_extension、abap/heaplimit、abap/sqlm/main_switch</div>
+  </div>
+
+  <h3 id="ch05-21-01">1. 課程定位與教材對照</h3>
+  <p>BC490《ABAP Performance Tuning》屬 ABAP 課程體系中的<b>進階（300 等級）課程</b>，强晟筆記的檔名也直接標「高級」。先修建議：<a href="#ch05-1">BC400</a>（基本語法）、<a href="#ch05-3">BC402</a>（內表與程式設計技術）、<a href="#ch05-16">BC430</a>（資料字典：索引與緩衝設定）。對象是開發者、開發顧問與技術顧問（Basis）。</p>
+  <p>兩份素材的差異很大：强晟筆記（2008 年，依當時 BC490 單元整理）只有 5 個單元，以 Oracle 與 R/3 為例，重點在「SQL 追蹤 → 存取路徑分類 → 改 SQL／改索引」的路線圖（Roadmap）；原廠 Col19（2022 年版，556 頁）擴充到 9 個單元，新增記憶體管理、Code Inspector、STAD、SQL Monitor、Shared Objects、內表二級鍵、SAT、RFC 效能。<b>值得注意：Col19 雖是 2022 年版，舉例仍以 Oracle 為主，幾乎沒有 HANA 專屬內容</b>；本章第 23、24 節的 HANA 內容（Code Pushdown、CDS、AMDP、無預設排序）是依 SAP 官方文件與實務經驗補寫。</p>
+
+  <table>
+    <thead><tr><th>本章小節</th><th>主題</th><th>强晟筆記（2008）頁碼</th><th>原廠 Col19 Unit / Lesson（PDF 頁）</th></tr></thead>
+    <tbody>
+      <tr><td>2</td><td>架構、存取成本、工具地圖</td><td>第一單元 課程概覽 p4–9</td><td>Unit 1 AS ABAP Architecture p9–28</td></tr>
+      <tr><td>3</td><td>記憶體管理、PRIV 模式、ST02、除錯器記憶體分析</td><td>第二單元第四課 p55–56（僅調試器記憶體）</td><td>Unit 2 L1–L4 p31–68</td></tr>
+      <tr><td>4</td><td>Code Inspector／ATC 設計期檢查</td><td>—（2008 年版無）</td><td>Unit 2 L5 p69–86</td></tr>
+      <tr><td>5</td><td>對話步驟、回應時間、STAD／ST03N</td><td>第二單元第一課 p13–20</td><td>Unit 3 L1–L2 p89–122</td></tr>
+      <tr><td>6</td><td>內嵌時間量測框架</td><td>附錄第二課 p310–316</td><td>Unit 3 L3 p123–136</td></tr>
+      <tr><td>7</td><td>資料庫架構、ST04／DBACOCKPIT、SQL 快取分析</td><td>第三單元第一課 p59–66；第五單元第三課 p288–298</td><td>Unit 4 L1 p139–154；L7 p243–276</td></tr>
+      <tr><td>8</td><td>SQL Monitor（SQLM）與 SWLT</td><td>—</td><td>Unit 4 L2 p155–170</td></tr>
+      <tr><td>9</td><td>ST05 效能追蹤</td><td>第二單元第二課 p21–40</td><td>Unit 4 L3 p171–192</td></tr>
+      <tr><td>10</td><td>索引存取策略、索引設計、選擇性分析</td><td>第三單元第二課 p67–135</td><td>Unit 4 L4–L6 p193–242</td></tr>
+      <tr><td>11</td><td>不合適的存取路徑：改寫 WHERE、Hint</td><td>第三單元第二課 p96–135</td><td>Unit 5 L1 p283–287</td></tr>
+      <tr><td>12</td><td>單表存取四大規則</td><td>第三單元第三課 p136–165</td><td>Unit 5 L1 p279–304</td></tr>
+      <tr><td>13</td><td>FOR ALL ENTRIES、RANGES、內表當資料來源</td><td>p144–149、p178–179</td><td>Unit 5 L1 p295–300</td></tr>
+      <tr><td>14</td><td>多表存取：巢狀 SELECT、JOIN、View、子查詢、LDB</td><td>p166–188</td><td>Unit 5 L2–L3 p305–342</td></tr>
+      <tr><td>15</td><td>Pool／Cluster 表（S/4HANA 已退場）</td><td>p189–203</td><td>—（Col19 已刪除）</td></tr>
+      <tr><td>16</td><td>SAP 表緩衝、ST10</td><td>p204–221</td><td>Unit 6 L1–L4 p343–392</td></tr>
+      <tr><td>17</td><td>緩衝模組、Shared Memory、Shared Objects</td><td>p222–228（程式內緩衝、相似 SQL）</td><td>Unit 7 L1–L3 p393–422</td></tr>
+      <tr><td>18</td><td>內表型別與存取成本</td><td>第四單元 p230–276；附錄第一課 p304–309</td><td>Unit 8 L1–L2 p425–464</td></tr>
+      <tr><td>19</td><td>巢狀操作、二級鍵、ASSIGNING</td><td>p249–275</td><td>Unit 8 L2–L3 p443–476</td></tr>
+      <tr><td>20</td><td>SAT（SE30）ABAP Trace、ST12</td><td>第二單元第三課 p41–54</td><td>Unit 8 L4 p477–514</td></tr>
+      <tr><td>21</td><td>RFC 與 GUI Roundtrip 效能</td><td>—</td><td>Unit 9 L1–L4 p515–556</td></tr>
+      <tr><td>22</td><td>系統層被動分析：ST03N、SM50/SM66 快照、DB01 鎖</td><td>第五單元 p277–303</td><td>分散於 Unit 3、Unit 4 L7</td></tr>
+      <tr><td>23–24</td><td>HANA：Code Pushdown、CDS、AMDP、無預設排序</td><td>—</td><td>—（本章依 SAP 官方文件補寫；L29 的 2017 Col10 版經逐單元核對，同樣沒有，見下方 L29 對照）</td></tr>
+      <tr><td>26</td><td>L29 補充：2001 初版與 2017 Col10 的差異、教材錯誤、選修練習</td><td>—</td><td>L29 兩個版本（見下表）</td></tr>
+    </tbody>
+  </table>
+  <div class="note">原廠 Col19 的 Unit 5 規則頁仍保留大量 Oracle 專屬說明（成本式優化器 CBO、Hint、shared cursor cache）。在 S/4HANA 上，<b>工具與觀念</b>（量測 → 分類 → 對症下藥）完全適用，但<b>具體門檻數字</b>（每筆 10 ms、BETWEEN 估 5% 成本⋯）是磁碟式資料庫時代的經驗值，本章會逐一標註。</div>
+  <p><b>L29 版本對照：</b><span class="src">L29_原廠教材</span> 另收兩份 BC490 英文原廠教材，剛好補上强晟筆記<b>之前</b>與 Col19 <b>之前</b>的兩個時間點：2001 初版是强晟筆記的「母本」（筆記裡的門檻數字幾乎都能在這裡找到原文），2017 Col10 則是 Col19 的前一版。</p>
+  <table>
+    <thead><tr><th>L29 檔名</th><th>版本／年代</th><th>頁數／語言</th><th>性質與重點</th></tr></thead>
+    <tbody>
+      <tr><td>BC490 ABAP Performance Tuning_2001_354_英文.pdf</td><td>R/3 System Release 1.0，02/26/2001；投影片頁尾 © SAP AG 1999（R/3 4.6C 時代）</td><td>354 頁，英文，有文字層</td><td>5 個單元＋附錄，投影片加講解文字；p286–354 是選修練習（改業務邏輯）的完整解答原始碼。工具還是 STAT、ST03、SE30、ST05 四種追蹤</td></tr>
+      <tr><td>e-book BC490_EN_Col10_2017_687_性能調適_英文.pdf</td><td>Col10，2017（檔案建立 2018/05），畫面截圖多為 2015 年</td><td>687 頁，英文，<b>純掃描、無文字層</b>（本章以逐頁看圖核對）</td><td>9 個單元，單元與課名和 Col19 <b>完全相同</b>；練習與解答直接排在各課後面，所以頁數比 Col19（556 頁）多。例子仍以 Oracle 為主，<b>沒有 HANA、CDS、AMDP、SWLT、ATC、ST12</b></td></tr>
+    </tbody>
+  </table>
+  <table>
+    <thead><tr><th>主題</th><th>2001 版單元（PDF 頁）</th><th>2017 Col10 Unit / Lesson（印刷頁 → PDF 頁＝印刷頁＋10）</th><th>本章小節</th></tr></thead>
+    <tbody>
+      <tr><td>架構、存取成本、路線圖圖例</td><td>Course Overview p16–23</td><td>Unit 1 p1–22（PDF p11–32）</td><td>2</td></tr>
+      <tr><td>記憶體管理、除錯器記憶體</td><td>Analyzing Individual Objects p59–60（只有除錯器）</td><td>Unit 2 L1–L4 p23–67（PDF p33–77）</td><td>3</td></tr>
+      <tr><td>Code Inspector</td><td>—</td><td>Unit 2 L5 p68–90（PDF p78–100）</td><td>4</td></tr>
+      <tr><td>對話步驟、STAT／STAD</td><td>p30–33（STAT p31、回應時間 p32、路線圖 p33）</td><td>Unit 3 L1–L2 p91–128（PDF p101–138）</td><td>5</td></tr>
+      <tr><td>內嵌量測 GET RUN TIME</td><td>Appendix p279–285</td><td>Unit 3 L3 p129–148（PDF p139–158）</td><td>6</td></tr>
+      <tr><td>DB 架構、ST04、SQL 快取</td><td>p73–75；R/3 System Analysis p259–267</td><td>Unit 4 L1 p151–170（PDF p161–180）；L7 p282–318（PDF p292–328）</td><td>7</td></tr>
+      <tr><td>SQL Monitor</td><td>—</td><td>Unit 4 L2 p171–189（PDF p181–199）</td><td>8</td></tr>
+      <tr><td>ST05</td><td>p35–46</td><td>Unit 4 L3 p190–216（PDF p200–226）</td><td>9</td></tr>
+      <tr><td>索引、選擇性、衝突分析、Hint</td><td>Database Accesses p80–122</td><td>Unit 4 L4–L6 p217–281（PDF p227–291）</td><td>10、11</td></tr>
+      <tr><td>單表／多表存取、Pool/Cluster</td><td>p125–162</td><td>Unit 5 p319–406（PDF p329–416；Pool/Cluster 已刪）</td><td>12–15</td></tr>
+      <tr><td>表緩衝、程式內緩衝、其他技巧</td><td>p164–178</td><td>Unit 6 p407–472（PDF p417–482）；Unit 7 p473–516（PDF p483–526）</td><td>16、17、25</td></tr>
+      <tr><td>內表</td><td>Internal Tables p195–246</td><td>Unit 8 L1–L3 p517–589（PDF p527–599）</td><td>18、19</td></tr>
+      <tr><td>SE30／SAT</td><td>p48–57（SE30）</td><td>Unit 8 L4 p590–630（PDF p600–640）</td><td>20</td></tr>
+      <tr><td>RFC、GUI Roundtrip</td><td>—</td><td>Unit 9 p631–677（PDF p641–687）</td><td>21</td></tr>
+      <tr><td>系統層被動分析</td><td>R/3 System Analysis p247–274</td><td>分散於 Unit 3、Unit 4 L7</td><td>22</td></tr>
+    </tbody>
+  </table>
+  <div class="note"><b>三版比較一句話：</b>2001 版＝「強晟筆記的原文」，只有 5 個單元、R/3 4.6C 的工具名稱；2017 Col10 ＝ Col19 的前一版，9 個單元與 Col19 一模一樣，差別主要是版面（練習內嵌）與少數說明文字。<b>三個原廠版本都沒有 HANA 專屬內容</b>，所以本章第 23、24 節維持「依 SAP 官方文件與實務經驗補寫」的標註；第 4 節的 ATC、第 8 節的 SWLT、第 20 節的 ST12 也一樣——原廠 BC490 各版都只講 SCI、SQLM、SAT。版本之間的細部差異整理在第 26 節。</div>
+
+  <h3 id="ch05-21-02">2. 效能分析的出發點：架構、存取成本與工具地圖</h3>
+  <p>SAP 是三層主從架構：<b>展示層、應用層、資料庫層</b>。展示層與應用層可以水平擴充（硬體不夠就加前端、加應用伺服器），<b>資料庫是中央資源，無法靠「多加幾台資料庫」擴充</b>。因此 ABAP 效能分析有兩個主要目標：</p>
+  <ul>
+    <li><b>降低應用伺服器 CPU 負荷</b>——主要來自內表處理（大內表、巢狀迴圈）。</li>
+    <li><b>降低資料庫負荷</b>——主要來自 SQL（讀太多、讀太頻繁、存取路徑錯）。這是重中之重。</li>
+  </ul>
+  <p>强晟筆記給的存取成本數量級（2008 年硬體，觀念至今有效）：</p>
+  <table>
+    <thead><tr><th>資料從哪裡來</th><th>每筆約需時間</th><th>當年容量參考</th></tr></thead>
+    <tbody>
+      <tr><td>應用伺服器 SAP 表緩衝</td><td>約 0.1 ms</td><td>表緩衝約 120 MB（單筆 40 MB＋一般 80 MB）</td></tr>
+      <tr><td>資料庫快取（DB buffer）</td><td>約 1 ms</td><td>約 500 MB</td></tr>
+      <tr><td>資料庫磁碟</td><td>約 10 ms</td><td>數 TB</td></tr>
+      <tr><td>網路封包</td><td>前端↔應用 2 KB／應用↔資料庫 32 KB</td><td>一個 SAP 工作處理程序約 5 MB</td></tr>
+    </tbody>
+  </table>
+  <p>課程的方法論是「<b>路線圖（Roadmap）</b>」：監視器圖示＝起始狀況、問號＝是非題、驚嘆號＝中間結論、工具圖示＝具體動作（路徑終點）、箭頭＝跳到另一張路線圖。本章把各路線圖改寫成條列。</p>
+  <p><b>工具地圖</b>（先選對工具，才不會在錯的地方找問題）：</p>
+  <table>
+    <thead><tr><th>工具</th><th>全名／用途</th><th>適用情境</th><th>本章小節</th></tr></thead>
+    <tbody>
+      <tr><td><span class="tcode">STAD</span></td><td>統計記錄監視器：每個對話步驟的回應時間拆解</td><td>第一步：判斷慢在 CPU、DB、Roll-wait 還是 GUI</td><td>5</td></tr>
+      <tr><td><span class="tcode">ST03N</span></td><td>工作量監視器（Workload Monitor）</td><td>全系統被動分析：找出吃掉最多回應時間的交易</td><td>22</td></tr>
+      <tr><td><span class="tcode">ST05</span></td><td>效能追蹤：SQL、Buffer、Enqueue、RFC、HTTP trace</td><td>單一程式的資料庫問題</td><td>9</td></tr>
+      <tr><td><span class="tcode">SAT</span>（舊 <span class="tcode">SE30</span>）</td><td>ABAP Trace／Runtime Analysis</td><td>單一程式的 CPU 問題（內表、巢狀迴圈、模組化成本）</td><td>20</td></tr>
+      <tr><td><span class="tcode">ST12</span></td><td>Single Transaction Analysis（ST-A/PI 附加元件）</td><td>一次同時錄 ABAP Trace＋SQL Trace，SAP 支援人員最愛</td><td>20</td></tr>
+      <tr><td><span class="tcode">SQLM</span>／<span class="tcode">SQLMD</span></td><td>ABAP SQL Monitor</td><td>在正式機長期（最多兩週）收集所有 SQL 的真實執行統計</td><td>8</td></tr>
+      <tr><td><span class="tcode">SWLT</span></td><td>SQL Performance Tuning Worklist</td><td>把 SQLM 的執行數據與 SCI/ATC 靜態檢查結果合併排序，產出調校工作清單</td><td>8</td></tr>
+      <tr><td><span class="tcode">SCI</span>／<span class="tcode">ATC</span></td><td>Code Inspector／ABAP Test Cockpit</td><td>設計期靜態檢查：沒有 WHERE、迴圈內 SELECT、沒有 ORDER BY⋯</td><td>4、24</td></tr>
+      <tr><td><span class="tcode">ST04</span>／<span class="tcode">DBACOCKPIT</span></td><td>資料庫效能監視器（7.0 SP12 起整合為 DBA Cockpit）</td><td>SQL 快取（Oracle: shared cursor cache／HANA: SQL Plan Cache）、Expensive Statements</td><td>7</td></tr>
+      <tr><td><span class="tcode">ST02</span></td><td>Tune Summary：記憶體區與 SAP 緩衝</td><td>PRIV 模式、緩衝 swap、Mode list</td><td>3、16</td></tr>
+      <tr><td><span class="tcode">ST10</span></td><td>Table Call Statistics</td><td>哪些表該緩衝、哪些緩衝設錯</td><td>16</td></tr>
+      <tr><td><span class="tcode">ST22</span></td><td>Short Dump 分析</td><td>TSV_TNEW_PAGE_ALLOC_FAILED、TIME_OUT、DBIF_RSQL_* 等效能相關當機</td><td>3</td></tr>
+      <tr><td><span class="tcode">SM50</span>／<span class="tcode">SM66</span></td><td>本機／全系統工作處理程序概覽</td><td>快照分析：正在跑很久的是誰、卡在哪張表</td><td>22</td></tr>
+    </tbody>
+  </table>
+  <div class="tip">分析順序背起來：<b>STAD 看比例 → DB 時間高就 ST05、CPU 時間高就 SAT → 改完再用 STAD 量一次</b>。正式機的全面體檢則用 <b>SQLM（兩週）→ SWLT 排優先順序</b>。</div>
+
+  <h3 id="ch05-21-03">3. 記憶體管理：使用者內容、Extended Memory 與 PRIV 模式</h3>
+  <p>對話工作處理程序遠少於線上使用者，因此一個工作處理程序只在「處理某個對話步驟」期間屬於某位使用者（<b>工作處理程序多工 Work Process Multiplexing</b>）。使用者的變數、內表、權限資料存在<b>使用者內容（User Context）</b>，每個對話步驟開始時 Roll-in、結束時 Roll-out。</p>
+  <table>
+    <thead><tr><th>記憶體區</th><th>性質</th><th>存放內容</th></tr></thead>
+    <tbody>
+      <tr><td>SAP Local（WP）Memory／Local Roll Area</td><td>OS Local</td><td>執行中的 runtime object、stack、DB 傳輸緩衝、指向其他記憶體區的指標</td></tr>
+      <tr><td>SAP Extended Memory（EM）</td><td>OS Shared</td><td><b>交易資料的主要存放處</b>；預設以 1,024 KB 為區塊配置；7.40 起取代舊的 global Roll Area</td></tr>
+      <tr><td>SAP Heap Memory（PRIV memory）</td><td>OS Local</td><td>EM 用完或達使用者配額後的「緊急備援」</td></tr>
+      <tr><td>SAP Buffers</td><td>OS Shared</td><td>程式（PXA）、Nametab、表緩衝等約 40 種緩衝</td></tr>
+      <tr><td>SAP Global Extended Memory（EG）</td><td>OS Shared</td><td>跨使用者內容共用，例如 Shared Objects</td></tr>
+      <tr><td>SAP Paging Area</td><td>Shared＋檔案</td><td><span class="kw">EXPORT TO MEMORY</span>（舊）、<span class="kw">EXTRACT</span>、<span class="kw">SUBMIT</span>／<span class="kw">CALL TRANSACTION</span> 傳參</td></tr>
+    </tbody>
+  </table>
+  <p>對話工作處理程序的配置順序：Roll-in → 用 EM 直到使用者配額（參數 <span class="kw">ztta/roll_extension</span>）→ 改用 Heap，此時進入 <b>PRIV 模式（Private Mode）</b>：Heap 無法 Roll-out，該工作處理程序被這位使用者獨占，其他人只能排隊。一兩個 PRIV 無妨，<b>很多個同時 PRIV 時全系統都會變慢</b>。相關參數：<span class="kw">rdisp/wppriv_max_no</span>、<span class="kw">rdisp/max_priv_time</span>、<span class="kw">abap/heaplimit</span>（預設 40 MB，超過則交易結束後重啟該工作處理程序以歸還 OS 記憶體）。背景工作處理程序一開始就用 Heap，沒有 PRIV 問題（它本來就不多工）。</p>
+  <p>其他觀念：外部模式（External Mode＝一個 SAP GUI 視窗）數量由 <span class="kw">rdisp/max_alt_modes</span> 控制（2～16，預設 6）；每個外部模式最多 9 層內部模式（Internal Mode，<span class="kw">SUBMIT AND RETURN</span>／<span class="kw">CALL TRANSACTION</span> 堆疊）；SAP Virtual Memory 合計不宜超過實體 RAM 的 125%。</p>
+  <p><span class="tcode">ST02</span> → Detail Analysis → SAP memory → <b>Mode List</b> 可看每個 session 用了多少 EM／Heap；有 Heap 的 session 就代表一個 PRIV 中的工作處理程序。記憶體不足的典型 <span class="tcode">ST22</span> 短傾印：</p>
+  <ul>
+    <li>使用者內容用盡：<b>TSV_TNEW_PAGE_ALLOC_FAILED</b>、TSV_TNEW_BLOCKS_NO_ROLL_MEMORY、SYSTEM_ROLL_IN_ERROR</li>
+    <li>與資料庫溝通時記憶體不足：DBIF_RTAB_NO_MEMORY、DBIF_RSQL_NO_MEMORY</li>
+    <li>Paging 用盡：SYSTEM_NO_MORE_PAGING；啟動時共享記憶體違規：PXA_NO_SHARED_MEMORY、STORAGE_PARAMETERS_WRONG_SET</li>
+    <li>跑太久：<b>TIME_OUT</b>（對話工作處理程序超過 <span class="kw">rdisp/max_wprun_time</span>）——大量資料應改背景作業（見 <a href="#ch04-4">4-4 章</a>）</li>
+  </ul>
+  <p><b>除錯器的記憶體分析</b>（詳見 <a href="#ch05-4">5-4 章 BC403</a>）：新除錯器的 Memory Analysis 工具可列出前 25 大記憶體物件，區分 <b>Bound Memory</b>（刪掉這個物件能釋放多少）與 <b>Referenced Memory</b>；Stack、Dynamic Memory Objects、Static Variables 分開統計。强晟筆記的舊路徑是「設定 → 表記憶體」與「轉到 → 系統 → 系統區域，區域輸入 ITAB」。</p>
+  <pre><code class="abap">*&amp;---------------------------------------------------------------*
+*&amp; 長壽型交易（工作中心模式，一開幾小時）的記憶體衛生
+*&amp;---------------------------------------------------------------*
+METHOD process_work_package.
+  " 每個工作包開始前先清掉上一包的暫存，避免記憶體洩漏逐步累積
+  CLEAR mt_items.              "清內容，保留已配置區塊（下一包會再用）
+  FREE  mt_big_log.            "清內容並歸還記憶體（大且不再需要）
+
+  SELECT vbeln, posnr, matnr, kwmeng FROM vbap
+    WHERE vbeln = @iv_vbeln
+    INTO TABLE @mt_items.
+
+  " 物件參考不用就清掉，否則被參照的整棵物件樹都釋放不了
+  CLEAR mo_old_document.
+ENDMETHOD.</code></pre>
+  <div class="warn">工作中心型交易（左邊工作清單、右邊逐筆處理，一開就是一整天）是記憶體洩漏的高風險區：內表只加不清、物件參考沒清，前幾小時看不出來，等實體記憶體用完開始 OS paging，<b>效能會瞬間崩潰</b>。<span class="kw">LOOP AT</span> 這種 O(n) 存取的洩漏物件會更早現形。</div>
+
+  <h3 id="ch05-21-04">4. 設計期檢查：Code Inspector（SCI）與 ATC</h3>
+  <p>Code Inspector（<span class="tcode">SCI</span>）檢查 Repository 物件的靜態內容，涵蓋效能、安全、語法、命名規範。它整合在 <span class="tcode">SE80</span>／<span class="tcode">SE38</span>／<span class="tcode">SE37</span>／<span class="tcode">SE24</span>／<span class="tcode">SE11</span>（選單「程式 → 檢查 → Code Inspector」，使用檢查變式 <b>DEFAULT</b>）；對傳輸請求則在 <span class="tcode">SE09</span> 執行，使用變式 <b>TRANSPORT</b>。</p>
+  <p>SCI 的三個元素：<b>檢查變式（Check Variant）＋物件集（Object Set）＝檢驗（Inspection）</b>。全域元素人人可用、可傳輸；區域元素只有擁有者能改；區域的 DEFAULT 變式會覆蓋全域 DEFAULT。大物件集（&gt;50 個）可平行執行：每包 10～50 個物件、每台伺服器最多 12 個 task。命名檢驗與靜態物件集預設 50 天後刪除。</p>
+  <p>與效能相關的重要檢查項目（Col19 列出，7.40 起新增多項）：</p>
+  <ul>
+    <li>沒有 WHERE 條件的 SELECT；WHERE 未用到任何索引欄位；WHERE 未用到索引第一個欄位</li>
+    <li><span class="kw">CLIENT SPECIFIED</span> 但 WHERE 沒有用戶端欄位</li>
+    <li>繞過表緩衝的 SELECT（刻意的 <span class="kw">BYPASSING BUFFER</span>、<span class="kw">FOR UPDATE</span> 不報）</li>
+    <li>有問題的 <span class="kw">SELECT *</span>（實際使用欄位低於門檻，預設 20%）</li>
+    <li>可改寫成 JOIN 的 <span class="kw">FOR ALL ENTRIES</span>；跨模組化單元的迴圈內 DB 操作；巢狀迴圈</li>
+    <li>SELECT 之後緊接 CHECK；SELECT…ENDSELECT 迴圈中用 EXIT／RETURN</li>
+    <li>標準表的循序讀取（內表 O(n) 存取）</li>
+  </ul>
+  <pre><code class="abap">" 小型設定表，確認過筆數固定、刻意整表讀取 → 才加虛擬註解
+SELECT werks, name1 FROM t001w
+  INTO TABLE @DATA(lt_plant).                        "#EC CI_NOWHERE
+
+" 標準表的循序讀取：資料量確定很小（&lt;10 筆）才可接受
+READ TABLE lt_small_cfg INTO DATA(ls_cfg)
+     WITH KEY param = 'MAXROWS'.                     "#EC CI_STDSEQ</code></pre>
+  <div class="warn"><b>不要為了讓紅燈消失就貼虛擬註解（pseudo comment）或 pragma。</b>原廠練習題明確說：看完說明、分析過問題之後，才可以加；更不可以為了過關去改檢查變式或把物件從物件集移掉。<span class="tcode">ATC</span> 是 SCI 的後繼框架（同樣的檢查、加上排程、豁免流程、中央檢查系統），S/4HANA 專案建議以 ATC 作為傳輸前的強制關卡，ADT 中直接 Run As → ABAP Test Cockpit（見 <a href="#ch05-5">5-5 章</a>）。</div>
+  <p><b>L29 Col10 版補充</b>（Unit 2 L5，印刷頁 p68–80／PDF p78–90）：</p>
+  <ul>
+    <li><b>客戶系統只能檢查客戶自己開發的物件</b>；SAP 物件只有在「被修改後的 7 天內」才能單獨放進檢驗（p73）。所以想用 SCI 查 SAP 標準程式的效能問題，基本上行不通——標準程式慢，先找 SAP Note。</li>
+    <li>物件集可以從 <b>SAT、SCOV 的結果</b>、檔案上傳、所用處清單收集（Object Collectors，p73）；也可以從傳輸請求抽出主物件（TADIR-PGMID = R3TR）。</li>
+    <li>「繞過表緩衝」檢查的附註：<b>NetWeaver 7.10 起，單筆緩衝表不必再寫 SELECT SINGLE 也能用到緩衝</b>（p77 圖 60 註腳）；另外兩種繞過方式——WHERE 中兩個欄位互相比較（<span class="kw">dbtab~a &gt; dbtab~b</span>）與 Native SQL——SCI <b>不會報</b>。</li>
+    <li>原廠「最佳實務」（p80 圖 63）：經常、定期執行；物件集要完整（用 Save Selections Only 讓物件集每次動態重算）；大檢驗放背景平行跑；每則訊息都要處理，但不可為了消訊息改壞其他語句、不可未分析就加虛擬註解；並牢記 SCI 是<b>靜態工具</b>——<b>分析不到動態程式碼，也分不出哪段程式常跑、哪段幾乎不跑</b>。這正是第 8 節要搭配 SQLM 執行數據的原因。</li>
+  </ul>
+  <div class="note">ATC 不在任何一版 BC490 教材中（2001 版連 SCI 都沒有；Col10、Col19 只教 SCI），上面 warn 方塊的 ATC 說明<span class="src">（依 SAP 官方文件補寫）</span>。</div>
+
+  <h3 id="ch05-21-05">5. 對話步驟與回應時間：STAD 與 ST03N</h3>
+  <p>對話處理中，<b>一次畫面切換＝一個對話步驟（Dialog Step）</b>；更新、Spool 的每個請求也各算一步；背景作業可視為一個或多個步驟。一個使用者請求的 13 個處理階段：</p>
+  <ol>
+    <li>使用者請求送到應用伺服器</li>
+    <li>若工作處理程序全忙，放進 Dispatcher 佇列</li>
+    <li>分派到工作處理程序</li>
+    <li>Roll-in 使用者內容</li>
+    <li>先嘗試由 SAP 表緩衝滿足 SQL</li>
+    <li>緩衝沒有才把 SQL 送到資料庫</li>
+    <li>嘗試由資料庫快取滿足</li>
+    <li>把缺少的資料區塊從磁碟讀進資料庫快取（强晟筆記「導入確實的資料塊」應為「缺少的」之誤譯）</li>
+    <li>必要時從資料庫快取置換掉舊區塊</li>
+    <li>結果傳回應用伺服器</li>
+    <li>若資料有異動，更新本機表緩衝</li>
+    <li>結果經 Dispatcher 傳回展示層</li>
+    <li>Roll-out 使用者內容</li>
+  </ol>
+  <p><b>回應時間的組成</b>（SAP Note 8963）：回應時間＝Dispatcher 等待＋Roll-in＋Load/Generation＋DB 請求時間＋Enqueue＋Roll-wait＋處理時間。其中<b>處理時間不是量的，是用減法算出來的</b>；CPU 時間由作業系統量測，<b>不是</b>回應時間的加總項，而是橫跨各段的另一個維度。</p>
+  <table>
+    <thead><tr><th>時間項</th><th>偏高代表什麼</th></tr></thead>
+    <tbody>
+      <tr><td>Dispatcher Wait</td><td>工作處理程序被卡太久（多半不是設定數量不足）；<span class="tcode">SM51</span> → Queue information 看 Requests waiting</td></tr>
+      <tr><td>Roll-wait</td><td>同步 RFC、GUI Roundtrip（見第 21 節）、要求資料量過大</td></tr>
+      <tr><td>Load/Generation</td><td>程式、CUA、畫面緩衝太小</td></tr>
+      <tr><td>DB Request</td><td>DB 伺服器 CPU/記憶體瓶頸、昂貴 SQL、鎖、缺索引、統計資訊過期、DB 快取太小</td></tr>
+      <tr><td>CPU 高</td><td>大內表、低效率程式邏輯</td></tr>
+      <tr><td>處理時間 &gt; 2 × CPU 時間</td><td>應用伺服器 CPU 瓶頸（差值稱 Lost Time）</td></tr>
+    </tbody>
+  </table>
+  <p>經驗法則：全系統平均對話回應時間應 <b>&lt; 1,000 ms</b>；平衡系統中「處理時間：DB 時間：Roll-wait」約 <b>40：40：20</b>。强晟筆記的路線圖：若某對象 <b>CPU 時間 &gt; 40% ×（回應時間－Dispatcher 等待）</b>→ 走 ABAP Runtime Analysis；若 <b>DB 時間 &gt; 40% ×（回應時間－Dispatcher 等待）</b>→ 走 SQL 效能追蹤。</p>
+  <p><span class="tcode">STAD</span>（舊稱 STAT）顯示單筆統計記錄：資料由各工作處理程序在每步結束時寫入共享緩衝，再 flush 到 OS 檔案（參數 <span class="kw">stat/file</span>，每小時一個檔，<span class="kw">stat/max_files</span> 預設保留 48 個）。背景工作 SAP_COLLECTOR_FOR_PERFMONITOR（報表 RSCOLL00，依表 TCOLL 呼叫 RSSTAT90）把資料彙總進表 <b>MONI</b>，供 <span class="tcode">ST03N</span> 使用。STAD 的使用步驟：</p>
+  <ol>
+    <li>Step 0：先執行目標程式幾次，讓緩衝與快取填滿（Transferred kBytes 穩定）。</li>
+    <li>Step 1：正式執行（統計記錄自動寫，不用開關）。</li>
+    <li>Step 2：STAD 依時間、依交易 ID 分組、或 Business Transaction Totals 顯示。</li>
+    <li>Step 3：看細節：Time、DB（Direct read／Sequential read／Update／Insert／Delete 各自筆數與時間）、Task/Memory、RFC、Bytes、Table（需參數 <span class="kw">stat/tabrec</span> &gt; 0）。</li>
+  </ol>
+  <div class="tip">STAD 的 DB 小節兩個判斷：<b>Avg. time/row</b> 循序讀 &gt; 10 ms 或異動 &gt; 50 ms 就該開 ST05；<b>Requests ≈ Database rows</b> 表示程式大概是一筆一筆 SELECT SINGLE，應改成陣列讀取。强晟筆記的舊標準：循序讀每筆約 10 ms、SELECT SINGLE 約 5 ms、異動約 20 ms（出自 L29 2001 版 PDF p31，當時的交易是 <span class="tcode">STAT</span>；磁碟時代數字；HANA 上正常值低一到兩個數量級，但「相對比例」判斷法不變）。</div>
+
+  <h3 id="ch05-21-06">6. 內嵌量測：GET RUN TIME 與 CL_ABAP_RUNTIME 測試框架</h3>
+  <p>想比較兩種寫法誰快，最直接的方法是在程式裡量。<span class="kw">GET RUN TIME FIELD f</span> 第一次執行時把 f 歸零，之後每次寫入「距第一次的<b>微秒</b>數」（强晟筆記寫毫秒，是誤植）。<span class="kw">SET RUN TIME CLOCK RESOLUTION HIGH|LOW</span> 設精度，只能在第一次 GET RUN TIME 之前執行一次，否則無法攔截的短傾印。</p>
+  <p>6.40 起可改用 <b>CL_ABAP_RUNTIME</b> 工廠類別：<span class="kw">create_hr_timer( )</span>（高精度）／<span class="kw">create_lr_timer( )</span>（低精度）回傳 <b>IF_ABAP_RUNTIME</b> 物件，方法 <span class="kw">get_runtime( )</span>。優點是可同時開多個不同精度的計時器；缺點是每次呼叫約慢 2 µs，量極短的程式碼時要注意。</p>
+  <p>正確的測試框架（原廠練習題答案 A）：<b>外圈</b>重複多次取最小值／平均值以濾掉系統負載；<b>內圈</b>重複執行被測語句以放大太短的時間；另外量一次「空的基準方法」（呼叫開銷、初始化）再扣掉。原講義用 <span class="kw">FORM f0/f1/f2</span> 與 WITH HEADER LINE 內表實作，Col19 改為類別 CL_BC490_TIME_MEAS_FWK（singleton、方法 do_measurement）與 CL_BC490_TIME_MEAS_S。以下改寫成現代 ABAP：</p>
+  <pre><code class="abap">*&amp;---------------------------------------------------------------*
+*&amp; 微型效能測試框架：外圈抗干擾、內圈放大、扣除基準時間
+*&amp;---------------------------------------------------------------*
+INTERFACE lif_variant.
+  METHODS execute.
+ENDINTERFACE.
+
+CLASS lcl_meas DEFINITION FINAL.
+  PUBLIC SECTION.
+    TYPES: BEGIN OF ty_result,
+             variant TYPE string,
+             min_us  TYPE decfloat34,
+             avg_us  TYPE decfloat34,
+           END OF ty_result.
+    CLASS-METHODS run
+      IMPORTING iv_variant       TYPE string
+                io_code          TYPE REF TO lif_variant
+                iv_cnt_out       TYPE i DEFAULT 20
+                iv_cnt_in        TYPE i DEFAULT 100
+      RETURNING VALUE(rs_result) TYPE ty_result.
+ENDCLASS.
+
+CLASS lcl_meas IMPLEMENTATION.
+  METHOD run.
+    DATA(lo_timer) = cl_abap_runtime=&gt;create_hr_timer( ).
+    DATA lv_sum TYPE decfloat34.
+    DATA lv_min TYPE i VALUE 2147483647.
+
+    DO iv_cnt_out TIMES.                          "外圈：消除系統負載、換 WP 的干擾
+      DATA(lv_t1) = lo_timer-&gt;get_runtime( ).
+      DO iv_cnt_in TIMES.                         "內圈：讓 &lt;1 µs 的語句也量得到
+        io_code-&gt;execute( ).
+      ENDDO.
+      DATA(lv_run) = lo_timer-&gt;get_runtime( ) - lv_t1.
+      lv_min = nmin( val1 = lv_min val2 = lv_run ).
+      lv_sum = lv_sum + lv_run.
+    ENDDO.
+
+    rs_result = VALUE #( variant = iv_variant
+                         min_us  = lv_min / iv_cnt_in
+                         avg_us  = lv_sum / iv_cnt_out / iv_cnt_in ).
+  ENDMETHOD.
+ENDCLASS.
+
+" 使用：先量空方法當基準，再量各變體，淨時間 = 變體 - 基準
+" DATA(ls_base) = lcl_meas=&gt;run( iv_variant = `BASE`       io_code = NEW lcl_empty( ) ).
+" DATA(ls_v1)   = lcl_meas=&gt;run( iv_variant = `READ BINARY` io_code = NEW lcl_read_bin( ) ).
+" DATA(ls_v2)   = lcl_meas=&gt;run( iv_variant = `READ HASHED` io_code = NEW lcl_read_hash( ) ).
+" cl_demo_output=&gt;display( |V1 淨時間 { ls_v1-avg_us - ls_base-avg_us } µs| ).</code></pre>
+  <div class="note">量測結果會受系統負載與「這次剛好從緩衝讀、下次從 DB 讀」影響，<b>一定要取多次的最小值或平均值</b>。要做長期、可重複的比較，ABAP Unit 搭配 ADT 的 ABAP Profiler 會比自寫框架更方便。</div>
+
+  <h3 id="ch05-21-07">7. 資料庫端觀察：ST04／DBACOCKPIT 與 SQL 快取分析</h3>
+  <p>每個 SAP 工作處理程序在資料庫端都有一個 1:1 的 <b>Shadow Process</b>。ABAP SQL 先經工作處理程序內的<b>資料庫介面（DBIF）</b>翻譯成原生 SQL，拆成原子操作：</p>
+  <table>
+    <thead><tr><th>操作</th><th>說明</th></tr></thead>
+    <tbody>
+      <tr><td>DECLARE</td><td>定義游標（結果集名稱）</td></tr>
+      <tr><td>PREPARE</td><td>解析 SQL、由優化器決定存取路徑；變數以佔位符（Oracle 的 :A0、MaxDB/DB6 的 ?）表示。SAP 游標快取讓相同結構的 SQL 可略過 PREPARE</td></tr>
+      <tr><td>OPEN／REOPEN</td><td>代入實際值、開游標；REOPEN＝存取路徑仍在快取的相似 SQL</td></tr>
+      <tr><td>FETCH</td><td>以 <b>32 KB</b> 的容器批次傳回資料（舊參數 dbs/io_buf_size = 33,792 位元組 ÷ 每筆長度 ＝ 每次 FETCH 筆數）</td></tr>
+      <tr><td>EXEC／REEXEC</td><td>寫入類操作（取代 OPEN＋FETCH）</td></tr>
+      <tr><td>CLOSE</td><td>關閉游標</td></tr>
+    </tbody>
+  </table>
+  <p><b>成本式優化器（CBO）</b>依 WHERE 條件、可用索引、欄位選擇性（統計資訊）與表大小估算每條存取路徑的成本，選最便宜的。統計資訊過期，優化器就會做錯決定——統計更新由 DBA 透過 <span class="tcode">DB13</span>（DBA Planning Calendar）排程，Oracle 可在 <span class="tcode">DB20</span> 查上次更新日期（報表 RSANAORA 可手動更新）。</p>
+  <p><span class="tcode">ST04</span> 的關鍵指標（Col19 以 Oracle 為例；7.0 SP12 起 ST04 即 <span class="tcode">DBACOCKPIT</span>，舊畫面為 ST04OLD、DB02OLD）：</p>
+  <ul>
+    <li><b>Buffer Quality</b> ＝（邏輯讀－實體讀）÷ 邏輯讀：CBO 下至少 94%，平衡系統 97% 以上。但<b>不可為了提高命中率而狂加 DB 快取</b>，OS paging 的傷害遠大於小一點的快取。</li>
+    <li><b>Reads / User Calls</b>：平均每條 SQL 讀幾個區塊。CBO 約 15 以下、RBO 約 20 以下為佳；<b>大於 20:1 就急需做 SQL 快取分析</b>。系統與 DB 要先運轉數天，快取數據才具代表性。</li>
+  </ul>
+  <p><b>SQL 快取（Oracle 稱 Shared Cursor Cache；HANA 稱 SQL Plan Cache）分析</b>——路徑：ST04 → Performance → SQL Statement Analysis → Shared Cursor Cache。判斷昂貴 SQL：</p>
+  <table>
+    <thead><tr><th>觀點</th><th>門檻</th><th>意義</th></tr></thead>
+    <tbody>
+      <tr><td>Buffer Gets（邏輯讀，DB CPU）</td><td>單一 SQL 佔全部邏輯讀 &gt; 5%</td><td>吃掉 5% 以上 DB 伺服器 CPU</td></tr>
+      <tr><td>Disk Reads（實體讀，I/O）</td><td>Col19：&gt; 2%；强晟筆記與 L29 2001 版（PDF p262）：&gt; 3%</td><td>兩版門檻不同，以新版 2% 較嚴格為準</td></tr>
+      <tr><td>Buffer Gets / Record</td><td>&lt; 5 → 存取路徑合適；&gt; 5 → 不合適（也有文獻用 30）</td><td>決定走「改程式」還是「改索引」路線</td></tr>
+      <tr><td>Rows Processed / Execution</td><td>偏高</td><td>傳回太多筆，通常是 ABAP 邏輯問題</td></tr>
+      <tr><td>Executions</td><td>次數極多</td><td>迴圈內 SELECT SINGLE，每次都佔一個 32 KB 容器與一次往返</td></tr>
+    </tbody>
+  </table>
+  <p>兩種昂貴 SQL 要對症下藥：</p>
+  <ul>
+    <li><b>Type 1：存取路徑不合適</b>（讀很多區塊、只回很少筆）——更新統計、建立／調整／刪除索引、強制使用者輸入重要索引欄位、改寫 WHERE。</li>
+    <li><b>Type 2：存取路徑合適但仍昂貴</b>（讀很多、也回很多）——資料庫層已無可優化，只能改 ABAP 邏輯或業務流程（最後手段）。</li>
+  </ul>
+  <p>從快取找回 ABAP 原始碼：快取中的 Open SQL 以<b>大寫、變數名在雙引號中</b>識別（小寫無引號且含 $ 的是 Oracle 遞迴呼叫；大寫無引號的是 SAP 工具或 Native SQL）。按「ABAP Display」可跳到程式，但注意<b>它指向的是「DB 重啟後第一個 PREPARE 這個結構的程式」，未必是真正的元兇</b>。找不到時：<span class="tcode">SE11</span>／<span class="tcode">SE12</span> 所用處清單（可限定 SELECT、ORDER BY 等關鍵字）、檢查投影視圖（Col19 案例：KBED 的昂貴 SQL 其實來自投影視圖 KBED_AVCHK）、報表 RSSTATUS 找應用領域、<span class="tcode">SM66</span>＋Oracle Session Monitor 抓現行犯。動態 SQL、Native SQL（EXEC SQL 區塊不進所用處索引表 WBCROSSGT）、空的 RANGES 表都會讓所用處清單找不到。</p>
+  <div class="warn">S/4HANA 上 <span class="tcode">ST04</span> 直接進入 HANA 版 DBA Cockpit：常用的是 SQL Plan Cache（依 Total Execution Time 排序）、Expensive Statements Trace、Threads。HANA 是記憶體內欄式資料庫，「實體讀／Buffer Quality」這類 Oracle 指標不再適用，改看執行時間、記憶體與 CPU 使用；<b>但「Type 1／Type 2 分類」與「先找元兇程式再改」的方法論不變</b>。</div>
+
+  <h3 id="ch05-21-08">8. SQL Monitor（SQLM）與 SQL Performance Tuning Worklist（SWLT）</h3>
+  <p>既有工具各有盲點：ST05、SAT 只能追單一流程且開銷大；STAD、ST03N 看全系統但沒有 SQL 細節；DB 快取有細節但會被覆蓋、不同程式的相同 SQL 會被合併、也連不回業務流程。<b>SQL Monitor 補上這個缺口</b>：在正式機長期、低開銷（平均 &lt; 3%）地記錄<b>每一條</b> ABAP 發出的 SQL（Open SQL、Native SQL、核心發出的 SQL），並記錄其<b>進入點（Request Entry Point）</b>——交易、報表、RFC 模組或 URL。</p>
+  <p>彙總鍵：DB 表名、SQL 在原始碼的位置（程式／Include／行號）、流程類型與名稱（例如交易 VA01）。收集數據：執行次數、執行時間與讀寫筆數的最大／最小／平均／標準差。版本：NW 7.02 以上標準內建，更舊版本可透過 ST-PI 附加元件（SAP Note 1885926）。</p>
+  <p><b>正式機啟用步驟</b>：</p>
+  <ol>
+    <li>授權：管理者與檢視者分開，授權物件 S_ADMI_FCD，值 <b>SQMA</b>（管理、開關）與 <b>SQMD</b>（顯示）；交易 <span class="tcode">SQLM</span>、<span class="tcode">SQLMD</span>。</li>
+    <li><span class="tcode">RZ11</span> 確認 <span class="kw">abap/sqlm/main_switch</span> = on（預設）。</li>
+    <li><span class="tcode">SQLM</span> → SQL Monitor → Activate → All servers，設定到期日（一天／一週／兩週；預設 7 天後自動關閉）。</li>
+    <li>Server State → Check／Ensure Server State 確認各伺服器狀態一致。</li>
+    <li>確認背景作業：RTM_PERIODIC_JOB（每小時把共享記憶體資料寫入 DB）、SQLM_UPDATE_DATA/SCHEDULE（每小時複寫到 SQLM 表，若跑太久可改成 4 小時）、SQLM_DEACTIVATE/SCHEDULE（到期關閉）。</li>
+  </ol>
+  <div class="tip">原廠建議：<b>一個量測期最多兩週</b>（太長會被程式變更稀釋意義）；啟用後前幾小時盯住筆數，超過 200 萬筆就先關掉（例如大量含 GUID 的 URL 讓資料無法彙總）。刪除資料前記得先做 Snapshot，改善後重開一輪比較前後的 SQL Profile。</div>
+  <p><b>分析四招</b>（<span class="tcode">SQLMD</span>）：</p>
+  <ol>
+    <li><b>流程觀點</b>：Aggregation by Request，依 Executions／Total Time／Total Records 排序找前十大流程，再下鑽看該流程的 SQL Profile——經驗上前五條 SQL 就佔了八成。</li>
+    <li><b>系統觀點</b>：Aggregation by Source Position、套件限定 Z*／Y*，依 Total Time 排序＝客製程式裡最貴的 SQL；看 min/max/標準差可分辨「條條都慢」還是「偶爾卡鎖」；<b>Executions/Internal Session 很高＝巢狀 SELECT</b>。</li>
+    <li><b>資料量觀點</b>：依 Total Records 排序；max＝min＝整表筆數→大概沒有 WHERE；max 與 min 差很大→偶爾遇到<b>空的 FOR ALL ENTRIES 驅動表或空 RANGES</b>。</li>
+    <li><b>指定流程</b>：依 Request Type／Entry Point（例如 VA01）過濾，下鑽產出調校清單。</li>
+  </ol>
+  <p><span class="tcode">SWLT</span>（SQL Performance Tuning Worklist）則是把 <b>SQLM 的執行期數據</b>與 <b>SCI/ATC 的靜態檢查結果</b>（例如「迴圈內 SELECT」「SELECT * 只用少數欄位」）依原始碼位置合併，讓你一眼看到「又貴、又有已知壞味道」的語句，優先處理。這是 S/4HANA 遷移前後做客製程式效能整頓的標準組合。<span class="src">（SWLT 不在 BC490 任何一版教材中，依 SAP 官方文件補寫）</span></p>
+  <p><b>L29 Col10 版補充</b>（Unit 4 L2，印刷頁 p171–186／PDF p181–196），Col10 比 Col19 多寫了幾個實務細節：</p>
+  <table>
+    <thead><tr><th>項目</th><th>Col10 原文重點</th><th>出處（印刷頁）</th></tr></thead>
+    <tbody>
+      <tr><td>兩種版本</td><td>標準版（SAP_BASIS 內建）支援 NW 702、703/731、740；ST-PI 附加元件版支援 NW 700～740。<b>NW 740 以前不支援 720 核心，要改用 721 核心</b>。正式機說明以 NW 740 SP3 或 ST-PI 2008_1_700 SP8 的功能為準</td><td>p173 表 15</td></tr>
+      <tr><td>資料量經驗值</td><td>開 24 小時約 3 萬～40 萬筆 SQLM 記錄；兩週後約 10 萬～數百萬筆</td><td>p174</td></tr>
+      <tr><td>運作原理</td><td>同一 internal session 內重複執行同一 SELECT 不新增記錄、只累加；session roll-out 或結束時才彙總進伺服器共享記憶體，滿了才寫檔，最後由背景作業非同步寫 DB</td><td>p173</td></tr>
+      <tr><td>第一次看得到資料</td><td>啟用後最多要等 1 小時（等週期性背景作業）</td><td>p175</td></tr>
+      <tr><td>時間序列</td><td>Results 選 By Time Interval＋Display Time Series，可看同一條 SQL 在不同時段的表現（例如只看 10:00–11:00）</td><td>p176、p183</td></tr>
+      <tr><td>Technical Records</td><td>勾選後會多出 ABAP 核心隱含執行的 SQL（不是 Open SQL、Native SQL 或顯式 SQL 語句造成的）</td><td>p177</td></tr>
+      <tr><td>關鍵欄位</td><td><b>Total DB Time ÷ Total Time</b>（Total Time＝DB 時間＋ABAP 執行時間）比值高的程式碼最有 SQL 最佳化空間；Executions/Internal Session 高＝巢狀 SELECT</td><td>p182–183 表 17</td></tr>
+      <tr><td>單位陷阱</td><td>所有時間都是<b>毫秒、顯示到小數 3 位</b>——畫面上的 2.220,570 是約 2,220 ms（德式千分位），不要看成 2 百萬</td><td>p184 Hint</td></tr>
+    </tbody>
+  </table>
+  <div class="warn">最後一列要小心：Col10 p184 的 Hint 原文寫「2.220,570 ms are ~ 2.201 milliseconds」，數字自相矛盾（2.220,570 依德式格式是 2,220.570 ms，約 2.2 秒）。這是教材筆誤，判讀時以「逗號後三位是小數」為準。</div>
+
+  <h3 id="ch05-21-09">9. ST05 效能追蹤：錄製、彙總與逐條分析</h3>
+  <p><span class="tcode">ST05</span> 追蹤的是「程式向工作處理程序外部要求的資源」：<b>SQL Trace</b>（黃色）、<b>Table Buffer Trace</b>（藍色）、<b>Enqueue Trace</b>、<b>RFC Trace</b>、<b>HTTP Trace</b>（RFC、HTTP 可追進出兩向）。它適合分析<b>單一應用</b>；整個系統或 DB 伺服器都慢時不是 ST05 的舞台。可以在正式機開啟，不會造成錯誤或不一致。</p>
+  <p><b>使用步驟</b>：</p>
+  <ol>
+    <li><b>Step 0 預跑</b>：先執行目標程式幾次，避免表緩衝、程式緩衝的載入動作混進追蹤。</li>
+    <li><b>Step 1 錄製</b>：Activate Trace（可 with Filter：指定使用者、交易／程式、最多 5 張包含或排除的表、工作處理程序號碼）→ 執行 → Deactivate。勾選 Stack Trace 可記錄 ABAP 呼叫堆疊（每筆多約 30 µs、檔案大 50%），追 Enqueue（都在 SAPLSENA）或框架內的 SQL 特別有用。</li>
+    <li><b>Step 2 顯示</b>：明細清單（Detailed Trace List）、<b>結構相同的 SQL</b>（Structure-Identical，Shift+F8）、<b>值相同的 SQL</b>（Value-Identical，Ctrl+Shift+F8）、表存取彙總、應用元件階層。</li>
+    <li><b>Step 3 逐條分析</b>：語句明細與變數值、DDIC 資訊（緩衝設定、索引）、<b>Explain（執行計畫）</b>、ABAP 原始碼、呼叫堆疊；還可把追蹤丟給 Code Inspector 檢查（連動態 SQL、ADBC 都涵蓋）。</li>
+  </ol>
+  <p>追蹤檔參數（新版）：<span class="kw">rstr/filename</span>、<span class="kw">rstr/buffer_size_kB</span>（預設 200）、<span class="kw">rstr/max_filesize_MB</span>（預設 16）、<span class="kw">rstr/max_files</span>（預設 10，循環覆寫）。每筆記錄約 880 位元組、開銷 &lt; 3%；<b>錄太久會覆蓋自己的開頭</b>。强晟筆記的舊說法是「每台應用伺服器只有一個追蹤檔、同時只能一人追蹤、預設 8KB、建議 <span class="kw">rstr/max_diskspace</span> = 16384000」——<b>L29 2001 版原文（PDF p36）寫的是「預設 800 KB」</b>，强晟筆記少抄了兩個零；原文同樣建議把 <span class="kw">rstr/max_diskspace</span> 設為 16,384,000（16 MB）。這套「單一追蹤檔、一次一人」的機制已被上述多檔循環取代，以新版為準。Col10（Unit 4 L3，印刷頁 p193／PDF p203）的參數與預設值和 Col19 相同，並補一句：同一台伺服器已有追蹤在錄時，無法再開另一個錄製；顯示與分析也必須在錄製的同一台伺服器上做。</p>
+  <p><b>讀懂清單的判斷準則</b>：</p>
+  <table>
+    <thead><tr><th>欄位／現象</th><th>判斷</th></tr></thead>
+    <tbody>
+      <tr><td>Duration 單位</td><td><b>微秒（µs）</b>。强晟筆記寫「高開銷 SQL 耗時超過 200,000 毫秒」是單位誤植，應為 200,000 µs＝200 ms。<b>L29 2001 版查證：這個誤植出自原廠</b>——PDF p44 投影片就寫「Per database operation &gt;= 200,000 ms」，但同一版 p38 又明說 Duration 單位是微秒，强晟是照抄原文。筆記另寫「超過 100 毫秒標紅」則正確（2001 版 p38）</td></tr>
+      <tr><td>FETCH 次數</td><td>單條 SQL 需要 &gt; 10 次 FETCH（傳很多 32 KB 容器）→ 昂貴</td></tr>
+      <tr><td>Dur/Rec、Min Dur/Rec</td><td>SELECT &gt; 10,000 µs／筆、INSERT/UPDATE/DELETE &gt; 50,000 µs／筆 → 慢，要細查</td></tr>
+      <tr><td>Executions 多且 Rec/Exec = 1</td><td>一堆 SELECT SINGLE，改陣列讀取或 JOIN</td></tr>
+      <tr><td>Redundancy／Identical %</td><td>值相同的重複 SQL。4 次相同只需 1 次 → 優化潛力 60～75%；用內表緩衝結果</td></tr>
+      <tr><td>DBIF 轉換</td><td>用戶端欄位會自動加 WHERE MANDT；FOR ALL ENTRIES 會拆成多條 IN/OR；MODIFY 變 INSERT 或 UPDATE；EXPORT TO DATABASE 變 INDX 類表的 INSERT；緩衝表首次存取會變成「緩衝載入 SQL」</td></tr>
+    </tbody>
+  </table>
+  <div class="note">Explain 顯示的是「<b>按下 Explain 當下</b>」的執行計畫，可能與錄製當時不同；也可以手動輸入改寫後的 SQL 按 Explain，比較成本變化。PREPARE、FETCH 無法 Explain。HANA 上 Explain 會顯示 HANA 的計畫運算子，進一步可用 PlanViz（HANA Studio／Database Explorer）分析。</div>
+
+  <h3 id="ch05-21-10">10. 資料庫索引：存取策略、設計規則與選擇性分析</h3>
+  <p>在 ABAP 字典建表時，鍵欄位放在最前面，啟用後資料庫自動建立<b>主索引</b>（唯一）；另可定義<b>二級索引</b>（唯一或不唯一）。資料庫以多層 <b>B* 樹</b>組織索引區塊：根區塊 → 分支區塊 → 葉區塊（含索引欄位值與指向表記錄的 ROWID）。索引記錄依索引欄位排序，表區塊本身不排序。</p>
+  <table>
+    <thead><tr><th>存取策略</th><th>觸發條件</th><th>成本特性</th></tr></thead>
+    <tbody>
+      <tr><td><b>Index Unique Scan</b></td><td>唯一索引的所有欄位都用「=」指定</td><td>最多讀約 4 個區塊（3 索引＋1 表），回 0 或 1 筆，最快</td></tr>
+      <tr><td><b>Index Range Scan</b></td><td>只指定索引前段欄位（例：VBAP 只給 VBELN）</td><td>讀一段連續葉區塊；選擇性差時會比全表掃描還慢，且把大量區塊推到 LRU 清單頂端擠掉別人的快取</td></tr>
+      <tr><td><b>Concatenation</b></td><td>IN 清單、OR：同一索引用多個搜尋字串各掃一次再串接去重</td><td>每個值各做一次 range/unique scan</td></tr>
+      <tr><td><b>Full Table Scan</b></td><td>無可用索引，或要讀的比例高（約 &gt; 5%）</td><td>每個表區塊讀一次、放 LRU 尾端不擠快取；讀大比例資料時反而最有效</td></tr>
+    </tbody>
+  </table>
+  <p>强晟筆記的經典反例：<span class="kw">SELECT … FROM vbap WHERE matnr = …</span>，VBAP 主索引是 MANDT/VBELN/POSNR，優化器卻選了主索引做 range scan——唯一可用的條件只有 MANDT = '001'，等於把整個用戶端的索引全掃一遍。這類「無選擇性的 Index Range Scan」最多要讀「表區塊數 × 索引區塊數」，比全表掃描更糟。</p>
+  <p><b>索引設計規則</b>（兩份教材合併）：</p>
+  <ul>
+    <li>只有能把結果篩到<b>約 5% 以下</b>時，索引才有意義，否則優化器寧可全表掃描。</li>
+    <li>每張表索引宜少（約 <b>5 個以內</b>）、每個索引欄位宜少（約 <b>4 個以內</b>）；索引之間不要互相包含。</li>
+    <li><b>選擇性高、且用「=」查詢的欄位放前面</b>。Col19 範例：10 個工廠 × 各 1,000 物料，查 WERKS = 102、MATNR 1～500：索引（WERKS, MATNR）只掃 500 筆；索引（MATNR, WERKS）要掃約 5,000 筆才篩出 500 筆。用戶端欄位放第一個不是因為它有選擇性，而是它永遠用等號。</li>
+    <li>循序掃描的索引範圍盡量小（經驗值：&lt; 1,000 列），高頻 SQL 要求更嚴。</li>
+    <li>欄位語意分類：<b>識別碼</b>（單據號、物件號，高選擇性）、<b>組織單位</b>（銷售組織、公司代碼、工廠，低選擇性）、<b>狀態欄位</b>（查少數狀態時高選擇性，如未結訂單）、<b>分類欄位</b>（訂單類型，低）、<b>日期時間</b>（通常可用）、<b>文字欄位</b>（選擇性高但太寬，不要放）。</li>
+    <li>自建程式查交易資料表（主資料、交易資料會線性成長）時，<b>避免對 SAP 標準表加二級索引</b>，改找索引表、輔助表或別的存取路徑；不要對 Basis 表（NAST、D010、D020、DD*）加二級索引；<b>不要改 SAP 標準索引</b>，除非 SAP Note 建議（先搜 Note，關鍵字「表名／程式名 AND performance/index」）。</li>
+  </ul>
+  <p><b>選擇性分析</b>：<span class="tcode">DB02</span>（Space → Segments → Detailed analysis → Table columns）看每欄 distinct values；<span class="tcode">DB05</span> 算欄位組合的分佈直方圖。Col19 的 COSS 案例：112,181 筆，索引候選（USPOB, GJAHR, WRTTP, VERSN）——USPOB 有 3,060 個值、加 GJAHR 變 5,028、加 WRTTP 只到 5,135、加 VERSN 仍是 5,135；平均每組合回 22 筆，且有 4 個組合會回 10,000～100,000 筆。<b>結論：不建</b>（後兩欄不增加選擇性、且有會造成無選擇性 range scan 的組合）。規則：<b>加入某欄後 distinct 值沒增加，該欄就不該放進索引</b>。强晟筆記的 VBAK 例（AUART/AUDAT/VKORG）：1,352,728 筆、全組合 965,325 個值，平均 1.4 筆，是好索引。</p>
+  <p><b>衝突分析（Interference Analysis）</b>：新增／修改／刪除索引可能讓其他 SQL 變慢。步驟：SE12 所用處清單找出引用該表的所有 View → 修改前做「限定該表與 View」的 SQL 快取分析並下載 → DBA 修改索引並更新統計 → 重設 SQL 快取 → 約兩天後再分析一次 → 若某 SQL 每次執行的邏輯／實體讀增加超過約 30%，撤銷修改。建索引會鎖表，請在離峰時段；缺索引（DDIC 與 DB 不一致，常見於表重組後）用 <span class="tcode">DB02</span> 的 Missing Indexes 檢查。</p>
+  <div class="warn"><b>S/4HANA 的索引觀念要更新。</b>HANA 是欄式儲存，每一欄本身就像一個壓縮字典索引，全欄掃描非常快；大多數情況<b>不需要、也不建議</b>加二級索引（每個索引都佔記憶體並拖慢寫入）。先用 SQLM／Plan Cache 證明某條高頻 SQL 真的受益，再考慮建立。索引定義與緩衝設定的操作見 <a href="#ch05-16">5-16 章 BC430</a> 與 <a href="#ch01-2">1-2 章</a>。</div>
+
+  <h3 id="ch05-21-11">11. 不合適的存取路徑：改寫 WHERE、列舉優於區間、Hint 是最後手段</h3>
+  <p>强晟筆記「修改 ABAP 程式碼」路線圖列出索引用不上的五大原因：缺 WHERE 條件（索引缺口）、錯用 CLIENT SPECIFIED、否定表達（NOT、&lt;&gt;）、使用 BETWEEN／LIKE／&lt;／&gt;、上述運算子再用 OR 串接。<b>WHERE 裡條件的順序不影響存取路徑</b>（這不是指索引欄位順序），但會影響 SQL 文字是否與快取中已有的相同——所以建議一律依 DDIC 欄位順序書寫，提高重用率。</p>
+  <pre><code class="abap">*&amp;---------------------------------------------------------------*
+*&amp; 讓索引用得上：補缺口、改肯定句、拆 OR
+*&amp;---------------------------------------------------------------*
+" ✗ 索引缺口：BKPF 主鍵 MANDT/BUKRS/BELNR/GJAHR，漏了 BUKRS
+"   → 索引搜尋字串只剩 MANDT，等同掃整個用戶端
+SELECT bukrs, belnr, gjahr FROM bkpf
+  WHERE belnr = @lv_belnr
+  INTO TABLE @DATA(lt_bkpf_bad).
+
+" ✓ 就算業務上只有一個公司代碼，也要把它寫進 WHERE
+SELECT bukrs, belnr, gjahr FROM bkpf
+  WHERE bukrs = @lv_bukrs
+    AND belnr = @lv_belnr
+  INTO TABLE @DATA(lt_bkpf).
+
+" ✗ 否定條件無法用於索引搜尋，只有 MANDT、KUNNR 用得上
+SELECT vbeln, erdat, kunnr FROM vbak
+  WHERE kunnr IN @s_kunnr
+    AND auart NOT IN ('TA', 'KL', 'SO', 'ZBC')
+  INTO TABLE @DATA(lt_vbak_neg).
+
+" ✓ 改成肯定列舉：MANDT、KUNNR、AUART 都能用（Explain 會看到 concatenation）
+SELECT vbeln, erdat, kunnr FROM vbak
+  WHERE kunnr IN @s_kunnr
+    AND auart IN ('BV', 'WV', 'ZWK1', 'SM', @space)
+  INTO TABLE @DATA(lt_vbak_pos).
+
+" ✗ 大量 LIKE 用 OR 串接：每個 LIKE 被估成全表 10% 成本，加總超過就改走全表掃描
+" ✓ 拆成數條 SQL 分批（原講義用 APPENDING TABLE），最後自行去重
+SELECT vbeln, posnr FROM vbap
+  WHERE vbeln LIKE '00003001%' OR vbeln LIKE '00003002%'
+  INTO TABLE @DATA(lt_part).
+SELECT vbeln, posnr FROM vbap
+  WHERE vbeln LIKE '00003005%' OR vbeln LIKE '00003006%'
+  APPENDING TABLE @lt_part.
+SORT lt_part BY vbeln posnr.
+DELETE ADJACENT DUPLICATES FROM lt_part COMPARING vbeln posnr.</code></pre>
+  <ul>
+    <li><b>BETWEEN</b>：Oracle 不論區間大小都估成讀全部區塊的 5%；區間很小時改成 <span class="kw">IN (v1, …, vn)</span> 或 RANGES 表的 EQ 列舉，就能走索引並串接。</li>
+    <li><b>LIKE、&lt;、&gt;</b>：估 10%。欄位完整指定時用 = 取代 LIKE；<span class="kw">LIKE '%'</span> 這種條件直接省略；萬用字元開頭（'_'、'%'）無法縮小索引範圍。ABAP 選擇畫面的 <b>*</b>／<b>+</b> 對應 SQL 的 <b>%</b>／<b>_</b>。</li>
+    <li><b>CLIENT SPECIFIED</b>：加了卻沒寫 MANDT 條件，DBIF 就不會自動補，主索引第一欄失效。原講義建議補 <span class="kw">mandt = sy-mandt</span>；新版語法中 CLIENT SPECIFIED 已列為過時（7.51 起改用 <span class="kw">USING CLIENT</span>／<span class="kw">USING ALL CLIENTS</span>），一般程式根本不需要跨用戶端。</li>
+    <li><b>複雜 WHERE</b>：盡量寫成析取範式（DNF，OR 包 AND）；內層 OR 能用 IN 就用 IN；OR 太多會超過 DB 限制（SAP Note 690421、13607）。</li>
+  </ul>
+  <p><b>Casper 實務：條件用列舉（多筆 EQ）比用區間（BT）安全。</b>效能上，列舉可走索引串接，區間常被估成大範圍；正確性上，區間比的是<b>字典序</b>不是業務語意——號碼段不連續、ALPHA 前導零（'0000001234' 與 '1234'）、編碼規則改過，都會漏抓或多抓。</p>
+  <pre><code class="abap">" ✓ 列舉：精確、可走索引、語意清楚
+DATA lr_werks TYPE RANGE OF werks_d.
+lr_werks = VALUE #( sign = 'I' option = 'EQ'
+                    ( low = '1010' ) ( low = '1020' ) ( low = '1710' ) ).
+
+" ✗ 區間：'1010' ~ '1710' 之間的字串全部命中，包括 '1100'、'15ZZ'……
+" lr_werks = VALUE #( ( sign = 'I' option = 'BT' low = '1010' high = '1710' ) ).
+
+" 程式自己組 RANGES 時一定要設上限：太大會產生超長 SQL（超過 DB 語句長度就 DUMP）
+IF lines( lr_werks ) &gt; 1000.
+  " 改用 FOR ALL ENTRIES 或內表當資料來源的 JOIN（見第 13 節）
+ENDIF.
+
+SELECT matnr, werks, dispo FROM marc
+  WHERE werks IN @lr_werks
+  INTO TABLE @DATA(lt_marc).</code></pre>
+  <p><b>資料庫 Hint</b>：4.5A 以前只能寫在 Native SQL 裡；之後 Open SQL 可加 <span class="kw">%_HINTS &lt;DBMS&gt; '&lt;hint&gt;'</span>（例如 Oracle 的 <span class="kw">%_HINTS ORACLE 'INDEX("VBAP" "VBAP~A")'</span>；FULL、INDEX、FIRST_ROWS、ALL_ROWS 等）。資料庫看不懂的 Hint 會被當註解忽略。相關 Note：140825（總表）、130480（Oracle）、130481（MS SQL）、150037（DB6）、152913（Informix）、162034（DB2/390）。</p>
+  <div class="warn"><b>Hint 只能當最後手段。</b>它綁死特定資料庫，換 DB（例如 Oracle → HANA 遷移）時所有 Hint 都要逐一檢查；而且它凍結了優化器依資料成長動態選路的能力——今天好的索引明天可能變壞。S/4HANA 上的 Oracle Hint 全部失效（HANA 的 Hint 語法是 <span class="kw">%_HINTS HDB '…'</span>），遷移專案應用 ATC 把舊 Hint 全部找出來評估。</div>
+
+  <h3 id="ch05-21-12">12. 單表存取四大規則（合適存取路徑下的最佳化）</h3>
+  <p>存取路徑合適但仍昂貴時，Col19 歸納四條規則（强晟筆記稱「減少傳輸的列、減少傳輸的欄、減少資料傳輸、避免不必要的 SQL」）：</p>
+  <ol>
+    <li><b>讓搜尋範圍小</b>——讓優化器找得到好的存取路徑（第 10、11 節）。</li>
+    <li><b>讓結果集小</b>——WHERE 寫足、寫穩定；條件放 WHERE 不放 CHECK；只要前 n 筆就用 UP TO n ROWS。</li>
+    <li><b>讓傳輸量小</b>——明列欄位不用 SELECT *；聚合在 DB 做；UPDATE 只 SET 要改的欄。</li>
+    <li><b>讓傳輸次數少</b>——陣列讀取、FOR ALL ENTRIES、JOIN；大量寫入用 FROM TABLE。</li>
+  </ol>
+  <pre><code class="abap">*&amp;---------------------------------------------------------------*
+*&amp; 規則 2、3 的標準寫法
+*&amp;---------------------------------------------------------------*
+" 規則 2：穩定的 WHERE —— RESB 每月可成長數百 MB。
+"   只給 MATNR 會隨時間越抓越多（不穩定）；加上 KZEAR（最終發料）只抓未結預留，筆數才會穩定
+SELECT rsnum, rspos, matnr, werks, bdmng, bdter FROM resb
+  WHERE matnr IN @s_matnr
+    AND kzear = @abap_false
+  INTO TABLE @DATA(lt_resb).
+
+" 規則 2：條件寫在 WHERE。舊講義在 SELECT 迴圈內用 CHECK 過濾 → 整張 VBAK 傳過網路才丟掉
+SELECT vbeln, erdat, kunnr FROM vbak
+  WHERE vbeln BETWEEN @lv_low AND @lv_high
+  INTO TABLE @DATA(lt_vbak).
+
+" 規則 2：只要前 n 筆 → UP TO n ROWS（用 sy-dbcnt 自己中斷，最後一個 32 KB 容器還是整包傳了）
+"   HANA 上「前 n 筆」一定要配 ORDER BY，否則每次回來的 n 筆可能不同（見第 24 節）
+SELECT vbeln, erdat, kunnr FROM vbak
+  WHERE vbeln IN @s_vbeln
+  ORDER BY erdat DESCENDING, vbeln DESCENDING
+  INTO TABLE @DATA(lt_latest)
+  UP TO @p_limit ROWS.
+
+" 規則 3：聚合在 DB 做，每張訂單只傳一筆（ABAP 端控制層處理要傳所有明細）
+SELECT vbeln, MAX( kwmeng ) AS max_qty, MIN( matnr ) AS min_matnr
+  FROM vbap
+  WHERE vbeln IN @s_vbeln
+  GROUP BY vbeln
+  INTO TABLE @DATA(lt_agg).
+
+" 規則 3：HAVING 在 DB 端過濾群組
+"   ※ 教材原例寫成 SELECT MAX( matnr ) vbeln AVG( zmeng ) … GROUP BY matnr，
+"     非聚合欄 vbeln 不在 GROUP BY 中，且 MAX( matnr ) 對分組欄取最大無意義 → 語法錯誤。
+"     題意是「每個物料的最大單據號與平均目標數量」，應寫成：
+SELECT matnr, MAX( vbeln ) AS max_vbeln, AVG( zmeng ) AS avg_zmeng
+  FROM vbap
+  WHERE vbeln IN @s_vbeln
+  GROUP BY matnr
+  HAVING AVG( zmeng ) &gt;= @p_min AND AVG( zmeng ) &lt;= @p_max
+  INTO TABLE @DATA(lt_stat).</code></pre>
+  <div class="note">聚合函數的注意事項：DB 與 ABAP 的捨入規則不同（F 轉 I 尤其明顯）；DB 認得 NULL、ABAP 只有初始值，<b>AVG 遇到 NULL 的結果會與在 ABAP 算的不同</b>；AVG 目標用 F 型別（inline 宣告預設即是）、SUM 目標長度要大於來源以免溢位；含聚合、DISTINCT、GROUP BY 的 SQL 一律<b>繞過表緩衝</b>。HAVING 本身會增加 DB 負荷，能寫在 WHERE 的條件不要放 HAVING。<span class="kw">INTO CORRESPONDING FIELDS</span> 比依位置 INTO 多一點欄名比對成本（很小），目標結構與欄位清單一致時直接 INTO TABLE。</div>
+  <pre><code class="abap">*&amp;---------------------------------------------------------------*
+*&amp; 規則 3、4：寫入的最佳化（示範用 Z 表；嚴禁直接 UPDATE 標準表如 VBAP）
+*&amp;---------------------------------------------------------------*
+" ✓ UPDATE … SET：計算在 DB 做，不必先讀回來再一筆筆寫回
+UPDATE zsd_item SET zmeng = zmeng + 5
+  WHERE vbeln IN @s_vbeln.
+
+" ✓ 大量新增：一次 FROM TABLE，而不是迴圈裡一筆筆 INSERT
+INSERT zsd_item FROM TABLE @lt_new ACCEPTING DUPLICATE KEYS.
+IF sy-subrc = 4.
+  " 有部分鍵已存在：那些列沒寫入（不會 DUMP、也不覆蓋舊資料），其餘照常新增
+  MESSAGE |{ lines( lt_new ) - sy-dbcnt } 筆鍵值重複未寫入| TYPE 'S'.
+ENDIF.
+
+" ✓ 大量刪除：DELETE … WHERE 或 DELETE … FROM TABLE
+DELETE FROM zsd_item WHERE erdat &lt; @lv_purge_date.</code></pre>
+  <ul>
+    <li><span class="kw">UPDATE/DELETE … FROM TABLE</span> 有陣列效益；<span class="kw">MODIFY dbtab FROM TABLE</span> <b>沒有</b>（DBIF 仍逐筆轉成 INSERT 或 UPDATE）。</li>
+    <li>WHERE 子句只能與 <span class="kw">UPDATE … SET</span> 和 <span class="kw">DELETE FROM</span> 搭配。</li>
+    <li><b>不要在迴圈內 CALL FUNCTION … IN UPDATE TASK</b>：先收集到內表，一次呼叫。否則不只應用表，連更新表 VBHDR、VBDATA、VBMOD 也會暴增（LUW 與更新任務見 <a href="#ch05-11">5-11 章 BC414</a>）。</li>
+    <li>陣列也不是越大越好：過大的批次讓 DB 與更新表負荷暴增，建議分包（SAP Note 766349）。</li>
+  </ul>
+  <div class="warn"><b>教材錯誤修正：</b>Col19 p303 說「ACCEPTING DUPLICATE KEYS 在遇到重複鍵時設定 sy-subrc，並導致程式短傾印」——後半句錯誤。正確行為是：重複鍵的列不寫入、sy-subrc = 4、sy-dbcnt 為實際寫入筆數，<b>不會 DUMP</b>；不加此附加語句時才會觸發可攔截例外 CX_SY_OPEN_SQL_DB（未攔截即短傾印）。重複很多時效能反而差，此時可考慮 MODIFY FROM TABLE 或先查後寫。</div>
+
+  <h3 id="ch05-21-13">13. FOR ALL ENTRIES、RANGES 表與內表當資料來源</h3>
+  <p><span class="kw">FOR ALL ENTRIES</span>（FAE）是為了把 SELECT 從迴圈中拿出來而生的歷史產物（當年並非所有 SAP 支援的資料庫都能 JOIN）。它本質上是「內表與 DB 表之間的 JOIN，但在 ABAP 端完成」：DBIF 依參數把驅動表拆成多條原生 SQL（6.10 起多用 IN 清單），在 DBIF 端緩衝結果、<b>去除重複列</b>後再交給程式。</p>
+  <ul>
+    <li><span class="kw">rsdb/max_blocking_factor</span>、<span class="kw">rsdb/min_blocking_factor</span>：OR 串接的條件數（Oracle 約 5～15，强晟筆記記為 15；MS SQL 約 50）。</li>
+    <li><span class="kw">rsdb/max_in_blocking_factor</span>、<span class="kw">rsdb/min_in_blocking_factor</span>：IN 清單的值數。7.00 起 RZ11 不顯示部分 DB 參數預設值（Note 1296224；另見 48230、634263、881083）。</li>
+  </ul>
+  <p><b>四大陷阱</b>（完整說明見 <a href="#ch02-2-17">2-2 章第 17 節</a>）：</p>
+  <ol>
+    <li><b>驅動表為空＝整張表全抓</b>，而且與驅動表無關的 WHERE 條件也不會被評估。對照：<span class="kw">WHERE key1 IN rangetab AND f1 = X</span> 在 rangetab 為空時只會「不限制 key1」，仍會套用 f1 = X。</li>
+    <li><b>驅動表要先去重</b>，否則同樣的資料重讀好幾次。</li>
+    <li><b>結果會被去重</b>：SELECT 欄位若沒包含完整鍵，業務上不同的列可能被當重複刪掉（例如數量相同的兩筆明細）。</li>
+    <li><b>不要與大 RANGES 表合用</b>：產生大量不同 SQL（毒害游標快取）、WHERE 極複雜、甚至超過語句長度上限（Oracle 32 位元版 32 KB）而 DUMP。RANGES 建議固定上限約 15～20 列。</li>
+  </ol>
+  <pre><code class="abap">*&amp;---------------------------------------------------------------*
+*&amp; FAE 的安全寫法，以及 7.52 起「內表當資料來源」的替代方案
+*&amp;---------------------------------------------------------------*
+" ① 驅動表去重（GROUP BY 一次到位），並用 SORTED UNIQUE 保證不重複
+DATA lt_kunnr TYPE SORTED TABLE OF kunnr WITH UNIQUE KEY table_line.
+lt_kunnr = VALUE #( FOR GROUPS g OF ls_v IN lt_vbak GROUP BY ls_v-kunnr ( g ) ).
+
+" ② ★ 空表檢查：少了這行，驅動表空的那天就是把整張 KNA1 讀進來
+IF lt_kunnr IS NOT INITIAL.
+  SELECT kunnr, name1, adrnr FROM kna1
+    FOR ALL ENTRIES IN @lt_kunnr
+    WHERE kunnr = @lt_kunnr-table_line
+    INTO TABLE @DATA(lt_kna1).
+ENDIF.
+
+" ③ 7.52 起：內表可當資料來源直接與 DB 表 JOIN（HANA 上內表會整包傳到 DB 端）
+"    不必自己擔心空表、也不會有 FAE 的隱性去重
+SELECT DISTINCT k~kunnr, k~name1, k~adrnr
+  FROM @lt_vbak AS v
+  INNER JOIN kna1 AS k ON k~kunnr = v~kunnr
+  INTO TABLE @DATA(lt_kna1_join).
+
+" ④ 結果要依鍵讀取：FAE 的結果沒有順序，放進 SORTED/HASHED 表再用
+DATA lt_kna1_h TYPE HASHED TABLE OF kna1 WITH UNIQUE KEY kunnr.</code></pre>
+  <div class="tip">何時 FAE 還是好選擇：驅動表不大、WHERE 指向一小塊區域、有合適索引、要讀的表是<b>有緩衝的</b>（JOIN 一律繞過表緩衝，FAE 與逐筆 SELECT 則可用緩衝）。驅動表很大或要讀大量資料時，JOIN、CDS View 或內表資料來源通常更好。在 HANA 上，新版核心會以 FDA（Fast Data Access）把 FAE 驅動表整包送到 DB 端處理，但「空表陷阱」依舊存在。</div>
+
+  <h3 id="ch05-21-14">14. 多表存取：巢狀 SELECT、JOIN、View、子查詢與邏輯資料庫</h3>
+  <p>ABAP 實作「JOIN 邏輯」的方式：巢狀 SELECT、FOR ALL ENTRIES、資料庫 View、ABAP JOIN、子查詢、顯式游標、邏輯資料庫。<b>最具擴充性、通常也最快的是在資料庫層做 JOIN</b>（View、ABAP JOIN、子查詢），因為存取順序由優化器依統計資訊動態決定；巢狀 SELECT 與 FAE 的順序則被寫死在程式裡——使用者輸入不同（例如這次只給客戶、下次只給單號）時，寫死的順序可能正好相反。</p>
+  <p><b>巢狀 SELECT 的三大問題</b>：① 傳輸開銷大——外層每一筆都讓內層 REOPEN 一次，每次只回一筆，32 KB 容器幾乎是空的；② 相同 SQL 重複執行——外層非鍵欄位（如訂單上的客戶）對應內層鍵欄位時，同一客戶被讀很多次；③ 存取順序寫死。</p>
+  <p>資料庫層 JOIN 的兩種執行策略：<b>Nested Loop</b>（先選外表——WHERE 估算回傳最少的那張，再依 JOIN 條件逐筆找內表）與 <b>Sort Merge Join</b>（各表先依 WHERE 取結果集、依 JOIN 條件排序再合併；兩表都有選擇性 WHERE、或 JOIN 條件本身沒有選擇性時較有利）。<b>JOIN 條件欄位至少在內表要有索引</b>。</p>
+  <pre><code class="abap">*&amp;---------------------------------------------------------------*
+*&amp; 巢狀 SELECT → 資料庫層 JOIN
+*&amp;   原講義：外層 SELECT vbak 迴圈內再 SELECT SINGLE kna1（已不示範）
+*&amp;---------------------------------------------------------------*
+" ✓ INNER JOIN：只留兩邊都有的
+SELECT v~vbeln, v~kunnr, k~name1, k~adrnr
+  FROM vbak AS v
+  INNER JOIN kna1 AS k ON k~kunnr = v~kunnr
+  WHERE v~vbeln IN @s_vbeln
+  INTO TABLE @DATA(lt_inner).
+
+" ✓ LEFT OUTER JOIN：沒有客戶主檔的訂單也要保留（右表欄位回初始值）
+SELECT v~vbeln, v~kunnr, k~name1
+  FROM vbak AS v
+  LEFT OUTER JOIN kna1 AS k ON k~kunnr = v~kunnr
+  WHERE v~vbeln IN @s_vbeln
+  INTO TABLE @DATA(lt_outer).
+
+" ✓ 子查詢：只要「在這批訂單中出現過的客戶」
+SELECT kunnr, adrnr FROM kna1
+  WHERE kunnr IN ( SELECT DISTINCT kunnr FROM vbak WHERE vbeln IN @s_vbeln )
+  INTO TABLE @DATA(lt_cust).
+
+" ✓ 需要依結果做 EXISTS 判斷時，EXISTS 通常比 IN 子查詢更直覺
+SELECT kunnr, name1 FROM kna1 AS k
+  WHERE EXISTS ( SELECT vbeln FROM vbak WHERE kunnr = k~kunnr AND erdat &gt;= @lv_from )
+  INTO TABLE @DATA(lt_active_cust).</code></pre>
+  <div class="warn"><b>教材錯誤修正：</b>强晟筆記 p83 的 JOIN 例 <span class="kw">ON vbuk~vbeln = vbuk~vbeln</span> 是自己等於自己（應為 vbak~vbeln = vbuk~vbeln）；p183 的 <span class="kw">WHERE t1~vben</span> 為 vbeln 之誤。另外 VBUK／VBUP 在 S/4HANA 已廢除，狀態欄位併入 VBAK／VBAP／LIKP 等表頭與明細，舊程式 JOIN VBUK 的寫法要改。</div>
+  <ul>
+    <li><b>資料庫 View</b>（SE11）：只能做 INNER JOIN；不能自建索引（用基礎表的索引）；可重用、對 SQL 快取友善；<b>預設繞過表緩衝</b>，但 4.0 起可對 View 本身設定緩衝。</li>
+    <li><b>ABAP JOIN</b>：可做 INNER 與 LEFT OUTER；欄位一律加表別名前綴；別串太多表。舊限制（右邊必須是表或 View、ON 只能用 AND、每個比較都要含右表欄位、LEFT OUTER JOIN 的 WHERE 不可用右表欄位）在 7.40 SP05 之後多數已放寬。</li>
+    <li><b>邏輯資料庫（LDB）</b>：節點階層決定讀取順序，GET 事件就像巢狀迴圈；只需低層資料時仍會讀經過的所有上層節點；可用 <span class="kw">GET node FIELDS f1 f2</span> 限縮欄位。</li>
+  </ul>
+  <div class="warn">邏輯資料庫在 S/4HANA 屬過時技術（强晟筆記當年就註明「已屬過時技術，代碼略」），新程式一律自己寫 SQL 或使用 CDS View；LDB 的歷史與維護見 <a href="#ch05-6">5-6 章 BC405</a>。多表查詢的語法細節見 <a href="#ch02-2-15">2-2 章第 15 節</a>。</div>
+
+  <h3 id="ch05-21-15">15. Pool 表與 Cluster 表（S/4HANA 已退場）</h3>
+  <p>强晟筆記（Col19 已刪除此段）說明：除了透明表，ABAP 字典可把多張邏輯表放進一張實體表——<b>Pool 表</b>（多張小表放進表池，如 KAPOL；鍵為 TABNAME＋VARKEY，非鍵欄位壓縮存於 VARDATA，所以池表的鍵欄位必須是 C 型）與 <b>Cluster 表</b>（功能相關的資料依共同的簇鍵放一起，如 BSEG 放在表簇 RFBLG；欄位 PAGENO、TIMESTMP、PAGELG、VARDATA）。</p>
+  <ul>
+    <li>優點：壓縮省空間與網路；表數量少、管理容易；Cluster 表一次讀出相依資料。</li>
+    <li>缺點：非鍵欄位不能建索引；不能用 View、ABAP JOIN、Native SQL；<b>只有鍵欄位（Cluster 是簇鍵）的條件會送到 DB</b>，ORDER BY／GROUP BY 非鍵欄位也不會送。</li>
+    <li>經典反例：<span class="kw">SELECT … FROM bseg WHERE kunnr = …</span>——KUNNR 壓在 VARDATA 裡，DB 只收到 WHERE MANDT，整個用戶端的 RFBLG 全讀回來在 DBIF 過濾。當年的解法是改讀<b>二級索引表 BSID</b>（應收未清項）。</li>
+    <li>池表 AA005 例：WHERE 沒從最左鍵連續指定，VARKEY 只能用 'AA005001%' 前綴 LIKE；解法依序是補條件 → 完整緩衝該表 → 把表移出表池轉透明表再建索引（須先詢問 SAP）。</li>
+  </ul>
+  <pre><code class="abap">" S/4HANA：BSEG 已是透明表（不再有 RFBLG 簇），但仍是超大表
+" 查客戶未清項目：BSID 在 S/4HANA 是相容 View（名稱保留，底層讀 BSEG/ACDOCA），
+" 舊程式不必改名；新開發建議直接用 ACDOCA 或 SAP 發佈的 CDS View
+SELECT bukrs, belnr, gjahr, buzei, zfbdt, dmbtr
+  FROM bsid
+  WHERE bukrs = @lv_bukrs
+    AND kunnr = @lv_kunnr
+  INTO TABLE @DATA(lt_open_items).</code></pre>
+  <div class="warn">S/4HANA 的資料庫只能是 HANA，<b>Pool 表與 Cluster 表在轉換時全數轉為透明表</b>（BSEG、KONV→PRCD_ELEMENTS 等），相關的效能技巧已不適用；但「查大表一定要有好的 WHERE」與「優先使用專為查詢設計的索引表／View」的精神仍然成立。FI 資料在 S/4HANA 以萬用日記帳 ACDOCA 為核心。</div>
+
+  <h3 id="ch05-21-16">16. SAP 表緩衝：類型、同步、繞過條件與 ST10</h3>
+  <p>表緩衝把表內容放在<b>每台應用伺服器的共享記憶體</b>，存取比資料庫快 10～100 倍（强晟筆記：緩衝約 0.2～6 ms 對上 DB 8～600 ms）。緩衝資料依主鍵排序存放，<b>只能用主鍵存取，不能用二級索引</b>。三種類型可統一理解為「有 n 個鍵欄位的通用緩衝」：</p>
+  <table>
+    <thead><tr><th>類型</th><th>n</th><th>載入／失效單位</th><th>讀得到緩衝的條件</th></tr></thead>
+    <tbody>
+      <tr><td>全緩衝（Full）</td><td>0</td><td>整張表</td><td>任何只含主鍵條件的讀取</td></tr>
+      <tr><td>通用緩衝（Generic）</td><td>0 &lt; n &lt; 全部鍵</td><td>一個通用區（前 n 個鍵欄位的值組合）</td><td>通用區所有欄位都要用「=」指定</td></tr>
+      <tr><td>單筆緩衝（Single record）</td><td>全部鍵</td><td>一筆</td><td>完整主鍵（7.02 起不寫 SINGLE、用陣列讀取也會走緩衝）</td></tr>
+    </tbody>
+  </table>
+  <p><b>跨伺服器同步</b>：① 在本機 DB 修改，同時更新（工作區模式）或失效（集合模式）本機緩衝；② DBIF 寫一筆同步記錄到表 <b>DDLOG</b>；③ 其他伺服器定期（約每 1～2 分鐘）讀 DDLOG，把受影響的緩衝失效，下次存取再重載。<b>兩次同步之間，其他伺服器可能讀到舊資料</b>。失效後有「pending period」：接下來數次（目前 5 次）存取直接走 DB，第 6 次才重載，避免載入／失效反覆震盪。</p>
+  <p>失效範圍：全緩衝→整表；通用緩衝在工作區模式（單筆 UPDATE/INSERT/MODIFY/DELETE dbtab FROM wa）→同一通用區，集合模式（FROM TABLE、UPDATE…SET…WHERE、DELETE…WHERE）→整表；單筆緩衝在工作區模式→那一筆，集合模式→整表。</p>
+  <p><b>一定繞過緩衝的語句</b>：<span class="kw">BYPASSING BUFFER</span>、<span class="kw">SELECT … FOR UPDATE</span>、<span class="kw">DISTINCT</span>、聚合函數（COUNT/SUM/MAX/MIN/AVG）、<span class="kw">IS NULL</span>、ORDER BY 非主鍵（ORDER BY PRIMARY KEY 可以）、GROUP BY／HAVING、子查詢、JOIN 與多表 View、Native SQL、WHERE 中兩欄互相比較；單筆緩衝表則是沒給完整主鍵的讀取；通用緩衝表則是沒用「=」填滿通用區（例如加了 CLIENT SPECIFIED 卻沒給 MANDT）。</p>
+  <pre><code class="abap">" ✓ 單筆緩衝表 T100：完整主鍵 → 讀應用伺服器緩衝
+SELECT SINGLE text FROM t100
+  WHERE sprsl = @sy-langu
+    AND arbgb = 'BC490'
+    AND msgnr = '050'
+  INTO @DATA(lv_text).
+" ※ 强晟筆記 p217 寫成 SELECT SINGLE * … INTO TABLE，SINGLE 不能搭 INTO TABLE，為筆誤。
+
+" ✓ 通用緩衝表 TCURR（通用區＝MANDT）：不寫 CLIENT SPECIFIED，DBIF 自動補 MANDT → 讀緩衝
+SELECT kurst, fcurr, tcurr, gdatu, ukurs FROM tcurr
+  WHERE kurst = 'M'
+  INTO TABLE @DATA(lt_rates).
+
+" ✓ 需要保證最新值（例如取得鎖之後重讀）→ 明確繞過緩衝，並讓 Code Inspector 看得出是刻意的
+SELECT SINGLE value FROM zcfg_param BYPASSING BUFFER
+  WHERE param = 'NEXT_RUN'
+  INTO @DATA(lv_next_run).</code></pre>
+  <p><b>該不該緩衝</b>：</p>
+  <ul>
+    <li>技術面：表要小（經驗上 &lt; 1 MB 最理想，10 MB 以上要特別評估共享記憶體）；讀多寫少（<b>異動 &lt; 讀取的 1%</b>）；能容忍短暫不一致；存取以主鍵為主。緩衝前先與 Basis 確認共享記憶體夠大，否則緩衝會 swap。</li>
+    <li>語意面：<b>交易資料（VBAK、LIKP、MKPF、RESB）不緩衝</b>；主資料（MARA、KNA1、LFA1）通常也不緩衝（會長到上百 MB、常用二級索引路徑存取）；<b>客製化設定表（T000、T001、T001W、TVKO）最適合緩衝</b>。改 SAP 標準表的緩衝設定要有 SAP Note 依據並需修改金鑰。</li>
+  </ul>
+  <p><b>分析工具</b>：<span class="tcode">ST02</span>（命中率應接近 100%、Swaps 應避免；只看目前登入的那台伺服器）、<span class="tcode">ST10</span>（Table Call Statistics）、<span class="tcode">ST05</span> Buffer Trace、<span class="tcode">AL12</span>（SAP 支援用的專家工具，無文件）、<span class="tcode">SE17</span>、<span class="tcode">DB05</span>、<span class="tcode">SAT</span>、<span class="tcode">SCI</span>。ST10 的判讀：依 DB activity 的 Rows affected 排序，<b>緩衝表出現在前面</b>就代表太大常被失效或存取方式與緩衝類型不符；依 Invalidations 排序，小表（&lt; 1 MB）失效次數對讀取次數比例不應超過約 1%，1～10 MB 的表約 0.1%；未緩衝表中讀多寫少的客製表與條件表應考慮緩衝。緩衝狀態：valid、invalid、pending、loadable、loading、absent/displaced、multiple、error（常見原因是表太大放不進緩衝）。</p>
+  <div class="note">緩衝設定本身在 <span class="tcode">SE11</span> 技術設定中維護（見 <a href="#ch01-2">1-2 章</a>、<a href="#ch05-16">5-16 章</a>）。HANA 雖然很快，<b>應用伺服器緩衝仍比跨網路到 DB 快得多</b>，設定表的緩衝在 S/4HANA 依然重要。</div>
+
+  <h3 id="ch05-21-17">17. 資料物件緩衝：緩衝模組、Shared Memory／Buffer、Shared Objects</h3>
+  <p>表緩衝只適用少數表；主資料、交易資料太大或變動太頻繁，只能在程式裡自己緩衝——Col19 稱為<b>緩衝模組（Buffer Module）</b>，也叫讀取模組、Data Provider、交易緩衝。SAP 標準大量使用（例如函數群組 V45I 的單筆讀取模組、STATUS_CHECK）。一個好的緩衝模組要有：</p>
+  <ul>
+    <li><b>Not-found 緩衝</b>：查不到的鍵也要記住，否則同一個不存在的鍵會一直打 DB。</li>
+    <li><b>可繞過</b>：在 Enqueue 保護下需要 committed read 時要能強制重讀。</li>
+    <li><b>顯式 refresh 與大小上限</b>（超過上限時在未命中的那次才清空）。</li>
+    <li>緩衝內表用 <b>HASHED 或 SORTED</b>，不用標準表。</li>
+    <li>資料只用一次就不要緩衝；已在表緩衝的表不要再緩衝一次（記憶體花兩份、效益可忽略）。</li>
+  </ul>
+  <pre><code class="abap">*&amp;---------------------------------------------------------------*
+*&amp; 緩衝模組：取代「SELECT 迴圈內 SELECT SINGLE kna1」與舊式 FORM 讀取子程序
+*&amp;---------------------------------------------------------------*
+CLASS lcl_kna1_buffer DEFINITION FINAL.
+  PUBLIC SECTION.
+    TYPES: BEGIN OF ty_kna1,
+             kunnr  TYPE kunnr,
+             name1  TYPE name1_gp,
+             ort01  TYPE ort01_gp,
+             exists TYPE abap_bool,
+           END OF ty_kna1.
+    CLASS-METHODS get
+      IMPORTING iv_kunnr       TYPE kunnr
+                iv_bypass      TYPE abap_bool DEFAULT abap_false
+      RETURNING VALUE(rs_kna1) TYPE ty_kna1.
+    CLASS-METHODS refresh.
+  PRIVATE SECTION.
+    CONSTANTS c_max_entries TYPE i VALUE 10000.
+    CLASS-DATA gt_buffer TYPE HASHED TABLE OF ty_kna1 WITH UNIQUE KEY kunnr.
+ENDCLASS.
+
+CLASS lcl_kna1_buffer IMPLEMENTATION.
+  METHOD get.
+    IF iv_bypass = abap_false.
+      READ TABLE gt_buffer WITH TABLE KEY kunnr = iv_kunnr INTO rs_kna1.
+      IF sy-subrc = 0.
+        RETURN.                                  "命中（包含「確定不存在」的記錄）
+      ENDIF.
+    ENDIF.
+
+    SELECT SINGLE kunnr, name1, ort01 FROM kna1
+      WHERE kunnr = @iv_kunnr
+      INTO CORRESPONDING FIELDS OF @rs_kna1.
+    rs_kna1-exists = xsdbool( sy-subrc = 0 ).    "★ Not-found 也緩衝
+    rs_kna1-kunnr  = iv_kunnr.
+
+    IF lines( gt_buffer ) &gt;= c_max_entries.
+      CLEAR gt_buffer.                           "隱式 refresh：只在未命中時才觸發
+    ENDIF.
+    INSERT rs_kna1 INTO TABLE gt_buffer.
+    IF sy-subrc &lt;&gt; 0.
+      MODIFY TABLE gt_buffer FROM rs_kna1.       "bypass 重讀後覆蓋舊值
+    ENDIF.
+  ENDMETHOD.
+
+  METHOD refresh.
+    CLEAR gt_buffer.
+  ENDMETHOD.
+ENDCLASS.</code></pre>
+  <p><b>跨 session 共用資料</b>的技術演進：</p>
+  <ul>
+    <li><span class="kw">EXPORT … TO SHARED BUFFER</span>：LRU 置換，資料可能被擠掉（ST02 列 Export/import，EIBUF，參數 rsdb/obj/*）。</li>
+    <li><span class="kw">EXPORT … TO SHARED MEMORY</span>：不置換，但滿了就存不進去（ST02 列 Exp./Imp. SHM，ESM，參數 rsdb/esm/*）。</li>
+    <li>其他 EXPORT 目的地：DATA BUFFER、INTERNAL TABLE、MEMORY（ABAP Memory，外部模式內可見）、DATABASE（INDX 類透明表）。</li>
+    <li><b>Shared Objects</b>（6.40 起，取代 SE33 的 Contexts）：把<b>物件</b>放在共享記憶體，讀取端以參考存取、<b>不必複製</b>。用 <span class="tcode">SHMA</span> 定義 Area（產生繼承 CL_SHM_AREA 的 Area 類別，命名建議 ZCL_*），根類別須勾 Shared Memory Enabled；<span class="tcode">SHMM</span> 監控；大小由 <span class="kw">abap/shared_objects_size_MB</span> 控制（SAP Note 1322182、972757）。</li>
+  </ul>
+  <pre><code class="abap">" 讀取端：多人可同時 attach_for_read，讀完 detach
+TRY.
+    DATA(lo_area) = zcl_flight_catalog_area=&gt;attach_for_read( ).
+    DATA(lt_flights) = lo_area-&gt;root-&gt;get_flights( iv_carrid = 'LH' ).
+    lo_area-&gt;detach( ).
+  CATCH cx_shm_attach_error INTO DATA(lx_shm).
+    " 尚無有效版本 → 由建置程式：attach_for_write( ) → CREATE OBJECT … AREA HANDLE
+    "                         → set_root( ) → detach_commit( )
+    MESSAGE lx_shm-&gt;get_text( ) TYPE 'I'.
+ENDTRY.</code></pre>
+  <div class="tip">Shared Objects 的適用情境只有兩種：<b>共享緩衝</b>（型錄：一天最多改一次、多人同時讀）與<b>獨占緩衝</b>（購物車：一人寫、之後另一人讀）。頻繁寫入或大量並行讀寫不適合（鎖機制會拒絕大部分存取）。經驗值：Area 約 200～500 KB 才划算，重用率很高時可低到約 50 KB；首次 attach_for_read 約 260～280 µs、之後約 80～90 µs，而緩衝表的 SELECT SINGLE 只要 20～50 µs——<b>簡單設定資料用表緩衝，複雜物件結構才用 Shared Objects</b>。版本管理與程式細節見 <a href="#ch05-3">5-3 章 BC402</a>。</div>
+
+  <h3 id="ch05-21-18">18. 內表：型別選擇與存取成本</h3>
+  <p>內表屬性由<b>行型別、鍵、唯一性、表類型</b>完整決定。三種表類型（基礎語法見 <a href="#ch02-2">2-2 章</a>）：</p>
+  <table>
+    <thead><tr><th>操作（n 筆，處理 m 筆）</th><th>STANDARD</th><th>SORTED</th><th>HASHED</th></tr></thead>
+    <tbody>
+      <tr><td>依鍵 READ／MODIFY／DELETE 單筆</td><td>O(n)（BINARY SEARCH 後 O(log n)）</td><td>O(log n)</td><td>O(1)</td></tr>
+      <tr><td>依鍵 INSERT</td><td>O(1)</td><td>O(log n)</td><td>O(1)</td></tr>
+      <tr><td>COLLECT</td><td>O(1)～O(n)（內建暫時雜湊，被 DELETE/INSERT/SORT 破壞後退化為線性）</td><td>O(log n)</td><td>O(1)</td></tr>
+      <tr><td>LOOP … WHERE（鍵左側連續）</td><td>O(n)</td><td><b>O(m + log n)</b></td><td>O(n)</td></tr>
+      <tr><td>索引存取 READ INDEX</td><td>O(1)</td><td>O(1)</td><td>不允許</td></tr>
+      <tr><td>SORT</td><td>O(n log n)</td><td>不必要</td><td>O(n log n)</td></tr>
+    </tbody>
+  </table>
+  <p><b>選型路線圖</b>：幾乎都用完整主鍵做單筆存取 → HASHED；多半用主鍵、且能從最左鍵連續指定做單筆或部分循序處理 → SORTED；主要用索引存取、或同一張表要用多種不同欄位組合存取 → STANDARD（可依需要 SORT 再 BINARY SEARCH，或加二級鍵）。雜湊表單筆鍵存取比索引存取慢約 2.5～3 倍，但與筆數無關；雜湊表筆數上限受作業系統限制。</p>
+  <pre><code class="abap">*&amp;---------------------------------------------------------------*
+*&amp; 建表與填表：陣列讀取、批次附加、COLLECT vs DB 聚合
+*&amp;---------------------------------------------------------------*
+TYPES: BEGIN OF ty_item,
+         vbeln  TYPE vbeln_va,
+         posnr  TYPE posnr_va,
+         matnr  TYPE matnr,
+         kwmeng TYPE kwmeng,
+       END OF ty_item.
+
+" 陣列讀取（ARRAY FETCH）直接進 SORTED 表：系統自動依鍵排序插入
+" ※ 內表鍵只取 DB 主鍵的一部分時不可宣告 UNIQUE，否則重複列會 DUMP
+DATA lt_item TYPE SORTED TABLE OF ty_item WITH UNIQUE KEY vbeln posnr
+               WITH NON-UNIQUE SORTED KEY by_matnr COMPONENTS matnr.
+SELECT vbeln, posnr, matnr, kwmeng FROM vbap
+  WHERE vbeln IN @s_vbeln
+  INTO TABLE @lt_item.
+
+" 內表對內表：批次附加，不要 LOOP + APPEND
+APPEND LINES OF lt_item_extra TO lt_item_std.
+INSERT LINES OF lt_item_extra FROM 1 TO 100 INTO TABLE lt_item.
+
+" 累計：COLLECT 的非鍵欄位必須全為數值；HASHED 表成本固定
+TYPES: BEGIN OF ty_sum,
+         ernam TYPE ernam,
+         waerk TYPE waerk,
+         netwr TYPE netwr_ak,
+       END OF ty_sum.
+DATA lt_sum TYPE HASHED TABLE OF ty_sum WITH UNIQUE KEY ernam waerk.
+LOOP AT lt_vbak ASSIGNING FIELD-SYMBOL(&lt;ls_vbak&gt;).
+  DATA(ls_sum) = VALUE ty_sum( ernam = &lt;ls_vbak&gt;-ernam
+                               waerk = &lt;ls_vbak&gt;-waerk
+                               netwr = &lt;ls_vbak&gt;-netwr ).
+  COLLECT ls_sum INTO lt_sum.
+ENDLOOP.
+
+" 更好的做法：資料本來就來自 DB 時，直接在 DB 聚合（第 12 節規則 3）
+SELECT ernam, waerk, SUM( netwr ) AS netwr FROM vbak
+  WHERE erdat IN @s_erdat
+  GROUP BY ernam, waerk
+  INTO TABLE @DATA(lt_sum_db).</code></pre>
+  <div class="note">陣列讀取不能用於深結構（行內含內表）的目標；唯一內表的建法：先以非唯一表陣列讀取、SORT 後 <span class="kw">DELETE ADJACENT DUPLICATES</span>（加 COMPARING 指定比較欄位，且必須與 SORT 欄位一致），比 SELECT 迴圈裡逐筆檢查是否存在快得多。資料庫表的全部鍵都要出現在內表但又不當鍵時，不能用 SELECT DISTINCT 取代。</div>
+
+  <h3 id="ch05-21-19">19. 巢狀操作、二級鍵與 ASSIGNING</h3>
+  <p><b>巢狀操作（Nested Operations）</b>比「巢狀迴圈」更精確：在 DO 迴圈裡用 READ TABLE INDEX 模擬 LOOP，或在 LOOP 裡對標準表做非最佳化的 READ（它內部就是一個全表迴圈），都是巢狀操作。兩層都是 O(n) 時，總成本是 O(n²)——Col19 的量測中，二次方解法比其他解法慢約 100 倍。注意：這與巢狀 SELECT 是兩回事（一個是 CPU、一個是 DB）。</p>
+  <pre><code class="abap">*&amp;---------------------------------------------------------------*
+*&amp; 表頭 × 明細：三種不會變成 O(n²) 的寫法
+*&amp;---------------------------------------------------------------*
+" ✗ lt_item_std 是標準表：外層每一圈，內層 LOOP WHERE 都全表掃描一次
+
+" ✓ 解法 A：內層用 SORTED 表，WHERE 從最左鍵連續指定 → O(log n + m)
+LOOP AT lt_head ASSIGNING FIELD-SYMBOL(&lt;ls_head&gt;).
+  LOOP AT lt_item ASSIGNING FIELD-SYMBOL(&lt;ls_item&gt;) WHERE vbeln = &lt;ls_head&gt;-vbeln.
+    " …
+  ENDLOOP.
+ENDLOOP.
+
+" ✓ 解法 B：平行游標（兩表都依 VBELN 排序、明細必須都有對應表頭），內層從上次停下的位置繼續
+DATA lv_idx TYPE i VALUE 1.
+LOOP AT lt_head ASSIGNING &lt;ls_head&gt;.
+  LOOP AT lt_item_std ASSIGNING FIELD-SYMBOL(&lt;ls_it&gt;) FROM lv_idx.
+    IF &lt;ls_it&gt;-vbeln &lt;&gt; &lt;ls_head&gt;-vbeln.
+      lv_idx = sy-tabix.
+      EXIT.
+    ENDIF.
+    " … 處理同一張訂單的明細
+  ENDLOOP.
+ENDLOOP.
+
+" ✓ 解法 C：二級鍵——同一張表還要用物料找明細；必須明寫 USING KEY（沒有優化器幫你選）
+LOOP AT lt_item ASSIGNING &lt;ls_item&gt; USING KEY by_matnr WHERE matnr = lv_matnr.
+  " …
+ENDLOOP.
+
+" 只判斷是否存在：line_exists / TRANSPORTING NO FIELDS，不搬任何資料
+IF line_exists( lt_item[ KEY by_matnr matnr = lv_matnr ] ).
+  " …
+ENDIF.
+
+" 直接改表體：ASSIGNING 後賦值即可，不要再 MODIFY
+LOOP AT lt_item ASSIGNING &lt;ls_item&gt; WHERE vbeln = lv_vbeln.
+  &lt;ls_item&gt;-kwmeng = &lt;ls_item&gt;-kwmeng * 2.
+ENDLOOP.</code></pre>
+  <p><b>二級鍵（Secondary Keys，7.0 EhP2 起）</b>：最多 15 個；SORTED 或 HASHED；可在程式或 SE11 表類型中定義；READ／LOOP／DELETE／MODIFY 可用，<b>INSERT／APPEND／COLLECT 不能指定</b>。非唯一二級鍵採<b>延遲更新</b>：第一次使用時才建立、之後再用到時才更新，所以第一次 READ 在 SAT 裡看起來特別貴；唯一二級鍵則是即時更新（它是約束）。使用 USING KEY 時 sy-tabix 是「該鍵的順序」，之後的索引操作也要改成 USING KEY，建議把索引存下來並以 idx／idx_k2 命名區分。<span class="kw">DELETE … USING KEY k2</span> 對標準表仍有 O(n) 成分（要找主索引位置）。</p>
+  <div class="tip"><b>建議（Col19）</b>：新開發先用有主鍵的 SORTED/HASHED 表，需要第二種最佳化存取時再加二級鍵；二級鍵優先選 SORTED（HASHED 要求唯一且立即更新）；標準表只用於很小的表或無法改表型的舊程式。<b>ASSIGNING</b> 在以下情況一定用：行內含內表（深結構）、工作區 &gt; 1 KB、要修改內容；在 LOOP 中即使工作區較小也划算（開銷只有一次）；只有「工作區極小、單筆 READ 在大型巢狀迴圈中執行極多次」時 INTO wa 才較快——所以强晟筆記「超過 10 行的表，ASSIGNING 一律比 INTO 快，無論表多寬」的說法對 LOOP 大致成立，對單筆 READ 則不盡然。</div>
+  <p>其他程式風格要點：任何對標準表的操作（不只 READ、LOOP，還有 INSERT、MODIFY、DELETE）都要最佳化，所以用 SORTED 表比較強健；SORT 一定明寫排序欄位（預設鍵可能改變）；<span class="kw">DELETE ADJACENT DUPLICATES</span> 與 SORT 用相同欄位；BINARY SEARCH 前的排序順序必須正確；SORT 次數越少越好（<span class="kw">SORT … STABLE</span> 可保留相同鍵的原順序）；不要把大型巢狀操作拆進很細的模組化單元（呼叫開銷會大於內表操作本身）；不要用表頭行（header line）。巢狀迴圈的更多寫法見 <a href="#ch02-2-12">2-2 章第 12 節</a>。</p>
+
+  <h3 id="ch05-21-20">20. SAT（原 SE30）ABAP Trace 與 ST12</h3>
+  <p><span class="tcode">SAT</span> 分析的是 ABAP 語句本身的執行時間（可選記憶體），用來找：不必要的處理區塊呼叫、昂貴的內表操作、長時間的模組化單元、巢狀迴圈。它<b>不是</b>整個系統都慢時的工具。追蹤開啟時對被測程式影響明顯，<b>追越少事件、越短時間越好</b>；有些昂貴動作追不到（指派標準表給排序表時的隱式 SORT、二級鍵的延遲建立、XSLT/Simple Transformation），其時間會算進呼叫者的淨時間。</p>
+  <p><b>使用步驟</b>：</p>
+  <ol>
+    <li><b>Step 0</b>：建立／選擇量測變式（名為 DEFAULT 的變式會自動套用），先預跑幾次。</li>
+    <li><b>變式設定</b>：
+      <ul>
+        <li>彙總（Aggregation）：<b>None</b>（每個事件一筆，資訊完整、有呼叫階層）或 <b>Per Call Position</b>（同一呼叫位置合併。例：迴圈 1,000 次呼叫同一方法，不彙總是 1,002 筆、彙總後 3 筆；檔案小、快，但沒有呼叫階層）。</li>
+        <li>事件類型：處理區塊、畫面、<b>內表</b>（會讓追蹤暴增，需要時才開）、產生與載入、DB 存取、資料傳輸（EXPORT/IMPORT）、其他。</li>
+        <li>程式元件限制：不限、依 Hotspot 定義（表 HOTSPOT_DEF）、指定最多 10 個處理區塊。</li>
+        <li>選項：量測 RFC 與更新任務（在對方伺服器以 SAPSYS 記錄）、<b>顯式開關</b>（OK code 輸入 <b>/ron</b>、<b>/roff</b>；或語句 <span class="kw">SET RUN TIME ANALYZER ON/OFF</span>；舊版 TCODE RON／ROFF）、量測記憶體（需參數 rstr/accept_remote_trace）。</li>
+      </ul>
+    </li>
+    <li><b>Step 1 錄製</b>：三種方式——<b>In Dialog</b>（直接執行交易／程式／函數）、<b>In Parallel Session</b>（對正在跑的工作處理程序開追蹤，適合抓長時間執行中的程式）、<b>For User/Service</b>（排程：符合使用者、用戶端、流程類型 DIA/UPD/BGD/RFC/HTTP、物件等條件時自動開始；適合瀏覽器應用與背景作業）。勾 Determine Names of Internal Tables 才會顯示內表真名而不是 IT_n。</li>
+    <li><b>Step 2 評估</b>：Hit List（依呼叫位置彙總的毛／淨時間）、DB Tables、Profile（依內部／外部處理區塊、資料存取或套件、元件分組）、Processing Blocks（可一鍵展開 Critical Processing Blocks，預設門檻 5%）、Call Hierarchy、Times；另可比較兩次追蹤。Expert Mode 的 <b>% Internal</b> 指出時間花在 SAP 內部還是外部（DB、RFC），決定先改哪邊。</li>
+  </ol>
+  <p><b>毛時間（Gross）與淨時間（Net）</b>：毛時間＝該事件的全部時間；淨時間＝毛時間扣掉其下呼叫的子單元與個別語句。兩者相同時只顯示一個。路線圖（强晟筆記）：先用<b>全彙總、無過濾</b>量一次 → 找出佔總時間 &gt; 10% 的程式段或語句 → 限縮到這些段、改成「無彙總或每呼叫位置」再量 → 若是內表問題就走內表路線圖，否則用除錯器或內嵌量測細查（由上而下）。</p>
+  <p>舊版 <span class="tcode">SE30</span> 的說法（强晟筆記）：結果檔存於應用伺服器最多 8 天（新版 SAT 預設 50 天後刪除）、參數 abap/atrasizequota（保留空間）與 abap/atrapath（存放路徑）、全集合／每呼叫位置集合／無集合三種集合方式、命中清單、組命中清單、表命中清單、內表命中清單、呼叫階層。SE30 已由 SAT 取代，功能對應。</p>
+  <div class="tip"><b>ST12（Single Transaction Analysis）</b>來自 ST-A/PI 附加元件，把 ABAP Trace 與 ST05 SQL Trace <b>一次錄製、一個畫面分析</b>，並能直接帶出 SQL 的 Explain 與呼叫位置，SAP 支援工程師做效能服務時幾乎都用它。系統有裝 ST-A/PI 就可以用；分析流程與 SAT＋ST05 相同。ADT 中另有 ABAP Profiler（本質就是 SAT）與 SQL Trace 視圖（見 <a href="#ch05-5">5-5 章</a>）。<span class="src">（ST12 不在 BC490 任何一版教材中——2001、Col10、Col19 都只教 SE30／SAT＋ST05——本段依 SAP 官方文件補寫）</span></div>
+  <p><b>L29 版本補充</b>：</p>
+  <ul>
+    <li><b>2001 版 SE30（PDF p48–57）</b>：入口是「System → Utilities → Runtime analysis → Execute」；三個分頁 Program parts／Statements／Duration &amp; type，可設最大檔案大小（預設 1,000 KB）與最長量測時間（預設 1,800 秒）。彙總分三級：<b>Full aggregation</b>（每個程式段或語句只留 1 筆）、<b>Per calling position</b>、<b>None</b>；原廠範例 <span class="kw">DO 1000 TIMES</span> 呼叫程式段 X：不彙總 1,001 筆、全彙總 1 筆、依呼叫位置 2 筆。SAT 已<b>取消「全彙總」</b>，只剩 None 與 Per Call Position（Col10 p594 的例子變成 1,002 筆對 3 筆），所以强晟筆記路線圖的「先全彙總量一次」在 SAT 上改用 Per Call Position＋Hit List 代替。</li>
+    <li>2001 版的評估畫面是 Hit list、Group hit list、Table hit list、內表 Hit list、Call hierarchy 五種；開頭有一張 ABAP／DB／R/3 三段的長條圖，這就是 SAT「Profile」頁與 Expert Mode 的 % Internal 的前身。</li>
+    <li><b>Col10 Unit 8 L4 的追蹤比較（印刷頁 p618–622／PDF p628–632）</b>：兩次追蹤的 Hit List 比較，Code 欄 <b>T1_</b>＝只在第一次、<b>T_2</b>＝只在第二次、<b>T12</b>＝兩次都有（有意義的比較要以 T12 為主）；預設依 Net 2/1 比值遞減排序，可依事件類別（Events）或呼叫／被呼叫程式（Programs）濃縮，Swap 按鈕可對調兩次追蹤。改寫前後各錄一次再比較，是證明「改善有效」最直接的方法。</li>
+  </ul>
+
+  <h3 id="ch05-21-21">21. RFC 與 GUI Roundtrip 的效能</h3>
+  <p>同步 RFC（sRFC）期間，呼叫端工作處理程序會 Roll-out 等待，這段時間記為 <b>Roll-wait time</b>；在對方系統花的時間（含建立連線）稱 RFC+CPIC time。除了 sRFC，<span class="kw">COMMIT WORK</span>（不結束對話步驟時）、同步更新、<span class="kw">WAIT UP TO n SECONDS</span>、<span class="kw">COMMIT WORK AND WAIT</span> 也會造成 Roll-wait。非同步 RFC（<span class="kw">STARTING NEW TASK</span>）不等待，沒有 Roll-wait。RFC 型態與語法見 <a href="#ch04-1">4-1 章</a>、<a href="#ch05-12">5-12 章 BC415</a>。</p>
+  <p><b>GUI Roundtrip</b>：4.6A 起的 GUI Controls（ALV Grid、Textedit、HTML control、下拉清單）在一個對話步驟內可能與前端做多次同步 RFC（工作處理程序是 RFC client、SAP GUI 是 server），全部 Roundtrip 的時間累計為 <b>GUI time</b>（包含在 Roll-wait 內）。判讀：</p>
+  <ul>
+    <li>ST05 的 RFC Trace 中出現 <b>OLE_FLUSH_CALL</b>＝一次到前端的 Roundtrip。</li>
+    <li>每個對話步驟平均應只有 <b>1 次</b> Roundtrip（一般畫面 2 次可接受）；每次最多傳 32 KB；複雜畫面每步約 2～10 KB 為宜。</li>
+    <li>頻寬加大<b>無助於</b> Roundtrip 效能（延遲與防火牆才是關鍵）；SAP GUI 狀態列可顯示 Roundtrip 與 Flush 次數。</li>
+    <li>寫 Control 程式時，把多個方法呼叫累積後一次 <span class="kw">cl_gui_cfw=&gt;flush( )</span>，不要每個呼叫都 flush（見 <a href="#ch05-10">5-10 章 BC412</a>、<a href="#ch03-2">3-2 章</a>）。</li>
+  </ul>
+  <p><b>aRFC 平行處理</b>會大量消耗對話工作處理程序，必須用 <span class="tcode">RZ12</span> 定義 RFC 伺服器群組並設定<b>配額（Quota）</b>——多個配額參數同時檢查，以最嚴格者為準（SAP Note 74141）。同步 RFC 的連線重試次數在 <span class="tcode">SM59</span> 設定。</p>
+
+  <h3 id="ch05-21-22">22. 系統層被動分析：工作量、快照與資料庫鎖</h3>
+  <p>强晟筆記第五單元「R/3 系統分析」是<b>在正式機被動執行</b>的分析（系統需已上線一段時間、在典型使用者活動時段進行），目的是找出影響效能的關鍵對象，把分析所需資訊交給開發者。需要蒐集的資訊：</p>
+  <ul>
+    <li>資料庫問題：SQL 文字（尤其 WHERE）、DDIC 資訊（表／View 名、技術設定、索引）、優化器存取策略（Explain）、觸發 SQL 的 ABAP 程式碼。</li>
+    <li>CPU 問題：關鍵程式段或語句；內表問題則要表名與相關程式碼。</li>
+  </ul>
+  <p><b>① 工作量分析</b>（<span class="tcode">ST03N</span>，舊 ST03）：選伺服器與期間，看 Dialog steps、平均回應時間、平均 CPU 時間、平均 DB 時間；<b>交易概要</b>依總回應時間排序，找「佔總回應時間最大宗」的對象。對話交易與背景作業分開看——白天與線上使用者同時跑的長背景報表特別傷。路線圖：CPU &gt; 40% → SAT；DB &gt; 40% → ST05。若每步平均 DB 回應時間 &gt; 600 ms，多半是 Basis 或 DB 本身的問題，<b>SQL 追蹤結果此時不可信</b>，應先請 Basis／DBA 處理。</p>
+  <p><b>② SQL 快取分析</b>（<span class="tcode">ST04</span>）：見第 7 節。</p>
+  <p><b>③ 快照分析</b>：<span class="tcode">SM50</span>（本機）／<span class="tcode">SM66</span>（全系統）連續重新整理數次，仍佔著同一個對話工作處理程序的程式就是嫌疑犯；看「動作」欄（直接讀取、循序讀取、插入、更新、刪除、提交）與「表」欄。若是 DB 等待，進 ST04 的 Session Monitor（依 OS 程序 ID 對應 SQL）看正在執行的 SQL 並 Explain；若是鎖等待，進 <span class="tcode">DB01</span>（排他鎖等待）找出持鎖者，請他釋放或必要時刪除（被回滾的交易要重做）。</p>
+  <div class="note">資料庫鎖通常在對話步驟結束的隱式 DB Commit 時釋放；要跨多個對話步驟鎖定資料請用 SAP 鎖（Enqueue，見 <a href="#ch05-11">5-11 章 BC414</a>）。原則：<b>DB 鎖越晚取得越好，取得後避免長時間的 SQL 或內表處理</b>。</div>
+
+  <h3 id="ch05-21-23">23. HANA 時代：Code Pushdown、CDS View 與 AMDP</h3>
+  <p>BC490 的傳統黃金規則是「資料庫是瓶頸，能在 ABAP 做的就不要丟給 DB」（强晟筆記：「由於資料庫不可擴充，應盡可能在 ABAP 中排序」）。在 HANA 上這條規則部分反轉：HANA 是記憶體內、欄式、可平行運算的資料庫，<b>把資料密集的運算下推到資料庫（Code-to-Data／Code Pushdown），只把結果傳回應用伺服器</b>，通常快得多。調整後的原則：</p>
+  <table>
+    <thead><tr><th>傳統規則（BC490）</th><th>HANA 時代的調整</th></tr></thead>
+    <tbody>
+      <tr><td>結果集小、傳輸量小、次數少</td><td><b>完全不變</b>，而且更重要（網路往返成本相對變得更顯著）</td></tr>
+      <tr><td>SELECT * 只是多傳一點</td><td>欄式儲存下每多一欄就多一次欄重組，<b>SELECT * 代價更高</b></td></tr>
+      <tr><td>在 ABAP 排序、聚合，減輕 DB</td><td>聚合、JOIN、計算、排序盡量在 DB 做（ABAP SQL 運算式、CDS、AMDP）</td></tr>
+      <tr><td>建二級索引加速</td><td>多數不需要；先證明再建</td></tr>
+      <tr><td>FAE 取代巢狀 SELECT</td><td>JOIN、CDS View、內表資料來源（7.52）通常更好</td></tr>
+      <tr><td>SQL 回傳順序「看起來」固定</td><td><b>沒有 ORDER BY 就沒有順序</b>（第 24 節）</td></tr>
+    </tbody>
+  </table>
+  <p>Code Pushdown 的三個層次（由易到難，<b>能用上一層就不要用下一層</b>）：</p>
+  <ol>
+    <li><b>ABAP SQL 強化</b>（7.40 SP05 起）：SQL 運算式、CASE、字串與日期函數、JOIN 擴充、子查詢、UNION（7.50）、內表資料來源（7.52）。語法見 <a href="#ch02-2-16">2-2 章第 16 節</a>。</li>
+    <li><b>CDS View</b>：在 ADT 定義、可重用的語意資料模型，支援關聯（Association）、聚合、參數、存取控制（DCL）；也是 Fiori／RAP 的基礎。</li>
+    <li><b>AMDP</b>（ABAP Managed Database Procedure）：在 ABAP 類別中直接寫 SQLScript，只在真的需要 HANA 專屬功能（複雜多步驟運算、預測函式庫）時才用。</li>
+  </ol>
+  <pre><code class="sql">// CDS View（7.50～7.54 的傳統語法 DEFINE VIEW，需要 @AbapCatalog.sqlViewName）
+// 7.55（S/4HANA 2020）起建議改用 DEFINE VIEW ENTITY，不再需要 SQL View 名稱
+@AbapCatalog.sqlViewName: 'ZVSDCUSTSUM'
+@AccessControl.authorizationCheck: #NOT_REQUIRED
+@EndUserText.label: '客戶別訂單金額彙總'
+define view ZI_SalesCustSum
+  as select from vbak
+    inner join   kna1 on kna1.kunnr = vbak.kunnr
+{
+  key vbak.kunnr         as Customer,
+  key vbak.waerk         as Currency,
+      kna1.name1         as CustomerName,
+      count( * )         as OrderCount,
+      sum( vbak.netwr )  as NetAmount
+}
+group by vbak.kunnr, vbak.waerk, kna1.name1</code></pre>
+  <pre><code class="abap">" 在 ABAP 端像讀一般表一樣讀 CDS View：JOIN 與聚合都已在 HANA 完成
+SELECT customer, currency, customername, ordercount, netamount
+  FROM zi_salescustsum
+  WHERE customer IN @s_kunnr
+  ORDER BY netamount DESCENDING
+  INTO TABLE @DATA(lt_top_customers)
+  UP TO 20 ROWS.</code></pre>
+  <pre><code class="abap">*&amp;---------------------------------------------------------------*
+*&amp; AMDP：真的需要 SQLScript 時才用（只能跑在 HANA）
+*&amp;---------------------------------------------------------------*
+CLASS zcl_sd_top_customers DEFINITION PUBLIC FINAL CREATE PUBLIC.
+  PUBLIC SECTION.
+    INTERFACES if_amdp_marker_hdb.
+    TYPES: BEGIN OF ty_top,
+             kunnr TYPE kunnr,
+             netwr TYPE netwr_ak,
+           END OF ty_top,
+           tt_top TYPE STANDARD TABLE OF ty_top WITH EMPTY KEY.
+    METHODS get_top
+      IMPORTING VALUE(iv_mandt) TYPE mandt
+                VALUE(iv_top)   TYPE i
+      EXPORTING VALUE(et_top)   TYPE tt_top.
+ENDCLASS.
+
+CLASS zcl_sd_top_customers IMPLEMENTATION.
+  METHOD get_top BY DATABASE PROCEDURE FOR HDB LANGUAGE SQLSCRIPT
+                 OPTIONS READ-ONLY
+                 USING vbak.
+    et_top = SELECT kunnr, SUM( netwr ) AS netwr
+               FROM vbak
+              WHERE mandt = :iv_mandt
+              GROUP BY kunnr
+              ORDER BY netwr DESC
+              LIMIT :iv_top;
+  ENDMETHOD.
+ENDCLASS.
+
+" 呼叫端：用戶端要自己傳（AMDP 不會自動加 MANDT）
+" NEW zcl_sd_top_customers( )-&gt;get_top( EXPORTING iv_mandt = sy-mandt iv_top = 10
+"                                       IMPORTING et_top   = DATA(lt_top) ).</code></pre>
+  <div class="warn">AMDP 的代價：綁死 HANA、SQLScript 除錯較難、<b>不會自動處理用戶端</b>（忘了 WHERE mandt 就會跨用戶端讀資料）、也繞過表緩衝。能用 ABAP SQL 或 CDS 解決的，就不要寫 AMDP。<span class="kw">DEFINE VIEW ENTITY</span> 需 7.55 以上；RAP 與 ABAP Cloud 另見本館後續章節。</div>
+
+  <h3 id="ch05-21-24">24. HANA 沒有預設排序：「取第一筆」一定要先排序</h3>
+  <p>Oracle 等列式資料庫依索引讀取時，結果「常常剛好」依主鍵排好，舊程式因此默默依賴這個巧合：SELECT 完直接 READ TABLE … BINARY SEARCH、<span class="kw">SELECT SINGLE</span> 不給完整鍵就當作「第一筆」、<span class="kw">UP TO 1 ROWS</span> 不寫 ORDER BY。<b>HANA 沒有這種巧合</b>：欄式儲存、平行執行、分割區，同一條 SQL 每次回傳順序都可能不同。</p>
+  <div class="warn"><b>Casper 的專案實例：</b>成本評價資料同時存在 item category「H」與 cost component「E」兩種角度，兩者的成本構成欄位數量不同。程式「取第一筆」卻沒有排序，HANA 一下回 H、一下回 E，<b>同一個物料每次跑出來的成本不一樣</b>，而且在開發機、測試機都很難重現。最後的結論是：<b>條件固定抓 H，並加上明確排序</b>。任何「取第一筆／取最新一筆／取最大一筆」的邏輯，都必須先明確排序（或直接用 MAX/MIN 聚合）。</div>
+  <pre><code class="abap">*&amp;---------------------------------------------------------------*
+*&amp; 「取第一筆」的正確寫法
+*&amp;---------------------------------------------------------------*
+" ✗ 沒有完整主鍵的 SELECT SINGLE：HANA 回哪一筆不保證
+SELECT SINGLE kalnr, kadky FROM keko
+  WHERE matnr = @lv_matnr
+    AND werks = @lv_werks
+  INTO @DATA(ls_any_costing).
+
+" ✓ 明確排序 + UP TO 1 ROWS：語意是「最新成本估算日的那一筆」
+SELECT kalnr, kadky, bwvar FROM keko
+  WHERE matnr = @lv_matnr
+    AND werks = @lv_werks
+  ORDER BY kadky DESCENDING, kalnr DESCENDING
+  INTO TABLE @DATA(lt_latest)
+  UP TO 1 ROWS.
+DATA(ls_latest) = VALUE #( lt_latest[ 1 ] OPTIONAL ).
+
+" ✓ Casper 案例的做法（示意，Z 表與欄位名為示範）：先把「角度」固定，再排序
+SELECT cost_elem, cost_value FROM zco_cost_source
+  WHERE matnr    = @lv_matnr
+    AND src_type = 'H'                 "固定抓 item category H，不讓 H/E 混在一起
+  ORDER BY cost_elem
+  INTO TABLE @DATA(lt_cost).
+
+" ✓ 讀進內表後要 BINARY SEARCH／AT NEW／DELETE ADJACENT DUPLICATES → 先 SORT
+"   （或直接用 SORTED 表接收；FAE 的結果尤其沒有順序）
+SORT lt_cost BY cost_elem.</code></pre>
+  <p>在 HANA 遷移專案中，SAP 提供 ATC／SCI 的功能性檢查（例如「Search problematic statements for result of SELECT/OPEN CURSOR without ORDER BY」，收在 SAP 交付的 HANA 遷移檢查變式中），專門找出「依賴隱含順序」的語句：SELECT 後接 READ … BINARY SEARCH、DELETE ADJACENT DUPLICATES、AT NEW／AT END OF 控制層處理、SELECT SINGLE 或 UP TO 1 ROWS 沒有 ORDER BY 等。<b>遷移前一定要跑、而且逐條處理</b>，不是加虛擬註解了事。詳細比較另見 <a href="#ch02-2-18">2-2 章第 18 節</a>。</p>
+  <div class="tip">三條實務心法在效能調校中的位置：<b>① HANA 無預設排序</b>——效能改寫（例如把巢狀 SELECT 改 JOIN、改 FAE）後結果順序一定會變，改完要驗證依賴順序的邏輯；<b>② 列舉優於區間</b>——既快（索引串接）又準（不受字典序誤導）；<b>③ 先找標準再客製</b>——標準程式慢，先搜 SAP Note、看有無 SAP 發佈的索引或 CDS View，再考慮 BAdI／Enhancement，最後才改標準（見 <a href="#ch03-4">3-4 章</a>、<a href="#ch05-14">5-14 章 BC425</a>）。</div>
+
+  <h3 id="ch05-21-25">25. 其他技巧與課程總路線圖</h3>
+  <p><b>强晟筆記「其他方法」路線圖</b>：</p>
+  <ul>
+    <li><b>程式內緩衝</b>：能用緩衝避免相同 SQL 就緩衝（第 17 節）。</li>
+    <li><b>強健的使用者介面</b>：選擇畫面的關鍵欄位設 <span class="kw">OBLIGATORY</span>、在開始選資料前檢查最低輸入條件；自建搜尋說明依 SAP 標準設計（最常用欄位放上面）；選擇畫面空白的 SELECT-OPTIONS 不會出現在 SQL 中，可能讓最重要的索引欄位消失（見 <a href="#ch03-1">3-1 章</a>）。</li>
+    <li><b>合併相似 SQL</b>：DB 以<b>文字</b>區分 SQL——IN 清單值數不同、OR 數量不同、WHERE 欄位或順序不同、欄位清單不同，都是不同的語句。合併後 SQL 快取管理的語句變少，解析次數與記憶體都下降。</li>
+    <li><b>熟悉業務與資料表關係</b>：强晟在後記強調，SAP 常把同一份資料寫進多張相關表，某張表查不快時，換一張（索引表、狀態表）效率可能有質的飛躍——這需要多學業務邏輯。</li>
+  </ul>
+  <p><b>全課總路線圖（合適存取路徑的昂貴 SQL）</b>：有基礎問題？→ 一般方法；單表問題？→ 單表路線圖；多表？→ 多表路線圖；Pool/Cluster？→ 池／簇表路線圖；緩衝表？→ 表緩衝路線圖；其他？→ 其他方法。<b>不合適存取路徑</b>：有技術問題（Basis/DB 設定、缺索引、統計過期）？→ 交給 Basis/DBA；SQL 寫法不當？→ 改 ABAP；索引能改？→ 選擇性分析＋衝突分析；還是不行 → Hint（最後手段）。</p>
+  <p><b>强晟筆記的舊語法對照</b>（本章程式碼已全部改寫，舊寫法僅以文字記錄）：</p>
+  <table>
+    <thead><tr><th>講義舊寫法</th><th>本章改寫</th></tr></thead>
+    <tbody>
+      <tr><td>SELECT … ENDSELECT ＋ APPEND</td><td>SELECT … INTO TABLE @DATA( )（陣列讀取）</td></tr>
+      <tr><td>SELECT 迴圈內 CHECK</td><td>條件移入 WHERE</td></tr>
+      <tr><td>SELECT 迴圈內 SELECT SINGLE（巢狀 SELECT）</td><td>JOIN／子查詢／CDS View／緩衝模組</td></tr>
+      <tr><td>FORM read_kna1 讀取子程序</td><td>類別方法的緩衝模組（HASHED 表＋not-found 緩衝）</td></tr>
+      <tr><td>無 @ 的主機變數、空白分隔欄位清單</td><td>ABAP SQL：逗號分隔、主機變數加 @</td></tr>
+      <tr><td>WITH HEADER LINE 的結果表、SUBTRACT、MODIFY 表頭行</td><td>VALUE #( )、一般運算式、ASSIGNING 直接改</td></tr>
+      <tr><td>RANGES 語句</td><td>DATA … TYPE RANGE OF ＋ VALUE #( )</td></tr>
+      <tr><td>EXEC SQL 中寫 Hint</td><td>%_HINTS（且只當最後手段）</td></tr>
+      <tr><td>邏輯資料庫 GET 事件</td><td>自寫 SQL 或 CDS View</td></tr>
+    </tbody>
+  </table>
+  <p>更多舊語法對照見 <a href="#ap-01">附錄 ap-01</a>。</p>
+
+  <h3 id="ch05-21-26">26. L29 補充：2001 初版、2017 Col10 與新版的差異</h3>
+  <p>把 L29 的兩個版本和既有素材排在一起，BC490 二十年的演進一目了然：2001 版是「Oracle＋R/3 4.6C＋路線圖」的原型，强晟筆記（2008）幾乎是它的中文整理；2017 Col10 已是今天的 9 單元架構，Col19（2022）只做了小修。下表只列<b>本章前面還沒寫到</b>的差異。</p>
+  <table>
+    <thead><tr><th>項目</th><th>2001 版（PDF 頁）</th><th>2017 Col10／Col19</th><th>S/4HANA 1809+ 的現況</th></tr></thead>
+    <tbody>
+      <tr><td>課程結構</td><td>5 個單元：Analyzing Individual Objects、Database Accesses、Internal Tables、R/3 System Analysis、Appendix（p9–287）</td><td>9 個單元，新增記憶體管理、Code Inspector、SQLM、Shared Objects、RFC</td><td>工具再加上 ATC、SWLT、ADT Profiler</td></tr>
+      <tr><td>單筆統計記錄</td><td><span class="tcode">STAT</span>，檔案 stat.DAT（p31）</td><td><span class="tcode">STAD</span></td><td>STAD；ST03N</td></tr>
+      <tr><td>ST05 追蹤種類</td><td>SQL、Enqueue、RFC、Buffer 四種；Enqueue／RFC「本課不說明」（p35）</td><td>再加 HTTP Trace，RFC／HTTP 可追進出兩向</td><td>同 Col10；ADT 也能看 SQL Trace</td></tr>
+      <tr><td>ST05 追蹤檔</td><td>每台伺服器一個檔、一次一人、預設 800 KB（p36）</td><td>rstr/* 多檔循環、有過濾條件</td><td>同 Col10</td></tr>
+      <tr><td>ST05 清單功能</td><td>Compressed Summary（Goto → Summary → Compress）、Identical Selects；建議開<b>三個視窗</b>分別看清單、彙總、重複（p42–44）</td><td>Structure-Identical／Value-Identical、Table Summaries、Hierarchy Display</td><td>同 Col10</td></tr>
+      <tr><td>SQL 快取入口</td><td>依資料庫不同：Oracle 的 SQL request、Informix 的 SQL statement、MS SQL Server 的 Stored proc. stats、SAP DB 的 Diagnosis monitor（p262）</td><td>ST04 → Performance → SQL Statement Analysis → Shared Cursor Cache；7.00 SP12 前 ST04、之後舊畫面改 ST04OLD（Col10 p153、p284）</td><td>HANA 的 SQL Plan Cache（DBACOCKPIT）</td></tr>
+      <tr><td>DB 傳輸容器</td><td>最多 32 KB（p20）</td><td><b>Oracle 32 KB、其他資料庫 64 KB</b>（Col10 p321 圖 233）</td><td>本章第 7 節的「32 KB」是以 Oracle 為準</td></tr>
+      <tr><td>內表</td><td>只有三種表型與存取成本；尚無二級鍵、ASSIGNING 以 FIELD-SYMBOLS 講解（p198–235）</td><td>二級鍵、延遲更新、SAT 內表事件</td><td>再加 7.40 運算式（<span class="kw">VALUE</span>、<span class="kw">FOR</span>、<span class="kw">line_exists</span>）</td></tr>
+    </tbody>
+  </table>
+  <p><b>2001 版的教材錯誤與矛盾</b>（强晟筆記有幾處誤譯也是從這裡來的）：</p>
+  <ul>
+    <li><b>雜湊表存取時間</b>：p203 寫「constant regardless of the number of rows」（正確，O(1)），p207 同一段文字卻改成「proportional to the number of values in the table」（錯，那是標準表循序讀的特性）。以 O(1) 為準。</li>
+    <li><b>200,000 ms</b>：p44、p46 的「昂貴 SQL 門檻」單位應為微秒（見第 9 節）。</li>
+    <li><b>ORDER BY PRIMARY KEY</b>：p105 前一句說「選取與排序可用同一索引時可在 DB 排序」，下一句卻說「If the data is selected using the primary index, the ORDER BY PRIMARY KEY is counterproductive」，前後矛盾；依範例上下文，原意應是「資料<b>不是</b>用主索引選出時，ORDER BY PRIMARY KEY 才會適得其反」。</li>
+    <li><b>除錯器不可在正式機做效能分析</b>（p60）：除錯會觸發隱含 DB Commit，可能造成資料不一致——這條警告在新版被弱化，但至今仍然成立。</li>
+  </ul>
+  <p><b>「在 ABAP 排序」這條舊規則要重新理解。</b>2001 版 p105：「資料庫是中央資源、無法擴充，<b>能在 ABAP 排序就在 ABAP 排序</b>；只有選取與排序可共用同一索引時才在 DB 排序。」這是磁碟式資料庫、單一 DB 伺服器時代的最佳化。到了 HANA，排序在 DB 端做通常更便宜，而且更重要的是<b>正確性</b>：HANA 沒有預設順序（第 24 節），凡是依賴順序的邏輯都必須有人明確排序——在 DB 用 ORDER BY 或在 ABAP 用 SORT／SORTED 表都可以，就是不能「兩邊都沒做」。</p>
+  <pre><code class="abap">*&amp;---------------------------------------------------------------*
+*&amp; 2001 版 p105 的三個例子，改寫成 S/4HANA 版本
+*&amp;---------------------------------------------------------------*
+" 例 1：WHERE 走主鍵、也依主鍵排序 → DB 端排序幾乎零成本
+SELECT vbeln, posnr, matnr, kwmeng FROM vbap
+  WHERE vbeln IN @s_vbeln
+  ORDER BY PRIMARY KEY
+  INTO TABLE @DATA(lt_by_key).
+
+" 例 2（舊版的反例）：依非索引欄位排序。在 Oracle 時代建議改到 ABAP 排；
+"       在 HANA 上 DB 排序通常不是瓶頸，寫在 SQL 裡語意也最清楚
+SELECT vbeln, posnr, matnr, kwmeng FROM vbap
+  WHERE vbeln IN @s_vbeln
+  ORDER BY matnr, vbeln, posnr
+  INTO TABLE @DATA(lt_by_matnr).
+
+" 例 3：資料之後要用鍵大量讀取 → 直接用 SORTED 表接收，插入時就排好，
+"       之後 READ／LOOP WHERE 都是二分搜尋，不必再 SORT、也不會忘了 SORT
+TYPES: BEGIN OF ty_item,
+         matnr  TYPE matnr,
+         vbeln  TYPE vbeln_va,
+         posnr  TYPE posnr_va,
+         kwmeng TYPE kwmeng,
+       END OF ty_item,
+       tt_item TYPE SORTED TABLE OF ty_item
+               WITH NON-UNIQUE KEY matnr vbeln posnr.
+DATA lt_sorted TYPE tt_item.
+
+SELECT matnr, vbeln, posnr, kwmeng FROM vbap
+  WHERE vbeln IN @s_vbeln
+  INTO CORRESPONDING FIELDS OF TABLE @lt_sorted.
+
+LOOP AT lt_sorted ASSIGNING FIELD-SYMBOL(&lt;ls_item&gt;) WHERE matnr = p_matnr.
+  " …依 vbeln、posnr 的順序處理，順序由表型保證
+ENDLOOP.</code></pre>
+  <p><b>2001 版選修練習：改業務邏輯是最後一步</b>（Appendix p286 題目、p287 起為解答說明與完整原始碼，一直到 p354）。練習程式讀的是課程訓練用的銷售單複本表（VVBAK、VVBAP、VVBEP、客戶 KKNA1、工廠物料 MMARC，對應標準表 VBAK、VBAP、VBEP、KNA1、MARC）。前面幾個單元已把每條 SQL 修到最好，但分析結果仍顯示：VVBEP 被多條 SELECT 讀取、MMARC 對內表每一列讀兩次、而且有兩條不同的 MMARC SELECT。解法是改變<b>資料庫存取的順序</b>：</p>
+  <ol>
+    <li>把 VVBAK＋VVBAP 的 ABAP JOIN 擴成 <b>VVBAK＋VVBAP＋VVBEP 三表 JOIN</b>，提早讀到排程行。</li>
+    <li>讀物料工廠資料的兩條 SELECT 合併，副程式 DETERMINE_PROCUREMENT 整個取消，所需邏輯併進 GET_ELIGIBLE_SALES_ITEMS。</li>
+    <li>因為資料已經依正確順序取得，後面的 <span class="kw">SORT itab BY proc_type werks matnr</span> 可以省掉，也少一個 LOOP。</li>
+  </ol>
+  <p>原解答用 FORM 副程式、表頭行內表與 GET RUN TIME 計時；以下是同一個思路的 S/4HANA 寫法——把 MARC 也一起 JOIN 進來，一條 SQL 取代原本的多條 SELECT：</p>
+  <pre><code class="abap">*&amp;---------------------------------------------------------------*
+*&amp; 選修練習的現代版：訂單＋項目＋排程行＋物料工廠一次取回
+*&amp;---------------------------------------------------------------*
+CLASS lcl_eligible_items DEFINITION FINAL.
+  PUBLIC SECTION.
+    TYPES: BEGIN OF ty_line,
+             werks TYPE werks_d,
+             matnr TYPE matnr,
+             vbeln TYPE vbeln_va,
+             posnr TYPE posnr_va,
+             etenr TYPE etenr,
+             edatu TYPE edatu,
+             wmeng TYPE wmeng,
+             beskz TYPE beskz,           "採購類型：原本另一條 MARC SELECT 才拿得到
+             kunnr TYPE kunag,
+           END OF ty_line,
+           tt_line TYPE STANDARD TABLE OF ty_line WITH EMPTY KEY.
+    CLASS-METHODS read
+      IMPORTING it_vbeln        TYPE RANGE OF vbeln_va
+      RETURNING VALUE(rt_lines) TYPE tt_line.
+ENDCLASS.
+
+CLASS lcl_eligible_items IMPLEMENTATION.
+  METHOD read.
+    SELECT p~werks, p~matnr, k~vbeln, p~posnr,
+           e~etenr, e~edatu, e~wmeng, m~beskz, k~kunnr
+      FROM vbak AS k
+      INNER JOIN vbap AS p ON p~vbeln = k~vbeln
+      INNER JOIN vbep AS e ON e~vbeln = p~vbeln
+                          AND e~posnr = p~posnr
+      INNER JOIN marc AS m ON m~matnr = p~matnr
+                          AND m~werks = p~werks
+      WHERE k~vbeln IN @it_vbeln
+        AND e~wmeng &gt; 0
+      " 後續邏輯依工廠、物料分組 → 在 SQL 就排好，原本的 SORT 可以省掉
+      ORDER BY p~werks, p~matnr, k~vbeln, p~posnr, e~etenr
+      INTO TABLE @rt_lines.
+  ENDMETHOD.
+ENDCLASS.
+
+" 呼叫端（量測請用 SAT 前後各錄一次，再用 Hit List 比較，不必自己 GET RUN TIME）
+" DATA(lt_lines) = lcl_eligible_items=&gt;read( it_vbeln = s_vbeln[] ).</code></pre>
+  <div class="warn">改寫成 JOIN 後有兩件事要驗證：① <b>結果筆數</b>——INNER JOIN 會把沒有排程行或沒有 MARC 的項目濾掉，原程式若要保留它們就改 LEFT OUTER JOIN；② <b>順序</b>——原程式靠 SORT 保證的順序，現在由 ORDER BY 保證，千萬別因為「看起來已經排好」就把 ORDER BY 也拿掉（Casper 經驗第一條：HANA 沒有預設排序）。另外，WHERE 條件若來自使用者輸入，<span class="kw">s_vbeln</span> 請引導使用者輸入單號清單（列舉）而不是大區間（Casper 經驗第二條）。</div>
+  <div class="tip">2001 版把這個練習放在最後，傳達的觀念至今不變：<b>先用工具確認每條 SQL 都已經最佳化，最後才動業務邏輯</b>；而業務邏輯的改寫要找懂流程的人一起確認，這和「先標準、再 BAdI、最後才改標準」是同一種升級成本的思考（Casper 經驗第三條）。</div>
+
+  <h3 id="ch05-21-qa">練習與自我檢核</h3>
+  <ol>
+    <li><b>STAD 顯示某報表 DB 時間佔（回應時間－Dispatcher 等待）的 65%，下一步用什麼工具？若 CPU 時間佔 70% 呢？</b><br>參考答案：DB 高 → <span class="tcode">ST05</span> SQL Trace（或 ST12）；CPU 高 → <span class="tcode">SAT</span>（先全彙總找 &gt; 10% 的熱點，再細量）。依據是强晟筆記的 40% 門檻。</li>
+    <li><b>SQL Monitor 為何能在正式機長期開啟？建議量測多久？哪個指標最能抓出巢狀 SELECT？</b><br>參考答案：資料先在 session 記憶體彙總、再進共享記憶體、由背景作業非同步寫 DB，開銷平均 &lt; 3%；建議最長兩週；Executions/Internal Session 偏高＝迴圈內 SELECT。</li>
+    <li><b>ST05 某條 SELECT 的 Executions = 5,000、Rec/Exec = 1、Identical = 80%，代表什麼？怎麼改？</b><br>參考答案：迴圈內逐筆 SELECT SINGLE，且八成是重複值。改成驅動表去重後的 FAE／JOIN，或用緩衝模組避免重複讀。</li>
+    <li><b>為什麼 <span class="kw">WHERE belnr = @x</span> 查 BKPF 很慢？</b><br>參考答案：主鍵 MANDT/BUKRS/BELNR/GJAHR，缺 BUKRS 形成索引缺口，只剩 MANDT 可用。即使只有一個公司代碼也要寫進 WHERE。</li>
+    <li><b>DB05 顯示加入第三個欄位後 distinct 組合數幾乎不變，該怎麼處理？</b><br>參考答案：該欄不增加選擇性，不應放進索引；若仍有組合會回大量筆數，整個索引都不該建（COSS 案例）。</li>
+    <li><b>列出 FOR ALL ENTRIES 的四個陷阱與 7.52 起的替代方案。</b><br>參考答案：空驅動表抓全表、驅動表未去重、結果隱性去重、與大 RANGES 合用超長 SQL；替代：JOIN、CDS View、<span class="kw">SELECT … FROM @itab</span> JOIN。</li>
+    <li><b>哪些語句會繞過表緩衝？至少列六種。</b><br>參考答案：BYPASSING BUFFER、FOR UPDATE、DISTINCT、聚合函數、IS NULL、ORDER BY 非主鍵、GROUP BY/HAVING、子查詢、JOIN、Native SQL；單筆緩衝表未給完整鍵、通用緩衝表未用 = 填滿通用區。</li>
+    <li><b>ST10 中一張已緩衝的客製表排在 Rows affected 的最前面，可能原因？</b><br>參考答案：表太大、常被異動而失效（重載與 pending period 期間的 DB 讀取累積），或存取方式與緩衝類型不符（例如單筆緩衝表被循序讀）。考慮取消緩衝或改緩衝類型。</li>
+    <li><b>一張內表要同時用 VBELN 與 MATNR 兩種鍵大量讀取，該怎麼設計？</b><br>參考答案：主鍵 SORTED（vbeln, posnr）＋ 非唯一 SORTED 二級鍵 by_matnr，存取時明寫 USING KEY；若兩種存取可分階段，也可用標準表 SORT 切換。</li>
+    <li><b>何時一定要用 ASSIGNING？何時 INTO wa 反而較快？</b><br>參考答案：深結構、工作區 &gt; 1 KB、要修改內容時一定用；工作區極小且單筆 READ 在巨大巢狀迴圈中執行極多次時 INTO wa 較快。</li>
+    <li><b>ACCEPTING DUPLICATE KEYS 遇到重複鍵時會發生什麼？（指出教材錯誤）</b><br>參考答案：重複列不寫入、sy-subrc = 4、sy-dbcnt 為實寫筆數，不會 DUMP；Col19 p303 寫「導致短傾印」是錯的。</li>
+    <li><b>ST05 清單中 GUI 相關的 OLE_FLUSH_CALL 每步出現 6 次，代表什麼？</b><br>參考答案：每個對話步驟 6 次 Roundtrip，遠超建議的 1～2 次；應合併 Control 方法呼叫、減少 flush。</li>
+    <li><b>舊程式 <span class="kw">SELECT SINGLE</span>（未給完整鍵）在 Oracle 上一直正確，遷到 HANA 後結果時對時錯，為什麼？怎麼修？</b><br>參考答案：HANA 沒有預設排序，「第一筆」不固定。改為 ORDER BY ＋ UP TO 1 ROWS（或 MAX/MIN 聚合），必要時像 Casper 的 H/E 案例先把條件固定；遷移前用 ATC 的「沒有 ORDER BY」檢查全面掃描。</li>
+    <li><b>什麼情況下該寫 AMDP，而不是 CDS 或 ABAP SQL？寫 AMDP 要注意什麼？</b><br>參考答案：只有需要 SQLScript 專屬能力的複雜多步驟運算時；注意綁死 HANA、要自己處理用戶端、除錯較難、繞過表緩衝。</li>
+    <li><b>ST04 顯示 Reads/User calls = 35，你會怎麼做？在 HANA 上又看什麼？</b><br>參考答案：&gt; 20 表示急需 SQL 快取分析：依 Buffer Gets 找 &gt; 5% 的語句、以 Buffer Gets/Record 分為 Type 1/Type 2 對症處理。HANA 上改看 SQL Plan Cache 的 Total/Average Execution Time 與 Expensive Statements Trace。</li>
+      <li><b>强晟筆記說 ST05 追蹤檔「預設 8KB」、昂貴 SQL 門檻「200,000 毫秒」，對照 L29 2001 原文，這兩個數字各有什麼問題？</b><br>參考答案：2001 原文（PDF p36）是 800 KB，筆記少抄兩個零；200,000 ms 則是原廠 2001 版投影片本身就寫錯單位（p44），Duration 是微秒，應為 200,000 µs＝200 ms。今天以 rstr/* 多檔循環機制為準。</li>
+    <li><b>SQLM 畫面上 Total DB Time 顯示「2.220,570」，這條 SQL 花了多久？哪個比值最能指出值得做 SQL 最佳化的程式碼？</b><br>參考答案：SQLM 時間單位是毫秒、顯示小數 3 位，德式格式下是約 2,220.57 ms（約 2.2 秒）；Col10 p184 的 Hint 對這個例子的換算寫錯。Total DB Time ÷ Total Time 比值高的程式碼最有 SQL 最佳化空間（Col10 p183）。</li>
+    <li><b>2001 版說「能在 ABAP 排序就在 ABAP 排序」，在 S/4HANA 上還成立嗎？</b><br>參考答案：效能上不再絕對（HANA 端排序常更便宜），但正確性上更要緊：HANA 無預設順序，依賴順序的邏輯一定要有 ORDER BY、SORT 或 SORTED 表其中之一；把巢狀 SELECT 改成 JOIN 之後原本的 SORT 可以省，但要改由 ORDER BY 保證順序。</li>
+    <li><b>ATC、SWLT、ST12、CDS、AMDP 出現在哪一版 BC490 原廠教材？</b><br>參考答案：都沒有。2001、2017 Col10、2022 Col19 三版都只教 SCI、SQLM、SE30/SAT、ST05，例子以 Oracle 為主；本章相關內容是依 SAP 官方文件與實務補寫，已在各節標註。</li>
+</ol>
+</section>

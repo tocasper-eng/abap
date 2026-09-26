@@ -1,0 +1,1015 @@
+<section class="chapter" id="ch05-8" data-title="BC407 QuickView、InfoSet Query 與 SAP Query">
+  <h2>第 5-8 章 BC407 QuickView、InfoSet Query 與 SAP Query</h2>
+  <p class="lede">BC407 是原廠專門講「不寫程式也能出報表」的課：QuickViewer（<span class="tcode">SQVI</span>）、SAP Query（<span class="tcode">SQ01</span>）、InfoSet Query，以及背後的 InfoSet（<span class="tcode">SQ02</span>）與使用者群組（<span class="tcode">SQ03</span>）。<a href="#ch01-4">1-4 章</a>已經用實戰角度講過 SQVI／SQ01 的操作、AQ 程式名與 START_REPORT 掛 TCODE；本章則照原廠課程的十個單元，把 1-4 章沒講到的部分補齊：SAP List Viewer 的操作細節、統計與分級清單、報表／報表介面（RRI）、InfoSet Query 與角色、InfoSet 裡 ABAP 程式碼的進入點、S_QUERY 權限、AQLDB／AQGDB／AQTDB 傳輸機制、變式與背景作業，最後說明在 S/4HANA 裡什麼時候該改用 CDS View。</p>
+
+  <div class="meta">
+    <div><b>核心 TCODE</b><span class="tcode">SQVI</span><span class="tcode">SQ01</span><span class="tcode">SQ02</span><span class="tcode">SQ03</span><span class="tcode">SQ00</span><span class="tcode">PFCG</span><span class="tcode">SE36</span><span class="tcode">SE09</span><span class="tcode">SE80</span><span class="tcode">SE81</span><span class="tcode">SA38</span><span class="tcode">SE93</span><span class="tcode">SM36</span><span class="tcode">SM37</span><span class="tcode">STVARV</span><span class="tcode">SU01</span></div>
+    <div><b>關鍵物件</b>SCARR、SPFLI、SFLIGHT、SBOOK、SAIRPORT、F1S（邏輯資料庫）、AQLDB、AQGDB、AQTDB、AQPROT、AQPROTCUST、RSAQR3TR、SAP_QUERY_DEVELOPMENT_ROLE、SAP_QUERY_AD_HOC_ROLE、SAP_QUERY_DEVELOPMENT、SAP_QUERY_AD_HOC、S_QUERY、S_TABU_DIS、S_PROGRAM、S_DEVELOP、S_TCODE、使用者參數 AQW／AQB、/SAPQUERY/、TVARVC、CL_SALV_TABLE、CL_SALV_BS_RUNTIME_INFO、CL_SALV_GUI_TABLE_IDA</div>
+  </div>
+
+  <h3 id="ch05-8-01">1. 課程定位與教材對照</h3>
+  <p>BC407 全名 <b>Reporting: QuickViewer, InfoSet Query and SAP Query</b>，原廠為 2 天課程。講義沒有標課程等級；從內容看，它只要求使用者「會操作 SAP GUI」、InfoSet 設計者「具備 ABAP 基礎」，屬於 BC4xx 開發者系列裡偏入門、工具操作為主的一門課（强晟筆記檔名也歸在「基礎」），大約落在 100～200 級之間。本章對照兩份素材：</p>
+  <ul>
+    <li><b>强晟《SAP BC407 課程中文自學筆記》v1.0</b>（2007/7/13，151 頁，R/3 4.6C～ECC 5.0 時代）。</li>
+    <li><b>SAP 原廠 BC407 Participant Handbook，Course Version 18</b>（© 2022，Material Number 50146868，138 頁），開宗明義就寫 QuickViewer 是「SAP S/4HANA 裡開發 ad-hoc 報表的工具」。</li>
+  </ul>
+
+  <table>
+    <thead><tr><th>單元</th><th>主題</th><th>强晟筆記頁碼</th><th>原廠 Col18 Unit／Lesson（PDF 頁）</th><th>本章小節</th></tr></thead>
+    <tbody>
+      <tr><td>1</td><td>介紹：報表工具的共同原理、航班資料模型</td><td>p4–5</td><td>Unit 1 Reporting Tools（p9–13）</td><td>02</td></tr>
+      <tr><td>2</td><td>QuickViewer 與 SAP List Viewer</td><td>p6–21</td><td>Unit 2（p15–29）</td><td>03、04</td></tr>
+      <tr><td>3</td><td>SAP Query：組織環境、欄位選擇與基本清單、統計與分級清單、後續處理</td><td>p22–62（四課）</td><td>Unit 3 Lesson 1（p31–58）</td><td>05～09</td></tr>
+      <tr><td>4</td><td>InfoSet Query</td><td>p63–81</td><td>Unit 4（p59–71）</td><td>10</td></tr>
+      <tr><td>5</td><td>三種工具比較</td><td>p82–87</td><td>Unit 5（p73–77）</td><td>11</td></tr>
+      <tr><td>6</td><td>建立 InfoSet 會用到的 ABAP 敘述</td><td>p88–109（四課）</td><td>Unit 6（p79–96）</td><td>12、13</td></tr>
+      <tr><td>7</td><td>建立 InfoSet</td><td>p110–127</td><td>Unit 7（p97–112）</td><td>14、15</td></tr>
+      <tr><td>8</td><td>使用者管理與權限</td><td>p128–136</td><td>Unit 8（p113–122）</td><td>16、17</td></tr>
+      <tr><td>9</td><td>傳輸 Query 元件</td><td>p137–143</td><td>Unit 9（p123–129）</td><td>18</td></tr>
+      <tr><td>10／附錄</td><td>套件、變式、背景作業、TCODE 表</td><td>附錄 p144–150</td><td>Unit 10 Package and Variant Creation（p131–138）</td><td>19</td></tr>
+      <tr><td>—</td><td>S/4HANA 的替代方案（本書補充）</td><td>—</td><td>—</td><td>20</td></tr>
+    </tbody>
+  </table>
+
+  <p><b>2007 版與 Col18 版的主要差異：</b></p>
+  <ul>
+    <li><b>名詞</b>：2007 版稱「開發類（Development Class）」，Col18 改稱「套件（Package）」；QuickViewer 選單路徑由「工具 → ABAP 工作台 → 公用程式 → QuickViewer」改為 <b>System → Services → QuickViewer</b>。</li>
+    <li><b>Col18 新增</b>：ALV 計數欄（Counter Field）、S_QUERY 各 ACTVT 值（02／23／67）的完整表、InfoSet 權限群組（S_PROGRAM）、不經使用者群組執行 Query 的三種方法與 <span class="tcode">SQ00</span>、InfoSet 的 <b>Free coding</b> 進入點與可用 INITIALIZATION／AT SELECTION-SCREEN OUTPUT、附加欄位的「計算順序（Calculate Sequence）」功能。</li>
+    <li><b>2007 版獨有</b>：InfoSet Query 的「發布到 Internet（Web 報表）」、SELECT-OPTIONS 的 LOWER CASE 附加、4.6C 起 InfoSet 可用類似 BAdI 的方式做增強的說明。</li>
+    <li><b>第 10 單元</b>：Col18 把强晟筆記「附錄」裡的套件、變式、背景作業獨立成 Unit 10。</li>
+  </ul>
+  <div class="note">Col18 講義 Unit 3 第一段的標題印成「XML Introduction」，但內文講的是 SAP Query 的組織環境，跟 XML 完全無關，是原廠排版錯誤，對照時不要被標題誤導。</div>
+
+  <h3 id="ch05-8-02">2. 第一單元：報表工具的共同原理與航班資料模型</h3>
+  <p>三種工具（QuickViewer、SAP Query、InfoSet Query）的原理相同，使用者只要做三件事：</p>
+  <ol>
+    <li><b>指定資料基礎</b>（例如從哪幾張表讀）。</li>
+    <li><b>決定清單長相</b>。</li>
+    <li><b>定義選擇畫面</b>，預先限縮資料。</li>
+  </ol>
+  <p>真正被執行的是系統<b>產生（generate）出來的一支 ABAP 報表程式</b>，所以報表工具又稱為「報表產生器（report generator）」。使用者不必會 ABAP；但下一節起你會看到，<b>設計 InfoSet 的人必須會 ABAP</b>。</p>
+
+  <p>整門課都用航班資料模型（Flight Data Model）示範，必背欄位：</p>
+  <table>
+    <thead><tr><th>表</th><th>欄位</th><th>意義</th></tr></thead>
+    <tbody>
+      <tr><td rowspan="3"><b>SCARR</b> 航空公司</td><td>CARRID</td><td>航空公司代碼</td></tr>
+      <tr><td>CARRNAME</td><td>航空公司名稱</td></tr>
+      <tr><td>CURRCODE</td><td>航空公司本國幣別</td></tr>
+      <tr><td rowspan="4"><b>SPFLI</b> 航線</td><td>CARRID</td><td>航空公司代碼</td></tr>
+      <tr><td>CONNID</td><td>航線代碼</td></tr>
+      <tr><td>AIRPFROM、AIRPTO</td><td>出發機場、抵達機場</td></tr>
+      <tr><td>CITYFROM、CITYTO</td><td>出發城市、抵達城市（Col18 講義誤印成 CITYO）</td></tr>
+      <tr><td rowspan="5"><b>SFLIGHT</b> 航班</td><td>CARRID、CONNID</td><td>同 SPFLI</td></tr>
+      <tr><td>FLDATE</td><td>飛行日期</td></tr>
+      <tr><td>SEATSMAX、SEATSOCC</td><td>經濟艙最大座位數、已佔用座位數</td></tr>
+      <tr><td>PRICE</td><td>基本票價</td></tr>
+      <tr><td>CURRENCY</td><td>幣別</td></tr>
+      <tr><td rowspan="3"><b>SBOOK</b> 訂位</td><td>CARRID、CONNID、FLDATE</td><td>同 SFLIGHT</td></tr>
+      <tr><td>BOOKID</td><td>訂位編號</td></tr>
+      <tr><td>CUSTOMID</td><td>客戶編號</td></tr>
+    </tbody>
+  </table>
+  <p>在 SQVI 裡用 SCARR ＋ SPFLI 做 Join，產生器做的事其實就是下面這種 ABAP SQL。先看懂它，後面講 Inner／Left Outer Join 與別名時就不會迷糊：</p>
+
+  <pre><code class="abap">*&amp;---------------------------------------------------------------*
+*&amp; QuickView「SCARR + SPFLI」背後等價的 ABAP SQL（7.52 寫法）
+*&amp;---------------------------------------------------------------*
+DATA gv_carrid TYPE s_carr_id.
+SELECT-OPTIONS s_carr FOR gv_carrid.
+
+START-OF-SELECTION.
+  " ① Inner Join：只有「至少有一條航線」的航空公司會出現
+  SELECT c~carrid, c~carrname, p~connid, p~cityfrom, p~cityto
+    FROM scarr AS c
+    INNER JOIN spfli AS p ON p~carrid = c~carrid
+    WHERE c~carrid IN @s_carr
+    ORDER BY c~carrid, p~connid
+    INTO TABLE @DATA(lt_inner).
+
+  " ② Left Outer Join：沒有航線的航空公司也會出現，右表欄位為初始值
+  "    左右順序有意義：畫面上放在左邊的表 = SQL 的左表
+  SELECT c~carrid, c~carrname, p~connid, p~cityfrom, p~cityto
+    FROM scarr AS c
+    LEFT OUTER JOIN spfli AS p ON p~carrid = c~carrid
+    WHERE c~carrid IN @s_carr
+    ORDER BY c~carrid, p~connid
+    INTO TABLE @DATA(lt_outer).
+
+  " ③ 別名（Alias）：同一張表在一個 Join 只能出現一次，
+  "    要用第二次就取別名——出發與抵達機場名稱都要讀 SAIRPORT
+  SELECT p~carrid, p~connid,
+         a1~name AS airport_from,
+         a2~name AS airport_to
+    FROM spfli AS p
+    LEFT OUTER JOIN sairport AS a1 ON a1~id = p~airpfrom
+    LEFT OUTER JOIN sairport AS a2 ON a2~id = p~airpto
+    WHERE p~carrid IN @s_carr
+    ORDER BY p~carrid, p~connid
+    INTO TABLE @DATA(lt_airport).
+
+  cl_demo_output=&gt;write( lt_inner ).
+  cl_demo_output=&gt;write( lt_outer ).
+  cl_demo_output=&gt;display( lt_airport ).</code></pre>
+  <div class="warn"><b>HANA 沒有預設排序。</b>報表工具產生的程式若沒有指定排序，清單順序在 HANA 上可能每次不同。上面每個 SELECT 都明寫 ORDER BY，就是 Casper 在成本評價案踩過的坑：H 與 E 兩種成本構成同時存在時，「取第一筆」的結果會漂移。用 SQVI／SQ01 也一樣：<b>一定要在清單定義裡指定排序欄位</b>，不要依賴「看起來有排好」。</div>
+
+  <h3 id="ch05-8-03">3. 第二單元：QuickViewer 的資料來源、Join 規則與輸出方式</h3>
+  <p>SQVI 的基本操作請看 <a href="#ch01-4">1-4 章第 2 節</a>，這裡補齊原廠課程強調的規則與限制：</p>
+  <ul>
+    <li><b>三步驟</b>：定義資料來源 → 設計清單與選擇畫面 → 執行。<b>不存檔也能直接執行</b>。</li>
+    <li><b>資料來源五選一</b>：單一表格、Table Join、InfoSet（只能用<b>標準區</b>的）、DDIC 資料庫視圖、邏輯資料庫。選「表格」就只能用那一張，事後不能再加表。</li>
+    <li><b>私人、不可複製、不可傳輸</b>：每位使用者只看得到自己的 QuickView；因為不接傳輸系統，<b>不需要 Z／Y 命名空間</b>，名稱只限字母、連字號、底線。但可以<b>轉成 SAP Query</b>。</li>
+    <li><b>執行方式</b>：直接執行、帶變式執行、背景執行。</li>
+    <li><b>Join 定義是 QuickView 專屬</b>，不能給別人重用（這點跟 DB View、InfoSet、邏輯資料庫不同）。系統會依 ABAP Dictionary（<b>相同 Domain</b> 的欄位）提出 Join 條件建議，可修改。</li>
+    <li><b>每張表在一個 Join 只能出現一次</b>，要重複用就取別名（Alias）。</li>
+    <li><b>只能 Join 透明表</b>，不能 Join Pool／Cluster Table。</li>
+    <li>新加入的表<b>預設是 Inner Join</b>；要改成外連接，在連線上按右鍵選 <b>Left Outer Join</b>。拖放兩個欄位即可建立連線，右鍵 <b>Delete Link</b> 刪除。</li>
+  </ul>
+  <div class="warn"><b>S/4HANA 注意：</b>原本在 ECC 是 Cluster／Pool 的表（例如 BSEG、KONV 所屬的 KOCLU）在 S/4HANA 已轉成透明表或被新表取代（定價條件改存 <b>PRCD_ELEMENTS</b>），所以「BSEG 不能 Join」這條限制在 S/4HANA 已不成立；但財務明細請優先用 <b>ACDOCA</b>（Universal Journal），不要再 Join BSEG。</div>
+
+  <p><b>基本模式（Basic Mode）畫面四區</b><span class="src">（依講義步驟整理）</span>：左側資料來源欄位樹、左下操作說明、右上 QuickView 設定（標題、備註、輸出方式、清單欄位、排序、選擇欄位）、右下線上文件。右上用兩個 Table Control 操作：從右邊「可用欄位」傳到左邊「清單欄位」；游標放在清單欄位上按<b>綠色＋</b>會在該欄位<b>前</b>插入換行（多行清單），<b>紅色－</b>移除換行。排序頁籤與選擇欄位頁籤操作方式相同。</p>
+  <div class="tip">若沒有定義選擇畫面、或執行時選擇畫面全部空白，系統會跳出對話框要你輸入<b>最大筆數</b>。這不是 bug，是保護機制——在正式機上請老實設條件。</div>
+
+  <p><b>輸出方式</b>分三大類：SAP 系統內輸出、直接轉到外部工具（Word、Excel）、直接存檔（本機檔案）。系統內最重要的三種：</p>
+  <table>
+    <thead><tr><th>輸出</th><th>特性</th></tr></thead>
+    <tbody>
+      <tr><td><b>SAP List Viewer</b>（原名 ABAP List Viewer, ALV）</td><td>最有彈性，<b>QuickViewer 的預設值</b></td></tr>
+      <tr><td><b>Table（表格控制）</b></td><td>以 Table Control 顯示，可排序、可再轉 ALV</td></tr>
+      <tr><td><b>List output（ABAP List）</b></td><td>傳統清單，最適合<b>階層式／多行清單</b>；可<b>儲存清單</b>，之後在 SQVI 初始畫面直接開啟同一份資料，不必重新選取</td></tr>
+    </tbody>
+  </table>
+  <p>執行時選擇畫面上方是 Program Selections（你定義的選擇欄位），下方可以<b>臨時改選輸出方式</b>，不必跟定義時一樣。選擇欄位可輸入多個單值或區間、也可排除；有多重選擇時箭頭由白變綠；右鍵可選比較運算子（Options）、刪行（Delete Lines）或全部清除。</p>
+
+  <h3 id="ch05-8-04">4. 第二單元（續）：SAP List Viewer 操作與對應的 SALV 程式</h3>
+  <p>原廠花了好幾頁講 ALV 的滑鼠與工具列操作（强晟筆記也吐槽「用文字說明操作確實難受」）。重點整理：</p>
+  <ul>
+    <li><b>左鍵</b>：點欄標題選欄（Ctrl 可多選，再點一次取消）、點列選列、拖曳欄標題移動欄位、拖曳欄標題交界改欄寬。</li>
+    <li><b>欄標題右鍵</b>：隱藏欄位（Show 可再叫回）、最佳欄寬（Optimum Width）、<b>設為最後固定欄</b>（橫向捲動時左邊欄位不動）。</li>
+    <li><b>工具列</b>：Details 顯示游標所在列的全部欄位（含隱藏欄）；選欄後升冪／降冪排序，不選欄則跳出多層排序對話框，排序欄的標題會有<b>紅色小三角</b>；<b>排序是小計的前提</b>；數值欄可合計，標題出現<b>Σ</b>。</li>
+    <li><b>小計五步驟</b>：① 選要合計的數值欄 → ② 按 Σ（小計按鈕才會出現）→ ③ 簡單小計：選非數值欄 → ④ 按小計按鈕；⑤ 複雜小計：跳過第 ③ 步，在對話框左邊放排序欄、逐欄設升降冪與是否小計，用箭頭調整排序層級。</li>
+    <li><b>列印與下載永遠處理整份清單</b>，不是只處理畫面上看到的部分。</li>
+    <li>欄位設定可存成<b>版面配置（Layout）</b>，下次在選擇畫面直接選用。ALV 的所有功能<b>只影響顯示、不影響資料選取</b>。</li>
+    <li><b>計數欄（Counter Field，Col18 新增）</b>：ALV 欄位集合裡永遠有一個「筆數」欄，預設隱藏，用 Show 叫出來即可。</li>
+  </ul>
+  <p>自己寫程式時，這些功能在 <b>CL_SALV_TABLE</b> 都有對應的 API（詳見 <a href="#ch02-3">2-3 章</a>）：</p>
+
+  <pre><code class="abap">*&amp;---------------------------------------------------------------*
+*&amp; 用 CL_SALV_TABLE 重現 QuickViewer 的 ALV 功能
+*&amp;---------------------------------------------------------------*
+SELECT carrid, connid, fldate, seatsmax, seatsocc, paymentsum, currency
+  FROM sflight
+  WHERE carrid IN @s_carr
+  ORDER BY carrid, connid, fldate
+  INTO TABLE @DATA(lt_flight).
+
+TRY.
+    cl_salv_table=&gt;factory( IMPORTING r_salv_table = DATA(lo_alv)
+                            CHANGING  t_table      = lt_flight ).
+
+    lo_alv-&gt;get_functions( )-&gt;set_all( abap_true ).      "完整工具列
+
+    DATA(lo_cols) = lo_alv-&gt;get_columns( ).
+    lo_cols-&gt;set_optimize( abap_true ).                   "＝右鍵「最佳欄寬」
+
+    " 固定欄：＝右鍵「設為最後固定欄」
+    lo_cols-&gt;set_key_fixation( abap_true ).
+    CAST cl_salv_column_table( lo_cols-&gt;get_column( 'CARRID' ) )-&gt;set_key( abap_true ).
+    CAST cl_salv_column_table( lo_cols-&gt;get_column( 'CONNID' ) )-&gt;set_key( abap_true ).
+
+    " 排序＋小計：排序是小計的前提
+    lo_alv-&gt;get_sorts( )-&gt;add_sort( columnname = 'CARRID' subtotal = abap_true ).
+    lo_alv-&gt;get_sorts( )-&gt;add_sort( columnname = 'CONNID' ).
+
+    " 合計（Σ）
+    lo_alv-&gt;get_aggregations( )-&gt;add_aggregation(
+      columnname  = 'SEATSOCC'
+      aggregation = if_salv_c_aggregation=&gt;total ).
+
+    " 版面配置：允許使用者儲存、可設預設
+    DATA(lo_layout) = lo_alv-&gt;get_layout( ).
+    lo_layout-&gt;set_key( VALUE #( report = sy-repid ) ).
+    lo_layout-&gt;set_save_restriction( if_salv_c_layout=&gt;restrict_none ).
+    lo_layout-&gt;set_default( abap_true ).
+
+    lo_alv-&gt;display( ).
+  CATCH cx_salv_msg cx_salv_not_found cx_salv_existing cx_salv_data_error INTO DATA(lx_salv).
+    MESSAGE lx_salv-&gt;get_text( ) TYPE 'E'.
+ENDTRY.</code></pre>
+  <div class="note">講義的「計數欄」在 SALV 對應 <span class="kw">CL_SALV_COLUMNS_TABLE-&gt;SET_COUNT_COLUMN( )</span>，前提是內表結構中真的有一個整數欄位當計數欄；若只是要看筆數，直接在 SELECT 用 COUNT(*) 或 lines( ) 更直接。</div>
+
+  <h3 id="ch05-8-05">5. 第三單元第一課：SAP Query 的組織環境與基本原則</h3>
+  <p>SAP Query 比 QuickViewer 多了一整套「組織」，目的就是讓你能<b>按使用者分權</b>：</p>
+  <ul>
+    <li>使用者必須屬於<b>至少一個使用者群組（User Group）</b>才能建立與執行 Query；一人可屬多個群組。</li>
+    <li>使用者群組掛 <b>InfoSet</b>；InfoSet 決定 Query 能讀哪些表、哪些欄位；<b>一個 InfoSet 可分配給多個群組</b>。</li>
+    <li>InfoSet 的欄位再分成<b>欄位群組（Field Group）</b>方便瀏覽。</li>
+    <li>Query 永遠建在「某個使用者群組 ＋ 某個 InfoSet」底下；使用者可存取自己群組內的所有 Query。</li>
+    <li><b>兩個查詢區（Query Area）</b>，4.0 版起：<b>全域區（Global）</b>跨 client、有物件目錄條目、自動接傳輸；<b>標準區（Standard）</b>依 client、不自動接傳輸。兩區互相獨立，同名物件可以在兩區代表不同東西。詳見 <a href="#ch01-4">1-4 章第 4 節</a>。</li>
+  </ul>
+
+  <p><b>與 QuickViewer 的差別</b>：SAP Query 的資料來源<b>只能是 InfoSet</b>（但 InfoSet 技術上可以包任意多張表或邏輯資料庫）；每個 Query 最多 <b>1 個基本清單 ＋ 9 個統計 ＋ 9 個分級清單</b>（講義另一處寫「1 個基本清單或 18 個彙總清單」，意思相同：統計與分級各 9 個，合計 18 個）；可在 InfoSet 選擇畫面之外再加選擇欄位；可串接多個清單。</p>
+
+  <p><b>起始畫面設定</b>：<span class="tcode">SQ01</span>（或 SQVI 初始畫面的 SAP Query 按鈕）→ Environment → Query Areas 切換查詢區；Edit → Change User Group 切換群組。常用的使用者參數（<span class="tcode">SU3</span>／System → User Profile → Own Data）：</p>
+  <table>
+    <thead><tr><th>參數 ID</th><th>值</th><th>效果</th></tr></thead>
+    <tbody>
+      <tr><td><b>AQW</b></td><td>G</td><td>預設進入<b>全域區</b>；空白 = 標準區（强晟：ECC 5.0 預設就是全域區，要用標準區才把 AQW 清空）</td></tr>
+      <tr><td><b>AQB</b></td><td>使用者群組名</td><td>預設使用者群組</td></tr>
+    </tbody>
+  </table>
+
+  <p><b>產生的程式名</b>：執行時內部報表產生器產生 <b>AQ + mm + 群組 12 碼 + Query 14 碼</b>，共 30 碼；mm 是編碼後的 client（標準區）或 <b>ZZ</b>（全域區），空白以「=」取代。查法：SQ01 → Query → More Functions → Display Report Name。强晟筆記把 Query 段寫成 <span class="kw">pppp…</span> 而說明卻寫 <span class="kw">qqqq…</span>，是筆誤；正確格式如下（全域區才能用這個規則算出名稱，標準區的 client 編碼請以系統顯示為準）：</p>
+
+  <pre><code class="abap">*&amp;---------------------------------------------------------------*
+*&amp; 依規則組出全域區 Query 的產生程式名，並確認它是否已產生
+*&amp;---------------------------------------------------------------*
+PARAMETERS: p_ugrp  TYPE c LENGTH 12 OBLIGATORY,   "SQ03 使用者群組
+            p_query TYPE c LENGTH 14 OBLIGATORY.   "SQ01 Query 名稱
+
+START-OF-SELECTION.
+  " WIDTH 保證補足固定長度；再把空白換成 '='
+  DATA(lv_prog) = |AQZZ{ p_ugrp WIDTH = 12 }{ p_query WIDTH = 14 }|.
+  lv_prog = translate( val = lv_prog from = ` ` to = `=` ).
+
+  SELECT SINGLE name FROM trdir
+    WHERE name = @lv_prog
+    INTO @DATA(lv_found).
+
+  IF sy-subrc = 0.
+    MESSAGE |產生程式 { lv_prog } 已存在| TYPE 'S'.
+  ELSE.
+    " 尚未產生（或曾被重新產生刪除）：請先在 SQ01 執行一次
+    MESSAGE |找不到 { lv_prog }，請先在 SQ01 執行一次讓系統產生| TYPE 'S' DISPLAY LIKE 'W'.
+  ENDIF.</code></pre>
+  <div class="warn">AQ 程式是「產生物」，InfoSet 重新產生、升級或 client 不同時都可能重建，<b>不要把它當成穩定的程式名寫死在其他程式或 TCODE 裡</b>。要掛 TCODE 請用 <a href="#ch01-4">1-4 章第 10 節</a>的 <b>START_REPORT 參數交易</b>。</div>
+
+  <h3 id="ch05-8-06">6. 第三單元第二課：欄位選擇、區域欄位與附加選擇欄位</h3>
+  <p>在 SQ01 選好 InfoSet（雙擊）後，<b>就不能再換 InfoSet</b>——因為資料讀取邏輯已經從 InfoSet 帶進 Query。接著依序經過四個畫面：</p>
+  <table>
+    <thead><tr><th>畫面</th><th>做什麼</th><th>必要性</th></tr></thead>
+    <tbody>
+      <tr><td><b>Title, Format</b></td><td>標題（必填，會印在清單上）、清單寬度與頁長（只有 ABAP List 輸出才需要）、輸出格式、<b>標準變式</b>（有設就永遠帶這組預設值執行）</td><td>必經</td></tr>
+      <tr><td><b>Field Groups</b></td><td>勾選要用的欄位群組</td><td>統計／分級清單必要</td></tr>
+      <tr><td><b>Field Selection</b></td><td>勾選欄位、定義<b>區域欄位</b></td><td>統計／分級清單必要；只用 Query Painter 做基本清單且不用區域欄位時可略過</td></tr>
+      <tr><td><b>Selection Fields</b></td><td>在 InfoSet 選擇畫面之外<b>再加</b>選擇欄位</td><td>選用</td></tr>
+    </tbody>
+  </table>
+
+  <p><b>區域欄位（Local Field）</b>是 SAP Query 獨有的「只存在於這個 Query 的計算欄位」，等於對 InfoSet 的補強：</p>
+  <ul>
+    <li>先開<b>短名稱</b>：Edit → Short Names → Switch On/Off，替要參與計算的欄位取短名。以短名引用欄位本身（例如 FLDATE），以 <b>&amp;短名</b>引用欄位內容（例如在頁首用 &amp;FLDATE）。</li>
+    <li>建立：Field Selection 畫面 Edit → Local Fields → Create／Change。區域欄位<b>一定要有短名、一定要歸到某個欄位群組</b>。</li>
+    <li>型態可以是<b>文字、計算、日期、時間</b>欄位，也可以是<b>符號（Symbol）或圖示（Icon）</b>；也可以「參照」其他有短名的欄位定型。</li>
+    <li>計算規則：一般四則運算式；按 <b>Complex Calculation</b> 可設多重條件，條件都不成立時取預設值。</li>
+    <li>公式可用特殊欄位：<b>%NAME</b>（執行者）、<b>%DATE</b>（執行日期）、<b>%TIME</b>（執行時間）。强晟筆記寫成「%DATA」是筆誤，正確是 <b>%DATE</b>。</li>
+  </ul>
+
+  <pre><code class="text">區域欄位設定示意（SQ01 → Field Selection → Edit → Local Fields → Create）
+────────────────────────────────────────────────────────────
+短名：SEATSMAX → MAX    SEATSOCC → OCC
+
+區域欄位 FREE   型態：計算欄位，長度 10，小數 0
+  條件 1：MAX &gt; 0          公式：MAX - OCC
+  否則（預設值）            0
+
+區域欄位 LOAD   型態：計算欄位，長度 5，小數 1
+  條件 1：MAX &gt; 0          公式：OCC * 100 / MAX
+  否則                      0
+
+區域欄位 LIGHT  型態：圖示（Icon）
+  條件 1：LOAD &gt;= 90       公式：ICON_RED_LIGHT
+  條件 2：LOAD &gt;= 70       公式：ICON_YELLOW_LIGHT
+  否則                      ICON_GREEN_LIGHT</code></pre>
+
+  <p>同樣的邏輯，在自己的程式裡用 <span class="kw">COND</span> 一次寫完（對照 <a href="#ch02-2">2-2 章</a>的 7.40+ 語法）：</p>
+  <pre><code class="abap">TYPES: BEGIN OF ty_out,
+         carrid   TYPE s_carr_id,
+         connid   TYPE s_conn_id,
+         fldate   TYPE s_date,
+         seatsmax TYPE s_seatsmax,
+         seatsocc TYPE s_seatsocc,
+         free     TYPE i,
+         load     TYPE p LENGTH 5 DECIMALS 1,
+         light    TYPE icon_d,
+       END OF ty_out,
+       tt_out TYPE STANDARD TABLE OF ty_out WITH EMPTY KEY.
+
+DATA(lt_out) = VALUE tt_out(
+  FOR ls IN lt_flight
+  LET lv_load = COND decfloat34( WHEN ls-seatsmax &gt; 0
+                                 THEN ls-seatsocc * 100 / ls-seatsmax
+                                 ELSE 0 )
+  IN ( carrid   = ls-carrid
+       connid   = ls-connid
+       fldate   = ls-fldate
+       seatsmax = ls-seatsmax
+       seatsocc = ls-seatsocc
+       free     = COND #( WHEN ls-seatsmax &gt; 0 THEN ls-seatsmax - ls-seatsocc ELSE 0 )
+       load     = lv_load
+       light    = COND #( WHEN lv_load &gt;= 90 THEN icon_red_light
+                          WHEN lv_load &gt;= 70 THEN icon_yellow_light
+                          ELSE                    icon_green_light ) ) ).</code></pre>
+
+  <p><b>附加選擇欄位（Selection Fields 畫面）</b>的規則：</p>
+  <ul>
+    <li>先看 InfoSet 已經提供哪些選擇欄位，<b>只把 InfoSet 沒有的欄位加成附加選擇</b>。</li>
+    <li>欄位若在 DDIC 設了 SET/GET 參數（Parameter ID），會自動帶入使用者上次輸入的值；不要的話可以在這裡關掉預帶。</li>
+    <li>可自訂選擇畫面文字，不填就用標準文字。</li>
+    <li>屬性 <b>SV（Single Value）</b>：畫面上只先給單值欄位（多重選擇仍可用）；<b>1L（Single Line）</b>：可輸入單值或一個區間，但不能多重選擇；<b>SV＋1L</b>：只能一個單值、無多重選擇。</li>
+  </ul>
+
+  <h3 id="ch05-8-07">7. 第三單元第二課（續）：Query Painter、控制層級與存到全域區</h3>
+  <p>基本清單用圖形化的 <b>Query Painter</b> 設計，它就是 QuickViewer 的「版面模式（Layout Mode）」。畫面四區：左上欄位樹、右上清單版面、左下目前元素資訊、右下文件連結與格式警告。</p>
+  <ul>
+    <li>在左上勾選欄位，會自動加到<b>目前這一行的尾端</b>；版面上顯示的是從資料來源讀出的<b>範例資料</b>，讀不到就模擬值。多行階層清單會讀多筆範例。</li>
+    <li>拖放可調整欄位順序；拖到<b>垃圾桶</b>即刪除（也可從垃圾桶拖回來）；拖邊框改輸出長度，或在左下直接填位置／長度再按 Apply。</li>
+    <li><b>工具箱</b>：拖表格圖示插入欄分隔線（紅叉刪除）；拖＋號在下方加一行；刪行時該行不能有欄位，把垃圾桶拖到該行上；拖顏色到欄位上改顏色。Tools → All Tools On/Off 可隱藏工具。</li>
+    <li>雙擊行內空白處顯示<b>行選項</b>：依其他行存在才輸出、前後空行、換頁、印在頁首；點尺規可設清單寬度與框線。欄位選項：輸出長度、位置、編輯遮罩。</li>
+  </ul>
+  <p><b>控制層級（Control Level）</b>只在輸出格式為 <b>ABAP List</b> 時由 Query Painter 定義：把欄位拖到 Sort 工具成為排序欄、逐欄設升／降冪，決定層級結束時要不要印小計、改小計文字、層級前空行或換頁、層級表頭表尾文字。外幣金額合計時系統會<b>自動依幣別分開合計</b>。</p>
+  <div class="warn"><b>合計溢位</b>：合計值印在與欄位相同的欄位、相同輸出長度；數字變大放不下時，第一碼會出現<b>星號 *</b>。解法是把要合計欄位的輸出長度調大。</div>
+  <p>頁首頁尾（ABAP List 輸出才有）可用變數：</p>
+  <table>
+    <thead><tr><th>變數</th><th>意義</th></tr></thead>
+    <tbody>
+      <tr><td>&amp;%NAME</td><td>使用者名稱</td></tr>
+      <tr><td>&amp;%DATE</td><td>日期</td></tr>
+      <tr><td>&amp;%TIME</td><td>時間</td></tr>
+      <tr><td>&amp;%PAGE</td><td>頁碼</td></tr>
+    </tbody>
+  </table>
+  <div class="tip">控制層級也可以在執行時用 <b>SAP List Viewer</b> 做，而且更彈性：同一個 Query 定義可以做任意多種排序與小計組合，存成不同的 ALV 版面。實務上<b>除非客戶一定要 ABAP List 的列印格式，否則把排序小計交給 ALV 版面</b>，Query 定義保持單純。</div>
+
+  <p><b>存到全域區</b>：第一次儲存全域區的 Query 物件會要求指定<b>套件（Package，舊稱開發類）</b>，套件須在 <span class="tcode">SE80</span> 建立並符合客戶命名空間（Z／Y 開頭）；選「本機物件」即 <b>$TMP</b>，就不會被傳輸。還要指定<b>工作台請求（Workbench Request）</b>，由專案負責人在 <span class="tcode">SE09</span> 建立請求與每位成員的工作（Task）。一個物件永遠只屬於一個套件，但不同時間可以屬於不同請求。標準區的物件不自動接傳輸，參見報表 <b>RSAQR3TR</b> 的說明（第 18 節）。套件與傳輸的基本觀念見 <a href="#ch01-1">1-1 章</a>。</p>
+
+  <h3 id="ch05-8-08">8. 第三單元第三課：統計（Statistics）與分級清單（Ranked List）</h3>
+  <table>
+    <thead><tr><th>項目</th><th>統計 Statistics</th><th>分級清單 Ranked List</th></tr></thead>
+    <tbody>
+      <tr><td>本質</td><td>把相同鍵值的多筆資料壓成一行資訊行；<b>所有非數值欄位自動成為鍵</b>；數值欄位做欄合計</td><td><b>統計的特例</b>：同樣依鍵壓縮合計，但<b>強制依一個數值欄排序</b>（分級準則），只輸出前 N 名</td></tr>
+      <tr><td>數量上限</td><td>每個 Query 最多 9 個</td><td>每個 Query 最多 9 個</td></tr>
+      <tr><td>典型問題</td><td>各航空公司的載客數、營收合計</td><td>「營收最高的 10 條航線是哪些？」</td></tr>
+      <tr><td>可加值</td><td>平均值、百分比分配、讀取筆數；可定義中間小計層級，壓縮後只顯示小計與總計</td><td>同左；貨幣／數量換算規則也適用</td></tr>
+      <tr><td>建立三步驟</td><td colspan="2">① 定義清單版面（欄位順序、中間層級；分級清單還要指定<b>分級準則</b>）→ ② 頁首頁尾 → ③ 使用者互動產生圖形時的樣式（例如長條圖）</td></tr>
+    </tbody>
+  </table>
+  <ul>
+    <li>統計與分級清單<b>不是圖形化</b>定義，而是在一連串輸入畫面填數字：填標題、填欄位順序號碼後按 Enter 系統會依序排好；按 Line Layout 可預覽；非數值欄可填排序順序號，勾選降冪。</li>
+    <li>只有先選好欄位群組與欄位（第 6 節）才能建統計。</li>
+    <li><b>不同幣別或單位的金額／數量</b>要合計時，<b>每個欄位都要指定參考貨幣或參考單位</b>，系統自動換算；ABAP List 輸出時換算明細印在最後，換算失敗會記錄並把受影響的欄位標色。</li>
+  </ul>
+  <p>自己寫程式時，「統計」就是 GROUP BY，「分級清單」就是 GROUP BY ＋ ORDER BY ＋ UP TO n ROWS。重點是：<b>不同幣別不能直接加總</b>，要先依幣別分組、換算成參考貨幣，再排名：</p>
+
+  <pre><code class="abap">*&amp;---------------------------------------------------------------*
+*&amp; 分級清單：營收最高的 10 條航線（參考貨幣 EUR）
+*&amp;---------------------------------------------------------------*
+CONSTANTS gc_ref_curr TYPE s_currcode VALUE 'EUR'.
+
+" ① 先依「鍵 + 幣別」彙總：統計（Statistics）的本質就是 GROUP BY
+SELECT carrid, connid, currency,
+       SUM( paymentsum ) AS revenue,
+       SUM( seatsocc )   AS seats_occ,
+       COUNT(*)          AS flights
+  FROM sflight
+  WHERE carrid IN @s_carr
+  GROUP BY carrid, connid, currency
+  ORDER BY carrid, connid, currency
+  INTO TABLE @DATA(lt_stat).
+
+" ② 換算成參考貨幣（對應講義「參考貨幣」設定）
+TYPES: BEGIN OF ty_rank,
+         carrid  TYPE s_carr_id,
+         connid  TYPE s_conn_id,
+         rev_ref TYPE s_sum,
+       END OF ty_rank.
+DATA lt_rank TYPE SORTED TABLE OF ty_rank WITH UNIQUE KEY carrid connid.
+TYPES tt_rank_std TYPE STANDARD TABLE OF ty_rank WITH EMPTY KEY.   "SORTED 表不能改排序，排名時轉成 STANDARD
+
+LOOP AT lt_stat INTO DATA(ls_stat).
+  DATA(lv_ref) = CONV s_sum( ls_stat-revenue ).
+  IF ls_stat-currency &lt;&gt; gc_ref_curr.
+    CALL FUNCTION 'CONVERT_TO_FOREIGN_CURRENCY'
+      EXPORTING
+        date             = sy-datum
+        foreign_currency = gc_ref_curr
+        local_amount     = ls_stat-revenue
+        local_currency   = ls_stat-currency
+      IMPORTING
+        foreign_amount   = lv_ref
+      EXCEPTIONS
+        OTHERS           = 1.
+    IF sy-subrc &lt;&gt; 0.
+      " 換算失敗：講義說系統會記錄並標色，這裡記下來另外列示
+      MESSAGE |{ ls_stat-carrid } { ls_stat-connid } 幣別 { ls_stat-currency } 無匯率| TYPE 'I'.
+      CONTINUE.
+    ENDIF.
+  ENDIF.
+  " 同一航線可能有多種幣別：累加
+  IF line_exists( lt_rank[ carrid = ls_stat-carrid connid = ls_stat-connid ] ).
+    lt_rank[ carrid = ls_stat-carrid connid = ls_stat-connid ]-rev_ref =
+      lt_rank[ carrid = ls_stat-carrid connid = ls_stat-connid ]-rev_ref + lv_ref.
+  ELSE.
+    INSERT VALUE #( carrid = ls_stat-carrid connid = ls_stat-connid rev_ref = lv_ref )
+      INTO TABLE lt_rank.
+  ENDIF.
+ENDLOOP.
+
+" ③ 排名：分級準則 = rev_ref 降冪（Top list）；同分再用鍵值排，確保結果穩定
+DATA(lt_top) = CORRESPONDING tt_rank_std( lt_rank ).
+SORT lt_top BY rev_ref DESCENDING carrid ASCENDING connid ASCENDING.
+DELETE lt_top FROM 11.                                  "只留前 10 名</code></pre>
+  <div class="warn"><b>同分時的排序一定要補鍵值。</b>「前 10 名」若第 10、11 名同分，沒有第二排序鍵時 HANA 每次可能回傳不同的那一筆——這就是 Casper 強調的「HANA 沒有預設排序」。SAP Query 的分級清單同樣有這個問題，對結果有爭議時請改用程式並明確排序。</div>
+
+  <h3 id="ch05-8-09">9. 第三單元第四課：子清單組合、互動功能、RRI 與儲存清單</h3>
+  <p><b>子清單組合（Sublist Combination）</b>：一個 Query 要同時輸出多個清單（例如 1 個基本清單＋2 個統計＋1 個分級清單），輸出格式必須選 <b>ABAP List</b>；在 Title, Format 畫面用按鈕設定輸出順序。執行時各清單依序上下排列，用捲軸或 List Overview、Previous Section／Next Section 切換；互動功能作用在游標所在的那個子清單。</p>
+  <p><b>清單上的互動功能</b>：List Overview（子清單可分別顯示、分別列印）、Selections（查看選擇畫面輸入值）、Drilldown（展開／收合）、Totaling、<b>報表／報表介面（RRI）</b>、Table display（4.6A 起多行清單可壓成一行以表格顯示）、存成展示伺服器檔案或私人儲存區、轉 Word／Excel、SAP 圖形、ABC 分析、EIS（Executive Information System）。</p>
+
+  <p><b>報表／報表介面（Report/Report Interface, RRI）</b>：</p>
+  <ul>
+    <li>「報表」在這裡是上位詞，涵蓋 <b>Query、ABAP 報表與交易碼</b>。</li>
+    <li>使用者在 Query 清單上<b>雙擊一行</b> → 呼叫第二個 Query，系統把第一個 Query 的選擇畫面欄位與被雙擊那一行的所有欄位，填進第二個 Query 的（隱藏）選擇畫面，直接顯示結果。</li>
+    <li>發送端與接收端欄位靠<b>技術屬性（資料元素相同）</b>對應；細節見 <b>SAP Note 50629</b>。</li>
+    <li>一個 Query 可掛多個接收報表，雙擊時系統會問要呼叫哪一個。設定：SQ01 → Goto → <b>Report Assignment</b> → ＋號新增 → Enter 回總覽 → 存檔。</li>
+  </ul>
+  <p>自己寫 SALV 時，RRI 就是「雙擊事件 ＋ SUBMIT 帶選擇條件」：</p>
+
+  <pre><code class="abap">*&amp;---------------------------------------------------------------*
+*&amp; 用 SALV 雙擊事件模擬 RRI：航線清單 → 雙擊 → 該航線的訂位清單
+*&amp;---------------------------------------------------------------*
+CLASS lcl_rri DEFINITION FINAL.
+  PUBLIC SECTION.
+    METHODS constructor IMPORTING it_conn TYPE ty_conn_tab.
+    METHODS on_double_click FOR EVENT double_click OF cl_salv_events_table
+      IMPORTING row column.
+  PRIVATE SECTION.
+    DATA mt_conn TYPE ty_conn_tab.
+ENDCLASS.
+
+CLASS lcl_rri IMPLEMENTATION.
+  METHOD constructor.
+    mt_conn = it_conn.
+  ENDMETHOD.
+
+  METHOD on_double_click.
+    DATA(ls_conn) = VALUE #( mt_conn[ row ] OPTIONAL ).
+    IF ls_conn IS INITIAL.
+      RETURN.
+    ENDIF.
+    " 發送端欄位 → 接收端選擇條件（講義：依資料元素相同自動對應）
+    DATA(lt_sel) = VALUE rsparams_tt(
+      ( selname = 'S_CARR' kind = 'S' sign = 'I' option = 'EQ' low = ls_conn-carrid )
+      ( selname = 'S_CONN' kind = 'S' sign = 'I' option = 'EQ' low = ls_conn-connid ) ).
+    SUBMIT zbc407_bookings WITH SELECTION-TABLE lt_sel AND RETURN.
+  ENDMETHOD.
+ENDCLASS.
+
+" 掛上事件（lo_alv 為 CL_SALV_TABLE 實體，lt_conn 為航線清單）
+DATA(lo_rri) = NEW lcl_rri( lt_conn ).
+SET HANDLER lo_rri-&gt;on_double_click FOR lo_alv-&gt;get_event( ).</code></pre>
+  <div class="note">範例中的 <span class="kw">ty_conn_tab</span>、接收端報表 <span class="kw">ZBC407_BOOKINGS</span>（有 S_CARR、S_CONN 兩個 SELECT-OPTIONS）為示意名稱。注意這裡刻意用<b>單值 EQ</b> 傳遞條件，不是 BT 區間——符合「列舉比區間安全」的原則。</div>
+
+  <p><b>儲存清單（Saved Lists）</b>：ABAP List 輸出的清單可以跟 Query 一起存（List → Save），系統自動記錄日期時間。再次開啟<b>不讀資料庫</b>，比重跑快得多；大多數互動功能仍可用（ALV、下載），<b>但 RRI 不能用</b>。從 SQ01 → Goto → Saved Lists 開啟；在儲存的清單裡按 Selections 可看當時的選擇條件。若 Query 被放進角色（<span class="tcode">PFCG</span>），所有儲存清單會自動帶到角色，從右鍵選單開啟。</p>
+
+  <h3 id="ch05-8-10">10. 第四單元：InfoSet Query——從角色出發的即席報表</h3>
+  <p>InfoSet Query 與 SAP Query 共用 InfoSet、使用者群組、查詢區，差別在「怎麼把使用者接進來」與「介面」：</p>
+  <ul>
+    <li><b>使用者不直接放進使用者群組，而是透過角色（Role）</b>。一個人可以有多個角色，但<b>每個角色只能掛一個使用者群組</b>。强晟筆記把這句譯成「每個人可以有多個角色但只能有一個用戶組」是誤譯，以原廠原文為準。</li>
+    <li>可從角色選單、SAP 選單或 SQ01 啟動；依角色設定，系統會拿一個既有 Query 當<b>範本</b>、或只提供一個 InfoSet 讓你新建。Extras → Template Information 可查目前的 InfoSet 與 Query 名。</li>
+    <li><b>畫面三區</b>：左上 InfoSet 欄位樹（勾選 = 放進清單或選擇畫面，也可拖放）、右上選擇畫面、下方以 ALV 呈現的<b>結構與輸出預覽</b>。</li>
+    <li>欄位樹有三種顯示：欄位群組樹（預設，若 InfoSet 有選擇畫面，其欄位列在最上面）、欄位目錄（不分群組）、邏輯資料庫結構（InfoSet 基於 LDB 時）。</li>
+    <li>圖示帶 <b>T</b> 的欄位有<b>自動文字辨識</b>（例如航空公司代碼自動帶出名稱），右鍵可選只要值、只要文字或兩者都要；用勾選方式加入則套用預設值。右鍵也可看欄位技術資訊。</li>
+  </ul>
+  <p><b>下方預覽區的兩個用途</b>：① 用 ALV 功能決定版面（拖放欄位順序、設定值／文字），這些版面設定<b>會延續到其他輸出格式</b>（例如傳統清單）；② 預覽——按 <b>Refresh Data</b> 才真的依選擇條件讀資料庫，第一次刷新前看到的是<b>假的範例資料</b>。另兩個重要按鈕：<b>Delete</b>（選欄刪欄；沒選欄會刪整張清單）、<b>Initialize Formatting</b>（取消排序合計、恢復預設欄寬）。</p>
+  <p><b>選擇畫面</b>：跟標準選擇畫面不同，<b>只有一個輸入欄、沒有區間</b>，要輸入區間得開 Multiple Selection。欄位多半是 SELECT-OPTIONS；若是 InfoSet 定義成 PARAMETERS 的單值欄位，Option 按鈕不會啟用。沒填任何條件就執行，系統會要求限制筆數。</p>
+  <p><b>清單類型與設定</b>（Edit → Settings，或預覽區的 Basic List／Statistics／Ranked List 按鈕）：</p>
+  <ul>
+    <li><b>一個 InfoSet Query 只能選基本清單、統計、分級清單其中一種</b>，不能組合（這是跟 SAP Query 最大的差別）。</li>
+    <li>Statistics/Ranked List 頁籤指定<b>參考貨幣與參考單位</b>、分級清單的<b>筆數</b>；可加計數器，但<b>InfoSet 基於邏輯資料庫時沒有這個勾選框</b>。</li>
+    <li>統計可在 ALV 欄位右鍵加上 Output Mean Value、Output Proportion in %、Output Total Number。</li>
+    <li>分級清單：在 ALV 選一個數值欄（即分級準則）後按排序——<b>降冪產生 Top list</b>（最高值在前），<b>升冪產生 Flop list</b>（最低值在前）。强晟筆記把這段寫成「值小於／大於標準的項目」，語意不清，以原廠「Top／Flop list」為準。分級清單至少要選一個數值欄輸出。</li>
+    <li>Output 頁籤的輸出方式（預設 ALV，也可 ABAP List）<b>只在全螢幕執行時生效</b>；可設定全螢幕執行時要不要顯示選擇畫面。Default: Value/Text 頁籤決定帶 T 欄位預設顯示值或文字；<b>「值與文字同時顯示」只能在欄位右鍵個別設定</b>。</li>
+  </ul>
+  <div class="warn"><b>不要用 InfoSet Query 去編輯含有下列特性的 SAP Query</b>：多個清單、多行基本清單、區域欄位。InfoSet Query 只會顯示單行、無區域欄位的清單，<b>一旦覆蓋存檔，SAP Query 的這些特性就永久遺失</b>。</div>
+  <div class="warn"><b>已過時：</b>强晟 2007 版提到 InfoSet Query 可經 Goto → Internet → Release Template for Web 發布成 URL（前提是 InfoSet 有權限群組），這是 ITS／Web Reporting 時代的功能，Col18 已刪除。S/4HANA 要給瀏覽器使用者看報表，請改走 CDS View ＋ Fiori（第 20 節）。</div>
+
+  <h3 id="ch05-8-11">11. 第五單元：三種工具比較總表</h3>
+  <table>
+    <thead><tr><th>比較項目</th><th>QuickViewer</th><th>SAP Query</th><th>InfoSet Query</th></tr></thead>
+    <tbody>
+      <tr><td>啟動</td><td><span class="tcode">SQVI</span></td><td><span class="tcode">SQ01</span></td><td>通常從角色選單</td></tr>
+      <tr><td>清單設計介面</td><td>傳統介面（基本模式）＋圖形介面（版面模式）</td><td>三種清單皆有傳統介面；基本清單另有圖形介面（Query Painter）</td><td>圖形介面</td></tr>
+      <tr><td>執行前必須存檔</td><td>否</td><td>否</td><td>否</td></tr>
+      <tr><td>使用者群組</td><td>無，每人自己的 QuickView</td><td>有（直接分配）</td><td>有（直接分配或經由角色）</td></tr>
+      <tr><td>Query 專屬權限檢查</td><td>無</td><td>S_QUERY</td><td>S_QUERY</td></tr>
+      <tr><td>依 client</td><td>是</td><td>全域區否／標準區是</td><td>同 SAP Query</td></tr>
+      <tr><td>傳輸</td><td>否</td><td>全域區自動接傳輸；標準區手動</td><td>同 SAP Query</td></tr>
+      <tr><td>資料基礎</td><td>表、DB View、LDB、InfoSet；可自建 Join</td><td>InfoSet（必須已存在）</td><td>同 SAP Query</td></tr>
+      <tr><td>區域欄位</td><td>否</td><td>是</td><td>否</td></tr>
+      <tr><td>自動文字辨識</td><td>否</td><td>是（4.6C 起）</td><td>是</td></tr>
+      <tr><td>清單數量</td><td>1 個基本清單</td><td>最多 1 基本＋9 統計＋9 分級</td><td>基本、統計、分級三選一</td></tr>
+      <tr><td>階層式清單</td><td>是（ABAP List 輸出且在版面模式定義）</td><td>是（ABAP List 輸出）</td><td>否</td></tr>
+      <tr><td>互動功能</td><td>是</td><td>是</td><td>是</td></tr>
+      <tr><td>RRI</td><td>否</td><td>是</td><td>是（只能分配；要用 SQ01 呼叫）</td></tr>
+      <tr><td>儲存清單到選單／角色</td><td>否</td><td>是</td><td>否</td></tr>
+      <tr><td>其他</td><td>可轉成 SAP Query</td><td>可當 InfoSet Query 繼續編輯（但子清單組合、階層清單、區域欄位會失去）</td><td>可當 SAP Query 繼續編輯</td></tr>
+    </tbody>
+  </table>
+  <div class="note"><b>教材修正：</b>强晟筆記的比較表把 QuickViewer 的「階層清單」寫成「否」，Col18 原文為「Yes（if output as ABAP list and definition in layout mode）」，本表以原廠為準。</div>
+  <p><b>權限檢查的差異</b>：QuickViewer 沒有自己的權限物件；執行時若資料來源是表、Join 或 DB View，檢查 <b>S_TABU_DIS</b>（表格權限群組）；若來源是 InfoSet，則繼承 InfoSet 的檢查，特別是<b>權限群組（以 S_PROGRAM 檢查）</b>。SAP Query／InfoSet Query 有 <b>S_QUERY</b> 控制能否變更、建立、維護、翻譯 Query；執行時 InfoSet 基於表／Join／DB View 同樣會再檢查 S_TABU_DIS，基於邏輯資料庫則執行 LDB 內的檢查，InfoSet 程式碼裡寫的檢查也全部會跑。</p>
+
+  <h3 id="ch05-8-12">12. 第六單元：InfoSet 設計者必備的 ABAP 敘述</h3>
+  <p>原廠自問自答：「用 Query 是不是就不用寫 ABAP？」——<b>使用者</b>不用；但執行 Query 時背後跑的是自動產生的 ABAP 程式，<b>InfoSet 就是這支程式的範本</b>，所以<b>建 InfoSet 的人一定要有 ABAP 基礎</b>。這個單元把報表程式的骨架濃縮成五類敘述：</p>
+  <table>
+    <thead><tr><th>用途</th><th>敘述</th><th>本書詳解</th></tr></thead>
+    <tbody>
+      <tr><td>定義資料</td><td>TYPES、DATA</td><td><a href="#ch02-1">2-1 章</a></td></tr>
+      <tr><td>定義選擇畫面</td><td>SELECT-OPTIONS、PARAMETERS</td><td><a href="#ch03-1">3-1 章</a></td></tr>
+      <tr><td>檢查輸入</td><td>AT SELECTION-SCREEN、CHECK、MESSAGE</td><td><a href="#ch03-1">3-1 章</a></td></tr>
+      <tr><td>讀取與處理資料</td><td>SELECT、運算式</td><td><a href="#ch02-2">2-2 章</a></td></tr>
+      <tr><td>輸出</td><td>WRITE（Query 由產生器處理，InfoSet 通常不寫）</td><td><a href="#ch02-3">2-3 章</a> 改用 ALV</td></tr>
+    </tbody>
+  </table>
+  <ul>
+    <li><b>預定義型別</b>：d（日期）、t（時間）、i（整數）、f（浮點）、p（packed）、n（數字文字）、c（字元）、x（位元組）、string、xstring。用 TYPES 自訂的型別稱為「程式區域型別」。</li>
+    <li><b>初始值</b>（沒有 VALUE 時）：c 為空白、n 為 '00…0'、d 為 '00000000'（YYYYMMDD）、t 為 '000000'（HHMMSS）、x 為 X'00'、i 為 0（4 bytes）、p 為 0（預設 8 bytes）、f 為 0。</li>
+    <li><b>內表與工作區</b>：講義推薦 <span class="kw">&lt;wa&gt; LIKE LINE OF &lt;itab&gt;</span> 保證結構一致（强晟評「確實是個好辦法」）。7.40 起更好的做法是 <span class="kw">LOOP AT itab INTO DATA(wa)</span> 內嵌宣告，連 LIKE LINE OF 都省了。講義用 MOVE 賦值、APPEND wa TO itab 填表，現代寫法改為 <span class="kw">=</span> 與 <span class="kw">VALUE #( )</span>。</li>
+    <li><b>選擇表</b>：SELECT-OPTIONS 名稱最多 <b>8 碼</b>，產生四欄內表 SIGN（I 包含／E 排除）、OPTION（EQ、NE、LE、LT、GE、GT、BT、NB、CP、NP）、LOW、HIGH；結果集 = 所有包含的聯集 − 所有排除的聯集。紅綠燈：綠 = I、紅 = E。選擇文字在 SE38 → Goto → Text Elements → Selection Texts 維護。</li>
+    <li><b>SELECT-OPTIONS 附加</b>：DEFAULT（可配 OPTION、SIGN）、OBLIGATORY、NO-EXTENSION（禁多重選擇，强晟誤拼成 NO-EXTENSIOIN）、NO INTERVALS、MEMORY ID &lt;pid&gt;（SPA/GPA）、LOWER CASE（DDIC 欄位不適用，以字典設定為準）。</li>
+    <li><b>MESSAGE</b>：在 AT SELECTION-SCREEN 用 E（錯誤，必須改輸入再執行）或 W（警告，按 Enter 可繼續）；WITH 最多帶 4 個參數，填入訊息文字的 &amp;1～&amp;4。</li>
+    <li><b>SELECT 結構</b>：SELECT 子句（欄位；SELECT * 取全欄）、FROM（表或 DDIC 視圖）、INTO（目標與 SELECT 子句結構不符會執行期錯誤）、WHERE（與單值比較用 = 或 EQ，與選擇表比較用 <b>IN</b>）。講義示範的是逐筆迴圈讀取寫法；大量資料應讀進內表（INTO TABLE）。本書依規範一律用 INTO TABLE，不示範逐筆迴圈寫法。</li>
+  </ul>
+
+  <pre><code class="abap">*&amp;---------------------------------------------------------------*
+*&amp; 第六單元的報表骨架，改寫為 7.52 現代寫法
+*&amp;---------------------------------------------------------------*
+REPORT zbc407_skeleton.
+
+DATA: gv_carrid TYPE s_carr_id,
+      gv_fldate TYPE s_date.
+
+SELECT-OPTIONS: s_carr FOR gv_carrid MEMORY ID car NO INTERVALS,
+                s_date FOR gv_fldate OBLIGATORY.
+PARAMETERS p_head AS CHECKBOX DEFAULT abap_true.   "PARAMETERS 適合做流程控制
+
+INITIALIZATION.
+  " 預設：今天起 90 天（日期是連續語意，用 BT 區間沒問題）
+  s_date[] = VALUE #( ( sign = 'I' option = 'BT' low = sy-datum high = sy-datum + 90 ) ).
+
+AT SELECTION-SCREEN ON s_carr.
+  " 輸入檢查＋權限檢查：錯誤用 E，使用者必須修正後重新執行
+  SELECT carrid FROM scarr
+    WHERE carrid IN @s_carr
+    ORDER BY carrid
+    INTO TABLE @DATA(lt_carr).
+  IF lt_carr IS INITIAL.
+    MESSAGE e398(00) WITH '找不到符合條件的航空公司'.
+  ENDIF.
+  LOOP AT lt_carr INTO DATA(ls_carr).
+    AUTHORITY-CHECK OBJECT 'S_CARRID'
+      ID 'CARRID' FIELD ls_carr-carrid
+      ID 'ACTVT'  FIELD '03'.
+    IF sy-subrc &lt;&gt; 0.
+      MESSAGE e398(00) WITH '無權限查詢航空公司' ls_carr-carrid.
+    ENDIF.
+  ENDLOOP.
+
+START-OF-SELECTION.
+  SELECT carrid, connid, fldate, price, currency, seatsmax, seatsocc
+    FROM sflight
+    WHERE carrid IN @s_carr
+      AND fldate IN @s_date
+    ORDER BY carrid, connid, fldate
+    INTO TABLE @DATA(gt_flight).
+
+END-OF-SELECTION.
+  IF gt_flight IS INITIAL.
+    MESSAGE '查無資料' TYPE 'S' DISPLAY LIKE 'W'.
+    RETURN.
+  ENDIF.
+  cl_demo_output=&gt;display( gt_flight ).</code></pre>
+  <div class="tip"><b>列舉比區間安全。</b>日期、金額這類連續語意的欄位用 BT 沒問題；但<b>單號、料號、客戶號、成本中心</b>這類代碼，BT 比的是字典序，遇到號碼段不連續、ALPHA 前導零、編碼規則改過，就會多抓或漏抓。給業務使用者的 Query 變式，代碼類欄位請用多筆 EQ（或 Multiple Selection 貼上清單），不要用區間。</div>
+
+  <h3 id="ch05-8-13">13. 第六單元（續）：事件概念與邏輯資料庫（LDB）</h3>
+  <p>可執行程式（類型 1）的流程由執行環境依<b>事件</b>控制。與 Query 有關的事件只有：<b>AT SELECTION-SCREEN、START-OF-SELECTION、GET／GET LATE、END-OF-SELECTION</b>（Col18 另外補充 InfoSet 可用 INITIALIZATION 與 AT SELECTION-SCREEN OUTPUT，見第 14 節）。事件區塊由事件關鍵字開始，碰到下一個事件關鍵字、程式結尾或副程式定義就結束。</p>
+  <ul>
+    <li><b>START-OF-SELECTION</b> 是標準事件：沒放在任何事件區塊裡的敘述都自動歸它；用來輸出清單開頭文字、讀資料、寫清單。</li>
+    <li><b>GET &lt;node&gt;</b>：只有程式屬性掛了邏輯資料庫才能用；LDB 依階層逐筆把資料交給程式，一個 GET 通常執行很多次。</li>
+    <li><b>GET &lt;node&gt; LATE</b>：該階層處理完後觸發，適合輸出該層的合計或平均（在 GET 中累計）。</li>
+    <li><b>END-OF-SELECTION</b>：所有 GET 都處理完後觸發，之後才顯示清單；可輸出結尾文字或為互動報表初始化變數。</li>
+  </ul>
+  <p><b>邏輯資料庫（Logical Database, LDB）</b>是一支專門讀資料、再提供給其他程式的 ABAP 程式，<b>階層結構</b>決定交付順序；它也提供選擇畫面、檢查輸入與錯誤對話——只有用到的表對應的那部分選擇畫面會出現。維護用 <span class="tcode">SE36</span>（Logical Database Builder），Help → Application Help 有說明。R/3 4.6C 約有 200 個 LDB。BC4xx 課程用 <b>F1S</b>：SPFLI（航線）→ SFLIGHT（航班）→ SBOOK（訂位）。</p>
+  <p><b>LDB 的特殊規則</b>：用 LDB 就不必自己寫 SELECT；但程式<b>另外加</b>的 SELECT-OPTIONS，LDB 無法轉成 WHERE 條件（它的 SELECT 早就寫死了），使用者卻會以為有過濾——所以必須在<b>對應表的 GET 事件第一行</b>寫 <span class="kw">CHECK &lt;選擇表&gt;</span> 自己過濾。若 LDB 對該表提供了「動態選擇（Free Selections）」，而你的 SELECT-OPTIONS FOR 的正是那張表的欄位，就不必再 CHECK。</p>
+  <div class="note"><b>教材修正：</b>Col18 講義此處寫「use the ABAP command CHECK &lt;node&gt;」，這是錯的——CHECK 後面接的是<b>選擇表（CHECK SELECT-OPTIONS／CHECK seltab）</b>，不是 LDB 節點；强晟 2007 版寫「CHECK &lt;seltab&gt;」才是正確的。</div>
+  <div class="warn"><b>S/4HANA 現況：邏輯資料庫已被 SAP 列為過時技術</b>，ABAP 關鍵字文件明言新開發不應再使用，ABAP Cloud 中完全不可用。S/4HANA 裡 HR 的 PNP／PNPCE 等 LDB 仍在運作，舊程式照跑；但<b>新的 InfoSet 請用 Table Join 或 DDIC/CDS View 當資料來源</b>，新程式用 ABAP SQL Join 或 CDS View 取代 GET 事件。</div>
+
+  <pre><code class="abap">*&amp;---------------------------------------------------------------*
+*&amp; 把 F1S 的 GET SPFLI / GET SFLIGHT / GET SPFLI LATE 改寫為現代 ABAP
+*&amp;---------------------------------------------------------------*
+SELECT p~carrid, p~connid, p~cityfrom, p~cityto,
+       f~fldate, f~seatsmax, f~seatsocc
+  FROM spfli AS p
+  INNER JOIN sflight AS f ON  f~carrid = p~carrid
+                          AND f~connid = p~connid
+  WHERE p~carrid IN @s_carr          "舊寫法要在 GET 第一行 CHECK，這裡直接進 WHERE
+    AND f~fldate IN @s_date
+  ORDER BY p~carrid, p~connid, f~fldate
+  INTO TABLE @DATA(lt_data).
+
+LOOP AT lt_data INTO DATA(ls_row)
+     GROUP BY ( carrid = ls_row-carrid
+                connid = ls_row-connid
+                cityfrom = ls_row-cityfrom
+                cityto   = ls_row-cityto )
+     ASCENDING
+     INTO DATA(lg_conn).
+  " ≈ GET spfli：每條航線一次
+  WRITE: / lg_conn-carrid, lg_conn-connid, lg_conn-cityfrom, lg_conn-cityto.
+
+  LOOP AT GROUP lg_conn INTO DATA(ls_flight).
+    " ≈ GET sflight：每個航班一次
+    WRITE: /10 ls_flight-fldate, ls_flight-seatsocc, '/', ls_flight-seatsmax.
+  ENDLOOP.
+
+  " ≈ GET spfli LATE：本層處理完，輸出小計
+  DATA(lv_occ) = REDUCE i( INIT s = 0 FOR m IN GROUP lg_conn NEXT s = s + m-seatsocc ).
+  DATA(lv_max) = REDUCE i( INIT s = 0 FOR m IN GROUP lg_conn NEXT s = s + m-seatsmax ).
+  WRITE: /10 |小計：{ lv_occ } / { lv_max }|.
+  ULINE.
+ENDLOOP.</code></pre>
+
+  <h3 id="ch05-8-14">14. 第七單元：用 SQ02 建立 InfoSet</h3>
+  <p><b>分工總表</b>（誰負責什麼）：</p>
+  <table>
+    <thead><tr><th>工作</th><th>InfoSet</th><th>SAP Query</th><th>InfoSet Query</th></tr></thead>
+    <tbody>
+      <tr><td>定義欄位</td><td>✔</td><td>✔（區域欄位）</td><td>—（只能靠 InfoSet）</td></tr>
+      <tr><td>定義選擇畫面</td><td>✔</td><td>✔（附加選擇）</td><td>✔（附加選擇）</td></tr>
+      <tr><td>檢查輸入</td><td>✔（AT SELECTION-SCREEN）</td><td>—</td><td>—</td></tr>
+      <tr><td>決定資料來源、讀取與換算</td><td>✔</td><td>—</td><td>—</td></tr>
+      <tr><td>輸出清單（排序、合計、欄位取捨）</td><td>—</td><td>✔</td><td>✔</td></tr>
+    </tbody>
+  </table>
+  <p>原則：<b>資料怎麼讀、怎麼算，放 InfoSet；要顯示哪些欄、怎麼排、怎麼合計，由使用者在 Query 決定</b>。兩邊要劃清界線。</p>
+
+  <p><b>InfoSet 的五種資料來源</b>：</p>
+  <table>
+    <thead><tr><th>來源</th><th>讀取方式</th><th>S/4HANA 建議</th></tr></thead>
+    <tbody>
+      <tr><td><b>Table Join</b></td><td>多表 INNER／LEFT OUTER JOIN（SELECT）</td><td>最常用</td></tr>
+      <tr><td><b>Direct Read</b></td><td>單一表或 DB View（SELECT）</td><td>來源可指定 CDS View 的 SQL View，最乾淨</td></tr>
+      <tr><td><b>Logical Database</b></td><td>依 LDB 結構（GET &lt;node&gt;）</td><td>過時，只為 HR 等舊情境保留</td></tr>
+      <tr><td><b>User Program（Data Retrieval by Program）</b></td><td>由自寫程式讀資料</td><td>複雜邏輯時用，見第 15 節</td></tr>
+      <tr><td><b>Read Sequential Data</b></td><td>READ DATASET 讀循序檔</td><td>原廠已註明「不再相關」</td></tr>
+    </tbody>
+  </table>
+  <ul>
+    <li>SQ02 建立時先決定屬於標準區或全域區；名稱任意，<b>SAP 自己的物件都以 /SAPQUERY/ 開頭</b>。必填標題與資料來源；Table Join 要接著定義 Join（可 Inner 或 Left Outer，系統建議條件可改）；選程式當來源時該程式必須已存在。</li>
+    <li><b>兩個版本：產生版與修訂版</b>。改完 InfoSet 一定要<b>重新產生（Generate）</b>，Query 只認產生版；已被 Query 使用的 InfoSet 改過後，那些 Query 也要刷新。</li>
+    <li><b>InfoSet 底下沒有任何 Query 時才能刪除</b>。</li>
+    <li><b>欄位群組</b>：系統會建議群組數與名稱，並可自動把欄位放進去；原廠建議群組數反映資料結構（例如兩表 Join 就建兩個群組）。<b>沒放進欄位群組的欄位，Query 使用者就看不到</b>——這正是用來把敏感欄位過濾掉的手段。</li>
+    <li><b>維護畫面三區</b>：左邊資料欄位樹、右上欄位群組樹、右下欄位明細（可改欄位文字或從字典取預設文字）。欄位樹可切換「含文字欄位」顯示：系統依 DDIC 外來鍵自動帶文字，例如 SPFLI-AIRPFROM／AIRPTO 的機場名稱從 <b>SAIRPORT</b> 讀；明細的 References 可看文字來自哪張表哪個欄位。</li>
+  </ul>
+
+  <p><b>附加項（Extras）</b>：在左邊欄位樹把游標放在<b>表名</b>上，按 Extras，右側出現附加項頁籤 → Create，輸入名稱與類型：</p>
+  <ul>
+    <li><b>附加表（Additional Table）</b>：<b>只能用 SELECT SINGLE 連接</b>——系統在 WHERE 中評估附加表的<b>全部主鍵</b>，只回一筆。可勾選<b>緩衝</b>：系統建內表存已讀的單筆，每次先 READ 內表，有就不再讀 DB。<b>同一張表不能重複當附加表</b>，要用第二次就建別名表。</li>
+    <li><b>附加欄位（Additional Field）</b>：直接指定資料型別或參照 DDIC 欄位；<b>Sequence of Code（程式碼順序）</b>決定各附加項在產生程式中的整合順序，用來表達相依關係（Col18 新增 <b>Calculate Sequence</b> 功能會自動算出相依順序）。這個畫面不放程式，要按 <b>Code for Addition</b> 進編輯器寫賦值；需要額外變數就在 DATA 程式碼區宣告。</li>
+    <li><b>附加結構（Additional Structure）</b>。</li>
+  </ul>
+  <p>附加欄位、附加表的操作步驟與 RECORD PROCESSING 效能陷阱，<a href="#ch01-4">1-4 章第 7 節</a>已有完整說明，這裡不重複。</p>
+
+  <h3 id="ch05-8-15">15. 第七單元（續）：程式碼進入點、選擇畫面與「程式當資料來源」</h3>
+  <p>InfoSet 可在產生程式的特定位置插入 ABAP 程式碼（必須語法正確，產生時整合到對應位置）：</p>
+  <table>
+    <thead><tr><th>進入點（Code Section）</th><th>說明</th></tr></thead>
+    <tbody>
+      <tr><td>DATA</td><td>宣告額外變數；這些變數<b>不能放進欄位群組，所以不能輸出到清單</b></td></tr>
+      <tr><td>INITIALIZATION、AT SELECTION-SCREEN OUTPUT</td><td>Col18 補充：複雜的選擇畫面控制可用</td></tr>
+      <tr><td>AT SELECTION-SCREEN</td><td>輸入檢查事件</td></tr>
+      <tr><td>START-OF-SELECTION</td><td>標準事件，選擇畫面後跑一次</td></tr>
+      <tr><td>GET、GET LATE</td><td><b>只有來源是 LDB 才能用</b></td></tr>
+      <tr><td>Record Processing</td><td>每讀一筆執行一次（對應讀取迴圈內）；可在此轉換、修改資料記錄</td></tr>
+      <tr><td>END-OF-SELECTION (Before List)</td><td>程式結束前、Query 產生清單<b>之前</b>，跑一次</td></tr>
+      <tr><td>END-OF-SELECTION (After List)</td><td>清單產生<b>之後</b>，跑一次</td></tr>
+      <tr><td>TOP-OF-PAGE</td><td>頁首事件</td></tr>
+      <tr><td>Free coding</td><td>Col18 新增：附加在產生程式<b>最尾端</b>，原廠舉例放 FORM 副程式</td></tr>
+    </tbody>
+  </table>
+  <div class="note"><b>附加欄位的程式碼不能寫在上述進入點</b>，只能從該附加欄位的定義畫面（Code for Addition）進去寫。</div>
+  <p><b>選擇畫面</b>用 SQ02 的 Selections 功能定義，可選「選擇表（SELECT-OPTIONS）」或「單值（PARAMETERS）」：</p>
+  <ul>
+    <li>來源不是 LDB 時，選擇欄位必須自己定義，而且要<b>參照資料來源欄位或 DATA 區宣告的變數</b>（FOR 後面的物件）；可使用 SELECT-OPTIONS 的所有附加；在此設定使用者看到的選擇文字。</li>
+    <li>來源是 LDB 時，LDB 的選擇欄位會排在最前面。</li>
+    <li>勾選 <b>Default on Selection Screen</b> 的選擇欄位，會自動出現在 InfoSet Query（即席報表）的選擇畫面上。</li>
+    <li><b>原廠不建議用 PARAMETERS 當資料條件</b>，因為它<b>不會被轉進 WHERE</b>，你必須自己在程式裡檢查；PARAMETERS 適合做流程控制（例如「是否輸出表頭」）。</li>
+    <li>AT SELECTION-SCREEN 可寫權限或有效性檢查；錯誤時發 E 或 W 訊息，系統會重新顯示選擇畫面。</li>
+  </ul>
+
+  <pre><code class="abap">*=====================================================================
+* InfoSet ZBC407_FLIGHT（Table Join：SPFLI + SFLIGHT）的程式碼區段
+* 選擇欄位（SQ02 → Selections）：SO_CARR FOR SPFLI-CARRID、SO_DATE FOR SFLIGHT-FLDATE
+* 附加欄位：ZFREE（空位數）、ZLOAD（載客率 %）
+* 註：InfoSet 產生器以表工作區提供資料，故以 SFLIGHT-SEATSMAX 形式引用欄位
+*=====================================================================
+
+*--- 區段：DATA ------------------------------------------------------
+DATA gv_skipped TYPE i.                          "被 Record Processing 濾掉的筆數
+
+*--- 區段：INITIALIZATION（Col18：可用於選擇畫面預設值）-------------
+IF so_date[] IS INITIAL.
+  so_date[] = VALUE #( ( sign = 'I' option = 'BT' low = sy-datum high = sy-datum + 30 ) ).
+ENDIF.
+
+*--- 區段：AT SELECTION-SCREEN（輸入檢查＋權限檢查）------------------
+SELECT carrid FROM scarr
+  WHERE carrid IN @so_carr
+  ORDER BY carrid
+  INTO TABLE @DATA(lt_carr).
+LOOP AT lt_carr INTO DATA(ls_carr).
+  AUTHORITY-CHECK OBJECT 'S_CARRID'
+    ID 'CARRID' FIELD ls_carr-carrid
+    ID 'ACTVT'  FIELD '03'.
+  IF sy-subrc &lt;&gt; 0.
+    MESSAGE e398(00) WITH '無權限：' ls_carr-carrid.
+  ENDIF.
+ENDLOOP.
+
+*--- 附加欄位 ZFREE 的 Code for Addition（序號 1）---------------------
+zfree = sflight-seatsmax - sflight-seatsocc.
+
+*--- 附加欄位 ZLOAD 的 Code for Addition（序號 2）
+zload = COND #( WHEN sflight-seatsmax &gt; 0
+                THEN sflight-seatsocc * 100 / sflight-seatsmax
+                ELSE 0 ).
+
+*--- 區段：Record Processing -----------------------------------------
+" 取消的航班（SEATSMAX = 0）不列入；CHECK 不成立即略過這一筆
+IF sflight-seatsmax = 0.
+  gv_skipped = gv_skipped + 1.
+ENDIF.
+CHECK sflight-seatsmax &gt; 0.
+
+*--- 區段：END-OF-SELECTION (After List) -----------------------------
+IF gv_skipped &gt; 0.
+  MESSAGE |已略過 { gv_skipped } 筆無座位數的航班| TYPE 'S'.
+ENDIF.</code></pre>
+  <div class="tip">Free coding 雖然原廠舉例放 FORM，<b>新寫的 InfoSet 請不要再用 FORM／PERFORM</b>。需要共用邏輯時，把本地類別的 DEFINITION 放在 DATA 區段、IMPLEMENTATION 放在 Free coding（因為 Free coding 在程式最尾端，類別定義必須先出現）；若產生器版本對此報語法錯誤，就把邏輯抽成全域類別（SE24）再從 InfoSet 呼叫——這樣還能單獨做單元測試。</div>
+
+  <p><b>程式當資料來源（Data Retrieval by Program）</b>：當讀取邏輯複雜到 Join 表達不了（多段查詢、呼叫 BAPI、跨模組計算），可以指定一個 DDIC 結構與一支程式。SQ02 會依結構產生程式範本，範本中有兩行特殊註解 <span class="kw">*&lt;QUERY_HEAD&gt;</span> 與 <span class="kw">*&lt;QUERY_BODY&gt;</span>：前者標記 Query 插入自己宣告與選擇畫面的位置，後者標記「每填好一筆結構就交給 Query」的位置。範本細節依版本略有不同，<b>請以 SQ02 產生的範本為準</b>，只在規定位置補上你的讀取邏輯：</p>
+
+  <pre><code class="abap">*&amp;---------------------------------------------------------------*
+*&amp; InfoSet 資料來源程式（示意）：結構 ZSBC407_CONN_REV 由 SE11 建立
+*&amp; 保留範本中的 *&lt;QUERY_HEAD&gt; 與 *&lt;QUERY_BODY&gt; 註解行，勿刪除
+*&amp;---------------------------------------------------------------*
+DATA gv_carrid TYPE s_carr_id.
+SELECT-OPTIONS s_carr FOR gv_carrid.
+
+*&lt;QUERY_HEAD&gt;
+
+START-OF-SELECTION.
+  " 複雜邏輯：先彙總、再補名稱——Join 做不到的就在這裡用程式完成
+  SELECT f~carrid, c~carrname, f~connid,
+         SUM( f~paymentsum ) AS revenue, f~currency
+    FROM sflight AS f
+    INNER JOIN scarr AS c ON c~carrid = f~carrid
+    WHERE f~carrid IN @s_carr
+    GROUP BY f~carrid, c~carrname, f~connid, f~currency
+    ORDER BY f~carrid, f~connid
+    INTO TABLE @DATA(lt_rows).
+
+  LOOP AT lt_rows INTO DATA(ls_row).
+    " 依範本規定，把資料填進與 DDIC 結構同名的工作區
+    zsbc407_conn_rev = CORRESPONDING #( ls_row ).
+*&lt;QUERY_BODY&gt;
+  ENDLOOP.</code></pre>
+  <div class="note">原廠 2007 版補充：R/3 4.6C 起 InfoSet 也可以用類似 BAdI 的方式做增強，不必改 Query 本身就能驗證應用邏輯，細節見 InfoSet 線上文件。這呼應 Casper 的第三條原則：<b>先找標準（Query 設定、InfoSet 附加項），再想客製（自寫程式）</b>。</div>
+
+  <h3 id="ch05-8-16">16. 第八單元：使用者群組、角色與 InfoSet Query 選單</h3>
+  <ul>
+    <li><span class="tcode">SQ03</span> 建使用者群組（SAP 命名空間 /SAPQUERY/），指定屬於標準區或全域區，並把 InfoSet 分配給群組；一個 InfoSet 可給多個群組。</li>
+    <li><b>SAP Query</b>：在 SQ03 直接把使用者加進群組。使用者可執行群組內所有 Query；權限夠的話可新建或修改。群組內可針對個別使用者<b>取消「變更」勾選</b>，即使他有 S_QUERY 變更權限，在這個群組也不能改。</li>
+    <li><b>InfoSet Query</b>：整合在角色概念裡。<span class="tcode">PFCG</span> → 角色 → <b>Personalization</b> 頁籤 → 雙擊「Assign User Group to SAP Query」→ 輸入群組名與查詢區。<b>一個角色只能掛一個使用者群組</b>；不必把使用者加進群組，角色裡的使用者就自動屬於該群組。</li>
+  </ul>
+  <p><b>把 InfoSet Query 放進角色選單</b>：有四支標準程式，決定存取方式與報表類型，建議用<b>變式</b>預填並跳過選擇畫面：</p>
+  <table>
+    <thead><tr><th>程式</th><th>存取來源</th><th>報表類型／查詢區</th><th>選擇畫面參數</th></tr></thead>
+    <tbody>
+      <tr><td><b>SAP_QUERY_DEVELOPMENT_ROLE</b></td><td>角色</td><td>開發（全域區）；角色必須掛<b>全域區</b>的群組</td><td>角色（必填）、InfoSet、Query（選填）</td></tr>
+      <tr><td><b>SAP_QUERY_AD_HOC_ROLE</b></td><td>角色</td><td>即席報表（標準區）；角色必須掛<b>標準區</b>的群組</td><td>同上；指定起始 Query 時，它會被當範本</td></tr>
+      <tr><td><b>SAP_QUERY_DEVELOPMENT</b></td><td>使用者群組</td><td>開發</td><td>—</td></tr>
+      <tr><td><b>SAP_QUERY_AD_HOC</b></td><td>使用者群組</td><td>即席報表</td><td>—</td></tr>
+    </tbody>
+  </table>
+  <p>使用者打開使用者選單，就會看到角色維護時做好的 InfoSet Query 項目，也可在這裡讀取與儲存 Query 的清單。强晟 2007 版寫 AD_HOC_ROLE 的查詢區「可以是全域或標準」，Col18 則明確寫 DEVELOPMENT_ROLE ＝ 全域區、AD_HOC_ROLE ＝ 標準區；新系統以 Col18 為準。</p>
+  <p><b>執行 Query 的其他方式（Col18）</b>——這些方式<b>都不需要把使用者加進 SQ03 群組</b>：</p>
+  <ol>
+    <li>用 AQ 開頭的報表名在 <span class="tcode">SA38</span> 執行。</li>
+    <li>在 ABAP Workbench 建立專用的<b>報表交易（Report Transaction）</b>呼叫產生的程式——<b>只有全域區的 Query 可以</b>，因為交易碼一定是跨 client 的；使用者需要該交易的 <b>S_TCODE</b> 權限。</li>
+    <li>在角色選單（PFCG）直接放 Query（不必指定產生程式名）。</li>
+  </ol>
+  <p>執行 Query 本身<b>不需要 S_QUERY</b>；S_QUERY 控制的是「能不能顯示或變更 Query 定義」。把使用者放進群組但不給 S_QUERY，他在 SQ01 仍能執行群組內的 Query，但看不到也改不了定義。<span class="tcode">SQ00</span> 更進一步：畫面上連 Change、Delete、Copy 都不出現，只有群組內 Query 清單（使用者若有 S_QUERY，SQ00 看起來就跟 SQ01 一樣）——<b>給業務使用者請開 SQ00</b>。</p>
+
+  <h3 id="ch05-8-17">17. 第八單元（續）：S_QUERY 權限、權限群組、執行時檢查與日誌</h3>
+  <table>
+    <thead><tr><th>S_QUERY－ACTVT</th><th>允許的動作</th></tr></thead>
+    <tbody>
+      <tr><td><b>02</b>（Change）</td><td>建立與變更 Query</td></tr>
+      <tr><td><b>23</b>（Maintain）</td><td>維護使用者群組與 InfoSet（管理員工作）</td></tr>
+      <tr><td><b>02 ＋ 23</b></td><td>原則上什麼都能做＝<b>超級使用者</b></td></tr>
+      <tr><td><b>67</b>（Translate）</td><td>Query 物件的語言比對／翻譯</td></tr>
+    </tbody>
+  </table>
+  <ul>
+    <li>系統在四支標準程式（SAP_QUERY_DEVELOPMENT_ROLE、SAP_QUERY_AD_HOC_ROLE、SAP_QUERY_DEVELOPMENT、SAP_QUERY_AD_HOC）中都會檢查 S_QUERY。</li>
+    <li><b>要在 InfoSet 裡寫 ABAP 程式碼</b>，除了 S_QUERY 還要有 <b>S_DEVELOP</b>：OBJTYPE = <b>PROG</b>、OBJNAME = <b>AQ*</b>。</li>
+    <li><b>權限群組</b>：可指定 InfoSet 內每個 Query 都帶一個權限群組，執行時以 <b>S_PROGRAM</b> 檢查。</li>
+    <li><b>執行時的檢查</b>：InfoSet 基於 LDB → LDB 裡寫的權限檢查一定會跑；基於自寫資料讀取程式 → 該程式裡的檢查會跑；InfoSet 的附加程式碼（例如 AT SELECTION-SCREEN）可再加任何檢查。</li>
+  </ul>
+  <div class="warn"><b>Query 最大的資安盲點</b>：Table Join 型 InfoSet 只檢查 S_TABU_DIS（表層級），<b>不會自動做公司代碼、工廠、銷售組織這類業務層級的權限檢查</b>——標準交易（例如 ME2N、VA05）有做的 M_BEST_WRK、V_VBAK_VKO 檢查，Query 預設都沒有。給業務用的 InfoSet，請在 AT SELECTION-SCREEN 自己補 AUTHORITY-CHECK（如第 15 節範例），或改用有 DCL 存取控制的 CDS View（第 20 節）。</div>
+
+  <p>從程式呼叫 Query 並取回結果（例如要把 Query 結果再加工或寄信），不要去解析清單，可以用 SALV 執行期資訊攔截 ALV 資料（Query 輸出格式須為 ALV）：</p>
+  <pre><code class="abap">*&amp;---------------------------------------------------------------*
+*&amp; 呼叫 Query 產生程式，攔截 ALV 資料而不顯示畫面
+*&amp;---------------------------------------------------------------*
+FIELD-SYMBOLS &lt;lt_result&gt; TYPE STANDARD TABLE.
+
+cl_salv_bs_runtime_info=&gt;set( display  = abap_false
+                              metadata = abap_false
+                              data     = abap_true ).
+
+" lv_prog 為第 5 節組出的 AQZZ... 產生程式名；ZDAILY 為預先存好的變式
+SUBMIT (lv_prog) USING SELECTION-SET 'ZDAILY' AND RETURN.
+
+TRY.
+    cl_salv_bs_runtime_info=&gt;get_data_ref( IMPORTING r_data = DATA(lr_data) ).
+    ASSIGN lr_data-&gt;* TO &lt;lt_result&gt;.
+    IF &lt;lt_result&gt; IS ASSIGNED.
+      MESSAGE |Query 回傳 { lines( &lt;lt_result&gt; ) } 筆| TYPE 'S'.
+    ENDIF.
+  CATCH cx_salv_bs_sc_runtime_info INTO DATA(lx_rt).
+    MESSAGE lx_rt-&gt;get_text( ) TYPE 'I'.
+ENDTRY.
+
+cl_salv_bs_runtime_info=&gt;clear_all( ).                 "一定要清，否則影響後續 ALV</code></pre>
+  <div class="note">從外部系統遠端執行 Query，SAP 另有可 RFC 呼叫的函數 <b>RSAQ_REMOTE_QUERY_CALL</b>（依查詢區、使用者群組、Query 名與選擇表執行，結果以扁平格式回傳），參數請以 <span class="tcode">SE37</span> 介面為準。不過介面整合的正道是 BAPI／OData（見 <a href="#ch04-1">4-1 章</a>），不要讓外部系統依賴 Query 定義。</div>
+
+  <p><b>日誌（Logging）</b>：可以記錄 InfoSet Query 的使用。在 <span class="tcode">SQ02</span> 的 Extras 選單把 InfoSet 接上日誌功能，每次執行可寫入表 <b>AQPROT</b>：查詢區與 InfoSet、使用者、日期時間、所有選擇欄位與值、所有輸出欄位。Customizing 裡有類似功能，用 Table Control 維護表 <b>AQPROTCUST</b>（欄位：查詢區——空白＝標準區、G＝全域區；InfoSet）。刪除日誌：SQ02 → Extras → Manage Logs，可依使用者等條件刪除。</p>
+  <div class="tip">稽核單位問「誰查過員工薪資／客戶信用額度」時，AQPROT 就是答案。含個資或敏感財務資料的 InfoSet，上線前就把日誌打開。</div>
+
+  <h3 id="ch05-8-18">18. 第九單元：傳輸 Query 元件（AQLDB／AQGDB／AQTDB）</h3>
+  <p>要懂 Query 的傳輸，先懂它<b>存在哪裡</b>：</p>
+  <table>
+    <thead><tr><th>表</th><th>內容</th><th>傳輸方式</th></tr></thead>
+    <tbody>
+      <tr><td><b>AQLDB</b></td><td>標準區物件（依 client）</td><td>不自動接傳輸；用 RSAQR3TR 匯出／匯入或複製到全域區</td></tr>
+      <tr><td><b>AQGDB</b></td><td>全域區物件（跨 client）</td><td>屬於套件，由傳輸組織器（<span class="tcode">SE09</span>）傳輸</td></tr>
+      <tr><td><b>AQTDB</b></td><td>傳輸資料集（匯出暫存）</td><td>匯出時寫入並掛上傳輸請求，目標系統再匯入</td></tr>
+    </tbody>
+  </table>
+  <div class="note"><b>教材修正：</b>强晟筆記 p142 有一處把 AQTDB 打成「AQTAB」，正確是 <b>AQTDB</b>。</div>
+  <p>全域區物件因為屬於某個套件而自動接傳輸；彼此有相依性的 Query 元件（群組、InfoSet、Query）應放同一個請求一起傳。以變更請求組織開發專案的好處：全員同一時間起跑、每人可追蹤自己的工作（Task）、專案外的開發者在專案結束前無法修改被鎖定的物件、所有相關物件一起觸發傳輸。</p>
+  <p><b>RSAQR3TR 的動作</b>（在任一 SQxx 初始畫面按 Transports，或直接 SA38 執行 RSAQR3TR）：</p>
+  <ul>
+    <li><b>Export</b>：在 AQTDB 建立傳輸資料集（並掛傳輸請求）。</li>
+    <li><b>Import</b>：從 AQTDB 讀入傳輸資料集。</li>
+    <li><b>Display</b>／<b>Delete</b>：顯示／刪除 AQTDB 中的傳輸資料集。</li>
+    <li><b>Copy Standard Area → Global Area</b>：AQLDB → AQGDB。</li>
+    <li><b>Copy Global Area → Standard Area</b>：AQGDB → AQLDB。</li>
+  </ul>
+  <p>把標準區物件搬到另一個 client／系統的標準區，有兩條路：① 匯出到 AQTDB（連同傳輸請求）→ 目標端從 AQTDB 匯入；② 先<b>複製到全域區</b>（等同標準區匯出＋全域區匯入），隨傳輸到目標系統，再從全域區複製回目標 client 的標準區。複製到全域區時的套件規則：<b>覆蓋既有物件 → 沿用被覆蓋物件的套件；全新物件 → 跳窗要求指定套件</b>。</p>
+  <div class="tip">實務建議：<b>要上正式機的 Query 一律建在全域區</b>（配合 <a href="#ch01-4">1-4 章</a>的查詢區說明），標準區只給使用者在 PRD 自己做臨時報表。這樣就不必每次跑 RSAQR3TR 手動搬運，也不會出現 DEV 與 PRD 版本對不起來的問題。</div>
+
+  <h3 id="ch05-8-19">19. 第十單元：套件、變式與背景執行</h3>
+  <p><b>TCODE 速查</b>（原廠 Table 14）：<span class="tcode">SQVI</span> QuickViewer、<span class="tcode">SQ01</span> Queries、<span class="tcode">SQ02</span> InfoSets、<span class="tcode">SQ03</span> User Groups、<span class="tcode">PFCG</span> 角色維護、<span class="tcode">SE09</span> 傳輸組織器、<span class="tcode">SE36</span> 邏輯資料庫建構器、<span class="tcode">SM36</span> 定義作業、<span class="tcode">SE80</span> Object Navigator。</p>
+  <p><b>建立套件</b>（<span class="tcode">SE80</span> → 左側選 Package → 輸入名稱 → 不存在時確認建立）要確認的屬性：Transport Layer（客戶開發須有客戶用的傳輸層）、Person Responsible（預設為自己）、Software Component（客戶開發通常填 <b>HOME</b>）、Application Component（決定在應用階層中的業務歸屬，之後可在 <span class="tcode">SE81</span> 找到）。存檔時要指定變更請求，做法同儲存全域區 Query 物件。詳見 <a href="#ch01-1">1-1 章</a>。</p>
+  <p><b>變式（Variant）</b>：</p>
+  <ul>
+    <li>把選擇條件存起來，不用每次重填；<b>背景執行 Query 必須指定變式</b>。</li>
+    <li>變式只能建在<b>選擇畫面</b>上，不能在 InfoSet Query 的選擇畫面控制項裡建；要讓 InfoSet Query 用變式，請用 Output 或在 SQ01 執行。</li>
+    <li>屬性：名稱與說明必填；預設可線上與背景共用，也可設「只限背景」；可保護整個變式或個別欄位；「只在目錄顯示」則不出現在 F4 清單；欄位類型 S = SELECT-OPTIONS、P = PARAMETERS；「保護欄位」不可輸入、「隱藏」可縮短選擇畫面。</li>
+    <li><b>選擇變數（Selection Variable）</b>三種動態取值：<b>T</b> 從表 TVARV 取值、<b>D</b> 動態日期計算（例如今天、上月第一天）、以及用 MEMORY ID 定義的使用者參數值。</li>
+  </ul>
+  <div class="warn"><b>TVARV 已過時</b>：講義提到的 TVARV 是不分 client 的舊表，現在請用依 client 的 <b>TVARVC</b>（以 <span class="tcode">STVARV</span> 維護）。變式的 T 類型選擇變數在新系統中讀的就是 TVARVC。</div>
+  <p><b>背景處理</b>：資料量大、執行時間長的程式應放背景跑。背景作業由專用的背景工作程序執行，不佔對話程序，可與線上作業平行。流程：定義作業（<span class="tcode">SM36</span>：名稱、優先等級／作業類別、目標主機）→ 定義步驟（程式＋變式、列印參數：存 Spool 或直接列印）→ 設定開始時間 → 儲存即<b>釋放（Release）</b>→ 用 <span class="tcode">SM37</span> 看狀態。Query 最簡單的做法是在 SQ01 初始畫面按 <b>Execute in Background</b>；QuickView 也可從 SQVI 初始畫面排背景。也可用函數群組 <b>BTCH、BTC2</b> 的函數自動排程（更多背景作業細節見 <a href="#ch04-4">4-4 章</a>）：</p>
+
+  <pre><code class="abap">*&amp;---------------------------------------------------------------*
+*&amp; 以程式排程 Query 背景作業（JOB_OPEN / SUBMIT VIA JOB / JOB_CLOSE）
+*&amp;---------------------------------------------------------------*
+DATA(lv_jobname) = CONV btcjob( |ZBC407_{ sy-datum }| ).
+DATA lv_jobcount TYPE btcjobcnt.
+
+CALL FUNCTION 'JOB_OPEN'
+  EXPORTING
+    jobname          = lv_jobname
+  IMPORTING
+    jobcount         = lv_jobcount
+  EXCEPTIONS
+    cant_create_job  = 1
+    invalid_job_data = 2
+    jobname_missing  = 3
+    OTHERS           = 4.
+IF sy-subrc &lt;&gt; 0.
+  MESSAGE |JOB_OPEN 失敗（{ sy-subrc }）| TYPE 'E'.
+ENDIF.
+
+" 背景執行 Query 一定要帶變式（ZDAILY 裡的日期用 D 類型選擇變數＝動態日期）
+SUBMIT (lv_prog)
+  USING SELECTION-SET 'ZDAILY'
+  VIA JOB lv_jobname NUMBER lv_jobcount
+  AND RETURN.
+
+CALL FUNCTION 'JOB_CLOSE'
+  EXPORTING
+    jobcount             = lv_jobcount
+    jobname              = lv_jobname
+    strtimmed            = abap_true          "立即開始；要排時間改填 sdlstrtdt / sdlstrttm
+  EXCEPTIONS
+    cant_start_immediate = 1
+    invalid_startdate    = 2
+    jobname_missing      = 3
+    job_close_failed     = 4
+    job_nosteps          = 5
+    job_notex            = 6
+    lock_failed          = 7
+    OTHERS               = 8.
+IF sy-subrc &lt;&gt; 0.
+  MESSAGE |JOB_CLOSE 失敗（{ sy-subrc }），請到 SM37 檢查| TYPE 'E'.
+ENDIF.</code></pre>
+
+  <h3 id="ch05-8-20">20. S/4HANA 補充：Query 還能用嗎？什麼時候換成 CDS View</h3>
+  <p>答案是：<b>SQVI、SQ01、SQ02、SQ03 在 S/4HANA（含 2023 版）on-premise 都還在、都能用</b>，原廠 Col18 教材也以 S/4HANA 為背景。但它們屬於 SAP GUI 世界，<b>不在 ABAP Cloud／BTP ABAP Environment 裡</b>，也不會出現在 Fiori Launchpad 的 Key User 擴充工具中。選擇原則：</p>
+  <table>
+    <thead><tr><th>情境</th><th>建議工具</th></tr></thead>
+    <tbody>
+      <tr><td>顧問／IT 臨時查資料</td><td><span class="tcode">SE16H</span>、SQVI</td></tr>
+      <tr><td>業務單位固定報表，用 SAP GUI，需求簡單</td><td>SAP Query（全域區）＋ START_REPORT 掛 TCODE（<a href="#ch01-4">1-4 章</a>）</td></tr>
+      <tr><td>需要業務層級權限（公司代碼、工廠）、要給 Fiori／Excel／BI 用</td><td><b>CDS View ＋ DCL</b>，搭 Fiori App「Custom Analytical Queries」或 Analysis for Office</td></tr>
+      <tr><td>複雜邏輯、要傳輸與版本控管、要單元測試</td><td>Z 報表程式（SALV／SALV IDA，見 <a href="#ch05-6">5-6 章 BC405</a>）</td></tr>
+      <tr><td>有標準報表或標準 CDS 可用</td><td><b>先用標準</b>（例如 I_ 開頭的 released CDS View）</td></tr>
+    </tbody>
+  </table>
+  <p>把本章的「航班載客率」InfoSet 改成 CDS View：InfoSet 的欄位群組＝CDS 的欄位清單、附加欄位＝計算欄位、權限群組／AT SELECTION-SCREEN 權限檢查＝DCL 存取控制。下例用 1809 就能用的 <span class="kw">DEFINE VIEW</span>（DDIC-based）；<b>S/4HANA 2020（ABAP 7.55）以上</b>建議改用 <span class="kw">DEFINE VIEW ENTITY</span>，不需要 sqlViewName：</p>
+
+  <pre><code class="sql">@AbapCatalog.sqlViewName: 'ZVBC407FLOAD'
+@AbapCatalog.compiler.compareFilter: true
+@AccessControl.authorizationCheck: #CHECK
+@EndUserText.label: 'BC407 航班載客率（取代 InfoSet ZBC407_FLIGHT）'
+define view ZI_BC407_FlightLoad
+  as select from sflight as f
+    inner join   scarr   as c on c.carrid = f.carrid
+{
+  key f.carrid                      as Carrid,
+  key f.connid                      as Connid,
+  key f.fldate                      as Fldate,
+      c.carrname                    as CarrierName,
+      f.seatsmax                    as SeatsMax,
+      f.seatsocc                    as SeatsOcc,
+      f.seatsmax - f.seatsocc       as SeatsFree,     -- 等同 InfoSet 附加欄位 ZFREE
+      @Semantics.amount.currencyCode: 'Currency'
+      f.paymentsum                  as Revenue,
+      @Semantics.currencyCode: true
+      f.currency                    as Currency
+}
+where f.seatsmax &gt; 0                                   -- 等同 Record Processing 的 CHECK
+
+/* ---- 存取控制 DCL（另建 Access Control 物件）：取代權限群組與手寫 AUTHORITY-CHECK ----
+@EndUserText.label: 'BC407 航班載客率 權限'
+@MappingRole: true
+define role ZI_BC407_FlightLoad {
+  grant select on ZI_BC407_FlightLoad
+    where ( Carrid ) = aspect pfcg_auth( S_CARRID, CARRID, ACTVT = '03' );
+}
+*/</code></pre>
+
+  <pre><code class="abap">*&amp;---------------------------------------------------------------*
+*&amp; 以 SALV IDA 直接顯示 CDS View：資料在 HANA 端分頁、排序、合計
+*&amp;---------------------------------------------------------------*
+TRY.
+    cl_salv_gui_table_ida=&gt;create_for_cds_view( 'ZI_BC407_FLIGHTLOAD' )-&gt;fullscreen( )-&gt;display( ).
+  CATCH cx_root INTO DATA(lx_ida).                     "IDA 例外含 checked 與 no_check 類，統一攔截
+    MESSAGE lx_ida-&gt;get_text( ) TYPE 'E'.
+ENDTRY.</code></pre>
+  <div class="warn"><b>Query 在 S/4HANA 的三個常見坑：</b>① InfoSet 直接 Join ECC 時代的舊表（BSEG、MKPF／MSEG、KONV、VBUK／VBUP），在 S/4HANA 可能變成相容性視圖或資料已搬到新表（ACDOCA、MATDOC、PRCD_ELEMENTS、VBAK／VBAP 狀態欄位），結果會慢或不完整；② 沒指定排序，HANA 回傳順序不固定；③ 只靠 S_TABU_DIS，缺業務層級權限檢查。升級專案請把既有 Query 全部列出（全域區看 AQGDB）逐一檢查。</div>
+  <div class="tip"><b>先標準、再客製</b>：Casper 的升級順序在報表上一樣適用——先找標準報表與標準 released CDS View → 用 Query／Custom Analytical Query 這類設定型工具 → 最後才寫 Z 程式。每往右一步，維護成本高一個量級。</div>
+
+  <h3 id="ch05-8-qa">練習與自我檢核</h3>
+  <ol>
+    <li><b>QuickViewer 可以讓同事也使用嗎？要怎麼讓它可傳輸？</b><br>參考答案要點：不行，QuickView 是使用者私有、不可複製、不接傳輸（所以不需 Z 命名空間）。可轉成 SAP Query，放在全域區並指定套件與傳輸請求。</li>
+    <li><b>SQVI 用 SCARR 左外連接 SPFLI，結果比 Inner Join 多了哪些資料？表的左右順序重要嗎？</b><br>參考答案要點：多出沒有任何航線的航空公司（SPFLI 欄位為初始值）；重要，畫面左側的表是 SQL 的左表。</li>
+    <li><b>一個 SAP Query 最多可以有幾個清單？InfoSet Query 呢？</b><br>參考答案要點：SAP Query 最多 1 基本＋9 統計＋9 分級，要組合多清單須用 ABAP List 輸出；InfoSet Query 只能三選一。</li>
+    <li><b>全域區 Query「ZFLIGHT」群組、Query「ZQ_SEATS」產生的程式名為何？為什麼不建議把它直接掛 TCODE？</b><br>參考答案要點：AQZZ ＋ 「ZFLIGHT=====」＋「ZQ_SEATS======」共 30 碼；AQ 程式是產生物，會被重建，應改用 START_REPORT 參數交易。</li>
+    <li><b>區域欄位與 InfoSet 附加欄位差在哪？</b><br>參考答案要點：區域欄位只存在於單一 SAP Query、用公式與條件定義、需短名與欄位群組、InfoSet Query 不支援；附加欄位定義在 InfoSet、以 ABAP 程式碼賦值，所有使用該 InfoSet 的 Query 都能用。</li>
+    <li><b>頁首要印出執行者與頁碼，用哪些變數？公式中要用執行日期，用哪個特殊欄位？</b><br>參考答案要點：&amp;%NAME、&amp;%PAGE（另有 &amp;%DATE、&amp;%TIME）；公式用 %DATE（强晟筆記的 %DATA 是筆誤）。</li>
+    <li><b>分級清單要列出「空位最少的 5 班」，在 InfoSet Query 怎麼設？寫程式時要注意什麼？</b><br>參考答案要點：Settings → Output 選 Ranked List，Statistics/Ranked List 頁籤設筆數 5，ALV 選空位欄按升冪（Flop list）；程式要 ORDER BY 空位 ASCENDING 並補鍵值作第二排序，否則同分時 HANA 結果不穩定。</li>
+    <li><b>RRI 的欄位是怎麼從發送端傳到接收端的？儲存的清單可以用 RRI 嗎？</b><br>參考答案要點：依資料元素相同自動對應選擇畫面欄位（SAP Note 50629），設定在 SQ01 Goto → Report Assignment；儲存清單不能用 RRI。</li>
+    <li><b>InfoSet 基於邏輯資料庫 F1S，你另外加了 SELECT-OPTIONS 過濾 SBOOK-CUSTOMID，為什麼使用者輸入後沒效果？怎麼修？</b><br>參考答案要點：LDB 的 SELECT 已寫死，無法把額外選擇轉成 WHERE；須在 GET sbook 第一行 CHECK 該選擇表（除非 LDB 對該表提供 Free Selections）。長期解法是改 Table Join 或 CDS View。</li>
+    <li><b>InfoSet 的 PARAMETERS 選擇欄位為什麼原廠不建議拿來當資料條件？</b><br>參考答案要點：PARAMETERS 不會被轉進 WHERE，必須自己在程式碼中檢查；適合用於流程控制。</li>
+    <li><b>業務使用者只要執行 Query、不准改定義，要怎麼給權限？</b><br>參考答案要點：放進使用者群組但不給 S_QUERY（或用報表交易／角色選單直接執行，需 S_TCODE），並讓他用 SQ00；要在 InfoSet 寫 ABAP 的人才需要 S_DEVELOP（PROG、AQ*）。</li>
+    <li><b>S_QUERY 的 ACTVT 02、23、67 各代表什麼？02＋23 呢？</b><br>參考答案要點：02 建立／變更 Query；23 維護使用者群組與 InfoSet；67 翻譯；02＋23 為超級使用者。</li>
+    <li><b>標準區的 Query 要搬到 PRD 的同一 client，有哪兩種做法？對應哪些表？</b><br>參考答案要點：RSAQR3TR 匯出到 AQTDB（掛傳輸請求）再匯入；或複製到全域區（AQLDB → AQGDB）隨傳輸過去再複製回標準區。</li>
+    <li><b>稽核要求記錄誰查過 HR 薪資 Query，怎麼做？</b><br>參考答案要點：SQ02 → Extras 把 InfoSet 接上日誌，寫入 AQPROT（查詢區、InfoSet、使用者、時間、選擇值、輸出欄位）；Customizing 維護 AQPROTCUST；SQ02 → Extras → Manage Logs 清理。</li>
+    <li><b>要讓 Query 每天早上 7 點自動跑，選擇條件的日期要是「昨天」，怎麼設？</b><br>參考答案要點：建變式，日期欄用 D 類型選擇變數（動態日期）；SQ01 Execute in Background 或 SM36 排程（或 JOB_OPEN／SUBMIT VIA JOB／JOB_CLOSE），SM37 監控；固定值改放 TVARVC（T 類型）而非舊的 TVARV。</li>
+    <li><b>S/4HANA 專案上，哪些情況應該用 CDS View 取代 InfoSet？</b><br>參考答案要點：需要業務層級權限（DCL）、要給 Fiori／Excel／BI 使用、資料量大需要下推 HANA、要進 ABAP Cloud；InfoSet 若 Join 舊表（BSEG、MSEG、KONV）也應改寫。</li>
+  </ol>
+</section>

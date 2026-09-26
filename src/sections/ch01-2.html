@@ -1,0 +1,980 @@
+<section class="chapter" id="ch01-2" data-title="ABAP 資料字典：資料表 / 視圖 / 結構 / 域 / 資料元素 / 類型組 / 搜尋說明 / 鎖物件">
+  <h2 id="ch01-2">第 1-2 章 ABAP 資料字典：資料表 / 視圖 / 結構 / 域 / 資料元素 / 類型組 / 搜尋說明 / 鎖物件</h2>
+  <p class="lede">這一章是整個 ABAP 開發的地基。資料字典（ABAP Dictionary，DDIC）是 SAP 全系統唯一的「資料型別中央登記處」：資料表長什麼樣、欄位的合法值有哪些、兩張表怎麼關聯、F4 按下去跳出什麼、多人同時改一筆資料誰先誰後——全部在 SE11 裡決定，而不是在程式裡硬寫。學完這一章，你能自己設計出一組互相關聯的 Z 資料表（客戶／物料／訂單主檔／訂單明細），為它們建 Domain、Data Element、外來鍵、Text Table、四種 View、Search Help 與 Lock Object，並用 SE54 產生維護畫面、掛上 SM30 與自訂 TCODE，最後知道在 S/4HANA 時代哪些做法該改成 CDS View。</p>
+
+  <div class="meta">
+    <div><b>核心 TCODE</b><span class="tcode">SE11</span><span class="tcode">SE14</span><span class="tcode">SE16</span><span class="tcode">SE16N</span><span class="tcode">SE16H</span><span class="tcode">SE54</span><span class="tcode">SM30</span><span class="tcode">SM31</span><span class="tcode">SM34</span><span class="tcode">SE80</span><span class="tcode">SE37</span><span class="tcode">SE93</span><span class="tcode">SE84</span><span class="tcode">SM12</span><span class="tcode">SE38</span><span class="tcode">ME23N</span><span class="tcode">VA03</span></div>
+    <div><b>關鍵物件</b>MARA、MAKT、KNA1、VBAK、VBAP、T001W、T001L、TCURC、TCURT、T002、DD02L、DD03L、DD04T、DD07L/DD07T、DD08L、SYST、SLIS、F4IF_INT_TABLE_VALUE_REQUEST、F4IF_SHLP_EXIT_EXAMPLE、CL_SALV_TABLE</div>
+  </div>
+
+  <h3 id="ch01-2-01">1. 資料字典是什麼：六種基本物件</h3>
+  <p>ABAP 資料字典是定義與管理「資料元素」與「資料庫元素」的中心工具。系統所有的全域資料型別、資料表結構都要在字典裡建立與維護；字典保證了資料的<b>完整性、一致性與安全性</b>。老師特別交代：<i>這張表要會默寫，才會記得 DD 的威力有多強大</i>。</p>
+
+  <table>
+    <thead><tr><th>物件</th><th>說明</th><th>要點</th></tr></thead>
+    <tbody>
+      <tr><td>Table 資料表</td><td>資料庫中真正存放資料的地方；字典裡定義的是「表的結構」，由列（記錄）與欄（欄位）組成</td><td>表的欄位一律透過 <b>Data Element</b> 定義</td></tr>
+      <tr><td>View 視圖</td><td>一張或多張資料表的邏輯呈現，本身<b>不存資料</b></td><td>共四種：Database／Projection／Maintenance／Help</td></tr>
+      <tr><td>Data Type 資料類型</td><td>值的集合＋定義在該值集上的一組操作</td><td>三種：Data Element／Structure／Table Type</td></tr>
+      <tr><td>Domain 域</td><td>指定欄位的技術屬性（型別、長度、小數位）與<b>允許的值</b></td><td>不能直接拿 Domain 定義表的欄位，一定要透過 Data Element</td></tr>
+      <tr><td>Search Help 搜尋說明</td><td>F4 說明，提升使用者友善度</td><td>可掛在 Table／Structure／Data Element／Screen／Parameters</td></tr>
+      <tr><td>Lock Object 鎖物件</td><td>對資料存取做並行控制；鎖資訊放在記憶體的 Lock Table</td><td>名稱一律以 <b>E</b> 開頭，建立後自動產生 ENQUEUE_／DEQUEUE_ 兩支函數</td></tr>
+    </tbody>
+  </table>
+
+  <div class="tip">口訣：<b>Domain 管「長什麼樣、能填什麼」，Data Element 管「叫什麼名字、F4 給什麼、說明文件怎麼寫」，Table 只是把一堆 Data Element 排起來。</b>這是 SAP 與其他系統最大的差別——別的系統直接在欄位上寫 CHAR(10)，SAP 是 Table → Data Element → Domain 三層。</div>
+
+  <p>四種 View 的差異，是本章最常被考的觀念：</p>
+  <table>
+    <thead><tr><th>View 類型</th><th>資料來源</th><th>連接條件</th><th>能否維護資料</th></tr></thead>
+    <tbody>
+      <tr><td><b>Database View</b></td><td>一張或多張表</td><td>自己定義；一律是 <b>INNER JOIN</b></td><td>單表視圖可維護（改視圖＝改表）；<b>多表視圖只能顯示</b></td></tr>
+      <tr><td><b>Projection View</b></td><td>只能一張表</td><td>無</td><td>用來「遮罩欄位」保護資料，可維護</td></tr>
+      <tr><td><b>Maintenance View</b></td><td>多張表</td><td><b>不能自訂</b>，必須來自既有外來鍵</td><td>可維護；需用「表格維護產生器」產生對話框；<b>所有主鍵都要放進視圖欄位</b></td></tr>
+      <tr><td><b>Help View</b></td><td>多張表</td><td>必須存在外來鍵（LEFT OUTER JOIN 語意）</td><td>不可維護；專供 Search Help 的 <b>Selection Method</b> 使用</td></tr>
+    </tbody>
+  </table>
+
+  <div class="warn">S/4HANA 提醒：新開發<b>不要再建 Database View</b>。DDIC 的 Database View 只是把 SQL 固化在字典裡，沒有註解（annotation）、不能做參數、不能被 Fiori／OData 直接消費。請改用 <b>ABAP CDS View</b>（見本章第 11 節）。Maintenance View ＋ SE54 這條路則仍然有效，客製設定表（Z 開頭的 Customizing 表）到今天還是這樣做。</div>
+
+  <h3 id="ch01-2-02">2. 用 SE11 建第一張 Z 資料表（含 Delivery Class 與 Maintenance）</h3>
+  <p>講義的目標很明確：<b>本節做完，要能用 SE16N 維護自己的資料</b>。而且提醒「實作之前，請先學會建立 function group」，因為後面 SE54 產生維護畫面時一定會用到。</p>
+
+  <p>SE11 建表的標準步驟：<span class="src">（依講義步驟整理）</span></p>
+  <ol>
+    <li>SE11 → 選 <b>Database table</b> → 輸入 <span class="kw">ZERP300_KNA1</span> → Create。</li>
+    <li><b>Delivery and Maintenance</b> 頁籤：
+      <ul>
+        <li><b>Delivery Class</b> 選 <b>A（Application table，主資料與交易資料）</b>。老師強調：<i>這個畫面一定要選 A，其他的不要選；C 雖然是客製，但那是 SPRO 的客製。</i></li>
+        <li><b>Data Browser/Table View Maint.</b> 選 <b>Display/Maintenance Allowed</b>，否則 SE16N / SM30 進不去、也產不出維護畫面。</li>
+      </ul>
+    </li>
+    <li><b>Fields</b> 頁籤：第一個欄位一律是 <b>MANDT</b>（Data Element MANDT，Domain MANDT，CLNT 3），並勾 Key，代表這是 client-dependent 的表。</li>
+    <li>逐欄輸入欄位名與 Data Element，勾選主鍵（Key）與 Initial Values。</li>
+    <li><b>幣別／數量欄位要設參考欄位</b>：CURR 型別要指定 Reference table + Reference field（幣別欄位 CUKY），QUAN 型別要指定單位欄位（UNIT）。這是講義中「處理數量 QUAN 與金額 CURR 欄位」的重點。</li>
+    <li>Extras → <b>Enhancement Category</b> 設為「Can Be Enhanced (Deep)」，否則激活時會一直跳警告。</li>
+    <li>按 <b>Technical Settings</b>（技術設定）填 Data Class / Size Category（見第 3 節）。</li>
+    <li>存檔 → 指定 Package 與 Request → <b>Activate</b>。老師提醒：<i>要 ACTIVE 才可被 SE16N 使用。</i></li>
+  </ol>
+
+  <p>講義示範的客戶資料表 <b>ZERP300_KNA1</b>：</p>
+  <table>
+    <thead><tr><th>欄位</th><th>Data Element</th><th>型別</th><th>參考</th><th>說明／對應標準欄位</th></tr></thead>
+    <tbody>
+      <tr><td>MANDT</td><td>MANDT</td><td>CLNT 3</td><td>—</td><td>用戶端（Key）</td></tr>
+      <tr><td>KUNNR</td><td>KUNAG</td><td>CHAR 10</td><td>—</td><td>客戶編碼（Key）；對應 VBAK-KUNNR</td></tr>
+      <tr><td>NAME1</td><td>NAME1_GP</td><td>CHAR</td><td>—</td><td>客戶名稱；對應 KNA1-NAME1</td></tr>
+      <tr><td>ZWERT</td><td>DZWERT</td><td>CURR</td><td>VBAP-WAERK</td><td>金額（需指定幣別參考欄位）</td></tr>
+      <tr><td>ZMENG</td><td>DZMENG</td><td>QUAN</td><td>VBAP-ZIEME</td><td>數量（需指定單位參考欄位）</td></tr>
+      <tr><td>ZIEME</td><td>DZIEME</td><td>UNIT</td><td>—</td><td>單位</td></tr>
+    </tbody>
+  </table>
+
+  <p>建好、激活好之後，先用最單純的方式把資料撈出來驗證。以下是 S/4HANA 的現代寫法：</p>
+
+<pre><code class="abap">REPORT zerp300_kna1_list.
+
+" 選擇畫面：以客戶編號區間查詢自建客戶表
+SELECT-OPTIONS: s_kunnr FOR zerp300_kna1-kunnr.
+
+START-OF-SELECTION.
+
+  " 一律明列欄位；主機變數用逸出字元 @
+  SELECT kunnr,
+         name1,
+         zwert,
+         zmeng,
+         zieme
+    FROM zerp300_kna1
+    WHERE kunnr IN @s_kunnr
+    ORDER BY kunnr             " SELECT 沒有 ORDER BY 就沒有排序保證
+    INTO TABLE @DATA(lt_kna1).
+
+  IF lt_kna1 IS INITIAL.
+    MESSAGE '查無資料' TYPE 'S' DISPLAY LIKE 'W'.
+    RETURN.
+  ENDIF.
+
+  TRY.
+      cl_salv_table=&gt;factory(
+        IMPORTING r_salv_table = DATA(lo_alv)
+        CHANGING  t_table      = lt_kna1 ).
+
+      lo_alv-&gt;get_functions( )-&gt;set_all( abap_true ).
+      lo_alv-&gt;get_columns( )-&gt;set_optimize( abap_true ).
+      lo_alv-&gt;display( ).
+
+    CATCH cx_salv_msg INTO DATA(lx_salv).
+      MESSAGE lx_salv-&gt;get_text( ) TYPE 'E'.
+  ENDTRY.</code></pre>
+
+  <div class="note">SE16N 是「簡易維護資料」的入口，<b>能在裡面新增出資料才算建表成功</b>。S/4HANA 上另有 <span class="tcode">SE16H</span>（HANA 版資料瀏覽器，支援彙總、Group By、Outer Join），查資料時比 SE16N 更好用。SE16N 的 <b>&amp;SAP_EDIT</b> 直接改資料模式在正式系統通常被關閉，且會寫入變更紀錄，不要當成日常工具。</div>
+
+  <div class="warn">舊系統可能遇到 <b>Cluster table / Pooled table</b>（為了加密或節省空間而存在，例如 BSEG、KONV 的舊型態）。這是歷史產物，S/4HANA 幾乎都已轉成 Transparent table（BSEG 保留但財務讀 ACDOCA、KONV 改 PRCD_ELEMENTS）。遇到再查即可，新開發一律建 Transparent table。</div>
+
+  <h3 id="ch01-2-03">3. 技術設定：Data Class、Size Category、Buffering、Logging</h3>
+  <p>SE11 裡按下「Technical Settings」是很多人跳過、卻在上線後出事的地方。</p>
+
+  <table>
+    <thead><tr><th>設定</th><th>選項</th><th>怎麼選</th></tr></thead>
+    <tbody>
+      <tr><td><b>Data Class</b>（資料類別）</td><td>APPL0</td><td>主資料（很少變動）：如 ZERP300_KNA1、ZERP300_MARA</td></tr>
+      <tr><td><b>Data Class</b></td><td>APPL1</td><td>交易資料（頻繁新增變動）：如 ZERP300_VBAK、ZERP300_VBAP</td></tr>
+      <tr><td><b>Data Class</b></td><td>APPL2</td><td>組織／客製設定資料（幾乎不變）</td></tr>
+      <tr><td><b>Data Class</b></td><td>USER / USER1</td><td>客戶自訂的資料類別（由 BASIS 建立表空間）</td></tr>
+      <tr><td><b>Size Category</b>（大小類別）</td><td>0 ~ 4</td><td>預估資料筆數等級，0 最小。填錯不會壞，只影響初始空間配置；HANA 上影響已很小</td></tr>
+      <tr><td><b>Buffering</b>（緩衝）</td><td>Not buffered / Single records / Generic（指定前 n 個 Key）/ Fully buffered</td><td>「幾乎不變、資料量小」的設定表才開 Fully buffered；<b>交易資料一律 Not buffered</b></td></tr>
+      <tr><td><b>Log data changes</b>（記錄變更）</td><td>勾／不勾</td><td>老師警告：<b>千萬不要勾</b>，有可能因為 log 讓系統效能變差</td></tr>
+    </tbody>
+  </table>
+
+  <div class="warn">Buffering 的經典地雷：表被緩衝之後，你用 ABAP SQL 讀到的可能是<b>舊資料</b>（緩衝未同步，最長可達分鐘級）。要強制讀資料庫請加 <span class="kw">BYPASSING BUFFER</span>；反之，若程式會頻繁 UPDATE 這張表，就絕對不要開緩衝。另外，凡是自己在程式中 UPDATE／DELETE 後又立刻 SELECT 的邏輯，都要留意這件事。</div>
+
+<pre><code class="abap">" 需要保證讀到資料庫最新值時（例如剛做完更新、或表有開 buffering）
+SELECT SINGLE kunnr, name1
+  FROM zerp300_kna1
+  WHERE kunnr = @lv_kunnr
+  BYPASSING BUFFER
+  INTO @DATA(ls_kna1).
+
+IF sy-subrc &lt;&gt; 0.
+  MESSAGE |客戶 { lv_kunnr ALPHA = OUT } 不存在| TYPE 'E'.
+ENDIF.</code></pre>
+
+  <p><b>SE14（Database Utility）</b>：當表結構改過（加欄位、改長度、改主鍵）而激活失敗，或狀態顯示「不一致」時的救援工具。</p>
+  <ul>
+    <li>SE14 → 輸入表名 → Edit → <b>Activate and adjust database</b>：把字典定義同步到實體資料庫（含資料轉換）。</li>
+    <li>Delete data → 清空資料重建（<b>會刪資料，正式機不要亂按</b>）。</li>
+    <li>Check → 比對字典與資料庫是否一致。</li>
+    <li>改主鍵、縮短欄位長度、改型別，都可能觸發完整的資料轉換（表會被鎖住），大表請排離峰執行。</li>
+  </ul>
+
+  <h3 id="ch01-2-04">4. Domain 與 Data Element：把「合法值」寫進字典</h3>
+  <p>SE11 建 Domain 與 Data Element 是為了「一次定義、到處引用」。老師的話：<i>建立資料表時，引用自定 Data Type 並綁定 Domain，可做好資料一致性的管理，這在大型系統上非常重要。</i></p>
+
+  <p><b>Domain（SE11 → Domain）重點頁籤</b>：</p>
+  <ul>
+    <li><b>Definition</b>：Data Type（CHAR／NUMC／DEC／CURR／QUAN／DATS／TIMS／UNIT／CUKY…）、No. Characters、Decimal Places。</li>
+    <li><b>Sign</b>：數值型 Domain 才有；<b>不打勾＝只能輸入正數</b>（講義特別提到這一點）。</li>
+    <li><b>Output Characteristics</b>：Output Length、<b>Conversion Routine</b>（轉換常式）。例如 SPRAS 用 <b>ISOLA</b> 把內部 1 碼語言碼轉成 ISO 2 碼；物料號碼用 <b>MATN1</b> 做前置補零。轉換常式其實是一對 <span class="kw">CONVERSION_EXIT_xxxxx_INPUT / _OUTPUT</span> 函數。</li>
+    <li><b>Value Range</b>：可填 <b>Single Values（固定值）</b>、<b>Intervals（區間）</b>，或指定 <b>Value Table（值表）</b>。</li>
+  </ul>
+
+  <div class="tip">Value Table 只是「候選」，它<b>不會自動檢核</b>。真正產生檢核的是欄位上的<b>外來鍵</b>；不過在 Data Element 引用有 Value Table 的 Domain 時，SE11 會主動建議你用該值表當 Check Table，按下去就自動產生外來鍵——這是老師說的「Domain 與 Data Element 能幫助業務顧問找問題」的實際機制。</div>
+
+  <p><b>Data Element（SE11 → Data type → Data element）重點</b>：</p>
+  <ul>
+    <li><b>Elementary Type</b>：綁 Domain（建議）或直接給 Predefined Type。</li>
+    <li><b>Field Label</b>：Short／Medium／Long／Heading——這是畫面與 ALV 抬頭的文字來源，一定要填，否則報表抬頭是空白。</li>
+    <li><b>Further Characteristics</b>：<b>Search Help</b>（掛 F4）、Parameter ID（SET/GET PARAMETER 記憶值）、Default Component Name。</li>
+    <li><b>Documentation</b>：使用者在畫面上按 F1 看到的說明。</li>
+  </ul>
+
+  <p>講義練習 03-3：<b>建立一個幣別欄位的 Data Element，並限定只能填 TCURC 內的內容</b>。作法是 Domain 型別 CUKY 長度 5、Value Table 指定 TCURC，Data Element 引用它，再在表欄位上建立外來鍵到 TCURC。</p>
+
+  <p>固定值（Fixed Values）是放在 DD07L／DD07T，可以直接讀出來當下拉清單：</p>
+
+<pre><code class="abap">" 讀取某個 Domain 的固定值清單（DD07L 值、DD07T 文字），用來自製下拉或做檢核
+DATA(lv_domname) = CONV domname( 'ZDSTATUS' ).
+
+SELECT l~domvalue_l AS value,
+       t~ddtext     AS text
+  FROM dd07l AS l
+  INNER JOIN dd07t AS t
+    ON  t~domname    = l~domname
+    AND t~valpos     = l~valpos
+    AND t~as4local   = l~as4local
+    AND t~ddlanguage = @sy-langu
+  WHERE l~domname  = @lv_domname
+    AND l~as4local = 'A'                  " 只取 Active 版本
+  ORDER BY l~valpos
+  INTO TABLE @DATA(lt_fixval).
+
+" 用 REDUCE 組出一段可讀的說明字串
+DATA(lv_hint) = REDUCE string(
+  INIT s = ``
+  FOR ls IN lt_fixval
+  NEXT s = COND #( WHEN s IS INITIAL
+                   THEN |{ ls-value }={ ls-text }|
+                   ELSE |{ s } / { ls-value }={ ls-text }| ) ).
+
+cl_demo_output=&gt;display( lv_hint ).</code></pre>
+
+  <div class="note">老師的練習流程：SE80 的 <b>RIS（Repository Information System，或直接用 SE84）</b>可以把 Data Element、Domain、Structure、Table 之間的關聯性串起來——想知道「這個 Domain 被誰用了」，就用 <b>Where-Used List</b>。</div>
+
+  <h3 id="ch01-2-05">5. 外來鍵（Foreign Key）與 Text Table</h3>
+  <p>定義：兩個表中有一個相同欄位，它在一個表中是主鍵，那麼這個公有欄位就是另一個表的<b>外鍵</b>。以另一個表的外鍵作關鍵字的表稱為<b>主表（Check Table）</b>，具有此外鍵的表稱為<b>從表（Foreign Key Table）</b>。作用是保持資料一致性與完整性：外鍵只能引用主表中存在的值，或使用空值。</p>
+
+  <p>SE11 建外來鍵的步驟：<span class="src">（依講義步驟整理）</span></p>
+  <ol>
+    <li>Fields 頁籤，游標點在要建外鍵的欄位上（例如 Z2202_00_VBAK-KUNNR）。</li>
+    <li>按工具列的<b>外來鍵圖示（鑰匙）</b>。</li>
+    <li>輸入 <b>Check table</b>（例如 Z2202_00_KNA1）；系統會依 Domain 自動建議欄位對應（Check table field ↔ Foreign key field）。</li>
+    <li>設定 <b>Cardinality（基數）</b>：主表 1 或 C（C＝可為空），從表 1／C／N／CN。客戶 1 → 訂單 N 就是 <b>1:CN</b>。</li>
+    <li>設定 <b>Foreign key field type（外鍵欄位類型）</b>：
+      <ul>
+        <li><b>Non-key-fields/candidates</b>：外鍵欄位不是主鍵</li>
+        <li><b>Key fields/candidates</b>：是主鍵欄位或能唯一確定記錄</li>
+        <li><b>Key fields of a text table</b>：這張表是主表的文本表</li>
+      </ul>
+    </li>
+    <li>可勾 <b>MsgClass/MsgNo</b> 指定檢核失敗時的訊息。</li>
+  </ol>
+
+  <div class="warn">外來鍵的檢核只在<b>畫面輸入（Dynpro／SM30／Fiori）</b>時自動生效，<b>ABAP SQL 的 INSERT／UPDATE 不會檢核外鍵</b>。所以你自己寫的上傳程式一定要自己檢核主表存在與否，不能靠字典。</div>
+
+<pre><code class="abap">" 上傳／過帳前自行檢核外來鍵：一次撈出所有主表 Key，再用 line_exists 判斷
+SELECT kunnr
+  FROM zerp300_kna1
+  FOR ALL ENTRIES IN @lt_upload
+  WHERE kunnr = @lt_upload-kunnr
+  INTO TABLE @DATA(lt_valid_kunnr).
+
+" FOR ALL ENTRIES 的空表陷阱：驅動表為空時會撈出「整張表」，務必先擋
+IF lt_upload IS INITIAL.
+  MESSAGE '無上傳資料' TYPE 'E'.
+ENDIF.
+
+" 轉成 HASHED 表，判斷才快
+DATA lt_key TYPE HASHED TABLE OF kunnr WITH UNIQUE KEY table_line.
+lt_key = VALUE #( FOR ls IN lt_valid_kunnr ( ls-kunnr ) ).
+
+LOOP AT lt_upload ASSIGNING FIELD-SYMBOL(&lt;ls_up&gt;).
+  IF NOT line_exists( lt_key[ table_line = &lt;ls_up&gt;-kunnr ] ).
+    &lt;ls_up&gt;-msg = |客戶 { &lt;ls_up&gt;-kunnr } 不存在於主檔|.
+  ENDIF.
+ENDLOOP.</code></pre>
+
+  <p><b>Text Table（文本表）</b>：一張表是另一張表的文本表，條件是——文本表的主鍵＝主表主鍵 ＋ <b>語言欄位 SPRAS</b>，除了這些欄位以外沒有其他能確定唯一性的欄位；而且要在 SPRAS 欄位上建立外來鍵、外鍵類型選 <b>Key fields of a text table</b>，Check table 填 <b>T002</b>。設定成功後，主表在 SE11 的 Delivery and Maintenance 頁籤就會顯示對應的 Text Table。</p>
+
+  <p>經典組合：MARA（物料主檔）↔ MAKT（物料說明）、TCURC（幣別）↔ TCURT（幣別說明）、T001W（工廠）↔ T001W 本身無文本表但有 NAME1。</p>
+
+  <p><b>練習題：知道 MAKT，如何得知對應的 MARA？</b>講義列了四種辦法：</p>
+  <ol>
+    <li>SE11 顯示 MAKT，在主鍵欄位 MATNR 上按「外來鍵關係」，就看得到 Check table = MARA。</li>
+    <li>看 <b>Delivery and Maintenance</b> 頁籤（舊版在 Further characteristics），會標註 Text Table／Master Data Table。</li>
+    <li>依 SAP 命名習慣猜（主表 + T，如 MARA→MAKT、TCURC→TCURT），但<b>光憑名稱不一定準，最終仍要回 SE11 核對</b>。</li>
+    <li>用 Data Element／Domain 的 <b>Where-Used List</b>，或直接查字典表 DD03L / DD08L。</li>
+  </ol>
+
+<pre><code class="abap">" 用程式反查：某張表的所有外來鍵關係（DD08L = 外鍵表頭）
+PARAMETERS p_tab TYPE tabname OBLIGATORY DEFAULT 'MAKT'.
+
+START-OF-SELECTION.
+
+  SELECT tabname,            " 從表
+         fieldname,          " 外鍵欄位
+         checktable,         " 主表（Check Table）
+         frkart,             " 外鍵類型（TEXT = 文本表）
+         card                " 基數
+    FROM dd08l
+    WHERE tabname  = @p_tab
+      AND as4local = 'A'
+    INTO TABLE @DATA(lt_fk).
+
+  " 順便帶出主表的中文說明
+  SELECT tabname, ddtext
+    FROM dd02t
+    FOR ALL ENTRIES IN @lt_fk
+    WHERE tabname    = @lt_fk-checktable
+      AND ddlanguage = @sy-langu
+      AND as4local   = 'A'
+    INTO TABLE @DATA(lt_txt).
+
+  cl_demo_output=&gt;display( lt_fk ).</code></pre>
+
+  <h3 id="ch01-2-06">6. 四張 Z 表與 ER Diagram（講義主線練習）</h3>
+  <p>講義要求：<b>以下四個表的關聯性，是學習 ER Diagram 的典型案例，請手繪關聯圖。</b>這四張表也是後面所有 View、Search Help、Lock Object 練習的基礎。</p>
+
+  <table>
+    <thead><tr><th>表名</th><th>用途</th><th>欄位（Key 以粗體）</th></tr></thead>
+    <tbody>
+      <tr><td>ZERP300_KNA1</td><td>客戶資料表</td><td><b>MANDT</b>(MANDT, CLNT 3)、<b>KUNNR</b>(KUNAG, CHAR 10)、NAME1(NAME1_GP, CHAR)</td></tr>
+      <tr><td>ZERP300_MARA</td><td>物料資料表</td><td><b>MANDT</b>、<b>MATNR</b>(MATNR, CHAR 40)、MAKTX(MAKTX, CHAR 40)</td></tr>
+      <tr><td>ZERP300_VBAK</td><td>訂單主檔</td><td><b>MANDT</b>、<b>VBELN</b>(VBELN_VA)、ERDAT(ERDAT)、KUNNR(KUNAG, CHAR 10)、NETWR(NETWR_AK, CURR 15,2)、WAERK(WAERK, CUKY)</td></tr>
+      <tr><td>ZERP300_VBAP</td><td>訂單明細</td><td><b>MANDT</b>、<b>VBELN</b>(VBELN_VA)、<b>POSNR</b>(POSNR_VA)、MATNR(MATNR, CHAR 40)、KWMENG(KWMENG, QUAN)、VRKME(VRKME, UNIT 3)、NETWR(NETWR_AK, CURR 15,2)、WAERK(WAERK, CUKY)</td></tr>
+    </tbody>
+  </table>
+
+  <p>關聯（外來鍵方向：從表 → 主表）：</p>
+  <ul>
+    <li>ZERP300_VBAK-KUNNR → ZERP300_KNA1（客戶 1 → 訂單 N）</li>
+    <li>ZERP300_VBAP-VBELN → ZERP300_VBAK（訂單主檔 1 → 明細 N）</li>
+    <li>ZERP300_VBAP-MATNR → ZERP300_MARA（物料 1 → 明細 N，這是講義的<b>練習題</b>）</li>
+    <li>ZERP300_VBAK-WAERK / VBAP-WAERK → TCURC（幣別檢核）</li>
+  </ul>
+
+  <p>講義另一組同構的練習表（2202 班的版本），欄位命名不同但關係一樣，做外來鍵時要注意：<b>外來鍵有限定必須透過 Data Element</b>，所以要先建 <span class="kw">ZDKUNNR</span>（Domain）與 <span class="kw">ZEKUNNR</span>（Data Element）才能綁到 Z2202_00_KNA1；同理明細表要建 <span class="kw">ZDMATNR</span> / <span class="kw">ZEMATNR</span> 綁 Z2202_00_MARA。</p>
+
+  <table>
+    <thead><tr><th>Z2202_00_VBAK（訂單主檔）</th><th>Z2202_00_VBAP（訂單明細）</th></tr></thead>
+    <tbody>
+      <tr><td>MANDT CLNT 3<br>ZCC 公司代碼 CHAR 4<br>ZSDNO 銷售編號 CHAR 10<br>ZDT 銷售日期 DATS 8<br>KUNNR 客戶編號 CHAR 10</td><td>MANDT CLNT 3<br>ZSDNO 銷售編號 CHAR 10<br>MATNR 物料編號 CHAR 40<br>ZQTY 銷售數量 NUMC 8<br>ZPRI 物料單價 CURR 15,2<br>ZAMT 銷售金額 CURR 15,2<br>ZCUR 交易貨幣 CUKY 5</td></tr>
+    </tbody>
+  </table>
+
+  <div class="tip">設計檢查表：① MANDT 有沒有放第一個且是 Key？② CURR/QUAN 有沒有指定參考欄位？③ Delivery Class 是不是 A？④ Maintenance 是不是 Allowed？⑤ 外來鍵有沒有建？⑥ Enhancement Category 有沒有設？六項都過，SE54 才會順。</div>
+
+  <h3 id="ch01-2-07">7. SE54 表格維護產生器、SM30 與自訂 TCODE</h3>
+  <p>光有表還不夠，使用者要能自己維護資料。這就是<b>表格維護產生器（Table Maintenance Generator）</b>的工作。入口有兩個：<span class="tcode">SE54</span>，或 SE11 顯示該表 → <b>Utilities → Table Maintenance Dialog</b>（或 Table Maintenance Generator）。</p>
+
+  <p>產生步驟：<span class="src">（依講義步驟整理）</span></p>
+  <ol>
+    <li>Authorization Group：沒有特別需求填 <b>&amp;NC&amp;</b>。</li>
+    <li><b>Function Group</b>：填一個已存在且已激活的 Function Group（講義示範 <span class="kw">ZFG2202_00_KNA1</span>）。老師提醒：<i>若無適合的 Function Group，可選 Z000，記得要按左上的新增鈕（像 A4 紙）</i>；也可以用 <span class="tcode">SE37</span>／<span class="tcode">SE80</span> 先建一個，<b>Function group 一定要激活</b>。</li>
+    <li><b>Maintenance type</b>：
+      <ul>
+        <li><b>one step</b>：只有一張總覽畫面（Overview），適合欄位少的表</li>
+        <li><b>two step</b>：總覽 + 單筆明細畫面，欄位多時用</li>
+      </ul>
+    </li>
+    <li><b>Maint. Screen No.</b>：按「Find Scr. Number(s)」讓系統自動配號（例如 0001 / 0002）。</li>
+    <li>按 <b>Create</b>，系統自動產生 Screen、PBO/PAI 模組與更新程式。</li>
+    <li>激活。<b>若激活不完整，要用 SE80 打開該 Function Group 全部激活</b>（老師 250501 特別註記過兩次的坑）。</li>
+  </ol>
+
+  <p>產生後，使用者用 <span class="tcode">SM30</span> 輸入表名／視圖名就能維護；<span class="tcode">SM31</span> 是舊版入口；<span class="tcode">SM34</span> 用來維護 <b>View Cluster</b>（多層設定表串成一個維護樹）。</p>
+
+  <div class="note"><b>為何要用 SM30 取代 SE16N？</b>老師要學生想一下——因為 SE16N 是給開發／顧問用的原始資料瀏覽器，沒有欄位檢核順序、沒有外鍵 F4 的完整行為、沒有權限群組控管、也留不下客製檢核邏輯；SM30 走的是產生出來的 Dynpro，能掛外來鍵檢核、能寫事件（Events）做自訂驗證，才是給<b>終端使用者</b>用的。</div>
+
+  <div class="warn"><b>改了表結構一定要重產維護畫面。</b>老師原話：<i>若日後又修改欄位或增加欄位時，為了讓 screen 也有這些新增欄位，必須進行修改。</i>做法是 SE54 → Change → 先 Delete 產生的物件再重新 Create，或用「Generated Objects → Change → 調整 Screen」。忘了這一步，SM30 上就看不到新欄位。</div>
+
+  <p><b>SM30 也能變 TCODE</b>（講義 02-4）：用 <span class="tcode">SE93</span> 建立<b>「Transaction with parameters（parameter transaction）」</b>：</p>
+  <ol>
+    <li>SE93 → 輸入 <span class="kw">ZKNA1M</span> → Create → 選 <b>Transaction with parameters (parameter transaction)</b>。</li>
+    <li>Transaction 填 <b>SM30</b>，勾 <b>Skip initial screen</b>。</li>
+    <li>Default Values 區填：<b>VIEWNAME = ZERP300_KNA1</b>、<b>UPDATE = X</b>（X＝維護模式，空白＝顯示）。</li>
+    <li>存檔激活，使用者輸入 ZKNA1M 就直接進入維護畫面。</li>
+  </ol>
+
+  <p>SM30 的 <b>Events</b>（SE54 → Environment → Modification → Events）可以掛自訂邏輯，例如存檔前檢核。以下是事件常式的現代化寫法（放在維護畫面所屬 Function Group 的 Include 中）：</p>
+
+<pre><code class="abap">" SE54 Event 21（Fill hidden fields）／01（Before saving the data in the database）
+" 在存檔前補上異動人／異動日，並做自訂檢核
+FORM zerp300_kna1_before_save.
+
+  DATA: lv_error TYPE abap_bool.
+
+  LOOP AT total ASSIGNING FIELD-SYMBOL(&lt;ls_total&gt;).
+
+    " TOTAL 的前段就是視圖／資料表結構，後面才是維護畫面用的動作旗標
+    ASSIGN &lt;ls_total&gt; TO FIELD-SYMBOL(&lt;ls_row&gt;) CASTING TYPE zerp300_kna1.
+    IF sy-subrc &lt;&gt; 0.
+      CONTINUE.
+    ENDIF.
+
+    " 自訂檢核：金額不可為負
+    IF &lt;ls_row&gt;-zwert &lt; 0.
+      MESSAGE |客戶 { &lt;ls_row&gt;-kunnr } 的金額不可為負| TYPE 'E'.
+      lv_error = abap_true.
+    ENDIF.
+
+  ENDLOOP.
+
+  IF lv_error = abap_true.
+    " sy-subrc 非 0 時，維護畫面會中止存檔
+    sy-subrc = 4.
+  ENDIF.
+
+ENDFORM.</code></pre>
+
+  <h3 id="ch01-2-08">8. 建立 Database View / Projection View / Maintenance View</h3>
+  <p><b>Database View（講義 05）</b>：把 Z2202_00_VBAK ＋ Z2202_00_KNA1 建成 <span class="kw">ZDV2202_00_VBAK</span>。</p>
+  <ol>
+    <li>SE11 → View → Create → 選 <b>Database view</b>。</li>
+    <li>Tables 區輸入兩張表 → 按 <b>Relationships</b>，系統會依<b>既有外來鍵</b>自動帶出 Join 條件（也可自己在 Join Conditions 手打）。</li>
+    <li>View Fields 區按 <b>Table fields</b> 逐一挑欄位。</li>
+    <li>Selection Conditions 可加固定過濾條件（例如 MANDT = 或某狀態碼）。</li>
+    <li>Maintenance Status：多表視圖只能設 <b>read only</b>。</li>
+    <li>激活後，就可以在 ABAP SQL 直接 <span class="kw">SELECT ... FROM ZDV2202_00_VBAK</span>。</li>
+  </ol>
+
+  <div class="tip">老師的兩句重點：<b>Database View 是強制 INNER JOIN，而且（多表時）只能查看資料</b>；<b>選錯 View 型態，事後還可以換</b>（SE11 → View → Change → 選單改型別），但「Database view 轉 Maintenance view 不見得能成功，反之則一定可以」。</div>
+
+  <p>練習題：<span class="kw">ZDV300_VBAP_MARA</span>（訂單明細 ＋ 物料）、<span class="kw">ZDV300_VBAK_KNA1</span>（訂單主檔 ＋ 客戶）。</p>
+
+  <p><b>Maintenance View（講義 06）</b>：建 <span class="kw">ZMV_2202_00_VBAK</span>。</p>
+  <ul>
+    <li>參與的表<b>必須已有外來鍵</b>，連接條件不能自訂。</li>
+    <li><b>所有參與表的主鍵都要放進視圖欄位</b>，否則激活會報錯。</li>
+    <li>每個欄位可設 <b>R/O（唯讀）</b>、<b>Key</b>。</li>
+    <li><b>一定要建立螢幕</b>——也就是要走 SE54 表格維護產生器，否則 SM30 進不去。</li>
+    <li>練習題：<span class="kw">ZMV300_VBAP_VBAK</span>。</li>
+  </ul>
+
+  <p><b>Projection View</b>：只能一張表，用途是遮罩欄位（例如只讓某群使用者看得到客戶編號與名稱，看不到金額），可維護。</p>
+
+  <p><b>Help View</b>：專供 Search Help 的 Selection Method；參與表必須有外來鍵，語意是 LEFT OUTER JOIN（主表沒有對應文字時仍會出現），這正是「物料 + 物料說明」F4 的標準做法。</p>
+
+<pre><code class="abap">" 不建 DB View，直接在 ABAP SQL 做 JOIN（S/4HANA 建議做法之一）
+SELECT k~vbeln,
+       k~erdat,
+       k~kunnr,
+       c~name1,
+       k~netwr,
+       k~waerk
+  FROM zerp300_vbak AS k
+  INNER JOIN zerp300_kna1 AS c
+    ON c~mandt = k~mandt
+   AND c~kunnr = k~kunnr
+  WHERE k~erdat IN @s_erdat
+    AND k~kunnr IN @s_kunnr
+  ORDER BY k~vbeln
+  INTO TABLE @DATA(lt_order).
+
+" 需要「客戶沒訂單也要出現」時，改 LEFT OUTER JOIN
+SELECT c~kunnr,
+       c~name1,
+       SUM( k~netwr ) AS total_netwr
+  FROM zerp300_kna1 AS c
+  LEFT OUTER JOIN zerp300_vbak AS k
+    ON  k~mandt = c~mandt
+    AND k~kunnr = c~kunnr
+  GROUP BY c~kunnr, c~name1
+  ORDER BY c~kunnr
+  INTO TABLE @DATA(lt_sum).</code></pre>
+
+  <h3 id="ch01-2-09">9. Structure、Table Type、Type Group 與 SYST</h3>
+  <p><b>Structure（講義 07）</b>：SE11 → Data type → Structure。老師的注意事項：</p>
+  <ul>
+    <li><b>一般結構不需要放 MANDT</b>（結構不落地，沒有 client 概念）。</li>
+    <li><b>命名前三個字不能有底線</b>，所以講義用 <span class="kw">ZDV_</span> 這種寫法（Z + 兩碼 + 底線）。</li>
+    <li>結構可以<b>多層巢狀</b>（欄位型別直接引用另一個結構，或用 .INCLUDE 包進來）。</li>
+    <li>結構的用處是「寫程式時會方便很多」：ALV 的輸出結構、函數的介面參數、BDC 的資料容器，全都靠它。</li>
+  </ul>
+
+  <p><b>Table Type（講義 08）</b>：SE11 → Data type → Table type。指定 Line Type（通常是剛才那個 Structure）、Access（Standard／Sorted／Hashed）、Key（Non-unique／Unique、Key components）。有了全域 Table Type，函數模組的 TABLES／CHANGING 參數才能直接引用。</p>
+
+<pre><code class="abap">" 對照：字典裡的 Structure / Table Type，在程式端的等價寫法
+TYPES: BEGIN OF ty_order,
+         vbeln TYPE zerp300_vbak-vbeln,
+         erdat TYPE zerp300_vbak-erdat,
+         kunnr TYPE zerp300_vbak-kunnr,
+         name1 TYPE zerp300_kna1-name1,
+         netwr TYPE zerp300_vbak-netwr,
+         waerk TYPE zerp300_vbak-waerk,
+       END OF ty_order.
+
+" 三種存取型態，對應 Table Type 的 Access 設定
+TYPES: ty_t_order_std  TYPE STANDARD TABLE OF ty_order WITH DEFAULT KEY,
+       ty_t_order_srt  TYPE SORTED   TABLE OF ty_order WITH NON-UNIQUE KEY vbeln,
+       ty_t_order_hsh  TYPE HASHED   TABLE OF ty_order WITH UNIQUE KEY vbeln.
+
+DATA(lt_order) = VALUE ty_t_order_std( ).
+
+" 巢狀結構：明細掛在表頭之下（字典的多層結構在程式端就是這樣）
+TYPES: BEGIN OF ty_head,
+         vbeln TYPE zerp300_vbak-vbeln,
+         items TYPE STANDARD TABLE OF zerp300_vbap WITH EMPTY KEY,
+       END OF ty_head.
+
+" 用 CORRESPONDING 在字典結構之間搬資料，取代逐欄 MOVE
+DATA ls_out TYPE ty_order.
+SELECT SINGLE vbeln, erdat, kunnr, netwr, waerk
+  FROM zerp300_vbak
+  WHERE vbeln = @lv_vbeln
+  INTO @DATA(ls_vbak).
+
+ls_out = CORRESPONDING #( ls_vbak ).</code></pre>
+
+  <p><b>Type Group（講義 09）</b>：類型組是「定義了多個資料類型的程式」。宣告時<b>一定要用類型組的名稱起頭</b>，而且要用 <span class="kw">TYPE-POOL</span> 宣告。最有名的就是 ALV 用的 <b>SLIS</b>：</p>
+
+<pre><code class="abap">" 類型組本體（SE11 → Type Group）：所有型別名稱必須以類型組名開頭
+TYPE-POOL slis.
+
+TYPES: slis_list_type(1) TYPE n,
+       slis_char_1(1)    TYPE c,
+       slis_text40(40)   TYPE c.</code></pre>
+
+  <div class="warn">老師的定位很準：<b>Type Group 是為了向下／向上相容而存在，會用就好，不必再擴展。</b>S/4HANA 上請注意兩件事：① 從 ABAP 7.02 起，使用類型組裡的型別<b>不必再寫 TYPE-POOLS 宣告</b>；② 新開發不要再建自己的 Type Group，改用 <b>全域 Interface 的常數／型別</b>（<span class="kw">INTERFACE zif_const</span> 內放 <span class="kw">CONSTANTS</span> 與 <span class="kw">TYPES</span>）或 Class 的靜態型別，因為它們支援命名空間、可被 ADT 重構、也能寫單元測試。</div>
+
+  <p><b>特殊結構 SYST（講義 07-2）</b>：SY 是系統結構，老師要求<b>至少記 10 個</b>：</p>
+  <table>
+    <thead><tr><th>欄位</th><th>意義</th><th>常見用法</th></tr></thead>
+    <tbody>
+      <tr><td>SY-SUBRC</td><td>上一個指令執行成功與否，<b>0 表示成功</b></td><td>每個 SELECT／CALL FUNCTION 之後必查</td></tr>
+      <tr><td>SY-UNAME</td><td>當前登入的使用者名稱</td><td>寫入異動人欄位</td></tr>
+      <tr><td>SY-DATUM</td><td>當前系統日期</td><td>異動日；注意是<b>應用伺服器日期</b></td></tr>
+      <tr><td>SY-UZEIT</td><td>當前系統時間</td><td>異動時間</td></tr>
+      <tr><td>SY-TCODE</td><td>當前執行的交易碼</td><td>Enhancement 中判斷來源</td></tr>
+      <tr><td>SY-INDEX</td><td>DO／WHILE 迴圈已跑過的次數</td><td>不要跟 SY-TABIX 混用</td></tr>
+      <tr><td>SY-TABIX</td><td>當前處理的是內表第幾筆</td><td>LOOP 中定位、之後 MODIFY</td></tr>
+      <tr><td>SY-MANDT</td><td>用戶端（Client）編號</td><td>寫 client-dependent 資料</td></tr>
+      <tr><td>SY-LANGU</td><td>登入語系</td><td>抓 Text Table 一定要用（講義 Search Help 練習「找到登錄語系的系統變數」就是它）</td></tr>
+      <tr><td>SY-ULINE / SY-VLINE</td><td>畫橫線／畫分隔號</td><td>WRITE 報表用（現代報表已改 ALV）</td></tr>
+      <tr><td>SY-MSGID/TY/NO/V1~V4</td><td>訊息類別／類型／編號／變數</td><td>函數 EXCEPTIONS 後組訊息</td></tr>
+      <tr><td>SY-DBCNT</td><td>上一個 SQL 影響的筆數</td><td>UPDATE／DELETE 後確認</td></tr>
+    </tbody>
+  </table>
+
+  <div class="note">S/4HANA 補充：<span class="kw">SY-DATUM</span> 是 AS 伺服器時區的日期，跨時區系統請改用 <span class="kw">cl_abap_context_info=&gt;get_system_date( )</span> / <span class="kw">get_user_date( )</span>，或 <span class="kw">GET TIME STAMP FIELD DATA(lv_ts)</span> 取 UTC 時戳。取使用者名稱建議用 <span class="kw">cl_abap_context_info=&gt;get_user_technical_name( )</span>，這在 ABAP Cloud（RAP）中是唯一被允許的寫法。</div>
+
+  <h3 id="ch01-2-10">10. Search Help：Elementary、Collective 與 Search Help Exit</h3>
+  <p>搜尋說明（F4 說明）是很有用的功能，可提高使用者友善性；可用於自建表或資料元素。設計時老師要你<b>注意四個點：傳入屬性、顯示屬性、條件屬性、傳回屬性</b>——對應到 SE11 Search Help 畫面的參數表格。</p>
+
+  <table>
+    <thead><tr><th>欄位</th><th>意義</th></tr></thead>
+    <tbody>
+      <tr><td><b>Search help parameter</b></td><td>參數名（通常＝Selection Method 的欄位名）</td></tr>
+      <tr><td><b>IMP</b></td><td>Import：畫面的值<b>傳入</b>當作過濾條件（連動的關鍵）</td></tr>
+      <tr><td><b>EXP</b></td><td>Export：選定後<b>回填</b>到畫面欄位</td></tr>
+      <tr><td><b>LPos</b></td><td>List Position：出現在 F4 清單的第幾欄（<b>顯示屬性</b>）</td></tr>
+      <tr><td><b>SPos</b></td><td>Selection Position：出現在「限制條件對話框」的第幾列（<b>條件屬性</b>）</td></tr>
+      <tr><td><b>DPos</b></td><td>Dialog Position：兩段式對話時的位置</td></tr>
+      <tr><td><b>Data element</b></td><td>決定該參數的欄位說明與型別</td></tr>
+      <tr><td><b>Modification not allowed</b></td><td>使用者不可在限制畫面上改這個條件</td></tr>
+    </tbody>
+  </table>
+
+  <p><b>Elementary Search Help（簡單型）建立步驟</b>，以講義 10-1 的 <span class="kw">ZSH_MSEHI</span>（數量單位）為例：<span class="src">（依講義步驟整理）</span></p>
+  <ol>
+    <li>SE11 → Search help → Create → 選 <b>Elementary search help</b>。</li>
+    <li><b>Selection method</b>：填資料來源，可以是 Table、View 或 <b>Help View</b>。單位用 <span class="kw">T006A</span>（含語言）或建一個 Help View 把 T006 ＋ T006A 串起來。</li>
+    <li><b>Dialog type</b>：Display values immediately（直接列值）／Dialog with value restriction（先問條件）／Dialog depends on set of values（值多才問）。</li>
+    <li>參數表格填 MSEHI（IMP/EXP 勾 EXP、LPos 1）、MSEHT（LPos 2）、SPRAS（IMP 勾、預設 <b>SY-LANGU</b>、Modification not allowed 勾）。</li>
+    <li>激活 → 按「測試」鈕（F8）試跑。</li>
+  </ol>
+
+  <p>講義另一個練習 <b>ZSH_WAERK</b>（讓 ZERP300_VBAK 使用）的四個步驟，重點在多語言：</p>
+  <ol>
+    <li>直接用 <b>TCURC</b> 當 Selection Method「似乎不是好主意，因為不能多語言」。</li>
+    <li>換成 TCURC 的 Text Table（標準是 <b>TCURT</b>；講義自建版寫成 ZTURT）。</li>
+    <li>找到「登錄語系的系統變數」＝ <b>SY-LANGU</b>，設成 SPRAS 參數的預設值。</li>
+    <li>把 Search Help 掛到資料表欄位上。</li>
+  </ol>
+
+  <p><b>Search Help 加掛在物件的五種模式</b>（講義原文）：</p>
+  <ol>
+    <li>SE11 顯示資料表 → 游標在欄位上 → 按工具列的 <b>Srch Help</b> 鈕（掛在 Table Field）</li>
+    <li>Screen（Dynpro）的欄位屬性 → <b>Search help</b> 欄位</li>
+    <li><b>Data Element</b> 的 Further Characteristics → Search Help（最推薦，一次全系統生效）</li>
+    <li>Dialog／報表：<span class="kw">PARAMETERS p_x TYPE ... MATCHCODE OBJECT &lt;search help&gt;</span></li>
+    <li>透過 <b>Check Table</b> 的隱含 F4（沒建 Search Help 時，外來鍵的主表就是預設 F4 來源）</li>
+  </ol>
+
+<pre><code class="abap">REPORT zdemo_search_help.
+
+" 模式 4：選擇畫面欄位直接掛字典的 Search Help
+PARAMETERS: p_meins TYPE zerp300_vbap-vrkme MATCHCODE OBJECT zsh_msehi,
+            p_waers TYPE zerp300_vbak-waerk MATCHCODE OBJECT zsh_waerk.
+
+" 完全自訂的 F4：用內表當值來源（字典裡做不到的情境才用）
+PARAMETERS p_type TYPE char10.
+
+AT SELECTION-SCREEN ON VALUE-REQUEST FOR p_type.
+
+  TYPES: BEGIN OF ty_f4,
+           code TYPE char10,
+           text TYPE char40,
+         END OF ty_f4.
+
+  DATA(lt_f4) = VALUE STANDARD TABLE OF ty_f4(
+    ( code = 'A' text = '主資料' )
+    ( code = 'B' text = '交易資料' )
+    ( code = 'C' text = '設定資料' ) ).
+
+  CALL FUNCTION 'F4IF_INT_TABLE_VALUE_REQUEST'
+    EXPORTING
+      retfield        = 'CODE'          " 回傳哪一欄
+      dynpprog        = sy-repid
+      dynpnr          = sy-dynnr
+      dynprofield     = 'P_TYPE'        " 回填到哪個畫面欄位
+      value_org       = 'S'             " S = 結構式內表
+    TABLES
+      value_tab       = lt_f4
+    EXCEPTIONS
+      parameter_error = 1
+      no_values_found = 2
+      OTHERS          = 3.
+
+  IF sy-subrc &lt;&gt; 0.
+    MESSAGE '取值失敗' TYPE 'S' DISPLAY LIKE 'W'.
+  ENDIF.</code></pre>
+
+  <p><b>Collective Search Help（複雜型）</b>：由多個 Elementary Search Help 組成，使用者按 F4 時會看到多個頁籤（例如物料可用「依說明找」「依物料群組找」「依工廠找」）。建立時在 <b>Included search helps</b> 頁籤加入各個 Elementary，並按 <b>Parameter assignment</b> 把 Collective 的參數對應到各 Elementary 的參數。</p>
+
+  <p>講義 10-3：<b>Collective Search Help 還可以再擴充</b>——以 <span class="tcode">ME23</span> 為例，把游標放在欄位上按 F1 → 技術資訊，可得知搜尋說明是 <b>MEKK</b>，就可以針對 MEKK 加入自己的 Elementary Search Help（<b>Append Search Help</b>，SE11 → Goto → Append Search Help，這樣升級不會被蓋掉）。</p>
+
+  <div class="tip"><b>Search Help 連動的經典坑</b>（講義原文的兩段對照）：<br>
+  第一種寫法<b>不會</b>連動：<span class="kw">P_1 TYPE T001W-WERKS, P_2 TYPE T001L-LGORT.</span><br>
+  第二種寫法<b>會</b>連動：<span class="kw">P_1 TYPE T001L-WERKS, P_2 TYPE T001L-LGORT.</span><br>
+  原因：儲存地點 LGORT 的 Search Help 需要 WERKS 當 IMP 參數，而系統是靠「畫面上同名欄位」去抓值。當 P_1 宣告成 T001W-WERKS，畫面欄位的字典來源不同，F4 找不到對應的 WERKS 就不會過濾；改用 T001L-WERKS 之後，兩個欄位同屬 T001L，連動才成立。<b>設計連動 F4 時，兩個欄位要來自同一張表／同一個 Search Help 的參數空間。</b></div>
+
+  <p><b>Search Help Exit</b>：Search Help 也可以增強，用一支函數模組介入 F4 的每個階段。<b>切記必須遵守 <span class="kw">F4IF_SHLP_EXIT_EXAMPLE</span> 的格式</b>（複製它的介面），把函數名填在 Search Help 的 <b>Search help exit</b> 欄位。</p>
+
+<pre><code class="abap">FUNCTION z_shlp_exit_werks.
+*"----------------------------------------------------------------------
+*"  介面必須完全複製 F4IF_SHLP_EXIT_EXAMPLE：
+*"  TABLES    shlp_tab   TYPE shlp_desct
+*"            record_tab STRUCTURE seahlpres
+*"  CHANGING  shlp       TYPE shlp_descr
+*"            callcontrol LIKE ddshf4ctrl
+*"----------------------------------------------------------------------
+
+  " callcontrol-step 會依序被呼叫多次，用 CASE 分階段處理
+  CASE callcontrol-step.
+
+    WHEN 'SELONE'.
+      " 選擇要用哪一個 Elementary Search Help（Collective 才會走到）
+      RETURN.
+
+    WHEN 'PRESEL'.
+      " 進入選值畫面前：動態塞入額外的限制條件
+      " 例如只允許使用者看自己有權限的工廠
+      READ TABLE shlp-selopt ASSIGNING FIELD-SYMBOL(&lt;ls_sel&gt;)
+           WITH KEY shlpfield = 'WERKS'.
+      IF sy-subrc &lt;&gt; 0.
+        APPEND VALUE ddshselopt( shlpfield = 'WERKS'
+                                 sign      = 'I'
+                                 option    = 'EQ'
+                                 low       = '1000' ) TO shlp-selopt.
+      ENDIF.
+      RETURN.
+
+    WHEN 'SELECT'.
+      " 自己撈資料：撈完把 callcontrol-step 設成 'DISP' 可跳過標準選取
+      RETURN.
+
+    WHEN 'DISP'.
+      " 清單顯示前：過濾掉不該讓使用者看到的列
+      LOOP AT record_tab ASSIGNING FIELD-SYMBOL(&lt;ls_rec&gt;).
+        IF &lt;ls_rec&gt;-string CS 'TEST'.
+          DELETE record_tab INDEX sy-tabix.
+        ENDIF.
+      ENDLOOP.
+      RETURN.
+
+    WHEN 'RETURN'.
+      " 使用者選定之後、回填畫面之前
+      RETURN.
+
+  ENDCASE.
+
+ENDFUNCTION.</code></pre>
+
+  <div class="note">講義 10-2 的練習「<b>ZUSER 練習修改名字</b>」：以 <b>USER 起頭的 Search Help</b>（如 USER_ADDR、USER_COMP）可以提供大量與使用者相關的 F4。練習目標是自建一個 ZUSER 系列的 Search Help，Selection Method 用 USR21 ＋ ADRP（或直接用 Help View），讓 F4 能顯示使用者代號與姓名，並可回填。</div>
+
+  <h3 id="ch01-2-11">11. Lock Object 鎖物件與 ENQUEUE／DEQUEUE</h3>
+  <p>鎖物件是對資料的存取進行<b>並行控制</b>。加鎖就是把使用者正在存取的資料登記在記憶體的 <b>Lock Table</b>（由 Enqueue Server 管理），解鎖就釋放。<b>建立鎖物件會自動產生兩個函數，一個加鎖、一個解鎖；鎖物件名稱要以 E 開頭。</b></p>
+
+  <p>SE11 建立步驟：<span class="src">（依講義步驟整理）</span></p>
+  <ol>
+    <li>SE11 → Lock object → 輸入 <span class="kw">EZERP300_VBAK</span> → Create。</li>
+    <li><b>Tables</b> 頁籤：Primary table 填 <span class="kw">ZERP300_VBAK</span>；若要連明細一起鎖，可再加 Secondary table（要有外來鍵關係）。</li>
+    <li><b>Lock mode</b> 選：
+      <ul>
+        <li><b>E（Write lock，獨佔可累加）</b>：最常用，同一交易可重複加鎖</li>
+        <li><b>S（Read lock，共享）</b>：多人可同時讀，但不可有人寫</li>
+        <li><b>X（Exclusive，不可累加）</b></li>
+        <li><b>O（Optimistic）</b>：先樂觀讀，存檔時才升級為寫鎖</li>
+      </ul>
+    </li>
+    <li><b>Lock parameter</b>：預設是主表的所有 Key 欄位；可只挑部分（未挑的欄位視為萬用，會鎖更廣）。</li>
+    <li>激活 → 系統產生 <span class="kw">ENQUEUE_EZERP300_VBAK</span> 與 <span class="kw">DEQUEUE_EZERP300_VBAK</span>。</li>
+  </ol>
+
+<pre><code class="abap">REPORT zerp300_vbak_change.
+
+PARAMETERS p_vbeln TYPE zerp300_vbak-vbeln OBLIGATORY.
+
+START-OF-SELECTION.
+
+  " 1. 先加鎖，鎖不到就不要往下做
+  CALL FUNCTION 'ENQUEUE_EZERP300_VBAK'
+    EXPORTING
+      mode_zerp300_vbak = 'E'          " E = 寫鎖
+      mandt             = sy-mandt
+      vbeln             = p_vbeln
+      _scope            = '2'          " 2 = 鎖延續到 COMMIT WORK 才由更新程序釋放
+      _wait             = abap_true    " 鎖不到時稍等再試
+    EXCEPTIONS
+      foreign_lock      = 1
+      system_failure    = 2
+      OTHERS            = 3.
+
+  CASE sy-subrc.
+    WHEN 0.
+      " 取得鎖，繼續
+    WHEN 1.
+      " sy-msgv1 會帶回鎖住這筆資料的使用者
+      MESSAGE |訂單 { p_vbeln ALPHA = OUT } 正被使用者 { sy-msgv1 } 鎖定中| TYPE 'E'.
+    WHEN OTHERS.
+      MESSAGE '鎖定失敗，請洽系統管理員' TYPE 'E'.
+  ENDCASE.
+
+  " 2. 讀取 → 修改
+  SELECT SINGLE vbeln, erdat, kunnr, netwr, waerk
+    FROM zerp300_vbak
+    WHERE vbeln = @p_vbeln
+    INTO @DATA(ls_vbak).
+
+  IF sy-subrc = 0.
+    ls_vbak-netwr = ls_vbak-netwr + 100.
+
+    UPDATE zerp300_vbak
+       SET netwr = @ls_vbak-netwr
+     WHERE vbeln = @p_vbeln.
+
+    IF sy-subrc = 0.
+      COMMIT WORK AND WAIT.
+      MESSAGE |訂單 { p_vbeln ALPHA = OUT } 已更新，共 { sy-dbcnt } 筆| TYPE 'S'.
+    ELSE.
+      ROLLBACK WORK.
+      MESSAGE '更新失敗' TYPE 'E'.
+    ENDIF.
+  ENDIF.
+
+  " 3. 一定要解鎖（_scope = '2' 時 COMMIT 會自動解，但顯式解鎖較保險）
+  CALL FUNCTION 'DEQUEUE_EZERP300_VBAK'
+    EXPORTING
+      mode_zerp300_vbak = 'E'
+      mandt             = sy-mandt
+      vbeln             = p_vbeln
+      _scope            = '3'.</code></pre>
+
+  <div class="warn">鎖物件三大坑：<br>
+  ① <b>_SCOPE 參數</b>：1＝鎖屬於當前對話（要自己 DEQUEUE）；2＝鎖交給更新程序，<b>COMMIT WORK 時自動釋放</b>（標準交易最常用）；3＝兩者都要。用錯會出現「資料改完鎖還在」或「還沒存檔鎖就沒了」。<br>
+  ② <b>程式中途 LEAVE／MESSAGE E 跳出而沒解鎖</b>，鎖會殘留到 session 結束。可用 <span class="tcode">SM12</span> 查看與手動刪除（正式機刪鎖要非常小心）。<br>
+  ③ <b>加鎖不等於資料庫鎖</b>。SAP Enqueue 是「君子協定」：只有<b>大家都去呼叫 ENQUEUE</b> 才有效。你直接 UPDATE 而不加鎖，系統不會阻止你——所以改標準表一定要用標準的 ENQUEUE 函數（例如改物料要用 <span class="kw">ENQUEUE_EMMARAE</span>）。</div>
+
+  <div class="tip">批次程式要一次釋放全部的鎖，可呼叫 <span class="kw">DEQUEUE_ALL</span>；若要用「集中送出」提升效能，ENQUEUE 加 <span class="kw">_COLLECT = abap_true</span>，最後呼叫 <span class="kw">FLUSH_ENQUEUE</span>。</div>
+
+  <h3 id="ch01-2-12">12. 擴充既有資料表：Append Structure 與 Include</h3>
+  <p>要在<b>標準表</b>（或別人的表）上加欄位，不能直接改表定義（升級會被蓋掉、且屬於修改標準），正確做法有兩種：</p>
+
+  <table>
+    <thead><tr><th>方式</th><th>做法</th><th>適用</th></tr></thead>
+    <tbody>
+      <tr><td><b>Append Structure</b></td><td>SE11 顯示表 → <b>Append Structure…</b> → 建 <span class="kw">ZA_MARA_EXT</span>，欄位一律以 <b>ZZ</b> 或 <b>YY</b> 開頭</td><td>加在表的<b>最後面</b>；升級安全；一張表可以有多個 Append</td></tr>
+      <tr><td><b>Customizing Include（CI_）</b></td><td>SAP 事先在表中預留 <span class="kw">.INCLUDE CI_xxxx</span>，你只要去建那個結構</td><td>SAP 指定的擴充點，如 CI_COBL（會計指派區塊）</td></tr>
+      <tr><td><b>.INCLUDE 自建結構</b></td><td>自建表的 Fields 中直接寫 <span class="kw">.INCLUDE</span> 引用一個 Structure</td><td>自己的 Z 表，讓多張表共用同一段欄位（如異動人／異動日）</td></tr>
+    </tbody>
+  </table>
+
+  <div class="warn">Append Structure 的限制：① 欄位名必須在客戶命名空間（ZZ／YY）否則升級可能撞名；② <b>不能加到主鍵</b>（Append 一定在最後面）；③ Pooled/Cluster table 不能 Append；④ 加完之後要 <span class="tcode">SE14</span> Activate and adjust database；⑤ S/4HANA 上優先考慮 <b>Custom Fields and Logic（Key User Extensibility，Fiori App）</b>，它會自動把欄位延伸到 CDS View 與 Fiori 畫面，比手工 Append 省事很多。</div>
+
+<pre><code class="abap">" 讀取自己 Append 上去的欄位，跟標準欄位混用完全一樣
+SELECT matnr,
+       mtart,
+       matkl,
+       zzcustom_flag,          " 來自 Append Structure ZA_MARA_EXT
+       zzcustom_grp
+  FROM mara
+  WHERE mtart = @p_mtart
+    AND lvorm = @space
+  ORDER BY matnr
+  INTO TABLE @DATA(lt_mara).
+
+" 動態判斷某欄位是否存在（跨系統版本相容時很好用）
+DATA(lo_struct) = CAST cl_abap_structdescr(
+                    cl_abap_typedescr=&gt;describe_by_name( 'MARA' ) ).
+
+DATA(lt_comp) = lo_struct-&gt;get_components( ).
+
+IF line_exists( lt_comp[ name = 'ZZCUSTOM_FLAG' ] ).
+  cl_demo_output=&gt;write( '本系統的 MARA 已擴充 ZZCUSTOM_FLAG' ).
+ELSE.
+  cl_demo_output=&gt;write( '本系統尚未擴充' ).
+ENDIF.</code></pre>
+
+  <h3 id="ch01-2-13">13. S/4HANA 補充：CDS View 取代自建 DB View、HANA 上的 Z 表設計</h3>
+  <p>講義的 Database View 觀念要保留（考證照、看舊程式都用得到），但<b>新開發請改用 ABAP CDS View</b>。CDS 的好處是：可加註解（讓 Fiori／OData／分析工具直接使用）、支援參數、支援關聯（association）、支援彙總與 SQL 函數、程式碼可進版控。</p>
+
+  <div class="warn">版本差異一定要記：<b>S/4HANA 1809（ABAP 7.53）只有 DDIC-based CDS View</b>，語法是 <span class="kw">DEFINE VIEW</span> 且必須加 <span class="kw">@AbapCatalog.sqlViewName</span>（會產生一個 SQL View）。<b>從 S/4HANA 2020（ABAP 7.55）起才有 CDS View Entity</b>（<span class="kw">DEFINE VIEW ENTITY</span>），不需要也不可以寫 sqlViewName。兩者都只能在 <b>Eclipse ADT</b> 裡建立，SE11／SE80 只能顯示。</div>
+
+<pre><code class="abap">" 寫法 A：S/4HANA 1809 ~ 1909 可用（DDIC-based CDS View）
+@AbapCatalog.sqlViewName: 'ZVERP300ORD'
+@AbapCatalog.compiler.compareFilter: true
+@AccessControl.authorizationCheck: #CHECK
+@EndUserText.label: '訂單主檔含客戶名稱'
+define view Z_I_Erp300Order
+  as select from zerp300_vbak as Ord
+  inner join    zerp300_kna1  as Cust
+    on  Ord.mandt = Cust.mandt
+    and Ord.kunnr = Cust.kunnr
+{
+  key Ord.vbeln  as SalesOrder,
+      Ord.erdat  as OrderDate,
+      Ord.kunnr  as Customer,
+      Cust.name1 as CustomerName,
+      @Semantics.amount.currencyCode: 'Currency'
+      Ord.netwr  as NetAmount,
+      @Semantics.currencyCode: true
+      Ord.waerk  as Currency
+}</code></pre>
+
+<pre><code class="abap">" 寫法 B：S/4HANA 2020（ABAP 7.55）以後的 CDS View Entity — 新專案請用這個
+@AccessControl.authorizationCheck: #CHECK
+@EndUserText.label: '訂單主檔含客戶名稱'
+define view entity Z_I_Erp300Order
+  as select from zerp300_vbak as Ord
+  association [1..1] to zerp300_kna1 as _Customer
+    on  $projection.Customer = _Customer.kunnr
+{
+  key Ord.vbeln       as SalesOrder,
+      Ord.erdat       as OrderDate,
+      Ord.kunnr       as Customer,
+      _Customer.name1 as CustomerName,
+
+      @Semantics.amount.currencyCode: 'Currency'
+      Ord.netwr       as NetAmount,
+
+      @Semantics.currencyCode: true
+      Ord.waerk       as Currency,
+
+      _Customer                       // 曝露 association 給上層 View 使用
+}</code></pre>
+
+<pre><code class="abap">" 在 ABAP 中消費 CDS View：跟讀一般資料表一樣，但可用別名欄位與彙總
+SELECT SalesOrder,
+       OrderDate,
+       Customer,
+       CustomerName,
+       NetAmount,
+       Currency
+  FROM z_i_erp300order
+  WHERE OrderDate IN @s_erdat
+    AND Customer  IN @s_kunnr
+  ORDER BY SalesOrder
+  INTO TABLE @DATA(lt_order).
+
+" Code Pushdown：彙總交給 HANA 做，不要撈回 ABAP 再 LOOP 加總
+SELECT Customer,
+       CustomerName,
+       SUM( NetAmount ) AS TotalAmount,
+       COUNT( * )       AS OrderCount
+  FROM z_i_erp300order
+  WHERE OrderDate IN @s_erdat
+  GROUP BY Customer, CustomerName
+  HAVING SUM( NetAmount ) &gt; 10000
+  ORDER BY Customer
+  INTO TABLE @DATA(lt_sum).</code></pre>
+
+  <p><b>Z 表在 HANA 上的設計原則</b>：</p>
+  <ul>
+    <li>SE11 建的表在 HANA 預設是 <b>Column Store（欄式儲存）</b>，適合分析與大量掃描；只有極高頻單筆讀寫的小表才考慮 Row Store（技術設定的 Storage Type）。</li>
+    <li><b>不要亂建 Secondary Index。</b>Row Store 時代靠索引解決的問題，HANA 靠欄式壓縮＋平行掃描就夠了；多餘索引反而拖慢寫入、佔記憶體。真的要建，先用 <span class="tcode">ST05</span>／SQL Monitor 證明有需要。</li>
+    <li><b>Code Pushdown</b>：能在 SQL 做的（JOIN、彙總、CASE、字串處理）就不要撈回 ABAP 用 LOOP 做。</li>
+    <li>大表避免 <span class="kw">SELECT *</span>——欄式儲存下，多讀一欄就多一份 I/O。</li>
+    <li><b>SELECT SINGLE 沒有排序保證</b>：多筆符合時回傳哪一筆由 DB 決定，HANA 上結果可能與 AnyDB 不同。要指定就寫 <span class="kw">ORDER BY ... UP TO 1 ROWS</span>。</li>
+  </ul>
+
+  <div class="warn">這正是專案上真實發生過的坑：某支成本報表因為資料同時存在兩種角度（例如 <b>item category（H）</b>與 <b>cost component（E）</b>），兩者的成本構成欄位數量不同，而程式<b>沒有排序</b>就取第一筆，於是「一下抓到 H、一下抓到 E」，成本結果不穩定。解法就是<b>明確指定要哪一種（加 WHERE 條件）並加上 ORDER BY</b>。另外相關經驗：<b>條件用列舉（IN 明列值）比用區間（BETWEEN）安全</b>，區間可能把不該納入的代碼一起掃進來。</div>
+
+  <h3 id="ch01-2-14">14. 用程式讀字典：DD* 表與 RTTI</h3>
+  <p>字典本身也是一堆表。會查這些表，等於多了一把萬用鑰匙：</p>
+
+  <table>
+    <thead><tr><th>字典表</th><th>內容</th></tr></thead>
+    <tbody>
+      <tr><td>DD02L / DD02T</td><td>資料表清單／表的說明文字</td></tr>
+      <tr><td>DD03L / DD03T</td><td>表的欄位清單（含 Key 旗標、位置、Data Element）／欄位說明</td></tr>
+      <tr><td>DD04L / DD04T</td><td>Data Element／其文字</td></tr>
+      <tr><td>DD01L / DD01T</td><td>Domain／其文字</td></tr>
+      <tr><td>DD07L / DD07T</td><td>Domain 的固定值／固定值文字</td></tr>
+      <tr><td>DD08L / DD05Q</td><td>外來鍵表頭／外來鍵欄位對應</td></tr>
+      <tr><td>DD25L / DD26S / DD27S</td><td>View 表頭／View 的基底表／View 的欄位</td></tr>
+      <tr><td>TADIR</td><td>所有 Repository 物件的登錄（誰建的、屬於哪個 Package）</td></tr>
+    </tbody>
+  </table>
+
+<pre><code class="abap">REPORT zdict_explorer.
+
+PARAMETERS p_tab TYPE tabname OBLIGATORY DEFAULT 'ZERP300_VBAK'.
+
+START-OF-SELECTION.
+
+  " 一次撈出表的欄位清單，並帶出 Data Element 的中文說明
+  SELECT f~position,
+         f~fieldname,
+         f~keyflag,
+         f~rollname AS data_element,
+         f~domname  AS domain,
+         f~datatype,
+         f~leng,
+         f~decimals,
+         t~ddtext   AS description
+    FROM dd03l AS f
+    LEFT OUTER JOIN dd04t AS t
+      ON  t~rollname   = f~rollname
+      AND t~ddlanguage = @sy-langu
+      AND t~as4local   = 'A'
+    WHERE f~tabname   = @p_tab
+      AND f~as4local  = 'A'
+      AND f~fieldname &lt;&gt; '.INCLUDE'
+    ORDER BY f~position
+    INTO TABLE @DATA(lt_field).
+
+  IF lt_field IS INITIAL.
+    MESSAGE |資料表 { p_tab } 不存在或未激活| TYPE 'E'.
+  ENDIF.
+
+  TRY.
+      cl_salv_table=&gt;factory(
+        IMPORTING r_salv_table = DATA(lo_alv)
+        CHANGING  t_table      = lt_field ).
+      lo_alv-&gt;get_functions( )-&gt;set_all( abap_true ).
+      lo_alv-&gt;get_columns( )-&gt;set_optimize( abap_true ).
+      lo_alv-&gt;display( ).
+    CATCH cx_salv_msg INTO DATA(lx).
+      MESSAGE lx-&gt;get_text( ) TYPE 'E'.
+  ENDTRY.</code></pre>
+
+<pre><code class="abap">" 用 RTTS 動態建立內表：使用者輸入表名，就把它整張撈出來顯示
+PARAMETERS p_tname TYPE tabname OBLIGATORY DEFAULT 'ZERP300_KNA1'.
+
+DATA lr_data TYPE REF TO data.
+FIELD-SYMBOLS &lt;lt_any&gt; TYPE STANDARD TABLE.
+
+START-OF-SELECTION.
+
+  TRY.
+      " 依表名取得結構描述，再組出對應的內表型別
+      DATA(lo_struct) = CAST cl_abap_structdescr(
+                          cl_abap_typedescr=&gt;describe_by_name( p_tname ) ).
+
+      DATA(lo_table) = cl_abap_tabledescr=&gt;create(
+                         p_line_type  = lo_struct
+                         p_table_kind = cl_abap_tabledescr=&gt;tablekind_std ).
+
+      CREATE DATA lr_data TYPE HANDLE lo_table.
+      ASSIGN lr_data-&gt;* TO &lt;lt_any&gt;.
+
+      " 動態 SELECT（整列取出，這裡是有意為之的例外）
+      SELECT * FROM (p_tname)
+        INTO TABLE @&lt;lt_any&gt;
+        UP TO 500 ROWS.
+
+      cl_salv_table=&gt;factory(
+        IMPORTING r_salv_table = DATA(lo_alv)
+        CHANGING  t_table      = &lt;lt_any&gt; ).
+      lo_alv-&gt;display( ).
+
+    CATCH cx_sy_move_cast_error.
+      MESSAGE |{ p_tname } 不是結構或資料表| TYPE 'E'.
+    CATCH cx_salv_msg INTO DATA(lx_salv).
+      MESSAGE lx_salv-&gt;get_text( ) TYPE 'E'.
+  ENDTRY.</code></pre>
+
+  <div class="tip">另一個常用的動態技巧：<span class="kw">cl_abap_typedescr=&gt;describe_by_data( ls_any )</span> 可以在執行期問「這個變數到底是什麼型別、多長」；配合 <span class="kw">ASSIGN COMPONENT 'MATNR' OF STRUCTURE ls_any TO FIELD-SYMBOL(&lt;lv&gt;)</span> 就能寫出通吃各種結構的共用副程式。</div>
+
+  <h3 id="ch01-2-qa">練習與自我檢核</h3>
+  <ol>
+    <li><b>建立 ZERP300_KNA1</b>：MANDT／KUNNR／NAME1／ZWERT／ZMENG／ZIEME。檢核點：CURR 有沒有指定幣別參考欄位（VBAP-WAERK）、QUAN 有沒有指定單位參考欄位（VBAP-ZIEME）？Delivery Class 是不是 A？做到能用 <b>SE16N 新增出資料</b>才算成功。</li>
+    <li><b>SE54 建維護畫面 → SM30 能維護</b>。若 Function Group 選不到，用 SE37／SE80 自己建一個並<b>全部激活</b>；也可先用 Z000。做完再用 <b>SE93</b> 把它包成一支 TCODE（parameter transaction，VIEWNAME + UPDATE=X + Skip initial screen）。</li>
+    <li><b>建立四張表並手繪 ER Diagram</b>：ZERP300_KNA1 / ZERP300_MARA / ZERP300_VBAK / ZERP300_VBAP，標出 1:N 關係與外來鍵方向。</li>
+    <li><b>Domain + Data Element 練習</b>：建一個幣別 Data Element，限定只能填 <b>TCURC</b> 內的值（Domain 型別 CUKY 5 + Value Table TCURC，Data Element 綁它，表欄位建外來鍵）。另建一個數值 Domain 並觀察 <b>Sign 不打勾＝只能輸入正數</b>。</li>
+    <li><b>外來鍵練習（講義 04）</b>：Z2202_00_VBAK N → 1 Z2202_00_KNA1。要先建 ZDKUNNR（Domain）+ ZEKUNNR（Data Element）。<b>練習題</b>：為訂單明細建 ZDMATNR + ZEMATNR，Z2202_00_VBAP N → 1 Z2202_00_MARA。</li>
+    <li><b>Text Table 練習</b>：知道 MAKT，如何找到 MARA？寫出四種方法（SE11 外鍵、Delivery and Maintenance 頁籤的 Text Table 標註、命名習慣＋回頭核對、Where-Used List / DD03L / DD08L）。</li>
+    <li><b>Database View</b>：建 ZDV2202_00_VBAK（VBAK + KNA1）。<b>練習題</b>：ZDV300_VBAP_MARA、ZDV300_VBAK_KNA1。答案要點：多表 DB View 只能顯示、強制 INNER JOIN。</li>
+    <li><b>Maintenance View</b>：建 ZMV_2202_00_VBAK，記得<b>所有主鍵都要進視圖</b>並用 SE54 產生螢幕。<b>練習題</b>：ZMV300_VBAP_VBAK。</li>
+    <li><b>Structure / Table Type</b>：建一個 ZDV_ 開頭的多層結構（不要放 MANDT，前三碼不能有底線），再建對應的 Table Type，然後在報表中用它接 SELECT 結果並用 CL_SALV_TABLE 顯示。</li>
+    <li><b>SYST 默寫</b>：至少寫出 10 個 SY 欄位與用途（SUBRC／UNAME／DATUM／UZEIT／TCODE／INDEX／TABIX／MANDT／LANGU／ULINE／VLINE／MSGV1／DBCNT）。</li>
+    <li><b>Type Group</b>：說明 <span class="kw">TYPE-POOL slis</span> 裡的型別命名規則（必須以類型組名開頭），並回答：S/4HANA 上為什麼不必再寫 TYPE-POOLS？新開發應該改用什麼？</li>
+    <li><b>Search Help 10-1</b>：建 ZSH_MSEHI，並為 Z2202_00_MARA 新增 MSEHI 欄位（Data Element MEINS）掛上它。<b>10-2</b>：ZUSER 系列練習修改名字。<b>ZSH_WAERK</b>：四步驟（TCURC 不能多語言 → 改用 Text Table → SPRAS 預設 SY-LANGU → 掛到 ZERP300_VBAK）。</li>
+    <li><b>Search Help 連動</b>：解釋為什麼 <span class="kw">P_1 TYPE T001W-WERKS</span> 不會連動、<span class="kw">P_1 TYPE T001L-WERKS</span> 會連動。</li>
+    <li><b>Collective Search Help 擴充</b>：以 ME23 找出採購資訊的 Search Help 是 <b>MEKK</b>，說明如何用 Append Search Help 掛上自己的 Elementary（升級安全）。並說出 Search Help Exit 必須遵守哪支範例函數的介面（<b>F4IF_SHLP_EXIT_EXAMPLE</b>）與五個 step（SELONE／PRESEL／SELECT／DISP／RETURN）。</li>
+    <li><b>Lock Object</b>：建 EZERP300_VBAK，寫一支程式做「加鎖 → 讀 → 改 → COMMIT → 解鎖」，並測試兩個 session 同時執行時第二個會拿到什麼訊息（FOREIGN_LOCK，SY-MSGV1 帶鎖定者）。再說明 _SCOPE 1/2/3 的差別，以及用 <b>SM12</b> 查鎖。</li>
+    <li><b>S/4HANA 觀念題</b>：① 為什麼新開發不建 Database View 而用 CDS？② 1809 與 2020 的 CDS 語法差在哪（sqlViewName / DEFINE VIEW ENTITY）？③ Z 表在 HANA 上該不該加索引？④ 為什麼「SELECT SINGLE 沒排序保證」會造成成本報表結果不穩定？</li>
+  </ol>
+</section>

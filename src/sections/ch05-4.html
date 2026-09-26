@@ -1,0 +1,900 @@
+<section class="chapter" id="ch05-4" data-title="BC403 ABAP 除錯技術（Debugger 全攻略）">
+  <h2>第 5-4 章 BC403 ABAP 除錯技術（Debugger 全攻略）</h2>
+  <p class="lede">BC403「Advanced ABAP Debugging」是 SAP 原廠專講 Debugger 的課程。它不教你寫程式，而是教你<b>看懂程式到底在做什麼</b>：怎麼啟動與結束 Debugger、F5～F8 與 Goto Statement、五種中斷點與 Watchpoint、內表／物件／記憶體分析、更新程式與 tRFC 的除錯、Layer Aware Debugging（<span class="tcode">SLAD</span>）、Request-Based Debugging（Terminal ID）、以及可以把除錯流程寫成程式的 Debugger Scripting（<span class="tcode">SAS</span>）。學完之後，「找不到哪裡出錯」與「看不懂標準程式」這兩件事，都會變成可以按步驟解決的問題。</p>
+
+  <div class="meta">
+    <div><b>核心 TCODE</b><span class="tcode">SE38</span><span class="tcode">SE80</span><span class="tcode">SE24</span><span class="tcode">SE37</span><span class="tcode">SM37</span><span class="tcode">SM50</span><span class="tcode">SICF</span><span class="tcode">SRDEBUG</span><span class="tcode">SLAD</span><span class="tcode">SAS</span><span class="tcode">SAAB</span><span class="tcode">S_MEMORY_INSPECTOR</span><span class="tcode">SAT</span><span class="tcode">SE30</span><span class="tcode">ST05</span><span class="tcode">ST22</span><span class="tcode">SM58</span><span class="tcode">SM13</span><span class="tcode">SU53</span><span class="tcode">SM21</span><span class="tcode">RZ11</span></div>
+    <div><b>關鍵物件</b>BREAK-POINT、BREAK、ASSERT、LOG-POINT、SY-BATCH、SY-SUBRC、S_DEVELOP（ACTVT 01/02/03）、rdisp/wpdbug_max_no、rdisp/max_debug_lazy_time、rdisp/max_alt_modes、abap/ext_debugging_possible、rfc/ext_debugging、LCL_DEBUGGER_SCRIPT、CL_TPDA_SCRIPT_CLASS_SUPER、CL_TPDA_SCRIPT_DATA_DESCR、CL_TPDA_SCRIPT_ABAPDESCR、CL_TPDA_SCRIPT_SCAN、IF_TPDA_SCRIPT_TRACE_WRITE、CX_TPDA_STOP_SCRIPTING_REQUEST、POPUP_GET_VALUES、&lt;&lt;%REST%&gt;&gt;、START_UP</div>
+  </div>
+
+    <div class="tip">本章是原廠 BC403 的 Debugger 功能全貌。想看「遇到問題時實際怎麼查」的情境寫法，請接著讀第六部 · 實戰專題：<a href="#ch06-1">6-1 開發者除錯實戰</a>、<a href="#ch06-2">6-2 顧問的除錯術</a>、<a href="#ch06-3">6-3 資料追蹤與效能調優實戰</a>。</div>
+
+<h3 id="ch05-4-01">1. 課程定位與教材對照</h3>
+  <p>BC403 屬於 SAP ABAP 開發課程中的<b>進階（300 等級取向）工具課</b>：前提是已學過 BC400（<a href="#ch05-1">5-1 章</a>）的基本語法，並最好懂一點 BC401 的 ABAP Objects（<a href="#ch05-2">5-2 章</a>），因為 Debugger 裡大量操作的是物件、參考與例外物件。本章素材只有原廠英文教材 <b>Col15（Course Version 15，Material Number 50134519，© 2022）</b>，共 146 頁；强晟 2007/2008 年的筆記中沒有 BC403 這一冊。</p>
+
+  <table>
+    <thead><tr><th>本章小節</th><th>原廠教材 Unit / Lesson</th><th>PDF 頁碼</th></tr></thead>
+    <tbody>
+      <tr><td>2～4 Debugger 概觀、啟動與結束、版面</td><td>Unit 1 Lesson 1 Describing Fundamental Debugger Functionality</td><td>p11～p19</td></tr>
+      <tr><td>5 控制程式執行（F5～F8、Goto、Step Size、Call Stack）</td><td>Unit 1 Lesson 2 Controlling Processing in the Debugger</td><td>p21～p25</td></tr>
+      <tr><td>6～7 中斷點、Watchpoint、Debugger Session</td><td>Unit 1 Lesson 3 Defining Breakpoints and Watchpoints</td><td>p27～p37</td></tr>
+      <tr><td>8～9 資料分析（變數、欄位、結構、內表、物件、Data Explorer、Diff）</td><td>Unit 1 Lesson 4 Analyzing Data in the Debugger</td><td>p39～p54</td></tr>
+      <tr><td>10 記憶體分析</td><td>Unit 1 Lesson 5 Analyzing Memory Consumption in the Debugger</td><td>p55～p64</td></tr>
+      <tr><td>11 使用者介面除錯（Screen、Web Dynpro）</td><td>Unit 1 Lesson 6 Debugging User Interfaces</td><td>p65～p70</td></tr>
+      <tr><td>12～15 例外、Trace、選項與設定、更新除錯、資料庫、系統管理</td><td>Unit 1 Lesson 7 Using Additional Debugger Functions</td><td>p71～p82（自我評量 p83～p92）</td></tr>
+      <tr><td>16 Layer Aware Debugging</td><td>Unit 2 Lesson 1 Using Layer Aware Debugging</td><td>p95～p103（評量 p105～p106）</td></tr>
+      <tr><td>17 Request-Based Debugging</td><td>Unit 3 Lesson 1 Using Request-Based Debugging</td><td>p109～p116（評量 p117～p118）</td></tr>
+      <tr><td>18 Debugger Scripting 與預設腳本</td><td>Unit 4 Lesson 1 Using Predefined Debugger Scripts</td><td>p121～p126</td></tr>
+      <tr><td>19 自訂 Debugger Script、Trace、SAS</td><td>Unit 4 Lesson 2 Creating and Executing Custom Debugger Scripts</td><td>p127～p141（評量 p143～p146）</td></tr>
+      <tr><td>20 S/4HANA 與 ADT 時代的除錯實務</td><td>（本書補充，非原教材內容）</td><td>—</td></tr>
+    </tbody>
+  </table>
+
+  <p><b>版本差異說明</b>：</p>
+  <ul>
+    <li>教材以 <b>New ABAP Debugger</b>（SAP NetWeaver 2004 起提供）為主；大量功能標註「as of SAP NetWeaver 7.0 EHP 2」（即 7.02），例如條件式中斷點、Debugger Scripting、Layer Aware Debugging、Request-Based Debugging、Display Exception 工具、Trace 工具。S/4HANA 1809（ABAP 7.53）全部都有。</li>
+    <li>Release 7.40 起，<b>Classic Debugger 已不能對外部請求（HTTP、RFC）除錯</b>，且不能在 Workbench 設定成預設 Debugger。</li>
+    <li>教材仍寫 <span class="tcode">SE30</span>；在 S/4HANA 上 <span class="tcode">SE30</span> 已被 <span class="tcode">SAT</span>（Runtime Analysis）取代，輸入 SE30 會自動轉到 SAT。</li>
+    <li>教材中 Web Dynpro、Microsoft Internet Explorer 的 SAP HTTP Plug-in 屬於舊世代技術，本章照實整理，並在相關處用 warn 方塊說明現況。</li>
+  </ul>
+  <div class="note">原廠教材的「Learning Assessment - Answers」在抽出的文字檔中<b>沒有保留正確答案的勾選標記</b>（每個選項前都是 X），因此本章 <a href="#ch05-4-qa">練習與自我檢核</a> 的答案是依教材內文推導並逐題說明理由，不是照抄答案頁。</div>
+
+  <h3 id="ch05-4-02">2. Debugger 概觀：New Debugger 與 Classic Debugger</h3>
+  <p>ABAP Debugger 是分析 ABAP 程式<b>最重要的工具</b>，兩大用途：</p>
+  <ul>
+    <li>開發期間分析錯誤：runtime error（短傾印，<span class="tcode">ST22</span>）與「不如預期的行為」。</li>
+    <li>分析既有程式、理解程式流程——這是<b>修改或擴充程式（尤其是 SAP 標準程式）之前的必要功課</b>。</li>
+  </ul>
+  <table>
+    <thead><tr><th>比較項目</th><th>New（Standard）Debugger</th><th>Classic Debugger</th></tr></thead>
+    <tbody>
+      <tr><td>可用版本</td><td>SAP NetWeaver 2004 起</td><td>所有 SAP 系統</td></tr>
+      <tr><td>架構</td><td><b>雙程序架構</b>：Debugger 在自己的主模式（external mode／main session），被除錯程式（debuggee）在原本的主模式；Debugger 顯示在獨立的 SAP GUI 視窗</td><td>與被除錯程式在<b>同一個 roll area</b>，顯示在同一視窗</td></tr>
+      <tr><td>介面</td><td>可自由配置（Desktop、1～4 個工具）</td><td>固定畫面</td></tr>
+      <tr><td>進階功能</td><td>Debugger Scripting、Layer Aware Debugging 只有 New Debugger 有</td><td>無</td></tr>
+      <tr><td>外部請求（HTTP/RFC）、更新程式除錯</td><td>可以</td><td>7.40 起已停用</td></tr>
+    </tbody>
+  </table>
+  <p>雙程序架構的結果：Debugger 開著時，畫面上會同時有兩個視窗——debuggee 的最後一個對話畫面與 Debugger 畫面，但<b>同一時間只有一個是作用中的</b>：要嘛程式在等使用者輸入（兩個對話步驟之間），要嘛 Debugger 在等使用者輸入（對話步驟進行中）。程式輸出最後畫面後，Debugger 仍保留（不作用），只要 debuggee 的 session 還活著，Debugger 就不會關閉。</p>
+  <div class="tip"><b>切換 Classic Debugger</b>：在 Standard Debugger 中選 Goto → Navigate to → Switch to Classic Debugger；或在命令列輸入 <span class="kw">/HSET DEBUGGER=CLASSIC</span>（只對本次登入 session 有效），改回來用 <span class="kw">/HSET DEBUGGER=STANDARD</span>。新開的 SAP GUI 登入 session 一律預設 Standard Debugger。實務上沒有理由再用 Classic。</div>
+
+  <h3 id="ch05-4-03">3. 啟動與結束 Debugger 的各種方法</h3>
+  <p>啟動方式依<b>程式類型</b>與<b>所使用的工具</b>而定：</p>
+  <table>
+    <thead><tr><th>情境</th><th>啟動方式</th><th>說明</th></tr></thead>
+    <tbody>
+      <tr><td>可執行程式／交易</td><td><span class="tcode">SE80</span> 物件樹右鍵 Execute → Debugging；或 <span class="tcode">SE38</span> 選單 Program → Test → Debugging</td><td>選單名稱依程式類型而異</td></tr>
+      <tr><td>背景作業</td><td><span class="tcode">SM37</span> 選一個<b>已完成</b>的 Job，命令列輸入 <span class="kw">jdbg</span></td><td>用相同選擇畫面值重現情境，且 <b>SY-BATCH = 'X'</b>（有些程式會依 SY-BATCH 改變行為）</td></tr>
+      <tr><td>ICF 服務</td><td><span class="tcode">SICF</span> 選服務 → Edit → Debugging → Activate Debugging</td><td>對 HTTP 服務設定除錯</td></tr>
+      <tr><td>方法／函數模組</td><td>Class Builder（<span class="tcode">SE24</span>）與 Function Builder（<span class="tcode">SE37</span>）的測試環境</td><td>可單獨以除錯模式測試方法或 FM</td></tr>
+      <tr><td>對話畫面執行中</td><td><span class="kw">/h</span>：System → Utilities → Debug Screen（依講義）</td><td>ABAP 敘述<b>與</b>畫面邏輯（Flow Logic）都除錯</td></tr>
+      <tr><td></td><td><span class="kw">/ha</span>：System → Utilities → Debug ABAP</td><td>不除錯畫面處理，但 PBO／PAI 呼叫的 module 仍會除錯</td></tr>
+      <tr><td></td><td><span class="kw">/hs</span>：System → Utilities → Debug System</td><td>自己的程式與<b>系統程式</b>一起除錯</td></tr>
+      <tr><td>任何正在執行的程式</td><td><span class="tcode">SM50</span> 選工作程序 → Administration → Program → Debugging</td><td>在下一個可中斷的敘述停下；卡死的長時間程式靠這招</td></tr>
+      <tr><td>中斷點</td><td>程式執行到有效的中斷點</td><td>見第 6 節</td></tr>
+    </tbody>
+  </table>
+  <div class="note">教材原文把 <span class="kw">/ha</span> 的選單寫成「Debug Debug ABAP」，是排版重複，正確名稱是 <b>Debug ABAP</b>。另外選單名稱在不同 SAP GUI 版本上可能略有不同，以命令列指令最可靠。</div>
+
+  <p><b>結束 Debugger</b>（選單 Debugger 或工具列按鈕）：</p>
+  <ul>
+    <li><b>Exit (Application continues running)</b>：關閉 Debugger，程式繼續跑。</li>
+    <li><b>Exit (Close Application)</b>：Debugger 與程式一起結束。</li>
+    <li>程式結束時 Debugger 是否一併關閉，由 Settings → Change Debugger Profile / Settings 的 <b>Close Debugger After Continue (F8) and Roll Area End</b> 決定；沒勾的話 Debugger 保持開啟，<b>變數清單不會清掉</b>，下次除錯可以繼續用。</li>
+    <li>GUI 應用程式可以在 Debugger 所附著的主模式命令列輸入 <span class="kw">/hx</span> 直接關閉 Debugger。</li>
+  </ul>
+
+  <pre><code class="text">命令列（OK-Code）除錯指令速查
+/h                       開啟除錯（ABAP + 畫面邏輯）
+/ha                      只除錯 ABAP（跳過 Flow Logic，PBO/PAI module 仍會停）
+/hs                      連同系統程式一起除錯（System Debugging）
+/hx                      從被除錯的主模式關閉 Debugger
+/hset debugger=classic   本次登入改用 Classic Debugger
+/hset debugger=standard  本次登入改回 Standard Debugger
+/htid                    本視窗之後的請求帶上自己的 Terminal ID（第 17 節）
+/hset tid=&lt;TID&gt;          本視窗之後的請求帶上指定的 Terminal ID
+/hget tid                查目前指派的 Terminal ID
+/hdel tid                刪除手動指派的 Terminal ID
+jdbg                     在 SM37 對已完成的背景 Job 重跑除錯（SY-BATCH = X）</code></pre>
+
+  <h3 id="ch05-4-04">4. Debugger 版面配置（Desktop 與工具）</h3>
+  <p>Debugger 畫面是一組頁籤（tabstrip），每個頁籤稱為一個 <b>Desktop</b>，放一組 Debugger 工具。每個 Desktop 可同時顯示 <b>1～4 個工具</b>，工具右側的小工具列提供：</p>
+  <table>
+    <thead><tr><th>按鈕</th><th>作用</th></tr></thead>
+    <tbody>
+      <tr><td>Close Tool</td><td>從 Desktop 移除該工具（Desktop 上超過一個工具才出現）</td></tr>
+      <tr><td>New Tool</td><td>新增工具（最多 4 個）</td></tr>
+      <tr><td>Replace Tool</td><td>用另一個工具取代</td></tr>
+      <tr><td>Full Screen</td><td>只留下這個工具</td></tr>
+      <tr><td>Maximize Vertically / Horizontally</td><td>垂直／水平拉伸；4 個工具時會擠掉同欄／同列的工具</td></tr>
+      <tr><td>Swap</td><td>交換位置；超過兩個工具時會再跳對話框選交換對象</td></tr>
+      <tr><td>Services of the Tool</td><td>該工具專屬的服務（不是每個工具都有）</td></tr>
+    </tbody>
+  </table>
+  <ul>
+    <li>工具列的 <b>Save Layout</b> 按鈕可儲存使用者專屬版面，下次啟動自動載入（也在 Debugger → Debugger Session 選單）。<b>只有前三個 Desktop（Desktop 1、2、3）的版面會被儲存</b>，其餘頁籤的變更在 session 結束時丟棄。</li>
+    <li>7.0 EHP 2 起，前三個頁籤的名稱可以改：Debugger → Debugger Session → Designation of the User Desktop。</li>
+    <li>教材建議：物件導向程式可以在同一 Desktop 放 Source Code、Variable Fast Display、Object、Call Stack，讓來回切換最少。</li>
+  </ul>
+
+  <h3 id="ch05-4-05">5. 控制程式執行：F5～F8、Goto Statement、Step Size、Call Stack</h3>
+  <p>原始碼中的<b>黃色箭頭</b>指向「下一個要執行、但還沒執行」的敘述。</p>
+  <table>
+    <thead><tr><th>按鍵</th><th>名稱</th><th>行為</th></tr></thead>
+    <tbody>
+      <tr><td><b>F5</b></td><td>Single Step</td><td>執行下一個敘述後停；遇到呼叫會<b>進入</b>被呼叫單元</td></tr>
+      <tr><td><b>F6</b></td><td>Execute</td><td>執行下一個敘述後停；被呼叫的單元（subroutine、FM、方法、dialog module）<b>整個執行完</b>才停</td></tr>
+      <tr><td><b>F7</b></td><td>Return</td><td>跑完目前單元，回到呼叫端後停</td></tr>
+      <tr><td><b>F8</b></td><td>Continue</td><td>一直跑到下一個中斷點或 Watchpoint</td></tr>
+      <tr><td><b>Shift+F8</b></td><td>Continue to Cursor</td><td>跑到游標所在敘述</td></tr>
+    </tbody>
+  </table>
+  <p><b>Goto Statement</b>（右鍵敘述 → Goto Statement，或 Debugger → Goto Statement）：可以<b>跳過</b>某段程式（避免會導致 runtime error 的敘述）或<b>重跑</b>已執行過的程式碼（換個變數值再試一次，不用重啟應用程式），前提是技術上可行。這是權限 ACTVT 02 以上才有的功能（第 15 節）。</p>
+  <p><b>Step Size（敘述級除錯）</b>：長長的 <span class="kw">IF</span> 有很多子條件，你以為是 TRUE 結果是 FALSE，要知道是哪個子條件失敗。按 <b>Step Size</b> 按鈕切換為 Statement Debugging，Debugger 會逐一執行子條件，各子條件的回傳值顯示在 Variables 窗格的 <b>Auto</b> 頁籤；再按一次回到逐行模式。7.40 以後的巢狀運算式（<span class="kw">COND</span>、<span class="kw">VALUE</span>、<span class="kw">REDUCE</span>、方法鏈）也很適合用這個功能拆開看。</p>
+
+  <pre><code class="abap">*&amp;---------------------------------------------------------------*
+*&amp; 練習用：Step Size 分析複合條件、Call Stack 觀察呼叫層次
+*&amp;---------------------------------------------------------------*
+REPORT zbc403_step_size.
+
+PARAMETERS p_carr TYPE s_carr_id DEFAULT 'LH'.
+
+CLASS lcl_check DEFINITION FINAL.
+  PUBLIC SECTION.
+    CLASS-METHODS is_candidate
+      IMPORTING is_flight       TYPE sflight
+      RETURNING VALUE(rv_ok)    TYPE abap_bool.
+ENDCLASS.
+
+CLASS lcl_check IMPLEMENTATION.
+  METHOD is_candidate.
+    " 在這行按 Step Size，F5 會逐一評估四個子條件，結果看 Auto 頁籤
+    rv_ok = xsdbool( is_flight-seatsmax &gt; 0
+                 AND is_flight-seatsocc &lt; is_flight-seatsmax
+                 AND is_flight-fldate   &gt;= sy-datum
+                 AND ( is_flight-price &gt; 500 OR is_flight-currency = 'EUR' ) ).
+  ENDMETHOD.
+ENDCLASS.
+
+START-OF-SELECTION.
+  SELECT carrid, connid, fldate, price, currency, seatsmax, seatsocc
+    FROM sflight
+    WHERE carrid = @p_carr
+    ORDER BY carrid, connid, fldate              "HANA 沒有預設排序，一定要寫
+    INTO CORRESPONDING FIELDS OF TABLE @DATA(lt_flight).
+
+  LOOP AT lt_flight INTO DATA(ls_flight).
+    " F5 進入方法、F6 跑完方法停在下一行、進入後按 F7 返回
+    IF lcl_check=&gt;is_candidate( CORRESPONDING #( ls_flight ) ) = abap_true.
+      WRITE: / ls_flight-connid, ls_flight-fldate, ls_flight-price.
+    ENDIF.
+  ENDLOOP.</code></pre>
+
+  <p><b>Call Stack 工具</b>：顯示目前呼叫堆疊，可選純 ABAP stack、Screen stack 或兩者合併（由 Debugger Customizing 的 Call Stack 頁籤決定）；預設放在 <b>Desktop 2</b>。系統程式以<b>藍色</b>顯示。雙擊任一層，同一 Desktop 的原始碼會重新定位，黃色箭頭指在「產生下一層」的那個敘述——<b>但實際執行位置不會改變</b>。</p>
+  <div class="tip">看不懂標準交易時，最快的方法是在關鍵畫面輸入 <span class="kw">/h</span>、按一下 Enter 進 Debugger，然後直接看 Call Stack：一眼就知道目前在哪支主程式、哪個 include、哪個 PAI module。這也是找 User Exit／BAdI 位置的起點（<a href="#ch03-3">3-3 章</a>、<a href="#ch03-4">3-4 章</a>）。</div>
+
+  <h3 id="ch05-4-06">6. 中斷點：Persistent、Session、External、Debugger 四種</h3>
+  <div class="warn">每位使用者<b>最多 30 個中斷點</b>。中斷點有不同的<b>範圍</b>與<b>生命週期</b>，選錯種類是「中斷點設了卻不停」的主因。</div>
+  <table>
+    <thead><tr><th>種類</th><th>設定方式</th><th>適用範圍</th><th>生命週期</th></tr></thead>
+    <tbody>
+      <tr><td><b>Persistent（寫在程式碼裡）</b></td><td><span class="kw">BREAK-POINT</span>（不分使用者，可加 <span class="kw">ID</span> 綁 Checkpoint Group）；<span class="kw">BREAK &lt;user&gt;</span>（只對該使用者）</td><td>HTTP／RFC 呼叫的程式中會被<b>忽略</b>，除非開啟外部除錯</td><td>跟著原始碼，直到刪掉</td></tr>
+      <tr><td><b>Session</b></td><td>Editor：Ctrl+Shift+F12、Set/Delete Session Breakpoint 按鈕、點左側狀態欄；Debugger：右鍵 Create Session Breakpoint</td><td>只對設定者本人，在該使用者 session 的所有主模式有效；<b>不能用在只經 HTTP 呼叫的程式</b>（Web Dynpro controller 方法、BSP event handler）</td><td>登出即刪除</td></tr>
+      <tr><td><b>External（User）</b></td><td>Editor：Ctrl+Shift+F9、Set/Delete External Breakpoint 按鈕、狀態欄右鍵 Set External Breakpoint；Debugger：右鍵 Create User Breakpoint</td><td>也適用 RFC、HTTP 請求；可綁使用者或 Terminal ID（第 17 節）</td><td><b>2 小時</b>；期間再設新的外部中斷點，所有外部中斷點的時效重新計算</td></tr>
+      <tr><td><b>Debugger（動態）</b></td><td>Debugger 中右鍵 Create Debugger Breakpoint、點狀態欄、Breakpoints → Line Breakpoint → Set/Delete；未知位置用 <b>F9</b> 或停止標誌按鈕、Breakpoints → Breakpoint at…</td><td>只在本次 Debugger session 可見</td><td>Debugger session 結束即刪除</td></tr>
+    </tbody>
+  </table>
+  <ul>
+    <li><b>外部中斷點的使用者</b>：RFC 或 HTTP 常用另一個帳號（例如通訊帳號）執行，要先在 Editor 的 Utilities → Settings → ABAP Editor → Debugging 的 <b>User</b> 欄位改成那個使用者，再設中斷點。</li>
+    <li><b>Client 陷阱</b>：Debugger 一律在<b>設中斷點的 client</b> 開啟。在 client 100 設，應用程式在 client 200 跑到時，程式在 200 被卡住，Debugger 卻開在 100。</li>
+    <li>7.0 EHP 2 起可勾 <b>Only current application server</b>，把外部中斷點限定在目前應用伺服器；<span class="tcode">SRDEBUG</span> 可設定外部中斷點在某個登入群組的伺服器生效，或（預設）所有應用伺服器生效。</li>
+    <li>Debugger 中按 <b>Save（Ctrl+S）</b>，所有 Debugger 中斷點會轉成 Session 中斷點。</li>
+    <li><span class="tcode">SE80</span> 的 Utilities → Breakpoints → Display 可一覽並刪除所有 Session 與 External 中斷點；Debugger 的 <b>Break./Watchpoints</b> 頁籤 → Breakpoints 子頁可刪除、停用、重新啟用、改變中斷點種類。</li>
+  </ul>
+  <p><b>F9「在未知位置設中斷點」可選的對象</b>：ABAP 敘述、本地／全域類別方法、函數模組、Form、傳統例外或類別例外、嵌入 Include 的行號，以及 7.0 EHP 2 起的：畫面 PBO／PAI Flow Logic 行號、Simple Transformation、Web Dynpro controller 方法、Program stack 變化、不精確的 decfloat 運算、<b>特定訊息（T100）</b>。</p>
+
+  <pre><code class="abap">*&amp;---------------------------------------------------------------*
+*&amp; Persistent 中斷點的正確寫法：一律綁 Checkpoint Group（SAAB）
+*&amp;---------------------------------------------------------------*
+" ✗ 不要：BREAK-POINT.            → 所有人都會停，忘了拿掉就傳到 PRD
+" ✗ 不要：BREAK zcasper.          → 綁個人帳號，換人維護就失效，也常被遺忘
+" ✓ 建議：綁 SAAB 建立的 Checkpoint Group，預設 inactive，要查時才在 SAAB 啟用
+METHOD post_goods_movement.
+
+  BREAK-POINT ID zmm_gm_debug.                   "SAAB 啟用 Break 才會停
+
+  " ASSERT 同樣可綁群組：條件不成立時可設為 Log / Break / Abort
+  ASSERT ID zmm_gm_debug
+    CONDITION line_exists( mt_items[ matnr = iv_matnr ] ).
+
+  " LOG-POINT：不中斷，只把值記到 SAAB 的 Log，適合在 QAS/PRD 追資料
+  LOG-POINT ID zmm_gm_debug
+    SUBKEY |{ iv_matnr }|
+    FIELDS iv_matnr iv_werks iv_menge.
+
+ENDMETHOD.</code></pre>
+  <div class="warn">教材強調：硬寫在程式裡的中斷點<b>只能在開發期間使用，傳輸前一定要移除</b>。用 Checkpoint Group 的好處是即使忘了拿掉，只要群組在 <span class="tcode">SAAB</span> 保持 inactive 就不會停；Code Inspector／ATC 也能檢查出沒綁群組的 <span class="kw">BREAK-POINT</span>。</div>
+
+  <p><b>條件式中斷點</b>（7.0 EHP 2 起，不必改程式碼）：已知行號的中斷點可在 Source Code 工具右鍵 → Create Breakpoint Condition、建立時填 <b>Free Condition Entry</b>、或在 Breakpoints 工具按 Create Breakpoint Condition。未知位置（例如「在 ABAP 命令 SELECT」）的中斷點則要在 Breakpoints 工具點 <b>Define Filter</b> 連結。可用的條件依命令而定：<span class="kw">SELECT</span> 只能依資料表篩選、<span class="kw">APPEND</span> 只能依內表篩選，有些命令完全不能加條件。</p>
+  <pre><code class="text">條件式中斷點（Free Condition Entry）範例
+LS_ITEM-MATNR = 'TG11' AND LS_ITEM-WERKS = '1710'     " 只在特定物料停
+SY-TABIX &gt; 998                                        " 大迴圈跳到第 999 圈
+LINES( LT_ITEM ) = 0                                  " 內表為空才停（內建函式可用）
+SY-SUBRC &lt;&gt; 0                                         " 只在失敗時停
+
+※ 條件建議用「多個 EQ 列舉」而不是區間：
+   MATNR = 'TG11' OR MATNR = 'TG12' 比 MATNR BETWEEN 'TG11' AND 'TG19' 安全，
+   區間比的是字典序，遇到 ALPHA 前導零或編碼規則改過就會停錯地方。</code></pre>
+
+  <h3 id="ch05-4-07">7. Watchpoint 與 Debugger Session 的存取</h3>
+  <p><b>Watchpoint</b>：當被監看的變數值<b>改變</b>時停下。</p>
+  <ul>
+    <li><b>只能在 Debugger session 裡定義</b>，session 結束一律刪除。</li>
+    <li>建立：<b>Shift+F4</b>、Create Watchpoint 按鈕、或 Breakpoints → Create Watchpoint；游標若停在變數上，名稱自動帶入 Variable 欄位。</li>
+    <li>區域變數可選只監看<b>目前這個</b> subroutine／FM／方法實例，或該單元的所有實例。</li>
+    <li>Free Condition Entry 可加條件；留空則任何變化都停。</li>
+    <li><b>多個 Watchpoint 之間是 OR</b>。</li>
+    <li>7.0 EHP 2 起有 <b>Watchpoint Type</b>：物件屬性改變時，參考變數的值（只是位址）不會變，所以監看參考變數沒用；選 <b>Watchpoint at Object Attribute</b> 可一次監看某一類屬性（例如所有 public instance 屬性、所有 private static 屬性）。</li>
+    <li>Break./Watchpoints 頁籤的 Watchpoints 子頁會顯示<b>目前值與前一個值</b>；按 Compare Variables 會用 Diff 工具比較兩者。</li>
+  </ul>
+  <pre><code class="abap">*&amp;---------------------------------------------------------------*
+*&amp; Watchpoint 練習：找出「是誰把價格改掉的」
+*&amp;---------------------------------------------------------------*
+CLASS lcl_order DEFINITION FINAL.
+  PUBLIC SECTION.
+    DATA mv_net_price TYPE netwr READ-ONLY.
+    METHODS constructor IMPORTING iv_price TYPE netwr.
+    METHODS apply_discount IMPORTING iv_pct TYPE p.
+    METHODS apply_surcharge IMPORTING iv_amt TYPE netwr.
+ENDCLASS.
+
+CLASS lcl_order IMPLEMENTATION.
+  METHOD constructor.
+    mv_net_price = iv_price.
+  ENDMETHOD.
+  METHOD apply_discount.
+    mv_net_price = mv_net_price * ( 100 - iv_pct ) / 100.
+  ENDMETHOD.
+  METHOD apply_surcharge.
+    mv_net_price = mv_net_price + iv_amt.     "← 假設 bug 在這裡
+  ENDMETHOD.
+ENDCLASS.
+
+START-OF-SELECTION.
+  DATA(lo_order) = NEW lcl_order( iv_price = '1000.00' ).
+  BREAK-POINT ID zbc403.                      "先停下來，才能建 Watchpoint
+  " 在 Debugger：Shift+F4 → Watchpoint Type 選 Watchpoint at Object Attribute
+  " 對 LO_ORDER 的 public instance 屬性設監看；監看 LO_ORDER 本身不會停
+  lo_order-&gt;apply_discount( 10 ).
+  lo_order-&gt;apply_surcharge( '-950.00' ).
+  WRITE: / |Net price: { lo_order-&gt;mv_net_price }|.</code></pre>
+
+  <p><b>Debugger Session 的儲存與載入</b>：非持久的中斷點登出就消失，隔天要接著查很麻煩。Debugger → Debugger Session → <b>Save</b> 可把目前設定存到檔案系統或資料庫，可選要存的元件：中斷點（session、external、debugger）與 Watchpoint、版面、變數、Debugger 選項與設定。</p>
+  <ul>
+    <li>名稱 <b>START_UP</b> 保留給預設 Debugger 設定，每次啟動自動載入；<b>預設 session 不能存中斷點與 Watchpoint</b>。</li>
+    <li>Debugger → Debugger Session → <b>Load</b> 載入；載入的中斷點一律成為 <b>Debugger 中斷點</b>（session 結束即刪），需要時再轉成 external 或 session 中斷點。</li>
+    <li>Debugger → Debugger Session → <b>Overview/Delete</b> 可一覽、多選刪除已存的 session。</li>
+  </ul>
+
+  <h3 id="ch05-4-08">8. 資料分析（一）：Variable Fast Display、Single Field、Structure</h3>
+  <p>游標停在 Source Code 工具中的變數名稱上會出現 quick info：顯示型別；簡單型別還會顯示值。各工具分工：</p>
+  <table>
+    <thead><tr><th>工具</th><th>適用對象</th><th>重點功能</th></tr></thead>
+    <tbody>
+      <tr><td>Variable Fast Display</td><td>多個變數並列</td><td>Variables 1、Variables 2、<b>Locals</b>、<b>Globals</b> 四個頁籤；另有 Memory Analysis 頁籤</td></tr>
+      <tr><td>Single Field</td><td>簡單欄位</td><td>長字串分段顯示、十六進位、XML 用瀏覽器顯示、以不同 code page 分析；可下載（EHP 2 起可下載為 XML）</td></tr>
+      <tr><td>Structure</td><td>結構</td><td>展開巢狀結構；非簡單非結構的元件（參考、內表）雙擊開對應工具；可一次切換全部欄位的修改／顯示；可下載</td></tr>
+      <tr><td>Table</td><td>內表</td><td>見第 9 節</td></tr>
+      <tr><td>Object</td><td>物件</td><td>見第 9 節</td></tr>
+      <tr><td>Data Explorer</td><td>複雜巢狀資料</td><td>樹狀一覽，見第 9 節</td></tr>
+    </tbody>
+  </table>
+  <ul>
+    <li><b>Globals</b> 自動列出所有全域變數；進入 subroutine／FM／方法時，區域變數與<b>FM／方法參數</b>自動列在 <b>Locals</b>。這兩頁是唯讀的。</li>
+    <li>在 Source Code 工具<b>雙擊變數</b>會加到 Variables 1／2；也可手動輸入名稱。有權限時按 <b>Change Field Content</b>（鉛筆）改值、Enter 確認。</li>
+    <li>複雜變數雙擊會開專屬工具，開在同一 Desktop 或專屬 Desktop 由 Settings → Customizing 決定；Customizing 也決定啟動時預設停在哪一頁。</li>
+    <li>Services of the Tool：把目前頁籤存成檔案；若正在除錯 FM，可選 <b>Save Parameters as test data (SE37)</b>，把當下參數值存成 Function Builder 的測試資料——重現 bug 的神技。</li>
+    <li>7.0 EHP 2 起在 Variables 1／2 可按 <b>Display References</b> 查誰參照了該變數；<b>Suspend Navigation / Hide Adjustment</b> 可暫時覆寫導覽設定（只在本次有效）。</li>
+    <li>在方法裡輸入 <b>ME</b> 會顯示目前物件的位址，雙擊即開 Object 工具。</li>
+  </ul>
+  <div class="note"><b>動態變數的三種看法</b>：字串、xstring、資料參考、內表、物件的記憶體配置會在執行時變動。參考指向一塊含管理資訊的 header，header 再指向真正資料位置。在 Debugger 中可以輸入：<span class="kw">&lt;var&gt;</span> 看資料、<span class="kw">*&lt;var&gt;</span> 看 header 值（含資料位置）、<span class="kw">&amp;&lt;var&gt;</span> 看參考值（含 header 位置）。</div>
+
+  <h3 id="ch05-4-09">9. 資料分析（二）：內表、物件、Data Explorer 與 Diff 比較</h3>
+  <p><b>Table 工具</b>分 <b>Tables</b>（使用者選過的內表清單與狀態歷程）與 <b>Table Content</b>（內容）兩個頁籤。鍵值欄位以<b>藍字</b>標示，按鑰匙圖示看鍵值定義。Attributes 欄位例如 <span class="kw">Standard [1000x68(2056)]</span> 代表：Standard 內表、1000 列、每列 68 欄、每列長度 2056 bytes。</p>
+  <ul>
+    <li>Services of the Tool／右鍵：<b>列操作</b>——刪除或編輯選取列、以索引 append／insert 新列（可拿既有列當範本）、刪除全部列；<b>欄操作</b>——改變或重設欄順序、最佳化或重設欄寬。</li>
+    <li>Table 工具本身是 ALV Grid，所以拖拉欄位、捲動、選取列欄等 ALV 功能都能用。</li>
+    <li>可把巢狀結構、子內表、參考物件的屬性<b>拉成欄位</b>顯示；版面可儲存重用；版面與資料可匯出匯入。</li>
+    <li>7.0 EHP 2 起的 <b>Column Configuration</b>：改欄序、刪欄、新增欄（例如物件的某個屬性、結構的子欄位），也可重設。教材範例：<span class="kw">GT_CONNFLIGHT_OO</span> 的 <span class="kw">CONNECTION</span> 欄是結構，預設看不到內容，要逐列雙擊；用 Column Configuration 把子欄位展開成獨立欄即可一次看完。存物件參考的內表同理——你要看的是物件屬性，不是參考本身。</li>
+    <li>帶 header line 的內表（已不建議使用）：在 Table Content 頁籤按圖示可在 Structure 工具看 header line 內容。</li>
+  </ul>
+  <p><b>Object 工具</b>四個按鈕：</p>
+  <ul>
+    <li><b>Display Attributes</b>（預設）：列出類別與超類別定義的常數、static、instance 屬性及可見度；有繼承時依定義類別分組，可用 <b>Superclasses On/Off</b> 切換；<b>Filters</b> 可依可見度、instance/static 隱藏屬性。可見度燈號：<b>綠 = public、黃 = protected、紅 = private</b>；Binding 欄：<b>綠球 = instance、灰球 = static</b>。<b>View</b> 欄位輸入某超類別名稱，會隱藏繼承自該超類別的類別所定義的元件。</li>
+    <li><b>Display Events</b>：列出事件及可見度，展開可看已註冊的 handler，順序即註冊順序。</li>
+    <li><b>Display References</b>：列出所有指向此物件的參考變數。</li>
+    <li><b>Display Inheritance Relationship</b>：顯示類別繼承階層。</li>
+  </ul>
+  <p><b>Data Explorer</b>：以樹狀結構一路往下鑽複雜資料（內表裡有結構、參考、再有內表），不必在多個工具間切換，關係一目了然。限制：只顯示名稱、值、型別；<b>不能改值</b>；沒有 tool services；<b>內表一次只顯示一列</b>（在列號上按右鍵切換）。</p>
+  <p><b>Diff 工具</b>：比較兩個<b>同型別</b>資料物件，適合找大字串／xstring、上萬列內表之間的差異，也能比較同一類別的兩個實例（輸入兩個參考變數名稱即比較其指向的物件）。在 Variable 1、Variable 2 輸入名稱，點 <b>Start Comparison</b>；每個差異一列，含說明與位置，雙擊會開兩個對應工具細看。之後若繼續執行程式，狀態列會提示比較結果可能過時，要再點一次 Start Comparison。</p>
+  <pre><code class="abap">*&amp;---------------------------------------------------------------*
+*&amp; Diff 工具的典型用途：同一段 SELECT 兩次結果為何不同？
+*&amp; （Casper 實務：HANA 沒有預設排序，「取第一筆」會不穩定）
+*&amp;---------------------------------------------------------------*
+" 錯誤示範：沒有 ORDER BY，HANA 回傳順序不保證，每次取到的「第一筆」可能不同
+SELECT kalnr, kalka, kkzma, kst001, kst002
+  FROM keph
+  WHERE kalnr = @lv_kalnr
+  INTO TABLE @DATA(lt_cost_a).
+
+SELECT kalnr, kalka, kkzma, kst001, kst002
+  FROM keph
+  WHERE kalnr = @lv_kalnr
+  INTO TABLE @DATA(lt_cost_b).
+" → 在 Debugger 開 Diff：Variable 1 = LT_COST_A、Variable 2 = LT_COST_B
+"   常會看到內容相同但順序不同；READ TABLE ... INDEX 1 就會抓到不同列
+
+" 正確寫法：明確排序，並依業務規則固定取值（本案結論：固定抓 H 角度）
+SELECT kalnr, kalka, kkzma, kst001, kst002
+  FROM keph
+  WHERE kalnr = @lv_kalnr
+  ORDER BY kalnr, kalka, kkzma
+  INTO TABLE @DATA(lt_cost).
+
+DATA(ls_first) = VALUE #( lt_cost[ 1 ] OPTIONAL ).</code></pre>
+  <div class="note">上例中 KEPH 欄位僅示意比較手法；實際成本構成的欄位選擇與「H／E」判斷請依專案的成本評價設定確認。重點是：<b>任何「取第一筆」的邏輯都必須先明確排序</b>，Debugger 的 Diff 工具就是用來證明「兩次結果不一樣」的利器。</div>
+
+  <h3 id="ch05-4-10">10. 記憶體分析：Memory Analysis、Memory Object Explorer、Loaded Programs</h3>
+  <p>最快的方法：Variable Fast Display 的 <b>Memory Analysis</b> 頁籤輸入多個變數名，看 allocated 與 used（bytes）。7.0 EHP 2 起另有 <b>Memory Object Explorer</b> 與 <b>Application Specific Memory Views</b>。</p>
+  <table>
+    <thead><tr><th>記憶體類型</th><th>意義</th></tr></thead>
+    <tbody>
+      <tr><td><b>Bound Memory</b></td><td>刪除該實體後會被釋放的記憶體；包含它自己，以及<b>只被它參考</b>的物件</td></tr>
+      <tr><td><b>Used Memory</b></td><td>實體本身實際使用的記憶體</td></tr>
+      <tr><td><b>Allocated Memory</b></td><td>系統保留的記憶體，<b>永遠 ≥ Used</b>；字串與內表會先多配，讓成長更有效率</td></tr>
+      <tr><td>Object vs Bound</td><td>Object memory 只算直接屬於該變數的部分。例：內表有一欄是字串參考，Object memory = 內表管理資料 + 每個字串參考（各 8 bytes），<b>不含</b>字串內容；Bound memory 才會算進去</td></tr>
+    </tbody>
+  </table>
+  <p><b>Memory Object Explorer</b>：以某個記憶體物件為起點（輸入參考變數名如 <span class="kw">GO_ALV</span>，或參考值如 <span class="kw">{O:1276...}</span>），選方向 <b>Memory Objects Contained</b>（往下看子物件）或 <b>Higher-Level Memory Objects</b>（往上看誰參照它）。每個節點顯示 Bound (Alloc.)、Bound (Used)、Object Size (Alloc.)、Object Size (Used)。右鍵 <b>Use As Start Point</b> 換起點；多條連線時 All Edges 欄出現按鈕。物件類型代碼：字串 <span class="kw">{S:id}</span>、內表 <span class="kw">{T:id}</span>、Box <span class="kw">{B:id}</span>、物件 <span class="kw">{O:id}</span>、匿名資料物件 <span class="kw">{A:id}</span>；循環參考顯示 Recursive Reference 圖示。教材提醒：記憶體突然暴增，常是<b>共享的值語意物件（例如內表）變成不共享</b>（copy-on-write 被觸發）。</p>
+  <p><b>Memory Analysis 工具</b>（目前 internal session）三個頁籤：</p>
+  <ul>
+    <li><b>Memory Sizes</b>：ABAP Application（Static Variables、Stack (Used)、Dyn. Memory Objects (Used)，加總為 Total；另有 Stack／Dyn. Memory Objects 的 Allocated）；Total: Internal Session（Used、Allocated、<b>Peak (Used)</b>）；Total: External Session（所有 internal session 的配置總和與 internal session 數）。預設要按 Refresh 才計算。</li>
+    <li><b>Memory Objects</b>：依大小排序的動態記憶體物件清單，View 可選 Memory Objects、<b>Types</b>（依類別／型別加總，類別含 static 屬性）、<b>Aggregates (Cycles)</b>（Strongly Connected Component，SCC）。</li>
+    <li><b>Dominator Tree</b>（7.0 EHP 2 起）：考慮交互參照，第一層只列沒有被別人參照的物件，節點記憶體含所有子節點。</li>
+  </ul>
+  <p>動態記憶體物件包括：內表、string／xstring、類別實例、匿名資料物件、boxed components——都是 deep 資料物件。<b>SCC</b>：一組互相可經參考到達彼此的物件（例如雙向鏈結串列、兩個物件互相持有對方參考），Garbage Collector 只能<b>整組一起回收</b>，且只有在外部沒有任何參考指進來時才回收；長時間執行又快取大量物件的程式，大型 SCC 就可能造成記憶體問題。</p>
+  <p>Services of the Tool → <b>Create Memory Snapshot</b> 可建立快照，再用 <span class="tcode">S_MEMORY_INSPECTOR</span> 比較兩個快照，找記憶體洩漏。<b>Loaded Programs</b> 工具列出目前 internal session 載入的所有程式（黃色箭頭 = 目前程式、帽子圖示 = program group 首、系統程式藍色、Load Size、最後修改日期時間、載入順序 Index），<b>Global Data</b> 頁籤可看任一載入程式的全域變數——除錯 User Exit 時要讀取主程式的全域資料，就從這裡看。</p>
+  <pre><code class="abap">*&amp;---------------------------------------------------------------*
+*&amp; 記憶體分析練習：SCC（互相參照）與內表共享
+*&amp;---------------------------------------------------------------*
+CLASS lcl_node DEFINITION FINAL.
+  PUBLIC SECTION.
+    DATA mo_prev    TYPE REF TO lcl_node.
+    DATA mo_next    TYPE REF TO lcl_node.
+    DATA mv_payload TYPE string.
+ENDCLASS.
+CLASS lcl_node IMPLEMENTATION.
+ENDCLASS.
+
+START-OF-SELECTION.
+  " ① 雙向鏈結串列：所有節點形成一個 SCC，GC 只能整組回收
+  DATA lo_head TYPE REF TO lcl_node.
+  DATA lo_last TYPE REF TO lcl_node.
+  DO 10000 TIMES.
+    DATA(lo_new) = NEW lcl_node( ).
+    lo_new-&gt;mv_payload = repeat( val = 'X' occ = 200 ).
+    IF lo_last IS BOUND.
+      lo_last-&gt;mo_next = lo_new.
+      lo_new-&gt;mo_prev  = lo_last.
+    ELSE.
+      lo_head = lo_new.
+    ENDIF.
+    lo_last = lo_new.
+  ENDDO.
+  BREAK-POINT ID zbc403.  "Memory Analysis → Memory Objects → View = Aggregates (Cycles)
+
+  " ② 內表共享（table sharing）：指派時不複製，修改時才真的複製
+  SELECT matnr, mtart, matkl FROM mara
+    ORDER BY matnr
+    INTO TABLE @DATA(lt_mara) UP TO 50000 ROWS.
+  DATA(lt_copy) = lt_mara.                        "此時仍共享，used 幾乎不增加
+  BREAK-POINT ID zbc403.  "Fast Display → Memory Analysis 頁籤比較兩者
+  lt_copy[ 1 ]-matkl = 'ZZZ'.                     "觸發 copy-on-write，記憶體跳升
+  BREAK-POINT ID zbc403.
+
+  CLEAR: lo_head, lo_last, lo_new.                "外部參考全斷，SCC 才能被回收</code></pre>
+
+  <h3 id="ch05-4-11">11. 使用者介面除錯：Screen 工具與 Web Dynpro</h3>
+  <p><b>Screen Analysis 工具</b>顯示畫面的執行期表示，分兩區：</p>
+  <ul>
+    <li><b>General View</b>：畫面與容器的階層樹——table control、frame、custom control 區、tabstrip、subscreen 區；tabstrip 含 subscreen 區，subscreen 區在執行期含 subscreen dynpro。雙擊元素在右側顯示資訊。</li>
+    <li><b>Screen Information</b>：<b>General Attr.</b>（可用 <span class="kw">LOOP AT SCREEN</span>／<span class="kw">MODIFY SCREEN</span> 改的屬性）、<b>Special Attr.</b>（conversion exit、field exit、外鍵檢查、switch）、<b>Misc.</b>（目前 tooltip 內容）。雙擊欄位列可在對話框看該欄位全部屬性。</li>
+  </ul>
+  <div class="tip">「欄位明明設了必填／隱藏卻沒生效」這類 Dialog 問題（<a href="#ch04-2">4-2 章</a>、<a href="#ch05-9">5-9 章 BC410</a>），用 Screen 工具看執行期屬性最快；再配合 F9 → Breakpoint at Screen（PBO/PAI 行號，EHP 2 起）或 <span class="kw">/h</span> 進 Flow Logic。</div>
+  <p><b>Web Dynpro ABAP 工具</b>（預設不在任何 Desktop，要按 New Tool → <b>Special Tools</b> 資料夾開啟）可看：目前 controller 的 context 結構與資料（每個 node 的 Lead Selection 元素會標示）、每個 controller 的屬性（可導覽到對應工具）、目前實例化的 component usages、view controller 的 view 階層與 UI 元素屬性、window controller 內嵌的 view 階層。</p>
+  <ul>
+    <li>Web Dynpro 只能用<b>外部中斷點</b>啟動除錯（session 中斷點不能用在只經 HTTP 呼叫的程式碼）。</li>
+    <li>預設腳本 <span class="kw">RSTPDA_SCRIPT_WDY_FIRE_PLUG</span>（追導覽 fire plug）與 <span class="kw">RSTPDA_SCRIPT_WDY_MESSAGES</span>（追 MessageArea 訊息來源），模擬傳統 Dynpro 的「Breakpoint at ABAP command SET SCREEN」與「MESSAGE」。</li>
+    <li><b>Context Menu Breakpoints</b>：不知道要在哪裡設中斷點時，UI 元素右鍵選單會出現 Activate Debugger（In the Event Handler of the UI Element／WDDOBEFOREACTION／WDDOAFTERACTION）、Deactivate Debugger、Delete All HTTP Breakpoints。設定步驟：① 先在 Web Dynpro 程式任一處設一個外部中斷點（可以是不一定會執行的方法，例如 ComponentController 的 <span class="kw">WDDOAPPLICATIONSTATECHANGE</span>；省略這步選單會出現但 Debugger 不會啟動）；② URL 加參數 <span class="kw">/h=X</span>（教材寫法，實際為 query string 形式，例如 <span class="kw">?sap-client=100&amp;h=X</span>，<span class="src">（依講義步驟整理）</span>）；③ 在觸發 action 的 UI 元素右鍵選擇；④ 除錯；⑤ 結束後用選單刪除中斷點。支援的 UI 元素：Button、InputField、LinkToAction、FormattedTextView、ThresholdSlider、ToolBarLinkToAction、CheckBox、TriStateCheckBox、HorizontalContextualPanel、popup 的標準按鈕（會對 popup 所有按鈕註冊的方法都啟動）。</li>
+  </ul>
+  <div class="warn"><b>S/4HANA 現況</b>：Web Dynpro ABAP 仍被支援（很多 SPRO 與 FPM 畫面還是它），但新 UI 開發走 <b>Fiori Elements／SAPUI5 + OData（RAP）</b>。Fiori App 後端的 ABAP 除錯同樣靠<b>外部中斷點</b>（使用者要設成 Gateway 呼叫時的帳號），或在 ADT 中設中斷點（<a href="#ch05-5">5-5 章</a>）；Web Dynpro 細節見 <a href="#ch05-23">5-23 章</a>。</div>
+
+  <h3 id="ch05-4-12">12. 例外分析與 Trace 工具</h3>
+  <p>ABAP 有兩種例外：以 SY-SUBRC 為基礎的<b>傳統例外</b>，以及以類別為基礎的<b>類別例外</b>（例外物件的屬性帶有錯誤資訊；由 <span class="kw">RAISE EXCEPTION</span> 或執行環境引發，用 <span class="kw">TRY … CATCH … ENDTRY</span> 處理）。</p>
+  <ul>
+    <li>例外被引發且被捕捉時，Debugger 狀態列顯示例外類別名，工具列多出兩個按鈕：<b>Last Exception Object</b>（分析例外物件）與 <b>Display Trigger Location</b>（跳到引發例外的原始碼位置）。</li>
+    <li><b>效能考量：CATCH 沒有 INTO 時系統根本不建立例外物件</b>，Last Exception Object 按鈕就不會出現。要在 Debugger 中永遠建立例外物件，須在 Debugger 設定勾 <b>Always Create Exception Object</b>。</li>
+    <li><b>Display Exception 工具</b>（EHP 2 起）：在 Object / Reference 欄輸入例外參考後，可看例外鏈（previous）上所有例外物件、例外文字、長文（Long Text 按鈕）、按 Position in Source Code Display 以紅色標出引發位置；雙擊例外物件開 Object 工具。</li>
+  </ul>
+  <pre><code class="abap">*&amp;---------------------------------------------------------------*
+*&amp; 例外鏈與 Debugger：CATCH 要不要寫 INTO 差很多
+*&amp;---------------------------------------------------------------*
+CLASS zcx_pp_order DEFINITION INHERITING FROM cx_static_check FINAL.
+  PUBLIC SECTION.
+    INTERFACES if_t100_message.
+    DATA mv_aufnr TYPE aufnr READ-ONLY.
+    METHODS constructor
+      IMPORTING textid   LIKE if_t100_message=&gt;t100key OPTIONAL
+                previous LIKE previous OPTIONAL
+                iv_aufnr TYPE aufnr OPTIONAL.
+ENDCLASS.
+
+CLASS zcx_pp_order IMPLEMENTATION.
+  METHOD constructor.
+    super-&gt;constructor( previous = previous ).
+    mv_aufnr = iv_aufnr.
+    if_t100_message~t100key = COND #( WHEN textid IS INITIAL
+                                      THEN if_t100_message=&gt;default_textid
+                                      ELSE textid ).
+  ENDMETHOD.
+ENDCLASS.
+
+" 呼叫端
+TRY.
+    DATA(lv_qty) = CONV i( lv_text_qty ).          "字串非數字 → CX_SY_CONVERSION_NO_NUMBER
+  CATCH cx_sy_conversion_no_number INTO DATA(lx_conv).
+    " 把原始例外包成業務例外，previous 形成例外鏈
+    RAISE EXCEPTION NEW zcx_pp_order( iv_aufnr = lv_aufnr
+                                      previous = lx_conv ).   "RAISE EXCEPTION NEW：7.52 起
+ENDTRY.
+
+" 上層
+TRY.
+    lo_pp-&gt;confirm( lv_aufnr ).
+  CATCH zcx_pp_order INTO DATA(lx_pp).             "有 INTO → Debugger 一定看得到例外物件
+    " Display Exception 工具輸入 LX_PP，可一路看到 previous 的 CX_SY_CONVERSION_NO_NUMBER
+    MESSAGE lx_pp TYPE 'S' DISPLAY LIKE 'E'.
+  CATCH cx_root.                                   "沒 INTO → 預設不建物件，除錯時看不到細節
+ENDTRY.</code></pre>
+  <p><b>Trace 工具</b>（EHP 2 起，名稱為 Trace (SE30 or ST05)）：在除錯中直接開關 Trace，完成後可導向對應交易看結果。支援：ABAP Trace 與 Performance Trace（<span class="tcode">SE30</span>／<span class="tcode">SAT</span>）、SQL Trace、資料庫緩衝 Trace、RFC Trace、Enqueue Trace（皆為 <span class="tcode">ST05</span>）。可同時開多個，但 <b>ABAP Trace 與 Performance Trace 不能同時</b>。雙擊 On/Off 欄切換（綠燈 = 啟用、紅燈 = 停用）；有 Trace File 時第一欄出現圖示並填入起訖日期時間，雙擊即開對應交易。</p>
+  <div class="tip">最實用的組合：在可疑的 SELECT 前停下 → Trace 工具打開 SQL Trace → F6 跑過 → 關閉 → 雙擊檔案看 <span class="tcode">ST05</span>，立刻知道實際送到 HANA 的 SQL、筆數與耗時。效能調校完整方法見 <a href="#ch05-21">5-21 章 BC490</a>。</div>
+
+  <h3 id="ch05-4-13">13. Debugger 選項（Customizing）與設定（Profile / Settings）</h3>
+  <p>Debugger 的客製分兩塊：<b>Options</b>（Settings → Customizing）與 <b>Settings</b>（Settings → Change Debugger Profile / Settings）。兩者按 Save 都存到預設 Debugger session <b>START_UP</b>。</p>
+  <p><b>Options 四個頁籤</b>：</p>
+  <ul>
+    <li><b>General</b>：Goto Source Code 在同一視窗或新視窗（同視窗要按 Back 回 Debugger）；分析資料物件的工具加在目前 Desktop 還是專屬 Desktop（一個 Desktop 最多 4 個工具，滿了時可選取代目前工具或開專屬 Desktop）；在 Source Code 雙擊變數是加到 Variable Fast Display 還是直接開專屬工具。</li>
+    <li><b>Call Stack</b>：只顯示 ABAP、只顯示畫面、或兩者。</li>
+    <li><b>Variable Fast Display</b>：啟動時預設頁籤、Globals 頁要隱藏哪些全域資料物件。</li>
+    <li><b>Debugger Scripting</b>：執行腳本時以及按 Continue (F8) 時的系統行為。</li>
+  </ul>
+  <p><b>Settings — Debug Mode 區</b>：</p>
+  <table>
+    <thead><tr><th>設定</th><th>說明</th></tr></thead>
+    <tbody>
+      <tr><td>System Debugging</td><td>是否除錯系統程式（Program Status = 'S'）；Debugger 中 Settings → System Debugging On/Off 或 debuggee 端 <span class="kw">/hs</span> 也可切換</td></tr>
+      <tr><td>Update Debugging</td><td>是否除錯 <span class="kw">COMMIT WORK</span> 後啟動的更新工作程序（第 14 節）</td></tr>
+      <tr><td>TRFC (in Background Task): Block Sending</td><td>勾選時 <span class="kw">IN BACKGROUND TASK</span> 的呼叫只收集不送出，Debugger 給一個 transaction ID，之後可在 <span class="tcode">SM58</span> 對該背景程序啟動除錯</td></tr>
+      <tr><td>Enterprise Service Infrastructure (ESI) Debugging</td><td>是否除錯 ESI 觸發的服務（EHP 2）</td></tr>
+      <tr><td>Shared Objects: Debug Automatic Area Structuring</td><td>是否除錯自動建立 area 結構時的 constructor class（EHP 2）</td></tr>
+    </tbody>
+  </table>
+  <p><b>Settings — Specific Settings 區</b>：</p>
+  <table>
+    <thead><tr><th>設定</th><th>說明</th></tr></thead>
+    <tbody>
+      <tr><td>Close Debugger After Continue (F8) and Roll Area End</td><td>debuggee 結束時自動關閉 Debugger 主模式</td></tr>
+      <tr><td>Copy Session Breakpoints Automatically</td><td>除錯中從同一使用者 session 其他主模式新設的 session 中斷點是否自動生效；不勾要用 Reload Breakpoints（EHP 2）</td></tr>
+      <tr><td>Always Create Exception Object</td><td>CATCH 沒寫 INTO 也建立例外物件</td></tr>
+      <tr><td>Cross-Roll-Area Stack Active</td><td>Call Stack 顯示所有 internal session（<span class="kw">SUBMIT … AND RETURN</span>、<span class="kw">CALL TRANSACTION</span>、<span class="kw">CALL DIALOG</span> 會開新 internal session），預設只顯示目前的（EHP 2）</td></tr>
+      <tr><td>Control Framework</td><td>Control Framework 的通訊步驟改為同步執行（EHP 2）；除錯 ALV Grid 事件時有用</td></tr>
+      <tr><td><b>Check Sorting Before READ BINARY SEARCH</b></td><td>執行 <span class="kw">READ … BINARY SEARCH</span> 前檢查內表是否已排序，未排序就 runtime error。大表效能損失大，<b>只在接近問題點時才開</b></td></tr>
+      <tr><td>Layer-Aware Debugger Active</td><td>啟用 Layer Aware Debugging（第 16 節）</td></tr>
+    </tbody>
+  </table>
+  <pre><code class="abap">*&amp;---------------------------------------------------------------*
+*&amp; 「Check Sorting Before READ BINARY SEARCH」要抓的 bug
+*&amp;---------------------------------------------------------------*
+SELECT matnr, werks, dispo FROM marc
+  WHERE werks = @p_werks
+  INTO TABLE @DATA(lt_marc).                 "沒排序（HANA 回傳順序不保證）
+
+" ✗ 未排序就 BINARY SEARCH：有時找得到、有時找不到，結果看運氣
+READ TABLE lt_marc INTO DATA(ls_marc)
+     WITH KEY matnr = lv_matnr BINARY SEARCH.
+" → 開啟該 Debugger 設定後，這行會直接 runtime error，一次揪出問題
+
+" ✓ 現代寫法 1：宣告 SORTED / HASHED 表或次要鍵，讓系統保證順序
+TYPES: BEGIN OF ty_marc,
+         matnr TYPE marc-matnr,
+         werks TYPE marc-werks,
+         dispo TYPE marc-dispo,
+       END OF ty_marc.
+DATA lt_marc_sorted TYPE SORTED TABLE OF ty_marc
+     WITH NON-UNIQUE KEY matnr werks.
+SELECT matnr, werks, dispo FROM marc
+  WHERE werks = @p_werks
+  INTO TABLE @lt_marc_sorted.
+DATA(lv_found) = xsdbool( line_exists( lt_marc_sorted[ matnr = lv_matnr ] ) ).
+
+" ✓ 現代寫法 2：保留標準表，但 BINARY SEARCH 前一定 SORT 相同鍵
+SORT lt_marc BY matnr.
+READ TABLE lt_marc INTO ls_marc WITH KEY matnr = lv_matnr BINARY SEARCH.</code></pre>
+
+  <h3 id="ch05-4-14">14. 更新除錯、tRFC 與存取資料庫的程式</h3>
+  <p><b>更新（Update）機制</b>把使用者對話與資料庫變更分開，由不同程式、不同工作程序處理：</p>
+  <ol>
+    <li>對話程式以 <span class="kw">CALL FUNCTION … IN UPDATE TASK</span> 呼叫更新函數模組——不立即執行，而是把 FM 名稱與傳入資料寫進更新記錄（log）。</li>
+    <li>多筆記錄組成一個 <b>SAP LUW</b>；更新保證所有更新 FM 在<b>一個資料庫 LUW</b> 內執行（all or nothing）。</li>
+    <li><span class="kw">COMMIT WORK</span> 時關閉這個 request queue，通知 Basis 有待處理的請求。</li>
+    <li>Basis 程式讀出 LUW 記錄交給更新程式執行；成功後刪除該 LUW 的記錄。</li>
+  </ol>
+  <p>因為更新 FM 不在目前被除錯的使用者 session 裡執行，<b>預設不會進入除錯</b>。要除錯就得在 Settings 勾 <b>Update Debugging</b>，<span class="kw">COMMIT WORK</span> 後會另開 Debugger 處理更新工作程序。更新與 LUW 的完整觀念見 <a href="#ch05-11">5-11 章 BC414</a>。</p>
+  <pre><code class="abap">*&amp;---------------------------------------------------------------*
+*&amp; 更新除錯與 tRFC 除錯的練習程式
+*&amp;---------------------------------------------------------------*
+DATA(ls_log) = VALUE zpp_conf_log( aufnr = lv_aufnr
+                                   budat = sy-datum
+                                   ernam = sy-uname ).
+
+" ① 更新 FM：F5 不會進去；要勾 Settings → Update Debugging
+CALL FUNCTION 'Z_PP_CONF_LOG_UPDATE' IN UPDATE TASK
+  EXPORTING is_log = ls_log.
+
+" ② tRFC：勾 Settings → TRFC (in Background Task): Block Sending
+"    → 呼叫被收集但不送出，之後到 SM58 對該 LUW 啟動除錯
+CALL FUNCTION 'Z_IF_MES_NOTIFY' IN BACKGROUND TASK
+  DESTINATION 'MES_SYSTEM'
+  EXPORTING iv_aufnr = lv_aufnr.
+
+COMMIT WORK.   "← Update Debugging 開啟時，這行之後另一個 Debugger 視窗會停在更新 FM
+               "   更新失敗記錄看 SM13；tRFC 卡住看 SM58</code></pre>
+
+  <p><b>存取資料庫的程式除錯風險</b>：每支程式在一個工作程序中執行；遇到等待狀態時程式被 roll out、工作程序釋放給別人用，資料庫連線必須結束目前 DB session → 觸發<b>隱含 DB commit</b>，之後就不能 rollback。在 Debugger 中：</p>
+  <ul>
+    <li>在 <span class="kw">SELECT</span> 迴圈中發生等待 → 連線關閉、DB cursor 遺失，繼續除錯會 runtime error。</li>
+    <li>在修改資料庫的敘述中或之後發生等待 → 上次 DB commit 以來的變更<b>全部寫入、無法回復</b>。在正式環境這是致命的。</li>
+  </ul>
+  <p>正常執行不會有、只有除錯才有的等待，就是 <b>Debugger 自己的對話步驟</b>：每次在中斷點或 Watchpoint 停下，對應工作程序都會觸發隱含 DB commit。唯一的避免方法：debuggee 的工作程序在除錯期間不釋放——系統會自動把對話工作程序轉成<b>獨佔（exclusive）除錯工作程序</b>，數量上限由 <span class="kw">rdisp/wpdbug_max_no</span> 決定，且<b>最多只能用一半的對話工作程序</b>。</p>
+  <ul>
+    <li>成功時 GUI 標題顯示 <span class="kw">(exclusive)(&lt;host&gt; &lt;SID&gt; &lt;sys.no.&gt;)</span>；失敗顯示 <span class="kw">(NOT exclusive)</span>，此時應延後除錯，等可以時用 Debugger → Exclusive Debugging Mode On 手動轉換。</li>
+    <li>獨佔模式下可從 Debugger 觸發 Edit → Database → <b>Commit (unlock)</b> 或 <b>Rollback</b>：變更可以先試再回滾，或在除錯中確定提交。</li>
+  </ul>
+  <div class="warn"><b>用完立刻離開 Debugger</b>：獨佔工作程序數量有限，掛著不關會卡住別人。教材中的舊寫法 <span class="kw">SELECT … ENDSELECT</span> 正是「迴圈中遇等待就 DB cursor 遺失」的高風險寫法，本館一律改用 <span class="kw">SELECT … INTO TABLE @DATA( )</span> 一次取回再 LOOP（<a href="#ch02-2">2-2 章</a>）。</div>
+
+  <h3 id="ch05-4-15">15. 系統管理：權限 S_DEVELOP 與 Profile 參數</h3>
+  <p>除錯權限由權限物件 <b>S_DEVELOP</b> 控制，關鍵在 <b>ACTVT</b> 欄位（除錯時物件類型 OBJTYPE 為 DEBUG）：</p>
+  <table>
+    <thead><tr><th>ACTVT</th><th>可做的事</th></tr></thead>
+    <tbody>
+      <tr><td><b>03</b></td><td>可啟動 Debugger（只能看）</td></tr>
+      <tr><td><b>02</b></td><td>可啟動 Debugger ＋ <b>改變數值</b> ＋ <b>Goto Statement</b></td></tr>
+      <tr><td><b>01</b></td><td>以上全部 ＋ <b>除錯系統程式</b> ＋ Kernel 除錯</td></tr>
+    </tbody>
+  </table>
+  <table>
+    <thead><tr><th>Profile 參數</th><th>用途</th></tr></thead>
+    <tbody>
+      <tr><td><span class="kw">rdisp/wpdbug_max_no</span></td><td>可被除錯程式獨佔的對話工作程序上限；不得超過對話工作程序的 50%</td></tr>
+      <tr><td><span class="kw">rdisp/max_debug_lazy_time</span></td><td>除錯閒置（無互動）最長時間，逾時 Debugger session 被重設（主模式關閉）</td></tr>
+      <tr><td><span class="kw">rdisp/max_alt_modes</span></td><td>每個使用者 session 的主模式數上限（預設 6）；Debugger 本身就占一個主模式</td></tr>
+      <tr><td><span class="kw">abap/ext_debugging_possible</span></td><td>限制哪些使用者類型可以外部除錯</td></tr>
+      <tr><td><span class="kw">rfc/ext_debugging</span></td><td>限制 RFC 情境的外部除錯</td></tr>
+      <tr><td><span class="kw">rfc/enable_trfc_dbg_user_switch</span></td><td>除錯 tRFC／qRFC LUW 時啟用使用者切換</td></tr>
+      <tr><td><span class="kw">rfc/disable_debugger_command_field</span></td><td>在 RFC session 中執行報表與 FM 時停用 Debugger 的命令列輸入</td></tr>
+    </tbody>
+  </table>
+  <div class="warn"><b>正式環境（PRD）不要給 ACTVT 02</b>。在 Debugger 改值或跳敘述等於繞過所有程式檢查直接改資料，稽核一定會追。系統日誌（<span class="tcode">SM21</span>）會記錄在 Debugger 中改變數值的動作；若有必要的緊急修正，應走 Firefighter／緊急帳號流程並留下紀錄。PRD 一般只給 ACTVT 03 甚至不給，查問題優先用 <span class="kw">LOG-POINT</span>、<span class="tcode">SLG1</span> 應用日誌、<span class="tcode">ST22</span> 與 <span class="tcode">SU53</span>。參數值可用 <span class="tcode">RZ11</span> 查詢。</div>
+
+  <h3 id="ch05-4-16">16. Layer Aware Debugging（SLAD）：只看你關心的那一層</h3>
+  <p>現代架構是多層的：Web Dynpro 應用在 Web Dynpro framework 上，framework 又建在 ICF（Internet Communication Framework）上，應用層與 ABAP kernel 之間至少還隔兩層框架程式碼；實際的複雜應用層數更多。以前只能用「關閉 System Debugging」排除 kernel 層，對非 kernel 的框架程式碼沒辦法選擇性排除。<b>Software Layer Aware Debugging</b> 解決這件事，適用：</p>
+  <ul>
+    <li>只除錯你負責的程式碼，隱藏框架程式碼，並能看到所有進入點（誰呼叫你這層、帶什麼參數）。</li>
+    <li>大步前進：從一層跳到另一層、從一個元件跳到另一個元件，而不是一路 F5。</li>
+  </ul>
+  <p><b>Object Set（物件集）</b>：在 <span class="tcode">SLAD</span> 定義，持久保存、可重用（也可在 Debugger 中直接定義，見下）；<b>Object Set 是 Repository 物件</b>。由 <b>Selection Set</b> 與 <b>Selection Set Expression</b> 組成：</p>
+  <ul>
+    <li>一個 Selection Set（例如 S1）只能是下列<b>其中一種</b>條件：單一 Package、Package 含子 Package、Program（程式名／類別名）、Function Module、Implemented Interface。條件用 select-options 定義，可做排除與區間。</li>
+    <li>Selection Set Expression 用 <b>AND</b> / <b>OR</b> 組合 Selection Set。</li>
+  </ul>
+  <pre><code class="text">SLAD Object Set 範例（教材 p99）
+Selection Set  BC400_BC403  : Package  BC400 ~ BC403
+Selection Set  CL_BC_CLASS  : Program  CL_BC*
+Selection Set  BC490        : Package  BC490
+Expression                  : CL_BC_CLASS AND ( BC400_BC403 OR BC490 )
+→ 結果：名稱以 CL_BC 開頭、且屬於 package BC400~BC403 或 BC490 的類別
+
+實務建議（Casper：列舉優於區間）
+Selection Set  ZMM_PKGS : Package with subpackages  ZMM_MAIN, ZMM_IF   （逐一列出）
+Selection Set  ZBADI    : Implemented Interface     IF_EX_ME_PROCESS_PO_CUST
+Expression              : ZMM_PKGS OR ZBADI
+→ 用 Package 區間 BC400~BC403 很方便，但也會把字典序落在中間、名稱意外的 package 一起包進來</code></pre>
+  <p><b>Debugger Profile</b>：組合多個 Object Set，並對每個 Object Set 設定：</p>
+  <table>
+    <thead><tr><th>設定</th><th>說明</th></tr></thead>
+    <tbody>
+      <tr><td>Visibility</td><td>可見則照常除錯；隱藏則 Debugger 不進入（類似系統程式）</td></tr>
+      <tr><td>Point of Entry</td><td>進入該 Object Set 的程式碼時停</td></tr>
+      <tr><td>Point of Exit</td><td>離開該 Object Set 後立刻停</td></tr>
+      <tr><td>Including System Code</td><td>包含該 Object Set 內的系統程式</td></tr>
+    </tbody>
+  </table>
+  <p>每個 Profile 都有預設 Object Set <b>&lt;&lt;%REST%&gt;&gt;</b>，代表「不屬於自訂 Object Set 的所有 ABAP 程式碼」，可設定其行為或直接刪除（只關心自訂 Object Set 之間的呼叫時很好用）。<b>持久 Profile 也是 Repository 物件</b>，在 <span class="tcode">SLAD</span> 建立／顯示／修改／複製／刪除；Debugger 中可載入但不能修改，只能衍生出暫時 Profile（session 結束即刪）。</p>
+  <p><b>在 Debugger 使用 Profile</b>（只有 New Debugger 可以）：</p>
+  <ol>
+    <li>按 <b>Configure Debugger Layer</b>（Ctrl+Shift+F4）。</li>
+    <li>勾 <b>Layer-Aware Debugger Active</b>。</li>
+    <li>選 <b>Use of Predefined Object Set using Debugger Profile</b>（載入持久 Profile）。</li>
+    <li>在 Profl. 欄位輸入名稱，或 F4／Profile Library 按鈕瀏覽。</li>
+    <li>按 <b>Continue</b> 只在本次生效；按 <b>Save Settings</b> 每次啟動都生效。</li>
+  </ol>
+  <p>啟用後工具列多一個開關 Layer Aware Debugging 的按鈕，但<b>新的 Debugger session 啟動時一律是關閉的</b>。關閉步驟相同，取消勾選即可。在 Debugger 中建立 Profile 的方法：<b>Direct Definition of Visible Object Set</b>（定義一個 Object Set，session 結束即刪）、以目前 Profile 為範本按 <b>Change</b>（開 SLAD，可 Save 持久或 Continue 暫時）、<b>Temp. Profile</b>（從零或複製既有 Profile）。這個設定對話框也包含在一般 Debugger 設定裡。</p>
+  <div class="tip">標準程式很深（例如 <span class="tcode">ME21N</span>、<span class="tcode">VA01</span>）時，建一個「只看 Z 開頭 Package + 自己實作的 BAdI 介面」的 Profile，按 F8 就會直接停在自己的增強程式進入點，不必在標準程式裡迷路。這也是<b>先找標準、再想客製</b>的最佳前置動作：先用 Layer Aware 看清楚標準流程在哪些 BAdI／Enhancement Spot 會呼叫出來（<a href="#ch03-4">3-4 章</a>、<a href="#ch05-15">5-15 章</a>）。</div>
+
+  <h3 id="ch05-4-17">17. Request-Based Debugging：用 Terminal ID 鎖定「這一個人的請求」</h3>
+  <p>HTTP 型應用（Web Dynpro、BSP、Web Service、ICF 服務）只能用外部除錯。傳統外部中斷點綁使用者 ID，但處理過程可能換帳號（例如透過 RFC 到另一系統取資料，RFC 帳號與原使用者不同），就停不下來。SAP NetWeaver <b>7.02</b> 起的新型外部中斷點綁 <b>Terminal ID（TID）</b>，確保：</p>
+  <ul>
+    <li>哪一台應用伺服器處理請求都沒關係。</li>
+    <li>使用者名稱不重要。</li>
+    <li><b>不影響其他使用者的請求</b>——在正式系統這點是關鍵。</li>
+  </ul>
+  <p>適用於「一個通用系統帳號處理各個用戶端請求」的 client-server 架構。例：支援人員在遠端 SAP GUI 設中斷點，瀏覽器則在客戶網路內的 WTS 上執行。</p>
+  <p><b>設定 Terminal ID</b>：<span class="tcode">SE80</span> Utilities → Settings → ABAP Editor → Debugging，選 <b>Terminal ID</b> 單選鈕，右邊自動顯示產生的 TID。之後所有外部中斷點都自動帶上此 TID；只有請求的 TID 與中斷點的 TID 相符時 Debugger 才啟動。請求經過多個 ABAP 系統時，TID 會自動轉送，所以可以跨系統追同一個請求。</p>
+  <div class="note">TID 代表 Windows 使用者在該作業系統上的登入，第一次啟用時產生並存在 Windows 登錄檔 <span class="kw">HKEY_CURRENT_USER\Software\SAP\ABAP Debugging</span>，直到手動刪除為止都有效。</div>
+  <ul>
+    <li><b>同一台 PC</b>（設中斷點的人就是送請求的人）：在發起請求的 SAP GUI 視窗輸入 <span class="kw">/htid</span>，之後此主模式發出的請求都帶自己的 TID，狀態列有訊息。</li>
+    <li><b>不同人／不同 PC</b>：送請求者在 SAP GUI 輸入 <span class="kw">/hset tid=&lt;TID&gt;</span>（覆寫從登錄檔讀到的 TID）。TID 很長，可從 Utilities → Settings 對話框複製後 email 給對方。<span class="kw">/hdel tid</span> 刪除手動指派，<span class="kw">/hget tid</span> 查目前指派。</li>
+    <li><b>HTTP 應用</b>：① 取得 Microsoft Internet Explorer 用的 SAP HTTP Plug-in（SAP Note 1041556）；② 用 Plug-in 啟動 IE，會開瀏覽器視窗並有 Plug-in 視窗在前景；③ 在 Terminal-ID 欄輸入中斷點的 TID（同一台 PC 不必）；④ 按 Start Transaction，<b>不要關 Plug-in 視窗</b>；⑤ 在瀏覽器照常操作。到達同 TID 的外部中斷點時，Debugger 在開發者電腦上開新視窗。</li>
+  </ul>
+  <div class="warn"><b>現況</b>：Internet Explorer 已停止支援，教材的 IE Plug-in 做法在現代環境基本上不可行。S/4HANA 上除錯 Fiori／OData／HTTP 請求的常見做法：對<b>實際執行請求的使用者</b>設外部中斷點（<span class="tcode">SE80</span> Settings 的 User 欄位改成 Gateway 服務帳號或使用者本人）、或在 ADT 中設中斷點（Eclipse 的中斷點預設就是外部中斷點，<a href="#ch05-5">5-5 章</a>）。<span class="kw">/htid</span>、<span class="kw">/hset tid</span> 對 SAP GUI 發起的 RFC 情境仍然有用。</div>
+
+  <h3 id="ch05-4-18">18. Debugger Scripting（一）：概念與預設腳本</h3>
+  <p>Debugger Scripting 自 SAP NetWeaver 7.0 EHP 2 起提供：<b>凡是你在 Debugger 手動能做的事，都能寫成腳本自動化</b>，還能產生各種 Trace 檔。</p>
+  <table>
+    <thead><tr><th>腳本用途</th><th>例子</th></tr></thead>
+    <tbody>
+      <tr><td>分析與修改程式中的變數、物件</td><td>每次停在 <span class="kw">AUTHORITY-CHECK</span>、執行後把 SY-SUBRC 改為 0，略過失敗的權限檢查（僅限開發／測試系統！）</td></tr>
+      <tr><td>各種 Trace</td><td>記錄每個執行過的 ABAP 敘述；追呼叫堆疊（可用來決定 Layer Aware 的 Profile 要包含什麼）；自訂 Trace 內容，例如追某個參數在呼叫鏈上被誰改錯</td></tr>
+      <tr><td>複雜的中斷點／Watchpoint</td><td>RFC 回來的資料有誤：每次 RFC 呼叫時觸發腳本 → 執行呼叫 → 檢查回傳 → 有問題就寫 Trace 或停下</td></tr>
+      <tr><td>控制被除錯程式的執行</td><td>讓腳本執行停住的敘述；發現值得互動分析的狀況時動態建立中斷點</td></tr>
+      <tr><td>分析與呈現複雜資料</td><td>逐列讀巢狀內表、檢查資料一致性，錯了就停</td></tr>
+    </tbody>
+  </table>
+  <ul>
+    <li>腳本使用 <b>ABAP Debugger Interface（ADI）</b>，在 <b>Debugger 端</b>執行，只能透過 ADI 操作應用程式，不能直接影響它。</li>
+    <li>Debugger 腳本技術上是一個 <b>subroutine pool</b>（有專屬程式類型），裡面只有本地類別 <b>LCL_DEBUGGER_SCRIPT</b>，可自行加屬性與方法。</li>
+    <li>預設腳本依用途分類：物件分析、通用中斷點、資料流分析、記憶體使用分析、runtime error 分析、Trace、特殊 Watchpoint、其他<span class="src">（依講義步驟整理：教材此處為三張截圖，完整清單請在 Script 頁籤按 Load Script 瀏覽，腳本名稱多以 RSTPDA_SCRIPT_ 開頭）</span>。</li>
+  </ul>
+  <p><b>LCL_DEBUGGER_SCRIPT 的四個方法</b>：</p>
+  <table>
+    <thead><tr><th>方法</th><th>時機</th><th>用途</th></tr></thead>
+    <tbody>
+      <tr><td><b>PROLOGUE</b></td><td>腳本啟動後第一個，只一次</td><td><b>技術初始化</b>：預設實作把 <span class="kw">abap_source</span>（<span class="kw">CL_TPDA_SCRIPT_ABAPDESCR</span> 實例）註冊到 debug_step 事件，確保取得的原始碼資訊是最新的。自己的初始化不要寫這裡</td></tr>
+      <tr><td><b>INIT</b></td><td>PROLOGUE 之後，只一次</td><td>自己的初始化；可放使用者互動（對話框詢問參數，ABAP Objects 允許的 UI 元素都能用）</td></tr>
+      <tr><td><b>SCRIPT</b></td><td>每次觸發</td><td>主要邏輯；匯入參數 <span class="kw">p_trigger</span> 帶觸發類型。可同時定義多個觸發（例如 SELECT 中斷點 ＋ stack change ＋ Watchpoint）</td></tr>
+      <tr><td><b>END</b></td><td>腳本結束或使用者停止時，一次</td><td>收尾：顯示結果、關閉資源、彙總資料（腳本因錯誤中止或 Debugger 被使用者結束時不呼叫）</td></tr>
+    </tbody>
+  </table>
+  <ul>
+    <li>引發 <span class="kw">cx_tpda_stop_scripting_request</span> 停止腳本；引發 <span class="kw">cx_tpda_script_continue</span> 不經使用者互動繼續到下個觸發。</li>
+    <li><span class="kw">me-&gt;break( )</span>：讓使用者決定停止或繼續（腳本內的中斷點）；<span class="kw">me-&gt;raise_error( )</span>：不經使用者互動終止腳本。</li>
+  </ul>
+  <div class="warn">教材的 Caution：<b>不要改類別名稱、不要改繼承、不要改 INIT／SCRIPT／END 的宣告、不要改 tag 註解</b>——那些 tag 在儲存腳本時自動產生，改了腳本就壞掉。</div>
+
+  <h3 id="ch05-4-19">19. Debugger Scripting（二）：自訂腳本、Trigger、ADI、Trace 與 SAS</h3>
+  <p>腳本可以在 Debugger 的 <b>Script</b> 頁籤（Debugger Scripting 工具）直接寫，也可以事先在交易 <span class="tcode">SAS</span>（ABAP Debugger Scripting and Tracing）的 Script Editor 頁籤準備——<b>用 SAS 事先寫好的好處是不會長時間佔住 Debugger 工作程序</b>。工具一開始顯示範本腳本（四個方法空實作），可以此為基礎或載入既有腳本修改後另存；存於資料庫或檔案系統。腳本可在 Object Navigator 顯示、修改、複製、刪除，也能寫程式文件，在工具中按 Help for Script 顯示。</p>
+  <p><b>Trigger 設定</b>：</p>
+  <ul>
+    <li><b>Execute Directly</b>：按 Start Script 立即執行一次。每次執行都產生新的 Trace 檔；<span class="kw">me-&gt;break( )</span> 不會中斷；執行完後回到一般除錯（若 Script 頁籤作用中時按 F8，會問要再跑一次腳本還是不帶腳本繼續）。</li>
+    <li><b>After Debugging Events</b>：Single Step in Debugger（每步之後）、Breakpoint Reached（任一 script breakpoint）、Watchpoint Reached（任一 script watchpoint）。按核取方塊右邊的按鈕，在下方頁籤的 Breakpoints／Watchpoints 定義觸發點。每次觸發都寫同一個 Trace 檔。<b>腳本不會因 Debugger 關閉而自動停止</b>，所以要在應用程式接近結尾處設個中斷點，以便手動停止腳本。</li>
+    <li><b>Script breakpoint／watchpoint 只觸發腳本，不中斷應用程式</b>。</li>
+  </ul>
+  <p>執行中 Script 頁籤只剩兩個按鈕：<b>Exit Script</b>（停止腳本、繼續除錯）與 <b>Continue Script</b>（每次觸發繼續執行）。按 F5／F6／F7／F8 則繼續除錯但觸發時<b>不執行腳本</b>，腳本仍未停止、可稍後繼續。只有在 Debugger 取得控制權時（應用程式的中斷點或 Watchpoint、或腳本中的 <span class="kw">me-&gt;break( )</span>）才能要求停止腳本。<b>要除錯腳本本身，必須在腳本方法中寫 <span class="kw">BREAK-POINT</span></b>。</p>
+  <p><b>ADI 存取方式</b>：大部分功能在以 <span class="kw">CL_TPDA_SCRIPT_</span> 開頭的類別的 static 元件；部分是 instance 元件，經由 <span class="kw">me-&gt;</span> 存取——本地腳本類別繼承自 <b>CL_TPDA_SCRIPT_CLASS_SUPER</b>，執行時由 Debugger framework 實例化。類別名稱不必背，<b>Script Wizard</b> 可自動產生重要的方法呼叫。</p>
+
+  <pre><code class="abap">*&amp;---------------------------------------------------------------*
+*&amp; Debugger Script：教材的「自動化」範例（航班載客率過低就改值並記 Trace）
+*&amp; 觸發方式：Script breakpoint 設在計算載客率的那一行（不會中斷應用程式）
+*&amp; 注意：ADI 方法簽章依版本略有差異，實作時請用 Script Wizard 產生呼叫
+*&amp;---------------------------------------------------------------*
+CLASS lcl_debugger_script DEFINITION INHERITING FROM cl_tpda_script_class_super.
+  PUBLIC SECTION.
+    METHODS prologue REDEFINITION.
+    METHODS init     REDEFINITION.
+    METHODS script   REDEFINITION.
+    METHODS end      REDEFINITION.
+  PRIVATE SECTION.
+    DATA mv_show_msg  TYPE abap_bool VALUE abap_true.   "INIT 與 SCRIPT 共用 → 必須是屬性
+    DATA mv_write_trc TYPE abap_bool VALUE abap_true.
+ENDCLASS.
+
+CLASS lcl_debugger_script IMPLEMENTATION.
+  METHOD prologue.
+    super-&gt;prologue( ).                                 "保留預設：註冊 abap_source
+  ENDMETHOD.
+
+  METHOD init.
+    " 互動腳本：只問一次，結果存成屬性
+  ENDMETHOD.
+
+  METHOD script.
+    TRY.
+        " 先 F5 執行計算那一行
+        debugger_controller-&gt;debug_step(
+          p_command = cl_tpda_script_debugger_ctrl=&gt;debug_step_into ).
+
+        DATA(lv_occ_txt) = cl_tpda_script_data_descr=&gt;get_simple_value(
+                             p_var_name = 'GV_PERCENTAGE' ).
+        DATA(lv_occ) = CONV decfloat16( lv_occ_txt ).
+
+        IF lv_occ &lt; 50.
+          IF mv_write_trc = abap_true.
+            DATA(lv_carr) = cl_tpda_script_data_descr=&gt;get_simple_value( p_var_name = 'GS_FLIGHT-CARRID' ).
+            DATA(lv_conn) = cl_tpda_script_data_descr=&gt;get_simple_value( p_var_name = 'GS_FLIGHT-CONNID' ).
+            trace-&gt;add_custom_info( p_trace_entry = VALUE #(
+              value = |Flight { lv_carr } { lv_conn } occupancy { lv_occ }% too low| ) ).
+          ENDIF.
+          IF mv_show_msg = abap_false.
+            " 讓 IF 條件不成立 → 不跳 information message，免得一直按 Continue
+            cl_tpda_script_data_descr=&gt;change_value( p_new_value = '50'
+                                                     p_varname   = 'GV_PERCENTAGE' ).
+          ENDIF.
+        ENDIF.
+      CATCH cx_tpda_varname cx_tpda_script_no_simple_type
+            cx_sy_conversion_no_number INTO DATA(lx_err).
+        " 取值失敗時交給使用者決定是否停
+        me-&gt;break( ).
+    ENDTRY.
+  ENDMETHOD.
+
+  METHOD end.
+    " Trace 檔在腳本結束時關閉；之後在 Trace File 頁籤或 SAS 分析
+  ENDMETHOD.
+ENDCLASS.</code></pre>
+  <p>此範例要設<b>兩個一般中斷點</b>：一個在觸發點之前（用來進 Debugger、載入並啟動腳本），一個在迴圈之後（讓開發者有機會結束腳本、關閉 Trace 檔）。教材列出使用的方法：<span class="kw">debugger_controller-&gt;debug_step</span>（執行 F5／F6／F7／F8）、<span class="kw">cl_tpda_script_data_descr=&gt;get_simple_value</span>（以字串取簡單變數值）、<span class="kw">cl_tpda_script_data_descr=&gt;change_value</span>（改簡單變數值）、<span class="kw">trace-&gt;add_custom_info</span>（寫自訂 Trace）。</p>
+
+  <p><b>互動腳本</b>：腳本就是一個本地類別的原始碼，所以不限於 ADI，大部分 ABAP 能力都能用。延伸上例：啟動時問使用者「要不要顯示訊息」「要不要寫 Trace」，只問一次 → 寫在 <b>INIT</b>。用函數模組 <span class="kw">POPUP_GET_VALUES</span>：傳給 <span class="kw">FIELDS</span> 表格參數幾列就出現幾個輸入欄，每個欄位的長度與型別<b>必須參照 ABAP Dictionary 的結構／表欄位</b>（不能獨立定義）；要做兩個布林欄位，就要找型別合適的字典欄位。關閉對話框後從同一張表讀使用者輸入。<b>使用者輸入要在 SCRIPT 方法使用，所以必須存成類別屬性，不能是 INIT 的區域變數</b>。</p>
+  <pre><code class="abap">  METHOD init.
+    " POPUP_GET_VALUES 的欄位必須參照字典欄位；這裡借用 SVAL 常見的做法
+    DATA(lt_fields) = VALUE ty_sval_tab(
+      ( tabname = 'BAPIFLAG' fieldname = 'BAPIFLAG' fieldtext = 'Show messages (X/blank)'  value = 'X' )
+      ( tabname = 'BAPIFLAG' fieldname = 'BAPIFLAG' fieldtext = 'Write trace file (X/blank)' value = 'X' ) ).
+
+    CALL FUNCTION 'POPUP_GET_VALUES'
+      EXPORTING  popup_title     = 'Debugger script options'
+      TABLES     fields          = lt_fields
+      EXCEPTIONS error_in_fields = 1
+                 OTHERS          = 2.
+    IF sy-subrc &lt;&gt; 0.
+      RETURN.
+    ENDIF.
+
+    " 存成屬性，SCRIPT 方法每次觸發都讀得到
+    mv_show_msg  = xsdbool( lt_fields[ 1 ]-value = 'X' ).
+    mv_write_trc = xsdbool( lt_fields[ 2 ]-value = 'X' ).
+  ENDMETHOD.</code></pre>
+  <div class="note">上例的 <span class="kw">ty_sval_tab</span> 請宣告為 <span class="kw">TYPES ty_sval_tab TYPE STANDARD TABLE OF sval WITH EMPTY KEY.</span>（放在類別 PRIVATE SECTION）；借用哪個字典欄位當布林欄位只要長度 1 的 CHAR 即可，教材原圖所用的欄位為截圖，此處以 <span class="kw">BAPIFLAG-BAPIFLAG</span> 示意。</div>
+
+  <p><b>執行期智慧中斷點</b>：需求是「每次到 <span class="kw">LOOP … ENDLOOP</span> 且處理的內表叫 <span class="kw">GT_FLIGHT</span> 才停，而且每個 LOOP 只停一次」——標準的「Breakpoint at ABAP statement」做不到，腳本可以：</p>
+  <pre><code class="abap">  METHOD script.
+    " 觸發：Script breakpoint at statement LOOP AT（優於 Single Step 觸發）
+    TRY.
+        " ① 掃描目前這一行
+        DATA(lo_scan) = cl_tpda_script_scan=&gt;scan(
+                          p_program = abap_source-&gt;program( )
+                          p_include = abap_source-&gt;include( )
+                          p_line    = abap_source-&gt;line( ) ).
+
+        " ② 是 LOOP 才能 cast 成 CL_TPDA_SCRIPT_SCAN_ITAB_LOOP
+        DATA(lo_loop) = CAST cl_tpda_script_scan_itab_loop( lo_scan ).
+
+        " ③ 取這一行所有 LOOP 的內表名稱，比對目標
+        DATA(lt_itabs) = lo_loop-&gt;it_tables( ).
+        IF NOT line_exists( lt_itabs[ table_line = 'GT_FLIGHT' ] ).
+          RETURN.
+        ENDIF.
+
+        " ④ 每個 LOOP 只停一次：記住已停過的行號（mt_loop_lines 為類別屬性）
+        DATA(lv_line) = abap_source-&gt;line( ).
+        IF line_exists( mt_loop_lines[ table_line = lv_line ] ).
+          RETURN.
+        ENDIF.
+        INSERT lv_line INTO TABLE mt_loop_lines.
+        me-&gt;break( ).                                  "中斷應用程式，交給開發者互動分析
+
+      CATCH cx_sy_move_cast_error.                     "不是 LOOP 敘述 → 略過
+      CATCH cx_tpda_scan INTO DATA(lx_scan).
+        RAISE EXCEPTION NEW cx_tpda_script_continue( ).
+    ENDTRY.
+  ENDMETHOD.</code></pre>
+  <div class="note">上述 scan 類別的方法名稱依教材 p139 描述（factory method <span class="kw">SCAN</span>、cast 成 <span class="kw">CL_TPDA_SCRIPT_SCAN_ITAB_LOOP</span>、方法 <span class="kw">IT_TABLES</span>）；參數名稱與 <span class="kw">abap_source</span> 取得行號的方法請以系統中 Script Wizard 產生的程式為準。啟動方式：在應用程式開頭設一個中斷點，進 Debugger 後載入並啟動腳本。</div>
+
+  <p><b>Trace 檔的產生與分析</b>：介面 <b>IF_TPDA_SCRIPT_TRACE_WRITE</b> 的方法可寫入最後一個 ABAP 敘述、呼叫階層、或任意自訂內容。腳本結束後，檔案出現在 <b>Trace File</b> 頁籤（新的在上），可 Display（管理資料對話框 → Continue 看明細，Components 單選鈕選要顯示的內容；Start Standalone Trace Analys. 另開 SAS 分析）、Delete、Start analysis in a new session。</p>
+  <p>交易 <span class="tcode">SAS</span> 三個頁籤：</p>
+  <ul>
+    <li><b>Trace Files</b>：Own Trace Files 與 Trace Files of Other Users，依日期時間排序，雙擊在 Trace Display 開啟。</li>
+    <li><b>Trace Display</b>：Trace Selection 區有 <b>Statements</b>、<b>Hierarchy</b>、<b>Custom</b> 三個按鈕，組合型 Trace 會有多個按鈕可用。</li>
+    <li><b>Script Editor</b>：具備 Debugger Script 頁籤的所有功能，<b>但沒有 Save 與 Start Script</b>。</li>
+  </ul>
+
+  <h3 id="ch05-4-20">20. S/4HANA 與 ADT 時代的除錯實務（本書補充）</h3>
+  <p>BC403 教的是 SAP GUI 的 New Debugger，這在 S/4HANA 仍是主力；但新開發越來越多在 <b>ABAP Development Tools（ADT，Eclipse）</b>進行（<a href="#ch05-5">5-5 章</a>）。對照如下：</p>
+  <table>
+    <thead><tr><th>需求</th><th>SAP GUI Debugger（本課）</th><th>ADT / S/4HANA 做法</th></tr></thead>
+    <tbody>
+      <tr><td>設中斷點</td><td>Session／External 中斷點</td><td>ADT 中斷點預設即為外部（使用者）中斷點，可直接攔到 Fiori／OData／RFC 請求；可設條件</td></tr>
+      <tr><td>Watchpoint</td><td>Shift+F4</td><td>ADT Debug 視角的 Variables 右鍵 Set Watchpoint</td></tr>
+      <tr><td>CDS View / AMDP</td><td>看不到 CDS 內部；AMDP 無法在 ABAP Debugger 逐步執行</td><td>CDS 用 Data Preview 與 SQL Console 驗證；<b>AMDP 只能在 ADT 用 AMDP Debugger</b> 設中斷點</td></tr>
+      <tr><td>RAP 行為實作</td><td>—</td><td>在 behavior pool 的 local handler 類別設中斷點；Layer Aware 的想法仍適用（只看自己的 BO）</td></tr>
+      <tr><td>效能</td><td>Trace 工具 → <span class="tcode">SAT</span>／<span class="tcode">ST05</span></td><td>ADT ABAP Profiling、SQL Trace；<span class="tcode">SE30</span> 已由 <span class="tcode">SAT</span> 取代</td></tr>
+      <tr><td>自動化分析</td><td>Debugger Scripting（<span class="tcode">SAS</span>）</td><td>ADT 無對等的腳本功能，仍回 SAP GUI 使用</td></tr>
+    </tbody>
+  </table>
+  <p><b>Casper 的三條實務經驗，在除錯時的應用</b>：</p>
+  <ol>
+    <li><b>HANA 沒有預設排序</b>：「在 DEV 除錯都對、到 PRD 偶爾錯」的經典原因。遇到結果不穩定，先用 Diff 工具比較兩次 SELECT 的結果（第 9 節），再開「Check Sorting Before READ BINARY SEARCH」（第 13 節）；成本評價同時有 item category H 與 cost component E 兩種角度、欄位數量不同，沒排序就一下 H 一下 E——該案最後結論是固定抓 H。</li>
+    <li><b>列舉優於區間</b>：條件式中斷點、SLAD 的 Selection Set、Watchpoint 條件都一樣，用多個 EQ 明列比用 BT 區間可靠（第 6、16 節）。</li>
+    <li><b>先找標準，再想客製</b>：Debugger 是找增強點的工具，不是改標準的藉口。步驟：<span class="kw">/h</span> 進入 → Call Stack 看位置 → F9 設「Breakpoint at Statement」<span class="kw">CALL BADI</span>／<span class="kw">GET BADI</span>（新 BAdI）或方法 <span class="kw">CL_EXITHANDLER=&gt;GET_INSTANCE</span>（Classic BAdI）、<span class="kw">CALL CUSTOMER-FUNCTION</span>（Customer Exit）→ 按 F8 列出流程中經過的所有增強點 → 再決定用標準設定、BAdI／Enhancement Spot、Enhancement Point，最後才是修改標準（<a href="#ch03-3">3-3 章</a>、<a href="#ch03-4">3-4 章</a>、<a href="#ch05-14">5-14 章</a>）。</li>
+  </ol>
+  <pre><code class="text">找增強點的中斷點清單（F9 → Breakpoint at → Statement / Method）
+Statement : CALL BADI              新 BAdI（Enhancement Framework）呼叫點
+Statement : GET BADI               新 BAdI 取得實例處
+Method    : CL_EXITHANDLER=&gt;GET_INSTANCE   Classic BAdI（舊式，僅維護用）
+Statement : CALL CUSTOMER-FUNCTION Customer Exit（SMOD/CMOD）
+Statement : MESSAGE                追錯誤訊息從哪裡發出（EHP 2 起也可直接指定 T100 訊息）
+Statement : AUTHORITY-CHECK        追權限檢查（配合 SU53）
+Statement : COMMIT WORK            確認 LUW 在哪裡結束</code></pre>
+  <div class="tip">背景作業錯誤的除錯流程：<span class="tcode">SM37</span> 看 Job Log → 選已完成的 Job 輸入 <span class="kw">jdbg</span> 重現（注意 SY-BATCH = 'X'）→ 若是還在跑的長時間作業，<span class="tcode">SM50</span> 選工作程序 → Program → Debugging 直接掛上去看它卡在哪個 SELECT（<a href="#ch04-4">4-4 章</a>）。</div>
+
+  <h3 id="ch05-4-qa">練習與自我檢核</h3>
+  <p><b>A. 原廠教材 Learning Assessment（Unit 1，共 16 題）</b></p>
+  <ol>
+    <li>命令列輸入哪個指令可除錯 ABAP 但不除錯畫面邏輯？（/h、/ha、/hs、/end）<br><i>答：/ha。</i>/h 連 Flow Logic 一起除錯，/hs 含系統程式，/end 不是除錯指令。</li>
+    <li>Debugger 版面可依使用者與被分析的應用程式配置工具位置。（是非）<br><i>答：True。</i>每個 Desktop 1～4 個工具，前三個 Desktop 版面可儲存。</li>
+    <li>要執行一個函數模組但不離開目前程式單元，按哪個鍵？<br><i>答：Execute（F6）。</i></li>
+    <li>關於 Session 中斷點哪些正確？（A 永久 B 屬於目前使用者 session C 登出即刪 D 可用於 HTTP）<br><i>答：B、C。</i>永久的是 persistent（寫在程式中）；HTTP 要用外部中斷點。</li>
+    <li>Watchpoint 可以在 Debugger session 之外定義。（是非）<br><i>答：False。</i>只能在 Debugger 中定義，session 結束即刪。</li>
+    <li>預設 Debugger 設定的 session 名稱？<br><i>答：START_UP。</i></li>
+    <li>除錯 FM 時，Variable Fast Display 哪個頁籤自動顯示 FM 參數？<br><i>答：Locals。</i></li>
+    <li>Table 工具可以做哪些事？（A 改欄位版面 B 新增修改刪除列 C 依資料庫變化更新顯示 D 儲存版面供他次使用）<br><i>答：A、B、D。</i>Table 工具顯示的是內表，不會自動反映資料庫變化。</li>
+    <li>Diff 工具可以比較不同型別的資料物件。（是非）<br><i>答：False。</i>必須同型別（或同一類別的兩個實例）。</li>
+    <li>Allocated memory 永遠 ≥ used memory。（是非）<br><i>答：True。</i></li>
+    <li>Screen Analysis 工具可以分析什麼？（A 畫面與容器階層 B 輸入欄位目前顯示的值 C 畫面欄位的屬性 D 畫面在本 session 顯示過幾次）<br><i>答：A、C。</i>教材描述的是階層樹（General View）與欄位屬性（General／Special Attr.、Misc.）；欄位的值要在變數工具看，D 教材未提供。</li>
+    <li>要使用 Context Menu Breakpoints，Web Dynpro URL 要加什麼？<br><i>答：/h=X（即 h=X 參數）。</i></li>
+    <li>Web Dynpro 方法只能設外部中斷點，Session 中斷點不能用。（是非）<br><i>答：True。</i>只經 HTTP 呼叫的程式碼不能用 Session 中斷點。</li>
+    <li>類別例外發生時出現哪個按鈕，按下後會標示引發位置？<br><i>答：Display Trigger Location。</i>Last Exception Object 是分析例外物件本身。</li>
+    <li>Update Debugging 控制在哪個敘述後除錯更新工作程序？<br><i>答：COMMIT WORK。</i></li>
+    <li>控制除錯權限的權限物件？<br><i>答：S_DEVELOP</i>（ACTVT 03 看、02 改值與 Goto、01 另加系統程式與 Kernel）。</li>
+  </ol>
+  <p><b>B. Unit 2～4 Learning Assessment</b></p>
+  <ol>
+    <li>哪些 Repository 物件類型可放進 Object Set 的 Selection Set？（Function Module、Subroutine、Program、Package）<br><i>答：Function Module、Program、Package。</i>Subroutine 不行（另有 Implemented Interface）。</li>
+    <li>每個新 Debugger Profile 都有的預設 Object Set 名稱？<br><i>答：&lt;&lt;%REST%&gt;&gt;。</i></li>
+    <li>啟用 Request-Based Debugging 時，外部中斷點與請求會帶一個稱為 Terminal ID 的識別碼。（是非）<br><i>答：True。</i></li>
+    <li>設中斷點者與送請求者不同人時，送請求者在命令列輸入什麼？<br><i>答：/hset tid=&lt;TID&gt;。</i></li>
+    <li>Debugger 腳本是只含哪個本地類別的 subroutine pool？<br><i>答：LCL_DEBUGGER_SCRIPT。</i></li>
+    <li>哪個方法負責腳本的技術初始化？<br><i>答：PROLOGUE。</i>INIT 是自己的初始化。</li>
+    <li>哪個方法可不經使用者互動終止腳本？<br><i>答：me-&gt;raise_error( )。</i></li>
+    <li>Debugger Scripting 產生的 Trace 檔用哪個交易查看？<br><i>答：SAS。</i>（SLAD 是 Layer Aware 的 Object Set／Profile）</li>
+  </ol>
+  <p><b>C. 實作練習</b></p>
+  <ol>
+    <li>用第 5 節程式，在 <span class="kw">xsdbool( … )</span> 那行按 Step Size，找出是哪個子條件讓航班不成為候選。<br><i>要點：</i>切換 Statement Debugging 後 F5，逐一看 Auto 頁籤的子條件結果；完成後再按一次 Step Size 回逐行模式。</li>
+    <li>在 <span class="tcode">SAAB</span> 建 Checkpoint Group <span class="kw">ZBC403</span>，把第 7 節程式的 <span class="kw">BREAK-POINT ID</span> 設為 Break，並用 Watchpoint at Object Attribute 找出把價格改成 -50 的那一行。<br><i>要點：</i>監看參考變數 LO_ORDER 不會停；要選物件屬性型 Watchpoint；停下後在 Watchpoints 子頁用 Compare Variables 看前後值。</li>
+    <li>寫一段 <span class="kw">CATCH cx_root.</span>（沒 INTO）的程式，比較勾與不勾 <b>Always Create Exception Object</b> 時 Debugger 的差異。<br><i>要點：</i>不勾時沒有 Last Exception Object 按鈕；勾了才能在 Display Exception 工具看到例外鏈。</li>
+    <li>用 <span class="tcode">SLAD</span> 建一個 Profile：Object Set 只含你的 Z Package（逐一列舉），設 Point of Entry，刪除 &lt;&lt;%REST%&gt;&gt;，然後在 <span class="tcode">ME21N</span> 儲存採購單時觀察停在哪些自己的增強程式。<br><i>要點：</i>Ctrl+Shift+F4 → 勾 Layer-Aware Debugger Active → 選 Profile → Continue；新 session 預設關閉要重開。</li>
+    <li>在 Update Debugging 開與關的情況下各跑一次第 14 節程式，說明為什麼關閉時 F5 進不去 <span class="kw">Z_PP_CONF_LOG_UPDATE</span>。<br><i>要點：</i>IN UPDATE TASK 只寫更新記錄，COMMIT WORK 後由更新工作程序在另一個 session 執行。</li>
+    <li>在 <span class="tcode">SAS</span> 寫一支腳本：每遇到 <span class="kw">AUTHORITY-CHECK</span> 就把物件名稱與 SY-SUBRC 寫進自訂 Trace（<b>不要改 SY-SUBRC</b>），跑完用 SAS 的 Trace Display → Custom 檢視。<br><i>要點：</i>觸發設 Breakpoint Reached，script breakpoint 為 statement AUTHORITY-CHECK；SCRIPT 中先 debug_step 執行該敘述再讀 SY-SUBRC；結尾設一般中斷點以結束腳本、關閉 Trace 檔。</li>
+    <li>申論：為什麼在 PRD 用 Debugger 修改資料庫相關變數特別危險？請用「隱含 DB commit」「exclusive 工作程序」「S_DEVELOP ACTVT 02」三個關鍵字說明。<br><i>要點：</i>Debugger 每次停下都是一次等待，非獨佔模式會觸發隱含 commit、變更無法回滾；獨佔工作程序有上限（rdisp/wpdbug_max_no，最多一半對話程序）；ACTVT 02 可改值與 Goto Statement，等於繞過程式檢查，且會被 SM21 記錄、稽核追查。</li>
+  </ol>
+</section>

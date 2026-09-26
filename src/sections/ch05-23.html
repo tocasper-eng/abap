@@ -1,0 +1,1191 @@
+<section class="chapter" id="ch05-23" data-title="NET310 Web Dynpro ABAP 基礎">
+  <h2>第 5-23 章 NET310 Web Dynpro ABAP 基礎</h2>
+  <p class="lede">NET310 是 SAP 原廠講授 <b>Web Dynpro for ABAP（WDA）</b>的 5 天課程：從 MVC 宣告式開發、Component／Window／View／Controller／Context 的架構，到 Context 程式設計、Supply Function、訊息、輸入說明、元件重用、對話框、設定與個人化、增強、動態程式設計、SALV_WD_TABLE、Select Options 與除錯。本章依原課程 13 個單元的順序整理 Col18 教材，所有程式碼都改寫成 ABAP 7.52 現代寫法，並把 Web Dynpro 在 S/4HANA 的位置講清楚：<b>標準應用與 FPM 仍大量使用、必須看得懂也改得動；但新開發請優先走 Fiori Elements／RAP</b>。</p>
+
+  <div class="meta">
+    <div><b>核心 TCODE</b><span class="tcode">SE80</span><span class="tcode">SE24</span><span class="tcode">SE11</span><span class="tcode">SE63</span><span class="tcode">SE61</span><span class="tcode">SE06</span><span class="tcode">SICF</span><span class="tcode">SFW1</span><span class="tcode">SFW2</span><span class="tcode">SFW5</span><span class="tcode">SPAU_ENH</span><span class="tcode">WD_TRACE_TOOL</span><span class="tcode">SE16</span></div>
+    <div><b>關鍵物件</b>IF_WD_CONTEXT_NODE、IF_WD_CONTEXT_ELEMENT、IF_WD_CONTEXT_NODE_INFO、IF_WD_MESSAGE_MANAGER、IF_WD_WINDOW_MANAGER、IF_WD_WINDOW、IF_WD_COMPONENT、CL_WD_COMPONENT_ASSISTANCE、CL_WD_UTILITIES、CL_WD_DYNAMIC_TOOL、CL_WD_UIELEMENT、CL_WD_UIELEMENT_CONTAINER、CL_WD_VIEW_ELEMENT、CL_WD_LAYOUT、CL_WD_LAYOUT_DATA、CL_WD_BUTTON、CL_WD_MATRIX_HEAD_DATA、CL_WD_FORMATTED_TEXT、CL_SALV_WD_CONFIG_TABLE、CL_WD_SELOPT_UTIL_20、IF_WD_SELECT_OPTIONS_20、WDR_CONTEXT_ATTR_VALUE、WDR_CONTEXT_ELEMENT_SET、WDY_BOOLEAN、WDR_TEXT_KEY、DDIF_FIELDLABEL_GET、DOCU_GET</div>
+    <div><b>標準元件／應用</b>SALV_WD_TABLE、WDR_OVS、WDR_MESSAGE_AREA、WDR_SELECT_OPTIONS、WD_SELECT_OPTIONS_20、WDR_TEST_UI_ELEMENTS、WDR_TEST_SEL_OPT_AUTO_20、WDHA_ADMINISTRATION、WDHA_TRANSLATION</div>
+    <div><b>內建屬性</b>WD_THIS、WD_CONTEXT、WD_COMP_CONTROLLER、WD_ASSIST、WDEVENT</div>
+  </div>
+
+  <h3 id="ch05-23-01">1. 課程定位與教材對照</h3>
+  <p>NET310 全名 <b>Fundamentals of Web Dynpro for ABAP</b>，本章依據的是 <b>Col18 版（Course Version 18，2022，教材編號 50148258，5 天課程）</b>，目標對象是開發人員（Developer）。這門課沒有强晟 2007 自學筆記可對照，只有原廠英文教材，因此下表只列原廠 Unit/Lesson 與頁碼。它屬於 NetWeaver 開發路線（NET 系列）的進階課程，教材自己也標明同樣內容收錄在 <b>TAW12</b>（ABAP Workbench Concepts）認證課程中。上課前建議先學過 BC400（<a href="#ch05-1">5-1 章</a>）與 BC401 ABAP Objects（<a href="#ch05-2">5-2 章</a>），因為 Web Dynpro 的每個 Controller 本質上都是一個本地類別。</p>
+
+  <table>
+    <thead><tr><th>原廠單元</th><th>主題</th><th>Col18 頁碼</th><th>本章小節</th></tr></thead>
+    <tbody>
+      <tr><td>Unit 1 L1</td><td>Web Dynpro 的好處、宣告式 Meta Model</td><td>p11–15</td><td>§2</td></tr>
+      <tr><td>Unit 1 L2、L5</td><td>元件架構、Context 與 Data Binding、MVC、內外可見性、Application</td><td>p17–35</td><td>§3</td></tr>
+      <tr><td>Unit 1 L3–L4</td><td>View 之間的導覽、View Assembly</td><td>p23–27</td><td>§4</td></tr>
+      <tr><td>Unit 2 L1</td><td>Controller 類型、生命週期、共用實體</td><td>p43–52</td><td>§5</td></tr>
+      <tr><td>Unit 3 L1–L2</td><td>Context 節點、Cardinality、Lead Selection、Singleton</td><td>p55–69</td><td>§6</td></tr>
+      <tr><td>Unit 3 L3、Unit 4 L2</td><td>Context Mapping、Data Binding、UI 屬性繫結</td><td>p71–73、p97–103</td><td>§7</td></tr>
+      <tr><td>Unit 4 L1</td><td>UI 元素分類、容器與 Layout Manager、View Editor</td><td>p81–96</td><td>§8</td></tr>
+      <tr><td>Unit 4 L3–L4</td><td>Table、CTable、選取模式、靜態右鍵選單</td><td>p105–123</td><td>§9</td></tr>
+      <tr><td>Unit 5 L1</td><td>Hook Method、Phase Model、Controller 方法與屬性</td><td>p129–139</td><td>§10</td></tr>
+      <tr><td>Unit 5 L2–L3</td><td>執行期存取 Context、新增／刪除元素</td><td>p141–158</td><td>§11</td></tr>
+      <tr><td>Unit 5 L4</td><td>Supply Function 與 Lazy Data Instantiation</td><td>p159–161</td><td>§12</td></tr>
+      <tr><td>Unit 6 L1–L2</td><td>國際化：DDIC 文字、OTR、Assistance Class</td><td>p171–181</td><td>§13</td></tr>
+      <tr><td>Unit 6 L3</td><td>訊息回報與 Phase Model</td><td>p183–198</td><td>§14</td></tr>
+      <tr><td>Unit 7 L1–L2</td><td>Value Help、Value Suggestion、Value Selector</td><td>p201–214</td><td>§15</td></tr>
+      <tr><td>Unit 7 L3–L4</td><td>Tooltip、Input Prompt、Explanation、Help Center、鍵盤操作</td><td>p215–243</td><td>§16</td></tr>
+      <tr><td>Unit 8 L1–L3</td><td>元件重用、Component Usage、跨元件 Mapping、動態使用</td><td>p247–270</td><td>§17</td></tr>
+      <tr><td>Unit 9 L1</td><td>對話框（External／Confirm／Window／Interface View）</td><td>p273–286</td><td>§18</td></tr>
+      <tr><td>Unit 10 L1–L3</td><td>Configuration／Customizing／Personalization、增強</td><td>p289–308</td><td>§19</td></tr>
+      <tr><td>Unit 10 L4–L5</td><td>動態修改 Context 與 UI</td><td>p309–342</td><td>§20</td></tr>
+      <tr><td>Unit 11 L1</td><td>ALV for Web Dynpro（SALV_WD_TABLE）</td><td>p343–352</td><td>§21</td></tr>
+      <tr><td>Unit 12 L1</td><td>Web Dynpro Select Options（WD_SELECT_OPTIONS_20）</td><td>p353–362</td><td>§22</td></tr>
+      <tr><td>Unit 13 L1–L3</td><td>監控、除錯、Runtime Analysis Tool</td><td>p363–372</td><td>§23</td></tr>
+    </tbody>
+  </table>
+
+  <p><b>版本背景：</b>Web Dynpro ABAP 自 <b>SAP NetWeaver AS 7.0</b> 起提供，開發工具就是加強過的 <span class="tcode">SE80</span>。教材中不少功能都標了「從哪個 EhP／SP 開始才有」，本章保留這些版本門檻：</p>
+  <ul>
+    <li>7.0 SP12：Context 屬性可繫結 enabled／visible／readOnly／state 屬性；SP13：設計期靜態右鍵選單。</li>
+    <li>7.0 EhP2：FormLayout、右鍵選單設外部中斷點；EhP3 / 7.31 EhP1：FormLayoutAdvanced。</li>
+    <li>7.30：CTable（ClientTable）；7.31：<span class="kw">create_and_open_popup( )</span>。</li>
+    <li>7.50：新建應用程式自動帶 <span class="kw">WDUIGUIDELINE = FIORI</span>、<span class="kw">WDPREFERREDRENDERING = STAND_ONLY</span>；SAP_UI 7.50 SP1：訊息區 NOTIFICATION_ICON 設計。</li>
+  </ul>
+  <div class="note">S/4HANA 1809 的底層是 ABAP Platform 1809（SAP_BASIS 7.53、ABAP 語言 7.53），上面所有功能都有；本書程式碼以 7.52 語法為基準，確保 1809 以上都能直接用。</div>
+
+  <h3 id="ch05-23-02">2. Web Dynpro 是什麼？宣告式開發與它在 S/4HANA 的地位</h3>
+  <p>原廠開場的定位：Web Dynpro 用<b>宣告式（declarative）</b>方式、以 <b>MVC</b> 為基礎開發網頁 UI。你只要宣告「畫面上有哪些 UI 元素、資料從哪裡來、可以怎麼導覽」，框架就依 <b>Meta Model</b> 自動產生程式，替你處理 HTML 與 JavaScript；你的程式碼只放在框架預留的位置（Controller 方法）裡。</p>
+  <p><b>Web Dynpro 的哲學：手寫程式碼越少越好。</b>具體做法有三：</p>
+  <ul>
+    <li>宣告式 Meta Model 定義 UI，開發環境從抽象定義產生程式；設計期不知道的變化，才用程式在執行期動態改 UI（§20）。</li>
+    <li>框架內建國際化、無閃爍（flicker-free）互動、商業邏輯與 UI 乾淨分離（修改版的 MVC）。</li>
+    <li>提供 Wizard（Web Dynpro Code Wizard）產生表單、表格與 Controller 方法中的程式。</li>
+  </ul>
+  <p>Web Dynpro ABAP 應用程式可直接使用的資料來源：系統中的<b>全域類別方法</b>、本系統或經 RFC 呼叫後端系統的<b>函數模組</b>、透過 Web Service Client 物件呼叫的 <b>Web Service</b>。</p>
+  <div class="warn"><b>原廠明確警告：不要在 Controller 方法裡直接寫 SELECT</b>，那會把流程邏輯與商業邏輯混在一起。Web Dynpro ABAP 不支援 Model 物件，最好的做法是把商業邏輯封裝在<b>全域 ABAP 類別</b>中；若要跨元件重用非視覺邏輯，可做成沒有 View 的 <b>Faceless Component</b>。本章所有範例都遵守這一點。</div>
+
+  <pre><code class="abap">*&amp;---------------------------------------------------------------------*
+*&amp; Model 類別：所有資料存取都放這裡，Web Dynpro Controller 只負責呼叫
+*&amp;---------------------------------------------------------------------*
+CLASS zcl_wd_flight_model DEFINITION PUBLIC FINAL CREATE PUBLIC.
+  PUBLIC SECTION.
+    TYPES tt_flights  TYPE STANDARD TABLE OF sflight WITH EMPTY KEY.
+    TYPES tt_bookings TYPE STANDARD TABLE OF sbook   WITH EMPTY KEY.
+    TYPES tt_carrid_range TYPE RANGE OF s_carr_id.
+
+    CLASS-METHODS get_flights
+      IMPORTING it_carrid         TYPE tt_carrid_range
+      RETURNING VALUE(rt_flights) TYPE tt_flights.
+
+    CLASS-METHODS get_bookings
+      IMPORTING iv_carrid          TYPE s_carr_id
+                iv_connid          TYPE s_conn_id
+                iv_fldate          TYPE s_date
+      RETURNING VALUE(rt_bookings) TYPE tt_bookings.
+ENDCLASS.
+
+CLASS zcl_wd_flight_model IMPLEMENTATION.
+  METHOD get_flights.
+    " HANA 沒有預設排序：表格第一列＝Lead Selection 預設元素，一定要 ORDER BY
+    SELECT carrid, connid, fldate, price, currency, planetype,
+           seatsmax, seatsocc
+      FROM sflight
+      WHERE carrid IN @it_carrid
+      ORDER BY carrid, connid, fldate
+      INTO CORRESPONDING FIELDS OF TABLE @rt_flights.
+  ENDMETHOD.
+
+  METHOD get_bookings.
+    SELECT carrid, connid, fldate, bookid, customid, custtype,
+           class, forcuram, forcurkey, order_date, cancelled
+      FROM sbook
+      WHERE carrid = @iv_carrid
+        AND connid = @iv_connid
+        AND fldate = @iv_fldate
+      ORDER BY bookid
+      INTO CORRESPONDING FIELDS OF TABLE @rt_bookings.
+  ENDMETHOD.
+ENDCLASS.</code></pre>
+
+  <div class="warn"><b>Web Dynpro 在 S/4HANA 的現況（寫給專案上的你）：</b>
+    <ul>
+      <li><b>仍然大量存在</b>：許多 S/4HANA 標準應用（尤其是設定類、主資料治理 MDG、部分 HR/EHS/PLM 畫面）以及建構在其上的 <b>FPM（Floorplan Manager）</b>應用都是 Web Dynpro ABAP；它們可以用 Tile 形式掛在 Fiori Launchpad 上，外觀看起來像 Fiori，但骨子裡是 WDA。所以<b>看得懂、除錯得了、會做 Configuration 與 Enhancement</b>，是 S/4HANA 顧問的必備能力。</li>
+      <li><b>新開發不建議再用</b>：SAP 的 UX 策略是 SAP Fiori。新交易型應用請走 <b>CDS View + RAP（RESTful ABAP Programming Model）+ Fiori Elements</b>；只讀報表可用 CDS + Fiori Elements List Report / Analytical List Page。</li>
+      <li><b>ABAP Cloud 不能用</b>：在 ABAP Cloud 開發模型（S/4HANA Cloud Public Edition、BTP ABAP Environment，以及 on-premise 的 Tier 1 開發）中，Web Dynpro 不是 released 技術，無法使用。</li>
+      <li>對照其他 UI 技術：經典 Dynpro 見 <a href="#ch05-9">5-9 章</a>／<a href="#ch04-2">4-2 章</a>；ITS／BSP 見 <a href="#ch05-17">5-17 章</a>；OData 服務的起點見 <a href="#ch04-1">4-1 章</a>。</li>
+    </ul>
+  </div>
+
+  <h3 id="ch05-23-03">3. 元件架構：Component、Window、View、Controller、Context、Application</h3>
+  <p><b>Web Dynpro Component</b> 是容器，裡面裝著與 UI 及程式有關的所有實體，是軟體模組化的單位：</p>
+  <ul>
+    <li><b>View</b>：瀏覽器上一塊矩形區域，包含 UI 元素（輸入欄、按鈕⋯）。一頁可以只由一個 View 組成，也可以由多個 View 組合。</li>
+    <li><b>Window</b>：定義 View 的可能組合與 View 之間的流程。一個 Window 可含任意多個 View，一個 View 也可被嵌入任意多個 Window。</li>
+    <li><b>Controller</b>：放 Web Dynpro 原始碼的地方；全域變數宣告成 Controller 屬性（Attribute）。</li>
+    <li><b>Context</b>：每個 Controller 都有的階層式資料儲存區，存放「與 UI 相關」的全域資料（顯示在畫面上、或用來控制 UI 屬性）。</li>
+  </ul>
+  <p>Component 可以被三種方式使用：① 透過 <b>Web Dynpro Application</b> 把元件綁到一個 URL，由瀏覽器或其他 Web Dynpro Client 呼叫；② 當作<b>子元件</b>，把它的視覺介面與主元件的畫面組合；③ 當作子元件，主元件存取它程式介面中的方法與資料。</p>
+
+  <h4>MVC 與內外可見性</h4>
+  <p>MVC 由挪威人 Trygve Reenskaug 於 1970 年代末在 Xerox PARC 提出，首次實作於 Smalltalk-80；SAP 修改並擴充了原始 MVC 規格來打造 Web Dynpro。一個元件的實體分成兩半：</p>
+  <table>
+    <thead><tr><th>可見性</th><th>實體</th><th>重點</th></tr></thead>
+    <tbody>
+      <tr><td rowspan="3">內部可見</td><td>View（Layout + View Controller）、Window（+ Window Controller）</td><td>View Controller 可含導覽 Plug、方法、Context。Window 的 Outbound Plug 可接內嵌 View 的任何 Inbound Plug，View 的 Outbound Plug 也可接外層 Window 的 Inbound Plug；<b>但同一元件的 Window 之間不能導覽</b>。</td></tr>
+      <tr><td>Component Controller</td><td>元件層級的 Controller；只跟某個 View 有關的邏輯（例如檢查輸入）寫在該 View Controller。<b>View Controller 不能被宣告為 Used Controller</b>（違反 MVC）。</td></tr>
+      <tr><td>Custom Controller</td><td>選用，用來模組化元件內容：當某幾個 View 的區域控制器，或封裝某個 Model 類別的邏輯，減輕 Component Controller 的負擔。</td></tr>
+      <tr><td rowspan="2">外部可見</td><td>Interface Controller</td><td>每個元件<b>只有一個</b>；透過它把資料、方法、事件開放給其他元件。</td></tr>
+      <tr><td>Interface View</td><td>與 Window <b>一對一</b>，建立 Window 時自動產生；只開放勾了 Interface 屬性的 Plug，<b>Window 的方法與 Context 不會經 Interface View 對外公開</b>。沒有 View 的元件就不需要 Window，也沒有 Interface View，稱為 <b>Faceless Component</b>。</td></tr>
+    </tbody>
+  </table>
+  <div class="tip">商業邏輯不應該寫在 Web Dynpro 元件裡，應該放在元件外（全域類別），才能被 Fiori/OData、RFC、背景作業重用——這也是日後把 WDA 換成 RAP 時，成本最低的寫法。</div>
+
+  <h4>Web Dynpro Application 與應用程式參數</h4>
+  <p><b>Application 是進入元件的入口，也是唯一能以 URL 定址的 Web Dynpro 實體</b>。定義時要指定：① 要實例化的元件（Root Component）；② 使用的 Interface View（其預設 View 決定預設 View Assembly）；③ 入口 Inbound Plug（必須是 <b>Startup</b> 型）。就像一個 Module Pool 可以掛多個 TCODE，一個元件也可以定義多個 Application，各自指向不同 Interface View 或不同 Inbound Plug。</p>
+  <table>
+    <thead><tr><th>應用程式參數</th><th>說明</th></tr></thead>
+    <tbody>
+      <tr><td><span class="kw">WDUIGUIDELINE</span></td><td>UI 準則。7.50 起新建應用自動設為 <b>FIORI</b>；FIORI 準則用 SAP_BLUECRYSTAL 主題，GL11／GL20 用 CORBU 主題</td></tr>
+      <tr><td><span class="kw">WDPREFERREDRENDERING</span></td><td>7.50 起預設 STAND_ONLY。<b>FIORI 準則只能跑 STANDARD 渲染模式</b>，參數設別的也沒用；要別的模式就改用 GL20 等準則</td></tr>
+      <tr><td><span class="kw">WDTHEMEROOT</span></td><td>指定主題（例如 SAP_CORBU），取代 DEFAULT</td></tr>
+      <tr><td><span class="kw">WDCONFIGURATIONID</span></td><td>靜態指定 Application Configuration（§19）</td></tr>
+      <tr><td><span class="kw">WDALLOWVALUESUGGEST</span>、<span class="kw">WDACCESSIBILITY</span></td><td>Value Suggestion 開關與無障礙模式（§15）</td></tr>
+      <tr><td><span class="kw">WDHIDEMOREFIELDHELPASDEFAULT</span></td><td>隱藏資料元素文件的 F1 說明（§16）</td></tr>
+    </tbody>
+  </table>
+  <div class="note">教材寫的 SAP_BLUECRYSTAL 是 7.50 當時的狀態；較新的 SAP_UI 版本對 FIORI 準則會改用 Belize、Quartz（sap_fiori_3）等較新主題，實際以你系統的 SAP_UI 版本為準。應用程式對應的 ICF 服務在 <span class="tcode">SICF</span> 的 <span class="kw">/sap/bc/webdynpro/</span> 路徑下，服務沒啟用時瀏覽器會回 403／404。</div>
+
+  <h3 id="ch05-23-04">4. View 之間的導覽：Plug、Navigation Link 與 View Assembly</h3>
+  <p><b>導覽靠「觸發 Outbound Plug」</b>。觸發 Outbound Plug 會產生一個導覽事件，這是一種特殊的非同步事件，會被放進<b>導覽佇列（navigation queue）</b>；佇列在 Web Dynpro 處理階段的特定時點才執行，在那之前還可以再觸發更多 Plug，或整個清掉。</p>
+  <ul>
+    <li><b>Outbound Plug</b>：依「造成離開目前 View 的動作」命名；宣告後產生 <span class="kw">FIRE_&lt;plug&gt;_PLG</span> 方法。</li>
+    <li><b>Inbound Plug</b>：依「為什麼顯示這個 View」命名；是導覽事件的處理方法，產生 <span class="kw">HANDLE&lt;plug&gt;</span> 方法。只有在目前 View Assembly 裡所有 View 都觸發完 Plug、且<b>沒有驗證錯誤取消導覽</b>時才會被呼叫。</li>
+    <li><b>Navigation Link</b>：把 Inbound Plug 註冊到 Outbound Plug 的導覽事件上；<b>定義在 Window 裡而不是 View 裡</b>，所以同一個 View 在不同 Window 中可以有不同的導覽。</li>
+    <li>Plug 可以帶參數，用來在 View 之間傳資料。</li>
+    <li><b>Action</b>：把用戶端事件（例如按按鈕）連到 View Controller 裡自動產生的事件處理方法 <span class="kw">ONACTION&lt;action&gt;</span>；要換 View 就在這個方法裡觸發 Outbound Plug。</li>
+  </ul>
+
+  <h4>View Assembly 與 ViewContainerUIElement</h4>
+  <ul>
+    <li>Window 是「所有可能組成可見畫面的 View 集合」，定義哪些 View 以何種組合顯示、觸發 Plug 時組合如何改變。</li>
+    <li>View 可用 <b>ViewContainerUIElement</b> 切出容器區域，實現巢狀 View；<b>一個 ViewContainerUIElement 一次只能顯示一個 View</b>，每個區域有一個啟動時的預設 View。</li>
+    <li>所有可能出現的 View 都必須嵌入 Window；要清空某區域，嵌入元件自動建立的 <b>EMPTYVIEW</b> 並導覽過去。</li>
+    <li>任一時刻實際看得到的那組 View 稱為 <b>View Assembly</b>。</li>
+  </ul>
+
+  <pre><code class="abap">*&amp;---------------------------------------------------------------------*
+*&amp; View V_LIST：按鈕 onAction 綁定 Action SHOW_DETAIL
+*&amp; Outbound Plug TO_DETAIL（參數 IV_CARRID、IV_CONNID）
+*&amp;---------------------------------------------------------------------*
+METHOD onactionshow_detail.
+  DATA ls_flight TYPE wd_this-&gt;element_flights.
+
+  DATA(lo_el) = wd_context-&gt;get_child_node( name = wd_this-&gt;wdctx_flights
+                          )-&gt;get_element( ).          "Lead Selection 元素
+  IF lo_el IS INITIAL.
+    RETURN.                                            "沒選任何列
+  ENDIF.
+  lo_el-&gt;get_static_attributes( IMPORTING static_attributes = ls_flight ).
+
+  " 觸發 Outbound Plug → 導覽事件進入 navigation queue
+  wd_this-&gt;fire_to_detail_plg( iv_carrid = ls_flight-carrid
+                              iv_connid = ls_flight-connid ).
+ENDMETHOD.
+
+*&amp; View V_DETAIL：Inbound Plug FROM_LIST，在 Window 中以 Navigation Link 連到 TO_DETAIL
+METHOD handlefrom_list.
+  " 參數名稱必須和 Outbound Plug 的參數名稱一致，框架才會帶值過來
+  wd_context-&gt;set_attribute( name  = 'SEL_CARRID' value = iv_carrid ).
+  wd_context-&gt;set_attribute( name  = 'SEL_CONNID' value = iv_connid ).
+ENDMETHOD.</code></pre>
+  <div class="tip">實務上跨 View 傳資料，比起 Plug 參數更常用的是 <b>Context Mapping</b>（§7）：兩個 View 都映射到 Component Controller 同一個節點，資料天然就同步，Plug 只負責「換畫面」。</div>
+
+  <h3 id="ch05-23-05">5. Controller 類型、生命週期與共用規則</h3>
+  <table>
+    <thead><tr><th>Controller</th><th>數量</th><th>說明</th><th>實例化時機</th></tr></thead>
+    <tbody>
+      <tr><td><b>Component Controller</b></td><td>每元件 1 個</td><td>全域、對所有 Controller 可見，驅動整個元件；沒有視覺介面</td><td>應用啟動即建立，活到元件結束</td></tr>
+      <tr><td><b>Custom Controller</b></td><td>0..n</td><td>封裝 Component Controller 的子功能。框架自動實例化且<b>順序不確定</b>，所以程式不能依賴其他 Custom Controller 已存在</td><td>延遲到第一次呼叫其方法；不能明確刪除</td></tr>
+      <tr><td><b>Configuration Controller</b></td><td>最多 1 個</td><td>特殊的 Custom Controller，只在元件有自訂設定／個人化功能時需要。<b>任何 Controller 都可存取它，但它不能存取其他 Controller</b></td><td>元件的第一個被建立的 Controller，活到元件結束</td></tr>
+      <tr><td><b>View Controller</b></td><td>每 View 1 個</td><td>處理該 View 的流程邏輯：檢查輸入、處理使用者動作</td><td>延遲到第一次呼叫；View 屬性 Lifetime 可選 <b>framework controlled</b>（隨元件刪除）或 <b>when visible</b>（離開 View Assembly 就刪）</td></tr>
+      <tr><td><b>Window Controller</b></td><td>每 Window 1 個</td><td>處理被重用為子元件時由 Inbound Plug 帶進來的資料</td><td>延遲到第一次呼叫（啟動應用、Interface View 被嵌入、或 Window 以對話框開啟）；不能明確刪除</td></tr>
+    </tbody>
+  </table>
+  <ul>
+    <li><b>執行期所有 Controller 實例相對其元件都是 Singleton</b>，View Controller 也是——所以<b>同一個 View 不能在一個 View Assembly 中嵌兩次</b>。</li>
+    <li>Web Dynpro 是 <b>stateful</b> 技術，Controller 實例的生命不只一次請求（對照 ITS/BSP 無狀態的差異見 <a href="#ch05-17">5-17 章</a>）。</li>
+    <li>每個 Controller 都有自己的 Context，Root Node 已存在；至少有 <span class="kw">wddoinit( )</span>、<span class="kw">wddoexit( )</span> 兩個 Hook Method；兩個預設屬性 <b>WD_THIS</b>（Controller 功能）與 <b>WD_CONTEXT</b>（Context 根節點）。</li>
+  </ul>
+  <p><b>Controller C1 宣告使用 C2（在 C1 的 Properties 頁籤）之後</b>，C1 可以：映射 C2 的 Context 節點、呼叫 C2 的方法、存取 C2 的 Public 屬性、處理 C2 的事件。所有 Controller 預設都使用 Component Controller（可刪除）；<b>View Controller 不能被使用</b>，所以 View 的 Context 與方法永遠是私有的——View 只負責顯示與互動，產生資料是 Component／Custom Controller 的工作。</p>
+  <div class="warn">Component／Custom Controller 可以定義自訂<b>事件</b>，任何 Controller（含 View、Window）的事件處理方法都能訂閱。<b>多個方法訂閱同一事件時，執行順序不確定</b>——跟「HANA 沒有預設排序」是同一類陷阱：凡是框架沒有保證順序的地方，你的邏輯就不能依賴順序。</div>
+
+  <h3 id="ch05-23-06">6. Context：節點、屬性、Cardinality、Lead Selection、Singleton</h3>
+  <p>每個 Controller 有且只有一個階層式的 Context，資料只活在 Controller 的生命週期內。結構（metadata）通常在設計期定義，但執行期也能改內容與結構。</p>
+  <ul>
+    <li><b>Context Root Node</b>：固定屬性、不能刪除，Cardinality 為 1..1，永遠只有一個元素；執行期由 WD_CONTEXT 參照。</li>
+    <li><b>Node</b>：主要的執行期資料儲存抽象，可有屬性與子節點。<b>節點名稱在整個 Controller Context 中必須唯一</b>。</li>
+    <li><b>Element</b>：節點底下所有子實體組成的一個單位——節點像內表，元素像一列。</li>
+    <li><b>Attribute</b>：不能有子實體，一定掛在某個節點（Root 或其他節點）底下。</li>
+    <li>Root 下的屬性會在執行期產生一個結構，參照存在元素的 <span class="kw">STATIC_ATTRIBUTES</span>；Root 下每個子節點自動產生 Node 物件，參照存在 Root 元素的 <span class="kw">CHILD_NODES</span>。</li>
+  </ul>
+
+  <h4>Cardinality</h4>
+  <table>
+    <thead><tr><th>值</th><th>意義</th><th>注意</th></tr></thead>
+    <tbody>
+      <tr><td>0..1</td><td>零或一個元素</td><td>加第二個元素 → DUMP</td></tr>
+      <tr><td>0..n</td><td>零或多個</td><td>Table UI 元素要繫結的節點（或 1..n）</td></tr>
+      <tr><td>1..1</td><td>恰好一個</td><td>節點實例化時<b>自動建立 index 1 元素</b>；刪掉它或加第二個 → DUMP</td></tr>
+      <tr><td>1..n</td><td>一個以上</td><td>自動建立 index 1 元素；刪掉預設元素 → DUMP</td></tr>
+    </tbody>
+  </table>
+  <p>Root 的直接子節點（<b>獨立節點</b>）在第一次被存取時自動實例化；非 Root 直接子節點（<b>相依節點</b>）必須依附父節點的元素，父節點集合是空的，子節點就不存在——所以相依節點的存在「不保證」。原廠拿內表比喻：內表的列數不是定義的一部分，但也沒有最小／最大列數限制，所以內表沒有 Cardinality 的對應物。</p>
+
+  <h4>Lead Selection</h4>
+  <p>每個節點都有整數屬性 <span class="kw">LEAD_SELECTION_INDEX</span>。節點屬性 <b>Initialize Lead Selection = true</b> 時，第一個元素一建立就自動設為 1；也可以由程式或使用者操作（例如點 Table 某列）設定。清除用常數 <span class="kw">IF_WD_CONTEXT_NODE=&gt;NO_SELECTION</span>。它的用途：① 表格選列時自動跟著變，也可以反過來用程式改它來標示某列；② 表單欄位繫結到 0..n／1..n 節點時，顯示的是 Lead Selection 那個元素；③ 父節點 Lead Selection 改變時，框架會自動呼叫子節點的 Supply Function。</p>
+  <div class="warn"><b>HANA 沒有預設排序 × Lead Selection：</b>Lead Selection 預設就是「第 1 個元素」。如果 <span class="kw">bind_table( )</span> 餵進來的內表是沒有 ORDER BY 的 SELECT 結果，在 HANA 上每次進畫面「預設選中的那一列」都可能不同，後面依 Lead Selection 帶出的明細（Supply Function）也跟著飄。這就是 Casper 在成本評價專案上遇到 H／E 兩種成本構成交替出現的同一個病：<b>任何「取第一筆」的邏輯，包括 Lead Selection，都必須先明確排序。</b></div>
+
+  <h4>Singleton 屬性</h4>
+  <p>子節點 N2 在父節點 N1 底下：</p>
+  <ul>
+    <li><b>Singleton = false（非 Singleton）</b>：N1 有 n 個元素，就有 n 個獨立的 N2 實例，每個掛在對應的父元素上。原廠寫「non-singleton 是預設」。</li>
+    <li><b>Singleton = true</b>：不管 N1 有幾個元素，執行期 N2 只有一個實例，永遠對應父節點的 Lead Selection 元素——搭配 Supply Function 做「表頭選哪列、明細就換哪批」是最常見的組合。</li>
+  </ul>
+  <div class="note">教材修正：原廠 p60 寫「Singleton = false 是預設值」，但在 SE80 新建節點時，Singleton 核取方塊實際上是<b>預設勾選（true）</b>的——這也是 Supply Function 範例不用特別設定就能動的原因。考 TAW12 時照教材答，實作時請看清楚節點屬性。</div>
+
+  <h3 id="ch05-23-07">7. Context Mapping 與 Data Binding</h3>
+  <p>兩個核心機制合起來，讓「不同 View 上的 UI 元素之間的資料傳遞」可以完全用宣告的方式完成：</p>
+  <ul>
+    <li><b>Data Binding</b>：把 UI 元素屬性連到<b>同一個 View Controller</b> 的 Context 節點／屬性，自動雙向搬資料。<b>UI 元素不能繫結到其他 Controller 的 Context</b>，UI 元素是 View Controller 私有的。</li>
+    <li><b>Context Mapping</b>：讓一個 Controller 的節點直接參照另一個 Controller 的節點，不必複製資料，是 Controller 之間共用資料的<b>主要機制</b>。</li>
+  </ul>
+
+  <h4>Context Mapping 規則</h4>
+  <ul>
+    <li>資料來源節點叫 <b>Mapping Origin</b>，被映射的叫 <b>Mapped Node</b>；<b>Mapped Node 沒有自己的元素集合，參照的是 Origin 的集合</b>。</li>
+    <li>前提：Origin 節點必須存在；<b>Origin Controller 不能是 View Controller</b>；目標 Controller 必須把 Origin Controller 宣告為 Used Controller。</li>
+    <li>操作：在目標 Controller 的 Context 頁籤，把右側（Used Controller）的節點拖到左側 Root → 複製結構並建立映射；若結構已存在，把兩節點互拖，<b>Origin 永遠是右邊 Used Controller 那一個</b>。</li>
+    <li>被映射節點中 Origin 沒有的屬性會被刪掉；兩邊名稱可以不同；映射後所有元素、屬性、子節點一起映射。Origin 結構改了，用 Mapped Node 右鍵選單同步。</li>
+    <li>兩端都在同一元件內叫 <b>Internal Mapping</b>；Origin 在元件外叫 <b>External Mapping</b>（§17）。</li>
+  </ul>
+
+  <h4>Data Binding 的執行過程</h4>
+  <p>繫結後，畫面渲染時框架把 Context 值送到 UI 元素；使用者操作觸發下一次 HTTP round trip 時，把修改過的值搬回同一個節點／屬性。<b>等框架把控制權交給你的 Action 處理方法時，Context 已經是最新值</b>。使用者輸入會自動轉成內部格式並做型別檢查（含 Domain 固定值）；驗證失敗時資料<b>不會</b>寫進 Context，但框架會保留使用者輸入，在下一個 View Assembly 中連同錯誤訊息一起顯示。</p>
+  <p>定義繫結的最少步驟：① 在 View Controller 的 Context 建節點／屬性；② 在 Layout 建 UI 元素；③ 屬性右邊有黃色圖示＋空圓圈的按鈕，按下去選 Context；④ 繫結後空圓圈變綠色勾勾，屬性值顯示 Context 路徑。</p>
+
+  <h4>用 Context 控制 UI 屬性（不要直接碰 UI 元素）</h4>
+  <p>屬性若在設計期寫死，執行期只能在 <span class="kw">wddomodifyview( )</span> 裡直接存取 UI 元素才改得動——<b>原廠明說這是差勁的設計，應避免</b>。正確做法：建一個型別與屬性相符的 Context 屬性（型別可在 <b>Types of the Web Dynpro Runtime</b> 頁籤找，例如 <span class="kw">WDY_BOOLEAN</span>、<span class="kw">WDUI_VISIBILITY</span>、<span class="kw">WDUI_STATE</span>），把 UI 屬性繫結過去，之後在任何能存取該 Context 的 Controller 方法中改值即可。常被繫結的屬性：主屬性（如 InputField 的 value）以及 <b>enabled、readOnly、state、visible</b>。7.0 SP12 起，繫結對話框多了一組選項按鈕，可以直接把 enabled／visible／readOnly／state 繫結到 <b>Context 屬性本身的屬性（Attribute Properties）</b>，不必另外建屬性。</p>
+
+  <pre><code class="abap">*&amp;---------------------------------------------------------------------*
+*&amp; 用 Context 控制 UI：編輯模式切換（View 中 InputField 的 readOnly
+*&amp; 繫結到 Context 屬性 UI_STATE.READ_ONLY，型別 WDY_BOOLEAN）
+*&amp;---------------------------------------------------------------------*
+METHOD onactiontoggle_edit.
+  DATA(lo_el_ui) = wd_context-&gt;get_child_node( name = wd_this-&gt;wdctx_ui_state
+                             )-&gt;get_element( ).
+  DATA lv_read_only TYPE wdy_boolean.
+  lo_el_ui-&gt;get_attribute( EXPORTING name  = 'READ_ONLY'
+                           IMPORTING value = lv_read_only ).
+
+  lo_el_ui-&gt;set_attribute( name  = 'READ_ONLY'
+                           value = xsdbool( lv_read_only = abap_false ) ).
+ENDMETHOD.
+
+*&amp; 7.0 SP12+：直接設定 Context 屬性的 Attribute Property（不必另建屬性）
+METHOD set_price_readonly.
+  DATA(lo_el) = wd_context-&gt;get_child_node( name = wd_this-&gt;wdctx_flights
+                          )-&gt;get_element( ).
+  IF lo_el IS BOUND.
+    lo_el-&gt;set_attribute_property(
+      attribute_name = 'PRICE'
+      property       = if_wd_context_element=&gt;e_property-read_only
+      value          = abap_true ).
+  ENDIF.
+ENDMETHOD.</code></pre>
+  <p><b>DDIC 文字：</b>Label、Caption、TextView 等顯示的文字可以來自 ABAP Dictionary：① 把文字屬性直接繫結到資料元素／結構欄位／透明表欄位；② Label 關聯到一個主屬性繫結 DDIC 型別屬性的 InputField，且 <b>Label 的 Text 屬性留空</b>，就自動帶資料元素的欄位標籤。</p>
+
+  <h3 id="ch05-23-08">8. UI 元素與 Layout Manager</h3>
+  <p>UI 元素是佔據 View Layout 一個位置的任何圖形實體——但不一定看得到：TransparentContainer、ViewContainerUIElement、InvisibleElement 都不可見，只用來組織結構。所有 UI 元素都能在執行期設成不可見，但<b>不會釋放它佔的空間</b>（隱藏 InputField 左邊的 Label，InputField 不會往左移）。UI 元素只是抽象描述，執行期才渲染，不等於某段 HTML。</p>
+  <table>
+    <thead><tr><th>分類</th><th>內容</th></tr></thead>
+    <tbody>
+      <tr><td>Text</td><td>顯示文字或輸入字面值</td></tr>
+      <tr><td>Action</td><td>點了觸發導覽或 round trip 的簡單元素</td></tr>
+      <tr><td>Selection</td><td>顯示多個值供選一或多個</td></tr>
+      <tr><td>Complex</td><td>需要子元素才能構成的元素（Table、Tree⋯）</td></tr>
+      <tr><td>Layout</td><td>組織版面；其中 <b>Group、Panel、TransparentContainer、Tray</b> 是容器元素</td></tr>
+      <tr><td>Graphics</td><td>圖形元素</td></tr>
+      <tr><td>Integration</td><td>嵌入各種非 ABAP 技術</td></tr>
+    </tbody>
+  </table>
+  <p>View Layout 的根是型別為 TransparentContainer 的 <b>RootUIElementContainer</b>，ID 寫死不能改，但可以從右鍵選單換型別（例如要嵌 Flash／Silverlight 時）。它上方的 <b>CONTEXT_MENUS</b> 是設計期右鍵選單的容器（§9）。</p>
+
+  <h4>Layout Manager（容器的 Layout 屬性）</h4>
+  <table>
+    <thead><tr><th>Layout</th><th>子元素 LayoutData</th><th>特性</th></tr></thead>
+    <tbody>
+      <tr><td><b>FlowLayout</b>（預設）</td><td>—</td><td>依序排列，不能指定換行；容器太窄自動換行（wrapping=false 可關）。各行元素互不相關，適合排子容器</td></tr>
+      <tr><td><b>RowLayout</b></td><td>RowHeadData（強制換行）／RowData</td><td>超過右邊界也不換行；各行之間不對齊（只有單欄）</td></tr>
+      <tr><td><b>MatrixLayout</b></td><td>MatrixHeadData（換行）／MatrixData</td><td>依欄對齊；欄數由最多元素的那一行決定；colSpan 跨欄；StretchedHorizontally／Vertically</td></tr>
+      <tr><td><b>GridLayout</b></td><td>—</td><td>colCount 靜態決定欄數，不能指定換行；移除元素後面全部左移，所以要用 <b>InvisibleElement 佔位</b>。<b>能用 MatrixLayout 就別用它</b></td></tr>
+      <tr><td><b>FormLayout</b>（7.0 EhP2+）</td><td>FormTopData（分區）／FormHeadData（換行）／FormData</td><td>分區，欄寬全區一致；colSpan 預設 -1 自動分佈</td></tr>
+      <tr><td><b>FormLayoutAdvanced</b>（7.0 EhP3／7.31 EhP1+）</td><td>FormDataAdvanced（需 rowspan）</td><td>可跨容器對齊；<b>格高不會自動配合元素，太高會被截斷</b></td></tr>
+      <tr><td><b>TileLayout</b></td><td>—</td><td>像 FlowLayout 但所有子元素等寬，形成磚塊，支援響應式；allowedColCounts 如 "2 3 5" 限定欄數</td></tr>
+    </tbody>
+  </table>
+  <p>容器的第一個子元素 LayoutData 只有一個合法值，EhP2 起不再顯示：RowLayout → RowHeadData、MatrixLayout → MatrixHeadData、FormLayout → FormTopData。</p>
+  <p><b>View Editor</b> 只在編輯 View Controller 時出現（Custom Controller 沒有視覺介面）。可從右鍵選單新增子元素、上下移動、<b>Copy Element／Insert Copied Element</b> 複製整棵子樹、<b>Save as Template</b> 存成範本並經 Code Wizard 重用。Properties 頁籤中以 on 開頭的屬性（onAction、onSort、onFilter）是用戶端事件，指派 Action 來處理；<b>不能自行用 JavaScript 處理其他用戶端事件</b>。</p>
+
+  <h3 id="ch05-23-09">9. Table、CTable、選取模式與靜態右鍵選單</h3>
+  <p>Table 是<b>複合 UI 元素</b>：Table → 多個 TableColumn（也是複合元素）→ 每欄一個 Caption（標題，選用但型別固定）＋一個 <b>Cell Editor</b>（預設 TextView，也可用 InputField、DropDownByKey、CheckBox、Button⋯）。Group、Tray 只強制要一個 Caption 子元素；Table、Tree 則需要更複雜的強制結構。</p>
+  <ul>
+    <li><b>Table 必須繫結 Cardinality 0..n 或 1..n 的節點</b>，表格列數＝節點元素數；Lead Selection 元素以反白列顯示（有選取欄時）。</li>
+    <li>用 Code Wizard 建表格會自動完成繫結；手動建的用右鍵 <b>Create Binding</b> 一次綁好。</li>
+    <li>Caption 的 text 留空且欄位屬性用 DDIC 資料元素 → 欄標題自動帶 DDIC 文字。</li>
+    <li>點選取按鈕預設觸發 round trip 並改 Lead Selection；把 Action 綁到 <span class="kw">onLeadSelect</span>，就會依序執行 <span class="kw">wddobeforeaction( )</span> → Action 處理方法 → <span class="kw">wddoafteraction( )</span>。</li>
+    <li><b>多選</b>：節點 <b>Selection</b>（選取 Cardinality）要設 0..n 或 1..n；<b>預設是 0..1</b>。</li>
+  </ul>
+  <table>
+    <thead><tr><th>selectionMode</th><th>行為</th></tr></thead>
+    <tbody>
+      <tr><td>auto（預設）</td><td>單選或多選，依節點 Selection 屬性</td></tr>
+      <tr><td>multi</td><td>節點 Selection 也是 {0,1}..n 時可多選；會設 Lead Selection</td></tr>
+      <tr><td>multiNoLead</td><td>同 multi，但不設 Lead Selection</td></tr>
+      <tr><td>single</td><td>單選，與節點 Selection 無關；會設 Lead Selection</td></tr>
+      <tr><td>singleNoLead</td><td>同 single，但不設 Lead Selection</td></tr>
+      <tr><td>none</td><td>不顯示選取欄，Lead Selection 列也不反白</td></tr>
+    </tbody>
+  </table>
+  <p><b>CTable（ClientTable，AS 7.30+）</b>比傳統 TableUIElement 強：能依用戶端可用空間調整，<b>只傳送看得到的列</b>（傳統 visibleRowCount 不會偵測可用空間）；HeightMode = UseVisibleRowCount 時可用底部把手拖拉列數；可水平／垂直捲動，垂直捲動時非同步載入，效能通常較好（但欄位數上百時會變慢）；可關閉隱含個人化、用分頁器、每欄標題可自訂選單。<b>Layout Wizard 沒有 CTable 範本</b>，建議做好一個後用 Save as Template 存成個人範本（不要存繫結），之後每個 Cell Editor 的主屬性繫結要自己補。</p>
+  <div class="tip">想看每個 UI 元素實際長什麼樣、有哪些屬性，直接執行每個系統都有的 Web Dynpro 應用 <b>WDR_TEST_UI_ELEMENTS</b>。</div>
+
+  <h4>靜態右鍵選單（7.0 SP13+）</h4>
+  <ul>
+    <li>在 View Designer 的 <b>CONTEXT_MENUS</b> 節點上右鍵建立選單；選單項目可為 MenuActionItem、MenuCheckBox、MenuRadioButton、MenuSeparator、Menu（子選單）。</li>
+    <li>指派到 UI 元素：填 <span class="kw">contextMenuId</span>，並把 <span class="kw">contextMenuBehaviour</span> 設為 <b>Provide</b>；Suppress＝不顯示；<b>Inherit＝顯示父元素的選單</b>（可跨多層）。這兩個屬性<b>不能繫結到 Context</b>。</li>
+    <li>MenuCheckBox 的 checked 繫結 WDY_BOOLEAN 屬性；MenuRadioButton 的 selectedKey 繫結 STRING 屬性。</li>
+    <li>執行期修改：每次開選單都會跑 <span class="kw">wddooncontextmenu( )</span>，參數 <span class="kw">CONTEXT_MENU_MANAGER</span> 取得已定義的選單，<span class="kw">CONTEXT_MENU_EVENT</span> 取得點擊位置（表格名、欄名、該列元素）。</li>
+  </ul>
+
+  <h3 id="ch05-23-10">10. Hook Method 與 Phase Model</h3>
+  <p><b>每個 Controller 都是 Web Dynpro 元件對應的全域類別中的一個本地類別</b>，啟動時由所有方法產生；Workbench 只讓你編輯方法本體，產生的類別本身不可存取。你可以自己定義三種方法：<b>一般方法（Method）、事件處理方法（Event Handler）、Supply Function</b>。</p>
+  <table>
+    <thead><tr><th>Controller</th><th>Hook Method</th><th>何時執行／用途</th></tr></thead>
+    <tbody>
+      <tr><td>全部</td><td>wddoinit( )／wddoexit( )</td><td>生命週期第一個／最後一個，各只跑一次；初始化與清理</td></tr>
+      <tr><td rowspan="3">Component</td><td>wddobeforenavigation( )</td><td>Action 方法之後、處理導覽佇列之前；複雜應用中跨元件驗證資料</td></tr>
+      <tr><td>wddopostprocessing( )</td><td>UI 送到用戶端前最後一個方法</td></tr>
+      <tr><td>wddoapplicationstatechange( )</td><td>應用被 suspend／resume 時（觸發 Window 的 Suspend Plug 可在不結束目前應用的情況下啟動另一個應用；第二個應用結束後經 Resume Plug 回來，有 Suspend Plug 就應該也建 Resume Plug）</td></tr>
+      <tr><td rowspan="4">View</td><td>wddobeforeaction( )</td><td>使用者觸發 Action 後、Action 方法之前，<b>上一個 View Assembly 的所有 View</b> 都會跑；放輸入檢查</td></tr>
+      <tr><td>wddoafteraction( )</td><td>Action 方法之後，所有 View 都跑；模組化 Action 處理</td></tr>
+      <tr><td>wddomodifyview( )</td><td><b>唯一能存取 UI 元素階層的方法</b>；參數 VIEW、FIRST_TIME</td></tr>
+      <tr><td>wddooncontextmenu( )</td><td>使用者在該 View 任何 UI 元素上按右鍵時</td></tr>
+      <tr><td rowspan="2">Window</td><td>wddoonopen( )</td><td>Window 以對話框開啟前（例如定義對話框框架上的按鈕）</td></tr>
+      <tr><td>wddoonclose( )</td><td>Window 以對話框關閉前</td></tr>
+    </tbody>
+  </table>
+
+  <h4>Phase Model（最簡單：一個元件、一個 View、無錯誤）</h4>
+  <ol>
+    <li><b>啟動應用</b>：實例化第一次顯示需要的所有 Controller → 依序跑 Component、Window、View 的 wddoinit( ) → 執行 Interface View 的 Inbound Plug 方法（預設 Plug 為 Default，即 <span class="kw">handledefault( )</span>）→ Component 的 wddobeforenavigation( ) → View 的 wddomodifyview( ) → Component 的 wddopostprocessing( )。</li>
+    <li><b>使用者互動</b>（按鈕需綁 Action；表格捲動、選列則不需綁也會發請求）：wddobeforeaction( ) → onaction&lt;ACTION&gt;( ) → wddoafteraction( ) → Component 的 wddobeforenavigation( ) → 若觸發了 Outbound Plug 且有 Navigation Link：新 View 實例化跑 wddoinit( )、再跑 handle&lt;PLUG&gt;( ) → 舊 View 若 Lifetime 受限則跑 wddoexit( ) → 新 View 的 wddomodifyview( ) → Component 的 wddopostprocessing( )。</li>
+  </ol>
+
+  <h4>Controller 屬性與存取其他 Controller</h4>
+  <ul>
+    <li><b>WD_THIS</b>：指向本地 Controller 介面 IF_&lt;controller&gt; 的自我參照；<b>不要用 ABAP 的 ME</b>。也提供驗證等標準功能。</li>
+    <li><b>WD_CONTEXT</b>：Context 根節點參照，一切 Context 存取的起點。</li>
+    <li><b>WD_COMP_CONTROLLER</b>：<b>只有在 Properties 頁籤宣告使用 Component Controller 時才存在</b>，可直接呼叫其方法與 Public 屬性。</li>
+    <li>其他被使用的 Controller 沒有現成參照，要先用 <span class="kw">wd_this-&gt;get_&lt;ctrl&gt;_ctr( )</span> 取得（型別 IG_&lt;ctrl&gt;）。</li>
+    <li>Attributes 頁籤可自訂屬性；勾 <b>Public</b> 後同元件其他 Controller 可見，但<b>屬性不能開放到元件介面</b>。所有方法都是 public（View Controller 的方法只能在 View 內用）；Component Controller 方法勾 <b>Interface</b> 就會出現在元件介面。</li>
+    <li><b>Controller 屬性不能繫結 UI</b>，只有 Context 屬性可以。</li>
+  </ul>
+
+  <pre><code class="abap">*&amp;---------------------------------------------------------------------*
+*&amp; Component Controller：WDDOINIT 呼叫 Model 類別、把資料放進 Context
+*&amp;---------------------------------------------------------------------*
+METHOD wddoinit.
+  " 取得 Message Manager 存在 Public 屬性，給所有 View 共用（§14）
+  wd_this-&gt;mo_msg_mgr = wd_this-&gt;wd_get_api( )-&gt;get_message_manager( ).
+
+  " 條件用列舉 EQ，不用 BT 區間（見 §22）
+  DATA(lt_carrid) = VALUE zcl_wd_flight_model=&gt;tt_carrid_range(
+                      sign = 'I' option = 'EQ'
+                      ( low = 'AA' ) ( low = 'LH' ) ( low = 'SQ' ) ).
+
+  DATA(lt_flights) = zcl_wd_flight_model=&gt;get_flights( lt_carrid ).
+
+  DATA lt_ctx TYPE wd_this-&gt;elements_flights.
+  lt_ctx = CORRESPONDING #( lt_flights ).
+
+  wd_context-&gt;get_child_node( name = wd_this-&gt;wdctx_flights
+           )-&gt;bind_table( new_items            = lt_ctx
+                          set_initial_elements = abap_true ).
+ENDMETHOD.
+
+*&amp; 在 View 中呼叫「非 Component Controller」的 Custom Controller 方法
+METHOD onactionrefresh.
+  DATA(lo_cust) = wd_this-&gt;get_cc_booking_ctr( ).   "Used Controller 需先宣告
+  lo_cust-&gt;reload_bookings( ).
+
+  " Component Controller 則可直接用 WD_COMP_CONTROLLER
+  wd_comp_controller-&gt;refresh_flights( ).
+ENDMETHOD.</code></pre>
+
+  <h3 id="ch05-23-11">11. 執行期存取 Context：讀、寫、新增、刪除</h3>
+  <p>每個 Controller 會產生本地介面 <b>IF_&lt;ctrl&gt;</b>，其中為每個節點產生：常數 <span class="kw">WDCTX_&lt;node&gt;</span>（值為大寫節點名）、結構型別 <span class="kw">ELEMENT_&lt;node&gt;</span>、標準表型別 <span class="kw">ELEMENTS_&lt;node&gt;</span>（列型別為前者）。存取任何元素或屬性，<b>第一步永遠是取得節點參照</b>。</p>
+  <table>
+    <thead><tr><th>動作</th><th>方法</th></tr></thead>
+    <tbody>
+      <tr><td>取得節點（型別 IF_WD_CONTEXT_NODE）</td><td><span class="kw">wd_context-&gt;get_child_node( name = wd_this-&gt;wdctx_&lt;node&gt; )</span>；可選 index 指定父元素，省略＝Lead Selection</td></tr>
+      <tr><td>依路徑取得相依節點</td><td><span class="kw">path_get_node( path = '&lt;node&gt;.&lt;index&gt;.&lt;sub_node&gt;' )</span>，省略 index＝父節點 Lead Selection</td></tr>
+      <tr><td>Lead Selection 元素（IF_WD_CONTEXT_ELEMENT）</td><td><span class="kw">get_element( )</span></td></tr>
+      <tr><td>第 n 個元素／元素個數</td><td><span class="kw">get_element( index = n )</span>／<span class="kw">get_element_count( )</span></td></tr>
+      <tr><td>讀單一屬性／全部靜態屬性</td><td><span class="kw">get_attribute( )</span>／<span class="kw">get_static_attributes( )</span></td></tr>
+      <tr><td>讀所有元素的靜態屬性</td><td><span class="kw">get_static_attributes_table( )</span></td></tr>
+      <tr><td>讀使用者多選的元素</td><td><span class="kw">get_selected_elements( )</span>，回傳 WDR_CONTEXT_ELEMENT_SET；參數 INCLUDING_LEAD_SELECTION</td></tr>
+      <tr><td>寫單一屬性／全部靜態屬性</td><td><span class="kw">set_attribute( )</span>／<span class="kw">set_static_attributes( )</span></td></tr>
+      <tr><td>新增元素</td><td><span class="kw">create_element( )</span> → 設值 → <span class="kw">bind_element( new_item = … set_initial_elements = … )</span></td></tr>
+      <tr><td>結構直接加一筆／內表整批</td><td><span class="kw">bind_structure( new_item = … )</span>／<span class="kw">bind_table( new_items = … )</span></td></tr>
+      <tr><td>刪除元素</td><td><span class="kw">remove_element( element = … )</span></td></tr>
+    </tbody>
+  </table>
+  <div class="note">教材修正：原廠 p144 表格寫 <span class="kw">n = lo_&lt;node&gt;-&gt;get_element_count( ).</span>，變數名少了 <span class="kw">_nd</span>，應為 <span class="kw">lo_nd_&lt;node&gt;-&gt;get_element_count( )</span>（element count 是節點方法，不是元素方法）。另外 <span class="kw">create_element( )</span> 建出來的元素<b>還不屬於節點</b>，一定要 bind_element 才會出現在畫面上——原廠特別以 Caution 標出。</div>
+  <div class="warn"><b>選取 ≠ Lead Selection：</b>使用者標記某列時，Lead Selection 那列雖然反白，但對應元素<b>不會自動被「選取」</b>。呼叫 get_selected_elements( ) 時要用 <span class="kw">including_lead_selection</span> 明確決定要不要把 Lead Selection 那筆也算進去，否則「只點一列就按刪除」會刪不到。</div>
+
+  <pre><code class="abap">*&amp;---------------------------------------------------------------------*
+*&amp; View：讀多選列、刪除、再新增一筆（Context API 全套）
+*&amp;---------------------------------------------------------------------*
+METHOD onactiondelete_selected.
+  DATA(lo_nd_flights) = wd_context-&gt;get_child_node( name = wd_this-&gt;wdctx_flights ).
+
+  " 多選列（含 Lead Selection）
+  DATA(lt_sel) = lo_nd_flights-&gt;get_selected_elements( including_lead_selection = abap_true ).
+  IF lt_sel IS INITIAL.
+    wd_comp_controller-&gt;mo_msg_mgr-&gt;report_message(
+      message_text = '請先選擇要刪除的航班'
+      message_type = if_wd_message_manager=&gt;co_type_warning ).
+    RETURN.
+  ENDIF.
+
+  LOOP AT lt_sel INTO DATA(lo_el).
+    DATA ls_flight TYPE wd_this-&gt;element_flights.
+    lo_el-&gt;get_static_attributes( IMPORTING static_attributes = ls_flight ).
+    " 真正的刪除要交給 Model 類別處理 LUW（見 5-11 章），這裡只移除畫面元素
+    lo_nd_flights-&gt;remove_element( element = lo_el ).
+  ENDLOOP.
+
+  wd_comp_controller-&gt;mo_msg_mgr-&gt;report_message(
+    message_text = |已移除 { lines( lt_sel ) } 筆，剩 { lo_nd_flights-&gt;get_element_count( ) } 筆|
+    message_type = if_wd_message_manager=&gt;co_type_standard ).
+ENDMETHOD.
+
+METHOD onactionadd_row.
+  DATA(lo_nd_flights) = wd_context-&gt;get_child_node( name = wd_this-&gt;wdctx_flights ).
+
+  " 寫法 1：create_element → set → bind_element
+  DATA(lo_new) = lo_nd_flights-&gt;create_element(
+                   static_attribute_values = VALUE wd_this-&gt;element_flights(
+                     carrid = 'LH' connid = '0400' fldate = sy-datum ) ).
+  lo_nd_flights-&gt;bind_element( new_item             = lo_new
+                               set_initial_elements = abap_false ).
+
+  " 寫法 2：結構直接 bind_structure（最常用）
+  lo_nd_flights-&gt;bind_structure(
+    new_item             = VALUE wd_this-&gt;element_flights( carrid = 'SQ' connid = '0026' fldate = sy-datum )
+    set_initial_elements = abap_false ).
+
+  " 讓新加的最後一筆成為 Lead Selection
+  lo_nd_flights-&gt;set_lead_selection_index( lo_nd_flights-&gt;get_element_count( ) ).
+ENDMETHOD.</code></pre>
+
+  <h3 id="ch05-23-12">12. Supply Function 與 Lazy Data Instantiation</h3>
+  <p>情境：上表是航班，下表是「目前選中航班」的訂位。每個 Context 節點都可以指派一個 <b>Supply Function</b>（節點屬性 Supply Function 填方法名，框架產生固定簽章的方法），<b>框架</b>會在以下情況自動呼叫它：</p>
+  <ul>
+    <li>節點集合還是初始（沒填過）時被存取；</li>
+    <li><b>父節點的 Lead Selection 改變</b>；</li>
+    <li>節點集合被程式 <span class="kw">invalidate( )</span> 過。</li>
+  </ul>
+  <p>而且只在「真的需要」時才呼叫：子節點既沒被程式存取、也沒繫結到下一個 View Assembly 的任何 UI 元素，就不呼叫。<b>Supply Function 不能從程式中直接呼叫，只有 Web Dynpro Runtime 能呼叫。</b>簽章中 <span class="kw">PARENT_ELEMENT</span> 是父節點 Lead Selection 元素、<span class="kw">NODE</span> 是要填的節點。</p>
+  <p>這就是 Web Dynpro 的 <b>Lazy Data Instantiation</b>：只在需要時才建資料。以銷售訂單為例，使用者只會點一張訂單看明細，一次讀出所有訂單的所有明細既浪費處理時間也浪費記憶體；相依集合也不會為父節點每個元素都建立，而是延到該父元素取得 Lead Selection 時才建。</p>
+
+  <pre><code class="abap">*&amp;---------------------------------------------------------------------*
+*&amp; Component Controller：節點 FLIGHTS（0..n）下的子節點 BOOKINGS
+*&amp; （Singleton = true、Cardinality 0..n、Supply Function = SUPPLY_BOOKINGS）
+*&amp;---------------------------------------------------------------------*
+METHOD supply_bookings.
+*   IMPORTING node           TYPE REF TO if_wd_context_node
+*             parent_element TYPE REF TO if_wd_context_element
+  DATA ls_flight TYPE wd_this-&gt;element_flights.
+  parent_element-&gt;get_static_attributes( IMPORTING static_attributes = ls_flight ).
+
+  DATA(lt_bookings) = zcl_wd_flight_model=&gt;get_bookings(
+                        iv_carrid = ls_flight-carrid
+                        iv_connid = ls_flight-connid
+                        iv_fldate = ls_flight-fldate ).
+
+  DATA lt_ctx TYPE wd_this-&gt;elements_bookings.
+  lt_ctx = CORRESPONDING #( lt_bookings ).
+
+  node-&gt;bind_table( new_items            = lt_ctx
+                    set_initial_elements = abap_true ).
+ENDMETHOD.
+
+*&amp; 需要「強制重讀」時不要去呼叫 supply_bookings，而是讓節點失效
+METHOD refresh_bookings.
+  wd_context-&gt;get_child_node( name = wd_this-&gt;wdctx_flights
+           )-&gt;get_child_node( name = wd_this-&gt;wdctx_bookings
+           )-&gt;invalidate( ).     "下次被存取或渲染時，框架自動重跑 Supply Function
+ENDMETHOD.</code></pre>
+  <div class="tip">Supply Function 讀資料一樣要 ORDER BY（Model 類別已處理）。另外，如果子節點是<b>非 Singleton</b>，每個父元素都會各有一份子節點，搭配大表就會把記憶體吃光——明細類節點幾乎都應該設成 Singleton。</div>
+
+  <h3 id="ch05-23-13">13. 國際化：DDIC 文字、OTR 與 Assistance Class</h3>
+  <p>要讓應用支援多語，所有字面值都要有翻譯，執行期依登入語言載入。<b>I18N</b> 是 internationalization 的縮寫：首字 I、中間 18 個字母、尾字 N。與語言相關的實體包括 Label 文字、Tooltip、按鈕文字、訊息文字與圖片。三種翻譯文字來源：</p>
+  <table>
+    <thead><tr><th>來源</th><th>用法</th><th>重點</th></tr></thead>
+    <tbody>
+      <tr><td><b>ABAP Dictionary</b></td><td>Label 關聯到繫結 DDIC 型別的 InputField 時自動帶<b>中文字標籤（medium）</b>；表格欄標題同理；或在繫結對話框按 DDIC binding on/off 直接指定資料元素與短／中／長文字</td><td>程式中可用函數 <span class="kw">DDIF_FIELDLABEL_GET</span> 讀任意語言的長標籤</td></tr>
+      <tr><td><b>OTR（Online Text Repository）</b></td><td>中央文字庫，Web Dynpro、BSP、各類 ABAP 程式（type 1、M、K）都能用。分 OTR 長文字、無 Alias 短文字、有 Alias 短文字</td><td>短文字上限 255 字元；直接打在 UI 屬性值裡的文字會存成<b>無 Alias 短文字，不能重用</b>。Alias 格式 <span class="kw">&lt;package&gt;/&lt;alias&gt;</span>，屬性值填 OTR 指令 <span class="kw">$OTR:&lt;package&gt;/&lt;alias&gt;</span></td></tr>
+      <tr><td><b>Assistance Class 文字符號</b></td><td>在類別 Goto → Text Symbols 定義，透過 WD_ASSIST 取用</td><td>最適合程式中組訊息，可含佔位符</td></tr>
+    </tbody>
+  </table>
+  <ul>
+    <li><b>OTR Browser</b>：從 Web Dynpro Explorer 的 Goto 選單開啟，可建立／修改／刪除本套件的 Alias 文字、看 metadata（作者、最後修改者、最大長度）與 where-used。屬性值欄位按 F4 會列出本套件與 <b>SOTR_VOCABULARY_BASIC</b>（SAP 標準詞彙）的文字，選了就自動填入 OTR 指令。</li>
+    <li>用 <span class="tcode">SE63</span> 翻譯 Web Dynpro 元件或應用時，相關 OTR 短文字（有無 Alias 都算）會一起被列入翻譯。</li>
+    <li><b>OTR 有應用伺服器緩衝</b>：本機修改或傳輸進來的文字，清緩衝前看不到；在 SAP GUI 命令欄輸入 <b>/$OTR</b> 清除。</li>
+  </ul>
+
+  <h4>Assistance Class</h4>
+  <p>SAP 7.0 起提供 <b>CL_WD_COMPONENT_ASSISTANCE</b>，子類別透過介面 <b>IF_WD_COMPONENT_ASSISTANCE</b> 的 <span class="kw">get_text( )</span>，傳入文字符號 ID，就以登入語言 <span class="kw">sy-langu</span> 回傳文字。指派方式：元件 Properties 頁籤的 <b>Assistance Class</b> 欄位填類別名 → 雙擊，不存在會自動建立並繼承 CL_WD_COMPONENT_ASSISTANCE。框架只建立<b>一個實例</b>，壽命等於元件，每個 Controller 都自動多一個屬性 <b>WD_ASSIST</b>。可以為 get_text 定義 public alias，也可以宣告型別 <b>WDR_TEXT_KEY</b> 的常數，用有意義的名稱指到文字符號。</p>
+
+  <pre><code class="abap">*&amp;---------------------------------------------------------------------*
+*&amp; Assistance Class：ZCL_WD_FLIGHT_ASSIST（繼承 CL_WD_COMPONENT_ASSISTANCE）
+*&amp; 文字符號 CAR = '航空公司 &amp;1 不存在'、SAV = '已儲存 &amp;1 筆'
+*&amp;---------------------------------------------------------------------*
+CLASS zcl_wd_flight_assist DEFINITION PUBLIC
+  INHERITING FROM cl_wd_component_assistance CREATE PUBLIC.
+  PUBLIC SECTION.
+    ALIASES get_text FOR if_wd_component_assistance~get_text.
+    CONSTANTS: c_carrid_invalid TYPE wdr_text_key VALUE 'CAR',
+               c_saved          TYPE wdr_text_key VALUE 'SAV'.
+ENDCLASS.
+CLASS zcl_wd_flight_assist IMPLEMENTATION.
+ENDCLASS.
+
+*&amp; 任一 Controller 中取用（三種寫法等價）
+METHOD show_texts.
+  DATA(lv_t1) = wd_assist-&gt;if_wd_component_assistance~get_text( key = 'CAR' ).
+  DATA(lv_t2) = wd_assist-&gt;if_wd_component_assistance~get_text( key = wd_assist-&gt;c_carrid_invalid ).
+  DATA(lv_t3) = wd_assist-&gt;get_text( key = 'CAR' ).     "用 public alias
+
+  " OTR Alias 文字（型別 string）
+  DATA(lv_otr) = cl_wd_utilities=&gt;get_otr_text_by_alias( 'ZWD_FLIGHT/TITLE_LIST' ).
+
+  " DDIC 長標籤（任意語言）
+  DATA ls_dfies TYPE dfies.
+  CALL FUNCTION 'DDIF_FIELDLABEL_GET'
+    EXPORTING tabname   = 'SFLIGHT'
+              fieldname = 'CARRID'
+              langu     = sy-langu
+    IMPORTING dfies_wa  = ls_dfies
+    EXCEPTIONS OTHERS   = 1.
+  IF sy-subrc = 0.
+    wd_context-&gt;set_attribute( name = 'LBL_CARRID' value = ls_dfies-scrtext_l ).
+  ENDIF.
+ENDMETHOD.</code></pre>
+  <div class="warn">OTR 在 S/4HANA 仍可用，但新開發的 Fiori/UI5 應用改用 i18n.properties 資源檔、RAP/CDS 則用 DDIC 文字與 <span class="kw">@EndUserText</span> 註解；OTR 主要是維護既有 WDA／BSP 時會碰到。</div>
+
+  <h3 id="ch05-23-14">14. 訊息回報：Message Manager 與它對 Phase Model 的影響</h3>
+  <p>訊息向使用者顯示狀態，依類型顯示不同圖示；嚴重狀況可以<b>取消導覽</b>；訊息可以連結到表單欄位，欄位會被反白，點訊息連結游標就跳到該欄位。使用者輸入與型別不符時，框架自動回報<b>驗證錯誤</b>：取消導覽、重顯上一個 View Assembly、錯誤自動連到那個欄位。</p>
+  <ul>
+    <li><b>訊息區位置</b>：預設在畫面頂端；要放別處就用 <b>MessageArea</b> UI 元素（可放在任何容器下）。</li>
+    <li><b>NOTIFICATION_ICON</b>（SAP_UI 7.50 SP1+）：WDUIGUIDELINE = FIORI 且沒指定其他設計時自動啟用——表頭顯示訊息計數，點了才以可移動、可縮放的 popover 顯示；可展開長文字、用權重圖示篩選。要放在 PageHeader，MessageArea 必須是 PageHeader 的子元素（只支援此設計）。沒有 PageHeader 也沒 MessageArea 時，FIORI 準則會自動嵌在表頭區。</li>
+    <li><b>應用程式的 Handling of Messages</b>：<i>Show Message Component on Demand</i>（有訊息才顯示）或 <i>Always Display Message Component</i>。</li>
+  </ul>
+
+  <h4>三類回報方法（IF_WD_MESSAGE_MANAGER）</h4>
+  <table>
+    <thead><tr><th>類別</th><th>方法（report_…）</th><th>參數化文字</th><th>連結 UI 元素</th></tr></thead>
+    <tbody>
+      <tr><td rowspan="8"><b>TEXT</b>（任意文字：OTR、Assistance Class、DDIC）</td><td>ELEMENT_ERROR_MESSAGE</td><td>PARAMS</td><td>多個（ELEMENT、ATTRIBUTES）</td></tr>
+      <tr><td>ATTRIBUTE_ERROR_MESSAGE</td><td>PARAMS</td><td>單一（ELEMENT、ATTRIBUTE_NAME）</td></tr>
+      <tr><td><b>ATTRIBUTE_MESSAGE</b></td><td>PARAMS</td><td>單一；可指定 fatal/error/warning/success，<b>建議取代 attribute_error_message</b></td></tr>
+      <tr><td>SUCCESS</td><td>PARAMS</td><td>否</td></tr>
+      <tr><td>WARNING</td><td>PARAMS</td><td>否</td></tr>
+      <tr><td>ERROR_MESSAGE</td><td>PARAMS</td><td>否</td></tr>
+      <tr><td>FATAL_ERROR_MESSAGE</td><td>PARAMS</td><td>否</td></tr>
+      <tr><td><b>MESSAGE</b></td><td>PARAMS</td><td>否；可指定類型，<b>建議取代上面四個</b></td></tr>
+      <tr><td rowspan="3"><b>T100</b>（訊息類別 SE91）</td><td>ELEMENT_T100_MESSAGE</td><td>MSG 結構</td><td>多個</td></tr>
+      <tr><td>ATTRIBUTE_T100_MESSAGE</td><td>MSG 結構</td><td>單一</td></tr>
+      <tr><td>T100_MESSAGE</td><td>MSGID/MSGNO/MSGTY、P1～P4</td><td>否</td></tr>
+      <tr><td rowspan="4"><b>EXCEPTION</b>（class-based 例外文字）</td><td>ELEMENT_EXCEPTION</td><td rowspan="4">僅限自訂例外類別（標準例外類別文字沒有佔位符）</td><td>多個</td></tr>
+      <tr><td>ATTRIBUTE_EXCEPTION</td><td>單一</td></tr>
+      <tr><td>EXCEPTION</td><td>否</td></tr>
+      <tr><td>FATAL_EXCEPTION</td><td>否</td></tr>
+    </tbody>
+  </table>
+  <p><b>訊息連結欄位靠的是 Context 屬性，不是 UI 元素名稱</b>：單一欄位要傳 ELEMENT（含錯誤值的元素）＋ ATTRIBUTE_NAME；多欄位只能在同一個元素內，傳 ELEMENT ＋ 屬性名內表 ATTRIBUTES（不傳內表＝連結該元素所有屬性）。多欄位時點連結跳到畫面上由左到右、由上到下第一個可見欄位。TEXT 訊息的佔位符名稱可自訂。</p>
+
+  <h4>訊息與 Phase Model</h4>
+  <ul>
+    <li><b>能取消導覽的位置</b>只有 View 的 <span class="kw">wddobeforeaction( )</span>、<span class="kw">wddoafteraction( )</span>、<span class="kw">onaction&lt;action&gt;</span>，以及 Component 的 <span class="kw">wddobeforenavigation( )</span>。</li>
+    <li><b>沒連結 Context 屬性的</b> success/warning/error：不影響 Phase Model，下一個 View Assembly 顯示，不取消導覽。</li>
+    <li><b>Fatal error</b>：中止目前 Hook Method、跳過後續 Action 相關 Hook；在 wddoafteraction( ) 之前回報則取消導覽。</li>
+    <li><b>驗證錯誤</b>：取消導覽，只執行 wddobeforeaction( )、wddobeforenavigation( )、wddopostprocessing( )。</li>
+    <li><b>連結 Context 屬性的 error</b>：Action 處理期間回報就取消導覽；在 wddobeforeaction( ) 回報，後續 Action 相關 Hook 全跳過。<b>只與單一 View 欄位有關的檢查，放在該 View 的 wddobeforeaction( )</b>。</li>
+    <li>上述影響只對 Action 型別 <b>standard</b> 成立；<b>validation-independent</b> 型的 Action 不管欄位對不對都會導覽並跑完所有 Hook——「取消」「關閉對話框」「結束應用」按鈕就該用這一型。</li>
+    <li>巢狀 View 時：所有 View 的 wddobeforeaction( ) 都在任何 Action 方法之前跑完，所有 wddoafteraction( ) 都在之後。</li>
+  </ul>
+
+  <pre><code class="abap">*&amp;---------------------------------------------------------------------*
+*&amp; View：WDDOBEFOREACTION 集中做輸入檢查，依目前 Action 分流
+*&amp;---------------------------------------------------------------------*
+METHOD wddobeforeaction.
+  DATA(lo_api)    = wd_this-&gt;wd_get_api( ).
+  DATA(lo_action) = lo_api-&gt;get_current_action( ).
+  IF lo_action IS INITIAL.
+    RETURN.
+  ENDIF.
+
+  CASE lo_action-&gt;name.
+    WHEN 'SEARCH'.
+      " 1) 必填檢查：UI 上 state = required 的欄位
+      cl_wd_dynamic_tool=&gt;check_mandatory_attr_on_view( view_controller = lo_api ).
+
+      " 2) 業務檢查：航空公司是否存在（檢查邏輯也可放 Model 類別）
+      DATA(lo_el) = wd_context-&gt;get_child_node( name = wd_this-&gt;wdctx_search )-&gt;get_element( ).
+      DATA lv_carrid TYPE s_carr_id.
+      lo_el-&gt;get_attribute( EXPORTING name = 'CARRID' IMPORTING value = lv_carrid ).
+
+      SELECT SINGLE @abap_true FROM scarr
+        WHERE carrid = @lv_carrid
+        INTO @DATA(lv_exists).
+      IF lv_exists = abap_false.
+        DATA(lo_msg) = lo_api-&gt;get_message_manager( ).
+        " TEXT 類：文字來自 Assistance Class，&amp;1 佔位符用 PARAMS 帶入
+        lo_msg-&gt;report_attribute_message(
+          message_text   = wd_assist-&gt;get_text( key = wd_assist-&gt;c_carrid_invalid )
+          element        = lo_el
+          attribute_name = 'CARRID'
+          params         = VALUE wdr_name_value_list( ( name = '1' value = lv_carrid ) )
+          message_type   = if_wd_message_manager=&gt;co_type_error ).
+      ENDIF.
+  ENDCASE.
+ENDMETHOD.
+
+*&amp; T100 與 EXCEPTION 類
+METHOD onactionsave.
+  DATA(lo_msg) = wd_comp_controller-&gt;mo_msg_mgr.
+  TRY.
+      DATA(lv_count) = zcl_wd_flight_model=&gt;save( ).   "假設會丟 ZCX_FLIGHT_ERROR
+      lo_msg-&gt;report_t100_message( msgid = 'ZWD_FLIGHT' msgno = '001' msgty = 'S'
+                                   p1    = |{ lv_count }| ).
+    CATCH zcx_flight_error INTO DATA(lx_err).
+      lo_msg-&gt;report_exception( message_object = lx_err ).
+  ENDTRY.
+ENDMETHOD.</code></pre>
+  <div class="tip">Message Manager 會收集目前元件及所有子元件回報的訊息。原廠建議：把取得 Message Manager 的程式放到 Component Controller 的 wddoinit( )，存成 Public 屬性（§10 範例的 <span class="kw">mo_msg_mgr</span>），各 View 直接用。訊息程式也可以用 Code Wizard 產生。<span class="kw">report_message( )</span> 的類型常數在 IF_WD_MESSAGE_MANAGER 中：<span class="kw">co_type_standard</span>（一般／成功）、<span class="kw">co_type_warning</span>、<span class="kw">co_type_error</span> 等，實際清單請在 SE24 確認。</div>
+
+  <h3 id="ch05-23-15">15. 輸入說明：Value Help、Value Suggestion 與 Value Selector</h3>
+  <p>使用者不受限於固定值集、或值集很大需要過濾時，就該給 Value Help 按鈕。開發者用<b>繫結 Context 屬性的 Input Help Mode</b> 控制：</p>
+  <table>
+    <thead><tr><th>Input Help Mode</th><th>說明</th></tr></thead>
+    <tbody>
+      <tr><td>Deactivated</td><td>不提供，與資料型別無關</td></tr>
+      <tr><td>Automatic</td><td>由 Runtime 決定（見下）</td></tr>
+      <tr><td>Dictionary Search Help</td><td>自選 DDIC Search Help（必須有一個 import 與一個 export 參數）</td></tr>
+      <tr><td>Object Value Selector（OVS）</td><td>用預先做好、可設定的 Web Dynpro 元件 <b>WDR_OVS</b> 做搜尋對話框</td></tr>
+      <tr><td>User-Defined Programming</td><td>自己寫一個 Web Dynpro 元件當搜尋說明</td></tr>
+    </tbody>
+  </table>
+  <p><b>Automatic 模式的判斷順序</b>（和經典 Dynpro 類似，但名稱與型別只在設計期決定一次）：① Context 屬性以 DDIC 表／結構欄位定型，且該欄位掛了 Search Help → 用它；② 該欄位有 Foreign Key 且 Check Table 有 Search Help → 用它；③ 有 Foreign Key 但 Check Table 沒 Search Help → 顯示 Check Table 鍵欄位；④ 資料元素的 Search Help；⑤ Domain 固定值／固定值範圍；⑥ 都沒有就不顯示。只用資料元素定型時，只有 Domain 固定值或 elementary Search Help 會生效；參照 Runtime 型別 DATA、F、I、OBJECT、STRING、STRING_TABLE、XSTRING 則不提供說明。</p>
+  <div class="tip">節點用 DDIC 結構定型時，多個屬性才會對應到同一結構的欄位——只有這樣，Search Help 才能<b>帶入多個欄位當篩選條件、選一筆回填多個欄位</b>（例如選航班同時填 CARRID、CONNID）。這是資料字典 Search Help 參數設計的價值，見 <a href="#ch01-2">1-2 章</a>與 <a href="#ch05-16">5-16 章</a>。</div>
+  <ul>
+    <li><b>suppressValueHelp</b>（WDY_BOOLEAN，預設 false，可繫結）：關掉某欄位的說明。</li>
+    <li><b>InputField 的 inputHelp 屬性</b>：auto（依繫結屬性）、calculator（欄位內小計算機，不顯示歷史）、search（搜尋圖示，點了觸發 onEnter 回後端）、none。</li>
+    <li><b>Value Suggestion</b>（邊打邊建議）四個條件：勾 <span class="kw">suggestValue</span>；屬性掛 DDIC elementary Search Help 或明確指派 Value Set；應用參數 <span class="kw">WDALLOWVALUESUGGEST = X</span>；<b>關閉無障礙</b>（WDACCESSIBILITY 為空）。建議值的 round trip <b>不跑 Phase Model</b>，所以 Action 方法與 wddomodifyview( ) 影響不了結果；又因流量較大可能拖慢伺服器，才必須明確開啟。</li>
+  </ul>
+
+  <h4>Value Selector：Index Binding vs Key Binding</h4>
+  <p>Value Selector 只允許從預定值集挑選（下拉框、選項按鈕群組、ItemListBox），<b>值少於約 30 個時才適用</b>。</p>
+  <table>
+    <thead><tr><th></th><th>Index Binding（DropDownByIndex 等）</th><th>Key Binding（DropDownByKey 等）</th></tr></thead>
+    <tbody>
+      <tr><td>值存在哪</td><td>Context：繫結到 0..n／1..n 節點下的屬性，渲染前要填好集合</td><td>型別：屬性以帶固定值的 Domain 定型（顯示短文字），或執行期動態指派 Value Set</td></tr>
+      <tr><td>使用者選值時</td><td><b>改的是 Lead Selection</b>，Context 資料不變</td><td><b>改的是 Lead Selection 元素中的屬性值</b>（存 key），Lead Selection 不變</td></tr>
+      <tr><td>round trip</td><td colspan="2">只有對應事件屬性綁了 Action 才會發生</td></tr>
+    </tbody>
+  </table>
+  <div class="note">Web Dynpro Runtime 型別本身就是「帶固定值 Domain 的特殊資料元素」，所以它們天生可用於 Key Binding。</div>
+
+  <pre><code class="abap">*&amp;---------------------------------------------------------------------*
+*&amp; Key Binding：執行期動態指派 Value Set（DropDownByKey 繫結 SEARCH.CARRID）
+*&amp;---------------------------------------------------------------------*
+METHOD wddoinit.   "View Controller
+  SELECT carrid, carrname
+    FROM scarr
+    ORDER BY carrname                      "下拉清單順序要自己決定
+    INTO TABLE @DATA(lt_scarr).
+
+  DATA(lt_value_set) = VALUE wdr_context_attr_value_list(
+                         FOR ls IN lt_scarr
+                         ( value = ls-carrid
+                           text  = |{ ls-carrid } { ls-carrname }| ) ).
+
+  " 取得節點的 metadata（IF_WD_CONTEXT_NODE_INFO）再設定 Value Set
+  wd_context-&gt;get_child_node( name = wd_this-&gt;wdctx_search
+           )-&gt;get_node_info(
+           )-&gt;set_attribute_value_set( name      = 'CARRID'
+                                       value_set = lt_value_set ).
+ENDMETHOD.</code></pre>
+  <div class="note">上例的 SELECT 為了示範寫在 View 裡；照原廠原則，正式程式應移到 Model 類別或 Assistance Class。</div>
+
+  <h3 id="ch05-23-16">16. 語意說明與鍵盤操作</h3>
+  <table>
+    <thead><tr><th>技術</th><th>重點</th></tr></thead>
+    <tbody>
+      <tr><td><b>Tooltip</b></td><td>最長 255 字元的黃框說明，滑鼠移上顯示。來源：直接輸入、OTR Alias、Context 屬性、資料元素文字。Label 沒設 Tooltip 時，若關聯欄位繫結 DDIC 資料元素，自動以<b>長欄位標籤</b>當 Tooltip</td></tr>
+      <tr><td><b>inputPrompt</b></td><td>空欄位內的淡色提示字，使用者一輸入就消失；來源同上。只對「屬性為初始值時不顯示任何字元」的欄位有效（數字 0、日期 00000000 會顯示字元就不行）</td></tr>
+      <tr><td><b>explanation</b></td><td>滑鼠移到關聯 Label 時顯示，Label 會加<b>綠色底線</b>；最長 255 字元；可來自 DDIC 資料元素的短文字或文件關鍵段 <span class="kw">&amp;DEFINITION&amp;</span>、<span class="kw">&amp;USE&amp;</span>。使用者可從右鍵選單開關。支援元素：Button、CheckBox、CheckBoxGroup、DropDownByIndex、DropDownByKey、FileUpload、InputField、ItemListBox、RadioButton、RadioButtonGroupByIndex、RadioButtonGroupByKey、TableColumn、TextEdit、TriStateCheckBox</td></tr>
+      <tr><td><b>More Field Help</b></td><td>主屬性繫結 DDIC 型別的元素預設就有經典 F1（右鍵 More Field Help，彈出資料元素文件＋技術資訊連結）；沒文件的元素用 Technical Help。應用參數 <span class="kw">WDHIDEMOREFIELDHELPASDEFAULT = X</span> 只顯示技術資訊，但若欄位的 explanation 來自 DDIC，該欄位仍照常顯示</td></tr>
+      <tr><td><b>Explanation UI 元素</b></td><td>獨立於其他元素的說明文字；text 可為靜態或 OTR Alias，<b>不能繫結 Context、不能取 DDIC</b>，最長 255。要更長：7.0 SPS&gt;11 可在 wddomodifyview( ) 動態指派；或用 <span class="kw">DOCU_GET</span>（物件 ID TX）讀 <span class="tcode">SE61</span> 的 General Text 文件，再用 <span class="kw">cl_wd_formatted_text=&gt;create_from_sapscript( )</span> 轉成 <span class="kw">M_XML_TEXT</span>；7.0 EhP1/EhP2（或 SAP_ABA SPS&gt;14）可直接填 <span class="kw">textDocumentName</span>。design = emphasized 時右側多一個隱藏連結</td></tr>
+      <tr><td><b>Help Center</b></td><td>應用中按 F1 開啟，分 Note（個人筆記，不能分享）、Frequently Asked Questions、Worth Knowing、Learning Content 等區段；連結可指向網頁、網路資料夾檔案（路徑維護在 IMG）、Solution Manager 物件。集中管理用 Web Dynpro 應用 <b>WDHA_ADMINISTRATION</b>，翻譯用 <b>WDHA_TRANSLATION</b></td></tr>
+    </tbody>
+  </table>
+  <div class="note">教材小修正：原廠 p224 說 Help Center「包含四個區段」，但隨後列出的是 Note、FAQ、Worth Knowing and Learning Content 三條（後者合併描述），課後測驗答案也是這三項。實際畫面上 Worth Knowing 與 Learning Content 是兩個區段，所以「四個」與「三項」其實是同一回事的不同數法。</div>
+
+  <h4>鍵盤操作</h4>
+  <ul>
+    <li><b>Default Button</b>：容器（ScrollContainer、TransparentContainer、Group、Tray）的 <span class="kw">defaultButtonId</span>；焦點在容器內任何元素時按 Enter＝按該按鈕。坑：① 表單欄位自己的 Enter 事件若綁了 Action，會優先觸發欄位事件；② TransparentContainer 要先把 <span class="kw">isLayoutContainer</span> 設為 ABAP_FALSE 才能指定；③ Tray 的預設按鈕定義在 Tray 的工具列。</li>
+    <li><b>Hotkey</b>（hotkey 屬性）：可指派給 Button、ToolBarButton、LinkToAction、LinkToURL、ToolBarLinkToAction、ToolBarLinkToURL、MenuActionItem；可用組合 CTRL+1～9、CTRL+F1～F12、CTRL+A～Z、CTRL+SHIFT+F1～F12。熱鍵會自動附加在 Tooltip（選單項目則附在文字）。容器與 Table 設 <span class="kw">handleHotkeys = ABAP_TRUE</span> 就成為 Hotkey Handler，熱鍵只在焦點於其內時有效（預設整個 pane 是 handler）。<b>同一 handler 內同一熱鍵定義兩次，熱鍵會被整個刪除</b>。瀏覽器外掛（如 IE 的 HTTPWatch）可能攔截熱鍵，NWBC 不受影響。</li>
+    <li><b>Access Key</b>：ALT＋文字首字，只移焦點不觸發事件；按住 ALT 時可存取元素的首字會加底線；可經個人化開關。<b>ALT+D 在 IE 無效</b>，框架會自動改配其他組合。</li>
+  </ul>
+
+  <h3 id="ch05-23-17">17. 元件重用：Component Usage、Interface Controller 與跨元件 Mapping</h3>
+  <p>真實的商業應用都由多個元件組成：客戶地址、訂單明細這類功能到處要用；框架本身也以通用元件提供功能——<b>WDR_OVS</b>（搜尋說明）、<b>WDR_MESSAGE_AREA</b>（訊息）、<b>SALV_WD_TABLE</b>（ALV）、<b>WDR_SELECT_OPTIONS</b>（選擇條件）。另一常見情境是設計期準備好多個候選子元件，執行期由使用者（例如點連結）決定嵌哪一個。</p>
+  <ul>
+    <li><b>元件介面</b>＝一個 Interface Controller ＋ 任意個 Interface View。Interface Controller 可含 Component Controller 中的一般方法、事件與 Context 節點：方法、事件勾 <b>Interface</b> 欄；節點勾 <b>Interface Node</b>，再勾 <b>Input Element (Ext.)</b> 則可被消費端映射（External Mapping）。<b>節點開放後，其所有子節點也一起開放</b>。</li>
+    <li>每個 Window 預設產生 Interface View；不要就在 Window 的 Properties 取消 Interface 勾選。</li>
+    <li><b>宣告使用</b>：消費端元件的 <b>Used Components</b> 頁籤；Component Use 欄填的名稱會成為執行期方法名的一部分。</li>
+    <li><b>宣告 ≠ 實例化</b>：除少數特例外，要自己在消費端某個 Controller 中實例化。框架為每個 Component Usage 建立一個 proxy 物件，由 <span class="kw">wd_this-&gt;wd_cpuse_&lt;usage&gt;( )</span> 取得；有 <span class="kw">has_active_component( )</span>、<span class="kw">create_component( )</span>、<span class="kw">delete_component( )</span>（預設實例活到消費端元件結束）。做實例化的 Controller 本身也要宣告使用該元件。</li>
+    <li><b>Interface View</b>：嵌入消費端的 Window；其 Inbound Plug 可接消費端 View／Window 的 Outbound Plug（經 Plug 參數傳資料進去），其 Outbound Plug 可接消費端的 Inbound Plug（把資料交回來）。</li>
+    <li><b>呼叫介面方法</b>：先把 Component Usage 的 <b>Interface Controller 宣告為 Used Controller</b>，再用 <span class="kw">wd_this-&gt;wd_cpifc_&lt;usage&gt;( )</span> 取得參照；Code Wizard 可產生。</li>
+    <li><b>訂閱介面事件</b>：同樣要先宣告 Used Controller，然後在消費端事件處理方法中註冊。<b>OVS 就是這樣運作</b>：OVS 元件每需要資料就觸發事件，消費端處理方法依事件參數判斷階段，再呼叫 OVS 的介面方法把資料送回去。</li>
+  </ul>
+
+  <h4>跨元件 Context Mapping</h4>
+  <table>
+    <thead><tr><th></th><th>Direct Context Mapping</th><th>External Context Mapping</th></tr></thead>
+    <tbody>
+      <tr><td>Mapping Origin 在</td><td>被使用元件的 Interface Controller</td><td>消費端的 Component／Custom Controller</td></tr>
+      <tr><td>用途</td><td>子元件提供資料給消費端</td><td>子元件需要消費端的資料才能工作（ALV 就是這種）</td></tr>
+      <tr><td>注意</td><td><b>子元件實例被刪除，Origin 就消失</b></td><td>要先建 Interface Controller Usage 並反向宣告使用消費端 Controller</td></tr>
+    </tbody>
+  </table>
+  <p><b>External Mapping 步驟</b>：① 在被使用元件的 Component Controller 設定目標節點屬性；② 勾 Interface Node 與 Input Element (ext.)；③ 消費端定義 Component Usage；④ 從消費端物件樹右鍵為該 Usage 建立 <b>Interface Controller Usage</b>；⑤ 雙擊編輯；⑥ 在其 Properties 把消費端含 Origin 的 Controller 加入 Used Controllers；⑦ 在 Context 頁籤把 Interface Controller Usage 的目標節點<b>由左往右</b>拖到 Origin 節點。</p>
+  <p><b>動態 Component Usage</b>：執行期才知道嵌哪個子元件時，讓所有候選元件實作同一個 <b>Web Dynpro Component Interface</b>（獨立開發物件，含方法、事件、Context，可加 Interface View；和元件<b>共用命名空間</b>）。在元件的 <b>Implemented Interfaces</b> 頁籤加入介面，並對每個介面按 <b>Reimplement</b>。注意：介面中的方法、事件、節點<b>不會自動</b>加進實作元件的 Interface Controller；從實作清單移除介面，也<b>不會</b>刪除已加入 Component Controller 的實體。</p>
+
+  <pre><code class="abap">*&amp;---------------------------------------------------------------------*
+*&amp; 消費端 Component Controller：使用子元件 ZWD_CUSTOMER（Usage 名 CUST）
+*&amp;---------------------------------------------------------------------*
+METHOD show_customer.
+  " 1) 取得 Component Usage 的 proxy，必要時才實例化（lazy）
+  DATA(lo_usage) = wd_this-&gt;wd_cpuse_cust( ).
+  IF lo_usage-&gt;has_active_component( ) = abap_false.
+    lo_usage-&gt;create_component( ).
+  ENDIF.
+
+  " 2) 取得子元件 Interface Controller（需先宣告為 Used Controller）
+  DATA(lo_ifc) = wd_this-&gt;wd_cpifc_cust( ).
+  lo_ifc-&gt;set_customer_id( iv_customid = iv_customid ).
+ENDMETHOD.
+
+*&amp; 3) 事件處理方法：訂閱子元件 Interface Controller 的 CUSTOMER_CHANGED 事件
+*&amp;    （Methods 頁籤 Method Type = Event Handler，Event 欄選 CUST 的事件）
+METHOD on_customer_changed.  "參數 IV_CUSTOMID 來自事件
+  wd_context-&gt;get_child_node( name = wd_this-&gt;wdctx_bookings
+           )-&gt;invalidate( ).
+  wd_this-&gt;mo_msg_mgr-&gt;report_message(
+    message_text = |客戶 { iv_customid } 已更新，訂位清單重新載入|
+    message_type = if_wd_message_manager=&gt;co_type_standard ).
+ENDMETHOD.
+
+*&amp; 4) 不再需要時可明確刪除（Direct Mapping 的 Origin 會跟著消失！）
+METHOD release_customer.
+  DATA(lo_usage) = wd_this-&gt;wd_cpuse_cust( ).
+  IF lo_usage-&gt;has_active_component( ) = abap_true.
+    lo_usage-&gt;delete_component( ).
+  ENDIF.
+ENDMETHOD.</code></pre>
+
+  <h3 id="ch05-23-18">18. 對話框：External、Confirmation、同元件 Window、子元件 Interface View</h3>
+  <table>
+    <thead><tr><th>類型</th><th>方法（IF_WD_WINDOW_MANAGER）</th><th>特性</th></tr></thead>
+    <tbody>
+      <tr><td><b>External</b></td><td>create_external_window( )</td><td>另開瀏覽器視窗，<b>modeless</b>；可設標題、URL，開關選單列、捲軸、狀態列、工具列、網址列，可否調整大小</td></tr>
+      <tr><td><b>Confirmation</b>（modal）</td><td>create_popup_to_confirm( )</td><td>顯示簡單文字＋標準按鈕組；可設預設按鈕、每個按鈕各自對應 Action、左側圖示、右上關閉鈕</td></tr>
+      <tr><td><b>同元件 Window</b>（modal）</td><td>create_and_open_popup( )（7.31+；以前用 create_window( )）</td><td>把本元件任一 Window 以彈窗顯示</td></tr>
+      <tr><td><b>子元件 Interface View</b>（modal）</td><td>create_and_open_popup( )（7.31+；以前用 create_window_for_cmp_usage( )）</td><td>指定 Component Usage 名與 Interface View 名；資料交換用 Context Mapping，或呼叫介面方法傳入、觸發介面事件傳回</td></tr>
+    </tbody>
+  </table>
+  <p><b>共通程式步驟</b>：① 對 WD_COMP_CONTROLLER 呼叫 <span class="kw">wd_get_api( )</span> 取得 <b>IF_WD_COMPONENT</b>；② 存變數；③ 呼叫 <span class="kw">get_window_manager( )</span> 取得 <b>IF_WD_WINDOW_MANAGER</b>；④ 存變數；⑤ 用它建立各種對話框；⑥ 回傳的對話框物件型別是 <b>IF_WD_WINDOW</b>，可 open／close（只限 modal）、設寬高等。Code Wizard 只支援 Window 與子元件 Interface View 兩種，External 與 Confirmation 要把產生的第 ⑤ 步換掉。</p>
+
+  <pre><code class="abap">*&amp;---------------------------------------------------------------------*
+*&amp; View：刪除前跳確認框，按 Yes 才觸發 Action CONFIRM_DELETE
+*&amp;---------------------------------------------------------------------*
+METHOD onactionask_delete.
+  DATA(lo_wm) = wd_comp_controller-&gt;wd_get_api( )-&gt;get_window_manager( ).
+
+  DATA(lo_popup) = lo_wm-&gt;create_popup_to_confirm(
+                     text         = VALUE string_table( ( `確定要刪除選取的航班嗎？` )
+                                                        ( `此動作無法復原。` ) )
+                     button_kind  = if_wd_window=&gt;co_buttons_yesno
+                     message_type = if_wd_window=&gt;co_msg_type_question
+                     window_title = `刪除確認`
+                     window_position = if_wd_window=&gt;co_center ).
+
+  " Yes 按鈕 → 本 View 的 Action CONFIRM_DELETE（Action 型別建議 validation-independent）
+  lo_popup-&gt;subscribe_to_button_event(
+    button            = if_wd_window=&gt;co_button_yes
+    action_name       = 'CONFIRM_DELETE'
+    action_view       = wd_this-&gt;wd_get_api( )
+    is_default_button = abap_false ).          "危險操作不要把 Yes 設成預設
+  lo_popup-&gt;open( ).
+ENDMETHOD.
+
+*&amp; 同元件 Window W_CUSTOMER 以 modal 彈窗顯示（7.31+）
+METHOD onactionshow_customer_popup.
+  DATA(lo_wm) = wd_comp_controller-&gt;wd_get_api( )-&gt;get_window_manager( ).
+  wd_this-&gt;mo_popup = lo_wm-&gt;create_and_open_popup(
+                        window_name  = 'W_CUSTOMER'
+                        title        = `客戶資料`
+                        button_kind  = if_wd_window=&gt;co_buttons_close
+                        message_type = if_wd_window=&gt;co_msg_type_none ).
+ENDMETHOD.
+
+*&amp; 外部視窗（modeless）
+METHOD onactionopen_help.
+  DATA(lo_wm) = wd_comp_controller-&gt;wd_get_api( )-&gt;get_window_manager( ).
+  DATA(lo_ext) = lo_wm-&gt;create_external_window(
+                   url   = `https://help.sap.com`
+                   title = `SAP Help` ).
+  lo_ext-&gt;open( ).
+ENDMETHOD.</code></pre>
+  <div class="tip">對話框專屬的程式（例如決定框架上要哪些按鈕）放在該 Window Controller 的 <span class="kw">wddoonopen( )</span>／<span class="kw">wddoonclose( )</span>，只有 Window 以對話框顯示時才會執行。</div>
+
+  <h3 id="ch05-23-19">19. Adaptation：Configuration、Customizing、Personalization 與增強</h3>
+  <table>
+    <thead><tr><th>層級</th><th>誰做</th><th>範圍</th><th>說明</th></tr></thead>
+    <tbody>
+      <tr><td><b>Configuration</b></td><td>開發人員</td><td>所有 Client 所有使用者（可傳輸）</td><td>建立設定資料集，覆寫 UI 屬性或 Context 屬性值，例如隱藏元素、表格交錯底色</td></tr>
+      <tr><td><b>Customizing</b></td><td>有權限的關鍵使用者／管理員</td><td>單一 Client、所有使用者（user-independent）</td><td>比個人化更有彈性；以 URL 加 <span class="kw">SAP-CONFIG-MODE=X</span> 啟動，右鍵 <i>Settings for Current Configuration</i>。先檢查 <span class="kw">S_DEVELOP</span>，不夠再查 <span class="kw">S_WDR_P13N</span></td></tr>
+      <tr><td><b>Personalization</b></td><td>任何使用者</td><td>使用者自己</td><td>受限：簡單元素只能改可見性，Table 還能調欄位順序</td></tr>
+    </tbody>
+  </table>
+  <p><b>優先順序：Personalization 覆寫 Customizing，Customizing 覆寫 Configuration。</b>上層可把參數設為 <b>Final</b>，下層就不能再改。個人化與 Customizing 都依附在某個 Configuration 上；存檔時若沒載入 Configuration，系統會建一個不含調整資訊的預設 Configuration。</p>
+  <ul>
+    <li><b>Built-in（implicit）</b>：框架現成、不必寫程式。<b>Component-defined（explicit）</b>：需要程式，所有以 Context 屬性為基礎的調整都做得到。</li>
+    <li><b>Configuration Controller</b>：建一個 Custom Controller → 右鍵 <i>(Re)Set as Config. Controller</i>。可設定的屬性定義在它的 Context，經 Mapping／Binding 影響 UI，在設定工具的 <b>Configuration-Defined</b> 頁籤維護。<b>這些屬性不會自動出現在 Customizing／Personalization</b>，要自己做維護對話框，並用 personalization manager 服務物件存檔。</li>
+    <li><b>Component Configuration</b>：綁定某元件，一個元件可有<b>任意多個</b>；可改該元件所有 View 的 UI 屬性。<b>Application Configuration</b>：綁定應用，指定每個（子）元件要載入哪個 Component Configuration，一個應用也可有任意多個；要先為應用用到的每個元件建好 Component Configuration。</li>
+    <li>指派 Application Configuration：動態＝URL 加 <span class="kw">sap-wd-configId=&lt;appl_config&gt;</span>；靜態＝應用參數 <span class="kw">WDCONFIGURATIONID</span>。</li>
+  </ul>
+  <p><b>建立 Component Configuration</b><span class="src">（依講義步驟整理）</span>：元件右鍵 <i>Create/Change Configuration</i>（瀏覽器開設定工具）→ 輸入全系統唯一 ID（客戶系統只能 Z／Y 開頭）→ New → 輸入說明 → 選 Local Object 或套件 → 選傳輸請求 → 在 <b>Web Dynpro Built-In</b> 面板展開 View 的 UI 元素樹、改屬性值並視需要勾 Final → Save → 關瀏覽器、在 Workbench 重新整理物件清單，Configuration 會出現在元件底下。Application Configuration 類似，在 <b>Assign Web Dynpro Component</b> 面板為每個元件（Usage）指派 Component Configuration。</p>
+  <div class="note">補充：設定工具本身也是 Web Dynpro 應用（較新版本為 CONFIGURE_COMPONENT／CONFIGURE_APPLICATION），FPM 應用的「畫面長相」幾乎全靠這套 Component Configuration 定義——在 S/4HANA 調整 FPM 畫面時，第一步永遠是找對 Configuration ID。</div>
+
+  <h4>Web Dynpro 的增強（Enhancement Framework）</h4>
+  <p>直接改原始碼或 Layout 叫<b>修改</b>，升級時會衝突。7.0 起的 Enhancement Framework（工具：Workbench 內建的 <b>Enhancement Builder</b>）統一了各種免修改的增強方式；增強實作是獨立開發物件，原物件不變，升級照樣可以更新，衝突用 <span class="tcode">SPAU_ENH</span> 處理。對 Web Dynpro ABAP：SAP 可提供 <b>BAdI</b>；除 BAdI 外<b>尚無 explicit 增強選項，主要靠 implicit 增強</b>（不需要 SAP 事先規劃）。可做的事：</p>
+  <ul>
+    <li>所有 Controller：方法前後加 <b>Pre-Exit／Post-Exit</b>、以 <b>Overwrite-Exit</b> 整段取代；新增一般方法、事件處理方法、Supply Function；新增屬性；在既有節點加屬性、新增節點、更新 Mapping；靜態擴充 Used Components／Controllers。</li>
+    <li>View：新增 Plug、Action、View；<b>移除既有 UI 元素、加新 UI 元素</b>。</li>
+    <li>Window：新增 Plug；移除／新增 Navigation Link；新增 Window。Component／Custom Controller：新增事件。元件：靜態擴充 Used Components。</li>
+    <li>前提：元件所屬軟體元件在 <span class="tcode">SE06</span> 的系統變更設定允許。增強實作只能透過 <b>Switch Framework</b> 停用：套件指派到 Switch（<span class="tcode">SFW1</span>）→ Switch 指派 Business Function（<span class="tcode">SFW2</span>）→ 在 <span class="tcode">SFW5</span> 啟用／停用。</li>
+    <li>操作：以<b>顯示模式</b>開 Controller → 工具列增強按鈕（或 Ctrl+F4）→ 輸入／選擇增強實作名稱；回顯示模式按 Display&lt;-&gt;Change（Ctrl+F1）。</li>
+  </ul>
+  <div class="warn"><b>先找標準，再想客製</b>（Casper 第三條），在 Web Dynpro 上的順序是：<b>Configuration → Customizing（SAP-CONFIG-MODE）→ BAdI → Implicit Enhancement（Pre/Post-Exit、UI 元素隱藏）→ Overwrite-Exit → 修改</b>。每往右一步，升級時要重測的東西就多一個量級。尤其 Overwrite-Exit 等於把 SAP 的方法整個接管，SAP 修了 Bug 你也吃不到。增強觀念詳見 <a href="#ch03-4">3-4 章</a>、<a href="#ch05-14">5-14 章</a>、<a href="#ch05-15">5-15 章</a>。</div>
+
+  <h3 id="ch05-23-20">20. 動態程式設計：執行期修改 Context 與 UI</h3>
+  <p>三類動態修改：<b>動態 Context</b>（建立／刪除節點與屬性、改 metadata）、<b>動態 UI</b>（建立／移除 UI 元素、改位置與屬性）、<b>動態指派 Action</b>（把設計期建好的 Action 指派給靜態或動態元素）。原廠建議：<b>能在設計期做的盡量在設計期做</b>，只有在資料結構設計期未知、畫面行為是泛用的、或要做泛用工具元件時才用動態程式。課程範例是做一個像 <span class="tcode">SE16</span> 的應用：使用者輸入表名，動態建 Context、動態建 Table、動態讀資料。</p>
+
+  <h4>動態 Context</h4>
+  <ul>
+    <li>新增獨立節點：先 <span class="kw">wd_context-&gt;get_node_info( )</span> 取得 Root 的 metadata，再 <span class="kw">add_new_child_node( )</span>；參數 <span class="kw">is_static = abap_false</span> 的節點才能在執行期刪除。</li>
+    <li>加屬性：對節點 metadata 呼叫 <span class="kw">add_attribute( )</span>，一次一個。</li>
+    <li>一次建好節點＋屬性：<span class="kw">static_element_type</span>（DDIC 平面結構／DB View／透明表）、<span class="kw">static_element_rtti</span>（RTTI 結構描述）、或 <span class="kw">attributes</span> 參數（每列一個屬性描述）。</li>
+    <li>取相依節點 metadata 兩種寫法：節點實例 → get_node_info( )；或 Root metadata → get_child_node( )。<b>原廠推薦第二種</b>，因為不依賴父節點元素存在。</li>
+    <li>IF_WD_CONTEXT_NODE_INFO 其他方法：get_attributes( )、get_attribute( )、get_child_nodes( )、get_child_node( )、get_parent( )、remove_attribute( )、remove_dynamic_attributes( )、remove_child_node( )。</li>
+  </ul>
+
+  <h4>動態 UI（只能在 wddomodifyview( )）</h4>
+  <ul>
+    <li>只有 View Controller 有 <span class="kw">wddomodifyview( )</span>，每次 round trip 結束、渲染前都會對目前 View Assembly 的每個 View 呼叫。</li>
+    <li>原則：① 能用 Context 繫結控制就不要直接操作 UI 物件；② UI 操作只准寫在 wddomodifyview( )；③ 一般只在 <span class="kw">first_time = abap_true</span> 時建動態結構，避免重建；④ <b>不要在 wddomodifyview( ) 中修改 Context</b>，把它當唯讀。</li>
+    <li>取容器：<span class="kw">view-&gt;get_root_element( )</span> 或 <span class="kw">view-&gt;get_element( id )</span>，回傳 IF_WD_VIEW_ELEMENT，要 down cast 成 <b>CL_WD_UIELEMENT_CONTAINER</b>（所有容器的父類）。所有 UI 元素類別繼承 <b>CL_WD_UIELEMENT</b>，整棵繼承樹的抽象根是 <b>CL_WD_VIEW_ELEMENT</b>。</li>
+    <li>先設容器屬性（尤其 Layout，會影響子元素屬性），Layout 類別都繼承 <b>CL_WD_LAYOUT</b>；LayoutData 類別繼承 <b>CL_WD_LAYOUT_DATA</b>，命名 CL_WD_&lt;kind&gt; 與靜態方法 new_&lt;kind&gt;( )。</li>
+    <li>建元素：<span class="kw">CL_WD_&lt;element&gt;=&gt;new_&lt;element&gt;( )</span>，例如 CL_WD_LABEL=&gt;new_label( )；<span class="kw">add_child( )</span> 加入，index 參數決定位置。複合元素用 <b>CL_WD_DYNAMIC_TOOL</b> 的 <span class="kw">create_table_from_node( )</span> 等一次建好。</li>
+    <li>通用方法：get_&lt;prop&gt;、set_&lt;prop&gt;、bind_&lt;prop&gt;、bound_&lt;prop&gt;；事件：set_on&lt;event&gt;、get_on&lt;event&gt;；容器：get_child(ren)、remove_child、remove_all_children、add_child。</li>
+    <li><b>動態 Action</b>：只能指向<b>既有</b>的 Action 處理方法（不能動態產生程式碼）；建立時用 on_&lt;event&gt; 參數（例如 new_button( on_action = 'X' )），或之後 set_on_action( )。</li>
+    <li>同一 Action 給多個元素時，用 Action 方法的參數 <b>WDEVENT</b> 分辨：<span class="kw">wdevent-&gt;name</span>（事件名，如 ON_ACTION）、<span class="kw">wdevent-&gt;parameters</span>（name/value 內表，一定含觸發元素的 ID，CheckBox 另有 CHECKED）；還不夠就用 <b>Parameter Mapping</b> 從 UI 元素多帶參數。</li>
+  </ul>
+  <div class="note">教材修正：原廠 p330 寫「在 hook method WDMODIFYVIEW 中操作 Layout」，少了 DO，正確名稱是 <span class="kw">WDDOMODIFYVIEW</span>。</div>
+
+  <pre><code class="abap">*&amp;---------------------------------------------------------------------*
+*&amp; 類 SE16：Component Controller 方法 BUILD_DYNAMIC_NODE
+*&amp;---------------------------------------------------------------------*
+METHOD build_dynamic_node.   "IMPORTING iv_tabname TYPE tabname
+  " 1) 安全檢查：表名必須是存在且啟用的透明表（避免 SQL Injection）
+  TRY.
+      DATA(lv_tab) = cl_abap_dyn_prg=&gt;check_table_name_str(
+                       val      = to_upper( iv_tabname )
+                       packages = '' ).
+    CATCH cx_abap_not_a_table cx_abap_not_in_package INTO DATA(lx_tab).
+      wd_this-&gt;mo_msg_mgr-&gt;report_exception( message_object = lx_tab ).
+      RETURN.
+  ENDTRY.
+
+  " 2) 刪舊節點、依 DDIC 結構一次建立新節點＋所有屬性
+  DATA(lo_root_info) = wd_context-&gt;get_node_info( ).
+  IF line_exists( lo_root_info-&gt;get_child_nodes( )[ name = 'DYN' ] ).
+    lo_root_info-&gt;remove_child_node( 'DYN' ).
+  ENDIF.
+  lo_root_info-&gt;add_new_child_node(
+    name                = 'DYN'
+    static_element_type = CONV string( lv_tab )
+    is_mandatory        = abap_false
+    is_multiple         = abap_true      "0..n
+    is_static           = abap_false ).  "執行期可刪除
+
+  " 3) 動態讀資料（泛用工具才用 SELECT *；一般程式請明列欄位）
+  DATA lr_data TYPE REF TO data.
+  CREATE DATA lr_data TYPE STANDARD TABLE OF (lv_tab).
+  ASSIGN lr_data-&gt;* TO FIELD-SYMBOL(&lt;lt_data&gt;).
+  SELECT * FROM (lv_tab)
+    ORDER BY PRIMARY KEY                 "HANA 無預設排序
+    INTO TABLE @&lt;lt_data&gt;
+    UP TO 200 ROWS.
+
+  wd_context-&gt;get_child_node( name = 'DYN' )-&gt;bind_table( new_items = &lt;lt_data&gt; ).
+  wd_this-&gt;mv_rebuild_ui = abap_true.     "通知 View 重建表格
+ENDMETHOD.</code></pre>
+  <div class="note"><span class="kw">get_child_nodes( )</span> 回傳的是以節點名為鍵的內表（WDR_CONTEXT_CHILD_INFO_MAP），上例用 <span class="kw">line_exists( )</span> 判斷是否存在；若你的版本回傳型別不同，改用 LOOP 判斷即可。</div>
+
+  <pre><code class="abap">*&amp;---------------------------------------------------------------------*
+*&amp; View：WDDOMODIFYVIEW 動態建立按鈕與表格
+*&amp;---------------------------------------------------------------------*
+METHOD wddomodifyview.
+*   IMPORTING first_time TYPE wdy_boolean
+*             view       TYPE REF TO if_wd_view
+  DATA(lo_root) = CAST cl_wd_uielement_container( view-&gt;get_root_element( ) ).
+
+  IF first_time = abap_true.
+    " 先設 Layout，再加子元素
+    cl_wd_matrix_layout=&gt;new_matrix_layout( container = lo_root ).
+    lo_root-&gt;set_width( '100%' ).
+
+    DATA(lo_btn) = cl_wd_button=&gt;new_button( id        = 'BTN_REFRESH'
+                                             text      = '重新整理'
+                                             on_action = 'REFRESH' ).  "既有 Action
+    cl_wd_matrix_head_data=&gt;new_matrix_head_data( element = lo_btn ).
+    lo_root-&gt;add_child( lo_btn ).
+  ENDIF.
+
+  " 表名變了才重建表格（旗標由 Component Controller 設定，這裡只讀不改 Context）
+  IF wd_comp_controller-&gt;mv_rebuild_ui = abap_true.
+    IF lo_root-&gt;get_child( id = 'TBL_DYN' ) IS BOUND.
+      lo_root-&gt;remove_child( id = 'TBL_DYN' ).
+    ENDIF.
+    DATA(lo_table) = cl_wd_dynamic_tool=&gt;create_table_from_node(
+                       ui_parent = lo_root
+                       table_id  = 'TBL_DYN'
+                       node      = wd_context-&gt;get_child_node( name = 'DYN' ) ).
+    cl_wd_matrix_head_data=&gt;new_matrix_head_data( element = lo_table ).
+    lo_table-&gt;set_visible_row_count( 20 ).
+    wd_comp_controller-&gt;mv_rebuild_ui = abap_false.   "Controller 屬性，不是 Context
+  ENDIF.
+ENDMETHOD.
+
+*&amp; 一個 Action 給多個按鈕時，用 WDEVENT 分辨是誰觸發
+METHOD onactionrefresh.
+  DATA(lv_id) = wdevent-&gt;get_string( 'ID' ).
+  CASE lv_id.
+    WHEN 'BTN_REFRESH'.
+      DATA lv_tabname TYPE tabname.
+      wd_context-&gt;get_child_node( name = 'SEARCH' )-&gt;get_element(
+               )-&gt;get_attribute( EXPORTING name = 'TABNAME' IMPORTING value = lv_tabname ).
+      wd_comp_controller-&gt;build_dynamic_node( lv_tabname ).
+  ENDCASE.
+ENDMETHOD.</code></pre>
+  <div class="warn">動態 SE16 類工具在正式系統要非常小心：一定要做表名白名單或至少 <span class="kw">cl_abap_dyn_prg</span> 檢查，並加上權限檢查（例如 <span class="kw">S_TABU_DIS</span>／<span class="kw">S_TABU_NAM</span>），否則等於開了一個繞過權限的資料瀏覽器。</div>
+
+  <h3 id="ch05-23-21">21. ALV for Web Dynpro：SALV_WD_TABLE</h3>
+  <p>Table UI 元素是 Web Dynpro 顯示大量資料的標準元素，但經典 SAP GUI 的 ALV Grid Control 在 Web Dynpro 中並不存在；SAP 因此做了一個通用元件 <b>SALV_WD_TABLE</b>，把任意 Context 節點的資料用 Table 顯示出來（原廠也說：這些功能 Table 元素自己寫程式也做得到）。預設功能：匯出 Excel、多欄複雜篩選、隱藏欄、調欄序、多欄排序、改列數與欄數、改表格設計、切換格線、儲存個人化變式（含預設變式）、以 Crystal Report 顯示、送 Portal 或 e-mail。</p>
+  <div class="tip">以 <span class="kw">sap-config-mode=X</span> 啟動時，ALV 的設定可以存給所有使用者，並透過 Customizing Task 加進傳輸請求——這是「關鍵使用者調好畫面 → 傳到 PRD」的標準做法。</div>
+  <p><b>嵌入步驟</b>：① Used Components 加入 SALV_WD_TABLE；② 若要放在 View Assembly 中，在 View 加 ViewContainerUIElement；③ 把 ALV 的 Interface View <b>TABLE</b> 嵌入 Window（或該 ViewContainer）；④ 呼叫任何介面方法前確保 Component Usage 已實例化；⑤ 呼叫介面方法 <span class="kw">set_data( )</span> 傳入資料來源節點參照；或 ⑥ 用 External Context Mapping：為 ALV Usage 建 Interface Controller Usage → 宣告使用消費端 Component Controller → 把其 DATA 節點外部映射到消費端的資料節點。</p>
+  <p><b>進階設定</b>：實例化時自動產生設定模型，介面方法 <span class="kw">get_model( )</span> 回傳 <b>CL_SALV_WD_CONFIG_TABLE</b>，它實作多個介面：</p>
+  <table>
+    <thead><tr><th>介面</th><th>用途</th></tr></thead>
+    <tbody>
+      <tr><td>IF_SALV_WD_COLUMN_SETTINGS</td><td>取得／新增／刪除欄，欄位屬性</td></tr>
+      <tr><td>IF_SALV_WD_CONFIG_ADMIN／IF_SALV_WD_CONFIG_TABLE</td><td>設定的 metadata／設定資料</td></tr>
+      <tr><td>IF_SALV_WD_DRAG_AND_DROP</td><td>拖放行為</td></tr>
+      <tr><td>IF_SALV_WD_EXPORT_SETTINGS／IF_SALV_WD_PDF_SETTINGS</td><td>匯出 Excel／PDF（如邊界）</td></tr>
+      <tr><td>IF_SALV_WD_FIELD_SETTINGS</td><td>內表欄位屬性：可見性、小計、筆數、合計列位置</td></tr>
+      <tr><td>IF_SALV_WD_FUNCTION_SETTINGS</td><td>自訂功能按鈕的新增、刪除、可見、啟用</td></tr>
+      <tr><td>IF_SALV_WD_GRAPHICS_SETTINGS</td><td>內嵌圖表</td></tr>
+      <tr><td>IF_SALV_WD_MASS_EDIT_SETTINGS</td><td>大量編輯預設值的可見性</td></tr>
+      <tr><td>IF_SALV_WD_STD_FUNCTIONS</td><td>標準 ALV 功能的可見性</td></tr>
+      <tr><td>IF_SALV_WD_TABLE_HIERARCHY</td><td>階層式顯示（末層為葉、全部展開）</td></tr>
+      <tr><td>IF_SALV_WD_TABLE_SETTINGS</td><td>整體：寬度、設計、可否編輯</td></tr>
+    </tbody>
+  </table>
+  <p>ALV 元件還會觸發事件供主元件訂閱：例如使用者點儲存格中的連結或按鈕觸發 <b>ON_CLICK</b>；使用者改了儲存格值後觸發 <b>ON_DATA_CHECK</b>，可在主元件做資料檢查。</p>
+
+  <pre><code class="abap">*&amp;---------------------------------------------------------------------*
+*&amp; Component Controller WDDOINIT（續）：Usage 名 ALV（SALV_WD_TABLE）
+*&amp;---------------------------------------------------------------------*
+METHOD setup_alv.
+  DATA(lo_usage) = wd_this-&gt;wd_cpuse_alv( ).
+  IF lo_usage-&gt;has_active_component( ) = abap_false.
+    lo_usage-&gt;create_component( ).
+  ENDIF.
+
+  DATA(lo_alv) = wd_this-&gt;wd_cpifc_alv( ).
+  " 用 set_data 傳入資料節點（或改用 External Context Mapping）
+  lo_alv-&gt;set_data( wd_context-&gt;get_child_node( name = wd_this-&gt;wdctx_flights ) ).
+
+  DATA(lo_model) = lo_alv-&gt;get_model( ).          "CL_SALV_WD_CONFIG_TABLE
+  lo_model-&gt;if_salv_wd_table_settings~set_read_only( abap_true ).
+  lo_model-&gt;if_salv_wd_table_settings~set_visible_row_count( 20 ).
+  lo_model-&gt;if_salv_wd_std_functions~set_export_allowed( abap_true ).
+
+  " 欄位：改標題、隱藏、排序
+  DATA(lo_col) = lo_model-&gt;if_salv_wd_column_settings~get_column( 'PRICE' ).
+  lo_col-&gt;get_header( )-&gt;set_text( '票價' ).
+  lo_model-&gt;if_salv_wd_column_settings~delete_column( 'MANDT' ).
+
+  " 金額小計
+  lo_model-&gt;if_salv_wd_field_settings~get_field( 'PRICE'
+          )-&gt;if_salv_wd_aggr~create_aggr_rule( aggregation_type = if_salv_wd_c_aggregation=&gt;aggrtype_total ).
+ENDMETHOD.
+
+*&amp; 事件處理：訂閱 ALV Interface Controller 的 ON_CLICK
+METHOD on_alv_click.   "參數 R_PARAM TYPE REF TO if_salv_wd_table_click
+  DATA(lv_col) = r_param-&gt;column.
+  DATA(lv_idx) = r_param-&gt;index.
+  wd_this-&gt;mo_msg_mgr-&gt;report_message(
+    message_text = |點了第 { lv_idx } 列的 { lv_col } 欄|
+    message_type = if_wd_message_manager=&gt;co_type_standard ).
+ENDMETHOD.</code></pre>
+  <div class="note">SAP GUI 世界的 ALV 見 <a href="#ch02-3">2-3 章</a>（CL_SALV_TABLE）與 <a href="#ch03-2">3-2 章</a>（CL_GUI_ALV_GRID）。三者名稱相似但完全不同：CL_SALV_TABLE 是 GUI 報表、SALV_WD_TABLE 是 Web Dynpro 元件、Fiori 則用 UI5 的 SmartTable／Fiori Elements List Report。</div>
+
+  <h3 id="ch05-23-22">22. Web Dynpro Select Options（WD_SELECT_OPTIONS_20）</h3>
+  <p>把 Select Options 元件 <b>WD_SELECT_OPTIONS_20</b> 整合到你的元件，就能顯示搜尋條件並以程式讀取使用者輸入。<b>讀資料與顯示結果不是它的工作</b>，它只負責渲染條件 UI 並觸發事件。使用者可以：選屬性（第一欄下拉，唯讀者為必填）、選運算子、輸入值（可用 * 萬用字元、下拉或 Value Help）、以 +／- 增刪列、<b>從表格或文字編輯器 Ctrl+C／Ctrl+V 一次貼入多個值</b>（自動展成多列）、儲存／載入搜尋（搜尋內容由呼叫端傳入，元件本身不保存）。</p>
+  <p><b>嵌入步驟</b>：① 宣告 Component Usage 為 WD_SELECT_OPTIONS_20；② 建 View Container，把 View <b>W_SELECT_OPTIONS</b> 嵌入 Window；③ 在首次輸出前（例如 View 的 wddoinit）以 <span class="kw">init_select_options</span> 初始化——可設表頭等一般文字、Search 等標準按鈕的可見性、最大列數預設值等全域選項（結構 <b>WDR_SO_S_GENERAL_TEXTS</b>、<b>WDR_SO_S_GENERAL_VISIBILITY</b>、<b>WDR_SO_S_GLOBAL_OPTIONS</b>）；④ 以 <span class="kw">add_attributes</span> 定義搜尋屬性（index、mandatory 等，結構 <b>WDR_SO_S_ATTRIBUTES</b>）；⑤ 註冊事件 <b>on_execute</b> 的處理方法讀取輸入。</p>
+  <p>讀輸入有兩種格式：<b>Range 格式</b>（SIGN I/E、OPTION EQ/NE⋯，可直接用在 <span class="kw">WHERE … IN</span>）用 <span class="kw">get_input_complete_as_range</span>，回傳 range 資料物件的內表，以欄位 <b>ATTRIBUTE</b> 找對應的 range；或 <b>Select Option 資料格式</b>（運算子定義在 <span class="kw">IF_WD_SELECT_OPTIONS_20=&gt;E_OPERATORS</span>，如 is、is_not、starts_with、does_not_equal）。<b>CL_WD_SELOPT_UTIL_20</b> 提供轉換：convert_ranges_into_data、convert_data_into_ranges、convert_abap_ops_in_so_ops、convert_so_ops_in_abap_ops 等。範例應用：<b>WDR_TEST_SEL_OPT_AUTO_20</b>。</p>
+
+  <pre><code class="abap">*&amp;---------------------------------------------------------------------*
+*&amp; on_execute 事件處理：把使用者輸入轉成 Range，交給 Model 查詢
+*&amp; （Select Options 20 各方法的完整簽章請以 SE24 IF_WD_SELECT_OPTIONS_20
+*&amp;   與範例 WDR_TEST_SEL_OPT_AUTO_20 為準，此處只示範 Range 的使用）
+*&amp;---------------------------------------------------------------------*
+METHOD on_so_execute.
+  DATA lt_carrid TYPE zcl_wd_flight_model=&gt;tt_carrid_range.
+
+  " 從 Select Options 取回完整輸入（Range 格式），依 ATTRIBUTE 找 CARRID
+  DATA(lt_ranges) = wd_this-&gt;mo_select_options-&gt;get_input_complete_as_range( ).
+  LOOP AT lt_ranges ASSIGNING FIELD-SYMBOL(&lt;ls_range&gt;) WHERE attribute = 'CARRID'.
+    ASSIGN &lt;ls_range&gt;-range-&gt;* TO FIELD-SYMBOL(&lt;lt_any&gt;).
+    lt_carrid = CORRESPONDING #( &lt;lt_any&gt; ).
+  ENDLOOP.
+
+  " 實務守門：區間（BT）改成列舉前先警告
+  IF line_exists( lt_carrid[ option = 'BT' ] ).
+    wd_this-&gt;mo_msg_mgr-&gt;report_message(
+      message_text = '區間比的是字典序，號碼段不連續或有前導零時可能漏抓，建議改用多值貼上'
+      message_type = if_wd_message_manager=&gt;co_type_warning ).
+  ENDIF.
+
+  DATA(lt_flights) = zcl_wd_flight_model=&gt;get_flights( lt_carrid ).
+  DATA lt_ctx TYPE wd_this-&gt;elements_flights.
+  lt_ctx = CORRESPONDING #( lt_flights ).
+  wd_context-&gt;get_child_node( name = wd_this-&gt;wdctx_flights
+           )-&gt;bind_table( new_items = lt_ctx set_initial_elements = abap_true ).
+ENDMETHOD.</code></pre>
+  <div class="warn"><b>條件用列舉（多筆 EQ）比用區間（BT）安全</b>（Casper 第二條）。Select Options 的「複製貼上多值」正是把 Excel 清單轉成多筆 EQ 的最佳入口——物料號碼、訂單號碼不連續、ALPHA 前導零、編碼規則改過時，BT 比的是字典序而非業務語意，漏抓或多抓都不會報錯。同樣的觀念在經典選擇畫面見 <a href="#ch03-1">3-1 章</a>。</div>
+  <div class="note">舊版元件 <b>WDR_SELECT_OPTIONS</b>（§17 提到的通用元件之一）仍存在，WD_SELECT_OPTIONS_20 是較新的版本；維護既有程式時兩者都可能遇到，API 不相容，不要混用。</div>
+
+  <h3 id="ch05-23-23">23. 疑難排解：監控、除錯與 Runtime Analysis Tool</h3>
+  <h4>前端 Helper Functions（Ctrl + Shift + Alt + 字母）</h4>
+  <table>
+    <thead><tr><th>字母</th><th>功能</th></tr></thead>
+    <tbody>
+      <tr><td>H</td><td>列出所有 Helper Function 與按鍵</td></tr>
+      <tr><td>A</td><td>顯示／隱藏無障礙資訊</td></tr>
+      <tr><td>D</td><td>HTML／DOM 分析</td></tr>
+      <tr><td>N</td><td>巢狀階層分析</td></tr>
+      <tr><td>O</td><td>顯示／隱藏 HTML 容器巢狀</td></tr>
+      <tr><td><b>P</b></td><td><b>Performance Monitor</b>：後端系統資訊、端到端時間、伺服器處理時間、用戶端渲染時間、回應資料、Work Process 記憶體用量、已實例化的 Web Dynpro 實體（元件、Controller）數量——最重要的是分析 <b>TAT（turnaround time）</b></td></tr>
+      <tr><td>S</td><td>大小／位置資訊面板</td></tr>
+      <tr><td>V</td><td>版本資訊面板</td></tr>
+    </tbody>
+  </table>
+  <div class="warn">Helper Functions 只有在使用者有 ABAP 除錯權限（<span class="kw">S_DEVELOP</span>）、且 Client <b>不是生產用</b>（T000 的 Client 角色為測試或開發）時才能用，原廠也說不保證所有情況都有效。PRD 上查效能要改用 <span class="tcode">STAD</span>、<span class="tcode">ST12</span>、SQL Monitor 等（見 <a href="#ch05-21">5-21 章</a>）。</div>
+
+  <h4>除錯</h4>
+  <ul>
+    <li>Web Dynpro 是 HTTP 請求，要設<b>外部中斷點（External Breakpoint）</b>，綁定特定使用者與 Client，只有該使用者能進除錯。</li>
+    <li>中斷時會在 SAP GUI 開新版 Debugger：前提是用戶端裝了 SAP GUI、有除錯權限、且預設使用新版 Debugger。</li>
+    <li>7.0 EhP2 起可從右鍵選單增刪外部中斷點：先在編輯器設一個外部中斷點（放在不一定會執行的方法也行，例如 Component Controller 的 wddoapplicationstatechange( )），URL 加 <b>/h=X</b>（<b>大小寫敏感</b>）；之後在會觸發 Action 的 UI 元素上右鍵，就有啟用／停用 Debugger 的子選單。</li>
+    <li>除錯技巧整體見 <a href="#ch05-4">5-4 章</a>；在 ADT（Eclipse）中對 Web Dynpro 除錯同樣使用外部中斷點，見 <a href="#ch05-5">5-5 章</a>。</li>
+  </ul>
+
+  <h4>Runtime Analysis Tool（RAT）</h4>
+  <p>回答「為什麼畫面上是 ABC 不是 XYZ？」「為什麼按鈕只有 X 使用者看得到？」「為什麼屬性 X 的值是 Y？」——也就是查出 UI 在哪一層被調整過。RAT 在右鍵 <b>Technical Help</b> 對話框的 <b>Adaptations</b> 頁籤，分三區：</p>
+  <ul>
+    <li><b>Adaptations</b>：列出這個元件被做過的調整（Configuration、Customizing、Personalization、Enhancement），點一列看下面兩區的明細。</li>
+    <li><b>Built-In Adaptations</b>：該層以內建調整改過的屬性與聚合、在該層的值、是否 Final。</li>
+    <li><b>Component-Defined Adaptations</b>：元件自訂調整所依據的 Context 節點與屬性、在該層的值、是否 Final。</li>
+  </ul>
+  <p><b>使用前必須先啟用 Web Dynpro Trace Tool</b>：<span class="tcode">WD_TRACE_TOOL</span> → <i>Activate for This User</i> → 在 Selection of Trace Features 勾 <b>WD Component Configuration</b> → OK（訊息「Tracing active for &lt;user&gt; 30 minutes」）→ 啟動應用 → 右鍵 Technical Help → Adaptations 頁籤。</p>
+  <div class="note">教材小錯：Unit 13 課後測驗答案寫「Read more in the lesson … (Unit 14, Lesson 3)」，但這門課只有 13 個單元，正確是 Unit 13 Lesson 3。另外 Unit 7 測驗第 2 題答案指向「Reporting Messages (Unit 6, Lesson 3), Task: Value Suggestions」，應為 Unit 7 Lesson 1 Providing Value Help。</div>
+
+  <h3 id="ch05-23-24">24. 從 Web Dynpro 到 Fiori／RAP：概念對照與選型</h3>
+  <p>學 NET310 最大的價值，是讀懂 S/4HANA 裡那些 WDA／FPM 標準畫面，並且知道新東西該用什麼做。下表把 Web Dynpro 的概念對到 RAP／Fiori 的對應物：</p>
+  <table>
+    <thead><tr><th>Web Dynpro ABAP</th><th>RAP／Fiori Elements／UI5</th><th>說明</th></tr></thead>
+    <tbody>
+      <tr><td>Component／Application（URL）</td><td>UI5 應用／Fiori Launchpad App（語意物件＋動作）</td><td>WDA 也能以 Tile 掛上 Launchpad</td></tr>
+      <tr><td>Context（節點、Cardinality）</td><td>OData 實體集合（CDS View Entity、Composition）</td><td>1..n 父子 → CDS Composition 父子</td></tr>
+      <tr><td>Supply Function／Lazy</td><td>OData $expand 與按需請求</td><td>都只讀需要的資料</td></tr>
+      <tr><td>Data Binding</td><td>UI5 Data Binding／Fiori Elements 註解</td><td>觀念幾乎一樣</td></tr>
+      <tr><td>Model 類別（全域類別）</td><td>RAP Behavior Definition＋Behavior Implementation</td><td>新開發商業邏輯的歸宿</td></tr>
+      <tr><td>Message Manager</td><td>RAP 的 <span class="kw">reported</span>／<span class="kw">failed</span></td><td>訊息連結欄位 ↔ <span class="kw">%element</span></td></tr>
+      <tr><td>Value Help／OVS</td><td>CDS <span class="kw">@Consumption.valueHelpDefinition</span></td><td>宣告式取代程式化</td></tr>
+      <tr><td>SALV_WD_TABLE</td><td>Fiori Elements List Report／Smart Table</td><td>匯出、篩選、變式都內建</td></tr>
+      <tr><td>Select Options 20</td><td>Filter Bar（<span class="kw">@UI.selectionField</span>）</td><td>一樣支援多值與區間</td></tr>
+      <tr><td>Configuration／Personalization</td><td>Key User Adaptation、變式管理</td><td>同樣分層</td></tr>
+      <tr><td>Enhancement（Pre/Post-Exit）</td><td>RAP 擴充、Developer Extensibility、Key User Extensibility</td><td>Clean Core 原則</td></tr>
+    </tbody>
+  </table>
+  <div class="warn"><b>選型結論：</b>① 維護／調整既有 WDA、FPM 標準應用 → 用本章技術，優先 Configuration，其次 Enhancement；② 新的交易型應用 → RAP ＋ Fiori Elements（第六部新主題章節將補齊 CDS、RAP）；③ 快速的內部 GUI 報表 → CL_SALV_TABLE（<a href="#ch02-3">2-3 章</a>）；④ 只有在「必須沿用既有 WDA 元件、且客戶沒有 Fiori 基礎設施」時才考慮新寫 Web Dynpro，並把邏輯全放全域類別，為未來換 RAP 鋪路。</div>
+
+  <h3 id="ch05-23-qa">練習與自我檢核</h3>
+  <ol>
+    <li><b>（Unit 1）</b>Web Dynpro 是以什麼設計典範、什麼方式開發？一個 ViewContainerUIElement 同時可以顯示幾個 View？同一元件的兩個 Window 之間可以導覽嗎？<br><i>要點：MVC、宣告式；一次只顯示一個 View；不行——Window 的 Outbound Plug 可接內嵌 View 的 Inbound Plug、View 的 Outbound Plug 可接外層 Window 的 Inbound Plug、每個 View 可嵌入多個 Window，但同元件 Window 之間不能導覽。</i></li>
+    <li><b>（Unit 1）</b>元件中哪些實體對外可見？什麼叫 Faceless Component？Application 必須指定哪三樣東西？<br><i>要點：只有 Interface Controller（每元件一個）與 Interface View（與 Window 一對一）；沒有 View 所以也沒有 Window、Interface View 的元件；Root Component、Interface View、Startup 型 Inbound Plug。</i></li>
+    <li><b>（Unit 2）</b>下列哪些是 Component Controller 的 Hook Method：wddobeforenavigation、wddopostprocessing、wddoonopen、wddoapplicationstatechange？為什麼 View Controller 不能被宣告為 Used Controller？<br><i>要點：除 wddoonopen（Window Controller）外都是；違反 MVC——View 只負責顯示與互動，不負責產生資料，所以 View 的 Context 與方法永遠私有，也不能當 Mapping Origin。</i></li>
+    <li><b>（Unit 3）</b>Cardinality 1..n 的節點實例化時會發生什麼？哪兩種情況會因 Cardinality 違規而 DUMP？Singleton 子節點與非 Singleton 子節點在執行期的差異？<br><i>要點：自動建立 index 1 元素；刪掉 1..1／1..n 的預設元素、對 0..1／1..1 加第二個元素；非 Singleton 每個父元素一份子節點，Singleton 只有一份、對應父節點 Lead Selection。</i></li>
+    <li><b>（Unit 3、Casper 經驗）</b>你的航班表格每次進畫面「預設選中的航班」都不一樣，下方訂位明細也跟著變。最可能的原因與修法？<br><i>要點：Lead Selection 預設是第 1 個元素，而 bind_table 的內表來自沒有 ORDER BY 的 SELECT，HANA 不保證順序；在 Model 類別的 SELECT 加 ORDER BY（或 ORDER BY PRIMARY KEY）。</i></li>
+    <li><b>（Unit 4）</b>Table 要繫結哪種 Cardinality 的節點？要讓使用者 Shift／Ctrl 多選，節點哪個屬性要改成什麼？預設值是？selectionMode 設 none 會怎樣？<br><i>要點：0..n 或 1..n；Selection 改 0..n 或 1..n，預設 0..1；不顯示選取欄、Lead Selection 列不反白。</i></li>
+    <li><b>（Unit 4）</b>GridLayout 有什麼缺點？什麼元素可以避免版面亂掉？contextMenuBehaviour 設 Inherit 的效果？<br><i>要點：欄數靜態、不能指定換行、移除元素後面全部左移；用 InvisibleElement 佔位，能用 MatrixLayout 就別用；顯示父元素的右鍵選單（可跨多層），且此屬性不能繫結 Context。</i></li>
+    <li><b>（Unit 5）</b>寫出「把內表 lt_ctx 整批放進節點 FLIGHTS 並取代原有資料」的一行程式，以及讀取目前多選列的方法名與關鍵參數。<br><i>要點：<span class="kw">wd_context-&gt;get_child_node( wd_this-&gt;wdctx_flights )-&gt;bind_table( new_items = lt_ctx set_initial_elements = abap_true )</span>；<span class="kw">get_selected_elements( including_lead_selection = … )</span>。</i></li>
+    <li><b>（Unit 5）</b>Supply Function 何時被呼叫？可以在程式中直接呼叫嗎？要強制重讀該怎麼做？<br><i>要點：節點集合初始時被存取、父節點 Lead Selection 改變、節點被 invalidate；不行，只有 Runtime 能呼叫；對節點呼叫 invalidate( )。</i></li>
+    <li><b>（Unit 6）</b>OTR Alias 的格式與 UI 屬性中的指令格式？修改 OTR 後畫面沒變怎麼辦？Assistance Class 必須繼承哪個類別、在 Controller 中以什麼屬性取用？<br><i>要點：&lt;package&gt;/&lt;alias&gt;、$OTR:&lt;package&gt;/&lt;alias&gt;；OK code 輸入 /$OTR 清緩衝；CL_WD_COMPONENT_ASSISTANCE，WD_ASSIST。</i></li>
+    <li><b>（Unit 6）</b>哪些方法中回報訊息可以取消導覽？只和單一 View 欄位有關的檢查應放哪？「取消」按鈕的 Action 應設為什麼型別？<br><i>要點：wddobeforeaction、wddoafteraction、onaction&lt;action&gt;、Component 的 wddobeforenavigation；該 View 的 wddobeforeaction；validation-independent。</i></li>
+    <li><b>（Unit 7）</b>Value Suggestion 的四個條件？Index Binding 與 Key Binding 的 Value Selector 在使用者選值時各改變什麼？<br><i>要點：勾 suggestValue、有 elementary Search Help 或 Value Set、WDALLOWVALUESUGGEST = X、關閉無障礙；Index 改 Lead Selection 不改資料，Key 改 Lead Selection 元素的屬性值不改 Lead Selection。</i></li>
+    <li><b>（Unit 8）</b>宣告 Component Usage 後子元件會自動實例化嗎？呼叫子元件介面方法前要做哪兩件事？Direct 與 External Context Mapping 的 Origin 各在哪一邊？<br><i>要點：一般不會，要 wd_cpuse_&lt;usage&gt;( )-&gt;create_component( )；把子元件 Interface Controller 宣告為 Used Controller、用 wd_cpifc_&lt;usage&gt;( ) 取參照；Direct 在子元件 Interface Controller、External 在消費端 Controller。</i></li>
+    <li><b>（Unit 9）</b>四種對話框各用 Window Manager 的哪個方法？哪一種是 modeless？<br><i>要點：create_external_window（modeless）、create_popup_to_confirm、create_and_open_popup（同元件 Window 或子元件 Interface View，7.31+）。</i></li>
+    <li><b>（Unit 10）</b>Configuration、Customizing、Personalization 誰覆寫誰？一個元件可以有幾個 Configuration Controller、幾個 Component Configuration？Customizing 模式怎麼進入？<br><i>要點：Personalization &gt; Customizing &gt; Configuration，上層可設 Final；Configuration Controller 最多一個、Component Configuration 任意多個；URL 加 SAP-CONFIG-MODE=X，需 S_DEVELOP 或 S_WDR_P13N。</i></li>
+    <li><b>（Unit 10、Casper 經驗）</b>客戶要求在某個 S/4HANA 標準 FPM 畫面上隱藏一個欄位並加一段檢查。請依「先標準再客製」排出方案順序。<br><i>要點：先查該 FPM 應用的 Component Configuration／Customizing 能否隱藏；檢查邏輯先找 BAdI；沒有才用 Implicit Enhancement（Post-Exit、隱藏 UI 元素），最後才考慮 Overwrite-Exit；停用增強只能靠 Switch Framework（SFW1/2/5），升級衝突用 SPAU_ENH。</i></li>
+    <li><b>（Unit 10）</b>動態建立 UI 元素的程式只能寫在哪個方法？為什麼通常要判斷 first_time？在該方法中可以改 Context 嗎？<br><i>要點：View 的 wddomodifyview( )；每次 round trip 都會跑，避免重建；不可以，應視 Context 為唯讀。</i></li>
+    <li><b>（Unit 11）</b>要顯示 ALV，Interface View 叫什麼名字？取得設定模型的方法與類別？<br><i>要點：元件 SALV_WD_TABLE 的 Interface View TABLE；get_model( ) 回傳 CL_SALV_WD_CONFIG_TABLE。</i></li>
+    <li><b>（Unit 12）</b>Select Options 20 的元件名與要嵌入的 View 名？要把輸入直接用在 WHERE … IN 應呼叫哪個方法？<br><i>要點：WD_SELECT_OPTIONS_20、W_SELECT_OPTIONS；get_input_complete_as_range，並以 ATTRIBUTE 欄找到對應 range。</i></li>
+    <li><b>（Unit 13）</b>開 Performance Monitor 的按鍵？為什麼在 PRD 按了沒反應？啟動 RAT 前必須先做什麼？<br><i>要點：Ctrl+Shift+Alt+P；需要 S_DEVELOP 除錯權限且 Client 不能是生產用（T000）；在 WD_TRACE_TOOL 為自己啟用並勾 WD Component Configuration（有效 30 分鐘）。</i></li>
+    <li><b>（綜合）</b>一個新專案要做「採購申請審核」網頁，團隊有人提議用 Web Dynpro。你怎麼回應？<br><i>要點：S/4HANA 新開發建議 CDS＋RAP＋Fiori Elements；Web Dynpro 在 ABAP Cloud 不可用、非 SAP UX 主軸；若因既有元件非用不可，邏輯一律放全域類別，為日後轉 RAP 預留。</i></li>
+  </ol>
+</section>

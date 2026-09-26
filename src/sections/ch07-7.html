@@ -1,0 +1,767 @@
+<section class="chapter" id="ch07-7" data-title="OOP 範例庫（七）：綜合實戰——報表變式呼叫框架與 IoT 生產訂單收貨">
+  <h2>第 7-7 章 OOP 範例庫（七）：綜合實戰——報表變式呼叫框架與 IoT 生產訂單收貨（書第 9 章）</h2>
+  <p class="lede">書的最後一章把前面學的類別、介面、繼承、多型、工廠模式與 RTTI 拿來做兩個「真的會上線」的小系統：一個是<b>用類別封裝 SUBMIT 與變式、再用 OO 日誌記錄執行結果的報表批次呼叫框架</b>（ZCL_CALL_REPORT_VARIANTS），另一個是<b>把 IoT 計數感測器的資料轉成生產訂單收貨（BAPI_GOODSMVT_CREATE）、再依訂單類型由工廠類別決定工時計算類別</b>的製造場景。本章逐支改寫 9.01～9.11，並把範例裡藏著的幾個真實 bug（日誌層級、數字型別長度、BAPI 回傳檢查、空參照）一一抓出來。</p>
+  <div class="meta">
+    <div><b>核心 TCODE</b><span class="tcode">SE24</span><span class="tcode">SE38</span><span class="tcode">SLG0</span><span class="tcode">SLG1</span><span class="tcode">SE91</span><span class="tcode">SM37</span><span class="tcode">SP01</span><span class="tcode">QA07</span><span class="tcode">MIGO</span><span class="tcode">MB51</span><span class="tcode">CO03</span><span class="tcode">SM30</span></div>
+    <div><b>關鍵物件</b>ZCL_CALL_REPORT_VARIANTS、VARI、VARID、VARIT、PRI_PARAMS、GET_PRINT_PARAMETERS、CF_RECA_MESSAGE_LIST、IF_RECA_MESSAGE_LIST、RECAMSG、CF_RECA_STORABLE、CL_ABAP_UNIT_ASSERT、ZIF_DATA_UPLOAD、ZCL_SENSOR、ZCL_NUM_SENSOR、ZCL_SAMPLER、ZCL_PRD_ORDER、BAPI_GOODSMVT_CREATE、BAPI_TRANSACTION_COMMIT、BAPI_TRANSACTION_ROLLBACK、BAPI2017_GM_HEAD_01、BAPI2017_GM_CODE、BAPI2017_GM_ITEM_CREATE、BAPIRET2、CL_ABAP_CLASSDESCR、CL_ABAP_TYPEDESCR、ABAP_ATTRDESCR_TAB、AUFK</div>
+  </div>
+
+  <h3 id="ch07-7-01">1. 範例索引</h3>
+  <p>本章負責書中第 9 章的 11 支隨書範例（檔名 <span class="kw">ABAP_OOP_Sample_9.xx.txt</span>）。書本內文不在素材資料夾裡，類別之間的關係是從範例程式本身的宣告推回來的；範例中沒出現、只存在於書本內文的類別名稱，本章會明確標為「示意名」。</p>
+  <table>
+    <thead><tr><th>編號</th><th>原 REPORT／類別／方法</th><th>主題一句話</th><th>本章講解</th></tr></thead>
+    <tbody>
+      <tr><td>9.01</td><td>ZCL_CALL_REPORT_VARIANTS→CALL_REPORT_BY_VARIANT</td><td>迴圈 SUBMIT 每個變式送 Spool，用巨集組訊息寫日誌</td><td><a href="#ch07-7-05">第 5 節</a>、<a href="#ch07-7-06">第 6 節</a></td></tr>
+      <tr><td>9.02</td><td>ZCL_CALL_REPORT_VARIANTS（完整類別）</td><td>建構子建立 RECA 日誌物件、GET_REPORT_VARIANTS 查 VARI／VARIT、SAVE_LOG 存日誌</td><td><a href="#ch07-7-03">第 3 節</a>～<a href="#ch07-7-06">第 6 節</a></td></tr>
+      <tr><td>9.03</td><td>REPORT ZRP_OOP_CALL_REP_VARI</td><td>呼叫端：輸入報表、等待秒數、變式描述關鍵字，建立物件後依序執行</td><td><a href="#ch07-7-07">第 7 節</a></td></tr>
+      <tr><td>9.04</td><td>METHOD GET_VALUE</td><td>被測方法：輸入值乘以 100</td><td><a href="#ch07-7-08">第 8 節</a></td></tr>
+      <tr><td>9.05</td><td>METHOD TEST_GET_VALUE</td><td>ABAP Unit 測試方法，用 CL_AUNIT_ASSERT 斷言 6 → 600</td><td><a href="#ch07-7-08">第 8 節</a></td></tr>
+      <tr><td>9.06</td><td>ZIF_DATA_UPLOAD~UPLOAD_GOODS_RECEIPT_NUMBER（計數感測器實作）</td><td>呼叫 BAPI_GOODSMVT_CREATE，無錯誤才 BAPI_TRANSACTION_COMMIT</td><td><a href="#ch07-7-10">第 10 節</a></td></tr>
+      <tr><td>9.07</td><td>METHOD GET_ORDER_INSTANCE（工廠類別）</td><td>用 CL_ABAP_CLASSDESCR 讀「註冊類別」的屬性，依訂單類型動態建立處理類別</td><td><a href="#ch07-7-12">第 12 節</a></td></tr>
+      <tr><td>9.08</td><td>ZCL_SAMPLER→CONSTRUCTOR</td><td>建立工廠物件、清空感測器內表</td><td><a href="#ch07-7-09">第 9 節</a></td></tr>
+      <tr><td>9.09</td><td>ZCL_SAMPLER→UPLOAD_GOODS_RECEIPT_NUMBER</td><td>逐一感測器組 101／F 收貨明細，向下轉型後呼叫介面方法</td><td><a href="#ch07-7-11">第 11 節</a></td></tr>
+      <tr><td>9.10</td><td>ZCL_SAMPLER→CAL_WORK_HOUR</td><td>由 AUFK 取訂單類型 AUART，交工廠取得處理類別後多型呼叫工時計算</td><td><a href="#ch07-7-13">第 13 節</a></td></tr>
+      <tr><td>9.11</td><td>REPORT ZREP_CLS_IOT</td><td>主程式：模擬三個計數感測器的流資料，上傳收貨並計算工時</td><td><a href="#ch07-7-14">第 14 節</a></td></tr>
+    </tbody>
+  </table>
+  <div class="note">本章與 <a href="#ch05-2">5-2 章（BC401 ABAP Objects）</a>互補：ABAP Unit 的原廠觀念見 <a href="#ch05-2-17">5-2 第 17 節</a>，Factory／Singleton 見 <a href="#ch05-2-19">5-2 第 19 節</a>，RTTI 與動態程式設計見 <a href="#ch05-2-20">5-2 第 20 節</a>；BAPI 與 COMMIT 的完整規則見 <a href="#ch04-1-09">4-1 第 9 節</a>；SUBMIT 與背景作業見 <a href="#ch04-4-15">4-4 第 15 節</a>。本章重點是「書中範例＋設計原則的實作」。</div>
+
+  <h3 id="ch07-7-02">2. 第 9 章全景：兩個綜合案例的類別關係</h3>
+  <p><b>觀念</b>：綜合實戰的價值不在單一語法，而在「責任怎麼切」。兩個案例各自示範了一種切法：</p>
+  <table>
+    <thead><tr><th>案例</th><th>類別／介面</th><th>責任</th><th>用到的 OO 觀念</th></tr></thead>
+    <tbody>
+      <tr><td rowspan="2">報表變式呼叫框架</td><td>ZCL_CALL_REPORT_VARIANTS</td><td>找變式、逐一 SUBMIT、寫應用日誌</td><td>封裝（把 SUBMIT、VARI 查詢、日誌 API 藏在類別裡）、建構子初始化</td></tr>
+      <tr><td>ZRP_OOP_CALL_REP_VARI</td><td>只負責收參數與呼叫</td><td>呼叫端與實作分離</td></tr>
+      <tr><td rowspan="6">IoT 生產訂單收貨</td><td>ZCL_SENSOR</td><td>感測器父類別，持有 <span class="kw">MV_SENSOR_ID</span></td><td>繼承</td></tr>
+      <tr><td>ZCL_NUM_SENSOR</td><td>計數感測器，實作 ZIF_DATA_UPLOAD</td><td>介面實作</td></tr>
+      <tr><td>ZIF_DATA_UPLOAD</td><td>定義「上傳收貨數量」這個能力</td><td>依賴抽象（DIP）</td></tr>
+      <tr><td>ZCL_SAMPLER</td><td>採樣器：管理多個感測器、協調收貨與工時計算</td><td>組合、向下轉型</td></tr>
+      <tr><td>工廠類別（屬性名 <span class="kw">MO_FACTORY_PRD</span>，類別名為示意）＋註冊類別（屬性名 <span class="kw">MO_PRD_TYPE</span>）</td><td>依訂單類型 AUART 決定要建立哪個處理類別</td><td>工廠模式、RTTI、動態建立物件</td></tr>
+      <tr><td>ZCL_PRD_ORDER 及其子類別</td><td>各訂單類型自己的工時計算 <span class="kw">CAL_WORK_HOUR</span></td><td>多型（重定義）</td></tr>
+    </tbody>
+  </table>
+  <p>IoT 案例的執行流程：主程式（9.11）建立採樣器與三個計數感測器 → 採樣器逐一感測器組收貨明細（9.09）→ 感測器呼叫 BAPI 過帳 101 收貨（9.06）→ 採樣器讀 AUFK 取得訂單類型（9.10）→ 工廠用 RTTI 查註冊類別、動態建立處理類別（9.07）→ 多型呼叫 <span class="kw">CAL_WORK_HOUR</span>。</p>
+  <div class="tip">這兩個案例都是「先標準再客製」的好教材：報表框架沒有改任何標準程式，只是用標準的變式＋SUBMIT＋應用日誌組合出新能力；IoT 案例的過帳也完全走標準 BAPI，而不是自己寫 MSEG/MATDOC。Casper 的原則：<b>標準設定 → BAdI／Enhancement Spot → Enhancement Point → 修改標準</b>，每往右一步升級成本高一個量級。</div>
+
+  <h3 id="ch07-7-03">3. 報表變式呼叫框架：ZCL_CALL_REPORT_VARIANTS 的類別定義（9.02）</h3>
+  <p><b>觀念</b>：很多標準報表（例如 <span class="tcode">QA07</span> 週期檢驗觸發、MRP 相關清單）要用十幾個變式分批跑。原作者的想法是：把「變式的報表名稱、描述關鍵字、每個變式之間的等待秒數」當成物件屬性，讓一個類別負責「找出這組變式 → 逐一執行 → 記錄日誌」，排程時只要排一支呼叫程式。</p>
+  <p><b>範例（改寫後）</b>：公開介面只留建構子與兩個動作方法；日誌物件、訊息結構、變式內表全部 PRIVATE。</p>
+  <pre><code class="abap">CLASS zcl_call_report_variants DEFINITION
+  PUBLIC FINAL CREATE PUBLIC.
+
+  PUBLIC SECTION.
+    TYPES:
+      BEGIN OF ty_report_variant,
+        report  TYPE varid-report,
+        variant TYPE varid-variant,
+        desc    TYPE varit-vtext,
+      END OF ty_report_variant,
+      tt_report_variant TYPE STANDARD TABLE OF ty_report_variant WITH EMPTY KEY,
+      tt_variant        TYPE STANDARD TABLE OF varid-variant WITH EMPTY KEY.
+
+    CONSTANTS:
+      c_log_object    TYPE balobj_d  VALUE 'Z_OOP_LOG',   " SLG0 建立
+      c_log_subobject TYPE balsubobj VALUE 'REPORT',
+      c_msgid         TYPE symsgid   VALUE 'Z_OOP_MSG'.   " SE91 建立
+
+    METHODS constructor
+      IMPORTING iv_rep_id         TYPE varid-report
+                iv_wait           TYPE i       DEFAULT 5
+                iv_variant_desc_c TYPE char20  OPTIONAL
+                it_variants       TYPE tt_variant OPTIONAL   " 列舉優先
+                iv_log_level      TYPE i       DEFAULT 9.
+    METHODS get_report_variants
+      RETURNING VALUE(rt_variants) TYPE tt_report_variant.
+    METHODS call_report_by_variant.
+
+  PRIVATE SECTION.
+    DATA mv_rep_id         TYPE varid-report.
+    DATA mv_wait           TYPE i.
+    DATA mv_variant_desc_c TYPE char20.
+    DATA mt_variants_in    TYPE tt_variant.
+    DATA mv_log_level      TYPE i.
+    DATA mi_msglist        TYPE REF TO if_reca_message_list.
+    DATA mt_report_variant TYPE tt_report_variant.
+    DATA ms_print_params   TYPE pri_params.
+
+    METHODS add_msg
+      IMPORTING iv_msgty TYPE symsgty
+                iv_msgno TYPE symsgno
+                iv_v1    TYPE clike OPTIONAL
+                iv_v2    TYPE clike OPTIONAL
+                iv_v3    TYPE clike OPTIONAL
+                iv_v4    TYPE clike OPTIONAL
+                iv_level TYPE i DEFAULT 3.
+    METHODS save_log.
+ENDCLASS.</code></pre>
+  <p><b>與原範例的差異</b>：</p>
+  <ul>
+    <li>原範例把 <span class="kw">MV_REP_ID</span>、<span class="kw">MV_WAIT</span>、<span class="kw">MV_VARIANT_DESC_C</span> 放在 PUBLIC SECTION 當公開屬性，外部可以隨意改；改寫版改成 PRIVATE，只能透過建構子設定（封裝）。</li>
+    <li><b>型別 bug</b>：原範例 <span class="kw">DATA mv_wait TYPE n</span> 沒寫長度，數字文字型別 n 未指定長度時預設長度為 1。呼叫端 9.03 的 <span class="kw">p_wait</span> 是 <span class="kw">n LENGTH 3</span>，輸入 30 秒時 <span class="kw">'030'</span> 指派給 n(1) 會被從左邊截掉只剩 <span class="kw">'0'</span>，接著被「IS INITIAL 就設 5」蓋掉——也就是說 10 秒以上的設定全部失效。改寫版直接用 <span class="kw">TYPE i</span>。</li>
+    <li>原範例的變式內表型別名 <span class="kw">ty_tab_report_variant</span> 是無鍵的 STANDARD TABLE（隱含預設鍵），改寫版明寫 <span class="kw">WITH EMPTY KEY</span>。</li>
+    <li>新增 <span class="kw">it_variants</span>（直接列舉變式）與 <span class="kw">iv_log_level</span>（日誌層級改成可設定，原範例寫死 9）。</li>
+  </ul>
+  <p><b>實務提醒</b>：訊息類別 <span class="kw">Z_OOP_MSG</span> 要先在 <span class="tcode">SE91</span> 建好，002 號訊息內容建議設成 <span class="kw">&amp;1&amp;2&amp;3&amp;4</span>；日誌物件 <span class="kw">Z_OOP_LOG</span>／子物件 <span class="kw">REPORT</span> 要先在 <span class="tcode">SLG0</span> 建立，否則存日誌會失敗。</p>
+
+  <h3 id="ch07-7-04">4. 找出要跑的變式：VARID／VARIT 與「描述分組」（9.02 GET_REPORT_VARIANTS；勘誤第 10 條）</h3>
+  <p><b>觀念</b>：原範例的分組方式是「在變式描述（VARIT-VTEXT）裡放一個組別代碼」，執行時用 <span class="kw">LIKE '%代碼%'</span> 把同組變式一次撈出來。書中第 352 頁以 <span class="tcode">QA07</span> 為例：把 QA07 的變式命名為 <span class="kw">QA07_G02_04</span> 這類名稱，並把<b>描述（Description）</b>設成「G02」，執行時輸入 G02 就能跑完這一組。</p>
+  <div class="warn"><b>勘誤表第 10 條</b>：原書第 352 頁此句括號中的英文單字有誤，應為 <b>Description</b>——「僅需將新的參數存入 QA07 的參數如 QA07_G02_04，並將描述（Description）設定成為『G02』，儲存即可」。這裡的「參數」指的就是報表變式（Variant）。QA07 在 <span class="tcode">SE93</span> 對應的報表程式名稱，請以你的系統為準後再填入 <span class="kw">p_rep_id</span>。</div>
+  <p><b>範例（改寫後）</b>：</p>
+  <pre><code class="abap">METHOD get_report_variants.
+  " 列舉模式：呼叫端直接給變式清單（Casper：列舉優於模糊比對）
+  IF mt_variants_in IS NOT INITIAL.
+    SELECT d~report, d~variant, t~vtext AS desc
+      FROM varid AS d
+      LEFT OUTER JOIN varit AS t
+        ON  t~report  = d~report
+        AND t~variant = d~variant
+        AND t~langu   = @sy-langu
+      FOR ALL ENTRIES IN @mt_variants_in
+      WHERE d~report  = @mv_rep_id
+        AND d~variant = @mt_variants_in-table_line
+      INTO TABLE @mt_report_variant.
+  ELSE.
+    " 描述分組模式（原書作法）：描述含關鍵字的變式
+    DATA(lv_pattern) = |%{ condense( mv_variant_desc_c ) }%|.
+    SELECT d~report, d~variant, t~vtext AS desc
+      FROM varid AS d
+      INNER JOIN varit AS t
+        ON  t~report  = d~report
+        AND t~variant = d~variant
+      WHERE d~report  = @mv_rep_id
+        AND t~langu   = @sy-langu
+        AND t~vtext   LIKE @lv_pattern
+        AND d~variant NOT LIKE '&amp;%'          " 排除 &amp; 開頭的系統變式
+      INTO TABLE @mt_report_variant.
+  ENDIF.
+
+  " HANA 沒有預設排序：FOR ALL ENTRIES 不能搭 ORDER BY，一律在 ABAP 端排序
+  SORT mt_report_variant BY variant.
+  DELETE ADJACENT DUPLICATES FROM mt_report_variant COMPARING variant.
+  rt_variants = mt_report_variant.
+ENDMETHOD.</code></pre>
+  <p><b>與原範例的差異</b>：</p>
+  <ul>
+    <li><b>會重複加 % 的 bug</b>：原範例用 <span class="kw">CONCATENATE '%' mv_variant_desc_c '%' INTO mv_variant_desc_c</span> 直接改寫屬性本身，同一個物件第二次呼叫就變成 <span class="kw">%%G02%%</span>；而且 CHAR20 放滿 20 字再加兩個 % 會被截斷。改寫版用區域變數＋字串範本。</li>
+    <li><b>語言寫死</b>：原範例 <span class="kw">varit~langu = 'E'</span>，在繁中登入（ZF）維護的變式描述永遠找不到；改用 <span class="kw">@sy-langu</span>（若公司規定變式描述一律用英文維護，才保留 'E' 並寫成常數說明原因）。</li>
+    <li><b>VARI → VARID</b>：原範例從 VARI（變式內容的叢集式資料表，要加 <span class="kw">RELID = 'VA'</span>）去 JOIN；變式的目錄其實是 <b>VARID</b>，改寫版改讀 VARID，意圖更清楚。</li>
+    <li><b>LOOP 中 DELETE</b>：原範例 SELECT 完再 <span class="kw">LOOP … IF variant(1) EQ '&amp;' … DELETE TABLE … FROM</span>，改寫版把條件下推到 WHERE（<span class="kw">NOT LIKE '&amp;%'</span>）。</li>
+    <li>原範例的 <span class="kw">ORDER BY vari~variant</span> 是對的（HANA 沒有預設排序，變式執行順序才會穩定）；改寫版因為列舉模式用 FOR ALL ENTRIES 不能 ORDER BY，統一在 ABAP 端 SORT。</li>
+  </ul>
+  <div class="warn"><b>列舉比模糊比對安全</b>（Casper 實務經驗第 2 條的延伸）：<span class="kw">LIKE '%G02%'</span> 也會抓到描述是「G020」「G02 停用」「舊G02備份」的變式，一旦有人複製變式改描述，就會多跑一組；而描述拼錯一個字又會漏跑。跟 BT 區間比字典序的問題是同一類——<b>比的是字串，不是業務語意</b>。正式排程請用 <span class="kw">it_variants</span> 列舉變式清單，或建一張 Z 設定表（組別 → 變式，用 <span class="tcode">SM30</span> 維護）。</div>
+
+  <h3 id="ch07-7-05">5. 以 SUBMIT 逐一執行變式並送 Spool（9.01／9.02 CALL_REPORT_BY_VARIANT）</h3>
+  <p><b>觀念</b>：<span class="kw">SUBMIT (動態程式名) USING SELECTION-SET 變式 TO SAP-SPOOL SPOOL PARAMETERS … WITHOUT SPOOL DYNPRO AND RETURN</span>——以變式執行指定報表，清單輸出直接進 Spool（<span class="tcode">SP01</span> 可查），不跳列印對話框，執行完回到呼叫端。</p>
+  <pre><code class="abap">METHOD call_report_by_variant.
+  IF mt_report_variant IS INITIAL.
+    add_msg( iv_msgty = 'W' iv_msgno = '002' iv_v1 = 'No variant found for ' iv_v2 = mv_rep_id iv_level = 1 ).
+    save_log( ).
+    RETURN.
+  ENDIF.
+
+  " 先取得一組有效的列印參數（原範例直接傳空白的 PRI_PARAMS）
+  DATA lv_valid TYPE c LENGTH 1.
+  CALL FUNCTION 'GET_PRINT_PARAMETERS'
+    EXPORTING
+      no_dialog      = abap_true
+      immediately    = abap_false
+      release        = abap_false
+    IMPORTING
+      out_parameters = ms_print_params
+      valid          = lv_valid
+    EXCEPTIONS
+      OTHERS         = 1.
+  IF sy-subrc &lt;&gt; 0 OR lv_valid IS INITIAL.
+    add_msg( iv_msgty = 'E' iv_msgno = '002' iv_v1 = 'Invalid print parameters' iv_level = 1 ).
+    save_log( ).
+    RETURN.
+  ENDIF.
+
+  LOOP AT mt_report_variant INTO DATA(ls_var).
+    DATA(lv_idx) = sy-tabix.          " SUBMIT 之後 sy-tabix 不可靠，先記下
+    SUBMIT (mv_rep_id)
+      USING SELECTION-SET ls_var-variant
+      TO SAP-SPOOL
+      SPOOL PARAMETERS ms_print_params
+      WITHOUT SPOOL DYNPRO
+      AND RETURN.
+
+    add_msg( iv_msgty = 'I' iv_msgno = '002'
+             iv_v1 = 'Program ' iv_v2 = mv_rep_id
+             iv_v3 = 'submitted with variant ' iv_v4 = ls_var-variant
+             iv_level = 3 ).
+
+    IF mv_wait &gt; 0 AND lv_idx &lt; lines( mt_report_variant ).
+      WAIT UP TO mv_wait SECONDS.     " 只為了錯開負載，不是等報表跑完
+    ENDIF.
+  ENDLOOP.
+
+  save_log( ).                        " 全部跑完再一次存檔
+ENDMETHOD.</code></pre>
+  <p><b>與原範例的差異</b>：</p>
+  <ul>
+    <li>原範例宣告了 <span class="kw">ls_print_par TYPE pri_params</span> 卻從未填值就傳給 SUBMIT；空白的列印參數（沒有輸出裝置等）在背景執行時很容易失敗或進到預設印表機。改寫版先用 <span class="kw">GET_PRINT_PARAMETERS</span>（<span class="kw">NO_DIALOG</span>）取得有效參數並檢查 <span class="kw">VALID</span>。</li>
+    <li>原範例把 SUBMIT 包在 <span class="kw">TRY … CATCH cx_root</span> 裡，以為被呼叫的報表出錯可以「記一筆 E 再繼續下一個變式」。實際上<b>被 SUBMIT 的程式內部發生的執行期錯誤會直接中止並產生 <span class="tcode">ST22</span> 短傾印，不會回到呼叫端的 CATCH</b>；報表若用 <span class="kw">MESSAGE … TYPE 'E'</span> 結束也只是回到呼叫端，SUBMIT 本身不會拋例外。所以原範例的 E 訊息分支幾乎不會發生，改寫版拿掉這個假安全感。</li>
+    <li>原範例記的 I 訊息是「runs with variant」，但 SUBMIT … AND RETURN 回來只代表「程式跑完回來了」，不代表結果正確；改寫版的訊息改成「submitted」，避免誤導看日誌的人。</li>
+    <li><span class="kw">WAIT UP TO n SECONDS</span>：SUBMIT … AND RETURN 本來就是同步的，不需要等報表完成；原範例每個變式後都 WAIT（包括最後一個）。另外 WAIT 會觸發<b>隱含資料庫提交</b>並讓出工作程序，放在交易邏輯中間要小心。</li>
+    <li><span class="kw">IF mv_wait IS INITIAL. mv_wait = 5.</span> 在迴圈內重複執行，改寫版移到建構子的 DEFAULT 5。</li>
+  </ul>
+  <div class="tip">變式很多、每支都要跑很久時，與其在一個對話程序裡 SUBMIT … AND RETURN 串行執行，不如每個變式開一個背景作業：<span class="kw">JOB_OPEN</span> → <span class="kw">SUBMIT … VIA JOB … AND RETURN</span> → <span class="kw">JOB_CLOSE</span>，交給 <span class="tcode">SM37</span> 監控（見 <a href="#ch04-4-15">4-4 第 15 節</a>）。這樣單一變式失敗不會拖垮整批，也能平行執行。</div>
+
+  <h3 id="ch07-7-06">6. OO 日誌：巨集 vs 私有方法、RECA 訊息清單與 SLG1（9.01／9.02 SAVE_LOG、CONSTRUCTOR）</h3>
+  <p><b>觀念</b>：原範例用 <span class="kw">CF_RECA_MESSAGE_LIST=&gt;CREATE</span> 建立一個 <span class="kw">IF_RECA_MESSAGE_LIST</span> 物件（這是 RE-FX 套件提供、對應用日誌 BAL 的 OO 包裝），傳入日誌物件 <span class="kw">Z_OOP_LOG</span>（<span class="tcode">SLG0</span>）、子物件 <span class="kw">REPORT</span> 與外部識別 <span class="kw">OO_CALL_REP</span>；每筆訊息是一個 <span class="kw">RECAMSG</span> 結構（MSGTY／MSGID／MSGNO／MSGV1~4／DETLEVEL），最後 <span class="kw">STORE</span> 存進資料庫、<span class="kw">CF_RECA_STORABLE=&gt;COMMIT( )</span> 提交，事後用 <span class="tcode">SLG1</span> 依物件／子物件／外部識別查詢。</p>
+  <p>書中另一個重點是<b>日誌層級</b>：1 表示最概略、9 表示最細節；只有訊息層級 ≤ 系統設定層級（原範例寫死 9）才寫入，用來節省資源。</p>
+  <pre><code class="abap">METHOD constructor.
+  mv_rep_id         = iv_rep_id.
+  mv_wait           = iv_wait.
+  mv_variant_desc_c = iv_variant_desc_c.
+  mt_variants_in    = it_variants.
+  mv_log_level      = iv_log_level.
+
+  " 建立日誌物件（SLG0：Z_OOP_LOG / REPORT，外部識別 OO_CALL_REP）
+  mi_msglist = cf_reca_message_list=&gt;create(
+                 id_object    = c_log_object
+                 id_subobject = c_log_subobject
+                 id_extnumber = |OO_CALL_REP { iv_rep_id }| ).
+
+  get_report_variants( ).
+ENDMETHOD.
+
+METHOD add_msg.
+  " 取代原範例的 DEFINE macro_build_msg
+  IF iv_level &gt; mv_log_level.
+    RETURN.                       " 比系統層級更細的訊息不記錄
+  ENDIF.
+  mi_msglist-&gt;add( is_message = VALUE recamsg( msgty    = iv_msgty
+                                              msgid    = c_msgid
+                                              msgno    = iv_msgno
+                                              msgv1    = iv_v1
+                                              msgv2    = iv_v2
+                                              msgv3    = iv_v3
+                                              msgv4    = iv_v4
+                                              detlevel = CONV #( iv_level ) ) ).
+ENDMETHOD.
+
+METHOD save_log.
+  mi_msglist-&gt;store( EXPORTING  if_in_update_task = abap_false
+                     EXCEPTIONS error             = 1
+                                OTHERS            = 2 ).
+  IF sy-subrc &lt;&gt; 0.
+    " 日誌存不進去也要讓人知道：至少寫一筆系統日誌或丟給呼叫端
+    MESSAGE |Application log for { mv_rep_id } could not be saved| TYPE 'S' DISPLAY LIKE 'E'.
+    RETURN.
+  ENDIF.
+  cf_reca_storable=&gt;commit( ).
+ENDMETHOD.</code></pre>
+  <p><b>與原範例的差異</b>：</p>
+  <ul>
+    <li><b>巨集 → 私有方法</b>：原範例在方法裡 <span class="kw">DEFINE macro_build_msg … END-OF-DEFINITION</span>，用 &amp;1～&amp;7 帶入訊息類型、編號、四個變數與層級。巨集無法除錯單步進入、沒有型別檢查、ADT 也無法重構，SAP 的 Clean ABAP 指引建議改用方法。改寫版的 <span class="kw">add_msg</span> 參數有名字、有型別、有預設值。</li>
+    <li><b>日誌層級的邏輯 bug</b>：原巨集只有在「層級通過」時才 <span class="kw">CLEAR ms_msg</span> 並填值，但呼叫端不論有沒有通過都接著 <span class="kw">CALL METHOD me-&gt;save_log( ms_msg )</span>。一旦某筆訊息被層級過濾掉，<b>存進去的會是上一筆殘留的 ms_msg</b>（重複一筆舊訊息）。原範例層級寫死 9、訊息層級都是 3 所以沒爆出來，一調低層級就會出錯。改寫版在 <span class="kw">add_msg</span> 內直接 RETURN。</li>
+    <li><b>每筆訊息都 STORE＋COMMIT</b>：原範例每個變式都呼叫一次 <span class="kw">save_log</span>，也就是每筆訊息各做一次存檔與資料庫提交；改寫版在迴圈結束後一次存。原範例 <span class="kw">IF sy-subrc &lt;&gt; 0. "出錯時不處理</span> 把錯誤吞掉，改寫版至少回報。</li>
+    <li>原範例宣告了 <span class="kw">lv_msgid</span>、<span class="kw">lv_msg_text</span>、<span class="kw">lv_exref</span> 但沒使用或用途重複，改寫版改成類別常數。</li>
+    <li><span class="kw">CALL METHOD cf_reca_message_list=&gt;create EXPORTING … RECEIVING ro_instance = mi_msglist</span> 改成函數式呼叫。</li>
+  </ul>
+  <div class="warn"><b>S/4HANA 注意</b>：<span class="kw">CF_RECA_STORABLE=&gt;COMMIT( )</span> 會提交<b>整個 LUW</b>，不只日誌。如果這個類別日後被放進會寫業務資料的流程，日誌存檔會把尚未確認的業務資料一起提交。較新的版本（ABAP Cloud／較新的 S/4HANA 版次）SAP 提供 <span class="kw">CL_BALI_LOG</span> 系列的應用日誌 API，可用 <span class="kw">SAVE_LOG</span> 的「第二連線」存檔而不影響業務 LUW；1809 環境則可直接用 <span class="kw">BAL_LOG_CREATE</span>／<span class="kw">BAL_LOG_MSG_ADD</span>／<span class="kw">BAL_DB_SAVE</span>（<span class="kw">I_2TH_CONNECTION</span>）。採用前請在你的系統確認可用的類別與參數。</div>
+
+  <h3 id="ch07-7-07">7. 呼叫端程式 ZRP_OOP_CALL_REP_VARI（9.03）</h3>
+  <p><b>觀念</b>：呼叫端只做三件事——收參數、建物件、叫方法。所有「怎麼找變式、怎麼執行、怎麼記日誌」都在類別裡，排程（<span class="tcode">SM36</span>）時只要排這支程式＋一個變式。</p>
+  <pre><code class="abap">REPORT zrp_oop_call_rep_vari.
+
+PARAMETERS: p_rep_id TYPE varid-report OBLIGATORY,
+            p_wait   TYPE i DEFAULT 5,
+            p_var_c  TYPE char20.
+DATA gv_vari TYPE varid-variant.
+SELECT-OPTIONS s_vari FOR gv_vari NO INTERVALS.   " 只允許單值列舉
+
+START-OF-SELECTION.
+  " 只接受 I / EQ 的單值，符合「列舉優於區間」
+  DATA(lt_variants) = VALUE zcl_call_report_variants=&gt;tt_variant(
+                        FOR ls_sel IN s_vari WHERE ( sign = 'I' AND option = 'EQ' )
+                        ( CONV #( ls_sel-low ) ) ).
+
+  IF lt_variants IS INITIAL AND p_var_c IS INITIAL.
+    MESSAGE '請輸入變式清單或變式描述關鍵字' TYPE 'S' DISPLAY LIKE 'E'.
+    RETURN.
+  ENDIF.
+
+  DATA(lo_runner) = NEW zcl_call_report_variants(
+                      iv_rep_id         = p_rep_id
+                      iv_wait           = p_wait
+                      iv_variant_desc_c = p_var_c
+                      it_variants       = lt_variants ).
+  lo_runner-&gt;call_report_by_variant( ).</code></pre>
+  <p><b>與原範例的差異</b>：</p>
+  <ul>
+    <li><span class="kw">CREATE OBJECT go_call_report_variants EXPORTING …</span> 改成 <span class="kw">NEW zcl_call_report_variants( … )</span> 內嵌宣告；原範例建立後 <span class="kw">IF … IS BOUND</span> 的檢查是多餘的（建立失敗會拋例外，不會回來一個空參照）。</li>
+    <li>原範例要呼叫端依序呼叫 <span class="kw">get_report_variants( )</span> 再 <span class="kw">call_report_by_variant( )</span>，順序錯了就什麼都不跑；改寫版在建構子內先查好變式（呼叫端仍可呼叫 <span class="kw">get_report_variants( )</span> 取回清單預覽）。</li>
+    <li>原範例 <span class="kw">p_wait TYPE n LENGTH 3</span> 與類別屬性 <span class="kw">TYPE n</span>（長度 1）不一致，是第 3 節提到的截斷 bug 的來源。</li>
+    <li>新增 <span class="kw">s_vari</span>（NO INTERVALS）讓使用者直接列舉變式。SELECT-OPTIONS 需要一個參照對象，所以先宣告 <span class="kw">DATA gv_vari TYPE varid-variant</span> 再 <span class="kw">FOR gv_vari</span>；使用者仍可在多重選擇裡輸入排除或萬用字元，程式只取 I／EQ 的單值。</li>
+  </ul>
+  <div class="note">選擇畫面文字（p_rep_id 等）請用 <span class="tcode">SE38</span> 的 Goto → Text Elements → Selection Texts 維護，並勾選字典參照。</div>
+
+  <h3 id="ch07-7-08">8. 為類別加上 ABAP Unit（9.04／9.05）</h3>
+  <p><b>觀念</b>：9.04 是被測方法 <span class="kw">GET_VALUE</span>（<span class="kw">rv_result = iv_value * 100</span>），9.05 是對應的測試方法 <span class="kw">TEST_GET_VALUE</span>：建立被測物件、呼叫 <span class="kw">get_value( 6 )</span>、斷言結果等於 600。書在綜合實戰章放這兩支，是要說明「框架型的類別一定要能自動化測試」。範例檔只有兩個方法本體，被測類別與測試類別的名稱在書本內文，以下用 <span class="kw">ZCL_CALCULATE</span>、<span class="kw">LTC_CALCULATE</span> 當示意名。</p>
+  <pre><code class="abap">" 被測類別（示意名 ZCL_CALCULATE）
+CLASS zcl_calculate DEFINITION PUBLIC FINAL CREATE PUBLIC.
+  PUBLIC SECTION.
+    METHODS get_value
+      IMPORTING iv_value         TYPE i
+      RETURNING VALUE(rv_result) TYPE i.
+ENDCLASS.
+
+CLASS zcl_calculate IMPLEMENTATION.
+  METHOD get_value.
+    rv_result = iv_value * 100.
+  ENDMETHOD.
+ENDCLASS.
+
+" 本機測試類別（SE24 → Local Test Classes，或 ADT 的 Test Classes 分頁）
+CLASS ltc_calculate DEFINITION FINAL
+  FOR TESTING RISK LEVEL HARMLESS DURATION SHORT.
+  PRIVATE SECTION.
+    DATA mo_cut TYPE REF TO zcl_calculate.      " cut = class under test
+    METHODS setup.
+    METHODS value_6_returns_600   FOR TESTING.
+    METHODS value_0_returns_0     FOR TESTING.
+    METHODS negative_value_scaled FOR TESTING.
+ENDCLASS.
+
+CLASS ltc_calculate IMPLEMENTATION.
+  METHOD setup.
+    mo_cut = NEW #( ).                          " 每個測試方法前都重建
+  ENDMETHOD.
+
+  METHOD value_6_returns_600.
+    cl_abap_unit_assert=&gt;assert_equals( exp = 600
+                                        act = mo_cut-&gt;get_value( 6 )
+                                        msg = |6 × 100 應為 600| ).
+  ENDMETHOD.
+
+  METHOD value_0_returns_0.
+    cl_abap_unit_assert=&gt;assert_equals( exp = 0 act = mo_cut-&gt;get_value( 0 ) ).
+  ENDMETHOD.
+
+  METHOD negative_value_scaled.
+    cl_abap_unit_assert=&gt;assert_equals( exp = -300 act = mo_cut-&gt;get_value( -3 ) ).
+  ENDMETHOD.
+ENDCLASS.</code></pre>
+  <p><b>與原範例的差異</b>：</p>
+  <ul>
+    <li><span class="kw">CL_AUNIT_ASSERT</span> 是舊版斷言類別，已被 <span class="kw">CL_ABAP_UNIT_ASSERT</span> 取代（參數相同：EXP／ACT／MSG）。</li>
+    <li>原範例在測試方法內 <span class="kw">CREATE OBJECT mo_calculate</span> 再 <span class="kw">IF mo_calculate IS BOUND</span>：萬一沒建成，測試會「什麼都沒斷言就通過」，是測試的大忌。改寫版把建立放到 <span class="kw">SETUP</span>，並拿掉 IS BOUND 的保護。</li>
+    <li>測試類別加上 <span class="kw">RISK LEVEL HARMLESS DURATION SHORT</span>，並多寫邊界值（0、負數）。</li>
+  </ul>
+  <div class="tip">要測本章的 ZCL_CALL_REPORT_VARIANTS 或 ZCL_SAMPLER 這種會 SUBMIT、會打 BAPI、會 COMMIT 的類別，不能直接在單元測試裡跑真的過帳。做法是把外部依賴抽成介面（例如「過帳服務」「日誌服務」），測試時注入 Test Double——這正是第 9 節 ZIF_DATA_UPLOAD 設計的價值。原廠做法見 <a href="#ch05-2-17">5-2 第 17 節</a>。</div>
+
+  <h3 id="ch07-7-09">9. IoT 案例架構：感測器、介面與採樣器（9.08，及 9.11 的型別）</h3>
+  <p><b>觀念</b>：產線上有多個計數感測器，各自回報「這段時間產出多少」。書中以選擇畫面模擬流資料（Streaming）處理的結果，每個感測器一筆「感測器 ID、收貨數量 ERFMG、單位 ERFME」。感測器父類別 <span class="kw">ZCL_SENSOR</span> 只負責識別；「能上傳收貨數量」這個能力定義在介面 <span class="kw">ZIF_DATA_UPLOAD</span>，由計數感測器 <span class="kw">ZCL_NUM_SENSOR</span> 實作；採樣器 <span class="kw">ZCL_SAMPLER</span> 管理感測器清單並持有工廠物件。</p>
+  <pre><code class="abap">INTERFACE zif_data_upload PUBLIC.
+  TYPES:
+    tt_gm_item TYPE STANDARD TABLE OF bapi2017_gm_item_create WITH EMPTY KEY,
+    BEGIN OF ty_gr_result,
+      success  TYPE abap_bool,
+      mat_doc  TYPE bapi2017_gm_head_ret-mat_doc,
+      doc_year TYPE bapi2017_gm_head_ret-doc_year,
+      return   TYPE bapiret2_t,
+    END OF ty_gr_result.
+
+  METHODS upload_goods_receipt_number
+    IMPORTING is_goodsmvt_header TYPE bapi2017_gm_head_01
+              is_goodsmvt_code   TYPE bapi2017_gm_code
+              it_goodsmvt_item   TYPE tt_gm_item
+    RETURNING VALUE(rs_result)   TYPE ty_gr_result.
+ENDINTERFACE.
+
+CLASS zcl_sensor DEFINITION PUBLIC CREATE PUBLIC.
+  PUBLIC SECTION.
+    METHODS constructor IMPORTING iv_sensor_id TYPE char10.
+    DATA mv_sensor_id TYPE char10 READ-ONLY.
+ENDCLASS.
+
+CLASS zcl_sensor IMPLEMENTATION.
+  METHOD constructor.
+    mv_sensor_id = iv_sensor_id.
+  ENDMETHOD.
+ENDCLASS.
+
+CLASS zcl_num_sensor DEFINITION PUBLIC
+  INHERITING FROM zcl_sensor CREATE PUBLIC.
+  PUBLIC SECTION.
+    INTERFACES zif_data_upload.
+ENDCLASS.
+
+CLASS zcl_sampler DEFINITION PUBLIC CREATE PUBLIC.
+  PUBLIC SECTION.
+    TYPES:
+      BEGIN OF ty_sensor,
+        sensor    TYPE REF TO zcl_sensor,
+        gr_number TYPE erfmg,
+        gr_unit   TYPE erfme,
+      END OF ty_sensor,
+      tt_sensor TYPE STANDARD TABLE OF ty_sensor WITH EMPTY KEY,
+      BEGIN OF ty_log,
+        sensor_id TYPE char10,
+        success   TYPE abap_bool,
+        mat_doc   TYPE mblnr,
+        doc_year  TYPE mjahr,
+        message   TYPE bapi_msg,
+      END OF ty_log,
+      tt_log TYPE STANDARD TABLE OF ty_log WITH EMPTY KEY.
+
+    METHODS constructor.
+    METHODS add_sensor
+      IMPORTING io_sensor    TYPE REF TO zcl_sensor
+                iv_gr_number TYPE erfmg
+                iv_gr_unit   TYPE erfme.
+    METHODS upload_goods_receipt_number
+      IMPORTING iv_order_number TYPE aufnr
+                iv_gr_plant     TYPE werks_d
+                iv_gr_material  TYPE matnr
+                iv_gr_sloc      TYPE lgort_d
+                iv_gr_batch     TYPE charg_d OPTIONAL
+      RETURNING VALUE(rt_log)   TYPE tt_log.
+    METHODS cal_work_hour
+      IMPORTING iv_order_number TYPE aufnr
+      RETURNING VALUE(rv_found) TYPE abap_bool
+      RAISING   cx_sy_create_object_error.
+
+  PRIVATE SECTION.
+    DATA mt_sensor      TYPE tt_sensor.
+    DATA mo_factory_prd TYPE REF TO zcl_prd_order_factory.   " 示意名
+    DATA mo_prd_order   TYPE REF TO zcl_prd_order.
+ENDCLASS.
+
+CLASS zcl_sampler IMPLEMENTATION.
+  METHOD constructor.                      " 9.08
+    mo_factory_prd = NEW #( ).
+  ENDMETHOD.
+
+  METHOD add_sensor.
+    APPEND VALUE #( sensor = io_sensor gr_number = iv_gr_number gr_unit = iv_gr_unit )
+      TO mt_sensor.
+  ENDMETHOD.
+  " upload_goods_receipt_number → 第 11 節；cal_work_hour → 第 13 節
+ENDCLASS.</code></pre>
+  <p><b>與原範例的差異</b>：</p>
+  <ul>
+    <li>9.08 原寫 <span class="kw">CREATE OBJECT mo_factory_prd. REFRESH mt_sensor.</span>：建構子執行時屬性本來就是初始值，<span class="kw">REFRESH</span> 多餘（而且 REFRESH 已屬過時寫法，要清空請用 <span class="kw">CLEAR</span>）。</li>
+    <li>9.11 主程式直接 <span class="kw">INSERT gs_sensor INTO TABLE go_sampler-&gt;mt_sensor</span>，代表 mt_sensor 是公開可寫的屬性，破壞封裝；而且主程式自己又定義了一個同名 <span class="kw">ty_sensor</span> 型別，兩邊結構一改就不相容。改寫版把 mt_sensor 改 PRIVATE，提供 <span class="kw">add_sensor</span> 方法。</li>
+    <li>介面方法原本是 CHANGING <span class="kw">ct_goodsmvt_item</span>／<span class="kw">ct_return</span>、沒有回傳物料文件號碼；改寫版改成 RETURNING 一個結果結構（成功旗標、物料文件、年度、BAPIRET2 表），呼叫端不必再自己判讀。</li>
+    <li>感測器 ID 改成建構子參數＋<span class="kw">READ-ONLY</span>，不讓外部在建立後任意改。</li>
+    <li>工廠類別在範例檔中只看得到屬性名 <span class="kw">mo_factory_prd</span>，<span class="kw">ZCL_PRD_ORDER_FACTORY</span> 是本章為了示範取的名字。</li>
+  </ul>
+
+  <h3 id="ch07-7-10">10. 物料移動：BAPI_GOODSMVT_CREATE 與 COMMIT（9.06）</h3>
+  <p><b>觀念</b>：生產訂單收貨＝移動類型 <b>101</b>、移動標識 <b>MVT_IND = 'F'</b>（對生產訂單）、GM_CODE <b>'02'</b>（對生產訂單收貨，相當於 <span class="tcode">MB31</span> / <span class="tcode">MIGO</span> 的 Goods Receipt for Order）。BAPI 本身<b>不提交</b>，必須由呼叫端判讀 RETURN 後呼叫 <span class="kw">BAPI_TRANSACTION_COMMIT</span>，否則物料文件不會真的寫進資料庫。</p>
+  <pre><code class="abap">METHOD zif_data_upload~upload_goods_receipt_number.
+  DATA lt_item    TYPE STANDARD TABLE OF bapi2017_gm_item_create.
+  DATA lt_return  TYPE STANDARD TABLE OF bapiret2.
+  DATA ls_headret TYPE bapi2017_gm_head_ret.
+  DATA ls_commit  TYPE bapiret2.
+
+  lt_item = it_goodsmvt_item.        " TABLES 參數需要可修改的標準表
+
+  CALL FUNCTION 'BAPI_GOODSMVT_CREATE'
+    EXPORTING
+      goodsmvt_header  = is_goodsmvt_header
+      goodsmvt_code    = is_goodsmvt_code
+    IMPORTING
+      goodsmvt_headret = ls_headret
+    TABLES
+      goodsmvt_item    = lt_item
+      return           = lt_return.
+
+  " E（錯誤）、A（中止）、X（當機）都算失敗——不是只看 E
+  DATA(lv_failed) = xsdbool( line_exists( lt_return[ type = 'E' ] )
+                          OR line_exists( lt_return[ type = 'A' ] )
+                          OR line_exists( lt_return[ type = 'X' ] )
+                          OR ls_headret-mat_doc IS INITIAL ).
+
+  IF lv_failed = abap_true.
+    CALL FUNCTION 'BAPI_TRANSACTION_ROLLBACK'.
+    rs_result = VALUE #( success = abap_false return = lt_return ).
+    RETURN.
+  ENDIF.
+
+  CALL FUNCTION 'BAPI_TRANSACTION_COMMIT'
+    EXPORTING
+      wait   = abap_true              " 等更新工作完成才回來
+    IMPORTING
+      return = ls_commit.
+
+  IF ls_commit-type CA 'EAX'.
+    APPEND ls_commit TO lt_return.
+    rs_result = VALUE #( success = abap_false return = lt_return ).
+    RETURN.
+  ENDIF.
+
+  rs_result = VALUE #( success  = abap_true
+                       mat_doc  = ls_headret-mat_doc
+                       doc_year = ls_headret-doc_year
+                       return   = lt_return ).
+ENDMETHOD.</code></pre>
+  <p><b>與原範例的差異</b>：</p>
+  <ul>
+    <li><b>只檢查 'E'</b>：原範例 <span class="kw">LOOP AT ct_return … IF ls_return-type EQ 'E'</span>，類型 <b>A（Abort）</b>的訊息會被當成成功而直接 COMMIT。改寫版 E／A／X 都算失敗，並以「有沒有拿到物料文件號碼」做第二道確認。</li>
+    <li><b>失敗沒有 ROLLBACK</b>：原範例有錯時什麼都不做，改寫版明確呼叫 <span class="kw">BAPI_TRANSACTION_ROLLBACK</span>，避免殘留的緩衝區影響同一個 LUW 裡的下一次呼叫（下一個感測器）。</li>
+    <li><b>COMMIT 的回傳沒看</b>：<span class="kw">WAIT = 'X'</span> 時 <span class="kw">BAPI_TRANSACTION_COMMIT</span> 的 RETURN 會帶回更新任務的錯誤，原範例沒接。</li>
+    <li>原範例的旗標變數 <span class="kw">le TYPE bapi_mtype</span> 命名不清楚，改成 <span class="kw">lv_failed</span>（<span class="kw">xsdbool</span>）；<span class="kw">'X'</span> 改成 <span class="kw">abap_true</span>。</li>
+  </ul>
+  <div class="warn"><b>Casper 實務經驗：BAPI 一定要檢查回傳</b>。「沒有 E 就 COMMIT」是最常見的線上事故來源之一：A 類訊息、COMMIT 階段的更新錯誤、以及「RETURN 是空的但也沒產生文件」這三種情況都會讓程式以為成功。完整規則與 BAPIRET2 欄位說明見 <a href="#ch04-1-09">4-1 第 9 節</a>。</div>
+
+  <h3 id="ch07-7-11">11. 採樣器上傳收貨：逐一感測器組明細並呼叫介面（9.09）</h3>
+  <p><b>觀念</b>：採樣器不關心每個感測器「怎麼」上傳，只問它「會不會」上傳——也就是有沒有實作 <span class="kw">ZIF_DATA_UPLOAD</span>。原範例用 <span class="kw">?=</span> 向下轉型成 <span class="kw">ZCL_NUM_SENSOR</span>，轉型失敗就 <span class="kw">CATCH cx_sy_move_cast_error</span> 跳過。</p>
+  <pre><code class="abap">METHOD upload_goods_receipt_number.
+  LOOP AT mt_sensor INTO DATA(ls_sensor).
+    " 7.50+：先用 IS INSTANCE OF 判斷，比 CATCH 轉型錯誤清楚
+    IF ls_sensor-sensor IS NOT INSTANCE OF zif_data_upload.
+      APPEND VALUE #( sensor_id = ls_sensor-sensor-&gt;mv_sensor_id
+                      success   = abap_false
+                      message   = 'Sensor does not support GR upload' ) TO rt_log.
+      CONTINUE.
+    ENDIF.
+
+    DATA(lo_uploader) = CAST zif_data_upload( ls_sensor-sensor ).
+
+    DATA(ls_result) = lo_uploader-&gt;upload_goods_receipt_number(
+      is_goodsmvt_header = VALUE #( pstng_date = sy-datum
+                                    doc_date   = sy-datum
+                                    header_txt = |IoT { ls_sensor-sensor-&gt;mv_sensor_id }| )
+      is_goodsmvt_code   = VALUE #( gm_code = '02' )          " 對生產訂單收貨
+      it_goodsmvt_item   = VALUE #( (
+          material_long = iv_gr_material                    " S/4HANA 40 碼物料號碼
+          plant         = iv_gr_plant
+          stge_loc      = iv_gr_sloc
+          batch         = iv_gr_batch
+          move_type     = '101'                              " 生產訂單收貨
+          mvt_ind       = 'F'                                " 對生產訂單
+          orderid       = iv_order_number
+          entry_qnt     = ls_sensor-gr_number
+          entry_uom     = ls_sensor-gr_unit
+          item_text     = ls_sensor-sensor-&gt;mv_sensor_id ) ) ).
+
+    APPEND VALUE #(
+      sensor_id = ls_sensor-sensor-&gt;mv_sensor_id
+      success   = ls_result-success
+      mat_doc   = ls_result-mat_doc
+      doc_year  = ls_result-doc_year
+      message   = COND #( WHEN ls_result-success = abap_true
+                          THEN |GR posted { ls_result-mat_doc }/{ ls_result-doc_year }|
+                          ELSE VALUE #( ls_result-return[ type = 'E' ]-message
+                                        DEFAULT VALUE #( ls_result-return[ 1 ]-message OPTIONAL ) ) ) )
+      TO rt_log.
+  ENDLOOP.
+ENDMETHOD.</code></pre>
+  <p><b>與原範例的差異</b>：</p>
+  <ul>
+    <li><b>RETURN 表沒有每輪清空</b>：原範例 <span class="kw">REFRESH lt_goodsmvt_item</span> 每輪清空明細，卻沒有清空 <span class="kw">lt_return</span>，又用 CHANGING 傳進 9.06。若 BAPI 不在內部自行清空 RETURN，第一個感測器的錯誤會一路讓後面每一個感測器都被判為失敗——是否清空取決於 BAPI 內部實作，程式不該賭這件事。改寫版每次呼叫都用全新的結果結構。</li>
+    <li><b>不管成敗都印「上傳完成」</b>：原範例呼叫後無條件 <span class="kw">WRITE: / '傳感器:' … ',生產收貨數據上傳完成.'</span>；改寫版回傳每個感測器的成敗與物料文件號碼，交給主程式用 SALV 顯示。</li>
+    <li><b>轉型目標太具體</b>：原範例轉成 <span class="kw">ZCL_NUM_SENSOR</span>（具體類別）再呼叫 <span class="kw">zif_data_upload~</span> 方法，等於採樣器依賴具體類別；日後加入「重量感測器」也實作同一介面時還得改採樣器。改寫版轉成介面型別，符合依賴反轉與開放封閉原則。原範例的 <span class="kw">CATCH cx_sy_move_cast_error</span> 是空的，默默跳過也不留紀錄。</li>
+    <li><b>MATERIAL → MATERIAL_LONG</b>：S/4HANA 物料號碼擴充為 40 碼，<span class="kw">BAPI2017_GM_ITEM_CREATE</span> 新增 <span class="kw">MATERIAL_LONG</span>；舊欄位 <span class="kw">MATERIAL</span>（18 碼）只為相容保留，物料號碼超過 18 碼時必須用新欄位。</li>
+    <li>表頭與 GM_CODE 原本在迴圈內每輪重設，改寫版用 <span class="kw">VALUE #( )</span> 一次組好；<span class="kw">CALL METHOD … EXPORTING … CHANGING …</span> 改成函數式呼叫。</li>
+  </ul>
+  <div class="tip">真實 IoT 產線很少直接打 101 收貨，更常見的是以<b>訂單確認</b>（例如 <span class="tcode">CO11N</span> 對應的確認 BAPI）觸發自動收貨與倒沖（Backflush），讓工時、耗用、收貨在同一個業務動作中完成；另外若訂單的控制碼設定為自動收貨，再手動打 101 會出錯。採用哪一種請先和 PP 顧問確認標準流程——先標準，再客製。</div>
+
+  <h3 id="ch07-7-12">12. 工廠模式＋RTTI：CL_ABAP_CLASSDESCR 依訂單類型建立處理類別（9.07）</h3>
+  <p><b>觀念</b>：不同訂單類型（AUART）的工時計算規則不同，每種規則一個 <span class="kw">ZCL_PRD_ORDER</span> 子類別。原範例的巧思是做一個「註冊類別」（屬性 <span class="kw">MO_PRD_TYPE</span>）：它的<b>每個屬性名稱就是一個訂單類型、屬性值就是處理類別名稱</b>。工廠用 <span class="kw">CL_ABAP_CLASSDESCR=&gt;DESCRIBE_BY_OBJECT_REF</span> 取得註冊類別的屬性清單（<span class="kw">ABAP_ATTRDESCR_TAB</span>），找到與訂單類型同名的屬性後，<span class="kw">ASSIGN obj-&gt;(屬性名)</span> 取值，再 <span class="kw">CREATE OBJECT … TYPE (類別名)</span> 動態建立物件。新增訂單類型時只要在註冊類別加一個屬性、再寫一個子類別。</p>
+  <pre><code class="abap">METHOD get_order_instance.
+  " iv_order_type TYPE aufk-auart；回傳 ro_prd_order TYPE REF TO zcl_prd_order
+  DATA(lo_registry) = NEW zcl_prd_type( ).               " 註冊類別（示意名）
+  DATA(lo_descr)    = CAST cl_abap_classdescr(
+                        cl_abap_typedescr=&gt;describe_by_object_ref( lo_registry ) ).
+
+  DATA(lv_attr) = to_upper( condense( iv_order_type ) ).  " RTTI 的屬性名一律大寫
+  IF NOT line_exists( lo_descr-&gt;attributes[ name = lv_attr ] ).
+    RAISE EXCEPTION TYPE cx_sy_create_object_error
+      EXPORTING classname = CONV #( |ORDER TYPE { iv_order_type }| ).
+  ENDIF.
+
+  ASSIGN lo_registry-&gt;(lv_attr) TO FIELD-SYMBOL(&lt;lv_class&gt;).
+  IF sy-subrc &lt;&gt; 0.
+    RAISE EXCEPTION TYPE cx_sy_create_object_error
+      EXPORTING classname = CONV #( lv_attr ).
+  ENDIF.
+
+  DATA(lv_class) = to_upper( CONV string( &lt;lv_class&gt; ) ).  " 類別名必須大寫
+  " NEW 只能用靜態型別；「型別名稱在執行期才知道」時仍要用 CREATE OBJECT … TYPE (…)
+  CREATE OBJECT ro_prd_order TYPE (lv_class).              " 失敗時拋 CX_SY_CREATE_OBJECT_ERROR 給呼叫端
+  mo_prd_order = ro_prd_order.
+ENDMETHOD.</code></pre>
+  <p><b>與原範例的差異</b>：</p>
+  <ul>
+    <li>原範例每次都 <span class="kw">CREATE OBJECT mo_prd_type</span> 再 <span class="kw">LOOP AT gt_attr_desc</span> 逐筆比對名稱；改寫版直接用 <span class="kw">line_exists( lo_descr-&gt;attributes[ name = … ] )</span>。原範例區域變數用 <span class="kw">gt_</span>／<span class="kw">gs_</span>（全域）前綴，命名不一致，改寫版改內嵌宣告。</li>
+    <li>原範例找不到對應屬性時什麼都不做，回傳一個<b>空參照</b>；呼叫端 9.10 接著呼叫 <span class="kw">mo_prd_order-&gt;cal_work_hour( )</span> 就會 <span class="kw">CX_SY_REF_IS_INITIAL</span> 短傾印。改寫版明確拋例外。</li>
+    <li>原範例在工廠方法內 <span class="kw">CATCH cx_sy_create_object_error</span> 後 <span class="kw">MESSAGE exc_text TYPE 'I'</span>：類別方法不應該自己彈出對話框（背景作業、RFC、Fiori 呼叫都沒有畫面），改寫版把例外往上拋，由 UI 層決定怎麼顯示。</li>
+    <li><span class="kw">mo_class_desc ?= …</span> 改成 <span class="kw">CAST cl_abap_classdescr( … )</span>；<span class="kw">TRANSLATE … TO UPPER CASE</span> 改成 <span class="kw">to_upper( )</span>。</li>
+    <li>這裡保留 <span class="kw">CREATE OBJECT … TYPE (lv_class)</span> 不是疏忽：<span class="kw">NEW</span> 運算子的型別必須在編譯期已知，動態類別名只能用 CREATE OBJECT。</li>
+  </ul>
+  <div class="warn"><b>設計評論</b>：「屬性名＝訂單類型」這招有三個限制——(1) ABAP 屬性名必須以字母開頭，數字開頭的訂單類型無法註冊；(2) 每新增一個訂單類型就要修改並傳輸註冊類別，其實沒有做到開放封閉；(3) 對應關係藏在程式裡，業務顧問看不到。實務上建議改成一張 Z 設定表（AUART → 類別名，<span class="tcode">SM30</span> 維護，逐筆<b>列舉</b>訂單類型，不要用區間），或者乾脆用 BAdI（多個實作＋過濾值 AUART），這才是 SAP 標準的「依條件選實作」機制（見 <a href="#ch03-4">3-4 章</a>）。若改讀設定表，<span class="kw">SELECT SINGLE</span> 要帶完整主鍵；只帶部分鍵時 HANA 沒有預設排序，每次抓到的「第一筆」可能不同。</div>
+
+  <h3 id="ch07-7-13">13. 依訂單類型計算工時：多型呼叫（9.10）</h3>
+  <p><b>觀念</b>：採樣器由生產訂單號碼查 <span class="kw">AUFK-AUART</span>，把訂單類型交給工廠取得處理物件，再呼叫 <span class="kw">cal_work_hour( )</span>——實際執行哪一個子類別的實作，由執行期物件決定（多型）。採樣器從頭到尾只認識抽象的 <span class="kw">ZCL_PRD_ORDER</span>。</p>
+  <pre><code class="abap">METHOD cal_work_hour.
+  SELECT SINGLE FROM aufk
+    FIELDS auart
+    WHERE aufnr = @iv_order_number          " AUFNR 是完整主鍵，SELECT SINGLE 結果唯一
+    INTO @DATA(lv_auart).
+  IF sy-subrc &lt;&gt; 0.
+    rv_found = abap_false.              " 類別不彈訊息，交給呼叫端決定怎麼顯示
+    RETURN.
+  ENDIF.
+  rv_found = abap_true.
+
+  mo_prd_order = mo_factory_prd-&gt;get_order_instance( lv_auart ).   " 失敗會拋例外
+  mo_prd_order-&gt;cal_work_hour( ).                                  " 多型：依子類別執行
+ENDMETHOD.
+
+" 抽象父類別與一個子類別（示意）
+CLASS zcl_prd_order DEFINITION PUBLIC ABSTRACT CREATE PUBLIC.
+  PUBLIC SECTION.
+    METHODS cal_work_hour ABSTRACT.
+ENDCLASS.
+
+CLASS zcl_prd_order_pp01 DEFINITION PUBLIC
+  INHERITING FROM zcl_prd_order CREATE PUBLIC.
+  PUBLIC SECTION.
+    METHODS cal_work_hour REDEFINITION.
+ENDCLASS.
+
+CLASS zcl_prd_order_pp01 IMPLEMENTATION.
+  METHOD cal_work_hour.
+    " 標準生產訂單的工時規則寫在這裡
+  ENDMETHOD.
+ENDCLASS.</code></pre>
+  <p><b>與原範例的差異</b>：</p>
+  <ul>
+    <li>原範例宣告了 <span class="kw">iv_prod_id TYPE aufk-aufnr</span>（在方法內用 iv_ 前綴宣告區域變數，而且完全沒用到）和 <span class="kw">lv_class</span>（也沒用到），改寫版刪除。</li>
+    <li><span class="kw">SELECT SINGLE auart FROM aufk INTO lv_prod_type WHERE aufnr = IV_ORDER_NUMBER</span> 缺 <span class="kw">@</span> 主機變數，改成 ABAP SQL 嚴格模式寫法。</li>
+    <li>原範例拿到 <span class="kw">mo_prd_order</span> 後沒檢查是否為空就呼叫方法（見第 12 節），改寫版由工廠保證「要嘛回傳有效物件，要嘛拋例外」。</li>
+    <li>「覆蓋」與「重載」的用語請依勘誤表第 3 條：ABAP 子類別重新實作父類別方法叫 <b>Redefinition（覆寫，Overriding）</b>，ABAP 沒有同名不同參數的 Overloading（詳見 <a href="#ch07-3">7-3 章</a>）。</li>
+  </ul>
+  <div class="note">生產訂單號碼 AUFNR 有 ALPHA 轉換（內部 12 碼補前導零）。選擇畫面參照 <span class="kw">AUFNR</span> 時會自動轉換；若訂單號碼來自外部檔案或 IoT 平台，務必先 <span class="kw">|{ lv_aufnr ALPHA = IN }|</span> 再查詢，否則永遠查不到。</div>
+
+  <h3 id="ch07-7-14">14. 主程式 ZREP_CLS_IOT：模擬三個感測器的流資料（9.11）</h3>
+  <p><b>觀念</b>：主程式以四個選擇畫面區塊模擬輸入——區塊 1 是生產訂單、工廠、物料、儲存地點、批次；區塊 2～4 各是一個計數感測器的 ID、收貨數量、單位（模擬從流資料處理類別取得的收貨資料）。建立採樣器與感測器後，先上傳收貨、再計算工時。</p>
+  <pre><code class="abap">REPORT zrep_cls_iot.
+
+SELECTION-SCREEN BEGIN OF BLOCK b1 WITH FRAME TITLE TEXT-t01.   " 生產訂單資料
+  PARAMETERS: p_prd   TYPE aufnr   OBLIGATORY,
+              p_plant TYPE werks_d OBLIGATORY,
+              p_pmat  TYPE matnr   OBLIGATORY,
+              p_psloc TYPE lgort_d OBLIGATORY,
+              p_batch TYPE charg_d.
+SELECTION-SCREEN END OF BLOCK b1.
+
+SELECTION-SCREEN BEGIN OF BLOCK b2 WITH FRAME TITLE TEXT-t02.   " 計數感測器 1
+  PARAMETERS: p_p1sor TYPE char10, p_p1num TYPE erfmg, p_p1uit TYPE erfme.
+SELECTION-SCREEN END OF BLOCK b2.
+SELECTION-SCREEN BEGIN OF BLOCK b3 WITH FRAME TITLE TEXT-t03.   " 計數感測器 2
+  PARAMETERS: p_p2sor TYPE char10, p_p2num TYPE erfmg, p_p2uit TYPE erfme.
+SELECTION-SCREEN END OF BLOCK b3.
+SELECTION-SCREEN BEGIN OF BLOCK b4 WITH FRAME TITLE TEXT-t04.   " 計數感測器 3
+  PARAMETERS: p_p3sor TYPE char10, p_p3num TYPE erfmg, p_p3uit TYPE erfme.
+SELECTION-SCREEN END OF BLOCK b4.
+
+START-OF-SELECTION.
+  TYPES: BEGIN OF ty_input,
+           id   TYPE char10,
+           qty  TYPE erfmg,
+           unit TYPE erfme,
+         END OF ty_input,
+         ty_input_tab TYPE STANDARD TABLE OF ty_input WITH EMPTY KEY.
+
+  DATA(lo_sampler) = NEW zcl_sampler( ).
+
+  " 三個感測器用一個表驅動，未輸入 ID 或數量為 0 的略過
+  DATA(lt_input) = VALUE ty_input_tab( ( id = p_p1sor qty = p_p1num unit = p_p1uit )
+                                       ( id = p_p2sor qty = p_p2num unit = p_p2uit )
+                                       ( id = p_p3sor qty = p_p3num unit = p_p3uit ) ).
+  LOOP AT lt_input INTO DATA(ls_in) WHERE id IS NOT INITIAL AND qty &gt; 0.
+    lo_sampler-&gt;add_sensor( io_sensor    = NEW zcl_num_sensor( ls_in-id )
+                            iv_gr_number = ls_in-qty
+                            iv_gr_unit   = ls_in-unit ).
+  ENDLOOP.
+
+  DATA(lt_log) = lo_sampler-&gt;upload_goods_receipt_number(
+                   iv_order_number = p_prd
+                   iv_gr_plant     = p_plant
+                   iv_gr_material  = p_pmat
+                   iv_gr_sloc      = p_psloc
+                   iv_gr_batch     = p_batch ).
+
+  TRY.
+      IF lo_sampler-&gt;cal_work_hour( p_prd ) = abap_false.
+        MESSAGE |生產訂單 { p_prd ALPHA = OUT } 不存在| TYPE 'S' DISPLAY LIKE 'E'.
+      ENDIF.
+    CATCH cx_sy_create_object_error INTO DATA(lx_create).
+      MESSAGE lx_create-&gt;get_text( ) TYPE 'S' DISPLAY LIKE 'E'.
+  ENDTRY.
+
+  TRY.
+      cl_salv_table=&gt;factory( IMPORTING r_salv_table = DATA(lo_alv)
+                              CHANGING  t_table      = lt_log ).
+      lo_alv-&gt;get_functions( )-&gt;set_all( abap_true ).
+      lo_alv-&gt;get_columns( )-&gt;set_optimize( abap_true ).
+      lo_alv-&gt;display( ).
+    CATCH cx_salv_msg INTO DATA(lx_salv).
+      MESSAGE lx_salv-&gt;get_text( ) TYPE 'I'.
+  ENDTRY.</code></pre>
+  <p><b>與原範例的差異</b>：</p>
+  <ul>
+    <li>原範例的區塊標題寫 <span class="kw">WITH FRAME TITLE title_h1</span>，但程式中從未給 <span class="kw">title_h1</span>～<span class="kw">title_h4</span> 賦值（沒有 INITIALIZATION），畫面上框線標題是空白；改寫版用文字元素 <span class="kw">TEXT-t01</span>～<span class="kw">t04</span>。</li>
+    <li>原範例三個感測器各寫一段 <span class="kw">CREATE OBJECT go_num_sensor_0x</span>＋五行賦值＋<span class="kw">INSERT … INTO TABLE go_sampler-&gt;mt_sensor</span>，重複三次；改寫版用表驅動 <span class="kw">LOOP AT VALUE …( )</span>，並略過空白的感測器（原範例空白感測器也會送一筆數量 0 的收貨去 BAPI）。</li>
+    <li>原範例宣告了 <span class="kw">go_prd_order TYPE REF TO zcl_prd_order</span> 卻沒用到；沒有 <span class="kw">START-OF-SELECTION</span> 事件（宣告以外的敘述隱含屬於 START-OF-SELECTION，能跑但可讀性差）。</li>
+    <li>9.10 原本沒有回傳值、查不到訂單就默默結束；改寫版 <span class="kw">cal_work_hour</span> 回傳 <span class="kw">rv_found</span>，訊息由主程式顯示（類別方法不彈訊息，與第 12 節同一原則）。</li>
+    <li>原範例用 <span class="kw">WRITE</span>／<span class="kw">SKIP</span> 輸出清單，改寫版以 <span class="kw">CL_SALV_TABLE</span> 顯示每個感測器的過帳結果。</li>
+    <li>原範例用一個大 <span class="kw">TRY … CATCH cx_sy_create_object_error</span> 包住全部；但這個例外在原範例的工廠方法內已經被吃掉，外層的 CATCH 實際上接不到。改寫版讓工廠往外拋，由主程式接。</li>
+    <li><span class="kw">p_plant TYPE werks</span> 改參照資料元素 <span class="kw">WERKS_D</span>。</li>
+  </ul>
+
+  <h3 id="ch07-7-15">15. 範例錯誤與改善總表</h3>
+  <table>
+    <thead><tr><th>範例</th><th>問題</th><th>後果</th><th>修正</th></tr></thead>
+    <tbody>
+      <tr><td>9.01／9.02</td><td>巨集過濾層級時不清空 ms_msg，但仍呼叫 save_log</td><td>調低層級後重複寫入上一筆訊息</td><td>改私有方法 add_msg，層級不符直接 RETURN</td></tr>
+      <tr><td>9.02</td><td><span class="kw">mv_wait TYPE n</span> 未指定長度（=1）</td><td>10 秒以上的等待被截斷後變成預設 5 秒</td><td>改 TYPE i</td></tr>
+      <tr><td>9.02</td><td>CONCATENATE '%' 寫回屬性本身</td><td>第二次呼叫變成 %%X%%；20 字描述被截斷</td><td>區域變數＋字串範本</td></tr>
+      <tr><td>9.02</td><td>VARIT-LANGU 寫死 'E'</td><td>非英文維護的變式描述找不到</td><td>sy-langu 或改用列舉</td></tr>
+      <tr><td>9.01／9.02</td><td>PRI_PARAMS 從未取得就傳給 SUBMIT</td><td>Spool 輸出裝置空白，背景可能失敗</td><td>GET_PRINT_PARAMETERS（NO_DIALOG）</td></tr>
+      <tr><td>9.01／9.02</td><td>以為 CATCH cx_root 能攔住被 SUBMIT 程式的錯誤</td><td>被呼叫程式短傾印時整批中止</td><td>改背景作業逐變式排程；日誌訊息改「submitted」</td></tr>
+      <tr><td>9.02</td><td>每筆訊息 STORE＋COMMIT；錯誤被吞掉</td><td>效能差、LUW 被意外提交</td><td>結束時一次存；錯誤回報</td></tr>
+      <tr><td>9.05</td><td>CL_AUNIT_ASSERT；IS BOUND 包住斷言</td><td>物件沒建成時測試「假通過」</td><td>CL_ABAP_UNIT_ASSERT＋SETUP</td></tr>
+      <tr><td>9.06</td><td>只檢查 type = 'E'；失敗不 ROLLBACK；COMMIT 回傳沒看</td><td>A 類訊息被當成功</td><td>E/A/X＋物料文件雙重確認，ROLLBACK</td></tr>
+      <tr><td>9.07</td><td>找不到訂單類型時回傳空參照；方法內 MESSAGE TYPE 'I'</td><td>9.10 呼叫時 CX_SY_REF_IS_INITIAL 短傾印；背景無畫面</td><td>拋例外給呼叫端</td></tr>
+      <tr><td>9.08</td><td>建構子內 REFRESH mt_sensor</td><td>多餘</td><td>刪除</td></tr>
+      <tr><td>9.09</td><td>lt_return 未每輪清空；不論成敗都 WRITE 完成；轉型成具體類別</td><td>錯誤訊息可能累積；誤導操作員；違反 DIP</td><td>每輪新結果結構；回傳日誌；轉型成介面</td></tr>
+      <tr><td>9.10</td><td>未使用的 iv_prod_id、lv_class；主機變數沒有 @</td><td>可讀性差</td><td>刪除；ABAP SQL 嚴格模式</td></tr>
+      <tr><td>9.11</td><td>框線標題變數未賦值；mt_sensor 公開可寫；go_prd_order 未使用；空白感測器也送 BAPI</td><td>畫面標題空白；封裝破壞；無意義的 BAPI 呼叫</td><td>TEXT-t01～t04；add_sensor；表驅動並略過空白</td></tr>
+      <tr><td>書 p352</td><td>括號內英文單字錯誤（勘誤表第 10 條）</td><td>—</td><td>應為 Description</td></tr>
+    </tbody>
+  </table>
+
+  <h3 id="ch07-7-16">16. 從綜合實戰回看 Casper 的三條實務經驗</h3>
+  <table>
+    <thead><tr><th>實務經驗</th><th>本章對應的地方</th><th>具體做法</th></tr></thead>
+    <tbody>
+      <tr><td><b>HANA 沒有預設排序</b></td><td>第 4 節變式清單的執行順序；第 12 節若改用設定表取處理類別</td><td>變式查詢一定 ORDER BY 或 ABAP 端 SORT；「取第一筆」的 SELECT SINGLE 要帶完整主鍵，否則先排序再取。成本評價抓 H／E 不穩定就是同一個坑（該案結論是固定抓 H）。</td></tr>
+      <tr><td><b>列舉優於區間</b></td><td>第 4、7 節變式用 LIKE '%G02%' 分組；第 12 節訂單類型對應</td><td>變式用 <span class="kw">s_vari</span>（NO INTERVALS）或設定表列舉；訂單類型對應表逐筆列 AUART，不寫 BT 區間。模糊比對與區間比的都是字串，不是業務語意。</td></tr>
+      <tr><td><b>先找標準，再想客製</b></td><td>第 2 節框架全用標準元件；第 10、11 節過帳走 BAPI；第 12 節「依條件選實作」</td><td>過帳一律用 BAPI 並檢查回傳；依訂單類型切換邏輯優先考慮 BAdI（過濾值）與設定表；收貨是否改走訂單確認＋自動收貨，先問 PP 標準流程。</td></tr>
+    </tbody>
+  </table>
+  <div class="tip">把本章兩個案例接起來就是一個很實用的組合：IoT 收貨程式做成可用變式執行的報表，再用 ZCL_CALL_REPORT_VARIANTS 依產線分組（列舉變式）排程，每次執行的結果寫進應用日誌，由 <span class="tcode">SLG1</span> 集中檢查——每一層都只用標準機制。</div>
+
+  <h3 id="ch07-7-qa">練習與自我檢核</h3>
+  <ol>
+    <li>原範例 <span class="kw">DATA mv_wait TYPE n</span>，呼叫端輸入 30，實際會等幾秒？為什麼？<br><i>參考答案要點</i>：n 未指定長度＝長度 1，'030' 指派給 n(1) 從左截斷剩 '0'，被視為 INITIAL 後改成 5，所以等 5 秒。</li>
+    <li>說明原巨集 <span class="kw">macro_build_msg</span> 在日誌層級過濾時會發生什麼錯誤，並寫出改成私有方法後的判斷式。<br><i>參考答案要點</i>：過濾時不 CLEAR、不填值，但仍 save_log，寫入上一筆殘留訊息；改成 <span class="kw">IF iv_level &gt; mv_log_level. RETURN. ENDIF.</span>。</li>
+    <li>為什麼 <span class="kw">TRY. SUBMIT … AND RETURN. CATCH cx_root.</span> 無法保證「一個變式失敗、其他繼續」？應該怎麼設計？<br><i>參考答案要點</i>：被呼叫程式的執行期錯誤直接短傾印、不回到呼叫端的 CATCH；改用 JOB_OPEN／SUBMIT VIA JOB／JOB_CLOSE 每個變式一個背景作業，SM37 監控。</li>
+    <li>寫出一段程式，判斷 BAPI_GOODSMVT_CREATE 是否成功，至少包含三個條件。<br><i>參考答案要點</i>：RETURN 沒有 E／A／X；GOODSMVT_HEADRET-MAT_DOC 不為空；BAPI_TRANSACTION_COMMIT（WAIT = abap_true）的 RETURN 沒有錯誤；失敗時 BAPI_TRANSACTION_ROLLBACK。</li>
+    <li>生產訂單收貨的移動類型、移動標識、GM_CODE 分別是什麼？S/4HANA 的物料號碼要填哪個欄位？<br><i>參考答案要點</i>：101、MVT_IND = 'F'、GM_CODE = '02'；MATERIAL_LONG（40 碼）。</li>
+    <li>9.07 的工廠為什麼不能用 <span class="kw">NEW</span> 取代 <span class="kw">CREATE OBJECT … TYPE (lv_type_name)</span>？<br><i>參考答案要點</i>：NEW 的型別必須在編譯期已知；動態類別名只能 CREATE OBJECT … TYPE (…)。</li>
+    <li>列出「屬性名＝訂單類型」註冊類別的三個限制，並提出兩種替代方案。<br><i>參考答案要點</i>：屬性名需字母開頭、新增類型要改程式並傳輸、對應關係業務看不到；替代：SM30 設定表（逐筆列舉 AUART）、BAdI 以 AUART 當過濾值。</li>
+    <li>9.09 中改用 <span class="kw">IS INSTANCE OF zif_data_upload</span> 並 CAST 成介面，而不是 <span class="kw">?=</span> 成 ZCL_NUM_SENSOR，符合哪兩個設計原則？<br><i>參考答案要點</i>：依賴反轉（依賴抽象不依賴具體）、開放封閉（新增感測器類型不必改採樣器）。</li>
+    <li>把 9.05 的測試改寫成使用 SETUP 與 CL_ABAP_UNIT_ASSERT，並說明原寫法「IF mo_calculate IS BOUND」的風險。<br><i>參考答案要點</i>：見第 8 節；物件沒建成時沒有任何斷言被執行，測試仍顯示通過。</li>
+    <li>勘誤表第 10 條更正的是什麼？在本章的框架中，這個「Description」扮演什麼角色？有什麼風險？<br><i>參考答案要點</i>：p352 括號中英文應為 Description；變式描述（VARIT-VTEXT）用來當分組關鍵字，GET_REPORT_VARIANTS 以 LIKE '%G02%' 撈同組變式；風險是模糊比對可能多抓或漏抓，正式排程應列舉變式。</li>
+  </ol>
+</section>

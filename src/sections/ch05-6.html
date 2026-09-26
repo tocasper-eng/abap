@@ -1,0 +1,1189 @@
+<section class="chapter" id="ch05-6" data-title="BC405 ABAP 報表程式設計（清單、選擇畫面、ALV）">
+  <h2>第 5-6 章 BC405 ABAP 報表程式設計（清單、選擇畫面、ALV）</h2>
+  <p class="lede">BC405 是 ABAP 開發者「寫報表」的正規課：從最早的 WRITE 經典清單、選擇畫面、邏輯資料庫（LDB），到自己用 ABAP SQL 取數、控制層小計、列印與背景作業、互動式清單，最後走到 ALV Grid Control 與 ALV Object Model（CL_SALV_TABLE）。本章依原課程單元順序整理强晟 2007 版筆記與 SAP 原廠 Col18 版教材，所有程式碼改寫成 S/4HANA 1809+（ABAP 7.53）可以直接用的寫法，並逐項標出哪些技術在 S/4HANA 已經過時、應該改用什麼。</p>
+
+  <div class="meta">
+    <div><b>核心 TCODE</b><span class="tcode">SE38</span><span class="tcode">SE80</span><span class="tcode">SE24</span><span class="tcode">SE51</span><span class="tcode">SE41</span><span class="tcode">SE36</span><span class="tcode">SE11</span><span class="tcode">LIBS</span><span class="tcode">BIBS</span><span class="tcode">SLIN</span><span class="tcode">SE43N</span><span class="tcode">RTTREE_MIGRATION</span><span class="tcode">SM36</span><span class="tcode">SM37</span><span class="tcode">SP01</span><span class="tcode">STVARVC</span><span class="tcode">SCI</span><span class="tcode">SAT</span><span class="tcode">ST05</span><span class="tcode">SQVI</span><span class="tcode">SQ01</span></div>
+    <div><b>關鍵物件</b>SPFLI、SFLIGHT、SBOOK、SCARR、TCURX、T006、TVARVC、LDBCB、SSCRFIELDS、BDCDATA、BDCMSGCOLL、CL_GUI_CUSTOM_CONTAINER、CL_GUI_DOCKING_CONTAINER、CL_GUI_DIALOGBOX_CONTAINER、CL_GUI_SPLITTER_CONTAINER、CL_GUI_EASY_SPLITTER_CONTAINER、CL_GUI_ALV_GRID、CL_ALV_EVENT_TOOLBAR_SET、CL_CTMENU、CL_SALV_TABLE、CL_SALV_COLUMNS_TABLE、CL_SALV_COLUMN_TABLE、LVC_T_FCAT、LVC_S_LAYO、LVC_T_SORT、LVC_T_SCOL、LVC_T_STYL、LVC_S_PRNT、DISVARIANT、UI_FUNCTIONS、LDB_PROCESS、GET_PRINT_PARAMETERS、SET_PRINT_PARAMETERS、ICON_CREATE、F4IF_INT_TABLE_VALUE_REQUEST、JOB_OPEN、JOB_CLOSE、S_ALV_LAYO</div>
+  </div>
+
+  <h3 id="ch05-6-01">1. 課程定位與教材對照</h3>
+  <p>本章取材兩份素材：<b>强晟《SAP BC405 課程中文自學筆記》v1.0（2007/7，140 頁，原課名 BC405: Techniques of List Creation）</b>與 <b>SAP 原廠 BC405《Programming ABAP Reports》Course Version 18（© 2022，5 天課，Material Number 50147782，288 頁）</b>。兩版的單元順序差很多：2007 版先講經典清單與 LDB，最後才有一個單元講 ALV Grid；Col18 版把 ALV 放到第 3～5 單元當主角，經典清單只剩 Unit 1 的一小節，控制層處理、Extract、互動式清單整個拿掉，另外新增「呼叫其他程式」與「ALV Object Model」兩個單元。</p>
+
+  <table>
+    <thead><tr><th>本章小節</th><th>强晟 2007 筆記（單元／頁碼）</th><th>原廠 Col18（Unit／Lesson／頁碼）</th></tr></thead>
+    <tbody>
+      <tr><td>2. 報表方案與 Include 結構</td><td>第一單元 p4</td><td>Unit 1 L1 Using Standard Reports p11–15；L2 Implementing a Simple List p17–20</td></tr>
+      <tr><td>3–4. 經典清單 WRITE、頁面、格式</td><td>第二單元 p5–23</td><td>Unit 1 L2 List Generation with WRITE p21–23（大幅縮減）</td></tr>
+      <tr><td>5. PARAMETERS／SELECT-OPTIONS</td><td>第三單元 p24–31</td><td>Unit 2 L1 p31–39</td></tr>
+      <tr><td>6. 選擇畫面設計、多畫面、Tabstrip、按鈕</td><td>第三單元 p32–33、p37</td><td>Unit 2 L1 p40–41；L2 p43–47；L4 p55–58</td></tr>
+      <tr><td>7. 選擇畫面事件、輸入檢查、F1/F4、變式</td><td>第三單元 p34–40</td><td>Unit 2 L1 p38–39；L3 p49–54</td></tr>
+      <tr><td>8. 邏輯資料庫 LDB</td><td>第四單元 p41–56；附錄 p136–139（LDB_PROCESS）</td><td>Unit 6 L1–L3 p185–204</td></tr>
+      <tr><td>9. 不用 LDB 自行取數（JOIN、FAE、聚合）</td><td>第五單元 p57–65</td><td>Unit 7 L1–L3 p209–226</td></tr>
+      <tr><td>10. 控制層處理與 Extract 資料集</td><td>第六單元 p66–83</td><td>（Col18 已移除）</td></tr>
+      <tr><td>11. 保存清單、列印、背景處理</td><td>第七單元 p84–98</td><td>Unit 9 p259–263</td></tr>
+      <tr><td>12. 互動式清單</td><td>第八單元 p99–112</td><td>（Col18 已移除）</td></tr>
+      <tr><td>13. ALV Grid 基礎：Control Framework、容器畫面</td><td>第九單元 p113–124</td><td>Unit 3 L1–L3 p63–104</td></tr>
+      <tr><td>14. ALV 外觀：版面變式、Layout、顏色、隱藏功能</td><td>第九單元 p129–131</td><td>Unit 4 L1–L3 p109–126</td></tr>
+      <tr><td>15. 欄位目錄 Field Catalog</td><td>第九單元 p125–128</td><td>Unit 4 L4 p127–140</td></tr>
+      <tr><td>16. ALV 事件與方法、右鍵選單</td><td>第九單元 p132–135</td><td>Unit 5 L1–L4 p145–177</td></tr>
+      <tr><td>17. 呼叫其他程式與資料傳遞</td><td>—</td><td>Unit 8 p233–253</td></tr>
+      <tr><td>18. ALV Object Model（CL_SALV_TABLE）</td><td>—</td><td>Unit 10 L1–L3 p267–286</td></tr>
+      <tr><td>19. S/4HANA 現況與替代方案</td><td>—</td><td>（本書整理）</td></tr>
+    </tbody>
+  </table>
+
+  <p><b>課程等級</b>：BC405 屬 SAP ABAP 開發路線的 Level 2（Core，約當本專區所稱的 200 級），前置課為 <a href="#ch05-1">5-1 章 BC400</a>；物件導向語法（事件處理類別、參照變數）最好先讀 <a href="#ch05-2">5-2 章 BC401</a>。Col18 的測驗答案頁自己註明：選擇畫面單元對應 TAW10 Part II Unit 10，ALV 單元對應 TAW11e Unit 10–12，所以唸速成班 TAW 的人也可以用本章對照。原廠範例程式都在套件 <b>BC405</b>，命名規則是 <span class="kw">BC405_xxx_D…</span>（示範）、<span class="kw">BC405_xxx_T…</span>（練習範本）、<span class="kw">BC405_xxx_S…</span>（解答），xxx 是單元縮寫：INTRO、SCREEN、USAGE、CREATE、DESIGN、EVENT、LOGDB、SELECT、CALL、BACKGR、OM、OTHER。資料模型是 BC_TRAVEL 航班模型（套件 BC_DATAMODEL）。</p>
+
+  <div class="note">强晟在後記說他四天就讀完這門課，因為「以前熟悉」，但「有些以前費了很大功夫才完成的功能，現在只需要一個簡單的參數就能實現」——這正是 ALV 的價值：排序、小計、篩選、匯出、版面變式，全部是標準功能，不必自己寫。下一門進階課 BC406（進階清單技術）見 <a href="#ch05-7">5-7 章</a>。</div>
+
+  <h3 id="ch05-6-02">2. 報表方案的選擇、ALV 與經典清單、Include 結構</h3>
+  <p>Col18 第一課開宗明義：<b>動手寫程式之前先問四個問題</b>（ABAP Programming Checklist）：</p>
+  <ol>
+    <li>有沒有 SAP 標準報表能做？（SAP Easy Access → SAP 選單 → Information Systems，或 General Report Selection 子樹，看文件、實際執行比對輸出）</li>
+    <li>標準報表能不能涵蓋大部分需求？</li>
+    <li>能不能用報表工具（SAP Query、InfoSet Query、QuickViewer）完成？</li>
+    <li>真的要自己寫，有沒有 LDB 或模組化單元（函數模組、BAPI、方法）可以拿來取數？</li>
+  </ol>
+  <div class="tip"><b>先找標準，再想客製。</b>這是 Casper 在每個專案都要一再講的第三條經驗：標準報表 → Query（<a href="#ch01-4">1-4 章 SQVI／SQ01</a>、<a href="#ch05-8">5-8 章 BC407</a>）→ 自寫程式，每往右一步，開發、測試、升級維護成本就高一級。BW（SAP Business Warehouse）是另一條路：資料萃取到 BW 後用非 ABAP 的查詢工具出報表。</div>
+
+  <table>
+    <thead><tr><th>方案</th><th>優點</th><th>限制</th></tr></thead>
+    <tbody>
+      <tr><td>標準報表</td><td>立即可用、零開發</td><td>彈性有限，輸出欄位不能自訂</td></tr>
+      <tr><td>InfoSet Query</td><td>介面簡單、不必寫程式；與 SAP Query 的 InfoSet 整合，必要時可到 SAP Query 再編輯；使用者存取整合在角色中；可做人資各領域的評估</td><td>要先在 SAP Query 定義 InfoSet 與使用者群組；清單不能一筆多行</td></tr>
+      <tr><td>SAP Query</td><td>自訂使用者群組、InfoSet、Query；可掛到 SAP Easy Access 選單；可彙總、計算、畫圖；一筆可多行；每個 Query 可定義基本清單加多張統計與排名清單</td><td>只限 SAP 系統內資料；學習成本比其他工具高</td></tr>
+      <tr><td>自寫 ABAP</td><td>完全彈性、可用全部 ABAP 語言</td><td>有效能差、取錯資料、解讀錯資料的風險</td></tr>
+    </tbody>
+  </table>
+
+  <p><b>兩種輸出格式</b>：ALV（SAP List Viewer，以表格或樹狀呈現大量資料，本課只講表格）與經典 ABAP 清單（WRITE）。ALV 又分兩種程式模型：<b>ALV Grid Control</b>（SAP R/3 4.6 起，CL_GUI_ALV_GRID）與 <b>ALV Object Model</b>（SAP NetWeaver 2004 起，CL_SALV_TABLE）。原廠比較表的結論：ALV Grid 支援無障礙（Accessibility）、可在背景產生、內建互動排序／彙總／小計／隱藏欄、Excel in place、使用者可隱藏欄位與調欄寬欄序；經典清單則可做細部版面、一筆資料多行顯示，<b>但不符合無障礙要求</b>，互動功能多半要自己寫。兩者都允許程式設計師實作自訂互動功能。</p>
+  <div class="note"><b>無障礙（Accessibility）</b>：2001 年 5 月美國《復健法》第 508 條（Section 508）要求公家機關只能採購無障礙的 IT。SAP 因此定出設計規範：軟體必須能<b>只用鍵盤操作</b>（螢幕閱讀器等輔助技術都需要）。在報表領域，ALV Grid 比經典清單更符合這項要求。</div>
+
+  <p><b>Include 程式與命名慣例</b>：Include 讓程式結構清楚、方便多人分工，用 <span class="kw">INCLUDE incl.</span> 嵌入主程式，可以巢狀。</p>
+  <table>
+    <thead><tr><th>用途</th><th>命名</th></tr></thead>
+    <tbody>
+      <tr><td>主程式</td><td>ZDEMO_00</td></tr>
+      <tr><td>TOP Include（全域資料宣告）</td><td>ZDEMO_00_TOP</td></tr>
+      <tr><td>PBO 模組</td><td>ZDEMO_00_O01（序號 0～99）</td></tr>
+      <tr><td>PAI 模組</td><td>ZDEMO_00_I01</td></tr>
+      <tr><td>副程式</td><td>ZDEMO_00_F01</td></tr>
+      <tr><td>ABAP 事件（START-OF-SELECTION 等）</td><td>ZDEMO_00_E01</td></tr>
+    </tbody>
+  </table>
+  <p>複製帶 Include 的程式：在物件清單的右鍵選 Copy → 輸入新主程式名 → <b>至少勾選 User interface、Screens、INCLUDEs 三項</b> → 在下一個對話框為每個 Include 指定新名稱並保留正確尾碼（TOP、E01、F01…）<span class="src">（依講義步驟整理）</span>。</p>
+
+<pre><code class="abap">*&amp;---------------------------------------------------------------------*
+*&amp; ZBC405_REPORT：S/4HANA 報表骨架（Include 分工 + 本地類別）
+*&amp;   舊教材的 _F01 放 FORM；新程式改成 _C01 放本地類別，事件區塊只做轉呼叫
+*&amp;---------------------------------------------------------------------*
+REPORT zbc405_report.
+
+INCLUDE zbc405_report_top.   " 型別、全域資料、選擇畫面
+INCLUDE zbc405_report_c01.   " lcl_report 定義與實作（取代 _F01 的 FORM）
+INCLUDE zbc405_report_o01.   " PBO 模組（若有 Dynpro）
+INCLUDE zbc405_report_i01.   " PAI 模組
+
+INITIALIZATION.
+  lcl_report=&gt;initialization( ).
+
+AT SELECTION-SCREEN.
+  lcl_report=&gt;check_input( ).
+
+START-OF-SELECTION.
+  DATA(go_report) = NEW lcl_report( ).
+  go_report-&gt;select_data( ).
+  go_report-&gt;display( ).</code></pre>
+  <div class="warn">舊教材的副程式 Include（_F01）裡放的是 <span class="kw">FORM</span>，<b>新程式不要再用 FORM/PERFORM</b>，改成本地類別的方法；舊語法對照見 <a href="#ap-01">附錄 ap-01</a>，模組化見 <a href="#ch02-4">2-4 章</a>。</div>
+
+  <h3 id="ch05-6-03">3. 經典清單：清單緩衝區、標準表頭與頁面格式</h3>
+  <p>程式中<b>第一個 WRITE 會觸發清單產生</b>。輸出先寫到清單緩衝區（list buffer），全部寫完後系統才從緩衝區產生畫面影像並顯示。系統預設產生兩行<b>標準表頭</b>：第一行左上是程式屬性裡的標題、右上是頁碼；第二行是一條連續橫線；捲動時這兩行固定在視窗頂端。列印時第一行變成：左上系統日期、中間清單標題、右上頁碼。交易碼 <span class="tcode">LIBS</span> 可以看 SAP 建議的清單版式，自己的報表長得像 SAP 標準報表，使用者會覺得一致。</p>
+
+  <table>
+    <thead><tr><th>語法</th><th>作用與限制</th></tr></thead>
+    <tbody>
+      <tr><td><span class="kw">REPORT … LINE-SIZE s LINE-COUNT m(n)</span></td><td>設定行寬 s、每頁行數 m、其中 n 行保留給 END-OF-PAGE 頁尾。s、m <b>必須是數字常值，不能是變數</b>；設 0 表示用預設。m 必須大於表頭加頁尾的行數，否則出錯</td></tr>
+      <tr><td><span class="kw">NEW-PAGE LINE-COUNT m</span></td><td>在清單層級中改每頁行數，覆蓋 REPORT 的設定；<b>行寬只能在建立新清單層級時改</b></td></tr>
+      <tr><td><span class="kw">REPORT … NO STANDARD PAGE HEADING</span></td><td>關閉標準表頭；可用 <span class="kw">NEW-PAGE NO-TITLE/WITH-TITLE</span>、<span class="kw">NO-HEADING/WITH-HEADING</span> 局部覆蓋</td></tr>
+      <tr><td><span class="kw">TOP-OF-PAGE</span></td><td>在基本清單遇到第一個 WRITE／ULINE／SKIP 時自動觸發，產生自訂頁首；捲動時固定在頂端；若沒關標準表頭，標準表頭會出現在它上面</td></tr>
+      <tr><td><span class="kw">END-OF-PAGE</span></td><td>頁尾，只有在 LINE-COUNT m(n) 保留了 n 行時才會觸發</td></tr>
+    </tbody>
+  </table>
+  <p><b>清單標題與欄標題</b>：可維護一行清單標題和最多四行欄標題，路徑是編輯器「轉到 → 文字元素 → 清單標題」，或在清單畫面「系統 → 清單 → 清單表頭」（在清單上維護比較直觀，因為看得到輸出）。沒維護時系統欄位 <span class="kw">sy-title</span> 會帶程式屬性的標題。表頭和所有文字元素一樣可以翻譯。</p>
+  <div class="note">强晟筆記寫「缺省的報表行寬是 83 列、頁長 60000 行」。行寬預設值依版本與視窗寬度而定（Col18 已不再給這個數字），實務上請一律明寫 <span class="kw">LINE-SIZE</span>，並記得上限是 1023；不要依賴預設。</div>
+
+  <h3 id="ch05-6-04">4. WRITE 格式化、FORMAT、圖示與線條、捲動、多語文字、系統欄位</h3>
+  <p><b>FORMAT 選項</b>：<span class="kw">COLOR n [ON|OFF]</span>（行背景色）、<span class="kw">INTENSIFIED [ON|OFF]</span>（加強色）、<span class="kw">INVERSE [ON|OFF]</span>（前景背景互換）、<span class="kw">HOTSPOT [ON|OFF]</span>（滑鼠變手形、單擊即觸發 AT LINE-SELECTION）、<span class="kw">INPUT [ON|OFF]</span>（可輸入欄位）、<span class="kw">RESET</span>（全部回預設）。FORMAT 作用於之後的 WRITE，持續到 <span class="kw">FORMAT COLOR OFF</span> 或 <span class="kw">FORMAT RESET</span>。注意 <b>RESET 會連 INTENSIFIED ON 這個標準設定一起關掉，所以用 COLOR OFF 比較好</b>；每個新事件開始時系統都會把 FORMAT 重設。也可以對單一欄位加格式，例如 <span class="kw">WRITE wa_spfli-carrid COLOR COL_KEY</span>，這會覆蓋 FORMAT——<b>就近原則</b>。</p>
+
+  <table>
+    <thead><tr><th>WRITE 附加</th><th>說明</th></tr></thead>
+    <tbody>
+      <tr><td>NO-GAP</td><td>欄位後不留空白，連續輸出</td></tr>
+      <tr><td>NO-ZERO</td><td>值為 0 只輸出空白；C、N 型的前導 0 換成空白</td></tr>
+      <tr><td>DD/MM/YY 等</td><td>覆蓋使用者主檔的日期格式（年份位數、分隔符；日月年順序依使用者設定）</td></tr>
+      <tr><td>CURRENCY cur</td><td>依表 <b>TCURX</b> 的規則格式化金額。金額在資料庫以「幣別最小單位、不帶小數」存放，加 CURRENCY 時 p 型本身的小數位數會被完全忽略</td></tr>
+      <tr><td>UNIT unit</td><td>依表 <b>T006</b> 格式化數量</td></tr>
+      <tr><td>USING EDIT MASK mask</td><td>依格式樣板輸出</td></tr>
+      <tr><td>UNDER g</td><td>從欄位 g 輸出的那一欄開始</td></tr>
+      <tr><td>LEFT-JUSTIFIED／CENTERED／RIGHT-JUSTIFIED</td><td>靠左（C、N、D、T、X 預設）／置中／靠右（I、P、F 數值型預設）</td></tr>
+    </tbody>
+  </table>
+  <p><b>圖示、符號、線條</b>：<span class="kw">WRITE … AS SYMBOL</span>（先 <span class="kw">INCLUDE &lt;SYMBOL&gt;</span>）、<span class="kw">AS ICON</span>、<span class="kw">AS LINE</span>；一個 <span class="kw">INCLUDE &lt;LIST&gt;</span> 就等於同時載入 &lt;SYMBOL&gt;、&lt;ICON&gt;、&lt;LINES&gt;、&lt;COLOR&gt;。橫線用 <span class="kw">ULINE</span>（與清單同寬）、<span class="kw">ULINE /m</span>（第 m 欄到右邊界）、<span class="kw">ULINE /m(n)</span>（第 m 欄起長 n）、或 <span class="kw">sy-uline</span>；直線用 <span class="kw">sy-vline</span>。橫線與直線交叉處系統會自動換成四種 L 形角、四種 T 形邊與十字，所以可以畫出表格甚至樹狀；特殊線如 <span class="kw">line_top_right_corner AS LINE</span>。</p>
+  <p><b>捲動與固定欄</b>：<span class="kw">SET LEFT SCROLL-BOUNDARY [COLUMN n]</span> 鎖定左側若干欄（不加 COLUMN 則用目前位置 sy-colno），<b>必須寫在 TOP-OF-PAGE 與 TOP-OF-PAGE DURING LINE-SELECTION</b>，因為系統每頁結束會把它歸 0。<span class="kw">NEW-LINE NO-SCROLLING</span> 讓下一行不隨橫向捲動（固定子標題），兩者可合用。<span class="kw">SCROLL LIST TO PAGE p INDEX sy-lsind LINE l</span> 可程式捲動到指定清單緩衝區的某頁某行。</p>
+  <p><b>頁面配置</b>：<span class="kw">NEW-PAGE</span> 換頁；<span class="kw">NEW-LINE</span>（等於 WRITE /）；<span class="kw">RESERVE n LINES</span>（本頁剩不到 n 行就先換頁）；<span class="kw">SKIP n</span>；<span class="kw">SKIP TO LINE n</span>；<span class="kw">BACK</span>（回到表頭後第一行，與 RESERVE 合用時回到 RESERVE 的行）；<span class="kw">POSITION n</span>；<span class="kw">SET BLANK LINES ON/OFF</span>（OFF 為預設，不輸出空行）。RESERVE、POSITION、BACK 常用在列印郵寄標籤。</p>
+  <p><b>多語文字元素</b>：文字元素（標準頁首、文字符號 text symbol、選擇文字）與原始碼分開存放，由登入語言決定顯示哪一種語言，因此不必動程式就能翻譯；定義輸出長度時要留足翻譯後的空間。引用方式有兩種：<span class="kw">WRITE TEXT-001</span>，或 <span class="kw">WRITE 'Flight'(001)</span>——後者的好處是沒有該語言翻譯時會顯示常值，不會變空白。忘了維護文字符號時，延伸語法檢查 <span class="tcode">SLIN</span> 會報錯。</p>
+  <p><b>清單產生時的系統欄位</b>：<span class="kw">sy-linct</span>（LINE-COUNT）、<span class="kw">sy-linsz</span>（LINE-SIZE）、<span class="kw">sy-srows</span>／<span class="kw">sy-scols</span>（視窗行數／欄數）、<span class="kw">sy-pagno</span>（目前頁）、<span class="kw">sy-linno</span>（目前行）、<span class="kw">sy-colno</span>（目前欄），後三個在產生清單時持續更新。標準清單介面自動提供：返回／退出／取消、首頁／上頁／下頁／末頁、列印、尋找／尋找下一個、儲存；標準選單有「儲存／傳送」與「清單表頭」。</p>
+
+<pre><code class="abap">REPORT zbc405_list NO STANDARD PAGE HEADING LINE-SIZE 120 LINE-COUNT 65(2).
+
+TYPES: BEGIN OF ty_flight,
+         carrid   TYPE sflight-carrid,
+         connid   TYPE sflight-connid,
+         fldate   TYPE sflight-fldate,
+         price    TYPE sflight-price,
+         currency TYPE sflight-currency,
+         seatsmax TYPE sflight-seatsmax,
+         seatsocc TYPE sflight-seatsocc,
+       END OF ty_flight.
+DATA gt_flights TYPE STANDARD TABLE OF ty_flight WITH EMPTY KEY.
+
+SELECT-OPTIONS so_car FOR gt_flights[ 1 ]-carrid.   " 7.40+：直接參照內表行型別欄位
+
+TOP-OF-PAGE.
+  FORMAT COLOR COL_HEADING.
+  WRITE: / |{ sy-title } — { sy-datum DATE = USER }|, AT sy-linsz - 10 |Page { sy-pagno }|.
+  WRITE: / 'Airline'(h01), 12 'No.'(h02), 20 'Date'(h03), 35 'Price'(h04), 60 'Occupancy'(h05).
+  ULINE.
+  FORMAT COLOR OFF.                                  " 用 COLOR OFF，不要用 RESET
+  SET LEFT SCROLL-BOUNDARY COLUMN 20.               " 捲動時固定前 20 欄
+
+END-OF-PAGE.
+  ULINE.
+  WRITE: / |Printed by { sy-uname }|.
+
+START-OF-SELECTION.
+  SELECT FROM sflight
+    FIELDS carrid, connid, fldate, price, currency, seatsmax, seatsocc
+    WHERE carrid IN @so_car
+    ORDER BY carrid, connid, fldate                  " HANA 沒有預設排序，清單一定要明寫
+    INTO TABLE @gt_flights.
+
+  LOOP AT gt_flights INTO DATA(ls_f).
+    DATA(lv_pct) = COND decfloat16( WHEN ls_f-seatsmax &gt; 0
+                                    THEN ls_f-seatsocc * 100 / ls_f-seatsmax ).
+    WRITE: / ls_f-carrid COLOR COL_KEY,              " 就近原則：蓋過 FORMAT
+             12 ls_f-connid,
+             20 ls_f-fldate DD/MM/YYYY,
+             35 ls_f-price CURRENCY ls_f-currency,   " 依 TCURX 放小數點
+             55 ls_f-currency,
+             60 lv_pct DECIMALS 1 NO-ZERO.
+    IF lv_pct &gt;= 90.
+      WRITE 75 icon_red_light AS ICON.               " 需 INCLUDE &lt;ICON&gt; 或型別群組 ICON
+    ENDIF.
+  ENDLOOP.</code></pre>
+  <div class="warn"><b>經典 WRITE 清單在 S/4HANA 仍可執行</b>，但 SAP 已不建議用於新開發：不符無障礙、無法在 Fiori 呈現、互動功能要自己寫。新報表請直接用 ALV（第 13～18 節），WRITE 只留給除錯輸出與極少數列印格式需求。</div>
+
+  <h3 id="ch05-6-05">5. 選擇畫面（一）：PARAMETERS 與 SELECT-OPTIONS</h3>
+  <p>選擇畫面是程式與使用者之間的介面，用來<b>限制從資料庫讀取的資料量</b>。<span class="kw">PARAMETERS</span> 與 <span class="kw">SELECT-OPTIONS</span> 是宣告性語言元素，會自動產生標準選擇畫面（<b>畫面號碼 1000</b>）；接了 LDB 的程式，選擇畫面長相由 <span class="kw">NODES</span> 指定的節點決定；另外可以用 <span class="kw">SELECTION-SCREEN BEGIN OF SCREEN</span> 定義附加選擇畫面、<span class="kw">CALL SELECTION-SCREEN</span> 呼叫。<b>報表在背景執行且有選擇畫面時，一定要有變式。</b>基礎用法見 <a href="#ch03-1">3-1 章</a>，本節補原廠課的完整細節。</p>
+
+  <p><b>PARAMETERS 重點</b>：</p>
+  <ul>
+    <li>名稱最多 <b>8 個字元</b>；可用 TYPE／LIKE；顯示文字在「轉到 → 文字元素 → 選擇文字」維護。</li>
+    <li><span class="kw">DEFAULT</span> 預設值；<span class="kw">MEMORY ID pid</span> 從 SAP Memory 取目前值自動帶入。SAP Memory 是使用者專屬、存活到登出的記憶區，SET/GET 參數名最長 20 字元，可掛在資料元素上；在欄位按 F1 → Technical Information 的 Parameter ID 就能查到名稱。</li>
+    <li><span class="kw">OBLIGATORY</span> 必填（畫面上出現問號／勾號標記，不填不能離開）。</li>
+    <li>報表選擇畫面<b>預設不做 ABAP 字典檢查</b>；若參照的字典欄位有外鍵關係，可加 <span class="kw">VALUE CHECK</span> 觸發檢查。</li>
+    <li><span class="kw">AS CHECKBOX</span>：一個字元，值為空白或 X。</li>
+    <li><span class="kw">RADIOBUTTON GROUP grp</span>：<b>群組名最多 4 個字元</b>；同組只能選一個，被選者為 X；都沒預設時系統自動選第一個。</li>
+    <li><span class="kw">MODIF ID mod</span>：把欄位歸到修改群組，方便執行時整批隱藏／鎖定（第 6 節）。</li>
+  </ul>
+
+  <p><b>SELECT-OPTIONS 重點</b>：名稱同樣最多 8 字元，但可以輸入範圍與複雜條件。它會產生一個<b>帶表頭行的標準內表</b>（選擇表 seltab），四欄 <b>SIGN</b>（I 包含／E 排除）、<b>OPTION</b>（運算子）、<b>LOW</b>、<b>HIGH</b>；<span class="kw">FOR</span> 後接已在 DATA（或 NODES）宣告的變數，LOW／HIGH 繼承其型別。</p>
+  <table>
+    <thead><tr><th>OPTION</th><th>意義</th><th>OPTION</th><th>意義</th></tr></thead>
+    <tbody>
+      <tr><td>EQ</td><td>等於</td><td>NE</td><td>不等於</td></tr>
+      <tr><td>LE／LT</td><td>小於等於／小於</td><td>GE／GT</td><td>大於等於／大於</td></tr>
+      <tr><td>BT</td><td>介於</td><td>NB</td><td>不介於</td></tr>
+      <tr><td>CP</td><td>符合樣式</td><td>NP</td><td>不符合樣式</td></tr>
+    </tbody>
+  </table>
+  <p><b>結果集合＝所有 I 行的聯集減去所有 E 行的聯集</b>；使用者什麼都不填，就等於不限制（全部讀出）。多重選擇對話框中綠燈代表 I、紅燈代表 E；「編輯 → 選擇選項」可改 SIGN／OPTION，「編輯 → 刪除選擇行」刪行；有多重選擇時右側按鈕箭頭由灰轉綠。</p>
+  <p>SELECT-OPTIONS 附加：<span class="kw">DEFAULT low [TO high] [OPTION op] [SIGN s]</span>、<span class="kw">MEMORY ID</span>（取值並在離開畫面時寫回）、<span class="kw">LOWER CASE</span>（不轉大寫；字典欄位以字典屬性為準）、<span class="kw">OBLIGATORY</span>、<span class="kw">NO-EXTENSION</span>（不能多重選擇）、<span class="kw">NO INTERVALS</span>（隱藏 HIGH，但仍可在多重選擇對話框輸入範圍）。</p>
+
+<pre><code class="abap">REPORT zbc405_selscreen.
+
+DATA gs_flight TYPE sflight.                          " 只當 FOR 的型別來源
+
+SELECTION-SCREEN BEGIN OF BLOCK b1 WITH FRAME TITLE TEXT-b01.
+  SELECT-OPTIONS: so_car FOR gs_flight-carrid MEMORY ID car NO INTERVALS,
+                  so_con FOR gs_flight-connid,
+                  so_dat FOR gs_flight-fldate OBLIGATORY.
+  PARAMETERS      p_max  TYPE s_seatsmax DEFAULT 400 MODIF ID adv.
+SELECTION-SCREEN END OF BLOCK b1.
+
+SELECTION-SCREEN BEGIN OF BLOCK b2 WITH FRAME TITLE TEXT-b02.
+  PARAMETERS: rb_alv  RADIOBUTTON GROUP out DEFAULT 'X' USER-COMMAND out,
+              rb_list RADIOBUTTON GROUP out,
+              cb_adv  AS CHECKBOX USER-COMMAND adv.    " 勾選時顯示進階欄位
+SELECTION-SCREEN END OF BLOCK b2.
+
+SELECTION-SCREEN BEGIN OF LINE.
+  SELECTION-SCREEN COMMENT 1(20) TEXT-c01 FOR FIELD p_cur.
+  SELECTION-SCREEN POSITION POS_LOW.                  " 對齊 SELECT-OPTIONS 的 LOW 欄
+  PARAMETERS p_cur TYPE s_currcode DEFAULT 'EUR'.
+SELECTION-SCREEN END OF LINE.
+SELECTION-SCREEN SKIP 1.
+
+INITIALIZATION.
+  " SELECT-OPTIONS 本身帶表頭行；新寫法直接對表身 so_dat[] 用 VALUE 指定
+  so_dat[] = VALUE #( ( sign = 'I' option = 'BT'
+                        low  = sy-datum - 30 high = sy-datum ) ).
+  " 列舉比區間安全：航空公司代號用多筆 EQ，而不是 BT 'AA' 到 'LH'
+  so_car[] = VALUE #( sign = 'I' option = 'EQ' ( low = 'AA' ) ( low = 'LH' ) ( low = 'UA' ) ).</code></pre>
+
+  <div class="warn"><b>列舉（多筆 EQ）比區間（BT）安全。</b>Casper 第二條經驗：BT 比的是<b>字典序</b>不是業務語意。物料號碼有 ALPHA 前導零（<span class="kw">000000000000001234</span> 與 <span class="kw">1234</span> 在 BT 中的位置完全不同）、號碼段不連續、編碼規則改過，都會讓區間漏抓或多抓。給使用者的預設值與背景變式，能用清單就用清單。</div>
+  <div class="note">SELECT-OPTIONS 產生的表頭行是 ABAP 現在<b>唯一還會自動產生表頭行的地方</b>；程式中引用表身時一律寫 <span class="kw">so_car[]</span>，在 SQL 中直接 <span class="kw">WHERE carrid IN @so_car</span>。自己要宣告同型的範圍表，用 <span class="kw">DATA lt_r TYPE RANGE OF s_carr_id</span>（見 <a href="#ch02-2">2-2 章</a>）。</div>
+
+  <h3 id="ch05-6-06">6. 選擇畫面（二）：區塊與行、附加畫面、Tabstrip、按鈕、執行時修改</h3>
+  <p><b>區塊</b>：<span class="kw">SELECTION-SCREEN BEGIN OF BLOCK blk WITH FRAME TITLE …</span> 把邏輯相關的元素框起來，<b>最多巢狀 5 層</b>；標題可用 text-xxx 或最多 8 字元的欄位名（後者要在 INITIALIZATION 賦值）。Col18 特別提醒：給區塊加標題是為了<b>無障礙</b>。設計前先看交易碼 <span class="tcode">BIBS</span> 的畫面設計準則。</p>
+  <p><b>行</b>：<span class="kw">BEGIN OF LINE … END OF LINE</span> 把多個參數與註解放同一行。<span class="kw">COMMENT</span> 一定要指定位置與長度（位置可用整數、變數、<span class="kw">pos_low</span>、<span class="kw">pos_high</span>；長度必須是整數常值）。<span class="kw">COMMENT … FOR FIELD f</span> 讓註解與欄位共用 F1 說明，且欄位被變式隱藏時註解也一起隱藏。<span class="kw">POSITION pos</span> 只能用在 BEGIN OF LINE 內；<span class="kw">SKIP n</span> 插入空行。</p>
+  <p><b>附加選擇畫面</b>：標準畫面永遠是 1000；其他畫面用 <span class="kw">SELECTION-SCREEN BEGIN OF SCREEN nnnn … END OF SCREEN nnnn</span> 定義（號碼建議大於 1000），<span class="kw">CALL SELECTION-SCREEN nnnn</span> 呼叫；加 <span class="kw">STARTING AT col row ENDING AT col row</span> 就變成對話框。系統自己管返回，不必像 CALL SCREEN 那樣寫 LEAVE SCREEN；使用者按執行（F8）<span class="kw">sy-subrc = 0</span>，按取消／退出 <span class="kw">sy-subrc = 4</span>。在事件中用 <span class="kw">sy-dynnr</span> 判斷是哪個畫面；附加畫面的預設值也在 INITIALIZATION 給。</p>
+  <p><b>Tabstrip</b>：要定義三樣東西——選擇畫面上的子畫面區、各頁籤標題、每個頁籤對應的子畫面。子畫面寫法 <span class="kw">SELECTION-SCREEN BEGIN OF SCREEN dynnr AS SUBSCREEN [NESTING LEVEL m] [NO INTERVALS]</span>：NESTING LEVEL 用來縮小子畫面避免出現捲軸（tabstrip 沒框用 0，外面每多一層框加 1）；NO INTERVALS 隱藏該畫面所有 SELECT-OPTIONS 的 HIGH。頁籤區塊 <span class="kw">BEGIN OF TABBED BLOCK blk FOR n LINES</span>，頁籤 <span class="kw">SELECTION-SCREEN TAB (len) name USER-COMMAND ucomm [DEFAULT [PROGRAM prog] SCREEN dynnr]</span>——name 是系統自動產生的變數（不必宣告），文字超過 len 會被截斷；有 DEFAULT 就必須有 SCREEN。頁籤與子畫面的關聯可延到執行時才決定：系統為每個 tabbed block 自動產生同名結構，含 <span class="kw">prog</span>、<span class="kw">dynnr</span>、<span class="kw">activetab</span> 三欄。事件次序：<b>AT SELECTION-SCREEN 先跑目前頁籤的子畫面、再跑 1000；AT SELECTION-SCREEN OUTPUT 先跑 1000、再跑下一個可見頁籤的子畫面</b>。</p>
+  <p><b>按鈕</b>：<span class="kw">SELECTION-SCREEN PUSHBUTTON [/]pos(len) name USER-COMMAND ucomm</span>；預設不換行，要換行在位置前加斜線，如 <span class="kw">/1(20)</span>。按鈕文字在 INITIALIZATION 指定給 name（可用文字符號，或用函數 <span class="kw">ICON_CREATE</span> 產生「圖示＋文字」）。按下後功能碼會放在 <span class="kw">sscrfields-ucomm</span>——原廠教材因此要求程式宣告 <span class="kw">TABLES sscrfields</span>（這是 TABLES 在新程式中少數仍被接受的用途；只讀功能碼的話，在 AT SELECTION-SCREEN 中直接用 <span class="kw">sy-ucomm</span> 也可以）。</p>
+  <p><b>選擇畫面事件 vs Dynpro 事件</b>：選擇畫面是系統依 ABAP 敘述自動產生的特殊畫面，<span class="kw">AT SELECTION-SCREEN OUTPUT</span> 相當於 PBO，<span class="kw">AT SELECTION-SCREEN</span> 相當於 PAI。<b>執行時修改畫面</b>：每個欄位在系統表 <span class="kw">SCREEN</span> 有一筆（SELECT-OPTIONS so_car 的兩個欄位叫 SO_CAR-LOW、SO_CAR-HIGH），在 AT SELECTION-SCREEN OUTPUT 中 <span class="kw">LOOP AT SCREEN</span>，把 <span class="kw">screen-active = 0</span> 隱藏、<span class="kw">screen-input = 0/1</span> 控制可否輸入；用 <span class="kw">screen-group1</span>（即 MODIF ID）整組處理。</p>
+
+<pre><code class="abap">" --- Tabstrip：兩個子畫面 + 一個按鈕 ---
+SELECTION-SCREEN BEGIN OF SCREEN 1100 AS SUBSCREEN NESTING LEVEL 2.
+  SELECT-OPTIONS so_from FOR gs_flight-carrid.
+SELECTION-SCREEN END OF SCREEN 1100.
+
+SELECTION-SCREEN BEGIN OF SCREEN 1200 AS SUBSCREEN NESTING LEVEL 2.
+  PARAMETERS p_city TYPE s_from_cit.
+SELECTION-SCREEN END OF SCREEN 1200.
+
+SELECTION-SCREEN BEGIN OF TABBED BLOCK tabs FOR 5 LINES.
+  SELECTION-SCREEN TAB (20) tab1 USER-COMMAND tab1 DEFAULT SCREEN 1100.
+  SELECTION-SCREEN TAB (20) tab2 USER-COMMAND tab2 DEFAULT SCREEN 1200.
+SELECTION-SCREEN END OF BLOCK tabs.
+
+SELECTION-SCREEN PUSHBUTTON /1(24) btn_det USER-COMMAND det.
+
+INITIALIZATION.
+  tab1 = 'Airline'(t01).
+  tab2 = 'Departure city'(t02).
+  " ICON_CREATE：產生「圖示 + 文字」的按鈕標籤
+  CALL FUNCTION 'ICON_CREATE'
+    EXPORTING  name   = icon_detail
+               text   = 'Details'(t03)
+    IMPORTING  result = btn_det
+    EXCEPTIONS OTHERS = 1.
+  IF sy-subrc &lt;&gt; 0.
+    btn_det = 'Details'(t03).
+  ENDIF.
+
+AT SELECTION-SCREEN OUTPUT.            " = PBO：只有這裡改 SCREEN 才有效
+  LOOP AT SCREEN INTO DATA(ls_screen).
+    IF ls_screen-group1 = 'ADV'.
+      ls_screen-active = COND #( WHEN cb_adv = abap_true THEN 1 ELSE 0 ).
+      MODIFY SCREEN FROM ls_screen.
+    ENDIF.
+    IF ls_screen-name = 'SO_CAR-HIGH'.  " 單獨鎖定 SELECT-OPTIONS 的上限欄
+      ls_screen-input = 0.
+      MODIFY SCREEN FROM ls_screen.
+    ENDIF.
+  ENDLOOP.
+
+AT SELECTION-SCREEN.                   " = PAI
+  CASE sy-ucomm.                       " 教材寫 sscrfields-ucomm，需 TABLES sscrfields
+    WHEN 'DET'.
+      CALL SELECTION-SCREEN 1300 STARTING AT 10 5 ENDING AT 80 12.
+      IF sy-subrc = 4.
+        MESSAGE 'Cancelled'(m01) TYPE 'S'.
+      ENDIF.
+  ENDCASE.</code></pre>
+  <div class="note">上例的 <span class="kw">LOOP AT SCREEN INTO wa</span> 是 7.40 起的寫法，取代舊的「LOOP AT SCREEN（隱含表頭行）」。附加畫面 1300 需另外以 BEGIN OF SCREEN 1300 定義（略）。</div>
+
+  <h3 id="ch05-6-07">7. 選擇畫面（三）：事件時序、輸入檢查、F1／F4、變式</h3>
+  <table>
+    <thead><tr><th>事件</th><th>觸發時機</th><th>用途</th></tr></thead>
+    <tbody>
+      <tr><td>LOAD-OF-PROGRAM／INITIALIZATION</td><td>程式載入後只執行一次，選擇畫面第一次顯示前</td><td>動態預設值（覆蓋 DEFAULT）、區塊標題、按鈕文字；接 LDB 時可用 F1 技術資訊查出 LDB 選擇欄位名再給預設</td></tr>
+      <tr><td>AT SELECTION-SCREEN OUTPUT</td><td>每次顯示選擇畫面前（使用者按 Enter 也會再跑）</td><td>改 SCREEN 屬性。<b>在這裡給值會覆蓋使用者輸入</b></td></tr>
+      <tr><td>AT SELECTION-SCREEN [ON f／ON seltab]</td><td>使用者動作後</td><td>輸入檢查；發 E／W 訊息時畫面重顯，全部欄位（或只有 ON 指定的欄位）重新可輸入</td></tr>
+      <tr><td>AT SELECTION-SCREEN ON BLOCK blk</td><td>同上</td><td>檢查一組欄位的組合；錯誤時該區塊欄位可輸入</td></tr>
+      <tr><td>AT SELECTION-SCREEN ON END OF seltab</td><td>多重選擇對話框動作後，整張選擇表傳入程式時</td><td>檢查整張選擇表</td></tr>
+      <tr><td>AT SELECTION-SCREEN ON HELP-REQUEST FOR f</td><td>F1</td><td>自訂說明；指定 SELECT-OPTIONS 名稱時對 low、high 都生效</td></tr>
+      <tr><td>AT SELECTION-SCREEN ON VALUE-REQUEST FOR f</td><td>F4</td><td>自訂搜尋說明；SELECT-OPTIONS <b>必須分別指定 so-low 或 so-high</b>；寫了這個事件欄位旁就會出現 F4 鈕</td></tr>
+    </tbody>
+  </table>
+  <div class="tip">原廠 Hint：F1／F4 最好維護在 <b>ABAP 字典</b>（資料元素說明、搜尋說明 Search Help），程式不必自己取數與回填，使用者也得到跨程式一致的操作。只有字典做不到的情況才寫 ON VALUE-REQUEST。</div>
+
+<pre><code class="abap">AT SELECTION-SCREEN ON so_car.          " 錯誤時只有 so_car 可重新輸入
+  IF so_car[] IS NOT INITIAL.
+    SELECT SINGLE FROM scarr FIELDS @abap_true
+      WHERE carrid IN @so_car
+      INTO @DATA(lv_exists).
+    IF sy-subrc &lt;&gt; 0.
+      MESSAGE e001(zbc405) WITH 'SCARR'.  " 不存在的航空公司
+    ENDIF.
+  ENDIF.
+
+AT SELECTION-SCREEN ON BLOCK b1.        " 組合檢查
+  IF p_max &lt; 0.
+    MESSAGE 'Maximum seats must not be negative'(e02) TYPE 'E'.
+  ENDIF.
+
+AT SELECTION-SCREEN ON VALUE-REQUEST FOR p_city.
+  SELECT DISTINCT FROM spfli
+    FIELDS cityfrom, countryfr
+    ORDER BY cityfrom                   " 值清單也要排序，HANA 不保證順序
+    INTO TABLE @DATA(lt_city).
+
+  DATA lt_return TYPE STANDARD TABLE OF ddshretval WITH EMPTY KEY.
+  CALL FUNCTION 'F4IF_INT_TABLE_VALUE_REQUEST'
+    EXPORTING  retfield    = 'CITYFROM'
+               dynpprog    = sy-repid
+               dynpnr      = sy-dynnr
+               dynprofield = 'P_CITY'
+               value_org   = 'S'
+    TABLES     value_tab   = lt_city
+               return_tab  = lt_return
+    EXCEPTIONS OTHERS      = 1.
+  IF sy-subrc = 0 AND line_exists( lt_return[ 1 ] ).
+    p_city = lt_return[ 1 ]-fieldval.
+  ENDIF.</code></pre>
+
+  <p><b>變式（Variant）</b>：每個程式可有任意多個變式，<b>變式只屬於該程式，不能跨程式共用</b>；常用相同條件或要背景執行時就該建。程式屬性勾 <b>Start using variant</b> 時，使用者必須選變式才能執行。多個選擇畫面時可以為全部或個別畫面建變式。命名規則：<b>SAP&amp;xxx</b> 為 SAP 提供、<b>CUS&amp;xxx</b> 為客戶建立——遵守這兩種規則的是「系統變式」，<b>與用戶端無關且隨報表自動傳輸</b>；其他名稱要傳輸，得在 ABAP 編輯器「轉到 → 變式」再「公用程式 → 傳輸請求」手動加入（傳輸觀念見 <a href="#ch01-1">1-1 章</a>）。</p>
+  <table>
+    <thead><tr><th>層級</th><th>屬性</th></tr></thead>
+    <tbody>
+      <tr><td>變式整體</td><td>Only for background processing（只供背景）、Protect variant（保護變式，只有建立者可改）、Only display in catalog（只在目錄顯示，不出現在一般 F4；目錄只有開發者從「轉到 → 變式 → 變式 → 目錄」看得到）、System variant（自動傳輸）</td></tr>
+      <tr><td>欄位</td><td>必填、停用 SET/GET 參數、儲存空值欄位、Selection variable（選擇變數）、隱藏「至」欄、隱藏欄位、保護欄位（不可輸入）；欄位型別 S＝SELECT-OPTIONS、P＝PARAMETERS</td></tr>
+    </tbody>
+  </table>
+  <p><b>選擇變數（Selection Variable）三種型別</b>：<b>T</b>＝從表 <b>TVARVC</b> 取值（在 <span class="tcode">STVARVC</span> 永久維護變數，執行時依名稱取值；强晟 2007 版寫的是舊表 TVARV，已由 TVARVC 取代）；<b>D</b>＝動態日期計算（今天、本月等）；<b>B</b>＝使用者專屬變數（欄位要宣告 MEMORY ID）。建立動態日期變式（NetWeaver 7.0 起的步驟）：建立變式 → 屬性 → 該日期欄 Selection Variable 選 D → Name of Variable 用 F4 選例如「Current Month」<span class="src">（依講義步驟整理）</span>。</p>
+  <div class="tip">背景排程報表的日期條件一定要用 D 型動態日期或 TVARVC 變數，不要把日期寫死在變式裡——否則下個月的排程還在跑上個月的資料。背景作業見第 11 節與 <a href="#ch04-4">4-4 章</a>。</div>
+
+  <h3 id="ch05-6-08">8. 邏輯資料庫（LDB）：結構、GET 事件、選擇畫面與 LDB_PROCESS</h3>
+  <p>邏輯資料庫是一種特殊的 ABAP 程式：<b>讀資料庫、依階層把資料交給報表</b>，同時提供選擇畫面、輸入檢查與錯誤對話、權限檢查。優點（兩版教材相同）：預先定義的選擇畫面、可用選擇畫面版本／變式／程式自己的附加選擇來調整；開發者不必知道表的確切結構與關係；資料依表階層（主鍵順序）送達；效能改善集中一處，所有掛這個 LDB 的程式自動受惠；權限檢查在 LDB 而不在報表。同一個 LDB 可以當多個 QuickView、Query、報表的資料來源；可執行程式在<b>程式屬性</b>指定 LDB，其他程式用函數 <span class="kw">LDB_PROCESS</span> 呼叫。</p>
+  <ul>
+    <li>數量：强晟筆記寫「ECC5 約 230 個」，Col18 寫「SAP ERP 超過 250 個」。名稱最長 20 字元；多數是 3 字元，第 3 碼是應用領域，例如 <b>DDF</b>＝Debtor Data（客戶）＋ F（Financials）。</li>
+    <li>維護工具：<span class="tcode">SE36</span> Logical Database Builder。LDB 程式名 <b>SAPDB&lt;ldbname&gt;</b>，選擇畫面定義在 Include <b>DB&lt;ldbname&gt;SEL</b>。</li>
+    <li>教學用 LDB <b>F1S</b>（套件 BC_DATAMODEL）：SPFLI（航線）→ SFLIGHT（航班）→ SBOOK（訂位）。</li>
+    <li><b>節點</b>名最長 14 字元，四種型別：<b>T</b> 表（節點名＝透明表名，不允許深層型別）、<b>S</b> 字典型別（任意名稱，可深層結構）、<b>C</b> 型別群組中的複雜型別（不建議，SAP Query 用起來有缺點）、<b>A</b> 動態節點（執行時才決定型別）。</li>
+  </ul>
+  <p><b>事件流程</b>：START-OF-SELECTION 在控制權交給 LDB 讀取常式<b>之前</b>觸發；LDB 在 <span class="kw">put_&lt;node&gt;</span> 副程式中 SELECT，執行 <span class="kw">PUT node</span> 就觸發報表的 <span class="kw">GET node</span>（可能執行很多次）；<span class="kw">GET node LATE</span> 在該節點所有下層節點處理完、讀下一筆之前觸發；全部讀完才觸發 END-OF-SELECTION。LDB 每個事件都有對應副程式（如 <span class="kw">init</span> 對應 INITIALIZATION），<b>先跑 LDB 副程式，再跑報表的事件區塊</b>；選擇畫面的 PBO／PAI 副程式中做檢查，權限檢查 <span class="kw">AUTHORITY-CHECK</span> 通常在 PAI。讀取深度由報表中最底層的 GET 決定，<b>LDB 會讀完直接存取路徑上的所有記錄</b>——只要深層節點時效率很差，應換一個節點位置較高的 LDB 或自己寫 SQL。</p>
+  <p><b>中止敘述</b>：<span class="kw">CHECK</span> 條件不成立即結束目前處理區塊；<span class="kw">STOP</span> 結束處理但<b>先執行 END-OF-SELECTION</b>（若 STOP 就在 END-OF-SELECTION 中則立即結束並顯示清單）；<span class="kw">EXIT</span> 立即離開程式、<b>不執行 END-OF-SELECTION</b>，已產生的清單照樣顯示；<span class="kw">REJECT</span> 放棄目前這筆，在同一階層讀下一筆（可在副程式中用）。GET 事件開始時系統自動換行，並把格式重設為預設。</p>
+  <p><b>LDB 選擇畫面</b>：<span class="kw">FOR NODE</span> 把選擇條件分配給節點，畫面長相取決於報表的 NODES 與 GET；<span class="kw">SELECTION-SCREEN FIELD SELECTION FOR TABLE/NODE</span> 允許報表用 <span class="kw">GET node FIELDS f1 f2</span> 只讀需要的欄位；<span class="kw">DYNAMIC SELECTIONS FOR NODE</span> 讓選擇畫面出現「動態選擇」按鈕，可選哪些欄位由<b>選擇視圖（Selection View）</b>決定：SAP 型或客戶自建的 CUS 型（CUS 優先）。建立方式：ABAP 編輯器 → Other Object → More → Selection view，Origin＝CUS、Name＝STANDARD <span class="src">（依講義步驟整理）</span>。大型 LDB 有多個<b>選擇畫面版本</b>（用 EXCLUDE 取子集），在程式屬性輸入版本號。只用到子節點（如 SFLIGHT）時，父節點（SPFLI）的選擇條件也會出現。</p>
+  <p><b>報表自己加的選擇條件</b>：若附加的 SELECT-OPTIONS 不是 LDB 的動態選擇欄位，LDB 的 WHERE 不會用到它，<b>報表必須在 GET 區塊中自己 <span class="kw">CHECK seltab</span></b>；PARAMETERS 則要寫完整邏輯條件（簡寫 CHECK seltab 只適用 SELECT-OPTIONS）。</p>
+  <p><b>LDB_PROCESS</b>（4.5 起）：讓對話程式、模組池也能用 LDB，還能多次呼叫。要準備依字典結構 <b>LDBCB</b> 的內表：LDBNODE（節點名）、GET（處理 GET）、GET_LATE（處理 GET LATE）、CB_PROG（回呼程式）、CB_FORM（回呼副程式名）；要讓 LDB 可重複處理，LDB 程式中必須有 <span class="kw">LDB_PROCESS_INIT</span> 副程式。回呼副程式中的條件檢查不成立時把參數 <span class="kw">selected</span> 設為空白，就不會再處理更深的節點。</p>
+
+<pre><code class="abap">*----- 舊技術示意：LDB F1S 的 GET 事件（勿用於新開發）-----
+" 程式屬性 Logical database = F1S
+NODES: spfli, sflight.                 " 強晟筆記原文把 sflight 誤植成 sfight
+
+GET spfli FIELDS carrid connid cityfrom cityto.
+  WRITE: / spfli-carrid, spfli-connid, spfli-cityfrom, spfli-cityto.
+
+GET sflight FIELDS fldate price currency.
+  CHECK sflight-price IN so_price.     " 報表自加的 SELECT-OPTIONS 要自己 CHECK
+  WRITE: /10 sflight-fldate, sflight-price CURRENCY sflight-currency.
+
+*----- S/4HANA 寫法：一句 JOIN 取代整個 LDB 階層 -----
+SELECT FROM spfli AS p
+  INNER JOIN sflight AS f ON  f~carrid = p~carrid
+                          AND f~connid = p~connid
+  FIELDS p~carrid, p~connid, p~cityfrom, p~cityto,
+         f~fldate, f~price, f~currency
+  WHERE p~carrid IN @so_car
+    AND f~price  IN @so_price          " 條件直接進 WHERE，由資料庫過濾
+  ORDER BY p~carrid, p~connid, f~fldate
+  INTO TABLE @DATA(lt_hier).</code></pre>
+  <div class="warn"><b>LDB 在 S/4HANA 已是過時技術。</b>SAP 早已不建議新開發使用 LDB，ABAP Cloud／Steampunk 完全沒有 LDB；許多 ERP 時代的 LDB（例如 FI 的 DDF／KDF／SDF、BRF）在 S/4HANA 背後的資料模型已改（ACDOCA、BP），效能與正確性都不再有保障。替代方案：自寫 ABAP SQL JOIN、使用 SAP 標準 <b>CDS View</b>（權限用 DCL 取代 LDB 的權限檢查），大量資料的顯示用 ALV IDA（第 19 節）。舊程式要升級時，先用 <span class="tcode">SE36</span> 看它讀了哪些表，再換成 CDS／SQL。CDS 見 <a href="#ch01-3">1-3 章</a>。</div>
+  <div class="note">强晟筆記 p50 的「SYNAMIC SELECTIONS」是「DYNAMIC SELECTIONS」之誤；p45 範例的「NODES: spfli, sfight」是「sflight」之誤。</div>
+
+  <h3 id="ch05-6-09">9. 不用 LDB 自行取數：View、JOIN、FOR ALL ENTRIES、聚合與 GROUP BY／HAVING／ORDER BY</h3>
+  <p><b>Open SQL（現稱 ABAP SQL）優於 Native SQL</b>：與資料庫無關、可換資料庫而不改程式、完整整合在 Workbench 並有語法檢查、可使用 SAP 表緩衝。Native SQL 寫在 <span class="kw">EXEC SQL [PERFORMING form] … ENDEXEC</span> 之間，<b>絕對不可用 Native SQL 修改 SAP 資料</b>（參照完整性由 SAP 程式維護）；真的要用就集中在一個 Include，並限於 ISO 9075:1992 標準 SQL。S/4HANA 需要資料庫特有功能時請改用 AMDP 或 ADBC（CL_SQL_STATEMENT），不要再寫 EXEC SQL。</p>
+  <p><b>多表讀取的五條效能原則</b>：① 結果集要小（適當 WHERE）；② 資料庫與應用伺服器間傳輸要少（明列欄位，不要 SELECT *）；③ 查詢次數要少（JOIN 取代巢狀 SELECT）；④ 搜尋範圍要小（WHERE 能用上索引）；⑤ 減輕資料庫負擔（善用 SAP 緩衝）。Col18 另加一句：有 SQL 的程式一定要做 Code Inspector（<span class="tcode">SCI</span>）、執行時期分析（<span class="tcode">SAT</span>）或 SQL Trace（<span class="tcode">ST05</span>），效能調校細節見 <a href="#ch05-21">5-21 章 BC490</a>。</p>
+  <table>
+    <thead><tr><th>技術</th><th>重點與限制</th></tr></thead>
+    <tbody>
+      <tr><td>資料庫 View（SE11）</td><td>在資料庫實作為 <b>INNER JOIN</b>；4.0 起可緩衝（規則同表緩衝，適合以讀為主）；優點：集中維護、可重用、程式只要一句 SELECT；缺點：彈性低，可能缺欄位。建立：SE11 → Database View → Table/Join Conditions（Relationships 鈕依外鍵帶出關聯）→ 檢查系統建議的 JOIN 條件 → View Flds → 啟用 <span class="src">（依講義步驟整理）</span>。S/4HANA 新開發改用 CDS View（<a href="#ch05-16">5-16 章</a>）</td></tr>
+      <tr><td>INNER JOIN</td><td>只留兩邊都符合條件的組合；條件不限主鍵，可用有外鍵關係或同 Domain 的欄位；同名欄位要加表名或別名；由資料庫決定讀表順序與索引</td></tr>
+      <tr><td>LEFT OUTER JOIN</td><td>左表全部保留，右表沒資料的欄位由資料庫填 NULL，進 ABAP 時轉成型別初始值。例：不是每家航空公司（SCARR）都有航線（SPFLI），但名稱全都要列出。<b>舊限制</b>：右邊只能是一張表或 View、ON 只能用 AND、ON 每個比較都要有右表欄位、至少一個真正的 JOIN 條件。<b>NetWeaver 7.40 SP05 起的新 Open SQL 已放寬</b>，ON 條件不必再含右表欄位</td></tr>
+      <tr><td>FOR ALL ENTRIES</td><td>以集合方式運作：先把第一批資料收進內表，<b>一定要先檢查內表不為空</b>——空內表會讓 FAE 讀回<b>整張表</b>；可先 DELETE ADJACENT DUPLICATES 去重避免重複讀；<span class="kw">itab-col</span> 是佔位符不是內表元件；結果自動去除重複列。建議用在「第一批資料不是從資料庫讀、而是已在程式中（例如使用者輸入）」的情況，否則用 JOIN。强晟筆記：JOIN 與 View 的效能遠高於 FAE</td></tr>
+      <tr><td>巢狀 SELECT</td><td>內層 SELECT 會隨外層每一筆各執行一次，主從式環境效能極差；只能當最後手段，且要把筆數最少的表放最外層。4.0 起可改用子查詢</td></tr>
+    </tbody>
+  </table>
+  <p><b>聚合函數</b>：<span class="kw">MAX</span>、<span class="kw">MIN</span>、<span class="kw">AVG</span>（數值欄；結果型別 F）、<span class="kw">SUM</span>（數值欄）、<span class="kw">COUNT( DISTINCT col )</span>（不同值個數）、<span class="kw">COUNT(*)</span>（列數；結果型別 I）。MAX／MIN／SUM 的結果型別＝字典欄位型別；<b>目標變數的型別要夠大</b>。<span class="kw">GROUP BY</span>：沒有用在聚合函數的欄位都必須列在 GROUP BY；STRING／RAWSTRING 欄位不能 GROUP BY；Pool／Cluster 表不能 GROUP BY（S/4HANA 已大多轉成透明表）。用 INTO CORRESPONDING FIELDS 時，聚合欄要用 <span class="kw">AS</span> 取別名對應目標欄位。<span class="kw">HAVING</span> 限制的是<b>群組</b>（語法同 WHERE，可含聚合函數；同一欄可在 SELECT 用一種聚合、在 HAVING 用另一種）。<span class="kw">ORDER BY</span>：沒列在 ORDER BY 的欄位順序是<b>未定義</b>的，同一句跑兩次結果可能不同；<span class="kw">ORDER BY PRIMARY KEY</span> 只適用單表 SELECT *；排聚合欄要用別名；除了 ORDER BY PRIMARY KEY，<b>加 ORDER BY 一律繞過 SAP 緩衝</b>；效能上只在有索引支援時讓資料庫排序。</p>
+
+<pre><code class="abap">" ① INNER JOIN：航線＋航班
+SELECT FROM spfli AS p
+  INNER JOIN sflight AS f ON f~carrid = p~carrid AND f~connid = p~connid
+  FIELDS p~carrid, p~connid, p~cityfrom, p~cityto, f~fldate, f~seatsmax, f~seatsocc
+  WHERE p~carrid IN @so_car
+  ORDER BY p~carrid, p~connid, f~fldate
+  INTO TABLE @DATA(lt_flights).
+
+" ② LEFT OUTER JOIN：沒有航線的航空公司也要列出
+SELECT FROM scarr AS c
+  LEFT OUTER JOIN spfli AS p ON p~carrid = c~carrid
+  FIELDS c~carrid, c~carrname, p~connid, p~cityfrom
+  ORDER BY c~carrid, p~connid
+  INTO TABLE @DATA(lt_airlines).
+
+" ③ FOR ALL ENTRIES：驅動表來自程式（例如上傳檔或使用者輸入）
+IF lt_flights IS NOT INITIAL.                     " ← 忘了這行就會讀整張 SBOOK
+  DATA(lt_keys) = lt_flights.
+  SORT lt_keys BY carrid connid fldate.
+  DELETE ADJACENT DUPLICATES FROM lt_keys COMPARING carrid connid fldate.
+  SELECT FROM sbook
+    FIELDS carrid, connid, fldate, bookid, customid, loccuram, loccurkey
+    FOR ALL ENTRIES IN @lt_keys
+    WHERE carrid = @lt_keys-carrid
+      AND connid = @lt_keys-connid
+      AND fldate = @lt_keys-fldate
+    INTO TABLE @DATA(lt_bookings).
+  SORT lt_bookings BY carrid connid fldate bookid. " FAE 不能 ORDER BY，事後排序
+ENDIF.
+
+" ④ 聚合 + GROUP BY + HAVING + ORDER BY（原廠 Unit 7 範例的現代寫法）
+SELECT FROM sflight
+  FIELDS carrid,
+         AVG( seatsmax ) AS seatsmax_avg,
+         AVG( seatsocc ) AS seatsocc_avg,
+         COUNT(*)        AS flights
+  WHERE carrid IN @so_car
+  GROUP BY carrid
+  HAVING AVG( seatsmax ) IN @so_avgmx
+     AND AVG( seatsocc ) IN @so_avgoc
+  ORDER BY seatsmax_avg DESCENDING, seatsocc_avg DESCENDING
+  INTO TABLE @DATA(lt_stat).</code></pre>
+  <div class="warn"><b>HANA 沒有預設排序。</b>Casper 第一條經驗：成本評價同時存在 item category「H」與 cost component「E」兩種角度，程式沒排序時一下抓到 H、一下抓到 E，成本結果就不穩定——最後結論是固定抓 H。在舊資料庫上「看起來照主鍵排好」的結果，到了 HANA（欄式儲存、平行處理）就不成立。凡是「取第一筆」（<span class="kw">SELECT … UP TO 1 ROWS</span>、<span class="kw">READ TABLE … INDEX 1</span>、控制層處理、清單輸出），<b>一定要先 ORDER BY 或 SORT</b>；FAE 不能下 ORDER BY，取回後自己 SORT。</div>
+  <div class="note">原廠 Unit 7 測驗第 6 題問「哪個附加會限制資料庫表被選出的列數」，答案給 HAVING——措辭不精確：HAVING 過濾的是 GROUP BY 之後的<b>群組</b>，真正在資料庫層限制列的是 WHERE。考試照答，觀念要分清楚。</div>
+
+  <h3 id="ch05-6-10">10. 資料格式化與控制層處理：內表 AT 與 Extract 資料集</h3>
+  <p>控制層處理（control level processing）把資料分組輸出，讓清單結構更清楚。資料要先放進內表並<b>依控制欄位升冪排序</b>（也可以用 Extract 資料集）。4.0 起內表有三種：STANDARD、SORTED、HASHED（內表詳見 <a href="#ch02-2">2-2 章</a>）。</p>
+  <ul>
+    <li><b>填內表</b>：<span class="kw">SELECT … INTO TABLE</span> 批次讀取；<span class="kw">APPEND</span> 附加到最後（只能用在 STANDARD／SORTED，之後 sy-tabix＝新行索引）；<span class="kw">COLLECT</span> 依非數值欄（鍵）找相同行，找到就把數值欄累加，找不到就新增——<b>非鍵欄位必須全是數值</b>。</li>
+    <li><b>SORT</b>：無 BY 時依表鍵；<span class="kw">BY f1 f2</span> 任意型別欄位；ASCENDING（預設）／DESCENDING；<b>SORTED 表不能用別的順序排</b>；控制層處理必須是升冪。</li>
+    <li><b>LOOP … ENDLOOP</b>：EXIT 中斷；ENDLOOP 後 sy-subrc＝0 表示至少跑一次、4 表示沒有任何行。</li>
+    <li><b>AT 結構</b>：AT FIRST／AT LAST 各一次；<span class="kw">AT NEW f</span> 在 f（<b>以及 f 左邊所有欄位</b>）值改變時、控制層開始；<span class="kw">AT END OF f</span> 在控制層結束。中斷欄位要依序是內表的第 1、2… 欄。<b>順序必須是</b>：AT FIRST → AT NEW f1 → AT NEW f2 → 單筆處理 → AT END OF f2 → AT END OF f1 → AT LAST。在 AT 區塊內，控制鍵右邊的欄位內容不可依賴（强晟筆記：字元欄位被填 *、數值欄位清空）；寫 <span class="kw">SUM</span> 會把該層數值欄自動加總；ENDAT 後恢復為目前這筆的值。</li>
+  </ul>
+  <p><b>Extract 資料集</b>（舊技術）：用 <span class="kw">FIELD-GROUPS</span> 宣告欄位群組，<span class="kw">INSERT f1 f2 INTO fg</span> 把<b>全域</b>資料物件（或欄位符號，未指派者會被忽略）放入群組；特殊群組 <b>HEADER</b> 必須存在，是每筆記錄的排序鍵，系統自動把它放在其他群組前面，<b>不能對 HEADER 下 EXTRACT</b>。<span class="kw">EXTRACT fg</span> 把一筆寫入循序資料集；處理完用 <span class="kw">SORT [BY …]</span>（欄位必須在 HEADER 中）排序，再用不帶表名的 <span class="kw">LOOP … ENDLOOP</span> 處理，資料放回同名程式欄位。INSERT 不是宣告敘述，所以可在 START-OF-SELECTION 動態擴充群組；但某群組一旦 EXTRACT 過就不能再 INSERT。HEADER 中沒值的欄位以十六進位 0 填入，<b>0 越多代表階層越深</b>。單筆處理用 <span class="kw">AT fg [WITH fg2]</span>（fg 後面緊跟 fg2 才處理——用來「有明細才印表頭」）；Extract 不能用 SUM 敘述，只能在 AT END OF／AT LAST 中用 <span class="kw">CNT(header 欄)</span> 與 <span class="kw">SUM(數值欄)</span>，其他地方用會短路（runtime error）；Extract 的 LOOP 不能巢狀，但可連續多個。搭配欄位符號與單選鈕可讓同一支程式依使用者選擇換排序與輸出格式。</p>
+  <table>
+    <thead><tr><th>內表</th><th>Extract 資料集</th></tr></thead>
+    <tbody>
+      <tr><td>可有多個</td><td>每支程式只有一個</td></tr>
+      <tr><td>控制層合計也可在控制頭（AT FIRST、AT NEW）</td><td>合計只在控制尾（AT END OF、AT LAST）</td></tr>
+      <tr><td>INSERT／MODIFY／DELETE／APPEND 都能用，隨時可改</td><td>只有 EXTRACT、SORT、循序 LOOP；SORT／LOOP 之後不能再 EXTRACT，不能插入刪除</td></tr>
+      <tr><td>所有行同一結構、靜態行型別</td><td>支援多種不同行結構、動態記錄型別</td></tr>
+      <tr><td>控制層只依行型別欄位順序</td><td>控制層依排序順序（與 HEADER 順序無關）</td></tr>
+      <tr><td>SUM 效率較低</td><td>SUM(f) 經最佳化</td></tr>
+    </tbody>
+  </table>
+
+<pre><code class="abap">" 經典控制層（AT NEW / AT END OF / SUM）——7.52 仍可用，但要先 SORT
+TYPES: BEGIN OF ty_book,
+         carrid   TYPE sbook-carrid,       " 控制欄位要排在最前面、依序排列
+         connid   TYPE sbook-connid,
+         fldate   TYPE sbook-fldate,
+         loccuram TYPE sbook-loccuram,
+       END OF ty_book.
+DATA lt_book TYPE STANDARD TABLE OF ty_book WITH EMPTY KEY.
+
+SORT lt_book BY carrid connid fldate.       " 升冪，否則控制層會亂跳
+LOOP AT lt_book INTO DATA(ls_book).
+  AT NEW carrid.
+    WRITE: / 'Airline', ls_book-carrid COLOR COL_GROUP.
+  ENDAT.
+  WRITE: /5 ls_book-connid, ls_book-fldate, ls_book-loccuram.
+  AT END OF carrid.
+    SUM.                                    " ls_book-loccuram 變成本層合計
+    WRITE: /5 'Total', ls_book-loccuram COLOR COL_TOTAL.
+  ENDAT.
+  AT LAST.
+    SUM.
+    WRITE: / 'Grand total', ls_book-loccuram COLOR COL_TOTAL INTENSIFIED.
+  ENDAT.
+ENDLOOP.
+
+" S/4HANA 建議：LOOP AT … GROUP BY + REDUCE，不依賴欄位順序也不怕 * 號
+LOOP AT lt_book INTO DATA(ls_grp)
+     GROUP BY ( carrid = ls_grp-carrid connid = ls_grp-connid )
+     ASCENDING
+     INTO DATA(lg).
+  DATA(lv_sum) = REDUCE sbook-loccuram( INIT s = 0
+                                        FOR m IN GROUP lg
+                                        NEXT s = s + m-loccuram ).
+  DATA(lv_cnt) = REDUCE i( INIT n = 0 FOR m IN GROUP lg NEXT n = n + 1 ).  " 相當 Extract 的 CNT
+  WRITE: / lg-carrid, lg-connid, lv_cnt, lv_sum.
+ENDLOOP.</code></pre>
+  <div class="warn"><b>Extract 資料集（FIELD-GROUPS／EXTRACT）在 S/4HANA 屬於過時語法</b>：只能用全域資料、不能在類別中使用、ABAP Cloud 不支援。分組請用 <span class="kw">LOOP AT … GROUP BY</span>（7.40 起）、<span class="kw">REDUCE</span>，或直接交給 ALV 的排序／小計（第 14、18 節），甚至在 SQL 端 GROUP BY。原講義也承認 Extract 的英文術語沒有好的中文翻譯，本書沿用原文。</div>
+
+  <h3 id="ch05-6-11">11. 保存清單、列印與背景處理</h3>
+  <p><b>保存清單的四個去處</b>（「系統 → 清單 → 儲存」或清單狀態的「清單 → 儲存」）：① SAP Office 資料夾（可放發件匣寄給其他使用者）；② 本機檔案，四種格式：未轉換（ASCII 純文字）、試算表（Excel）、RTF（Word／寫字板）、HTML；程式 <b>RSSOPCDR</b> 可設定使用者存檔的預設路徑；③ 區域選單（Area Menu）；④ 主選單的使用者收藏夾。4.6 起區域選單改為樹狀導覽，有交易碼的 1 型程式與 SAP Query 可直接加入，沒交易碼的系統會自動配一個；報表樹（Report Tree）也整合進區域選單，用 <span class="tcode">SE43N</span> 維護，舊報表樹可用 <span class="tcode">RTTREE_MIGRATION</span> 轉換。保存的清單與程式存在一起，程式已掛在區域選單或收藏夾時，清單會顯示在其後面；標準程式 <b>RSRSSLIS</b> 可顯示已存清單。區域選單可透過 Profile Generator（<span class="tcode">PFCG</span>）指派給角色（强晟筆記稱「活動組」）。</p>
+  <p><b>四種列印方式</b>：</p>
+  <table>
+    <thead><tr><th>方式</th><th>說明</th></tr></thead>
+    <tbody>
+      <tr><td>從選擇畫面</td><td>清單只送印表機不顯示；在對話工作程序中產生</td></tr>
+      <tr><td>從程式（NEW-PAGE PRINT ON）</td><td>選擇畫面上的列印選項都能用；適合互動清單（印細節清單）</td></tr>
+      <tr><td>清單產生後</td><td>清單已顯示且格式化，例如欄寬不能再改；在對話工作程序中產生</td></tr>
+      <tr><td>背景</td><td>在背景工作程序產生，特別適合長時間執行的程式</td></tr>
+    </tbody>
+  </table>
+  <p>列印參數分為：輸出裝置與份數、假脫機（Spool）請求、Spool 控制、封面、輸出格式。函數 <span class="kw">SET_PRINT_PARAMETERS</span> 設定線上清單列印的預設值。<b>程式控制列印</b>：<span class="kw">NEW-PAGE PRINT ON</span> 觸發換頁，之後輸出全部送 Spool；<span class="kw">NO DIALOG</span> 直接送出不給使用者改參數（不加則出現帶預設值的列印參數畫面）；<span class="kw">NEW-PAGE PRINT OFF</span> 換頁、結束 Spool 請求（號碼在 <span class="kw">sy-spono</span>），之後輸出回到螢幕。不建議把列印參數一個個單獨指定——使用者到了參數畫面不想印時，唯一辦法是終止整支程式。<b>PARAMETERS 附加用的結構必須由函數 <span class="kw">GET_PRINT_PARAMETERS</span> 填</b>：結構內含 NEW-PAGE PRINT ON 會驗算的內部檢查和，錯了程式就中斷；函數成功時 <span class="kw">valid</span>＝X，使用者取消或無法組出完整參數時結構為空、valid 為空白。一支程式要把清單分送多位收件者時，每次迴圈用 <span class="kw">new_list_id = 'X'</span> 取新 Spool，然後 PRINT OFF 結束目前請求。</p>
+
+<pre><code class="abap">" 依部門把清單分成多個 Spool 請求（原講義範例的現代寫法；原本的副程式呼叫改為方法）
+LOOP AT lt_receivers INTO DATA(ls_rcv).
+  DATA ls_params TYPE pri_params.
+  DATA lv_valid  TYPE c LENGTH 1.
+  CALL FUNCTION 'GET_PRINT_PARAMETERS'
+    EXPORTING  destination    = 'LP01'
+               department     = ls_rcv-department
+               receiver       = ls_rcv-uname      " 强晟筆記寫 receive，實際參數名為 RECEIVER
+               new_list_id    = abap_true         " 每位收件者一個新 Spool
+               no_dialog      = abap_true
+    IMPORTING  out_parameters = ls_params
+               valid          = lv_valid
+    EXCEPTIONS archive_info_not_found = 1
+               invalid_print_params   = 2
+               invalid_archive_params = 3
+               OTHERS                 = 4.
+  IF sy-subrc = 0 AND lv_valid = abap_true.
+    NEW-PAGE PRINT ON PARAMETERS ls_params NO DIALOG.
+    go_report-&gt;write_list( ls_rcv-department ).  " 輸出清單內容
+    NEW-PAGE PRINT OFF.
+    WRITE: / 'Spool ID'(001), sy-spono.
+  ENDIF.
+ENDLOOP.</code></pre>
+
+  <p><b>背景處理</b>：資料量大、執行時間長時放背景；背景在專用的背景工作程序執行、沒有使用者對話，可平行處理並讓對話工作程序留給前景使用；也適合定期評估與事件觸發的評估。步驟：<span class="tcode">SM36</span>（系統 → 服務 → 作業 → 定義作業）→ 作業名、作業類別（優先順序）、目標主機（F4）→ 定義步驟：程式、<b>有選擇畫面就必須給變式</b>、列印參數決定清單存 Spool 或直接印 → 開始條件（某日某時、事件…）→ 儲存即釋放。<span class="tcode">SM37</span> 看作業狀態；4.6C 起有作業精靈（Job Wizard）。程式化排程用函數群組 <b>BTCH</b>、<b>BTC2</b> 的函數。背景作業完整實務見 <a href="#ch04-4">4-4 章</a>。</p>
+  <p><b>ALV 在背景</b>：ALV 在背景執行時會產生<b>列印清單</b>（外觀與對話模式不同），可用程式設定初始排序、彙總或指定版面變式來調整。<b>在背景實例化容器控制項會發生例外</b>，所以要檢查 <span class="kw">sy-batch</span>（背景＝X，前景＝空白），背景時不要 CREATE OBJECT 容器。最省事的做法是用 CL_SALV_TABLE（第 18 節），它在背景會自動輸出成 Spool 清單。</p>
+
+<pre><code class="abap">" 程式化建立背景作業：JOB_OPEN → SUBMIT … VIA JOB → JOB_CLOSE
+DATA(lv_jobname) = CONV btcjob( |ZBC405_DAILY_{ sy-datum }| ).
+DATA lv_jobcount TYPE btcjobcnt.
+
+CALL FUNCTION 'JOB_OPEN'
+  EXPORTING  jobname  = lv_jobname
+  IMPORTING  jobcount = lv_jobcount
+  EXCEPTIONS OTHERS   = 1.
+IF sy-subrc &lt;&gt; 0.
+  MESSAGE 'JOB_OPEN failed' TYPE 'E'.
+ENDIF.
+
+SUBMIT zbc405_report
+  USING SELECTION-SET 'CUS&amp;DAILY'          " 背景一定要用變式
+  VIA JOB lv_jobname NUMBER lv_jobcount
+  AND RETURN.
+
+CALL FUNCTION 'JOB_CLOSE'
+  EXPORTING  jobcount  = lv_jobcount
+             jobname   = lv_jobname
+             strtimmed = abap_true           " 立即開始
+  EXCEPTIONS OTHERS    = 1.
+
+" 同一支報表中，依 sy-batch 決定輸出方式
+IF sy-batch = abap_true.
+  " 背景：不可建立 CL_GUI_CUSTOM_CONTAINER；改用 SALV 輸出成 Spool 清單
+ELSE.
+  CALL SCREEN 100.                             " 前景：容器畫面 + ALV Grid
+ENDIF.</code></pre>
+
+  <h3 id="ch05-6-12">12. 互動式清單：細節清單、HIDE、AT LINE-SELECTION、系統欄位</h3>
+  <p>每個基本清單最多可有 <b>20 層</b>細節清單，每層有自己的清單緩衝區；細節清單功能與基本清單相同。「返回」或「取消」離開目前清單並釋放其緩衝區，「退出」回選擇畫面。<b>START-OF-SELECTION、GET、END-OF-SELECTION、TOP-OF-PAGE、END-OF-PAGE 只用於基本清單</b>，離開基本清單後不再觸發；細節清單由 <span class="kw">AT LINE-SELECTION</span>（雙擊、點 HOTSPOT、按功能碼 PICK 的「細節」圖示或 F2）與 <span class="kw">AT USER-COMMAND</span>（選單、按鈕、功能鍵，用 CASE 判斷功能碼）產生；細節清單的頁首用 <span class="kw">TOP-OF-PAGE DURING LINE-SELECTION</span>，多層時用 CASE <span class="kw">sy-lsind</span> 區分。</p>
+  <ul>
+    <li><b>sy-lsind</b>：目前清單層級，觸發互動事件時加 1。事件中若沒有任何 WRITE／ULINE／SKIP，系統把 sy-lsind 還原，不產生新清單；也可在程式中改 sy-lsind 控制最大層數。</li>
+    <li><b>HIDE</b>：把全域欄位的名稱與值連同目前清單行位置存進 HIDE 區，<b>必須緊接在該行最後一個 WRITE 之後</b>；通常存鍵值。選取流程：使用者選一行 → 系統依 <span class="kw">sy-lilli</span> 找到該行 → 到 HIDE 區把值寫回對應欄位 → 執行 AT LINE-SELECTION → 產生細節清單。每層清單有自己的 HIDE 區。</li>
+    <li><b>無效行選擇</b>：選到沒有 HIDE 值的行（頁首、頁尾）。做法：每次 AT LINE-SELECTION 結束時清空 HIDE 欄位，下次若選到無效行欄位保持初始值，用 CHECK 擋掉，就不會產生細節清單。</li>
+    <li><b>緩衝區回收</b>：從第 5 層回到第 3 層時，第 4、5 層緩衝區會被自動刪除。</li>
+    <li><b>GUI 標題</b>：<span class="kw">SET TITLEBAR 'T01' WITH f1 … f9</span>，標題名最多 20 字元且大寫，最多 9 個參數，展開後總長最多 70 字元，會持續到設新標題為止。</li>
+    <li><b>對話框清單</b>：<span class="kw">WINDOW STARTING AT c1 r1 [ENDING AT c2 r2]</span>，座標以主視窗左上 (0,0) 起算；r1 ≤ 0 時全螢幕顯示。</li>
+    <li><b>GET CURSOR FIELD f VALUE v</b>：依游標位置取欄位名與值，sy-subrc＝0 在欄位上、4 不在。<b>不要把 VALUE 取得的值直接放進 SELECT 的 WHERE</b>——它是輸出格式字串，與非字元欄位比較會出錯，這時用 HIDE。</li>
+  </ul>
+  <table>
+    <thead><tr><th>系統欄位</th><th>意義</th><th>系統欄位</th><th>意義</th></tr></thead>
+    <tbody>
+      <tr><td>sy-lsind</td><td>目前清單索引</td><td>sy-listi</td><td>上一個顯示清單的索引</td></tr>
+      <tr><td>sy-lilli</td><td>被選行的絕對行號</td><td>sy-cpage</td><td>最上面顯示行所在頁</td></tr>
+      <tr><td>sy-cucol</td><td>游標在視窗中的欄</td><td>sy-curow</td><td>游標在視窗中的列</td></tr>
+      <tr><td>sy-staco</td><td>顯示的第一欄</td><td>sy-staro</td><td>顯示頁第一個可見行</td></tr>
+      <tr><td>sy-ucomm</td><td>觸發互動事件的功能碼</td><td>sy-pfkey</td><td>目前 GUI 狀態</td></tr>
+    </tbody>
+  </table>
+
+<pre><code class="abap">REPORT zbc405_interactive NO STANDARD PAGE HEADING.
+
+DATA: gv_carrid TYPE spfli-carrid,        " HIDE 欄位要用全域資料
+      gv_connid TYPE spfli-connid.
+
+START-OF-SELECTION.
+  SELECT FROM spfli FIELDS carrid, connid, cityfrom, cityto
+    ORDER BY carrid, connid
+    INTO TABLE @DATA(gt_spfli).
+  LOOP AT gt_spfli INTO DATA(gs_spfli).
+    gv_carrid = gs_spfli-carrid.
+    gv_connid = gs_spfli-connid.
+    FORMAT HOTSPOT ON.
+    WRITE: / gs_spfli-carrid, gs_spfli-connid, gs_spfli-cityfrom, gs_spfli-cityto.
+    FORMAT HOTSPOT OFF.
+    HIDE: gv_carrid, gv_connid.            " 緊接在該行最後一個 WRITE 之後
+  ENDLOOP.
+  CLEAR: gv_carrid, gv_connid.             " 避免清單尾端被誤判為有效行
+
+TOP-OF-PAGE DURING LINE-SELECTION.
+  CASE sy-lsind.
+    WHEN 1. WRITE: / |Flights of { gv_carrid } { gv_connid }|. ULINE.
+  ENDCASE.
+
+AT LINE-SELECTION.
+  CHECK gv_carrid IS NOT INITIAL.          " 無效行選擇：不產生細節清單
+  CASE sy-lsind.
+    WHEN 1.
+      SET TITLEBAR 'T_DETAIL' WITH gv_carrid gv_connid.
+      WINDOW STARTING AT 10 5 ENDING AT 90 20.   " 以對話框顯示細節清單
+      SELECT FROM sflight FIELDS fldate, price, currency, seatsocc
+        WHERE carrid = @gv_carrid AND connid = @gv_connid
+        ORDER BY fldate
+        INTO TABLE @DATA(lt_fl).
+      LOOP AT lt_fl INTO DATA(ls_fl).
+        WRITE: / ls_fl-fldate, ls_fl-price CURRENCY ls_fl-currency, ls_fl-currency, ls_fl-seatsocc.
+      ENDLOOP.
+  ENDCASE.
+  CLEAR: gv_carrid, gv_connid.
+
+AT USER-COMMAND.
+  CASE sy-ucomm.
+    WHEN 'SORT'.
+      DATA: lv_field TYPE string,
+            lv_value TYPE string.
+      GET CURSOR FIELD lv_field VALUE lv_value.
+      IF sy-subrc = 0.
+        MESSAGE |Cursor on { lv_field } = { lv_value }| TYPE 'S'.
+      ENDIF.
+  ENDCASE.</code></pre>
+  <div class="warn">互動式經典清單在 S/4HANA 能跑，但屬於舊技術：HIDE 綁全域變數、不能封裝在類別、無障礙差。同樣需求（主清單點一下看明細）請用 ALV 的 <span class="kw">DOUBLE_CLICK</span>／<span class="kw">HOTSPOT_CLICK</span> 事件（第 16 節），或 SALV 的 <span class="kw">double_click</span>／<span class="kw">link_click</span>（第 18 節）。第 16 節會看到：<b>ALV 事件中「READ TABLE itab INDEX e_row-index」就是 HIDE 區的替代品</b>。</div>
+
+  <h3 id="ch05-6-13">13. ALV Grid Control 基礎：Control Framework、容器畫面、SET_TABLE_FOR_FIRST_DISPLAY</h3>
+  <p><b>使用者角度的 ALV</b>（Col18 Unit 3 L1）：畫面由三區組成——<b>工具列</b>（呼叫程式可隱藏個別功能或整列）、<b>清單標題</b>（單行）、<b>資料區</b>。資料以內表傳入，超出範圍自動出現捲軸；欄位可分前導欄（顏色不同、橫向捲動時固定）與一般欄；可選儲存格、整列、整欄、列加欄；設定 Line Selection 時會多一欄選取按鈕；排序欄標題有紅色小三角，合計欄標題有 Σ。標準功能：明細（Details，以對話框顯示選取列）、升／降冪排序（可多欄）、搜尋、篩選、合計（總和、平均、最大、最小）、小計（依非數值欄分組）、列印、預覽（Views: Output List）、匯出、版面（Layout）、圖形。滑鼠左鍵選欄（Ctrl 多選）、拖曳換欄序、拖曳欄界調寬；右鍵可隱藏欄、Optimum Width、設為最後固定欄。<b>小計步驟</b>：選要合計的數值欄 → 按 Σ → 選要分組的非數值欄 → 按小計鈕（清單會先依分組欄升冪排序）；複雜小計則直接按小計鈕，在對話框左側設定排序欄、升降冪、是否小計與階層順序 <span class="src">（依講義步驟整理）</span>。當列印或下載時，系統處理的是整張清單而不只是螢幕上看得到的部分。</p>
+  <p><b>技術背景</b>：控制項（Control）是獨立、可重用的二進位元件，隨 SAP GUI 安裝在前端（ActiveX 或 JavaBeans），把功能從應用伺服器移到前端，ABAP 端有包裝類別（Control Wrapper）。所有控制項都透過 <b>Control Framework（CFW）</b>以同一種方式溝通：應用伺服器是 Automation Client，前端 SAP GUI 的 <b>Automation Controller</b> 是 Automation Server，方法呼叫以 RFC 送到前端。控制項不能單獨存在，必須有<b>畫面上保留的區域 → 容器控制項 → ALV Grid</b> 這條物件鏈。程式與兩個 ABAP 實例（容器、Grid 的代表物件）以及至少一個 Dynpro 溝通，總共四個實例：ABAP 端兩個、前端兩個。</p>
+  <table>
+    <thead><tr><th>容器類別</th><th>用途</th></tr></thead>
+    <tbody>
+      <tr><td>CL_GUI_CUSTOM_CONTAINER</td><td>SAP Custom Container：畫面／子畫面中用 Screen Painter 畫出的 Custom Control 區域</td></tr>
+      <tr><td>CL_GUI_DIALOGBOX_CONTAINER</td><td>非強制回應（amodal）對話框或全螢幕</td></tr>
+      <tr><td>CL_GUI_DOCKING_CONTAINER</td><td>可停靠、可調大小的子視窗（可貼在選擇畫面邊上，不必另畫畫面）</td></tr>
+      <tr><td>CL_GUI_SPLITTER_CONTAINER</td><td>把一塊區域切成多格放多個控制項</td></tr>
+      <tr><td>CL_GUI_EASY_SPLITTER_CONTAINER</td><td>兩格、可拖分割條調整</td></tr>
+    </tbody>
+  </table>
+  <p><b>建立容器畫面</b>（<span class="tcode">SE80</span> 右鍵 Create → Screen，或在 <span class="kw">CALL SCREEN 100</span> 上雙擊前向導覽）：屬性設畫面號碼、短文、Screen type＝Normal、Next Screen（預設是自己，避免按 Enter 就離開；填 0 或空白則使用者動作後回到呼叫點）→ Layout 用左側 Custom Control 鈕拉出區域並命名（例：CONTROL_AREA）→ 雙擊元素設 Resizing vertical／horizontal 及 Min. Lines／Min. Columns → 元素清單（綠色方塊鈕）中把 OK 型欄位命名（例 OK_CODE）<span class="src">（依講義步驟整理）</span>。畫面有四部分：屬性、版面、元素清單、流程邏輯；<b>流程邏輯不能寫 ABAP</b>，只能用 <span class="kw">MODULE</span> 呼叫 <span class="kw">MODULE … OUTPUT</span>（PBO）／<span class="kw">MODULE … INPUT</span>（PAI），可在不同畫面共用並以 sy-dynnr 區分。</p>
+  <p><b>GUI 狀態</b>：Screen Painter 畫的畫面不像清單或選擇畫面有預設功能，必須用 <span class="kw">SET PF-STATUS</span> 指定 GUI 狀態（Menu Painter <span class="tcode">SE41</span>，由 PBO 的狀態名稱雙擊建立）。GUI 狀態＝選單列＋標準工具列＋應用工具列＋功能鍵設定；「系統」「說明」選單每個畫面都有且不能改。狀態型別有 Normal Screen、Dialog Box、Context Menu。ALV 容器畫面的<b>最小狀態</b>：至少啟用 Back、Cancel、Exit（放在標準工具列即自動對應功能鍵，也放進選單）；<b>每次改介面都要重新啟用</b>。功能碼型別「空白」的功能被觸發時，功能碼放進畫面的 OK 欄位，PAI 開頭的自動欄位傳遞把它帶到程式同名欄位（型別 sy-ucomm）；<span class="kw">LEAVE TO SCREEN 0</span> 回到呼叫點、<span class="kw">LEAVE PROGRAM</span> 結束程式；OK 欄位要每個對話步驟清空（Enter 不會改變它），以免下一個畫面誤判。</p>
+  <p><b>建立物件</b>：參照變數 <span class="kw">DATA go_x TYPE REF TO class</span>；<span class="kw">CREATE OBJECT</span>（或 7.40 的 <span class="kw">NEW</span>）時自動執行 CONSTRUCTOR，它只能有 IMPORTING 參數與 EXCEPTIONS，所有必填參數都要給。容器用 <span class="kw">container_name</span> 指定畫面區域名；Grid 用 <span class="kw">i_parent</span> 指定容器。<b>必須在含該區域畫面的 PBO 中、畫面送到前端之前建立，而且只能建一次</b>——用 <span class="kw">IF go_container IS INITIAL</span> 包起來，否則每個 PBO 都會多產生一個物件。全螢幕 ALV 可用 <span class="kw">i_parent = cl_gui_custom_container=&gt;screen0</span>，此時不需要容器與 Custom Control 區。CREATE OBJECT／CALL METHOD 可用 Pattern（ABAP Objects Patterns）或從 SE80 導覽區把類別／方法<b>拖放</b>到編輯區自動產生，選用參數會以註解帶入。前端資源在程式結束時自動釋放，也可呼叫 <span class="kw">free( )</span>（繼承自 CL_GUI_OBJECT），再 CLEAR／FREE 參照讓垃圾回收處理 ABAP 端物件。</p>
+  <p><b>資料保存原則</b>：代表物件<b>不複製資料，只保存對內表的參照</b>，所以內表的生命週期必須不短於 Grid 物件（通常宣告為全域）；<b>只能傳 STANDARD 表，不可用 SORTED／HASHED</b>；使用者在 ALV 排序會真的改變程式中內表的順序，其他動作只讀。代表物件不能直接存的三樣東西——要顯示的資料、顯示規則（欄位目錄）、使用者預先格式化設定——都要放在程式變數中，用方法傳入。</p>
+  <p><b>SET_TABLE_FOR_FIRST_DISPLAY</b> 參數：<span class="kw">it_outtab</span>（資料，必填，CHANGING）、<span class="kw">i_structure_name</span>（字典結構名，系統自動產生欄位目錄，<b>內表要有同名欄位</b>）、<span class="kw">is_variant</span>／<span class="kw">i_save</span>／<span class="kw">i_default</span>（版面變式）、<span class="kw">is_layout</span>（外觀）、<span class="kw">is_print</span>（列印）、<span class="kw">it_special_groups</span>（欄位群組文字）、<span class="kw">it_toolbar_excluding</span>（隱藏標準功能）、<span class="kw">it_fieldcatalog</span>、<span class="kw">it_sort</span>、<span class="kw">it_filter</span>（初始排序／篩選，通常不必給，使用者可互動改，也會隨變式存取）。<b>REFRESH_TABLE_DISPLAY</b> 重送資料：<span class="kw">i_soft_refresh</span>＝空白表示保留並套用目前排序篩選、X 表示保留但不套用；<span class="kw">is_stable</span>（LVC_S_STBL 的 row、col 設 X）保留捲動位置。<b>改了內表的行結構就必須重新呼叫 SET_TABLE_FOR_FIRST_DISPLAY</b>，因為欄位目錄要重建。</p>
+
+<pre><code class="abap">*----- 畫面 0100 流程邏輯（SE51，不是 ABAP，只能呼叫 MODULE）-----
+PROCESS BEFORE OUTPUT.
+  MODULE status_0100.
+  MODULE init_control_processing.
+PROCESS AFTER INPUT.
+  MODULE user_command_0100.
+
+*----- 主程式 -----
+REPORT zbc405_alv_grid.
+
+DATA: go_container TYPE REF TO cl_gui_custom_container,
+      go_alv_grid  TYPE REF TO cl_gui_alv_grid,
+      gt_flights   TYPE STANDARD TABLE OF sflight WITH EMPTY KEY,  " 必須是 STANDARD，且活得比 Grid 久
+      ok_code      TYPE sy-ucomm.
+
+SELECT-OPTIONS so_car FOR gt_flights[ 1 ]-carrid.
+
+START-OF-SELECTION.
+  SELECT FROM sflight FIELDS *               " 與 SFLIGHT 同結構才用 *；否則明列欄位
+    WHERE carrid IN @so_car
+    ORDER BY carrid, connid, fldate
+    INTO TABLE @gt_flights.
+  CALL SCREEN 100.
+
+MODULE status_0100 OUTPUT.
+  SET PF-STATUS 'STATUS_0100'.               " 至少啟用 BACK / EXIT / CANCEL
+  SET TITLEBAR 'T0100'.
+  CLEAR ok_code.
+ENDMODULE.
+
+MODULE init_control_processing OUTPUT.
+  CHECK go_container IS INITIAL.             " 只建立一次
+  CREATE OBJECT go_container
+    EXPORTING  container_name = 'CONTROL_AREA'   " Screen Painter 中的 Custom Control 名稱
+    EXCEPTIONS cntl_error                  = 1
+               cntl_system_error           = 2
+               create_error                = 3
+               lifetime_error              = 4
+               lifetime_dynpro_dynpro_link = 5
+               OTHERS                      = 6.
+  IF sy-subrc &lt;&gt; 0.
+    MESSAGE 'Container could not be created' TYPE 'A'.
+  ENDIF.
+  go_alv_grid = NEW #( i_parent = go_container ).  " 全螢幕可用 cl_gui_custom_container=&gt;screen0
+
+  go_alv_grid-&gt;set_table_for_first_display(
+    EXPORTING  i_structure_name = 'SFLIGHT'  " 由字典結構自動產生欄位目錄
+    CHANGING   it_outtab        = gt_flights
+    EXCEPTIONS invalid_parameter_combination = 1
+               program_error                 = 2
+               too_many_lines                = 3
+               OTHERS                        = 4 ).
+  IF sy-subrc &lt;&gt; 0.
+    MESSAGE 'ALV could not be displayed' TYPE 'E'.
+  ENDIF.
+ENDMODULE.
+
+MODULE user_command_0100 INPUT.
+  CASE ok_code.
+    WHEN 'BACK' OR 'EXIT' OR 'CANCEL'.
+      go_alv_grid-&gt;free( ).                    " 釋放前端資源
+      go_container-&gt;free( ).
+      FREE: go_alv_grid, go_container.
+      LEAVE TO SCREEN 0.
+    WHEN 'REFRESH'.
+      go_alv_grid-&gt;refresh_table_display(
+        is_stable      = VALUE lvc_s_stbl( row = abap_true col = abap_true )
+        i_soft_refresh = abap_true ).
+  ENDCASE.
+ENDMODULE.</code></pre>
+  <div class="note">容器的建構子宣告了傳統 EXCEPTIONS（cntl_error、cntl_system_error、create_error、lifetime_error、lifetime_dynpro_dynpro_link），所以上例用 <span class="kw">CREATE OBJECT … EXCEPTIONS</span> 判斷 sy-subrc；若改寫成 <span class="kw">NEW #( )</span>，就無法攔截這些傳統例外，發生時會直接短路。Grid 的建構子不必處理這些例外時，用 NEW 即可。OOALV 與 Screen 的入門見 <a href="#ch03-2">3-2 章</a>，Dynpro 見 <a href="#ch04-2">4-2 章</a>、<a href="#ch05-9">5-9 章 BC410</a>，控制項見 <a href="#ch05-10">5-10 章 BC412</a>。</div>
+
+  <h3 id="ch05-6-14">14. ALV 外觀設計：版面變式、Layout 結構、例外欄、排序、行／儲存格顏色、隱藏標準功能</h3>
+  <p><b>版面變式（Layout Variant）</b>由 <span class="kw">is_variant</span>（型別 <b>DISVARIANT</b>）與 <span class="kw">i_save</span> 決定使用者能做什麼：</p>
+  <table>
+    <thead><tr><th>設定</th><th>使用者能做的事</th></tr></thead>
+    <tbody>
+      <tr><td>兩者皆空（預設）</td><td>只能改目前版面，不能選也不能存</td></tr>
+      <tr><td>is_variant-report = sy-cprog，i_save = 空白</td><td>可改目前版面、可選既有變式，不能存新的（一支程式有多個 ALV 時用 <span class="kw">handle</span> 欄位替每個實例取名）</td></tr>
+      <tr><td>i_save = 'U'</td><td>只能存使用者專屬變式</td></tr>
+      <tr><td>i_save = 'X'</td><td>只能存全域（共用）變式</td></tr>
+      <tr><td>i_save = 'A'</td><td>兩種都能存</td></tr>
+    </tbody>
+  </table>
+  <p>要用 i_save 就必須同時傳 is_variant。命名空間：客戶的全域（標準）變式以 <b>/</b> 開頭、SAP 的全域變式以<b>數字</b>開頭、使用者專屬變式以<b>字母</b>開頭。變式<b>與用戶端相關</b>，只有標準（全域）變式能傳輸（版面管理 → 選變式 → Layout → Transport）。<span class="kw">i_default</span>＝X（預設值）時，存變式可設為預設版面。建立或修改標準版面、設為預設，需要權限物件 <b>S_ALV_LAYO</b>，ACTVT＝23。背景執行時常需把變式放在選擇畫面：參數型別用 <span class="kw">disvariant-variant</span>，顯示前指定給 is_variant-variant。程式名要能放進傳輸結構，<b>不得超過 30 字元</b>。强晟筆記把方法名誤寫成 set_table_for_first_screen，正確是 set_table_for_first_display。</p>
+  <p><b>Layout 結構 LVC_S_LAYO</b> 主要欄位：<span class="kw">grid_title</span>（標題，最多 70 字元）、<span class="kw">zebra</span>（斑馬紋，列印也有效）、<span class="kw">no_headers</span>、<span class="kw">sel_mode</span>（選取模式：可選多少儲存格、列、欄；Ctrl 多選、Shift 連續選）、<span class="kw">cwidth_opt</span>（最佳欄寬）、<span class="kw">info_fname</span>（列顏色欄名）、<span class="kw">ctab_fname</span>（儲存格顏色內表欄名）、<span class="kw">excp_fname</span>／<span class="kw">excp_led</span>（例外欄／改用 LED）、<span class="kw">no_toolbar</span>（隱藏整個工具列）、<span class="kw">stylefname</span>（儲存格樣式內表欄名）、<span class="kw">detailtitl</span>（明細視窗標題）。</p>
+  <ul>
+    <li><b>例外欄（紅綠燈）</b>：資料表加一個長度 1 的字元欄，每列填 0＝灰、1＝紅、2＝黃、3＝綠、空白＝不顯示，再把欄名填入 excp_fname。例外欄永遠顯示在第一欄，且不計入 COL_POS。</li>
+    <li><b>初始排序</b>：LVC_T_SORT 每列一個排序條件，<span class="kw">fieldname</span>、<span class="kw">spos</span>（順序，或依內表順序）、<span class="kw">up</span>／<span class="kw">down</span>、<span class="kw">subtot</span>（小計）、<span class="kw">group</span>（列印時的分組換頁，給 * 或 UL）。</li>
+    <li><b>整列顏色</b>：資料表<b>最後</b>加一個 CHAR 4 欄位，值為 <b>C＋顏色碼＋加強(1/0)＋反白(1/0)</b>，例如 C111、C170、C501、C610；若資料表以全域結構描述，這個顏色欄不會被顯示，只拿來上色；可用 <span class="kw">INCLUDE TYPE</span> 在程式內組行型別。顏色碼是型別群組 COL 的 8 個常數（col_background 0、col_heading 1、col_normal 2、col_total 3、col_key 4、col_positive 5、col_negative 6、col_group 7）。</li>
+    <li><b>儲存格顏色</b>：資料表加一個 <b>LVC_T_SCOL</b> 型別的內表欄位，行內容 <span class="kw">fname</span>（欄名）、<span class="kw">color</span>（col、int、inv）、<span class="kw">nokeycol</span>（鍵欄以一般欄顯示）；<b>儲存格顏色優先於列顏色</b>；欄名填入 ctab_fname。只改一筆用 READ TABLE，多筆則 LOOP 後 MODIFY（或直接用欄位符號／參照修改）。</li>
+    <li><b>隱藏標準功能</b>：UI_FUNCTIONS 型內表填功能碼（CL_GUI_ALV_GRID 的常數：<span class="kw">MC_FC_</span> 開頭為單一功能、<span class="kw">MC_MB_</span> 開頭為整個選單，<span class="kw">MC_FC_EXCL_ALL</span> 停用應用工具列全部功能），傳給 it_toolbar_excluding；停用的功能不顯示、選單上變灰。整個工具列隱藏用 layout-no_toolbar。</li>
+  </ul>
+
+<pre><code class="abap">TYPES: BEGIN OF ty_out.
+         INCLUDE TYPE sflight.
+TYPES:   light    TYPE c LENGTH 1,          " 例外欄：0 灰 1 紅 2 黃 3 綠
+         line_col TYPE c LENGTH 4,          " 整列顏色 Cxyz，放在最後
+         cell_col TYPE lvc_t_scol,          " 儲存格顏色（不會顯示）
+       END OF ty_out.
+DATA gt_out TYPE STANDARD TABLE OF ty_out WITH EMPTY KEY.
+
+LOOP AT gt_out ASSIGNING FIELD-SYMBOL(&lt;ls_out&gt;).
+  DATA(lv_ratio) = COND decfloat16( WHEN &lt;ls_out&gt;-seatsmax &gt; 0
+                                    THEN &lt;ls_out&gt;-seatsocc / &lt;ls_out&gt;-seatsmax ).
+  &lt;ls_out&gt;-light = COND #( WHEN lv_ratio &gt;= '0.95' THEN '1'
+                            WHEN lv_ratio &gt;= '0.70' THEN '2'
+                            ELSE '3' ).
+  IF &lt;ls_out&gt;-fldate &lt; sy-datum.
+    &lt;ls_out&gt;-line_col = 'C200'.            " 過去航班整列淡色
+  ENDIF.
+  IF &lt;ls_out&gt;-price &gt; 1000.
+    &lt;ls_out&gt;-cell_col = VALUE #( ( fname = 'PRICE'
+                                   color = VALUE #( col = col_negative int = 1 inv = 0 ) ) ).
+  ENDIF.
+ENDLOOP.
+
+DATA(ls_layout) = VALUE lvc_s_layo( grid_title = 'Flights'(t01)
+                                    zebra      = abap_true
+                                    cwidth_opt = abap_true
+                                    sel_mode   = 'A'
+                                    excp_fname = 'LIGHT'
+                                    excp_led   = abap_false
+                                    info_fname = 'LINE_COL'
+                                    ctab_fname = 'CELL_COL' ).
+DATA(ls_variant) = VALUE disvariant( report = sy-cprog handle = 'FLT1' variant = p_vari ).
+DATA(lt_sort)    = VALUE lvc_t_sort( ( spos = 1 fieldname = 'CARRID' up = abap_true subtot = abap_true )
+                                     ( spos = 2 fieldname = 'CONNID' up = abap_true ) ).
+DATA(lt_exclude) = VALUE ui_functions( ( cl_gui_alv_grid=&gt;mc_fc_graph )
+                                       ( cl_gui_alv_grid=&gt;mc_fc_info ) ).
+
+go_alv_grid-&gt;set_table_for_first_display(
+  EXPORTING  i_structure_name     = 'SFLIGHT'
+             is_variant           = ls_variant
+             i_save               = 'A'          " 使用者與全域變式都可存
+             i_default            = abap_true
+             is_layout            = ls_layout
+             it_toolbar_excluding = lt_exclude
+  CHANGING   it_outtab            = gt_out
+             it_sort              = lt_sort
+  EXCEPTIONS OTHERS               = 1 ).</code></pre>
+  <div class="note">Col18 p137 說 EMPHASIZE 顏色碼「第三個字元代表加強，第三位為 1 表示反白」——後半句有誤：格式是 C＋顏色＋<b>第 3 碼加強</b>＋<b>第 4 碼反白</b>，例如 C300＝col_total 不加強不反白、C401＝col_key 不加強但反白。以上與整列顏色 info_fname 的規則相同。</div>
+
+  <h3 id="ch05-6-15">15. 欄位目錄 Field Catalog（LVC_T_FCAT）</h3>
+  <p>欄位目錄是資料區的<b>格式描述</b>：代表物件要知道每一欄的型別與格式，才能在螢幕與列印清單正確顯示。內表型別 <b>LVC_T_FCAT</b>、工作區 <b>LVC_S_FCAT</b>，每一列對應 ALV 的一欄，靠 <span class="kw">fieldname</span> 連到資料表的欄位。三種情況：</p>
+  <ol>
+    <li><b>全自動</b>：資料表所有欄位都在某個字典結構中、同名且都要顯示 → 只傳 i_structure_name。</li>
+    <li><b>半自動</b>：以字典結構為底，但要改欄序、標題，或多了字典結構沒有的欄位 → 只為要改、要加的欄建目錄列，連同 i_structure_name 一起傳，方法內會合併。</li>
+    <li><b>全手動</b>：行型別完全沒有字典參照 → 所有欄位都要在程式中建目錄。</li>
+  </ol>
+  <p>Col18 提醒<b>先考慮不用欄位目錄的替代做法</b>：要不同的欄就用另一個全域結構；要隱藏欄或換順序就用標準顯示變式；只要部分欄位左對齊可用 INCLUDE TYPE 組本地行型別；要動態產生資料表（Web AS 6.10 起）可把結構型別以欄位符號傳入。<span class="kw">INCLUDE TYPE</span> 自 6.10 起可納入字典型別、ABAP 型別與自訂型別；INCLUDE STRUCTURE 只為相容保留。自組欄位目錄後要檢查一致性：<b>在 ALV 無資料區（例如標題列）按住 Shift 並以滑鼠右鍵雙擊</b>，會出現一致性檢查。</p>
+  <table>
+    <thead><tr><th>欄位</th><th>作用</th></tr></thead>
+    <tbody>
+      <tr><td>fieldname</td><td>資料表欄名（必填）</td></tr>
+      <tr><td>ref_table／ref_field</td><td>字典參照；填了就從字典帶入所有型別資訊，其他欄位可再覆蓋。資料表欄名與字典欄名相同時只填 ref_table</td></tr>
+      <tr><td>rollname</td><td>資料元素：提供 F1 與欄標題、選擇畫面、Quick info 文字（未另設時）</td></tr>
+      <tr><td>inttype／outputlen</td><td>無字典參照時的 ABAP 型別（c、f、i…）與欄寬</td></tr>
+      <tr><td>cfieldname／currency</td><td>依另一欄的幣別格式化金額／整欄固定幣別；currency 有值時忽略 cfieldname（例：PRICE 的 cfieldname＝CURRENCY，USD 兩位小數、JPY 無小數）</td></tr>
+      <tr><td>qfieldname／quantity</td><td>數量單位，規則同上</td></tr>
+      <tr><td>decimals_o／decmlfield</td><td>小數位數（固定值／取自另一欄）</td></tr>
+      <tr><td>col_pos</td><td>欄位置；隱藏欄也要算，例外欄不算；沒給位置的手動欄會排在資料表其他欄之前</td></tr>
+      <tr><td>emphasize</td><td>X＝預設顏色強調，或 4 碼顏色 Cxyz</td></tr>
+      <tr><td>no_out</td><td>清單（螢幕與列印）不顯示，但仍出現在排序、篩選等欄位選擇對話框，可由變式叫回</td></tr>
+      <tr><td>tech</td><td>技術欄：清單與欄位選擇對話框都不出現</td></tr>
+      <tr><td>icon／symbol</td><td>以圖示／符號顯示（報表 <b>SHOWICON</b>、<b>SHOWSYMB</b> 可看清單；不是每個圖示都能列印）。Col18 原文寫成「layout 結構的 icon 欄」，其實是欄位目錄的欄位</td></tr>
+      <tr><td>colddictxt</td><td>用資料元素的哪種文字當欄標題：S／M／L／R（scrtext_s、scrtext_m、scrtext_l、reptext）；空白則用 coltext，coltext 也空則依欄寬自動挑</td></tr>
+      <tr><td>coltext／seltext／tooltip</td><td>欄標題／選擇對話框文字（優先序：seltext → 最長的資料元素文字 → tooltip → 欄名）／滑鼠停留提示</td></tr>
+      <tr><td>sp_group</td><td>欄位群組鍵；群組文字放 LVC_T_SGRP 傳 it_special_groups</td></tr>
+      <tr><td>txt_field</td><td>小計時一併顯示的文字欄（例：A 欄是工廠代號、B 欄是名稱，A 的 txt_field＝'B'）</td></tr>
+      <tr><td>hotspot／style／key／fix_column／do_sum／edit</td><td>熱點、樣式（例如按鈕）、鍵欄、固定欄、預設加總、可編輯</td></tr>
+    </tbody>
+  </table>
+
+<pre><code class="abap">" 半自動欄位目錄：SBOOK 結構 + 兩個自訂欄位 + 隱藏一欄
+TYPES: BEGIN OF ty_booking.
+         INCLUDE TYPE sbook.
+TYPES:   days_left TYPE i,                  " 執行時才算出來的欄位
+         icon_stat TYPE icon_d,
+       END OF ty_booking.
+DATA gt_bookings TYPE STANDARD TABLE OF ty_booking WITH EMPTY KEY.
+
+DATA(gt_fcat) = VALUE lvc_t_fcat(
+  ( fieldname = 'DAYS_LEFT' inttype = 'I' outputlen = 6
+    coltext   = 'Days left'(f01) seltext = 'Days until departure'(f02)
+    col_pos   = 5 emphasize = 'C510' )
+  ( fieldname = 'ICON_STAT' icon = abap_true
+    coltext   = 'Status'(f03) col_pos = 1 )
+  ( fieldname = 'LOCCURAM' ref_table = 'SBOOK' cfieldname = 'LOCCURKEY' do_sum = abap_true )
+  ( fieldname = 'MANDT'    tech = abap_true )        " 完全不出現
+  ( fieldname = 'PASSNAME' no_out = abap_true ) ).   " 預設隱藏，可從變式叫回
+
+go_alv_grid-&gt;set_table_for_first_display(
+  EXPORTING  i_structure_name = 'SBOOK'              " 其餘欄位由字典自動產生
+  CHANGING   it_outtab        = gt_bookings
+             it_fieldcatalog  = gt_fcat
+  EXCEPTIONS OTHERS           = 1 ).
+
+" 全手動時也可先用 LVC_FIELDCATALOG_MERGE 由字典結構產生，再逐欄修改
+DATA lt_fcat_full TYPE lvc_t_fcat.
+CALL FUNCTION 'LVC_FIELDCATALOG_MERGE'
+  EXPORTING  i_structure_name = 'SBOOK'
+  CHANGING   ct_fieldcat      = lt_fcat_full
+  EXCEPTIONS OTHERS           = 1.
+LOOP AT lt_fcat_full ASSIGNING FIELD-SYMBOL(&lt;fc&gt;) WHERE fieldname = 'CUSTOMID'.
+  &lt;fc&gt;-hotspot = abap_true.
+ENDLOOP.</code></pre>
+  <div class="tip">强晟筆記 p128 的舊寫法是「CLEAR wa_fieldcat → 逐欄賦值 → APPEND」重複很多次；7.40 起用 <span class="kw">VALUE lvc_t_fcat( ( … ) ( … ) )</span> 一次寫完，漏 CLEAR 導致上一欄屬性殘留的錯誤也一併消失。欄位目錄是 ALV 最常出錯的地方，ALV 基礎見 <a href="#ch02-3">2-3 章</a>。</div>
+
+  <h3 id="ch05-6-16">16. ALV 事件與方法：DOUBLE_CLICK、TOOLBAR、USER_COMMAND、BUTTON_CLICK、列印事件、右鍵選單</h3>
+  <p><b>事件怎麼從前端傳到程式</b>：前端控制項觸發事件 → SAP GUI 的 <b>Automation Controller</b> 收到，轉成特殊功能碼（加附帶資料）送給執行環境的 <b>Basis Services</b> → 轉給 ABAP 程式中的<b>代表物件</b> → 代表物件觸發 ABAP Objects 事件，通知已註冊的處理器方法（handler method）。代表類別（proxy class，即 Control Wrapper）以統一方式存取 CFW；CFW 在前端與應用伺服器兩邊都維護作用中實例的清單。觸發事件的物件不知道誰會處理，這與一般方法呼叫不同。</p>
+  <p><b>處理器方法</b>：任何類別都可以為其他類別的 public 事件定義處理器，定義部分加 <span class="kw">FOR EVENT evt OF class</span>，命名慣例 <span class="kw">on_&lt;event&gt;</span>；簽名<b>只能有 IMPORTING</b>，參數名與型別取自事件，不必全部接；每個事件都有隱含參數 <span class="kw">sender</span>（觸發的實例）。可以是靜態方法（<span class="kw">CLASS-METHODS</span>，不必建物件，呼叫用 <span class="kw">=&gt;</span>）或實例方法（<span class="kw">METHODS</span>，要建物件，用 <span class="kw">-&gt;</span>）。<b>預設不會執行，必須在執行時用 <span class="kw">SET HANDLER h FOR go_alv_grid</span>（或 FOR ALL INSTANCES）註冊</b>。物件導向基礎見 <a href="#ch05-2">5-2 章 BC401</a>。</p>
+  <p>ALV Grid 有超過 25 個事件，最重要的是：</p>
+  <table>
+    <thead><tr><th>事件</th><th>時機</th><th>主要參數</th></tr></thead>
+    <tbody>
+      <tr><td>DOUBLE_CLICK</td><td>資料區雙擊</td><td>e_row（index＝內表行號）、e_column（fieldname）、es_row_no（row_id）。强晟筆記用 e_row-index，Col18 用 es_row_no-row_id，兩者都有</td></tr>
+      <tr><td>HOTSPOT_CLICK</td><td>點熱點欄</td><td>e_row_id、e_column_id、es_row_no，填法同上</td></tr>
+      <tr><td>TOOLBAR</td><td>SET_TABLE_FOR_FIRST_DISPLAY 與 REFRESH_TABLE_DISPLAY 執行時、標準工具列整合前；也可用 <span class="kw">set_toolbar_interactive( )</span> 主動觸發</td><td>e_object（CL_ALV_EVENT_TOOLBAR_SET，公開屬性 mt_toolbar，行型別 STB_BUTTON）、e_interactive</td></tr>
+      <tr><td>MENU_BUTTON</td><td>按下型別為選單按鈕的元素</td><td>e_object（CL_CTMENU）、e_ucomm</td></tr>
+      <tr><td>USER_COMMAND</td><td>自訂按鈕或右鍵選單功能被選</td><td>e_ucomm</td></tr>
+      <tr><td>BEFORE_USER_COMMAND</td><td>任何功能（標準或自訂）處理前</td><td>e_ucomm；搭配 <span class="kw">set_user_command( )</span> 可置換標準功能</td></tr>
+      <tr><td>BUTTON_CLICK</td><td>儲存格按鈕被按</td><td>es_col_id、es_row_no</td></tr>
+      <tr><td>CONTEXT_MENU_REQUEST</td><td>右鍵（或 Shift+F10）</td><td>e_object（CL_CTMENU）</td></tr>
+      <tr><td>PRINT_TOP_OF_LIST／PRINT_TOP_OF_PAGE／PRINT_END_OF_PAGE／PRINT_END_OF_LIST</td><td>列印清單的各個時點</td><td>處理器中可用 WRITE、SKIP、ULINE 等經典清單敘述</td></tr>
+      <tr><td>SUBTOTAL_TEXT</td><td>小計行</td><td>為隱藏欄的小計定義額外文字</td></tr>
+    </tbody>
+  </table>
+  <ul>
+    <li><b>工具列加按鈕</b>：在 TOOLBAR 處理器中 APPEND 到 <span class="kw">e_object-&gt;mt_toolbar</span>（function、icon、quickinfo、text、butn_type：0 一般、1 選單＋預設、2 選單、3 分隔線…）。按下後觸發 USER_COMMAND。</li>
+    <li><b>儲存格按鈕</b>：整欄用欄位目錄的 <span class="kw">style</span>；個別儲存格則在資料表加 <b>LVC_T_STYL</b> 內表欄，為要顯示成按鈕的欄位加一行 fieldname＋<span class="kw">cl_gui_alv_grid=&gt;mc_style_button</span>，並把該欄名填 layout 的 <span class="kw">stylefname</span>（沒有 F4 的既有欄位也能用）。</li>
+    <li><b>列印</b>：LVC_S_PRNT 傳 is_print——<span class="kw">print</span>＝X 不顯示直接送 Spool（不處理互動輸出）；<span class="kw">reservelns</span> 頁尾保留行數；<span class="kw">prntlstinf</span>＝X 在清單開頭印出排序、合計、篩選與資料統計；<span class="kw">grpchgedit</span>＝X 讓使用者在排序對話框（不選欄直接按排序）的 CB 欄設定群組換頁或底線，這只在互動模式有效，背景要在 it_sort 的 <span class="kw">group</span> 給 * 或 UL；<span class="kw">prnt_title</span> 決定格線標題何時印（0／預設在 print_top_of_list 前、1 之後、2 在 print_top_of_page 前、3 之後）；<span class="kw">no_colwopt</span>＝X 不做欄寬最佳化；其他欄位 ALV Grid 不用。</li>
+    <li><b>常用方法</b>：<span class="kw">get_current_cell</span>（目前儲存格座標與值）、<span class="kw">get_selected_cells</span>、<span class="kw">get_selected_columns</span>、<span class="kw">get_selected_rows</span>（et_index_rows／et_row_no）、<span class="kw">get_subtotals</span>、<span class="kw">set_toolbar_interactive</span>、<span class="kw">set_user_command</span>；在 <span class="tcode">SE24</span> 的 Methods 頁籤看參數、例外與原始碼，類別文件連到 SAP Library。</li>
+    <li><b>右鍵選單</b>：ALV 預設就有右鍵選單，可取代或擴充。最簡單是在 SE80 建一個型別為 Context Menu 的 GUI 狀態（Menu Painter 中只寫文字不寫功能碼就成為子選單，最多三層），在 CONTEXT_MENU_REQUEST 處理器中用靜態方法 <span class="kw">cl_ctmenu=&gt;load_gui_status</span>（參數 program——目前程式用 sy-cprog、status、disable——UI_FUNCTIONS 型要變灰的功能碼、menu——要載入的 CL_CTMENU 物件）載入，再用 <span class="kw">add_function</span>、<span class="kw">add_separator</span> 等方法動態增改。選到功能一樣觸發 USER_COMMAND，用 e_ucomm 分辨。<b>人因準則</b>：最多兩層、最多 10 項（但要涵蓋所有按鈕功能）、用分隔線分組、物件專屬功能放最上面。</li>
+  </ul>
+
+<pre><code class="abap">CLASS lcl_handler DEFINITION.
+  PUBLIC SECTION.
+    CLASS-METHODS:
+      on_double_click FOR EVENT double_click OF cl_gui_alv_grid
+        IMPORTING e_row e_column es_row_no sender,
+      on_toolbar FOR EVENT toolbar OF cl_gui_alv_grid
+        IMPORTING e_object e_interactive,
+      on_user_command FOR EVENT user_command OF cl_gui_alv_grid
+        IMPORTING e_ucomm sender,
+      on_before_ucomm FOR EVENT before_user_command OF cl_gui_alv_grid
+        IMPORTING e_ucomm sender,
+      on_button_click FOR EVENT button_click OF cl_gui_alv_grid
+        IMPORTING es_col_id es_row_no,
+      on_context_menu FOR EVENT context_menu_request OF cl_gui_alv_grid
+        IMPORTING e_object,
+      on_print_top FOR EVENT print_top_of_page OF cl_gui_alv_grid.
+ENDCLASS.
+
+CLASS lcl_handler IMPLEMENTATION.
+  METHOD on_double_click.
+    " e_row-index 就是內表行號——這一步取代了經典清單的 HIDE 區
+    READ TABLE gt_flights INTO DATA(ls_flight) INDEX e_row-index.
+    CHECK sy-subrc = 0.                          " 等同「有效行選擇」檢查
+    MESSAGE |{ ls_flight-carrid } { ls_flight-connid } { ls_flight-fldate DATE = USER }, column { e_column-fieldname }| TYPE 'I'.
+  ENDMETHOD.
+
+  METHOD on_toolbar.
+    e_object-&gt;mt_toolbar = VALUE #( BASE e_object-&gt;mt_toolbar
+      ( butn_type = 3 )                                               " 分隔線
+      ( function = 'DIS_BOOK' icon = icon_booking_ok
+        quickinfo = 'Display bookings'(q01) text = 'Bookings'(q02) ) ).
+  ENDMETHOD.
+
+  METHOD on_user_command.
+    CASE e_ucomm.
+      WHEN 'DIS_BOOK'.
+        sender-&gt;get_selected_rows( IMPORTING et_index_rows = DATA(lt_rows) ).
+        IF lt_rows IS INITIAL.
+          sender-&gt;get_current_cell( IMPORTING e_row = DATA(lv_row) ).
+          lt_rows = VALUE #( ( index = lv_row ) ).
+        ENDIF.
+        LOOP AT lt_rows INTO DATA(ls_row).
+          " …依選取列讀 SBOOK，在第二個 ALV 或對話框顯示…
+        ENDLOOP.
+    ENDCASE.
+  ENDMETHOD.
+
+  METHOD on_before_ucomm.
+    " 把標準「明細」功能換成自己的訂位清單
+    IF e_ucomm = cl_gui_alv_grid=&gt;mc_fc_detail.
+      sender-&gt;set_user_command( 'DIS_BOOK' ).
+    ENDIF.
+  ENDMETHOD.
+
+  METHOD on_button_click.
+    MESSAGE |Button in row { es_row_no-row_id }, column { es_col_id-fieldname }| TYPE 'S'.
+  ENDMETHOD.
+
+  METHOD on_context_menu.
+    DATA(lt_disable) = VALUE ui_functions( ( 'DELETE' ) ).
+    cl_ctmenu=&gt;load_gui_status( program = sy-cprog
+                                status  = 'CTX_FLIGHT'           " 型別為 Context Menu 的 GUI 狀態
+                                disable = lt_disable
+                                menu    = e_object ).
+    e_object-&gt;add_separator( ).
+    e_object-&gt;add_function( fcode = 'DIS_BOOK' text = 'Bookings'(q02) ).
+  ENDMETHOD.
+
+  METHOD on_print_top.
+    WRITE: / |Flight report — printed { sy-datum DATE = USER } by { sy-uname }|.
+    ULINE.
+  ENDMETHOD.
+ENDCLASS.
+
+" 註冊：放在 SET_TABLE_FOR_FIRST_DISPLAY 之前（TOOLBAR 在該方法內就會觸發）
+SET HANDLER: lcl_handler=&gt;on_double_click lcl_handler=&gt;on_toolbar
+             lcl_handler=&gt;on_user_command lcl_handler=&gt;on_before_ucomm
+             lcl_handler=&gt;on_button_click lcl_handler=&gt;on_context_menu
+             lcl_handler=&gt;on_print_top FOR go_alv_grid.</code></pre>
+  <div class="tip">TOOLBAR 事件在 SET_TABLE_FOR_FIRST_DISPLAY <b>執行期間</b>就會觸發，所以 SET HANDLER 一定要寫在它之前；之後想改工具列，呼叫 <span class="kw">set_toolbar_interactive( )</span>。實例方法版本的註冊寫法是 <span class="kw">SET HANDLER go_handler-&gt;on_double_click FOR go_alv_grid</span>。</div>
+
+  <h3 id="ch05-6-17">17. 從報表呼叫其他程式與資料傳遞（SUBMIT、CALL TRANSACTION、ABAP／SAP Memory）</h3>
+  <p><b>同步呼叫</b>有兩種：中斷目前程式執行新程式、完成後回來；或結束目前程式啟動新程式。同一使用者 Session 中完整的 ABAP 程式只能循序執行；要平行請用 <span class="kw">CALL FUNCTION … STARTING NEW TASK</span>（見 <a href="#ch04-1">4-1 章</a>）。</p>
+  <table>
+    <thead><tr><th>敘述</th><th>記憶體行為</th><th>說明</th></tr></thead>
+    <tbody>
+      <tr><td>SUBMIT prog [VIA SELECTION-SCREEN] AND RETURN</td><td>開新的內部 Session 疊在堆疊上</td><td>執行 1 型程式；VIA SELECTION-SCREEN 顯示其標準選擇畫面；AND RETURN 完成後回到下一句</td></tr>
+      <tr><td>SUBMIT prog（不加 AND RETURN）</td><td>以被呼叫程式<b>取代</b>目前的內部 Session</td><td>不回來</td></tr>
+      <tr><td>CALL TRANSACTION tcode [AND SKIP FIRST SCREEN]</td><td>開新內部 Session</td><td>插入呼叫鏈；SKIP FIRST SCREEN 不顯示第一個畫面內容但流程邏輯照跑；UPDATE 附加指定更新技術（非同步預設、同步、本地）</td></tr>
+      <tr><td>LEAVE TO TRANSACTION tcode</td><td><b>移除所有內部 Session</b>，開一個新的，ABAP Memory 被清空</td><td>效果同命令欄輸入 /n&lt;tcode&gt;</td></tr>
+      <tr><td>LEAVE PROGRAM／程式自然結束</td><td>移除堆疊頂端的內部 Session</td><td>若是被 CALL TRANSACTION 或 SUBMIT AND RETURN 呼叫，回到呼叫端下一句；否則回到最初啟動程式的選單</td></tr>
+    </tbody>
+  </table>
+  <div class="note">Col18 p242 寫 LEAVE TO TRANSACTION「開一個含<b>呼叫端</b>程式 context 的新內部 Session」——應為<b>被呼叫交易</b>的程式 context，呼叫端已經被整個移除了。</div>
+  <p><b>記憶體結構</b>：一個外部 Session＝一個 SAP GUI 視窗（系統 → 建立 Session，或 /O&lt;tcode&gt;），預設一個使用者最多 6 個；每個外部 Session 最多 9 個內部 Session（堆疊），每支程式在自己的內部 Session 執行，資料只在該 Session 可見。呼叫函數模組時，若該函數群組在目前內部 Session 還沒載入，就載入為額外的程式群組並初始化其全域資料；之後同群組的函數共用這些全域資料；新的內部 Session 要重新載入。</p>
+  <p><b>跨內部 Session 傳資料的方式</b>：被呼叫程式的介面（標準選擇畫面）、ABAP Memory、SAP Memory、Shared Memory／Shared Buffer、資料庫表、前端本機檔（GUI_UPLOAD／GUI_DOWNLOAD 或 CL_GUI_FRONTEND_SERVICES）。</p>
+  <ul>
+    <li><b>選擇畫面介面</b>：SUBMIT 時指定變式（<span class="kw">USING SELECTION-SET</span>）或 <span class="kw">WITH p = v</span>、<span class="kw">WITH so IN range</span>（EQ、NE、I、E 意義同選擇條件；多重值先用 <span class="kw">TYPE RANGE OF</span> 建表）；編輯器的 Pattern 可自動帶出目標程式的參數名。</li>
+    <li><b>ABAP Memory</b>：使用者專屬、每個外部 Session 一份，可交換任何 ABAP 變數（欄位、結構、內表、複雜物件），不能跨外部 Session；/i 結束 Session 時釋放。<span class="kw">EXPORT … TO MEMORY ID id</span>（ID 最長 60 字元，同 ID 再 EXPORT 會覆蓋）、<span class="kw">IMPORT … FROM MEMORY ID id</span>（目標型別與名稱要一致，可用 TO 換名但型別須相同）、<span class="kw">FREE MEMORY ID id</span>。CALL TRANSACTION、SUBMIT 可用；<b>LEAVE TO TRANSACTION 不行</b>（記憶體被清掉）。</li>
+    <li><b>SAP Memory</b>：使用者專屬、存活整個登入期間、所有外部 Session 共用，存 SET/GET 參數值，可作畫面欄位預設值。用 PARAMETERS／SELECT-OPTIONS 的 MEMORY ID、參照有參數 ID 的資料元素，或 <span class="kw">SET PARAMETER ID 'pid' FIELD v</span>／<span class="kw">GET PARAMETER ID 'pid' FIELD v</span>。</li>
+    <li><b>CALL TRANSACTION USING bdcdata</b>：用 BDCDATA 內表餵畫面欄位——每個畫面先一行只填 program、dynpro、dynbegin＝X，之後每欄一行填 fnam／fval；可填 BDC_OKCODE（功能碼）、BDC_CURSOR（游標）。<span class="kw">MODE</span> A 全顯示（預設）／E 出錯才顯示／N 不顯示；<span class="kw">MESSAGES INTO</span> BDCMSGCOLL 型內表；sy-subrc 判斷成功。BDC 細節見 <a href="#ch04-4">4-4 章</a>、<a href="#ch05-13">5-13 章 BC420</a>。</li>
+  </ul>
+
+<pre><code class="abap">" ① ALV 雙擊某航線 → 帶條件呼叫訂位報表，完成後回來
+DATA lr_carr TYPE RANGE OF s_carr_id.
+lr_carr = VALUE #( ( sign = 'I' option = 'EQ' low = ls_flight-carrid ) ).
+SUBMIT zbc405_bookings
+  WITH so_car IN lr_carr
+  WITH p_conn =  ls_flight-connid
+  AND RETURN.
+
+" ② ABAP Memory：在同一外部 Session 的程式間傳內表
+EXPORT flights = gt_flights TO MEMORY ID 'ZBC405_FLIGHTS'.
+SUBMIT zbc405_consumer AND RETURN.            " 對方：IMPORT flights = lt_flights FROM MEMORY ID …
+FREE MEMORY ID 'ZBC405_FLIGHTS'.
+
+" ③ SAP Memory：帶參數 ID 開標準交易並跳過第一個畫面
+SET PARAMETER ID 'CAR' FIELD ls_flight-carrid.
+SET PARAMETER ID 'CON' FIELD ls_flight-connid.
+TRY.
+    CALL TRANSACTION 'BC405_FLIGHT' WITH AUTHORITY-CHECK AND SKIP FIRST SCREEN.
+  CATCH cx_sy_authorization_error.
+    MESSAGE 'No authorization for transaction' TYPE 'E'.
+ENDTRY.</code></pre>
+  <div class="warn">較新的 ABAP 版本（7.40 起）提供 CALL TRANSACTION 的 <span class="kw">WITH AUTHORITY-CHECK</span>附加，SAP 建議一律加上（否則不檢查使用者對該交易碼的授權，Code Inspector／ATC 的安全檢查會標出來）。示範交易碼 BC405_FLIGHT 為示意，請換成實際存在的交易。</div>
+
+  <h3 id="ch05-6-18">18. ALV Object Model：CL_SALV_TABLE</h3>
+  <p><b>基本原則</b>：只要兩個方法——靜態方法 <span class="kw">FACTORY</span>（取代 CREATE OBJECT，傳入內表 <span class="kw">t_table</span>，回傳實例 <span class="kw">r_salv_table</span>；輸出型態也由它的參數決定）與實例方法 <span class="kw">DISPLAY</span>。三種輸出：全螢幕（預設）、嵌入容器（<span class="kw">r_container</span>）、經典清單（<span class="kw">list_display = abap_true</span>）。Pattern 或拖放產生呼叫時會連 TRY／CATCH 一起產生；可在「公用程式 → 設定 → ABAP 編輯器 → Pattern」勾選 Functional Writing Style。<b>類別式例外</b>要自己處理：TRY 包住、取消 CATCH 的註解、加 <span class="kw">INTO</span> 參照（型別為該例外類別或 CX_ROOT），未處理的例外會造成執行時期錯誤。</p>
+  <p><b>屬性物件的取法</b>：每一種屬性或子物件（欄、按鈕、版面、列印…）都是另一個類別，類別名都是 CL_SALV_*，<b>複數名代表一群</b>（CL_SALV_COLUMNS_TABLE＝所有欄）、<b>單數名代表一個</b>（CL_SALV_COLUMN_TABLE＝某一欄）；它們不是從 CL_SALV_TABLE 繼承。做法永遠是兩步：① 用 CL_SALV_TABLE 的 GET_xxx 取得屬性物件（不是 CREATE OBJECT）；② 呼叫它的方法，<b>改動立即生效</b>。取一次就能呼叫多次。欄位順序影響所有欄，所以 set_column_position 在「所有欄」物件上；欄標題只屬於一欄，要先 get_columns( ) 再 get_column( 'X' )。</p>
+  <table>
+    <thead><tr><th>CL_SALV_TABLE 的 GET 方法</th><th>回傳類別（用途）</th></tr></thead>
+    <tbody>
+      <tr><td>GET_COLUMNS</td><td>CL_SALV_COLUMNS_TABLE（所有欄；其 GET_COLUMN 回傳單欄，型別宣告為 CL_SALV_COLUMN，要用顏色、熱點等方法須 CAST 成 CL_SALV_COLUMN_TABLE）</td></tr>
+      <tr><td>GET_FUNCTIONS</td><td>CL_SALV_FUNCTIONS_LIST（排序、彙總等工具列功能；其 GET_FUNCTIONS 回傳各個 CL_SALV_FUNCTION）</td></tr>
+      <tr><td>GET_FUNCTIONAL_SETTINGS</td><td>CL_SALV_FUNCTIONAL_SETTINGS（再 GET_HYPERLINKS、GET_TOOLTIPS）</td></tr>
+      <tr><td>GET_DISPLAY_SETTINGS</td><td>CL_SALV_DISPLAY_SETTINGS（標題、斑馬紋、格線）</td></tr>
+      <tr><td>GET_EVENT</td><td>CL_SALV_EVENTS_TABLE</td></tr>
+      <tr><td>GET_LAYOUT</td><td>CL_SALV_LAYOUT（版面變式管理）</td></tr>
+      <tr><td>GET_PRINT</td><td>CL_SALV_PRINT</td></tr>
+      <tr><td>GET_SELECTIONS</td><td>CL_SALV_SELECTIONS（選取模式與已選列）</td></tr>
+      <tr><td>GET_AGGREGATIONS／GET_SORTS／GET_FILTERS</td><td>CL_SALV_AGGREGATIONS（GET_AGGREGATION）／CL_SALV_SORTS（GET_SORT）／CL_SALV_FILTERS</td></tr>
+    </tbody>
+  </table>
+  <p><b>內容與結構的變更</b>：改了單一值、增刪列，要 <span class="kw">REFRESH</span>——<span class="kw">refresh_mode = if_salv_c_refresh=&gt;soft</span> 保留排序篩選（可能導致新加的列被篩選藏起來），<span class="kw">full</span> 清掉排序篩選；預設會捲回開頭，可用 s_stable 保持位置。改欄的顯示、順序、字典參照則不必 refresh。要換整張表（包括新結構）用 <span class="kw">SET_DATA( t_table )</span>，舊結構相關的排序等物件會被刪除。原廠表格把 CL_SALV_FUNCTION 誤植為 CL_SALV_FUCNTION。</p>
+
+<pre><code class="abap">REPORT zbc405_salv.
+
+PARAMETERS: p_list AS CHECKBOX,                    " 勾選則以經典清單輸出
+            p_vari TYPE slis_vari.
+
+DATA gt_flights TYPE STANDARD TABLE OF sflight WITH EMPTY KEY.   " SALV 參照此表，須為全域
+
+CLASS lcl_events DEFINITION.
+  PUBLIC SECTION.
+    CLASS-METHODS on_double_click FOR EVENT double_click OF cl_salv_events_table
+      IMPORTING row column.
+ENDCLASS.
+CLASS lcl_events IMPLEMENTATION.
+  METHOD on_double_click.
+    READ TABLE gt_flights INTO DATA(ls_f) INDEX row.
+    IF sy-subrc = 0.
+      MESSAGE |{ ls_f-carrid } { ls_f-connid } / { column }| TYPE 'I'.
+    ENDIF.
+  ENDMETHOD.
+ENDCLASS.
+
+AT SELECTION-SCREEN ON VALUE-REQUEST FOR p_vari.
+  DATA(ls_info) = cl_salv_layout_service=&gt;f4_layouts(
+                    s_key    = VALUE #( report = sy-repid )
+                    restrict = if_salv_c_layout=&gt;restrict_none ).
+  p_vari = ls_info-layout.
+
+START-OF-SELECTION.
+  SELECT FROM sflight FIELDS *
+    ORDER BY carrid, connid, fldate
+    INTO TABLE @gt_flights.
+
+  TRY.
+      cl_salv_table=&gt;factory(
+        EXPORTING list_display = p_list             " X＝經典清單；背景執行時自動輸出到 Spool
+        IMPORTING r_salv_table = DATA(go_alv)
+        CHANGING  t_table      = gt_flights ).
+
+      go_alv-&gt;get_functions( )-&gt;set_all( abap_true ).
+      go_alv-&gt;get_display_settings( )-&gt;set_striped_pattern( abap_true ).
+      go_alv-&gt;get_display_settings( )-&gt;set_list_header( 'Flights'(t01) ).
+
+      DATA(go_cols) = go_alv-&gt;get_columns( ).        " 所有欄
+      go_cols-&gt;set_optimize( abap_true ).
+      go_cols-&gt;set_column_position( columnname = 'PRICE' position = 4 ).
+
+      DATA(go_col) = CAST cl_salv_column_table( go_cols-&gt;get_column( 'CARRID' ) ).  " 單欄
+      go_col-&gt;set_long_text( 'Airline'(c01) ).
+      go_col-&gt;set_color( VALUE #( col = col_key int = 1 inv = 0 ) ).
+      go_cols-&gt;get_column( 'MANDT' )-&gt;set_technical( abap_true ).
+
+      go_alv-&gt;get_sorts( )-&gt;add_sort( columnname = 'CARRID' subtotal = abap_true ).
+      go_alv-&gt;get_aggregations( )-&gt;add_aggregation( columnname  = 'PAYMENTSUM'
+                                                     aggregation = if_salv_c_aggregation=&gt;total ).
+
+      DATA(go_layout) = go_alv-&gt;get_layout( ).
+      go_layout-&gt;set_key( VALUE #( report = sy-repid ) ).
+      go_layout-&gt;set_save_restriction( if_salv_c_layout=&gt;restrict_none ).  " 等同 i_save = 'A'
+      go_layout-&gt;set_default( abap_true ).
+      IF p_vari IS NOT INITIAL.
+        go_layout-&gt;set_initial_layout( p_vari ).
+      ENDIF.
+
+      go_alv-&gt;get_selections( )-&gt;set_selection_mode( if_salv_c_selection_mode=&gt;row_column ).
+      DATA(lo_events) = go_alv-&gt;get_event( ).
+      SET HANDLER lcl_events=&gt;on_double_click FOR lo_events.
+
+      go_alv-&gt;display( ).
+
+    CATCH cx_salv_msg cx_salv_not_found cx_salv_data_error cx_salv_existing INTO DATA(lx_salv).
+      MESSAGE lx_salv-&gt;get_text( ) TYPE 'E'.
+  ENDTRY.</code></pre>
+  <div class="tip">SALV 的限制：<b>不能編輯</b>、全螢幕模式要加自訂按鈕必須用 <span class="kw">set_screen_status( pfstatus = … report = … )</span> 複製一份標準 GUI 狀態（例如從 SAPLSALV_METADATA_STATUS 的 SALV_STANDARD 複製），嵌入容器時才可用 <span class="kw">get_functions( )-&gt;add_function( )</span>。需要編輯、儲存格樣式、精細事件控制時才回到 CL_GUI_ALV_GRID——這也是本書 CLAUDE.md 的原則：<b>預設 CL_SALV_TABLE，需編輯或細控才用 CL_GUI_ALV_GRID</b>。</div>
+
+  <h3 id="ch05-6-19">19. S/4HANA 現況：BC405 技術的新舊對照</h3>
+  <table>
+    <thead><tr><th>BC405 教的技術</th><th>在 S/4HANA 1809+ 的狀態</th><th>建議寫法／替代方案</th></tr></thead>
+    <tbody>
+      <tr><td>WRITE 經典清單、互動清單（HIDE、AT LINE-SELECTION）</td><td>可執行、不建議新開發；不符無障礙、無法上 Fiori</td><td>CL_SALV_TABLE；互動用 SALV／Grid 事件</td></tr>
+      <tr><td>邏輯資料庫 LDB、GET 事件、LDB_PROCESS</td><td>過時；ABAP Cloud 不支援；部分 FI／HR LDB 仍在但不保證效能</td><td>ABAP SQL JOIN、標準 CDS View（權限用 DCL）</td></tr>
+      <tr><td>Extract 資料集（FIELD-GROUPS）</td><td>過時語法，不能在類別中使用</td><td>LOOP AT … GROUP BY、REDUCE、SQL GROUP BY、ALV 小計</td></tr>
+      <tr><td>TABLES 工作區、表頭行、FORM／PERFORM 模組化</td><td>過時（TABLES 只剩 SSCRFIELDS 與 Dynpro 介面等少數用途）</td><td>內嵌宣告、本地類別方法（<a href="#ap-01">ap-01</a>）</td></tr>
+      <tr><td>巢狀 SELECT、SELECT … ENDSELECT、無 @ 主機變數</td><td>效能差／舊語法</td><td>JOIN、FOR ALL ENTRIES（先檢查非空）、@ 主機變數、明列欄位、ORDER BY</td></tr>
+      <tr><td>資料庫 View（SE11）</td><td>仍可用</td><td>CDS View Entity（DEFINE VIEW ENTITY 需 7.55 / S/4HANA 2020 以上；1809 用 DEFINE VIEW）</td></tr>
+      <tr><td>EXEC SQL Native SQL</td><td>禁止新用</td><td>AMDP、ADBC</td></tr>
+      <tr><td>REUSE_ALV_* 函數式 ALV</td><td>不再開發新功能</td><td>CL_SALV_TABLE／CL_GUI_ALV_GRID</td></tr>
+      <tr><td>CL_GUI_ALV_GRID</td><td>SAP GUI 專用，仍完整支援</td><td>需編輯或細控時使用</td></tr>
+      <tr><td>大量資料 ALV</td><td>整表讀進 ABAP 記憶體再顯示，資料量大時很慢</td><td><b>ALV with IDA</b>（CL_SALV_GUI_TABLE_IDA，7.40 起）：分頁、排序、彙總直接下推到 HANA，可直接吃 CDS View</td></tr>
+      <tr><td>報表樹、區域選單、SAP Office 存清單</td><td>舊 GUI 導覽</td><td>Fiori Launchpad 磚、角色（PFCG）；SAP GUI 報表可包成 Fiori 磚</td></tr>
+      <tr><td>整支報表</td><td>—</td><td>分析類需求優先評估標準 Fiori 分析 App、CDS 分析查詢（Embedded Analytics）、Fiori Elements List Report（CDS＋RAP）</td></tr>
+    </tbody>
+  </table>
+  <div class="warn">升級專案盤點舊報表時，BC405 年代的程式最常見三個 HANA 問題：① SELECT 沒有 ORDER BY 卻「取第一筆」（結果不穩定）；② FOR ALL ENTRIES 驅動表可能為空（整表讀取）；③ LDB／巢狀 SELECT 在 HANA 上變慢。用 <span class="tcode">SCI</span>／ATC 的 S/4HANA 就緒檢查（S4HANA_READINESS）可以掃出前兩類。</div>
+
+  <h3 id="ch05-6-qa">練習與自我檢核</h3>
+  <ol>
+    <li><b>（Col18 U1）</b>接到報表需求時，寫程式前要先確認哪四件事？<br><i>要點</i>：標準報表能否做到、能否涵蓋大部分、能否用 SAP Query／InfoSet Query／QuickViewer、自寫時有無 LDB 或函數／BAPI／方法可取數——即「先標準再客製」。</li>
+    <li>程式 ZTEST 的全域資料宣告應該在哪個 Include？<br><i>要點</i>：ZTEST_TOP（O01 為 PBO、I01 為 PAI、E01 為事件、F01 為副程式）。</li>
+    <li>說明 <span class="kw">FORMAT RESET</span> 與 <span class="kw">FORMAT COLOR OFF</span> 的差別，以及 <span class="kw">WRITE … COLOR</span> 與 FORMAT 衝突時誰優先。<br><i>要點</i>：RESET 連 INTENSIFIED ON 標準設定一起關；COLOR OFF 只關顏色；欄位層級的格式優先（就近原則）。每個事件開始 FORMAT 會重設。</li>
+    <li>SELECT-OPTIONS 的選擇集合如何計算？使用者什麼都不填時會發生什麼？為什麼 Casper 建議用多筆 EQ 而非 BT？<br><i>要點</i>：所有 I 的聯集減去所有 E 的聯集；不填＝不限制；BT 比字典序，遇 ALPHA 前導零、號碼不連續、編碼改過會漏抓或多抓。</li>
+    <li>選擇畫面上 AT SELECTION-SCREEN OUTPUT 與 AT SELECTION-SCREEN 分別相當於 Dynpro 的什麼事件？要隱藏 MODIF ID 為 ADV 的所有欄位，程式寫在哪裡、怎麼寫？<br><i>要點</i>：OUTPUT＝PBO、AT SELECTION-SCREEN＝PAI；在 OUTPUT 中 LOOP AT SCREEN，group1＝'ADV' 時 active＝0 並 MODIFY SCREEN。</li>
+    <li>使用 Tabstrip 時，AT SELECTION-SCREEN 與 AT SELECTION-SCREEN OUTPUT 各被處理幾次、順序為何？<br><i>要點</i>：各兩次；PAI 先目前頁籤子畫面再 1000；PBO 先 1000 再下一個可見頁籤子畫面。</li>
+    <li>變式命名 CUS&amp;DAILY 與 DAILY 在傳輸上有什麼不同？背景月報的日期條件應怎麼設定？<br><i>要點</i>：CUS&amp;／SAP&amp; 為系統變式、用戶端無關、隨程式自動傳輸；其他要手動加到傳輸請求。日期用選擇變數 D（動態日期）或 T（TVARVC）。</li>
+    <li>LDB 中 STOP、EXIT、REJECT、CHECK 的差異？報表自己加的 SELECT-OPTIONS 為什麼要在 GET 裡 CHECK？<br><i>要點</i>：STOP 會先跑 END-OF-SELECTION、EXIT 不跑、REJECT 放棄本筆讀同層下一筆、CHECK 結束目前區塊；LDB 的 WHERE 由 LDB 程式決定，報表無法修改，非動態選擇欄位只能讀回後自己過濾。</li>
+    <li>FOR ALL ENTRIES 最危險的錯誤是什麼？何時該用 FAE、何時用 JOIN？<br><i>要點</i>：驅動內表為空時讀回整張表；驅動資料已在程式（例如使用者輸入、上傳檔）時用 FAE，否則 JOIN；FAE 不能 ORDER BY，取回後自己 SORT 並注意結果已去重。</li>
+    <li>原廠測驗說「HAVING 會限制資料庫表被選出的列數」，這句話精確嗎？<br><i>要點</i>：不精確；WHERE 限制列、HAVING 限制 GROUP BY 之後的群組。另外沒列在 ORDER BY 的欄位順序是未定義的，HANA 上尤其明顯。</li>
+    <li>寫出控制層 AT 區塊的正確順序，並說明內表要先做什麼。改用 7.40 語法該怎麼寫？<br><i>要點</i>：AT FIRST → AT NEW f1 → AT NEW f2 → 單筆 → AT END OF f2 → AT END OF f1 → AT LAST；先依控制欄位升冪 SORT，控制欄位要是前幾欄；新寫法 LOOP AT … GROUP BY ＋ REDUCE。</li>
+    <li>比較內表與 Extract 資料集（至少四點）。<br><i>要點</i>：內表可多個／Extract 一個；內表可隨時增刪改／Extract 只能 EXTRACT、SORT、LOOP 且 SORT 後不能再加；內表單一靜態行型別／Extract 多結構動態；內表合計可在控制頭／Extract 只在控制尾且 SUM(f)、CNT(f) 經最佳化。</li>
+    <li>用程式控制列印時，為什麼 NEW-PAGE PRINT ON 的 PARAMETERS 結構必須由 GET_PRINT_PARAMETERS 產生？如何一次產生多個 Spool？<br><i>要點</i>：結構含內部檢查和，錯了程式中斷；valid＝X 才可用；每次 new_list_id＝X、PRINT OFF 結束目前請求，號碼看 sy-spono。</li>
+    <li>互動清單中如何避免「無效行選擇」？ALV 中對應的做法是什麼？<br><i>要點</i>：每次 AT LINE-SELECTION 後 CLEAR HIDE 欄位，下次用 CHECK 判斷；ALV 在 DOUBLE_CLICK 中 READ TABLE … INDEX e_row-index 並檢查 sy-subrc。</li>
+    <li>ALV Grid 為什麼必須在 PBO 中用 IF … IS INITIAL 建立？資料內表有哪些限制？背景執行要注意什麼？<br><i>要點</i>：否則每次 PBO 都新增物件；必須在畫面送出前建立。內表只能是 STANDARD、生命週期要不短於 Grid、Grid 只存參照（排序會改到程式內表）。背景時容器會拋例外，檢查 sy-batch，或改用 SALV。</li>
+    <li>i_save 的 'U'、'X'、'A' 各代表什麼？使用者要建立全域標準版面需要什麼權限？<br><i>要點</i>：U 使用者專屬、X 全域、A 兩者；需同時給 is_variant；權限物件 S_ALV_LAYO、ACTVT 23；客戶全域變式以 / 開頭。</li>
+    <li>整列顏色、儲存格顏色、例外欄分別要在資料表加什麼欄位、填到 layout 哪個欄位？兩種顏色衝突時誰優先？<br><i>要點</i>：CHAR4 Cxyz → info_fname；LVC_T_SCOL → ctab_fname；CHAR1 0～3 → excp_fname；儲存格顏色優先於列顏色。</li>
+    <li>欄位目錄中 NO_OUT 與 TECH 有何不同？什麼情況可以不建欄位目錄？<br><i>要點</i>：NO_OUT 不顯示但仍在欄位選擇對話框、可由變式叫回；TECH 兩處都不出現。資料表欄位全在某個字典結構中、同名、都要顯示時，只傳 i_structure_name。</li>
+    <li>在 ALV Grid 工具列加一個「Bookings」按鈕並處理它，需要哪些事件與步驟？為什麼 SET HANDLER 要寫在 SET_TABLE_FOR_FIRST_DISPLAY 之前？<br><i>要點</i>：TOOLBAR 處理器 APPEND 到 e_object-&gt;mt_toolbar、USER_COMMAND 處理器依 e_ucomm 處理、SET HANDLER 註冊；TOOLBAR 在 SET_TABLE_FOR_FIRST_DISPLAY 執行期間就觸發。要把標準「明細」換成自訂功能，用 BEFORE_USER_COMMAND＋set_user_command。</li>
+    <li>ABAP Memory 與 SAP Memory 的範圍差異？為什麼 LEAVE TO TRANSACTION 之後 IMPORT FROM MEMORY 拿不到資料？<br><i>要點</i>：ABAP Memory 每個外部 Session 一份、可傳任意變數；SAP Memory 整個登入共用、只存 SET/GET 參數；LEAVE TO TRANSACTION 移除所有內部 Session 並清空 ABAP Memory。</li>
+    <li>用 CL_SALV_TABLE 改某一欄的標題與顏色，步驟是什麼？為什麼要 CAST？<br><i>要點</i>：get_columns( ) 取所有欄 → get_column( '欄名' ) 取單欄 → 呼叫 set_long_text／set_color；get_column 回傳型別是 CL_SALV_COLUMN，顏色、熱點等方法在子類別 CL_SALV_COLUMN_TABLE，所以要 CAST。捕捉 cx_salv_not_found 等例外。</li>
+    <li>一張 S/4HANA 上要處理上千萬筆 ACDOCA 資料的明細報表，本章哪個技術最適合？為什麼不是一般 SALV？<br><i>要點</i>：ALV with IDA（CL_SALV_GUI_TABLE_IDA）搭配 CDS View，分頁、排序、彙總都下推到 HANA；一般 SALV 要先把整表讀進 ABAP 記憶體。</li>
+  </ol>
+</section>

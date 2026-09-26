@@ -1,0 +1,1262 @@
+<section class="chapter" id="ch03-1" data-title="選擇畫面：PARAMETERS / SELECT-OPTIONS / SELECTION-SCREEN 全解">
+  <h2 id="ch03-1">第 3-1 章 選擇畫面：PARAMETERS / SELECT-OPTIONS / SELECTION-SCREEN 全解</h2>
+  <p class="lede">這一章把「使用者怎麼把條件交給你的程式」講到底：單值 PARAMETERS、複選 SELECT-OPTIONS 的四欄內表（SIGN／OPTION／LOW／HIGH）、SELECTION-SCREEN 的版面排版、七個選擇畫面事件的觸發順序、動態顯示與隱藏欄位、自製 F4 輔助說明、變式（Variant）與背景執行、以及用 SUBMIT 把條件丟給另一支程式。學完之後，你能做出一支「條件精準、畫面好看、錯誤擋得住、可存成變式排程」的正式報表，也會避開老師在專案上真的踩過的坑——<b>條件用區間（BT）和用列舉（EQ）答案會不一樣</b>。</p>
+
+  <div class="meta">
+    <div><b>核心 TCODE</b><span class="tcode">SE38</span><span class="tcode">SE80</span><span class="tcode">SE11</span><span class="tcode">SE16N</span><span class="tcode">SE84</span><span class="tcode">SE93</span><span class="tcode">SA38</span><span class="tcode">SE37</span><span class="tcode">SE63</span><span class="tcode">SM30</span><span class="tcode">SM36</span><span class="tcode">SM37</span><span class="tcode">STVARV</span><span class="tcode">SU3</span><span class="tcode">SE18</span><span class="tcode">SPAU_ENH</span><span class="tcode">F.01</span><span class="tcode">MB52</span></div>
+    <div><b>關鍵物件</b>SSCRFIELDS、RSPARAMS、DDSHRETVAL、VRM_VALUES、TVARVC、TPARA、SCREEN、F4IF_INT_TABLE_VALUE_REQUEST、F4IF_FIELD_VALUE_REQUEST、DYNP_VALUES_READ、VRM_SET_VALUES、CL_GUI_FRONTEND_SERVICES、CL_SALV_TABLE、RFBILA00、RM07MLBS</div>
+  </div>
+
+  <h3 id="ch03-1-01">1. 選擇畫面在 SAP 的定位</h3>
+  <p>螢幕（Screen）是 ABAP 設計最重要的工作之一。SAP 的單據、主資料維護幾乎都靠螢幕，一支程式可以包含多個螢幕。螢幕上的 Dialog 就是使用者和程式之間的各種互動：輸入資料、選菜單、按按鈕、單擊或雙擊清單項目。</p>
+  <p>但<b>選擇畫面（Selection Screen）不需要你去 SE51 建 Screen Number</b>——它是由原始碼中的宣告語句自動產生的「簡易型螢幕」。這是它最大的優點：</p>
+  <ul>
+    <li><b>簡單方便</b>：幾行宣告就有一個可用的輸入畫面，不必畫 Layout、不必寫 PBO/PAI 模組。</li>
+    <li><b>移植方便</b>：畫面定義就在程式裡，跟著程式一起傳輸，不會漏傳 Screen。</li>
+    <li><b>自動型別檢查</b>：使用者輸入的值會自動與欄位型別比對。</li>
+    <li><b>自動接上字典</b>：用 DDIC 資料元素宣告，F1 直接顯示欄位文件、F4 直接叫出字典掛的搜尋說明。</li>
+    <li><b>多語系文字</b>：選擇文字（Selection Texts）可以多語維護，執行時自動用使用者的登入語言顯示。</li>
+    <li><b>可存成變式（Variant）</b>：重複使用，也是背景排程的必要條件。</li>
+  </ul>
+  <div class="note">標準選擇畫面的螢幕編號固定是 <b>1000</b>（<span class="kw">sy-dynnr = '1000'</span>）。用 <span class="kw">SELECTION-SCREEN BEGIN OF SCREEN n</span> 自行定義的則從 1001 開始由你指定。這個編號在寫 F4 輔助說明（要傳 DYNPNR）時會用到。</div>
+  <div class="tip">老師的定位很清楚：<b>「簡單，但是有很多要注意的技巧；另外條件變式的善用技巧也要能掌握。」</b> 這一章八成的內容都在講那些「技巧」。</div>
+
+  <h3 id="ch03-1-02">2. PARAMETERS：單值輸入的完整語法</h3>
+  <p>PARAMETERS 產生一個單值輸入框，它同時也是程式裡的一個<b>普通變數</b>，可以直接拿來運算、直接寫進 WHERE 條件（用 <span class="kw">=</span>）。</p>
+
+  <pre><code class="abap">PARAMETERS para[(len)] | para [LENGTH len]
+  [TYPE type [DECIMALS dec]] | [LIKE dobj]
+  [DEFAULT val]
+  [OBLIGATORY] [NO-DISPLAY] [LOWER CASE] [VALUE CHECK]
+  [AS CHECKBOX] | [RADIOBUTTON GROUP grp] | [AS LISTBOX VISIBLE LENGTH vlen]
+  [VISIBLE LENGTH vlen]
+  [MEMORY ID pid] [MATCHCODE OBJECT sh] [MODIF ID mid] [USER-COMMAND ucom]
+  [AS SEARCH PATTERN] [NO INTERVALS].</code></pre>
+
+  <table>
+    <thead><tr><th>附加語法</th><th>作用</th><th>注意事項 / 老師提醒</th></tr></thead>
+    <tbody>
+      <tr><td><b>TYPE t / LIKE dobj</b></td><td>指定型別。TYPE 接型別（DDIC 資料元素、表欄位、內建型別）；LIKE 接既有資料物件</td><td>新程式一律用 <b>TYPE</b>。用 DDIC 型別才會自動有 F1 文件與 F4 說明</td></tr>
+      <tr><td><b>DEFAULT val</b></td><td>設定預設值</td><td><b>不能用 VALUE</b>！這是 PARAMETERS 與 DATA 最容易混淆的一點</td></tr>
+      <tr><td><b>OBLIGATORY</b></td><td>必填，欄位左邊出現打勾符號，沒填不讓執行</td><td>與 NO-DISPLAY 互斥</td></tr>
+      <tr><td><b>NO-DISPLAY</b></td><td>不顯示在畫面上，但仍是選擇畫面的一部分</td><td>可用 SUBMIT ... WITH 或變式傳值進來，是「隱藏開關」的標準做法。加了 NO-DISPLAY 之後型別限制放寬（可以用 STRING 等）</td></tr>
+      <tr><td><b>LOWER CASE</b></td><td>保留小寫，不自動轉大寫</td><td>檔名、E-mail、密碼、URL 一定要加。忘了加是最常見的「查不到資料」原因之一</td></tr>
+      <tr><td><b>AS CHECKBOX</b></td><td>核取方塊，型別固定為 <b>CHAR1</b>（'X' / space）</td><td>判斷用 <span class="kw">IF p_flag = abap_true.</span></td></tr>
+      <tr><td><b>RADIOBUTTON GROUP g</b></td><td>單選鈕，同 group 只能選一個，型別 <b>CHAR1</b></td><td>群組名最長 4 碼；一組至少要兩個；<b>要用 DEFAULT 'X' 指定預設選哪個</b>，否則預設是第一個</td></tr>
+      <tr><td><b>AS LISTBOX VISIBLE LENGTH n</b></td><td>下拉清單，n 是顯示寬度</td><td>值從 Domain 固定值／檢查表自動來，或用 FM <b>VRM_SET_VALUES</b> 自己灌</td></tr>
+      <tr><td><b>VISIBLE LENGTH n</b></td><td>只縮短顯示寬度，內部長度不變</td><td>常配 TYPE STRING 使用（STRING 不加這個會佔滿整行）</td></tr>
+      <tr><td><b>MATCHCODE OBJECT sh</b></td><td>指定 SE11 的搜尋說明（Search Help）</td><td>覆寫資料元素原本掛的搜尋說明</td></tr>
+      <tr><td><b>MEMORY ID pid</b></td><td>與 SAP 記憶體（SPA/GPA）掛勾，進畫面自動 GET、執行時自動 SET</td><td>傳統上用 3 碼（MAT、WRK、BUK）。ID 要先存在於 <b>TPARA</b>，否則語法檢查會出警告</td></tr>
+      <tr><td><b>MODIF ID mid</b></td><td>把欄位歸到一個群組（<b>最長 3 碼</b>），供 <span class="kw">LOOP AT SCREEN</span> 判斷 <span class="kw">screen-group1</span></td><td>動態顯示／隱藏／變灰的關鍵，見第 13 節</td></tr>
+      <tr><td><b>USER-COMMAND ucom</b></td><td>只能給 CHECKBOX / RADIOBUTTON / LISTBOX 用；勾選時觸發 PAI，畫面重繪</td><td>功能碼由 <span class="kw">sscrfields-ucomm</span> 讀取。沒有它，勾了 checkbox 畫面不會有反應</td></tr>
+      <tr><td><b>VALUE CHECK</b></td><td>對 DDIC 檢查表 / 固定值做輸入檢查</td><td>只對有檢查表的 DDIC 型別有效</td></tr>
+      <tr><td><b>AS SEARCH PATTERN</b></td><td>當作主鍵構成的搜尋樣式欄位</td><td>搭配邏輯資料庫使用，現在很少用</td></tr>
+      <tr><td><b>NO INTERVALS</b></td><td>在 block 內對齊時壓縮空間</td><td>常放在 BEGIN OF BLOCK 上，讓整個框架的欄位不留區間位</td></tr>
+    </tbody>
+  </table>
+
+  <div class="warn"><b>兩個硬性限制記牢</b>：<br>
+  1. PARAMETERS / SELECT-OPTIONS 的<b>名稱不得超過 8 個字元</b>（含 P_、S_ 前綴）。取名 <span class="kw">P_WERKSXX</span> 就會語法錯誤。<br>
+  2. 預設值只能用 <b>DEFAULT</b>，不能用 <b>VALUE</b>；VALUE 是 DATA 的語法。</div>
+
+  <div class="tip">命名慣例：PARAMETERS 用 <b>P_</b> 開頭、SELECT-OPTIONS 用 <b>S_</b> 開頭、RADIOBUTTON 用 <b>R_</b> 開頭。這不是語法規定，但全世界的 ABAPer 都這樣寫，維護的人一眼就看得懂。</div>
+
+  <h3 id="ch03-1-03">3. 第 36 個練習：各種 PARAMETERS 控制項一次做完</h3>
+  <p>講義的 Z202202_36 把所有控制項排在一起，是最好的速查範本。這裡用 S/4HANA 的現代寫法重寫（把 <span class="kw">(5) TYPE C</span> 這種舊式長度宣告換成 DDIC 型別，並補上實務上一定會加的附加語法）：</p>
+
+  <pre><code class="abap">REPORT z202202_36.
+
+" 1. 一般文字框 + 預設值 + 掛 SAP 記憶體
+PARAMETERS p_p1 TYPE char5 DEFAULT 'CASP' MEMORY ID zp1.
+
+" 2. 核取方塊（型別固定 CHAR1），預設打勾，勾選時觸發畫面重繪
+PARAMETERS p_p2 AS CHECKBOX DEFAULT abap_true USER-COMMAND flag.
+
+" 3. 必填欄位
+PARAMETERS p_p3 TYPE char5 OBLIGATORY.
+
+" 4. 單選鈕群組（同一 GROUP 只能擇一），明確指定預設值
+PARAMETERS p_p4 RADIOBUTTON GROUP g1 DEFAULT 'X'.
+PARAMETERS p_p5 RADIOBUTTON GROUP g1.
+
+" 5. STRING 型別一定要用 VISIBLE LENGTH，否則畫面會被撐開
+PARAMETERS p_p6 TYPE string VISIBLE LENGTH 20 LOWER CASE.
+
+" 6. 下拉清單（值要另外灌，見下一節）
+PARAMETERS p_p7 TYPE char5 AS LISTBOX VISIBLE LENGTH 10.
+
+" 7. 指定 SE11 的搜尋說明；USER_COMP 是「系統使用者」的標準搜尋說明
+PARAMETERS p_p8 TYPE char12 MATCHCODE OBJECT user_comp.
+
+" 8. 物料號碼：用 DDIC 型別宣告就自動有 F4（MAT1 搜尋說明）與 F1 文件
+PARAMETERS p_matnr TYPE mara-matnr.
+
+" 9. 隱藏參數：畫面看不到，但可以被 SUBMIT ... WITH 或變式塞值進來
+PARAMETERS p_test TYPE abap_bool NO-DISPLAY.
+
+START-OF-SELECTION.
+  WRITE: / '單選鈕 P_P4 =', p_p4, / '核取方塊 P_P2 =', p_p2.</code></pre>
+
+  <div class="note"><b>練習（講義第 36 練習的延伸題）</b>：做一個 <b>P_MATNR 可以下拉選擇物料編號</b>。<br>兩條路：(a) 直接宣告 <span class="kw">TYPE mara-matnr</span>，字典上掛的搜尋說明 <b>MAT1</b> 會自動生效，按 F4 就有；(b) 若要自訂清單（例如只列本廠有庫存的料號），走第 14 節的 <b>F4IF_INT_TABLE_VALUE_REQUEST</b>。</div>
+
+  <div class="warn">用 <span class="kw">TYPE c LENGTH 5</span> 這種「純技術型別」宣告出來的欄位，<b>沒有 F1 說明、沒有 F4 搜尋、沒有轉換常式（Conversion Exit）</b>。物料號碼若用 CHAR40 自己宣告，畫面輸入 100 不會自動補成 000000000000000100，之後查 MARA 一定查不到。<b>能用 DDIC 型別就用 DDIC 型別</b>，這是 S/4 上最容易被忽略的地雷。</div>
+
+  <h3 id="ch03-1-04">4. AS LISTBOX 怎麼灌值，MATCHCODE 的搜尋說明怎麼找</h3>
+  <p>LISTBOX 若欄位的 Domain 有固定值（Fixed Values）或檢查表，值會自動帶出來；否則要自己用 <b>VRM_SET_VALUES</b> 灌，時機放在 <span class="kw">INITIALIZATION</span> 或 <span class="kw">AT SELECTION-SCREEN OUTPUT</span>。</p>
+
+  <pre><code class="abap">REPORT z_listbox_demo.
+
+TYPE-POOLS vrm.                       " 提供 vrm_values / vrm_id 型別
+
+PARAMETERS p_type TYPE char4 AS LISTBOX VISIBLE LENGTH 20 OBLIGATORY.
+
+INITIALIZATION.
+  " 固定清單：key 是實際存到變數的值，text 是畫面顯示的字
+  DATA(lt_list) = VALUE vrm_values(
+      ( key = 'FERT' text = '成品 Finished Product' )
+      ( key = 'HALB' text = '半成品 Semi-finished' )
+      ( key = 'ROH'  text = '原料 Raw Material' ) ).
+
+  CALL FUNCTION 'VRM_SET_VALUES'
+    EXPORTING
+      id     = 'P_TYPE'               " 必須大寫，且與參數名完全相同
+      values = lt_list
+    EXCEPTIONS
+      id_illegal_name = 1
+      OTHERS          = 2.</code></pre>
+
+  <p>若清單內容要從資料庫來（例如物料類型描述檔 T134T），就改成先 SELECT 再組：</p>
+
+  <pre><code class="abap">INITIALIZATION.
+  SELECT mtart, mtbez
+    FROM t134t
+    WHERE spras = @sy-langu
+    INTO TABLE @DATA(lt_mtart).
+
+  DATA(lt_values) = VALUE vrm_values(
+      FOR ls IN lt_mtart ( key = ls-mtart text = |{ ls-mtart } { ls-mtbez }| ) ).
+
+  CALL FUNCTION 'VRM_SET_VALUES'
+    EXPORTING id = 'P_TYPE' values = lt_values.</code></pre>
+
+  <div class="note"><b>講義的思考題</b>：「當使用 S/4HANA 時，不像 ECC 能直接找出 Search Help 的名稱，那要如何找得到 <b>USER_COMP</b>？」<span class="src">（依講義提示整理）</span><br>四條實用路線：<br>
+  1. 在任一有該欄位的標準畫面上按 <b>F1 → 技術資訊（Technical Information）</b>，畫面下方會列出「搜尋說明」；若 GUI 沒顯示，在說明視窗的設定裡把 Technical Information 打開。<br>
+  2. <span class="tcode">SE11</span> 開該欄位的<b>資料元素</b> → 「更多特性 / Further Characteristics」頁籤 → 看 Search Help 欄位；或看它的<b>檢查表（Check Table）</b>，檢查表本身就會產生隱式搜尋說明。<br>
+  3. <span class="tcode">SE11</span> 選 <b>Search help</b> → 名稱輸入 <b>*USER*</b> 按 F4 模糊搜尋。<br>
+  4. <span class="tcode">SE84</span>（Repository Information System）→ ABAP Dictionary → Search Helps，可用描述文字反查。</div>
+
+  <div class="tip">搜尋說明的層級順序（由高到低）：<b>畫面上的 MATCHCODE OBJECT ＞ 資料元素上掛的 Search Help ＞ 檢查表產生的隱式 Search Help</b>。要換掉標準的 F4，最省事的就是在 PARAMETERS 上加 MATCHCODE OBJECT。</div>
+
+  <h3 id="ch03-1-05">5. SELECT-OPTIONS：四欄內表 SIGN / OPTION / LOW / HIGH</h3>
+  <p>PARAMETERS 只能給一個值，實務上使用者要的是「這批料號」「這段日期」「排除這幾張單」。這就是 SELECT-OPTIONS。</p>
+
+  <pre><code class="abap">SELECT-OPTIONS sel FOR dobj.   " dobj 必須是已宣告的資料物件或表欄位</code></pre>
+
+  <p>執行後，使用者輸入的內容會傳到一個<b>自動產生的內表</b>，這個內表的結構永遠是這四欄：</p>
+
+  <table>
+    <thead><tr><th>欄位</th><th>值域</th><th>意義</th></tr></thead>
+    <tbody>
+      <tr><td><b>SIGN</b></td><td>I / E</td><td><b>I = Include 包含</b>；<b>E = Exclude 排除</b>。<b>不可以留空白</b></td></tr>
+      <tr><td><b>OPTION</b></td><td>EQ NE GT GE LT LE BT NB CP NP</td><td>比較運算子，見下表</td></tr>
+      <tr><td><b>LOW</b></td><td>值</td><td>維護項目－前（單值或區間下限）</td></tr>
+      <tr><td><b>HIGH</b></td><td>值</td><td>維護項目－後（區間上限，只有 BT / NB 才填）</td></tr>
+    </tbody>
+  </table>
+
+  <table>
+    <thead><tr><th>OPTION</th><th>意義</th><th>對應 SQL</th><th>範例（欄位 MATNR）</th></tr></thead>
+    <tbody>
+      <tr><td>EQ</td><td>等於</td><td>=</td><td>MATNR = 'DXTR1000'</td></tr>
+      <tr><td>NE</td><td>不等於</td><td>&lt;&gt;</td><td>MATNR &lt;&gt; 'DXTR1000'</td></tr>
+      <tr><td>GT</td><td>大於</td><td>&gt;</td><td>MATNR &gt; 'DXTR1000'</td></tr>
+      <tr><td>GE</td><td>大於等於</td><td>&gt;=</td><td>MATNR &gt;= 'DXTR1000'</td></tr>
+      <tr><td>LT</td><td>小於</td><td>&lt;</td><td>MATNR &lt; 'DXTR1000'</td></tr>
+      <tr><td>LE</td><td>小於等於</td><td>&lt;=</td><td>MATNR &lt;= 'DXTR1000'</td></tr>
+      <tr><td><b>BT</b></td><td>介於（含頭含尾）</td><td>BETWEEN</td><td>MATNR BETWEEN 'DXTR1000' AND 'DXTR2000'</td></tr>
+      <tr><td><b>NB</b></td><td>不介於</td><td>NOT BETWEEN</td><td>MATNR NOT BETWEEN ...</td></tr>
+      <tr><td><b>CP</b></td><td>模式比對</td><td>LIKE</td><td>MATNR LIKE 'DXTR1*'（* 任意字串、+ 任意單一字元、# 逸出）</td></tr>
+      <tr><td><b>NP</b></td><td>模式不比對</td><td>NOT LIKE</td><td>MATNR NOT LIKE 'DXTR1*'</td></tr>
+    </tbody>
+  </table>
+
+  <div class="tip">老師強調：<b>「光是這四個欄位就能變化出無窮的條件式，非常靈活、非常強大。善用之，能好好教導前端使用者。」</b> 很多客戶抱怨「報表不好用」，其實是沒人教他們按右邊那顆「多重選擇」按鈕（黃綠色箭頭），可以一次貼上幾百個料號、可以設排除。</div>
+
+  <div class="note"><b>Debug 觀察法</b>（老師特別交代一定要會）：s_s1 ～ s_s7 每一個都是<b>獨立的內表</b>。在 Debug 時，如果結構（表頭列）與內表同名，要用 <b>s_s1[]</b> 才看得到內表本體；變數旁邊有小帽子（hat）圖示就代表它是 WITH HEADER LINE。可以在程式中直接寫 <span class="kw">BREAK-POINT.</span> 或用 <span class="kw">BREAK-POINT ID</span>，實務上更常用 <span class="kw">BREAK sy-uname.</span>（只對自己中斷，不會影響其他使用者）。</div>
+
+  <h3 id="ch03-1-06">6. 第 37 個練習：SELECT-OPTIONS 的完整附加語法</h3>
+
+  <table>
+    <thead><tr><th>附加語法</th><th>作用</th></tr></thead>
+    <tbody>
+      <tr><td><b>DEFAULT l</b></td><td>單一預設值（自動 SIGN='I' OPTION='EQ'）</td></tr>
+      <tr><td><b>DEFAULT l OPTION op SIGN s</b></td><td>含判斷條件的單一預設值</td></tr>
+      <tr><td><b>DEFAULT l TO h</b></td><td>預設區間（自動 SIGN='I' OPTION='BT'）</td></tr>
+      <tr><td><b>DEFAULT l TO h OPTION op SIGN s</b></td><td>預設區間＋自訂條件（例如 NB / E）</td></tr>
+      <tr><td><b>OBLIGATORY</b></td><td>必填，至少要輸入一列</td></tr>
+      <tr><td><b>NO-EXTENSION</b></td><td>隱藏右邊的「多重選擇」按鈕，<b>只能輸入一列</b>（但仍可輸區間）</td></tr>
+      <tr><td><b>NO INTERVALS</b></td><td>隱藏 HIGH 欄位，<b>只能輸入單值</b>（但仍可輸多列）</td></tr>
+      <tr><td><b>NO-DISPLAY</b></td><td>不顯示，供 SUBMIT / 變式傳值</td></tr>
+      <tr><td><b>LOWER CASE</b></td><td>保留小寫</td></tr>
+      <tr><td><b>MEMORY ID pid</b></td><td>掛 SAP 記憶體（只作用在 LOW）</td></tr>
+      <tr><td><b>MATCHCODE OBJECT sh</b></td><td>指定搜尋說明</td></tr>
+      <tr><td><b>MODIF ID mid</b></td><td>群組代號，供 LOOP AT SCREEN 控制</td></tr>
+      <tr><td><b>VISIBLE LENGTH n</b></td><td>顯示長度</td></tr>
+      <tr><td><b>NO DATABASE SELECTION</b></td><td>搭配邏輯資料庫時，不參與 LDB 的自動選取</td></tr>
+    </tbody>
+  </table>
+
+  <p>講義的 Z202202_37 把各種 DEFAULT 組合排出來對照，這是理解 SIGN / OPTION 最快的方法。<b>注意：原講義用了 <span class="kw">TABLES vbak.</span> 來提供型別，S/4HANA 的現代寫法應改用一個 DATA 變數當「型別載體」</b>：</p>
+
+  <pre><code class="abap">REPORT z202202_37.
+
+" 現代寫法：不用 TABLES，宣告一個變數純粹當型別來源
+DATA gv_vbeln TYPE vbak-vbeln.
+
+SELECT-OPTIONS s_s1 FOR gv_vbeln.                                  " 空的：不限制
+SELECT-OPTIONS s_s2 FOR gv_vbeln DEFAULT 44 TO 54.                 " I / BT / 44 / 54
+SELECT-OPTIONS s_s3 FOR gv_vbeln DEFAULT 44 OPTION LE SIGN I.      " I / LE / 44
+SELECT-OPTIONS s_s4 FOR gv_vbeln DEFAULT 45 TO 55 OPTION NB SIGN I." I / NB / 45 / 55
+SELECT-OPTIONS s_s5 FOR gv_vbeln DEFAULT 45 TO 55 OPTION BT SIGN E." E / BT / 45 / 55
+SELECT-OPTIONS s_s6 FOR gv_vbeln NO-EXTENSION.                     " 只能一列
+SELECT-OPTIONS s_s7 FOR gv_vbeln NO INTERVALS.                     " 只能單值
+
+START-OF-SELECTION.
+  " 用 Debug 觀察 s_s1[] ~ s_s7[]，確認它們都是四欄內表
+  BREAK sy-uname.
+
+  SELECT vbeln, erdat, ernam, netwr, waerk
+    FROM vbak
+    WHERE vbeln IN @s_s2                 " SELECT-OPTIONS 一律用 IN
+    INTO TABLE @DATA(lt_vbak)
+    UP TO 100 ROWS.</code></pre>
+
+  <div class="warn"><b>S/4HANA：不要再寫 <span class="kw">TABLES:</span></b>。TABLES 會產生一個全域的表工作區（等同 WITH HEADER LINE 的近親），在 ABAP Objects（類別／方法）裡<b>根本不允許</b>，也是 ATC 檢查的固定扣分項。SELECT-OPTIONS 只是需要一個「有型別的資料物件」，用 <span class="kw">DATA gv_x TYPE vbak-vbeln.</span> 完全等效，而且 F1 / F4 / 轉換常式全部保留。</div>
+
+  <div class="warn"><b>NO INTERVALS 與 NO-EXTENSION 常被搞混</b>：<br>
+  ・<b>NO INTERVALS</b>＝拿掉「到（HIGH）」欄位 → 只能單值，但可以按多重選擇輸入很多列。<br>
+  ・<b>NO-EXTENSION</b>＝拿掉右邊那顆多重選擇按鈕 → 只能一列，但那一列還是可以填區間。<br>
+  兩個一起加，才等於「只能填一個單值」。</div>
+
+  <h3 id="ch03-1-07">7. RANGES 與自建 range 的正確填法</h3>
+  <p>SELECT-OPTIONS 同時做兩件事：<b>畫面元素 ＋ 四欄內表</b>。如果你只要那個四欄內表、不要畫面（例如程式內部自己組條件），那就是 RANGES。</p>
+
+  <table>
+    <thead><tr><th></th><th>SELECT-OPTIONS</th><th>RANGES（舊）</th><th>DATA ... TYPE RANGE OF（新，建議）</th></tr></thead>
+    <tbody>
+      <tr><td>產生畫面欄位</td><td>是</td><td>否</td><td>否</td></tr>
+      <tr><td>產生四欄內表</td><td>是</td><td>是</td><td>是</td></tr>
+      <tr><td>WITH HEADER LINE</td><td>是（無法避免）</td><td>是（因此已過時）</td><td><b>否</b></td></tr>
+      <tr><td>可宣告在方法／類別內</td><td>否</td><td>否</td><td><b>可以</b></td></tr>
+      <tr><td>可存進變式</td><td>是</td><td>否</td><td>否</td></tr>
+    </tbody>
+  </table>
+
+  <pre><code class="abap">" 舊寫法（講義時代）：RANGES 會產生 header line，S/4 請避免
+"RANGES r_matnr FOR mara-matnr.
+
+" 現代寫法一：直接宣告 range 型別的內表
+DATA lr_matnr TYPE RANGE OF mara-matnr.
+
+" 現代寫法二：先定型別，方法簽章／FM 介面可重複使用
+TYPES ty_r_matnr TYPE RANGE OF mara-matnr.
+DATA  lr_werks   TYPE RANGE OF marc-werks.
+
+" 用 VALUE # 一次組好（sign / option 可以提到括號外共用）
+lr_matnr = VALUE #( sign = 'I' option = 'EQ'
+                    ( low = 'DXTR1000' )
+                    ( low = 'DXTR1001' )
+                    ( low = 'DXTR1002' ) ).
+
+" 需要區間就明確寫出 BT，並且 low / high 都要填
+APPEND VALUE #( sign = 'I' option = 'BT'
+                low = '20250101' high = '20251231' ) TO lr_datum.
+
+" 由內表批次轉成 range（FOR 迴圈）
+TYPES ty_r_kunnr TYPE RANGE OF kna1-kunnr.
+DATA(lr_kunnr) = VALUE ty_r_kunnr(
+    FOR ls IN lt_customer ( sign = 'I' option = 'EQ' low = ls-kunnr ) ).</code></pre>
+
+  <p>如果要在程式裡「加料」到畫面上的 SELECT-OPTIONS（例如 INITIALIZATION 給預設條件），建議一律用 <b>方括號</b> 明確指定內表本體，避免踩到 header line：</p>
+
+  <pre><code class="abap">INITIALIZATION.
+  " 明確寫 s_matnr[]，不依賴 header line
+  APPEND VALUE #( sign = 'I' option = 'CP' low = 'DXTR1*' ) TO s_matnr[].
+  APPEND VALUE #( sign = 'E' option = 'EQ' low = 'DXTR1205' ) TO s_matnr[].</code></pre>
+
+  <div class="warn"><b>自建 range 的五條鐵律</b>（違反任何一條，SELECT 的結果都可能靜默出錯）：<br>
+  1. <b>SIGN 一定要填 'I' 或 'E'，大寫，不可空白</b>。空白的 SIGN 在 ABAP SQL 的 IN 條件裡行為未定義。<br>
+  2. <b>OPTION 一定要填</b>，而且要跟 HIGH 一致：填了 HIGH 就必須用 <b>BT / NB</b>；用 EQ/GT/LE… 時 <b>HIGH 必須留空</b>。填了 HIGH 又用 EQ，SAP 只看 LOW，HIGH 被默默忽略。<br>
+  3. <b>空的 range ＝ 不設限，會撈全表</b>。所以做「使用者不填就不查」的邏輯要自己擋：<span class="kw">IF lr_matnr IS INITIAL. MESSAGE ... TYPE 'E'. ENDIF.</span><br>
+  4. <b>E（排除）列是在 I（包含）列之後才套用</b>：結果 ＝（所有 I 列的聯集）減去（所有 E 列的聯集）。若表中<b>只有 E 列沒有 I 列</b>，等於「全部資料扣掉排除的」——這常常是使用者以為只會查到幾筆、結果跑了十分鐘的原因。<br>
+  5. <b>low / high 要用資料庫的內部格式</b>。MATNR、KUNNR、LIFNR、EQUNR 都有 ALPHA 轉換常式，畫面輸入 100、資料庫存的是 000000000000000100。自己塞值要先呼叫 <span class="kw">CONVERSION_EXIT_ALPHA_INPUT</span>（或用 <span class="kw">|{ lv_matnr ALPHA = IN }|</span>）。</div>
+
+  <pre><code class="abap">" 自己塞料號時，務必補零成內部格式
+DATA(lv_internal) = |{ lv_input ALPHA = IN }|.
+APPEND VALUE #( sign = 'I' option = 'EQ' low = lv_internal ) TO lr_matnr.
+
+" 反過來要顯示給人看時
+WRITE / |{ ls_mara-matnr ALPHA = OUT }|.</code></pre>
+
+  <h3 id="ch03-1-08">8. 【重點陷阱】區間（BT）與列舉（EQ）的答案為什麼會不一樣</h3>
+  <p>這是老師在真實專案上付出代價換來的經驗：<b>同一批資料，條件用「區間」跟用「列舉」，跑出來的答案不一樣，而用列舉的那個才是對的。</b></p>
+
+  <div class="warn"><b>結論先講：能列舉就列舉（I/EQ 一筆一筆列，或 I/CP 加 E/EQ 排除），不要圖省事寫 BT 區間。</b>會踩雷的原因有五個，全部都是「靜默出錯」——不會 dump、不會報錯，只是數字錯了。</div>
+
+  <p><b>原因一：CHAR 欄位的 BT 是「字典順序」比較，不是數值比較。</b><br>
+  SAP 裡幾乎所有代碼欄位（MATNR、VBELN、BELNR、KOSTL）都是字元型。字元比較是逐字元比的，所以：</p>
+  <ul>
+    <li><span class="kw">'DXTR1201' BT 'DXTR1210'</span> 會把 <b>DXTR12010、DXTR1205A、DXTR120X</b> 這種「開頭相同但更長／帶字尾」的料號一併撈進來（因為它們排在中間）。</li>
+    <li>反過來，<span class="kw">'9' BT '100'</span> 在字元世界裡是空集合（因為 '9' &gt; '1'），使用者以為查了 9 到 100，結果一筆都沒有。</li>
+  </ul>
+
+  <p><b>原因二：ALPHA 轉換常式讓邊界值對不上。</b><br>
+  畫面上輸入是有做轉換的（1201 → 000000000000001201），但<b>程式裡自己填 range 的 low/high 沒人幫你轉</b>。用 EQ 列舉時，某一筆對不上就是那一筆查不到，很容易被發現；用 BT 時，邊界對不上會讓整段區間<b>多抓或少抓</b>，而且看起來還很合理。</p>
+
+  <p><b>原因三：實務上的號碼段幾乎不是連續的。</b><br>
+  料號 DXTR1201～DXTR1210 中間，可能夾著別的廠、別的類別、甚至別的公司代碼的資料。BT 是「凡是排在這兩端之間的都算」，它不知道你的業務規則；列舉是「我點名的這幾筆才算」。<b>只要編碼帶有業務意義，區間就一定會誤傷。</b></p>
+
+  <p><b>原因四：編碼規則會變。</b><br>
+  今年的區間寫死 'A2025000001' TO 'A2025999999'，明年前綴改成 B 就整段失效，而且一樣不報錯，只是報表變成 0 筆。列舉至少會在「找不到某筆」時被人發現。</p>
+
+  <p><b>原因五：BT 的 HIGH 是「含尾」，但只有在長度一致時才直覺。</b><br>
+  日期、數量、金額型別沒問題；但字元欄位長度不一致時，BT 的「含尾」語意會跟人的直覺差很多。</p>
+
+  <p>所以老師在 ZOOALV 案例裡用的是這個模式：<b>用 I/CP 圈範圍，再用 E/EQ 逐筆挖掉</b>——既省手工，又精準：</p>
+
+  <pre><code class="abap">" 正確示範：包含 DXTR1* 全部，再明確排除 DXTR1201 ~ DXTR1210 這十筆
+INITIALIZATION.
+  APPEND VALUE #( sign = 'I' option = 'CP' low = 'DXTR1*' ) TO s_matnr[].
+
+  DO 10 TIMES.
+    DATA(lv_num)   = 1200 + sy-index.
+    DATA(lv_matnr) = |DXTR{ lv_num }|.
+    APPEND VALUE #( sign = 'E' option = 'EQ' low = lv_matnr ) TO s_matnr[].
+  ENDDO.
+
+" 錯誤示範（不要學）：看起來一樣，實際會誤殺 DXTR12010、DXTR1205A ...
+"  APPEND VALUE #( sign = 'E' option = 'BT'
+"                  low = 'DXTR1201' high = 'DXTR1210' ) TO s_matnr[].</code></pre>
+
+  <table>
+    <thead><tr><th>條件類型</th><th>SIGN</th><th>OPTION</th><th>範例</th><th>老師評語</th></tr></thead>
+    <tbody>
+      <tr><td>包含一整群</td><td>'I'</td><td>'CP'</td><td>DXTR1*</td><td>圈範圍用這個，比 BT 安全</td></tr>
+      <tr><td>逐筆排除</td><td>'E'</td><td>'EQ'</td><td>DXTR1201 … DXTR1210</td><td><b>正解</b>：一筆一筆點名</td></tr>
+      <tr><td>區間排除</td><td>'E'</td><td>'BT'</td><td>DXTR1201 ~ DXTR1210</td><td><b>會抓錯</b>：長度／字尾不同的會被誤殺</td></tr>
+    </tbody>
+  </table>
+
+  <div class="tip"><b>老師口訣：「條件寧可囉唆，不要聰明。」</b> 多寫十行 APPEND，換來答案永遠正確，這筆交易非常划算。真的必須用區間時（例如日期、會計期間、工廠這種格式固定的欄位），請確認：型別是 DATS/NUMC/定長 CHAR、且沒有轉換常式、且業務上確定是連續的。</div>
+
+  <div class="warn"><b>延伸提醒：「換個寫法答案就不一樣」還有另一個常見兇手——SELECT 沒有排序。</b><br>
+  同一筆業務資料在系統裡可能存在多種「角度」（例如成本估算就同時有 <b>H＝Item Category 項目類別</b> 與 <b>E＝Cost Component 成本組成</b> 兩種構成，兩者的欄位數量還不一樣）。若程式用 <span class="kw">SELECT SINGLE</span> 或沒有 <span class="kw">ORDER BY</span> 就取第一筆，抓到 H 還是 E 完全看資料庫當下的心情，結果就會<b>時對時錯、不穩定</b>。<br>
+  正確做法是：<b>在 WHERE 裡明確限定角度</b>（例如固定只取 H），再加 <span class="kw">ORDER BY</span> 保證順序。「條件要精準」和「取值要有序」是同一個問題的兩面。</div>
+
+  <h3 id="ch03-1-09">9. SELECTION-SCREEN：把畫面排漂亮</h3>
+  <p>SELECTION-SCREEN 用來建立畫面的框架結構，包括螢幕元素的建立與子螢幕的建立。完整指令清單：</p>
+
+  <table>
+    <thead><tr><th>指令</th><th>作用</th></tr></thead>
+    <tbody>
+      <tr><td><b>BEGIN OF BLOCK b [WITH FRAME] [TITLE t] [NO INTERVALS]</b> … <b>END OF BLOCK b</b></td><td>建立一個（帶標題的）方框群組；最多可巢狀 5 層</td></tr>
+      <tr><td><b>BEGIN OF LINE</b> … <b>END OF LINE</b></td><td>把多個元素排在同一行（此區間內元素不會自動換行）</td></tr>
+      <tr><td><b>SKIP [n]</b></td><td>空 n 行</td></tr>
+      <tr><td><b>ULINE [/pos(len)]</b></td><td>畫一條水平線</td></tr>
+      <tr><td><b>POSITION pos</b></td><td>把游標移到第 pos 欄；也可用 <b>POS_LOW / POS_HIGH</b> 對齊選項欄位</td></tr>
+      <tr><td><b>COMMENT pos(len) name [FOR FIELD f] [MODIF ID m]</b></td><td>放一段說明文字；<b>FOR FIELD</b> 讓這段文字的 F1 連到該欄位的說明</td></tr>
+      <tr><td><b>PUSHBUTTON pos(len) name USER-COMMAND uc [VISIBLE LENGTH n]</b></td><td>畫面上的按鈕</td></tr>
+      <tr><td><b>FUNCTION KEY n</b></td><td>在應用工具列加按鈕（n = 1～5，功能碼 FC01～FC05）</td></tr>
+      <tr><td><b>BEGIN OF SCREEN n [AS SUBSCREEN] [TITLE t]</b> … <b>END OF SCREEN n</b></td><td>自訂編號的選擇畫面／子畫面</td></tr>
+      <tr><td><b>BEGIN OF TABBED BLOCK t FOR n LINES</b> / <b>TAB (len) c USER-COMMAND uc DEFAULT SCREEN s</b></td><td>頁籤區塊</td></tr>
+      <tr><td><b>INCLUDE BLOCKS b / PARAMETERS p / SELECT-OPTIONS s / COMMENT</b></td><td>把別的選擇畫面的元素納進來重用</td></tr>
+      <tr><td><b>CALL SELECTION-SCREEN n [STARTING AT c l] [ENDING AT c l]</b></td><td>執行時呼叫自訂選擇畫面；加上座標就變成彈出視窗</td></tr>
+    </tbody>
+  </table>
+
+  <p>講義的 Z202202_38（第 38 個練習），示範兩個 BLOCK 加一個自訂畫面 1001：</p>
+
+  <pre><code class="abap">REPORT z202202_38.
+
+DATA gv_vbeln TYPE vbak-vbeln.      " 型別載體，取代舊寫法的 TABLES vbak
+
+" 第一個方框
+SELECTION-SCREEN BEGIN OF BLOCK b1 WITH FRAME TITLE TEXT-001.
+  PARAMETERS p_p7 TYPE vbak-vbeln.
+  PARAMETERS p_p8 TYPE vbak-vbeln.
+SELECTION-SCREEN END OF BLOCK b1.
+
+" 第二個方框
+SELECTION-SCREEN BEGIN OF BLOCK b2 WITH FRAME TITLE TEXT-002.
+  PARAMETERS p_pa TYPE vbak-vbeln.
+  PARAMETERS p_pb TYPE vbak-vbeln.
+SELECTION-SCREEN END OF BLOCK b2.
+
+" 自訂的第二張選擇畫面（編號自 1001 起）
+SELECTION-SCREEN BEGIN OF SCREEN 1001 TITLE TEXT-t01.
+  SELECTION-SCREEN COMMENT /1(30) TEXT-003.
+  PARAMETERS p_p9 TYPE vbak-vbeln.
+  PARAMETERS p_p0 TYPE vbak-vbeln.
+SELECTION-SCREEN END OF SCREEN 1001.
+
+START-OF-SELECTION.
+  " 以彈出視窗方式呼叫；不加 STARTING AT 就是整頁顯示
+  CALL SELECTION-SCREEN 1001 STARTING AT 10 5 ENDING AT 70 15.
+  IF sy-subrc = 0.
+    WRITE: / '使用者在 1001 輸入：', p_p9, p_p0.
+  ENDIF.</code></pre>
+
+  <p>把多個元素排在同一行、並用 COMMENT 當標籤，是實務上最常用的版面技巧：</p>
+
+  <pre><code class="abap">SELECTION-SCREEN BEGIN OF BLOCK bsel WITH FRAME TITLE TEXT-001.
+
+  " 同一行：單選鈕 + 文字 + 單選鈕 + 文字 + 文字 + 輸入框
+  SELECTION-SCREEN BEGIN OF LINE.
+    PARAMETERS       r_plant RADIOBUTTON GROUP g1 USER-COMMAND check.
+    SELECTION-SCREEN COMMENT 03(29) TEXT-r11 FOR FIELD r_plant.   " All Plant Matl.
+    PARAMETERS       r_user  RADIOBUTTON GROUP g1 DEFAULT 'X'.
+    SELECTION-SCREEN COMMENT 35(15) TEXT-r12 FOR FIELD r_user.    " Particular Ver.
+    SELECTION-SCREEN COMMENT 50(08) TEXT-r13.                     " User ID:
+    PARAMETERS       p_usnam TYPE sy-uname.
+  SELECTION-SCREEN END OF LINE.
+
+  SELECTION-SCREEN ULINE.
+  SELECTION-SCREEN SKIP 1.
+
+  " 按鈕
+  SELECTION-SCREEN PUSHBUTTON /1(20) btn_run USER-COMMAND run.
+
+SELECTION-SCREEN END OF BLOCK bsel.</code></pre>
+
+  <div class="note">COMMENT 與 PUSHBUTTON 的 <b>name</b> 會被系統<b>自動宣告成一個字元變數</b>（長度就是括號裡的 len），所以你可以在 INITIALIZATION 直接給它字串：<span class="kw">btn_run = '執行查詢'.</span>。如果寫成 TEXT-xxx，則是取文字符號（Text Symbol）的值。</div>
+
+  <h3 id="ch03-1-10">10. TABBED BLOCK、AS SUBSCREEN、FUNCTION KEY</h3>
+  <p>條件多到一頁塞不下時，用頁籤（Tabbed Block）。做法是：先把每組條件做成 <b>AS SUBSCREEN</b> 的選擇畫面，再用 TABBED BLOCK 把它們掛上去。</p>
+
+  <pre><code class="abap">REPORT z_tabbed_demo.
+
+TABLES sscrfields.                  " 唯一必須保留 TABLES 的地方：讀功能碼
+
+DATA gv_matnr TYPE mara-matnr.
+DATA gv_werks TYPE marc-werks.
+
+" --- 子畫面 1：基本條件 ---
+SELECTION-SCREEN BEGIN OF SCREEN 1100 AS SUBSCREEN.
+  SELECT-OPTIONS s_matnr FOR gv_matnr.
+  SELECT-OPTIONS s_werks FOR gv_werks.
+SELECTION-SCREEN END OF SCREEN 1100.
+
+" --- 子畫面 2：進階條件 ---
+SELECTION-SCREEN BEGIN OF SCREEN 1200 AS SUBSCREEN.
+  PARAMETERS p_zero  AS CHECKBOX DEFAULT abap_true.
+  PARAMETERS p_layou TYPE disvariant-variant.
+SELECTION-SCREEN END OF SCREEN 1200.
+
+" --- 頁籤區塊：FOR n LINES 是頁籤區要佔幾行 ---
+SELECTION-SCREEN BEGIN OF TABBED BLOCK tb FOR 12 LINES.
+  SELECTION-SCREEN TAB (20) tab1 USER-COMMAND uc1 DEFAULT SCREEN 1100.
+  SELECTION-SCREEN TAB (20) tab2 USER-COMMAND uc2 DEFAULT SCREEN 1200.
+SELECTION-SCREEN END OF BLOCK tb.
+
+INITIALIZATION.
+  tab1 = '基本條件'.
+  tab2 = '進階設定'.
+  tb-prog = sy-repid.
+  tb-dynnr = 1100.                  " 預設顯示哪一個子畫面
+  tb-activetab = 'UC1'.
+
+AT SELECTION-SCREEN.
+  CASE sscrfields-ucomm.
+    WHEN 'UC1'. tb-dynnr = 1100. tb-activetab = 'UC1'.
+    WHEN 'UC2'. tb-dynnr = 1200. tb-activetab = 'UC2'.
+  ENDCASE.</code></pre>
+
+  <p><b>FUNCTION KEY</b> 是把按鈕放到上方應用工具列（不是畫面內），最多 5 個，功能碼固定是 FC01～FC05：</p>
+
+  <pre><code class="abap">TABLES sscrfields.
+
+SELECTION-SCREEN FUNCTION KEY 1.
+SELECTION-SCREEN FUNCTION KEY 2.
+
+INITIALIZATION.
+  " 用 smp_dyntxt 可以同時設定文字、圖示與提示
+  DATA(ls_btn1) = VALUE smp_dyntxt( icon_id   = icon_export
+                                    icon_text = '匯出'
+                                    quickinfo = '把結果匯出成 Excel' ).
+  sscrfields-functxt_01 = ls_btn1.
+
+  DATA(ls_btn2) = VALUE smp_dyntxt( icon_id   = icon_information
+                                    icon_text = '說明' ).
+  sscrfields-functxt_02 = ls_btn2.
+
+AT SELECTION-SCREEN.
+  CASE sscrfields-ucomm.
+    WHEN 'FC01'.  MESSAGE '你按了匯出' TYPE 'I'.
+    WHEN 'FC02'.  MESSAGE '你按了說明' TYPE 'I'.
+  ENDCASE.</code></pre>
+
+  <div class="warn">本章唯一必須保留 <span class="kw">TABLES sscrfields.</span> 的地方就在這裡——選擇畫面的功能碼只能透過 SSCRFIELDS 這個結構讀取，SAP 至今仍是這樣設計。除此之外，其他 TABLES 一律拿掉。<br>另外：在選擇畫面上請讀 <b>sscrfields-ucomm</b>，不要讀 sy-ucomm，後者在選擇畫面上不一定被填。</div>
+
+  <h3 id="ch03-1-11">11. 文字元素與多語翻譯</h3>
+  <p>在 SELECT-OPTIONS 與 PARAMETERS 的設計中，畫面上顯示的名稱預設就是物件的定義名（P_P1、S_MATNR），這對使用者完全沒有意義。SAP 提供 <b>Text Elements（文字元素）</b> 來自訂，路徑：ABAP 編輯器 → <b>轉到（Goto）→ 文字元素（Text Elements）</b>。共三類：</p>
+
+  <table>
+    <thead><tr><th>類別</th><th>用途</th><th>引用方式</th></tr></thead>
+    <tbody>
+      <tr><td><b>清單標題 List Headings</b></td><td>定義 Report 的標題與欄位抬頭，<b>配合 WRITE 輸出</b>使用</td><td>系統自動套用在傳統清單上方</td></tr>
+      <tr><td><b>選擇文字 Selection Texts</b></td><td>設定 PARAMETERS / SELECT-OPTIONS 的抬頭文字</td><td>自動顯示；勾「字典」欄可直接沿用資料元素的短文</td></tr>
+      <tr><td><b>文字符號 Text Symbols</b></td><td>自訂任意文字，三位代碼</td><td><span class="kw">TEXT-001</span>，或 <span class="kw">'預設文字'(001)</span></td></tr>
+    </tbody>
+  </table>
+
+  <pre><code class="abap">" 兩種引用寫法的差別：
+WRITE / TEXT-001.              " 若 001 未維護，畫面上是空白，很難查
+WRITE / '銷售訂單清單'(001).    " 若 001 未維護，就顯示括號前的字面值（建議！）
+
+" 訊息也可以用文字符號
+MESSAGE |{ TEXT-e01 }：{ p_werks }| TYPE 'E'.</code></pre>
+
+  <div class="tip"><b>老師的三個實作提醒</b>：<br>
+  1. 「<b>'字面值'(001)</b>」這種寫法最安全——文字符號沒維護時至少還看得到字，而且雙擊就能建立。<br>
+  2. <b>文字元素要單獨啟用（Activate）</b>！很多人改完 Selection Texts 存檔就走，結果畫面沒變，就是忘了對文字元素按啟用。<br>
+  3. 設定值與<b>當前登入語言</b>綁定；程式若要支援多語，每種語言都要各自維護。</div>
+
+  <p><b>翻譯路徑</b>：</p>
+  <ul>
+    <li>編輯器內：<b>More（更多）→ Goto（轉到）→ Translation（翻譯）</b>，選來源語言與目標語言。</li>
+    <li>正式翻譯工具：<span class="tcode">SE63</span> → Translation → ABAP Objects → Short Texts，可批次處理程式的所有短文。</li>
+    <li>下拉選單裡能選的語言，<b>必須是系統已經安裝的語言</b>；沒裝的語言選不到。</li>
+  </ul>
+
+  <h3 id="ch03-1-12">12. 選擇畫面的事件順序（背下來）</h3>
+  <p>ABAP 可執行程式就是「一組針對各事件的處理塊」。如果程式裡一個事件關鍵字都沒寫，所有語句會被自動歸給隱含的 <b>START-OF-SELECTION</b>。</p>
+
+  <table>
+    <thead><tr><th>#</th><th>事件</th><th>觸發時機</th><th>典型用途</th></tr></thead>
+    <tbody>
+      <tr><td>1</td><td><b>LOAD-OF-PROGRAM</b></td><td>程式載入記憶體時（一次）</td><td>建立單例物件、初始化全域常數</td></tr>
+      <tr><td>2</td><td><b>INITIALIZATION</b></td><td>選擇畫面<b>顯示之前</b>（一次）</td><td>設預設值、灌 LISTBOX 值、設按鈕文字、預填 SELECT-OPTIONS</td></tr>
+      <tr><td>3</td><td><b>AT SELECTION-SCREEN OUTPUT</b></td><td>畫面 PBO；<b>每次顯示與每次按 Enter／F8 都會跑</b></td><td>LOOP AT SCREEN 動態顯示／隱藏／變灰</td></tr>
+      <tr><td>4a</td><td><b>AT SELECTION-SCREEN ON VALUE-REQUEST FOR f</b></td><td>使用者按 <b>F4</b></td><td>自製搜尋說明</td></tr>
+      <tr><td>4b</td><td><b>AT SELECTION-SCREEN ON HELP-REQUEST FOR f</b></td><td>使用者按 <b>F1</b></td><td>自製欄位說明</td></tr>
+      <tr><td>5a</td><td><b>AT SELECTION-SCREEN ON f</b></td><td>PAI，逐一欄位，依<b>宣告順序</b></td><td>單一欄位檢核（錯誤時只有該欄可輸入）</td></tr>
+      <tr><td>5b</td><td><b>AT SELECTION-SCREEN ON END OF sel</b></td><td>多重選擇彈窗關閉之後</td><td>檢核整個 SELECT-OPTIONS 內表</td></tr>
+      <tr><td>5c</td><td><b>AT SELECTION-SCREEN ON RADIOBUTTON GROUP g</b></td><td>單選鈕群組整體檢核</td><td>群組層級驗證</td></tr>
+      <tr><td>5d</td><td><b>AT SELECTION-SCREEN ON BLOCK b</b></td><td>該 BLOCK 內任一操作</td><td>跨欄位、同框架的關聯檢核</td></tr>
+      <tr><td>5e</td><td><b>AT SELECTION-SCREEN ON EXIT-COMMAND</b></td><td>按 Back / Exit / Cancel（功能碼型別 E）</td><td>離開前提醒「資料未儲存」</td></tr>
+      <tr><td>6</td><td><b>AT SELECTION-SCREEN</b></td><td>PAI 的<b>最後</b>，整張畫面</td><td>跨欄位總檢核、處理按鈕功能碼</td></tr>
+      <tr><td>7</td><td><b>START-OF-SELECTION</b></td><td>按下執行（F8）之後</td><td>抓資料（GET_DATA）</td></tr>
+      <tr><td>8</td><td><b>GET &lt;node&gt;</b></td><td>邏輯資料庫逐筆讀取</td><td>舊式 LDB 程式（MB52 等標準報表）</td></tr>
+      <tr><td>9</td><td><b>END-OF-SELECTION</b></td><td>所有資料選取完成、<b>輸出畫面尚未顯示之前</b></td><td>結果檢驗、呼叫 ALV 顯示</td></tr>
+      <tr><td>10</td><td>TOP-OF-PAGE / END-OF-PAGE / AT LINE-SELECTION</td><td>清單輸出期間</td><td>傳統清單的頁首頁尾與互動</td></tr>
+    </tbody>
+  </table>
+
+  <pre><code class="abap">REPORT z_event_demo.
+
+TABLES sscrfields.
+
+PARAMETERS qual_day TYPE d DEFAULT sy-datum.
+SELECTION-SCREEN PUSHBUTTON /1(20) btn_save USER-COMMAND save.
+
+INITIALIZATION.
+  " 把日期推到「上個月的最後一天」
+  qual_day+6(2) = '01'.             " 先變成本月 1 號
+  qual_day      = qual_day - 1.     " 再減 1 天 = 上月月底
+  btn_save      = '儲存'.           " 給按鈕文字（現代寫法，不用 MOVE）
+
+AT SELECTION-SCREEN OUTPUT.
+  " 每次畫面重繪都會跑到這裡
+
+AT SELECTION-SCREEN.
+  CASE sscrfields-ucomm.
+    WHEN 'SAVE'.  MESSAGE '假裝存檔成功' TYPE 'S'.
+  ENDCASE.
+
+START-OF-SELECTION.
+  WRITE: / 'DATE =', qual_day.
+
+END-OF-SELECTION.
+  " &lt;&gt; 與 &gt;&lt; 都是「不等於」，S/4 建議統一寫 &lt;&gt;
+  IF qual_day &lt;&gt; sy-datum.
+    WRITE: / 'TODAY =', sy-datum.
+  ELSE.
+    WRITE: / 'QUAL_DAY =', qual_day.
+  ENDIF.</code></pre>
+
+  <div class="warn"><b>三個最容易搞錯的事件細節</b>：<br>
+  1. <b>INITIALIZATION 設的值會被變式（Variant）和 SUBMIT ... WITH 傳進來的值覆蓋。</b> 這是設計如此（否則變式就沒意義），但常讓人以為「我的預設值不見了」。<br>
+  2. <b>AT SELECTION-SCREEN OUTPUT 每次按 Enter 都會重跑。</b> 如果你在裡面 APPEND 東西進 SELECT-OPTIONS，會愈按愈多筆——預填資料請放 INITIALIZATION。<br>
+  3. <b>錯誤訊息放的位置決定使用者體驗</b>：在 <span class="kw">AT SELECTION-SCREEN ON p_werks</span> 裡發 <span class="kw">MESSAGE ... TYPE 'E'</span>，<b>只有 p_werks 這一格可以輸入</b>，其他欄位變灰；在 <span class="kw">AT SELECTION-SCREEN</span>（無 ON）裡發，則<b>全部欄位都可以再輸入</b>。要求使用者只改那一格就用前者，要讓他重看全部就用後者。</div>
+
+  <h3 id="ch03-1-13">13. 第 39 個練習：MODIF ID ＋ LOOP AT SCREEN 動態顯示／隱藏</h3>
+  <p>這是選擇畫面最實用的技巧：勾了某個核取方塊，才顯示相關欄位。三個關鍵零件：<b>MODIF ID</b>（分組）＋ <b>USER-COMMAND</b>（觸發重繪）＋ <b>AT SELECTION-SCREEN OUTPUT 裡的 LOOP AT SCREEN</b>（改屬性）。</p>
+
+  <pre><code class="abap">REPORT z202202_39.
+
+DATA gv_vbeln TYPE vbak-vbeln.
+
+SELECT-OPTIONS s_s1 FOR gv_vbeln.
+
+" 有 USER-COMMAND 才會觸發 AT SELECTION-SCREEN，畫面才會重繪
+PARAMETERS p_p1 AS CHECKBOX USER-COMMAND flag.
+
+" 加了 MODIF ID F1，這兩個欄位就屬於 screen-group1 = 'F1'
+PARAMETERS p_p2 TYPE vbak-vbeln MODIF ID f1.
+PARAMETERS p_p3 TYPE vbak-vbeln MODIF ID f1.
+
+INITIALIZATION.
+  " 預填一筆選擇條件（用 s_s1[] 明確指定內表本體）
+  APPEND VALUE #( sign = 'I' option = 'EQ' low = '555' ) TO s_s1[].
+
+AT SELECTION-SCREEN OUTPUT.
+  LOOP AT SCREEN.
+    IF screen-group1 = 'F1'.
+      " 沒勾 P_P1 就整個藏起來；勾了才出現
+      screen-active = COND #( WHEN p_p1 = abap_true THEN 1 ELSE 0 ).
+      MODIFY SCREEN.
+    ENDIF.
+  ENDLOOP.</code></pre>
+
+  <table>
+    <thead><tr><th>SCREEN 欄位</th><th>0 的意思</th><th>1 的意思</th><th>常見用途</th></tr></thead>
+    <tbody>
+      <tr><td><b>ACTIVE</b></td><td>完全不顯示（連標籤一起消失）</td><td>正常顯示</td><td>隱藏整組欄位</td></tr>
+      <tr><td><b>INPUT</b></td><td>唯讀（灰色，看得到不能改）</td><td>可輸入</td><td>顯示但不給改</td></tr>
+      <tr><td><b>INVISIBLE</b></td><td>正常</td><td>顯示成 *（遮蔽）</td><td>密碼欄位</td></tr>
+      <tr><td><b>REQUIRED</b></td><td>非必填</td><td>必填</td><td>依情境動態變成必填</td></tr>
+      <tr><td><b>OUTPUT</b></td><td>不輸出</td><td>輸出</td><td>較少單獨使用</td></tr>
+    </tbody>
+  </table>
+
+  <div class="tip"><b>隱藏 SELECT-OPTIONS 要多藏一個東西</b>：一個 SELECT-OPTIONS 在畫面上其實有三個元素——<span class="kw">S_MATNR-LOW</span>、<span class="kw">S_MATNR-HIGH</span>，還有右邊那顆多重選擇按鈕，它的技術名稱是 <b><span class="kw">%_S_MATNR_%_APP_%</span></b>。用 MODIF ID 分組時三個都會被涵蓋；但若你是靠 <span class="kw">screen-name</span> 逐一判斷，記得把 <span class="kw">%_..._%_APP_%</span> 也藏掉，否則會留下一顆孤零零的按鈕。</div>
+
+  <pre><code class="abap">" 依 screen-name 精準控制（不用 MODIF ID 時的做法）
+AT SELECTION-SCREEN OUTPUT.
+  LOOP AT SCREEN.
+    IF screen-name CS 'S_MATNR' OR screen-name = '%_S_MATNR_%_APP_%'.
+      screen-input = 0.             " 變灰、唯讀
+      MODIFY SCREEN.
+    ENDIF.
+  ENDLOOP.</code></pre>
+
+  <div class="warn"><b>MODIF ID 的代號最多 3 個字元</b>（<span class="kw">screen-group1</span> 是 CHAR3），寫超過會語法錯誤。另外 screen-group1 的值一律會被轉成<b>大寫</b>，所以 <span class="kw">MODIF ID f1</span> 要用 <span class="kw">IF screen-group1 = 'F1'</span> 來比對，寫成 'f1' 永遠不會成立。</div>
+
+  <h3 id="ch03-1-14">14. 自製 F4 輔助說明</h3>
+  <p>當 DDIC 掛的搜尋說明不夠用（例如要「只列本廠有庫存的料號」「依前一個欄位動態過濾」），就自己寫。</p>
+
+  <table>
+    <thead><tr><th>函數</th><th>用途</th></tr></thead>
+    <tbody>
+      <tr><td><b>F4IF_INT_TABLE_VALUE_REQUEST</b></td><td>用<b>自己組出來的內表</b>當值清單（最常用）</td></tr>
+      <tr><td><b>F4IF_FIELD_VALUE_REQUEST</b></td><td>直接叫出<b>某個 DDIC 表欄位</b>的標準搜尋說明</td></tr>
+      <tr><td><b>DYNP_VALUES_READ</b></td><td>讀取畫面上「尚未按 Enter」的其他欄位值，做<b>連動 F4</b></td></tr>
+      <tr><td><b>DYNP_VALUES_UPDATE</b></td><td>把值寫回畫面欄位</td></tr>
+      <tr><td><b>CL_GUI_FRONTEND_SERVICES</b></td><td>檔案／目錄選擇對話框</td></tr>
+    </tbody>
+  </table>
+
+  <p>講義的 Z202202_39 用 FORM 實作，這裡改寫成 S/4 建議的<b>本地類別</b>寫法：</p>
+
+  <pre><code class="abap">REPORT z_f4_demo.
+
+DATA gv_vbeln TYPE vbak-vbeln.
+SELECT-OPTIONS s_s1 FOR gv_vbeln.
+
+CLASS lcl_f4 DEFINITION.
+  PUBLIC SECTION.
+    " CHANGING 傳址，才能把選到的值寫回畫面欄位
+    CLASS-METHODS vbeln_help CHANGING cv_field TYPE any.
+ENDCLASS.
+
+CLASS lcl_f4 IMPLEMENTATION.
+  METHOD vbeln_help.
+
+    " 1. 準備要顯示的清單（欄位順序＝畫面欄位順序）
+    SELECT vbeln, erdat, ernam, netwr
+      FROM vbak
+      INTO TABLE @DATA(lt_value)
+      UP TO 200 ROWS
+      ORDER BY vbeln.               " 有序才穩定
+
+    DATA lt_return TYPE TABLE OF ddshretval.
+
+    " 2. 叫出 F4 視窗
+    CALL FUNCTION 'F4IF_INT_TABLE_VALUE_REQUEST'
+      EXPORTING
+        retfield        = 'VBELN'   " 回傳哪一欄
+        dynpprog        = sy-repid  " 當前程式名稱
+        dynpnr          = sy-dynnr  " 當前螢幕編號
+        value_org       = 'S'       " S = 內表為結構化（多欄）；C = 單欄
+      TABLES
+        value_tab       = lt_value  " 下拉選擇的內容
+        return_tab      = lt_return " 使用者選中的列
+      EXCEPTIONS
+        parameter_error = 1
+        no_values_found = 2
+        OTHERS          = 3.
+
+    IF sy-subrc &lt;&gt; 0.
+      MESSAGE '取得輔助說明失敗' TYPE 'S' DISPLAY LIKE 'W'.
+      RETURN.
+    ENDIF.
+
+    " 3. 把選到的值寫回欄位
+    IF line_exists( lt_return[ 1 ] ).
+      cv_field = lt_return[ 1 ]-fieldval.
+    ENDIF.
+
+  ENDMETHOD.
+ENDCLASS.
+
+" F4：LOW 與 HIGH 要各寫一個事件
+AT SELECTION-SCREEN ON VALUE-REQUEST FOR s_s1-low.
+  lcl_f4=>vbeln_help( CHANGING cv_field = s_s1-low ).
+
+AT SELECTION-SCREEN ON VALUE-REQUEST FOR s_s1-high.
+  lcl_f4=>vbeln_help( CHANGING cv_field = s_s1-high ).
+
+" F1：自製欄位說明
+AT SELECTION-SCREEN ON HELP-REQUEST FOR s_s1-low.
+  MESSAGE '這裡輸入銷售訂單號碼，可用多重選擇一次貼上多筆' TYPE 'I'.</code></pre>
+
+  <div class="note"><b>另一種回寫方式</b>：把 <span class="kw">dynprofield = 'S_S1-LOW'</span> 也一起傳給 F4IF_INT_TABLE_VALUE_REQUEST，函數會<b>自動</b>把值填回畫面，你就不必自己讀 RETURN_TAB。缺點是欄位名寫死成字串，重構時容易漏改。兩種都可以，挑一種團隊統一就好。<br><b>VALUE_ORG</b>：<span class="kw">'S'</span> 代表 value_tab 是「結構化（多欄）」的內表；<span class="kw">'C'</span> 代表單欄字串清單。傳錯會顯示成一團亂碼似的欄位。</div>
+
+  <p><b>連動 F4</b>（選了工廠，料號清單只列該廠的）——關鍵是用 DYNP_VALUES_READ 讀出畫面上「還沒送出」的工廠值：</p>
+
+  <pre><code class="abap">AT SELECTION-SCREEN ON VALUE-REQUEST FOR s_matnr-low.
+
+  DATA lt_dynpfields TYPE TABLE OF dynpread.
+  APPEND VALUE #( fieldname = 'P_WERKS' ) TO lt_dynpfields.
+
+  CALL FUNCTION 'DYNP_VALUES_READ'
+    EXPORTING
+      dyname     = sy-repid
+      dynumb     = sy-dynnr
+      translate_to_upper = abap_true
+    TABLES
+      dynpfields = lt_dynpfields
+    EXCEPTIONS
+      OTHERS     = 1.
+
+  DATA(lv_werks) = COND werks_d( WHEN line_exists( lt_dynpfields[ 1 ] )
+                                 THEN lt_dynpfields[ 1 ]-fieldvalue ).
+
+  SELECT a~matnr, b~maktx
+    FROM marc AS a
+    INNER JOIN makt AS b ON b~matnr = a~matnr AND b~spras = @sy-langu
+    WHERE a~werks = @lv_werks
+    INTO TABLE @DATA(lt_help)
+    UP TO 500 ROWS
+    ORDER BY a~matnr.</code></pre>
+
+  <p><b>檔案路徑 F4</b>（上傳／下載程式一定會用到）：</p>
+
+  <pre><code class="abap">PARAMETERS p_file TYPE string LOWER CASE VISIBLE LENGTH 60 OBLIGATORY.
+
+AT SELECTION-SCREEN ON VALUE-REQUEST FOR p_file.
+
+  CONSTANTS lc_filter TYPE string
+            VALUE 'Excel (*.XLSX)|*.XLSX|文字檔 (*.TXT)|*.TXT|所有檔案 (*.*)|*.*|'.
+
+  DATA lt_files TYPE filetable.
+  DATA lv_rc    TYPE i.
+
+  cl_gui_frontend_services=&gt;file_open_dialog(
+    EXPORTING
+      window_title      = '請選擇要上傳的檔案'
+      default_extension = 'XLSX'
+      file_filter       = lc_filter
+    CHANGING
+      file_table        = lt_files
+      rc                = lv_rc
+    EXCEPTIONS
+      OTHERS            = 1 ).
+
+  IF lv_rc &gt; 0 AND line_exists( lt_files[ 1 ] ).
+    p_file = lt_files[ 1 ]-filename.
+  ENDIF.</code></pre>
+
+  <div class="warn"><b>前端檔案對話框不能在背景執行（Batch Job）裡用</b>——沒有 SAP GUI 就會 dump。若程式要支援排程，請改讀<b>應用伺服器路徑</b>（<span class="tcode">AL11</span> 上的目錄，用 <span class="kw">OPEN DATASET</span> 讀寫），並用 <span class="kw">IF sy-batch = abap_true.</span> 分流。另外在 Fiori / 瀏覽器環境下 CL_GUI_FRONTEND_SERVICES 完全不可用。</div>
+
+  <h3 id="ch03-1-15">15. 第 40 個練習：ON BLOCK 驗證與終止指令</h3>
+  <p>老師點出這個練習的三個重點：<b>(1) 理解 ON BLOCK 事件的觸發時間點；(2) 理解 START-OF-SELECTION 就是按下執行鍵之後的動作（一般放 GET_DATA）；(3) 抓資料時，PARAMETERS 用 <span class="kw">=</span>，SELECT-OPTIONS 用 <span class="kw">IN</span>。</b></p>
+
+  <pre><code class="abap">REPORT z202202_40.
+
+DATA gv_vbeln TYPE vbak-vbeln.
+DATA gv_erdat TYPE vbak-erdat.
+
+SELECTION-SCREEN BEGIN OF BLOCK b1 WITH FRAME TITLE TEXT-001.
+  PARAMETERS       p_p2 TYPE vbak-vbeln.
+  SELECT-OPTIONS   s_erdat FOR gv_erdat.
+SELECTION-SCREEN END OF BLOCK b1.
+
+" 在 block b1 內的任何操作都會觸發此事件
+AT SELECTION-SCREEN ON BLOCK b1.
+  IF p_p2 IS NOT INITIAL AND s_erdat[] IS NOT INITIAL.
+    MESSAGE '訂單號碼與建立日期擇一輸入即可' TYPE 'E'.
+  ENDIF.
+
+" 按下退出鍵（Back / Exit / Cancel）時觸發
+AT SELECTION-SCREEN ON EXIT-COMMAND.
+  DATA lv_answer TYPE c LENGTH 1.
+  CALL FUNCTION 'POPUP_TO_CONFIRM'
+    EXPORTING
+      titlebar              = '確認離開'
+      text_question         = '尚未執行查詢，確定要離開嗎？'
+      default_button        = '2'
+    IMPORTING
+      answer                = lv_answer          " 一定要接回答！
+    EXCEPTIONS
+      OTHERS                = 1.
+
+START-OF-SELECTION.
+  " GET DATA：PARAMETERS 用 = ，SELECT-OPTIONS 用 IN
+  SELECT vbeln, erdat, ernam, netwr, waerk
+    FROM vbak
+    WHERE vbeln = @p_p2                " PARAMETERS → =
+      AND erdat IN @s_erdat            " SELECT-OPTIONS → IN
+    INTO TABLE @DATA(lt_vbak)
+    ORDER BY vbeln.
+
+  IF lt_vbak IS INITIAL.
+    MESSAGE '查無資料' TYPE 'S' DISPLAY LIKE 'W'.
+    RETURN.
+  ENDIF.
+
+  cl_salv_table=&gt;factory(
+    IMPORTING r_salv_table = DATA(lo_alv)
+    CHANGING  t_table      = lt_vbak ).
+  lo_alv-&gt;display( ).
+
+END-OF-SELECTION.</code></pre>
+
+  <div class="note"><b>講義註記「AT SELECTION-SCREEN ON EXIT-COMMAND（20250611 試了無效）」的原因</b><span class="src">（依講義步驟整理）</span>：<br>
+  1. 這個事件<b>只在功能碼型別為 E</b>（Back／Exit／Cancel）時才觸發，按 Enter 或 F8 不會進來。<br>
+  2. 原範例呼叫 POPUP_TO_CONFIRM_DATA_LOSS 時<b>把 ANSWER 註解掉了</b>，沒有接使用者的回答，所以不管按什麼都一樣「看起來沒作用」。<br>
+  3. 這個事件的定位是「離開前做善後」（提示、清記憶體、寫 log），<b>不要把關鍵控制邏輯壓在這裡</b>。</div>
+
+  <p><b>四個終止指令的差別</b>（老師特別列出來對照，很容易考也很容易寫錯）：</p>
+
+  <table>
+    <thead><tr><th>指令</th><th>可用於</th><th>行為</th></tr></thead>
+    <tbody>
+      <tr><td><b>STOP</b></td><td>INITIALIZATION、AT SELECTION-SCREEN、START-OF-SELECTION、GET</td><td>在 INITIALIZATION 中：直接送出畫面；在其他事件中：<b>直接跳到 END-OF-SELECTION</b>。不想執行 END-OF-SELECTION 就改用 RETURN 或 EXIT</td></tr>
+      <tr><td><b>EXIT</b></td><td>迴圈（DO/WHILE/LOOP/SELECT）與處理模組</td><td>迴圈中：<b>只跳出當前這一層迴圈</b>；在 START-OF-SELECTION / GET / END-OF-SELECTION 中：直接觸發清單輸出、<b>不執行 END-OF-SELECTION</b>；沒有清單就回到選擇畫面。SAP 建議 EXIT <b>只</b>用於迴圈</td></tr>
+      <tr><td><b>RETURN</b></td><td>事件塊、Dialog Module、程序（FM／方法／副程式）</td><td><b>無條件離開當前處理模組，不管包了幾層迴圈</b>（這是與 EXIT 最大的差別），不影響後續模組</td></tr>
+      <tr><td><b>CHECK</b></td><td>迴圈與處理模組</td><td>迴圈中：<b>條件不成立就跳過本次迴圈剩餘部分，繼續下一圈</b>（相當於 CONTINUE）；事件中：中斷本事件後續程式碼，不影響其他模組。SAP 建議 CHECK <b>只</b>用於迴圈</td></tr>
+      <tr><td><b>REJECT</b></td><td>邏輯資料庫的 GET 事件</td><td>類似 CHECK，但<b>即使在迴圈內也會退出本次紀錄（含子節點）的處理</b>，直接讀下一筆</td></tr>
+    </tbody>
+  </table>
+
+  <div class="tip"><b>老師的建議照抄 SAP</b>：<b>EXIT 和 CHECK 只用在迴圈裡；要離開處理模組（FORM／METHOD／事件塊）一律用 RETURN。</b> 這樣讀程式的人不必猜「這個 EXIT 是跳出迴圈還是跳出整個模組」。</div>
+
+  <h3 id="ch03-1-16">16. 第 34、35 個練習：SAP 記憶體與 ABAP 記憶體</h3>
+  <p>兩種記憶體常被混為一談，作用範圍完全不同：</p>
+
+  <table>
+    <thead><tr><th></th><th>SAP Memory（SPA/GPA）</th><th>ABAP Memory</th></tr></thead>
+    <tbody>
+      <tr><td>指令</td><td>SET / GET PARAMETER ID</td><td>EXPORT / IMPORT … TO/FROM MEMORY ID</td></tr>
+      <tr><td>作用範圍</td><td><b>同一使用者的所有 Session（Mode）之間</b>，登出才清掉</td><td><b>同一個呼叫堆疊（internal session）</b>內，例如 SUBMIT／CALL TRANSACTION 的上下游</td></tr>
+      <tr><td>能存什麼</td><td>只能存<b>單一字串值</b>（畫面欄位值）</td><td>任何資料物件，<b>包括內表、結構</b></td></tr>
+      <tr><td>典型用途</td><td>畫面欄位預設值（工廠、公司代碼），配合 SU3 使用者參數</td><td>程式間傳大量資料</td></tr>
+      <tr><td>登錄位置</td><td>參數 ID 需存在於 <b>TPARA</b>（SE80 建立 / SM30 維護）</td><td>不需登錄，ID 自取即可（建議 Z 開頭）</td></tr>
+    </tbody>
+  </table>
+
+  <p><b>第 34 個練習：SET / GET PARAMETER ID</b>（在 Session 之間共用變數）：</p>
+
+  <pre><code class="abap">*&amp;---------------------------------------------------------------------*
+*&amp; Report Z202202_34_SET  ── 先執行這一支
+*&amp;---------------------------------------------------------------------*
+REPORT z202202_34_set.
+
+DATA(lv_data1) = CONV char6( 'CASPER' ).
+SET PARAMETER ID 'ZP1' FIELD lv_data1.
+MESSAGE |已寫入 SAP 記憶體 ZP1 = { lv_data1 }| TYPE 'S'.
+
+*&amp;---------------------------------------------------------------------*
+*&amp; Report Z202202_34_GET  ── 再執行這一支（可以在另一個 Session）
+*&amp;---------------------------------------------------------------------*
+REPORT z202202_34_get.
+
+DATA lv_data2 TYPE char6.
+GET PARAMETER ID 'ZP1' FIELD lv_data2.
+WRITE: / '從 SAP 記憶體讀到：', lv_data2.</code></pre>
+
+  <div class="note">執行要領：<b>先執行 Z202202_34_SET，再執行 Z202202_34_GET</b>（講義原文此處誤植為兩次 SET），並確認讀到的值正確。想確認跨 Session 有效，就開一個新視窗（/o）再跑 GET。</div>
+
+  <p><b>第 35 個練習：EXPORT / IMPORT MEMORY ID ＋ SUBMIT</b>（在 ABAP 程式之間共用變數）：</p>
+
+  <pre><code class="abap">*&amp;---------------------------------------------------------------------*
+*&amp; Report Z202202_35_EXPORT
+*&amp;---------------------------------------------------------------------*
+REPORT z202202_35_export.
+
+TYPES: BEGIN OF ty_item,
+         matnr TYPE mara-matnr,
+         menge TYPE i,
+       END OF ty_item,
+       ty_t_item TYPE STANDARD TABLE OF ty_item WITH EMPTY KEY.
+
+DATA(lv_data) = CONV char6( 'CASPER' ).
+DATA(lt_item) = VALUE ty_t_item( ( matnr = 'M001' menge = 10 )
+                                 ( matnr = 'M002' menge = 20 ) ).
+
+" 建議用「具名參數」寫法：兩邊變數名稱就不必相同
+EXPORT p_flag = lv_data
+       p_item = lt_item
+       TO MEMORY ID 'ZP2'.
+
+SUBMIT z202202_35_import AND RETURN.
+
+FREE MEMORY ID 'ZP2'.               " 用完要清，否則佔記憶體也可能誤讀舊值
+WRITE: / '[EXPORT 程式] LV_DATA =', lv_data.
+
+*&amp;---------------------------------------------------------------------*
+*&amp; Report Z202202_35_IMPORT
+*&amp;---------------------------------------------------------------------*
+REPORT z202202_35_import.
+
+" 型別必須兩邊一致：放在共用的 INCLUDE、Type Pool 或 DDIC 結構
+TYPES: BEGIN OF ty_item,
+         matnr TYPE mara-matnr,
+         menge TYPE i,
+       END OF ty_item,
+       ty_t_item TYPE STANDARD TABLE OF ty_item WITH EMPTY KEY.
+
+DATA lv_receive TYPE char6.         " 名稱可以跟來源不同
+DATA lt_receive TYPE ty_t_item.
+
+IMPORT p_flag = lv_receive
+       p_item = lt_receive
+       FROM MEMORY ID 'ZP2'.
+
+IF sy-subrc &lt;&gt; 0.
+  MESSAGE 'ABAP 記憶體 ZP2 沒有資料' TYPE 'E'.
+ENDIF.
+
+WRITE: / '[IMPORT 程式] 收到', lv_receive, '共', lines( lt_receive ), '筆'.</code></pre>
+
+  <div class="warn"><b>講義說「此法變數名稱二方要一致」，那是<i>簡寫形式</i>的限制。</b> 只要改用具名寫法 <span class="kw">EXPORT p_flag = lv_data</span> / <span class="kw">IMPORT p_flag = lv_receive</span>，兩邊變數名就完全解耦，這是 S/4 上建議的寫法。<br>另外：<b>IMPORT 之後一定要檢查 sy-subrc</b>；記憶體是空的時候 IMPORT 不會報錯，變數就保持原值，很容易誤判。</div>
+
+  <div class="tip">老師提醒：<b>「SUBMIT 與 CALL TRANSACTION 是在程式之中執行其他程式，一定要妥善規畫，否則管理不易。一般比較常見的是用資料表當做多個程式之間共用變數。」</b> S/4 時代還多了兩個選項：<b>類別的靜態屬性</b>（同一 session 內最乾淨）與 <b>Shared Objects</b>（<span class="tcode">SHMA</span>，跨 session 的共用記憶區）。</div>
+
+  <h3 id="ch03-1-17">17. SUBMIT：把條件丟給另一支程式</h3>
+  <pre><code class="abap">SUBMIT prog
+  [VIA SELECTION-SCREEN]                 " 顯示對方的選擇畫面讓使用者確認
+  [USING SELECTION-SET 'VAR01']          " 套用對方的某個變式
+  [WITH p_werks EQ '1000']               " 對方的 PARAMETERS
+  [WITH s_matnr IN lr_matnr]             " 對方的 SELECT-OPTIONS（整個 range 丟過去）
+  [WITH s_matnr BETWEEN 'A' AND 'B']     " 單一區間寫法
+  [WITH SELECTION-TABLE lt_seltab]       " 動態組條件
+  [EXPORTING LIST TO MEMORY]             " 把對方的清單輸出攔到記憶體
+  [AND RETURN].                          " 執行完回到本程式（沒有它就一去不回）</code></pre>
+
+  <pre><code class="abap">REPORT z_submit_demo.
+
+TYPES ty_r_matnr TYPE RANGE OF mara-matnr.
+
+DATA(lr_matnr) = VALUE ty_r_matnr(
+    ( sign = 'I' option = 'CP' low = 'DXTR1*' )
+    ( sign = 'E' option = 'EQ' low = 'DXTR1205' ) ).
+
+" 方式一：直接指定（欄位名稱要跟對方程式一致，編譯期就會檢查）
+SUBMIT zreport_stock
+  WITH p_werks EQ 'NCU1'
+  WITH s_matnr IN lr_matnr
+  AND RETURN.
+
+" 方式二：動態組條件表（欄位名是字串，可在執行期決定）
+DATA lt_seltab TYPE TABLE OF rsparams.
+APPEND VALUE #( selname = 'P_WERKS' kind = 'P'
+                sign = 'I' option = 'EQ' low = 'NCU1' ) TO lt_seltab.
+APPEND VALUE #( selname = 'S_MATNR' kind = 'S'
+                sign = 'I' option = 'CP' low = 'DXTR1*' ) TO lt_seltab.
+
+SUBMIT zreport_stock
+  WITH SELECTION-TABLE lt_seltab
+  VIA SELECTION-SCREEN                  " 先讓使用者看一眼條件
+  AND RETURN.</code></pre>
+
+  <table>
+    <thead><tr><th>RSPARAMS 欄位</th><th>說明</th></tr></thead>
+    <tbody>
+      <tr><td><b>SELNAME</b></td><td>對方程式的參數／選項名稱（大寫）</td></tr>
+      <tr><td><b>KIND</b></td><td><b>'P'</b> = PARAMETERS；<b>'S'</b> = SELECT-OPTIONS</td></tr>
+      <tr><td><b>SIGN / OPTION / LOW / HIGH</b></td><td>同 SELECT-OPTIONS 四欄；KIND = 'P' 時只用 LOW</td></tr>
+    </tbody>
+  </table>
+
+  <div class="note">要抓對方程式的<b>清單輸出</b>，用 <span class="kw">SUBMIT … EXPORTING LIST TO MEMORY AND RETURN.</span> 之後呼叫 <b>LIST_FROM_MEMORY</b> 取出，再用 <b>LIST_TO_ASCI</b> 轉成文字列。這是「包裝標準報表」的經典手法（例如把 MB52 的結果撈出來再加工）。<br>反過來，要讀取<b>自己這支程式當下的選擇條件</b>（做 log 或做標題），用 FM <b>RS_REFRESH_FROM_SELECTOPTIONS</b>。</div>
+
+  <div class="warn"><b>SUBMIT 傳入的值會覆蓋 INITIALIZATION 設的預設值</b>，這是刻意的設計。但要注意：如果對方的參數是 <span class="kw">OBLIGATORY</span> 而你沒傳值、又沒有 <span class="kw">VIA SELECTION-SCREEN</span>，程式會停在選擇畫面等人——在背景 job 裡就是 job 卡死。<b>背景排程一律要確認所有必填欄位都有值或有變式。</b></div>
+
+  <h3 id="ch03-1-18">18. 變式（Variant）與背景執行</h3>
+  <p>把選擇畫面填好的一整組條件存起來重複使用，就是變式。這是老師說的「條件變式的善用技巧」，也是背景排程的前提。</p>
+  <ol>
+    <li>在選擇畫面填好條件 → 點<b>儲存（Save）</b>圖示 → 輸入變式名稱與描述 → 儲存。</li>
+    <li>執行時：<b>Goto → Variants → Get</b>（或畫面上的「取得變式」按鈕）。</li>
+    <li>維護／刪除：SE38 → 選 <b>Variants</b> → Change。</li>
+  </ol>
+
+  <p><b>變式屬性（Attributes）</b>是很多人沒用過但很好用的功能：</p>
+  <table>
+    <thead><tr><th>屬性</th><th>作用</th></tr></thead>
+    <tbody>
+      <tr><td>Only for Background Processing</td><td>只給背景 job 用，前台看不到</td></tr>
+      <tr><td>Protect Variant</td><td>只有建立者能改</td></tr>
+      <tr><td>Do not display in catalog</td><td>不出現在變式清單（隱藏用）</td></tr>
+      <tr><td>Save field without values</td><td>該欄位不存值（每次執行都空白）</td></tr>
+      <tr><td>Protect field</td><td>套用變式後該欄位變唯讀，使用者不能改</td></tr>
+      <tr><td>Hide field / Hide field 'BIS'</td><td>套用變式後隱藏該欄位／只隱藏 HIGH 欄</td></tr>
+      <tr><td><b>Selection variable</b></td><td><b>動態值</b>：<b>D</b> = 動態日期計算（今天、本月最後一天、上月…）；<b>T</b> = 取 <b>TVARVC</b> 表變數；<b>B</b> = 使用者出口</td></tr>
+    </tbody>
+  </table>
+
+  <div class="tip"><b>排程報表最實用的組合</b>：日期欄位設 Selection variable = <b>D「目前日期」</b>或「上個月的第一天／最後一天」，這樣一支 job 每天／每月自動跑出正確區間，不必每個月改變式。若多支程式要共用同一組值（例如「目前結帳期間」），就用 <b>T（TVARVC）</b>，在 <span class="tcode">STVARV</span>（部分系統為 STVARVC）維護一次，全部程式跟著變。</div>
+
+  <p><b>背景執行</b>：</p>
+  <ul>
+    <li>SE38 → Program → <b>Execute in Background</b>（或 F9），選印表機、選日期／時間、選變式。</li>
+    <li><span class="tcode">SM36</span> 建立 Job（可串多個步驟、設定事件觸發、設定週期）；<span class="tcode">SM37</span> 監控 Job（看 Log、看 Spool）。</li>
+    <li>程式裡用 <span class="kw">sy-batch</span> 判斷是否在背景，避開所有 GUI 呼叫。</li>
+  </ul>
+
+  <pre><code class="abap">START-OF-SELECTION.
+  DATA(lt_result) = lcl_report=&gt;get_data( ).
+
+  IF sy-batch = abap_true.
+    " 背景：不能用 ALV Grid、不能用 CL_GUI_FRONTEND_SERVICES
+    " 只能寫 WRITE 清單（進 Spool）、寫檔到 AL11、或寄信
+    LOOP AT lt_result INTO DATA(ls_r).
+      WRITE: / ls_r-matnr, ls_r-werks, ls_r-labst.
+    ENDLOOP.
+  ELSE.
+    cl_salv_table=&gt;factory( IMPORTING r_salv_table = DATA(lo_alv)
+                            CHANGING  t_table      = lt_result ).
+    lo_alv-&gt;display( ).
+  ENDIF.</code></pre>
+
+  <div class="warn">背景執行的三大地雷：<b>(1)</b> <span class="kw">MESSAGE … TYPE 'I'</span> 或 <span class="kw">'E'</span> 在背景會讓 job 直接失敗（Cancelled），背景請用 <span class="kw">TYPE 'S'</span> 或寫進 Application Log（<span class="tcode">SLG1</span>／BAL_* 系列 FM）。<b>(2)</b> 任何 CL_GUI_* 前端物件都會 dump。<b>(3)</b> 必填欄位沒值又沒變式，job 會卡在選擇畫面。</div>
+
+  <h3 id="ch03-1-19">19. 實務案例一：工廠預設與使用者版本</h3>
+  <p>這支是老師的實戰範本（09-2），示範「單選鈕切換 → 動態清空／鎖定欄位 → 執行前總檢核」的完整套路。已改寫成 S/4 寫法（拿掉 TABLES、MOVE，改用 LOOP AT SCREEN 鎖欄位而非只是清空）：</p>
+
+  <pre><code class="abap">REPORT z_plant_default.
+
+DATA gv_matnr TYPE marc-matnr.
+DATA gv_mtart TYPE mara-mtart.
+DATA gv_matkl TYPE mara-matkl.
+DATA gv_dispo TYPE marc-dispo.
+DATA gv_beskz TYPE marc-beskz.
+
+SELECTION-SCREEN BEGIN OF BLOCK mm1 WITH FRAME TITLE TEXT-001.
+
+  SELECT-OPTIONS: s_matnr FOR gv_matnr MODIF ID sc1,
+                  s_mtart FOR gv_mtart,
+                  s_matkl FOR gv_matkl,
+                  s_dispo FOR gv_dispo,
+                  s_beskz FOR gv_beskz.
+
+  PARAMETERS:     p_werks  TYPE marc-werks OBLIGATORY DEFAULT 'NCU1',
+                  p_exc_ba AS CHECKBOX DEFAULT abap_true,   " 排除採購申請 PR
+                  p_exc_pa AS CHECKBOX DEFAULT abap_true,   " 排除計畫訂單
+                  p_updt   TYPE flag DEFAULT space.         " 需要時可改 NO-DISPLAY
+
+  SELECTION-SCREEN BEGIN OF LINE.
+    PARAMETERS:       r_plant RADIOBUTTON GROUP g1 USER-COMMAND check.
+    SELECTION-SCREEN  COMMENT 03(29) TEXT-r11 FOR FIELD r_plant. " All Plant Matl.
+    PARAMETERS:       r_user  RADIOBUTTON GROUP g1 DEFAULT 'X'.
+    SELECTION-SCREEN  COMMENT 35(15) TEXT-r12 FOR FIELD r_user.  " Particular Ver.
+    SELECTION-SCREEN  COMMENT 50(08) TEXT-r13.                   " User ID:
+    PARAMETERS:       p_usnam TYPE sy-uname MODIF ID usr.
+  SELECTION-SCREEN END OF LINE.
+
+SELECTION-SCREEN END OF BLOCK mm1.
+
+INITIALIZATION.
+  p_werks = 'NCU1'.                 " 現代寫法：直接指派，不用 MOVE
+  p_usnam = sy-uname.               " 預設就是登入者本人
+
+AT SELECTION-SCREEN OUTPUT.
+  LOOP AT SCREEN.
+    IF screen-group1 = 'USR'.
+      " 選「全廠」時，使用者版本欄位鎖起來（比只清空更清楚）
+      screen-input = COND #( WHEN r_plant = abap_true THEN 0 ELSE 1 ).
+      MODIFY SCREEN.
+    ENDIF.
+  ENDLOOP.
+
+  IF r_plant = abap_true.
+    CLEAR p_usnam.
+  ENDIF.
+
+AT SELECTION-SCREEN.
+  " 總檢核放這裡，比放 START-OF-SELECTION 好：訊息 E 會留在選擇畫面
+  IF r_user = abap_true AND p_usnam IS INITIAL.
+    MESSAGE 'Must Entry User Version!' TYPE 'E'.
+  ENDIF.
+  IF r_plant = abap_true AND p_usnam IS NOT INITIAL.
+    MESSAGE 'Must not Entry User Version!' TYPE 'E'.
+  ENDIF.
+
+START-OF-SELECTION.
+  PERFORM prepare_data.
+  PERFORM get_data.
+  PERFORM update_db_data.
+
+END-OF-SELECTION.</code></pre>
+
+  <div class="tip"><b>檢核該放哪裡？</b> 原講義把檢核放在 START-OF-SELECTION，用 <span class="kw">MESSAGE 'xxx' TYPE 'I'</span> 加 <span class="kw">EXIT</span>。改放 <b>AT SELECTION-SCREEN</b> 加 <span class="kw">TYPE 'E'</span> 更好：使用者會直接留在選擇畫面、游標停在要改的欄位，不必再按一次返回。<b>規則：凡是「條件正不正確」的檢查，一律放 AT SELECTION-SCREEN。</b></div>
+
+  <h3 id="ch03-1-20">20. 實務案例二：年度預設（RFBILA00 / F.01 的選擇畫面解讀）</h3>
+  <p>老師要求：<b>先學會操作 <span class="tcode">F.01</span>（財務報表），再回頭解讀它的程式碼 RFBILA00</b>，看懂 PARAMETERS 與 SELECT-OPTIONS 在標準程式裡怎麼用。這段程式碼濃縮了本章幾乎所有技巧：</p>
+
+  <pre><code class="abap">" ── 標準程式 RFBILA00（F.01）選擇畫面骨架，重點註解版 ──
+
+SELECTION-SCREEN BEGIN OF LINE.
+  " COMMENT ... FOR FIELD：讓這段文字的 F1 連到後面那個欄位
+  SELECTION-SCREEN COMMENT  1(30) TEXT-030 FOR FIELD bilavers.  " 財務報表版本
+  SELECTION-SCREEN POSITION 35.                                 " 對齊到第 35 欄
+  PARAMETERS bilavers TYPE t011t-versn MEMORY ID bil OBLIGATORY." 掛 SAP 記憶體
+  SELECTION-SCREEN COMMENT 40(8) TEXT-031 FOR FIELD bilaspra.   " 語言
+  SELECTION-SCREEN POSITION 49.
+  PARAMETERS bilaspra TYPE t011-dspra DEFAULT sy-langu OBLIGATORY.
+SELECTION-SCREEN END OF LINE.
+
+PARAMETERS     bilbjahr TYPE bkpf-gjahr OBLIGATORY.             " 報表年度
+SELECT-OPTIONS b_monate FOR rfsdo-bilabmon NO-EXTENSION OBLIGATORY. " 期間（只能一列）
+PARAMETERS     bilvjahr TYPE bkpf-gjahr OBLIGATORY.             " 比較年度
+SELECT-OPTIONS v_monate FOR rfsdo-bilavmon NO-EXTENSION OBLIGATORY.
+PARAMETERS     planvers TYPE skc1a-rvers DEFAULT space.         " 計畫版本
+
+SELECTION-SCREEN SKIP 1.
+
+" ── 輸出格式方框：三個單選鈕各自佔一行，配 COMMENT 當標籤 ──
+SELECTION-SCREEN BEGIN OF BLOCK list WITH FRAME TITLE TEXT-204.
+
+  SELECTION-SCREEN BEGIN OF LINE.
+    PARAMETERS bilalist TYPE rfbila_alv_settings-classic RADIOBUTTON GROUP alv.
+    SELECTION-SCREEN COMMENT 3(20) TEXT-205 FOR FIELD bilalist.  " Classical list
+  SELECTION-SCREEN END OF LINE.
+
+  SELECTION-SCREEN BEGIN OF LINE.
+    PARAMETERS bilagrid TYPE rfbila_alv_settings-grid RADIOBUTTON GROUP alv.
+    SELECTION-SCREEN COMMENT  3(20) TEXT-206 FOR FIELD bilagrid. " ALV grid control
+    SELECTION-SCREEN COMMENT 25(10) TEXT-209 FOR FIELD bilagvar. " Layout
+    SELECTION-SCREEN POSITION 40.
+    PARAMETERS bilagvar TYPE slis_vari MEMORY ID gl_bspl_alv_grid_var.
+  SELECTION-SCREEN END OF LINE.
+
+  SELECTION-SCREEN BEGIN OF LINE.
+    SELECTION-SCREEN POSITION 4.
+    PARAMETERS bilastsl TYPE rfbila_alv_settings-strucblnce AS CHECKBOX.
+    SELECTION-SCREEN COMMENT 6(40) TEXT-208 FOR FIELD bilastsl.
+  SELECTION-SCREEN END OF LINE.
+
+SELECTION-SCREEN END OF BLOCK list.</code></pre>
+
+  <div class="note"><b>從這段標準程式可以學到的四件事</b>：<br>
+  1. <b>期間用 <span class="kw">SELECT-OPTIONS … NO-EXTENSION OBLIGATORY</span></b>：既要區間（1 月到 12 月），又不准使用者輸入多列，是「會計期間」的標準寫法。<br>
+  2. <b>版本欄位掛 MEMORY ID</b>：使用者上次選什麼，下次進來自動帶出。<br>
+  3. <b>COMMENT … FOR FIELD 搭配 POSITION</b>：標準程式全部用這一招做出整齊的欄位對齊，值得照抄。<br>
+  4. <b>ALV Layout 用 <span class="kw">TYPE slis_vari</span>（或 <span class="kw">disvariant-variant</span>）加 MEMORY ID</b>：這是讓報表記住使用者版面配置的標準做法。</div>
+
+  <h3 id="ch03-1-21">21. 綜合案例：複雜條件 ＋ OO ALV</h3>
+  <p>第 11 節配合 ABAP3-2 的 ZOOALV_2_GRID，把「INITIALIZATION 預填複雜條件」與 ALV 顯示接起來，這是本章的集大成：</p>
+
+  <pre><code class="abap">REPORT zooalv_2_grid.
+
+DATA gv_matnr TYPE mara-matnr.
+
+SELECTION-SCREEN BEGIN OF BLOCK blk1 WITH FRAME TITLE TEXT-001.
+  SELECT-OPTIONS s_matnr FOR gv_matnr.
+SELECTION-SCREEN END OF BLOCK blk1.
+
+" 預設條件：包含 DXTR1*，逐筆排除 DXTR1201 ~ DXTR1210
+INITIALIZATION.
+  APPEND VALUE #( sign = 'I' option = 'CP' low = 'DXTR1*' ) TO s_matnr[].
+
+  DO 10 TIMES.
+    DATA(lv_num)   = 1200 + sy-index.
+    DATA(lv_matnr) = |DXTR{ lv_num }|.
+    APPEND VALUE #( sign = 'E' option = 'EQ' low = lv_matnr ) TO s_matnr[].
+  ENDDO.
+
+START-OF-SELECTION.
+  SELECT a~matnr, a~mtart, a~matkl, a~meins, b~maktx
+    FROM mara AS a
+    LEFT OUTER JOIN makt AS b ON b~matnr = a~matnr AND b~spras = @sy-langu
+    WHERE a~matnr IN @s_matnr          " SELECT-OPTIONS 用 IN，逸出字元 @ 不可少
+    INTO TABLE @DATA(lt_mara)
+    ORDER BY a~matnr.                  " 一定要排序，結果才穩定
+
+  IF lt_mara IS INITIAL.
+    MESSAGE '查無符合條件的物料' TYPE 'S' DISPLAY LIKE 'W'.
+    RETURN.
+  ENDIF.
+
+  TRY.
+      cl_salv_table=&gt;factory( IMPORTING r_salv_table = DATA(lo_alv)
+                              CHANGING  t_table      = lt_mara ).
+
+      lo_alv-&gt;get_functions( )-&gt;set_all( abap_true ).       " 開啟全部工具列功能
+      lo_alv-&gt;get_columns( )-&gt;set_optimize( abap_true ).    " 欄寬自動最佳化
+      lo_alv-&gt;get_display_settings( )-&gt;set_list_header( |物料清單（{ lines( lt_mara ) } 筆）| ).
+      lo_alv-&gt;display( ).
+
+    CATCH cx_salv_msg INTO DATA(lx_salv).
+      MESSAGE lx_salv-&gt;get_text( ) TYPE 'E'.
+  ENDTRY.</code></pre>
+
+  <div class="warn"><b>講義最後那句 <span class="kw">WRITE: space.</span>「關鍵！觸發畫面顯示」是舊 ALV 的權宜之計。</b><br>
+  它的用途是：當你用 <span class="kw">CL_GUI_ALV_GRID</span> 掛在 <b>Docking Container</b> 上、而程式只有選擇畫面沒有任何螢幕時，必須先產生一個清單（List）畫面，Grid 才有地方可掛。<br>
+  在 S/4HANA 上，<b>全螢幕報表請直接用 CL_SALV_TABLE</b>——它自己會建立畫面，完全不需要這一招；只有需要「可編輯欄位、複雜事件、多個 Grid 併排」時才回頭用 CL_GUI_ALV_GRID ＋ 自建 Screen（見第 3-2 章）。</div>
+
+  <h3 id="ch03-1-22">22. 選擇畫面設計檢查清單（Code Review 用）</h3>
+  <ul>
+    <li>參數／選項名稱 ≤ 8 碼，前綴 P_ / S_ / R_ 一致。</li>
+    <li>全部用 <b>DDIC 型別</b>宣告（有 F1／F4／轉換常式），不要用 CHARn 硬幹。</li>
+    <li>沒有 <span class="kw">TABLES:</span>（唯一例外：<span class="kw">TABLES sscrfields.</span>）。</li>
+    <li>檔名、E-mail、路徑類欄位有 <b>LOWER CASE</b>。</li>
+    <li>條件<b>能列舉就列舉</b>，避免 BT 區間；自建 range 的 SIGN／OPTION 都有填、大寫、與 HIGH 一致。</li>
+    <li>「使用者什麼都不填就撈全表」的情況已被擋掉（OBLIGATORY 或 AT SELECTION-SCREEN 檢核）。</li>
+    <li>SELECT 一律明列欄位、帶 <span class="kw">@</span> 逸出主機變數、加 <b>ORDER BY</b>。</li>
+    <li>條件檢核放 <b>AT SELECTION-SCREEN</b>（訊息 TYPE 'E'），不要放 START-OF-SELECTION。</li>
+    <li>預填資料放 <b>INITIALIZATION</b>，不要放 AT SELECTION-SCREEN OUTPUT（會愈跑愈多筆）。</li>
+    <li>Selection Texts 全部維護好並<b>單獨啟用</b>；多語系客戶要做翻譯（SE63）。</li>
+    <li>需要排程的程式：確認 <span class="kw">sy-batch</span> 分流、沒有 CL_GUI_* 呼叫、必填欄位有變式。</li>
+    <li>需要重複執行的條件，做成<b>變式</b>並考慮用 Selection variable（D／T）處理日期。</li>
+  </ul>
+
+  <h3 id="ch03-1-qa">練習與自我檢核</h3>
+  <ol>
+    <li><b>第 34 練習</b>：寫 Z202202_34_SET 與 Z202202_34_GET，用 SET／GET PARAMETER ID 在兩個 Session 之間傳值。<br><i>要點</i>：先跑 SET 再跑 GET；參數 ID 建議登錄到 TPARA；驗證開新視窗（/o）也讀得到。</li>
+    <li><b>第 35 練習</b>：用 EXPORT／IMPORT MEMORY ID ＋ SUBMIT 在兩支程式之間傳值。<br><i>要點</i>：改用具名寫法 <span class="kw">p_flag = lv_data</span>，兩邊變數名可以不同；IMPORT 後檢查 sy-subrc；用完 FREE MEMORY ID。</li>
+    <li><b>第 36 練習</b>：把 CHECKBOX、RADIOBUTTON、LISTBOX、MATCHCODE、STRING+VISIBLE LENGTH、OBLIGATORY、MEMORY ID 全部做一次。<br><i>延伸</i>：讓 P_MATNR 可以下拉選擇物料編號（先試 DDIC 型別的內建 F4，再試自製 F4）。</li>
+    <li><b>Search Help 找名字</b>：在 S/4HANA 上找出 <b>USER_COMP</b> 這個搜尋說明的四種方法（F1 技術資訊、SE11 資料元素、SE11 模糊搜尋、SE84）。</li>
+    <li><b>第 37 練習</b>：把 s_s1～s_s7 七種 DEFAULT 組合寫出來，用 Debug 觀察 <b>s_s1[]～s_s7[]</b> 的 SIGN／OPTION／LOW／HIGH 各是什麼。<br><i>要點</i>：注意 DEFAULT 44 TO 54 自動變成 I/BT；DEFAULT 45 TO 55 OPTION BT SIGN E 變成排除區間。</li>
+    <li><b>NO INTERVALS vs NO-EXTENSION</b>：不看筆記說出兩者的差別，並說出「只准填一個單值」要怎麼寫。</li>
+    <li><b>區間 vs 列舉</b>：舉出至少三個「用 BT 會抓錯、用 EQ 列舉才對」的實際理由，並把 <span class="kw">E/BT 'DXTR1201' ~ 'DXTR1210'</span> 改寫成正確的列舉版本。</li>
+    <li><b>第 38 練習</b>：用 BEGIN OF BLOCK ／ WITH FRAME TITLE ／ BEGIN OF LINE ／ COMMENT ／ ULINE ／ SKIP 排出一個「三個方框、其中一行有兩個單選鈕加一個輸入框」的畫面，並用 CALL SELECTION-SCREEN 1001 STARTING AT … 做出彈出視窗。</li>
+    <li><b>事件順序</b>：不看筆記寫出 INITIALIZATION → AT SELECTION-SCREEN OUTPUT → ON field／ON BLOCK／ON VALUE-REQUEST → AT SELECTION-SCREEN → START-OF-SELECTION → END-OF-SELECTION 的順序，並說明「訊息放 ON field 和放 AT SELECTION-SCREEN 有什麼不同」。</li>
+    <li><b>第 39 練習</b>：用 MODIF ID ＋ USER-COMMAND ＋ LOOP AT SCREEN，做出「勾了核取方塊才出現兩個欄位」的效果；再改成「不勾時變灰（唯讀）而非消失」。</li>
+    <li><b>F4 自製</b>：用 F4IF_INT_TABLE_VALUE_REQUEST 做一個銷售訂單的 F4，LOW 與 HIGH 都要能用；再做一個「先選工廠、料號 F4 只列該廠料號」的連動 F4（用 DYNP_VALUES_READ）。</li>
+    <li><b>第 40 練習</b>：實作 AT SELECTION-SCREEN ON BLOCK 與 ON EXIT-COMMAND，並解釋為什麼原範例的 EXIT-COMMAND「試了無效」。<br><i>要點</i>：POPUP 的 ANSWER 沒接回來；只有功能碼型別 E 才觸發。</li>
+    <li><b>終止指令</b>：說出 STOP／EXIT／RETURN／CHECK／REJECT 各自的作用範圍，特別是「EXIT 在巢狀迴圈中只跳一層，RETURN 直接離開整個模組」。</li>
+    <li><b>SUBMIT</b>：用 WITH SELECTION-TABLE（RSPARAMS）動態組條件呼叫另一支程式，並加上 VIA SELECTION-SCREEN 與 AND RETURN 觀察差別。</li>
+    <li><b>變式與排程</b>：建立一個變式，把日期欄位設成 Selection variable = D「上個月的最後一天」，再用 SM36 排一個每月執行的 job，SM37 看結果。</li>
+    <li><b>10-1（自我驗收）</b>：把第 2 章的 <b>Z202202_26</b> 改寫成「使用者可以輸入區間條件，且建檔者預設為登錄者（sy-uname）」。<br><i>要點</i>：SELECT-OPTIONS ＋ INITIALIZATION 設 p_ernam = sy-uname。</li>
+    <li><b>10-2</b>：打開標準程式 <b>MB52</b>（庫存清單）研究它的選擇畫面。老師的問題：<b>「懂 ERP 模組的人來看程式，跟懂程式的人來學存貨評價，哪一個容易？」</b></li>
+    <li><b>10-3</b>：程式中看不懂的部分請自學到第 3-4 章（第三、四代增強）。例如標準程式 <b>RM07MLBS</b> 裡的 <span class="kw">ENHANCEMENT-POINT rm07mlbs_g4 SPOTS es_rm07mlbs [STATIC]</span>：<br>
+      ・<b>ENHANCEMENT-POINT</b> 是 Enhancement Framework 在標準碼裡預留的擴充點，可以插自訂邏輯而不修改原廠程式。<br>
+      ・<b>SPOTS es_rm07mlbs</b> 是這些增強點所屬的 Enhancement Spot（增強區域），用來把相關增強點組織在一起。<br>
+      ・<b>STATIC</b> 表示這是靜態增強點（可插入宣告式的程式碼，位置固定、始終可用）；沒有 STATIC 的則是動態增強點。<br>
+      ・實作／查看：<span class="tcode">SE18</span> 輸入 <b>es_rm07mlbs</b>；升級後檢查增強是否失效用 <span class="tcode">SPAU_ENH</span>。</li>
+    <li><b>綜合題</b>：配合第 3-2 章的 ZOOALV_2_GRID，加上「包含 DXTR1*、排除 DXTR1201～DXTR1210」的複雜條件，並用 CL_SALV_TABLE 顯示；比較用 BT 排除與用 EQ 逐筆排除的筆數差異，把差異的料號列出來。</li>
+    <li><b>結業自問</b>：老師說「恭喜您學完模組顧問所需要的 ABAP 知識」。要成為真正的 ABAPer，接下來還要走完：<b>OOALV、Screen（Dialog）、SmartForms、Enhancement、RFC、BAPI</b>——對照本圖書館第 3-2 到第 4-4 章，列出自己還沒掌握的項目。</li>
+  </ol>
+</section>

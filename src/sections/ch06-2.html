@@ -1,0 +1,526 @@
+<section class="chapter" id="ch06-2" data-title="除錯的絕招（二）：顧問的除錯術——定位錯誤、找增強點、分析問題">
+  <h2>第 6-2 章 除錯的絕招（二）：顧問的除錯術——定位錯誤、找增強點、分析問題</h2>
+  <p class="lede">業務（功能）顧問不必會寫 ABAP，但一定要會「看」ABAP：使用者丟來一個紅燈訊息，你要能在十分鐘內回答三個問題——<b>是哪一行程式丟出來的？是配置／主資料問題還是程式問題？如果要改，該掛在哪個增強點？</b>本章把 L35 素材裡散落的顧問除錯文章，整理成一套「訊息號 → 程式碼行 → 根因 → 標準或增強點 → 回報開發」的標準作業流程，並貫徹 Casper 的第三條實務經驗：<b>先找標準，再想客製</b>。</p>
+
+  <div class="meta">
+    <div><b>核心 TCODE</b><span class="tcode">/h</span><span class="tcode">SE91</span><span class="tcode">SE93</span><span class="tcode">SE84</span><span class="tcode">SE18</span><span class="tcode">SE19</span><span class="tcode">SMOD</span><span class="tcode">CMOD</span><span class="tcode">FIBF</span><span class="tcode">CODE_SCANNER</span><span class="tcode">SAT</span><span class="tcode">ST05</span><span class="tcode">ST22</span><span class="tcode">SU53</span><span class="tcode">STAUTHTRACE</span><span class="tcode">SLG1</span><span class="tcode">SMARTFORMS</span><span class="tcode">SE16</span><span class="tcode">SM21</span><span class="tcode">ME22N</span><span class="tcode">ME21N</span></div>
+    <div><b>關鍵物件</b>T100、T100A、SY-MSGID、SY-MSGNO、SY-MSGTY、RS_ABAP_SOURCE_SCAN、CL_EXITHANDLER=&gt;GET_INSTANCE、GET BADI、CALL CUSTOMER-FUNCTION、MODSAP、MODSAPT、TADIR、TSTC、BF_FUNCTIONS_FIND、OPEN_FI_PERFORM_*、BALW_BAPIRETURN_GET2、BAL_LOG_MSG_ADD、SSF_FUNCTION_MODULE_NAME、T161P、PROGDIR、S_DEVELOP、COMM_PRODUCT</div>
+  </div>
+
+  <h3 id="ch06-2-01">1. 素材清單與本章定位</h3>
+  <p>L35 不是原廠課程，而是網路上收集的簡中／英文技術文章，截圖多、文字少、品質參差。本章取用與「顧問」相關的 11 份文件如下（字數為抽出文字後去除空白的字元數；英文列字數）：</p>
+  <table>
+    <thead><tr><th>檔名</th><th>語言</th><th>性質</th><th>份量</th><th>本章用到的重點</th></tr></thead>
+    <tbody>
+      <tr><td>Detailed Debugging Techniques for Functional consultants.docx</td><td>英文</td><td>顧問入門</td><td>約 1,390 字、10 張截圖</td><td>/h 限制、BREAK-POINT 與 BREAK &lt;uname&gt;、Breakpoint at Statement／Subroutine／FM</td></tr>
+      <tr><td>sap debugging for functional consultants.docx</td><td>英文</td><td>顧問入門</td><td>約 2,130 字、17 張截圖</td><td>為什麼顧問要除錯、SLIN 找靜態中斷點、Watchpoint、內表下載</td></tr>
+      <tr><td>业务顾问需要学会的SAP ABAP调试.docx</td><td>簡中</td><td>上一篇的中譯版</td><td>約 3,800 字、16 張截圖</td><td>同上（中文術語對照）</td></tr>
+      <tr><td>作为SAP顾问都应该知道的ABAP程序调试方法.docx</td><td>簡中</td><td>顧問實例</td><td>約 800 字、4 張截圖</td><td>ME020 → Breakpoint at Message → T161P 配置缺漏</td></tr>
+      <tr><td>SAP顾问的技能：ABAP调试和智能表单.docx</td><td>簡中</td><td>顧問實例</td><td>約 2,000 字、22 張截圖</td><td>訊息 00055、Breakpoint at Message、Goto Statement、SmartForms 除錯</td></tr>
+      <tr><td>SAP错误消息调试之：让所有的错误消息都能被定位.docx</td><td>簡中</td><td>開發者視角</td><td>約 3,200 字、24 張截圖</td><td>「七種武器」：Where-used、Watchpoint、MESSAGE 中斷點、原始碼掃描、SAT、ST05、搜尋引擎（範例 DS017）</td></tr>
+      <tr><td>debug定位报错代码行.docx</td><td>簡中</td><td>截圖教學</td><td>約 350 字、<b>35 張截圖</b></td><td>ME22N 改價 → MM899 → ZXM06U43 的四種定位法</td></tr>
+      <tr><td>SAP debugging定位报错.pdf</td><td>簡中</td><td>上一篇的 PDF 版</td><td>18 頁、以圖為主（文字層亂碼）</td><td>同上，僅作對照</td></tr>
+      <tr><td>ABAP问题分析和排除经验之谈.docx</td><td>簡中</td><td>開發者經驗</td><td>約 2,200 字、17 張截圖</td><td>ALV「順查法／倒查法」、SmartForms 倒推</td></tr>
+      <tr><td>SAP 高效调试技巧.docx</td><td>簡中</td><td>短文</td><td>約 300 字、3 張截圖</td><td>CODE_SCANNER、BAL_LOG_MSG_ADD／BALW_BAPIRETURN_GET2 中斷點</td></tr>
+      <tr><td>利用ABAP调试模式修改SE16里数据库表的内容.docx</td><td>簡中</td><td><b>危險操作</b></td><td>約 330 字、5 張截圖</td><td>SE16 SHOW→EDIT（本章第 14 節附完整警告）</td></tr>
+    </tbody>
+  </table>
+  <p>另有 5 支影片無法轉文字，索引見第 16 節。</p>
+  <p><b>本章與其他章的分工：</b></p>
+  <ul>
+    <li><a href="#ch05-4">5-4 章（BC403 原廠除錯課）</a>講 Debugger 功能全貌：New／Classic Debugger（5-4 §2）、啟動方式（§3）、F5～F8 與 Goto Statement（§5）、四種中斷點（§6）、Watchpoint（§7）、變數與內表工具（§8、§9）、Debugger Script（§18、§19）。本章<b>不再重複操作說明</b>，只講顧問在實戰情境下「用哪一招、為什麼」。</li>
+    <li><a href="#ch06-1">6-1 章</a>是開發者除錯實戰（條件中斷點、Debugger Script、更新任務、RFC、巨集除錯）。</li>
+    <li><a href="#ch06-3">6-3 章</a>是追蹤與效能調優（SAT、ST05、ST12 的完整用法）。本章只把 SAT／ST05 當成「找訊息」的工具。</li>
+  </ul>
+
+  <h3 id="ch06-2-02">2. 顧問為什麼要會除錯：從訊息到根因的標準流程</h3>
+  <p><b>情境：</b>使用者在 <span class="tcode">ME22N</span> 改採購單價格，跳出紅燈「4500000078 00010 由於已收貨，不允許修改價格」。你是 MM 顧問，第一反應應該是什麼？</p>
+  <p>素材 <i>sap debugging for functional consultants</i> 開宗明義：<b>「只有在檢查配置（customizing）與主資料都無法判定根因時，才需要除錯。」</b>除錯不是第一步，而是第三步。整理成流程：</p>
+  <ol>
+    <li><b>讀訊息</b>：點訊息看長文本與技術資訊（訊息類別＋編號＋類型），見第 3 節。</li>
+    <li><b>查 SAP 已知答案</b>：訊息長文本的「程序（Procedure）」段落、SAP Note（用訊息號＋交易碼搜尋）。</li>
+    <li><b>定位程式碼</b>：用第 4～7 節的武器找出丟訊息的那一行。</li>
+    <li><b>判斷類型</b>：那一行在標準程式（SAPL*、LME* …）還是客製（Z*、ZX*、Y*）？前面讀了哪張表？見第 10 節。</li>
+    <li><b>決定處理方式</b>：補配置／主資料 → 調整增強 → 最後才考慮改程式，見第 8、9 節。</li>
+    <li><b>回報</b>：交給 ABAP 開發者時用第 15 節的範本，一次把資訊給齊。</li>
+  </ol>
+  <div class="tip"><b>Casper 實務經驗第 3 條：先找標準，再想客製。</b>標準設定 → BAdI／Enhancement Spot → Enhancement Point → 修改標準，每往右一步升級成本高一個量級。顧問會除錯的最大價值，正是能在第 4 步就看出「這其實只是 T161P 少一筆配置」，而不是直接開需求單請開發者寫增強。</div>
+  <p>素材也點出顧問會除錯的三個好處：縮短問題分析時間、<b>減少對 ABAP 團隊的過度依賴</b>、讓工作量估算（effort estimation）更準確。寫功能規格書（FS）時，能指出「請在 BAdI ME_PROCESS_PO_CUST 的 CHECK 方法加檢查」的顧問，比只寫「系統要擋」的顧問值錢得多。</p>
+
+  <h3 id="ch06-2-03">3. 讀懂錯誤訊息：類別、編號、類型、長文本</h3>
+  <p>SAP 所有經由 <span class="kw">MESSAGE</span> 丟出的訊息都存在表 <b>T100</b>（訊息文字，鍵值 SPRSL＋ARBGB＋MSGNR），訊息類別（Message Class）主檔在 <b>T100A</b>，維護用 <span class="tcode">SE91</span>。在畫面上點狀態列訊息（或在訊息清單雙擊紅燈），出現「效能助理（Performance Assistant）」長文本，其中「訊息號」欄就是技術資訊。<span class="src">（依截圖整理）</span></p>
+  <table>
+    <thead><tr><th>訊息號寫法</th><th>訊息類別（SY-MSGID）</th><th>編號（SY-MSGNO）</th><th>素材出處</th></tr></thead>
+    <tbody>
+      <tr><td>MM899</td><td>MM</td><td>899</td><td>debug定位报错代码行：ME22N 改價「由於已收貨，不允許修改價格」</td></tr>
+      <tr><td>ME020</td><td>ME</td><td>020</td><td>作为SAP顾问…：ME21N「憑證類型 NB 未允許項目類別 U」</td></tr>
+      <tr><td>DS017</td><td>DS</td><td>017</td><td>七種武器：SE38 輸入不存在的程式「Program ZSDFSF does not exist」</td></tr>
+      <tr><td>00055</td><td>00</td><td>055</td><td>顧問的技能：必填欄位未輸入</td></tr>
+    </tbody>
+  </table>
+  <p><b>訊息類型（SY-MSGTY）</b>決定燈號與行為，也是反查時過濾結果的關鍵：</p>
+  <table>
+    <thead><tr><th>類型</th><th>意義</th><th>狀態列表現</th><th>反查時的意義</th></tr></thead>
+    <tbody>
+      <tr><td>A</td><td>Abort 終止</td><td>彈窗後結束交易</td><td>很少見，多半是嚴重不一致</td></tr>
+      <tr><td>E</td><td>Error 錯誤</td><td>紅燈，畫面欄位鎖住等待修正</td><td>最常見的「擋住」</td></tr>
+      <tr><td>W</td><td>Warning 警告</td><td>黃燈，按 Enter 可繼續</td><td>常由配置表決定 W 或 E（例如 MM 的訊息控制 OME0／OMCQ）</td></tr>
+      <tr><td>I</td><td>Information 資訊</td><td>彈窗</td><td>不擋流程</td></tr>
+      <tr><td>S</td><td>Success 成功</td><td>綠燈</td><td>DS017 就是以 S 類型丟出，所以狀態列是綠勾</td></tr>
+      <tr><td>X</td><td>Exit</td><td>直接短傾印 MESSAGE_TYPE_X</td><td>去 <span class="tcode">ST22</span> 看，見第 11 節</td></tr>
+    </tbody>
+  </table>
+  <div class="note">同一個訊息號的類型<b>不是固定的</b>：程式裡可以寫 <span class="kw">MESSAGE e017(ds)</span>，也可以寫 <span class="kw">MESSAGE s017(ds)</span>。另外 MM、FI、SD 都有「可設定訊息」機制（MM 採購：<span class="tcode">OME0</span>；庫存管理：<span class="tcode">OMCQ</span>；FI：<span class="tcode">OBA5</span>），同一個訊息在不同使用者／公司可能是 W 或 E。顧問遇到「為什麼只有某人會被擋」時，先查這幾個配置，比除錯快。</div>
+
+  <h3 id="ch06-2-04">4. 武器一：SE91 Where-used 反查程式碼</h3>
+  <p><b>情境：</b>已拿到訊息號 MM899，想知道哪支程式會丟這個訊息。這是所有方法中<b>不必重現錯誤</b>的一招，適合先在測試機摸底。</p>
+  <p><b>操作步驟</b><span class="src">（依截圖整理，debug定位报错代码行 圖 1～10）</span>：</p>
+  <ol>
+    <li><span class="tcode">ME22N</span> 修改 PO 4500000078 第 10 項淨價 → 出現紅燈，雙擊紅燈看訊息清單，再點長文本，記下訊息號 <b>MM899</b>。</li>
+    <li><span class="tcode">SE91</span>：訊息類別輸入 <b>MM</b>，子物件選「訊息」，編號輸入 <b>899</b>。</li>
+    <li>按「使用位置清單（Where-Used List，Ctrl+Shift+F3）」，在「用於」勾選「程式」「類別」（必要時加 Web Dynpro 元件），執行（F8）。</li>
+    <li>結果：<b>使用位置 訊息 MM 899（1 命中）</b>——程式 <b>ZXM06U43</b>（Include ZXM06U43）。雙擊進入，看到第 28 行 <span class="kw">MESSAGE E899(MM) WITH tekpo-ebeln tekpo-ebelp '由於已收貨，不允許修改價格'</span>。</li>
+    <li>在該行設中斷點（Session Breakpoint），回到 ME22N 再改一次價格 → Debugger 停在這一行，確認就是它。</li>
+  </ol>
+  <p><b>為什麼要最後再設中斷點確認？</b>標準訊息常常被幾十個地方引用。七種武器一文以 DS017 為例，Where-used 列出 LDMC_DTLU02、LS38AU12、LSEDTATTRF10、MS38EF00…一大串。技巧是<b>用訊息類型過濾</b>：SE38 看到的 DS017 是綠勾（S 類型），所以只看 <span class="kw">MESSAGE s017</span> 的列，<span class="kw">MESSAGE E017</span> 直接略過；很快鎖定 Include <b>LWBABAPF00</b> 第 813 行，再用中斷點證實。<span class="src">（依截圖整理）</span></p>
+  <p>Where-used 靠的是<b>靜態</b>的交叉參照索引，所以下面這些寫法它<b>找不到</b>：</p>
+<pre><code class="abap">" (1) 找得到：訊息類別與編號寫死在 MESSAGE 敘述中
+MESSAGE e899(mm) WITH ls_ekpo-ebeln ls_ekpo-ebelp.
+
+" (2) 找不到：訊息類別／編號是變數（動態 MESSAGE）
+DATA(lv_msgid) = CONV symsgid( 'MM' ).
+DATA(lv_msgno) = CONV symsgno( '899' ).
+MESSAGE ID lv_msgid TYPE 'E' NUMBER lv_msgno WITH ls_ekpo-ebeln.
+
+" (3) 找不到：訊息被收進 BAPIRET2／應用日誌，而不是直接 MESSAGE
+APPEND VALUE bapiret2( type       = 'E'
+                       id         = 'MM'
+                       number     = '899'
+                       message_v1 = ls_ekpo-ebeln ) TO lt_return.
+
+" (4) 找得到但會誤判：MESSAGE ... INTO 只是組字串，不一定會顯示給使用者
+MESSAGE e899(mm) WITH ls_ekpo-ebeln INTO DATA(lv_text).
+</code></pre>
+  <div class="warn"><b>索引可能不完整：</b>客製 Z 程式的 Where-used 索引在開發系統通常是最新的，但在 QAS／PRD 或剛升級的系統，標準程式的索引可能沒建（需 Basis 執行 SAPRSEUB／SAPRSEUC 建立）。<b>Where-used 查不到不代表沒有</b>，改用第 5～7 節的動態方法。</div>
+
+  <h3 id="ch06-2-05">5. 武器二：Breakpoint at Message（最推薦的一招）</h3>
+  <p><b>情境：</b>錯誤可以重現、有訊息號。這是顧問最該練熟的方法，<b>完全不需要看懂程式碼</b>就能停在丟訊息的那一行。</p>
+  <p><b>操作步驟</b><span class="src">（依截圖整理，作为SAP顾问… 圖 1～4；debug定位报错代码行 圖 11～18）</span>：</p>
+  <ol>
+    <li>在出錯畫面（還沒按儲存前）的命令欄輸入 <b>/h</b> 按 Enter，狀態列顯示「除錯被啟動」。</li>
+    <li>再做一次會出錯的動作（改價格、按 Enter 或儲存）→ Debugger 開啟。</li>
+    <li>按 <b>F9</b>（或功能表「中斷點 → 中斷點位置 → 訊息處中斷點」／Breakpoints → Breakpoint at → Breakpoint at Message），在「建立中斷點」彈窗切到最右邊的<b>「訊息」頁籤</b>。</li>
+    <li>ID 填訊息類別（例 <b>ME</b>），編號填 <b>020</b>，「型」可留空（代表任何類型都停）。</li>
+    <li>按 <b>F8</b>（繼續）→ Debugger 自動停在丟出該訊息的敘述。</li>
+  </ol>
+  <p><b>ME020 實例的結論：</b>Debugger 停在程式 <b>SAPLMEPO</b>、Include <b>LMEPOF1V</b>、FORM <b>MEPO_ITEM_MAIN_CHECK_1</b> 第 74 行。往上看三行就懂了：</p>
+<pre><code class="text">*--- Kombination Bestellart/Bestelltyp/Positionstyp gegen T161P ---
+SELECT SINGLE * FROM t161p WHERE bsart = ekko-bsart
+                             AND bstyp = ekko-bstyp
+                             AND pstyp = ekpo-pstyp.
+IF sy-subrc NE 0.
+  MESSAGE e020(me) WITH ekko-bsart ekko-bstyp msg_pstypl.   "&lt;- 停在這裡
+ENDIF.
+</code></pre>
+  <p>（標準程式碼照截圖原樣抄錄，僅供閱讀；不是新程式的寫法範例。）程式讀配置表 <b>T161P</b>（採購憑證類型允許的項目類別），找不到「NB＋F＋U」的組合就報錯。所以根因是<b>配置缺漏</b>，到 SPRO「採購 → 採購訂單 → 定義憑證類型」底下的「允許的項目類別」補上即可，不需要任何開發。這正是第 2 節流程第 4 步的威力。</p>
+  <div class="note">原文敘述的情境是「科目分配 A、項目類別 L」，但截圖實際是憑證類型 NB＋項目類別 U（庫存轉儲），原作者也註明「此處僅為示範」。本章以截圖為準。</div>
+  <div class="tip"><b>停下來之後先看 Call Stack（ABAP 和畫面堆疊）。</b>MM899 案例停住時，堆疊由下往上是：ME22N TRANSACTION → … → METHOD POST_DOCUMENT → METHOD SAVE → FUNCTION MEPO_DOC_CHECK → FORM PRUEFEN → FORM CUSTOMER_DATA_CHECK → <b>FUNCTION EXIT_SAPMM06E_012</b>。看到 EXIT_ 開頭的函數模組，就知道是 Customer Exit（第 8 節）。<span class="src">（依截圖整理）</span></div>
+
+  <h3 id="ch06-2-06">6. 武器三：Breakpoint at Statement MESSAGE 與 Watchpoint SY-MSGNO</h3>
+  <p><b>情境 A：錯誤沒有訊息號</b>（例如彈窗文字是拼出來的、或你手上只有使用者的截圖）。改用「敘述中斷點」：</p>
+  <ol>
+    <li>/h 啟動 Debugger → 功能表「中斷點 → 中斷點位置 → 語句斷點處（Breakpoint at Statement，Shift+F5）」。</li>
+    <li>在「ABAP 命令」頁籤輸入 <b>MESSAGE</b> → 確認 → F8。</li>
+    <li>Debugger 會停在<b>每一個</b> MESSAGE 敘述。素材截圖中，先停在 FUNCTION AIP01_T001W_EXT_READ 的 <span class="kw">MESSAGE e001 WITH i_werks RAISING plant_not_found</span>，那不是我們要的 → 繼續 F8，直到停在與畫面錯誤文字一致的那一行（ZXM06U43 第 28 行）。<span class="src">（依截圖整理，debug定位报错代码行 圖 29～35）</span></li>
+  </ol>
+  <div class="note">上例中 AIP01 那一行雖然停了，但 <span class="kw">MESSAGE … RAISING</span> 在呼叫端有處理例外時<b>不會顯示訊息</b>，只會觸發例外。這就是為什麼 Breakpoint at Statement MESSAGE 會「停很多次」——很多 MESSAGE 根本沒到使用者眼前。同理可用 <span class="kw">CALL FUNCTION</span>、<span class="kw">AUTHORITY-CHECK</span>、<span class="kw">COMMIT WORK</span>、<span class="kw">GET BADI</span> 當關鍵字。</div>
+  <p><b>情境 B：想讓系統「自己停在」訊息被設定的瞬間</b>。<span class="kw">MESSAGE</span> 執行時會填入 SY-MSGID／SY-MSGNO／SY-MSGTY／SY-MSGV1～4，所以對 SY-MSGNO 設 Watchpoint 也能定位：</p>
+  <ol>
+    <li>/h → 重現動作 → Debugger 中按「監視點（Watchpoint，Shift+F4）」。</li>
+    <li>「變數」輸入 <b>SY-MSGNO</b>，類型選「變數的觀察點」。</li>
+    <li>「自由條件輸入（Free Condition Entry）」填條件（見下方），確認 → F8。</li>
+    <li>狀態列出現「已到達監視點（SY-MSGNO）」，程式停在剛執行完的 MESSAGE 行。</li>
+  </ol>
+<pre><code class="text">* Watchpoint 條件範例（Free Condition Entry）
+SY-MSGNO = '899'                          "只看編號
+SY-MSGID = 'MM' AND SY-MSGNO = '899'      "類別＋編號同時成立（對 SY-MSGNO 設 WP，條件可引用其他欄位）
+SY-MSGTY = 'E'                            "任何錯誤訊息（對 SY-MSGTY 設 WP）
+
+* Breakpoint at Message 彈窗（F9 → 訊息頁籤）
+ID   = MM
+編號 = 899
+型   = （空白 = 任何類型；填 E 則只停錯誤）
+</code></pre>
+  <div class="warn">Watchpoint 會讓程式每執行一行都檢查條件，<b>在大程式（例如 VA01、MIGO 過帳）上會明顯變慢</b>。而且編號 899 在 MM 以外的類別也存在，只設 <span class="kw">SY-MSGNO = '899'</span> 可能誤停。能用 Breakpoint at Message 就先用它，Watchpoint 是備援。</div>
+
+  <h3 id="ch06-2-07">7. 武器四～七：原始碼掃描、SAT、ST05、SAP Note</h3>
+  <p>七種武器一文的後四招不靠 Debugger，而是「換個角度」找。其標題寫「七種武器」、內文卻說「六種方法」，實際是 6 種工具法＋第 7 種「搜尋引擎／問專家」。<span class="src">（依截圖整理）</span></p>
+  <p><b>武器四：原始碼靜態掃描。</b>先用 <span class="tcode">SE93</span> 查交易碼背後的程式與套件（SE38 → 程式 RSABAPPROGRAM、套件 <b>SEDT</b>），再用報表 <b>RS_ABAP_SOURCE_SCAN</b>（或交易 <span class="tcode">CODE_SCANNER</span>）限定套件掃關鍵字：</p>
+<pre><code class="text">RS_ABAP_SOURCE_SCAN 選擇畫面
+  String searched for ....... MESSAGE S017          "純文字搜尋
+  String is regular expression [X]                  "改用 Regex 時勾選
+      例：MESSAGE\s+[EWSIAX]899\(MM\)              "任一類型的 899(MM)
+  Package ................... SEDT                  "先限縮套件，否則全系統掃會跑很久
+結果：LSEDTATTRF10 380 / LSEDTATTRIPP 239 / LWBABAPF00 813 → 第三筆即目標
+
+CODE_SCANNER
+  Packages .................. SEDT   [X] Packages Contained（含子套件）
+  Search String 1 ........... MESSAGE S017
+</code></pre>
+  <p><b>武器五：SAT 執行期分析。</b><span class="tcode">SAT</span> 建立變式，<b>Aggregation 一定要選 None</b>（否則看不到完整呼叫樹）→ Transaction 填 SE38 → Execute → 重現錯誤 → 回 SAT 看結果，在 Call Hierarchy 用搜尋找「Message S017」即可跳到程式碼。SAT 的 Processing Blocks 樹狀圖也是學習複雜標準交易呼叫關係的利器。詳細用法見 <a href="#ch06-3">6-3 章</a>。</p>
+  <p><b>武器六：ST05 SQL Trace。</b>推理：SE38 按 Display 時必然先查某張表，查不到才報錯，所以「查表的 SQL」與「丟訊息的程式行」一定很近。<span class="tcode">ST05</span> 追蹤後，在結果中一眼看到 <b>PROGDIR</b>（存放所有 ABAP 程式名稱的表），SQL 為 <span class="kw">SELECT WHERE "NAME" = 'ASDASDD' AND "STATE" = 'A'</span>；按「Display ABAP Call Location」跳到 LWBABAPF00 第 774 行，往下捲到 813 行就是訊息。</p>
+  <div class="warn">原作者原話：「如果你在客戶生產系統開了 ST05 忘了關，你可能得跟你的工作說再見。」ST05 是<b>系統層級</b>開關（可限制使用者，但仍佔用追蹤檔），用完立刻關閉；正式機上使用前先取得 Basis 同意。</div>
+  <p><b>武器七：搜尋引擎、SAP Note、請教專家。</b>用「訊息號＋交易碼」（例：<i>ME020 ME21N</i>、<i>M7 021 MIGO</i>）搜 SAP for Me（me.sap.com）的 Knowledge Base Article 與 Note，常常直接有答案。原作者提醒：這招最快，但也最容易錯過藉問題提升自己的機會。</p>
+  <div class="tip"><b>訊息不是 MESSAGE 丟的怎麼辦？</b>很多 BAPI 與新框架（MM 的 PO 物件、FI 的 BAPI、服務合約）把訊息收進 BAPIRET2 或應用日誌（<span class="tcode">SLG1</span>）。素材 <i>SAP 高效调试技巧</i> 建議在函數模組 <b>BALW_BAPIRETURN_GET2</b>（組 BAPIRET2 的標準函數）或 <b>BAL_LOG_MSG_ADD</b>（寫應用日誌）設 Breakpoint at Function Module，觸發時看 Call Stack 最上層的呼叫者，就是產生訊息的地方。</div>
+
+  <h3 id="ch06-2-08">8. 找增強點（一）：Customer Exit——從 ZX Include 反推 SMOD</h3>
+  <p><b>情境：</b>第 4 節找到的 ZXM06U43 是什麼？為什麼標準的 ME22N 會跑進 Z 程式？這是 Customer Exit（函數出口），詳細原理見 <a href="#ch03-3">3-3 章</a>。顧問要會的是<b>從線索反推</b>：</p>
+  <table>
+    <thead><tr><th>線索</th><th>推得</th><th>去哪裡看</th></tr></thead>
+    <tbody>
+      <tr><td>Include 名稱 ZXM06U43</td><td>屬於函數群 XM06 的客製 Include</td><td><span class="tcode">SE80</span> 函數群 XM06</td></tr>
+      <tr><td>Call Stack 的 FUNCTION EXIT_SAPMM06E_012</td><td>主程式 SAPMM06E 的第 012 號出口</td><td><span class="tcode">SE37</span></td></tr>
+      <tr><td>函數模組 → 增強</td><td>增強 <b>MM06E005</b>（採購憑證的客戶欄位）</td><td>表 <b>MODSAP</b>（MEMBER = EXIT_SAPMM06E_012）；<span class="tcode">SMOD</span></td></tr>
+      <tr><td>增強 → 專案</td><td>哪個 CMOD 專案啟用了它、是否 Active</td><td><span class="tcode">CMOD</span>；表 MODACT</td></tr>
+    </tbody>
+  </table>
+  <p><b>主動找「這個交易有哪些 Customer Exit」</b>的三種方法：</p>
+  <ul>
+    <li>Debugger 設 Breakpoint at Statement <span class="kw">CALL CUSTOMER-FUNCTION</span>，走一遍交易，停到的每一處就是有機會掛程式的出口。</li>
+    <li><span class="tcode">SE84</span> → 增強 → 客戶出口 → 增強，用套件（例：ME）搜尋。</li>
+    <li>寫一支小報表：交易碼 → 程式（TSTC）→ 套件（TADIR）→ 該套件下的 SMOD 增強與 BAdI 定義。這是網路上流傳多年「找 User Exit 程式」的現代寫法：</li>
+  </ul>
+<pre><code class="abap">REPORT zfind_enhancements.
+
+PARAMETERS p_tcode TYPE tcode OBLIGATORY DEFAULT 'ME22N'.
+
+START-OF-SELECTION.
+  " 1) 交易碼 → 程式
+  SELECT SINGLE pgmna FROM tstc
+    WHERE tcode = @p_tcode
+    INTO @DATA(lv_prog).
+  IF sy-subrc &lt;&gt; 0.
+    MESSAGE |交易碼 { p_tcode } 不存在| TYPE 'I'.
+    RETURN.
+  ENDIF.
+
+  " 2) 程式 → 套件（函數群程式 SAPLxxxx 要用 FUGR 查）
+  DATA(lv_obj_name) = COND sobj_name( WHEN lv_prog(4) = 'SAPL' THEN lv_prog+4
+                                      ELSE lv_prog ).
+  DATA(lv_object)   = COND trobjtype( WHEN lv_prog(4) = 'SAPL' THEN 'FUGR'
+                                      ELSE 'PROG' ).
+  SELECT SINGLE devclass FROM tadir
+    WHERE pgmid = 'R3TR' AND object = @lv_object AND obj_name = @lv_obj_name
+    INTO @DATA(lv_devclass).
+
+  " 3) 套件底下的 Customer Exit（SMOD）與 BAdI 定義（SXSD）
+  "    HANA 沒有預設排序：要穩定的清單就一定要 ORDER BY
+  SELECT t~object, t~obj_name, m~modtext
+    FROM tadir AS t
+    LEFT OUTER JOIN modsapt AS m
+      ON m~name = t~obj_name AND m~sprsl = @sy-langu
+    WHERE t~pgmid    = 'R3TR'
+      AND t~object   IN ( 'SMOD', 'SXSD', 'ENHS' )
+      AND t~devclass = @lv_devclass
+    ORDER BY t~object, t~obj_name
+    INTO TABLE @DATA(lt_enh).
+
+  cl_demo_output=&gt;new(
+    )-&gt;write( |{ p_tcode } → { lv_prog } → 套件 { lv_devclass }|
+    )-&gt;write( lt_enh
+    )-&gt;display( ).
+</code></pre>
+  <div class="note">這支報表只找「交易主程式所在套件」的增強，<b>會漏掉</b>放在其他套件的出口（例如 ME22N 的主程式 SAPLMEGUI 在套件 MEGUI，而 MM06E005 在套件 ME）。所以它只是起點，最終仍以 Debugger 實際走過的路徑為準。SXSD 是 Classic BAdI 定義、ENHS 是 Enhancement Spot（New BAdI 的容器）。</div>
+
+  <h3 id="ch06-2-09">9. 找增強點（二）：BAdI 與 BTE——CL_EXITHANDLER、GET BADI、BF_FUNCTIONS_FIND</h3>
+  <p>比 Customer Exit 更常見的是 BAdI（原理見 <a href="#ch03-4">3-4 章</a>）。要知道「這個交易在執行過程中呼叫了哪些 BAdI」，依 BAdI 種類用不同的中斷點：</p>
+  <table>
+    <thead><tr><th>要找的東西</th><th>中斷點設在</th><th>停下來看什麼</th></tr></thead>
+    <tbody>
+      <tr><td>Classic BAdI</td><td>方法 <b>CL_EXITHANDLER=&gt;GET_INSTANCE</b>（SE24 開類別，在方法第一行設 Session Breakpoint；或 Debugger 的 Breakpoint at Method）</td><td>參數 <b>EXIT_NAME</b> 的值就是 BAdI 定義名</td></tr>
+      <tr><td>New BAdI（Enhancement Spot）</td><td>Breakpoint at Statement <b>GET BADI</b>（以及 <b>CALL BADI</b>）</td><td>敘述中 BAdI 變數的型別（TYPE REF TO 的 BAdI 名）</td></tr>
+      <tr><td>Customer Exit</td><td>Breakpoint at Statement <b>CALL CUSTOMER-FUNCTION</b></td><td>出口號碼（主程式名＋三碼）</td></tr>
+      <tr><td>BTE（FI 的 Business Transaction Event）</td><td>函數模組 <b>BF_FUNCTIONS_FIND</b>（P/S 介面）、<b>PC_FUNCTION_FIND</b>（Process 介面）</td><td>傳入的事件號碼，例如 00001025；對照 <span class="tcode">FIBF</span></td></tr>
+      <tr><td>隱含／顯式增強點</td><td>Debugger「中斷點 → 在增強上」或 SE80 看 Enhancement Implementation</td><td>ENHANCEMENT … ENDENHANCEMENT 區塊</td></tr>
+    </tbody>
+  </table>
+<pre><code class="abap">" 你在標準程式裡會看到的兩種 BAdI 呼叫方式（知道長相，才知道中斷點要設在哪）
+
+" (A) Classic BAdI：經由 CL_EXITHANDLER 取實例
+DATA lo_badi_classic TYPE REF TO if_ex_me_process_po_cust.
+cl_exithandler=&gt;get_instance(
+  EXPORTING exit_name = 'ME_PROCESS_PO_CUST'   "←在 GET_INSTANCE 看到的就是這個
+  CHANGING  instance  = lo_badi_classic ).
+
+" (B) New BAdI（Kernel BAdI）：GET BADI / CALL BADI 敘述，不經過 CL_EXITHANDLER
+DATA lo_badi TYPE REF TO badi_sd_sales_item.    "示意：TYPE REF TO 後面就是 BAdI 名稱
+TRY.
+    GET BADI lo_badi.                            "←Breakpoint at Statement GET BADI
+    CALL BADI lo_badi-&gt;some_method EXPORTING is_vbap = ls_vbap.
+  CATCH cx_badi_not_implemented.
+    " 沒有啟用的實作 → 標準行為
+ENDTRY.
+</code></pre>
+  <div class="warn"><b>常見誤解：</b>網路上很多教學只教「在 CL_EXITHANDLER=&gt;GET_INSTANCE 設中斷點找 BAdI」。那只抓得到 <b>Classic BAdI</b>；S/4HANA 的新功能大量使用 New BAdI（GET BADI 由 Kernel 直接處理，不經過 CL_EXITHANDLER），只設前者會以為「這個交易沒有 BAdI」。兩個都要設。另外，SAP 已將 ME_PROCESS_PO_CUST 等 Classic BAdI 移入 Enhancement Spot 做相容遷移，實作時以 <span class="tcode">SE19</span> 看到的類型為準。</div>
+  <p><b>BTE 的顧問視角：</b>FI 的過帳、付款、催收常用 BTE。<span class="tcode">FIBF</span> → 環境 → 資訊系統（P/S）可列出所有事件與範例函數（例：00001025 過帳前檢查、00001030 更新憑證），客製實作則是 Z 函數模組掛在「產品」下並啟用。標準程式中呼叫點長這樣：<span class="kw">CALL FUNCTION 'OPEN_FI_PERFORM_00001025_E'</span>，其內部用 BF_FUNCTIONS_FIND 找出啟用中的實作，所以在 BF_FUNCTIONS_FIND 設中斷點可以一次看到交易經過的所有 BTE。</p>
+  <div class="tip"><b>找到出口後的決策（Casper 經驗第 3 條）：</b>① 能不能用標準配置達成（訊息控制、欄位狀態、替代／驗證 <span class="tcode">GGB0</span>／<span class="tcode">GGB1</span>）？② 不行才用 BAdI／Enhancement Spot；③ 再不行才用隱含增強點；④ 修改標準（需 Access Key、升級時要 <span class="tcode">SPAU</span>）是最後手段。每往右一步，測試與升級成本都高一個量級。</div>
+
+  <h3 id="ch06-2-10">10. 配置問題還是程式問題？判斷流程與兩個對照案例</h3>
+  <p>停在丟訊息的那一行後，顧問要回答的核心問題就是「這是誰的問題」。判斷準則：</p>
+  <table>
+    <thead><tr><th>觀察</th><th>傾向</th><th>下一步</th></tr></thead>
+    <tbody>
+      <tr><td>程式是標準（SAPL*、SAPM*、L*），訊息前面剛讀了 T 開頭配置表（T161P、T001W、T156…）且 sy-subrc ≠ 0</td><td><b>配置缺漏</b></td><td>用 <span class="tcode">SE16</span> 看該表、找對應 SPRO 路徑（SM30 表名 → 「Where-used in IMG」或 SPRO 的「附加資訊 → 顯示關鍵」）</td></tr>
+      <tr><td>標準程式，前面讀的是主資料表（MARA、MARC、LFA1、KNA1、A0xx 條件表）</td><td><b>主資料問題</b></td><td>用對應的交易（MM03、BP、VK13）確認資料</td></tr>
+      <tr><td>程式名是 Z*、Y*、ZX*、或 Call Stack 中有 EXIT_、BAdI 實作類別 ZCL_*</td><td><b>客製邏輯</b></td><td>找規格書與負責的開發者，見第 15 節</td></tr>
+      <tr><td>標準程式，邏輯看起來不合理、在 SAP Note 能搜到相同訊息＋程式名</td><td><b>標準程式錯誤</b></td><td>套 Note（<span class="tcode">SNOTE</span>）或開 SAP Incident</td></tr>
+      <tr><td>訊息與權限有關（「沒有權限…」、訊息類別 00、M7 的權限訊息）</td><td><b>權限</b></td><td>立刻 <span class="tcode">SU53</span>，見第 12 節</td></tr>
+    </tbody>
+  </table>
+  <p><b>對照案例：</b></p>
+  <ul>
+    <li><b>ME020（配置）：</b>停在標準 LMEPOF1V，前一行 SELECT T161P 失敗 → 補「憑證類型允許的項目類別」配置。零開發。</li>
+    <li><b>MM899（客製）：</b>停在 ZXM06U43，是某位開發者在 Customer Exit 寫的「已收貨不准改價」檢查。要不要放寬？是業務規則問題，找需求提出者與開發者討論。</li>
+  </ul>
+  <p>ZXM06U43 原始碼（截圖）本身也值得顧問抓出幾個問題，交給開發者時可一併建議：</p>
+  <ul>
+    <li>用 <span class="kw">SELECT … ENDSELECT</span> 迴圈讀 EKBE 累加收貨數量（禁用寫法），且在 <span class="kw">LOOP AT tekpo</span> 裡逐筆 SELECT。</li>
+    <li>客製檢查借用 SAP 標準訊息類別 <b>MM 的 899 號</b>，並把中文訊息文字塞在 WITH 參數裡——這會讓人以為是標準訊息，也讓 SE91 Where-used 的結果混淆。應建立自己的訊息類別（例 ZMM）。</li>
+    <li>依 BEWTP = 'E'（收貨）並用 SHKZG 判斷借貸方累加，邏輯正確，但未考慮退貨沖銷後數量為 0 的情形是否仍要擋，需與業務確認。</li>
+  </ul>
+  <p>改寫成 S/4HANA 寫法的參考如下（Customer Exit 的介面參數 TEKPO 為標準結構表；新專案建議改用 BAdI ME_PROCESS_PO_CUST 的 CHECK 方法）：</p>
+<pre><code class="abap">" Include ZXM06U43（EXIT_SAPMM06E_012）——現代寫法示意
+" 規則：已有收貨數量的項目，不允許變更淨價
+LOOP AT tekpo ASSIGNING FIELD-SYMBOL(&lt;ls_item&gt;).
+
+  SELECT SINGLE netpr FROM ekpo
+    WHERE ebeln = @&lt;ls_item&gt;-ebeln
+      AND ebelp = @&lt;ls_item&gt;-ebelp
+    INTO @DATA(lv_db_netpr).
+  IF sy-subrc &lt;&gt; 0 OR &lt;ls_item&gt;-netpr = lv_db_netpr.
+    CONTINUE.                                  "新項目或價格沒改，不檢查
+  ENDIF.
+
+  " 以 GROUP BY 彙總取代原本的逐筆 SELECT 迴圈：收貨（BEWTP = 'E'）借方 S 加、貸方 H 減
+  SELECT shkzg, SUM( menge ) AS qty
+    FROM ekbe
+    WHERE ebeln = @&lt;ls_item&gt;-ebeln
+      AND ebelp = @&lt;ls_item&gt;-ebelp
+      AND bewtp = 'E'
+    GROUP BY shkzg
+    INTO TABLE @DATA(lt_gr).
+
+  DATA(lv_gr_qty) = REDUCE menge_d( INIT q = CONV menge_d( 0 )
+                                    FOR ls_gr IN lt_gr
+                                    NEXT q = COND #( WHEN ls_gr-shkzg = 'S' THEN q + ls_gr-qty
+                                                     ELSE q - ls_gr-qty ) ).
+
+  IF lv_gr_qty &lt;&gt; 0.
+    " 使用自己的訊息類別 ZMM，而非借用標準 MM 899
+    MESSAGE e001(zmm) WITH &lt;ls_item&gt;-ebeln &lt;ls_item&gt;-ebelp.
+  ENDIF.
+ENDLOOP.
+</code></pre>
+
+  <h3 id="ch06-2-11">11. 看懂 ST22 短傾印：顧問也讀得懂的七個欄位</h3>
+  <p><b>情境：</b>使用者說「畫面突然跳出一大片英文就結束了」。那是 Runtime Error（短傾印），到 <span class="tcode">ST22</span> 依日期、使用者篩選即可找到。顧問不必看懂每一行，但要會讀這幾段：</p>
+  <table>
+    <thead><tr><th>段落</th><th>內容</th><th>顧問要抓的重點</th></tr></thead>
+    <tbody>
+      <tr><td>Short Text / Category</td><td>一句話摘要與分類（ABAP Programming Error、Resource Shortage、Installation Error…）</td><td>分類若是 Resource Shortage，多半找 Basis 而不是開發者</td></tr>
+      <tr><td>Runtime Error／Exception</td><td>錯誤名稱與例外類別（如 CONVT_NO_NUMBER／CX_SY_CONVERSION_NO_NUMBER）</td><td>用它＋程式名搜 SAP Note</td></tr>
+      <tr><td>What happened? / What can you do?</td><td>白話說明</td><td>是否提示「保存（Keep）此傾印」</td></tr>
+      <tr><td>Error analysis</td><td>技術原因，常含出錯的值（例：'12,5' 不能轉成數字）</td><td>這個值通常來自使用者輸入或上傳檔案——資料問題</td></tr>
+      <tr><td>How to correct the error</td><td>SAP 建議與 Note 搜尋關鍵字</td><td>直接複製給開發者</td></tr>
+      <tr><td>Information on where terminated / Source Code Extract</td><td>程式、Include、行號，並以「&gt;&gt;&gt;&gt;&gt;」標示出錯行</td><td>程式是 Z 還是標準？</td></tr>
+      <tr><td>Active Calls/Events、Chosen Variables</td><td>Call Stack 與當下變數值</td><td>從下往上看，找第一個 Z 物件</td></tr>
+    </tbody>
+  </table>
+  <table>
+    <thead><tr><th>常見 Runtime Error</th><th>典型原因</th><th>誰處理</th></tr></thead>
+    <tbody>
+      <tr><td>MESSAGE_TYPE_X</td><td>程式主動以 X 類型終止（一致性檢查失敗），看 Error analysis 裡的訊息號</td><td>先查 Note，常是資料不一致</td></tr>
+      <tr><td>CONVT_NO_NUMBER、CONVT_OVERFLOW</td><td>文字轉數字失敗（上傳檔格式、千分位、小數點）</td><td>資料／開發者</td></tr>
+      <tr><td>GETWA_NOT_ASSIGNED、OBJECTS_OBJREF_NOT_ASSIGNED</td><td>欄位符號或物件參考未指派就使用</td><td>開發者</td></tr>
+      <tr><td>SAPSQL_ARRAY_INSERT_DUPREC、DBSQL_DUPLICATE_KEY_ERROR</td><td>重複鍵寫入資料庫（常見於號碼範圍狀態錯誤）</td><td>顧問先查 <span class="tcode">SNRO</span>／號碼範圍</td></tr>
+      <tr><td>TIME_OUT</td><td>前景執行超過 rdisp/max_wprun_time</td><td>改背景作業或效能調校（<a href="#ch06-3">6-3 章</a>）</td></tr>
+      <tr><td>TSV_TNEW_PAGE_ALLOC_FAILED</td><td>內表記憶體不足（選擇條件太寬）</td><td>縮小條件；開發者改分批</td></tr>
+      <tr><td>UNCAUGHT_EXCEPTION</td><td>類別型例外沒被 CATCH</td><td>開發者</td></tr>
+    </tbody>
+  </table>
+  <p>開發者修正 CONVT_NO_NUMBER 的正確方式是捕捉類別型例外並給使用者看得懂的訊息，而不是讓程式短傾印：</p>
+<pre><code class="abap">" 上傳檔的金額欄位 → 數字；錯了就回報第幾行，不要 DUMP
+LOOP AT lt_upload ASSIGNING FIELD-SYMBOL(&lt;ls_line&gt;).
+  DATA(lv_row) = sy-tabix.
+  TRY.
+      DATA(lv_amount) = CONV wrbtr( replace( val  = &lt;ls_line&gt;-amount_txt
+                                              sub  = ','
+                                              with = ''
+                                              occ  = 0 ) ).
+    CATCH cx_sy_conversion_no_number cx_sy_conversion_overflow INTO DATA(lx_conv).
+      APPEND VALUE bapiret2( type    = 'E'
+                             message = |第 { lv_row } 行金額「{ &lt;ls_line&gt;-amount_txt }」格式錯誤：{ lx_conv-&gt;get_text( ) }| )
+        TO lt_messages.
+      CONTINUE.
+  ENDTRY.
+  " ... 後續處理 lv_amount
+ENDLOOP.
+</code></pre>
+  <div class="tip">ST22 的傾印預設只保留約 14 天（依系統設定），重要的傾印要按「保存（Keep）」並截下 Header 與 Source Code Extract。回報時「傾印的日期時間＋使用者＋Runtime Error 名稱」三項就能讓開發者在 ST22 直接找到同一筆。</div>
+
+  <h3 id="ch06-2-12">12. SU53 權限問題：先排除權限，再懷疑程式</h3>
+  <p><b>情境：</b>A 使用者可以做、B 使用者不行；或訊息是「您沒有 … 的權限」。這類問題<b>九成跟程式無關</b>，不要急著 /h。</p>
+  <ol>
+    <li>請使用者在出錯後<b>立刻</b>（同一個 Session、不要再做其他動作）執行 <span class="tcode">/nSU53</span>，截圖給你。畫面會列出<b>最後一次失敗</b>的權限檢查：權限物件（例 M_BEST_BSA）、欄位（ACTVT、BSART）、檢查值與使用者目前擁有的值。</li>
+    <li>較新版本的 SU53 可由管理者「顯示其他使用者的權限檢查」，不必叫使用者操作。</li>
+    <li>SU53 只記得最後一次失敗，若程式先失敗一次又改走別的路，可能誤導。需要完整記錄時用 <span class="tcode">STAUTHTRACE</span>（系統追蹤，只看權限）或 <span class="tcode">ST01</span>，對該使用者開追蹤後重現。</li>
+    <li>把結果交給權限管理員在 <span class="tcode">PFCG</span> 調整角色；標準交易的預設檢查值維護在 <span class="tcode">SU24</span>。</li>
+  </ol>
+  <p>客製程式也應用 <span class="kw">AUTHORITY-CHECK</span> 做權限檢查，且失敗時要讓 SU53 查得到——也就是不要自己寫死使用者名單：</p>
+<pre><code class="abap">" 客製報表：依採購組織檢查顯示權限（失敗的檢查會記錄在 SU53）
+AUTHORITY-CHECK OBJECT 'M_BEST_EKO'
+  ID 'EKORG' FIELD p_ekorg
+  ID 'ACTVT' FIELD '03'.
+IF sy-subrc &lt;&gt; 0.
+  MESSAGE e002(zmm) WITH p_ekorg.   "ZMM 002：您沒有採購組織 &amp;1 的顯示權限
+ENDIF.
+
+" 反例（不要這樣做）：寫死使用者，SU53 看不到、權限管理員也管不到
+" IF sy-uname = 'USER01' OR sy-uname = 'USER02'. ... ENDIF.
+</code></pre>
+  <div class="note">在 Debugger 中用 Breakpoint at Statement <span class="kw">AUTHORITY-CHECK</span> 可以看到程式實際檢查了哪個物件、哪個值，適合 SU53 資訊不足時。但這是開發者或資深顧問的工具，一般仍以 SU53／STAUTHTRACE 為主。</div>
+
+  <h3 id="ch06-2-13">13. 報表數字不對：順查法與倒查法；SmartForms 除錯</h3>
+  <p><b>情境：</b>客製 ALV 某一欄是空的或金額不對。素材 <i>ABAP问题分析和排除经验之谈</i> 提出兩種查法：</p>
+  <table>
+    <thead><tr><th></th><th>順查法</th><th>倒查法（推薦）</th></tr></thead>
+    <tbody>
+      <tr><td>做法</td><td>找到輸出內表與欄位後，從程式開頭一路 Debug 下來，看值從哪來</td><td>從輸出處往回推：找離輸出最近、與該欄位有關的賦值，一層層往上追到資料來源表</td></tr>
+      <tr><td>優點</td><td>走完一遍，整支程式邏輯都懂了</td><td>省大量時間，迅速鎖定問題</td></tr>
+      <tr><td>缺點</td><td>程式大時非常耗時</td><td>對整體邏輯不一定清楚</td></tr>
+      <tr><td>適合</td><td>程式小、邏輯單純的自建程式</td><td>所有自建程式</td></tr>
+    </tbody>
+  </table>
+  <p>原文範例<span class="src">（依截圖整理）</span>：ALV 內表 GS_ALV 的 BELNR 欄沒值 → 往上找到 GS_ALV 的值是從 GS_FYBX 搬過來 → GS_FYBX 來自內表 GT_FYBX 的迴圈 → GT_FYBX 直接 SELECT 自建表 ZFIT_FYBX → 用 <span class="tcode">SE16</span> 看 ZFIT_FYBX 原始資料就沒有 BELNR，所以問題在「寫入 ZFIT_FYBX 的那支程式」，不是這支報表。</p>
+  <div class="warn"><b>數字「時對時錯」要先想到排序（Casper 經驗第 1 條）。</b>倒查到 <span class="kw">SELECT SINGLE</span>、<span class="kw">READ TABLE … INDEX 1</span>、<span class="kw">UP TO 1 ROWS</span> 卻沒有 <span class="kw">ORDER BY</span> 時，在 HANA 上每次取到的「第一筆」可能不同。成本評價同時有 item category H 與 cost component E 兩種角度，未排序就一下抓 H、一下抓 E，結果不穩定；該案最後固定抓 H。另外，若選擇條件用區間（BT）比對號碼，也要懷疑字典序與前導零造成的漏抓（經驗第 2 條：列舉優於區間）。</div>
+  <p><b>SmartForms 除錯</b>（素材 <i>SAP顾问的技能</i> 與 <i>经验之谈</i>；SmartForms 開發見 <a href="#ch04-3">4-3 章</a>）：</p>
+  <ol>
+    <li><span class="tcode">SMARTFORMS</span> 顯示表單，在左側樹找到要查的「程式行（Program Lines）」節點，複製其中一行程式碼備用。</li>
+    <li>功能表「環境 → 函數模組名稱」取得產生的函數模組（/1BCDWB/SF000000xx，每個系統編號不同）。</li>
+    <li><span class="tcode">SE37</span> 開該函數模組 → 跳到主程式 → 用「尋找」搜剛才複製的程式行 → 設 Session Breakpoint。</li>
+    <li>重新執行列印（例 <span class="tcode">ME9F</span>、<span class="tcode">VF31</span>，或輸出預覽）→ 停在表單邏輯中。</li>
+    <li>欄位沒印出來時用倒查法：值來自表單介面（驅動程式傳入）還是表單內的全域定義／程式行？前者去查驅動程式，後者在表單內查。</li>
+  </ol>
+<pre><code class="abap">" 驅動程式取得 SmartForms 產生的函數模組名稱（名稱每個系統不同，不可寫死）
+DATA lv_fm_name TYPE rs38l_fnam.
+
+CALL FUNCTION 'SSF_FUNCTION_MODULE_NAME'
+  EXPORTING
+    formname           = 'ZMM_PO_FORM'
+  IMPORTING
+    fm_name            = lv_fm_name
+  EXCEPTIONS
+    no_form            = 1
+    no_function_module = 2
+    OTHERS             = 3.
+IF sy-subrc &lt;&gt; 0.
+  MESSAGE ID sy-msgid TYPE 'E' NUMBER sy-msgno
+          WITH sy-msgv1 sy-msgv2 sy-msgv3 sy-msgv4.
+ENDIF.
+" 除錯技巧：在下一行設中斷點，F5 進入 lv_fm_name 就直接進表單產生的程式
+CALL FUNCTION lv_fm_name
+  EXPORTING
+    is_ekko = ls_ekko
+  TABLES
+    it_ekpo = lt_ekpo
+  EXCEPTIONS
+    OTHERS  = 1.
+</code></pre>
+  <div class="note">素材稱 SmartForms 是「維護 PDF 表單的工具」並不精確：SmartForms 產生的是 OTF 輸出，送到 Spool 列印或再轉成 PDF（CONVERT_OTF）；真正以 PDF 為核心的是 Adobe Forms（SFP）。另外，素材說「F8 執行整個程序並退出交易」只在沒有其他中斷點時成立。</div>
+
+  <h3 id="ch06-2-14">14. 危險操作：用 Debugger 改 SE16 資料、跳過程式碼</h3>
+  <p>素材 <i>利用ABAP调试模式修改SE16里数据库表的内容</i> 示範了一招流傳甚廣、但<b>絕不應該在正式環境使用</b>的技巧。本節照實說明，目的是讓顧問<b>認得出這種操作的痕跡、理解它的風險</b>。</p>
+  <p><b>素材的做法</b><span class="src">（依截圖整理）</span>：表 COMM_PRODUCT（CRM 產品主檔）在 SE11 的「Data Browser/Table View Maint.」設為「Display/Maintenance Allowed with Restrictions」，SE16 只能顯示不能改。</p>
+  <ol>
+    <li>SE16 進到該筆記錄的明細畫面，命令欄輸入 /h。</li>
+    <li>按 Enter，Debugger 停在程式 SAPLSETB、Include LSETBF01、FORM <b>SET_STATUS_VAL</b> 第 34 行 <span class="kw">if code = 'SHOW'</span>。</li>
+    <li>在變數區把 <b>CODE</b> 的值從 SHOW 改成 <b>EDIT</b>，按修改圖示。</li>
+    <li>F8 繼續，明細畫面變成「Table COMM_PRODUCT Change」，欄位可編輯、可儲存。</li>
+  </ol>
+  <p>同類手法還有：在 Debugger 把 SY-SUBRC 從 4 改成 0 繞過權限或檢查、用 Goto Statement（Shift+F12，<a href="#ch05-4">5-4 章 §5</a>）跳過檢查程式碼、跳過 COMMIT WORK 或更新任務。素材 <i>SAP顾问的技能</i> 把 Goto Statement 當成「繞過程式碼區塊」的用例介紹，同樣只能在沙箱中理解程式流程時使用。</p>
+  <div class="warn">
+    <b>正式環境一律禁止。</b>
+    <ul>
+      <li><b>權限：</b>在 Debugger 修改變數值需要權限物件 <b>S_DEVELOP</b>，OBJTYPE = DEBUG、ACTVT = <b>02</b>（只看變數是 03）。正式機的使用者本來就不應持有 DEBUG 02；持有的帳號（含 Firefighter／緊急帳號）必須受控並事後審查。</li>
+      <li><b>留下紀錄：</b>在 Debugger 修改變數值、跳行（Goto Statement）都會寫入 <b>系統日誌 <span class="tcode">SM21</span></b>（例如訊息「Field content changed」一類的 Debugger 事件，含使用者、時間、程式、變數），稽核人員一查就知道。</li>
+      <li><b>稽核風險：</b>直接改資料庫表<b>繞過了應用程式的所有檢查與關聯表更新</b>（例如 COMM_PRODUCT 還有對應的文字、設定表、變更文件、CDS／搜尋索引），也<b>不會產生變更文件（CDHDR／CDPOS）</b>。這在 SOX／ITGC 稽核中屬於重大缺失，可能造成資料不一致且無法追溯。</li>
+      <li><b>SE16N 的 &amp;SAP_EDIT：</b>早年另一個常見手法是在 SE16N 輸入 &amp;SAP_EDIT 進入編輯模式；SAP 已透過 Note 1420281 關閉此功能，現行版本若確有編輯需求，須經專屬權限與核准流程（並有紀錄），不應視為日常工具。</li>
+    </ul>
+    <b>正規替代做法：</b>① 用業務交易本身修正（產品主檔用 COMMPR01、物料用 MM02、採購單用 ME22N）；② 大量修正用 BAPI／標準批次工具（LSMW、Migration Cockpit、Mass Change）並經傳輸的程式執行；③ SAP 提供修正報表的情況（很多 Note 附有 Z 修正程式）照 Note 執行；④ 真的只能改表時，寫一支經測試、經傳輸、有核准單的一次性修正程式，並在程式內記錄變更前後值。
+  </div>
+
+  <h3 id="ch06-2-15">15. 給 ABAP 開發者的問題回報範本與檢查清單</h3>
+  <p>顧問除錯的最終產出，是一份<b>開發者不必再回頭問你</b>的問題描述。以下範本整合本章各節，可直接貼到工單系統：</p>
+<pre><code class="text">【問題回報】ME22N 已收貨 PO 無法調價（範例）
+1. 系統／Client ........ QAS 300（PRD 可重現：是，PO 4500000078）
+2. 交易碼／程式 ........ ME22N（SAPLMEGUI）
+3. 使用者／角色 ........ USER01 / Z_MM_BUYER
+4. 重現步驟 ............ ME22N 開 PO 4500000078 → 項目 10 淨價 2,100.10 改 2,000 → Enter
+5. 訊息 ................ 類型 E，MM899「4500000078 00010 由於已收貨，不允許修改價格」
+6. 預期結果 ............ 依 2026 採購政策：收貨後 30 天內允許調價
+7. 定位結果 ............ Breakpoint at Message MM899 →
+                         Include ZXM06U43 第 28 行（EXIT_SAPMM06E_012，增強 MM06E005）
+                         Call Stack：POST_DOCUMENT → SAVE → MEPO_DOC_CHECK → PRUEFEN
+                                     → CUSTOMER_DATA_CHECK → EXIT_SAPMM06E_012
+8. 已排除 .............. 權限（SU53 無失敗）、配置（OME0 訊息控制無此訊息）、
+                         主資料（EKBE 確有收貨 5,001 EA）
+9. 初步判斷 ............ 客製邏輯；規則需調整（非標準程式錯誤）
+10. 建議 ............... 保留 Exit 或移至 BAdI ME_PROCESS_PO_CUST~CHECK；
+                         改用自有訊息類別 ZMM；逐筆 SELECT 迴圈改為彙總查詢
+11. 附件 ............... 訊息長文本截圖、Debugger 停點截圖、ST22 傾印（若有）
+</code></pre>
+  <table>
+    <thead><tr><th>檢查項目</th><th>工具</th><th>完成</th></tr></thead>
+    <tbody>
+      <tr><td>訊息號、類型、長文本已記錄</td><td>F1／效能助理</td><td>☐</td></tr>
+      <tr><td>訊息長文本的 Procedure 與 SAP Note 已查</td><td>me.sap.com</td><td>☐</td></tr>
+      <tr><td>可設定訊息（W/E）已查</td><td><span class="tcode">OME0</span>、<span class="tcode">OMCQ</span>、<span class="tcode">OBA5</span></td><td>☐</td></tr>
+      <tr><td>權限已排除</td><td><span class="tcode">SU53</span>、<span class="tcode">STAUTHTRACE</span></td><td>☐</td></tr>
+      <tr><td>程式行已定位並用中斷點證實</td><td><span class="tcode">SE91</span>、Breakpoint at Message</td><td>☐</td></tr>
+      <tr><td>標準 or 客製、配置 or 主資料已判斷</td><td>第 10 節表格</td><td>☐</td></tr>
+      <tr><td>有短傾印時已保存並擷取重點段落</td><td><span class="tcode">ST22</span></td><td>☐</td></tr>
+      <tr><td>若要客製，已列出可用標準增強點</td><td><span class="tcode">SE84</span>、<span class="tcode">SE18</span>、<span class="tcode">SMOD</span>、<span class="tcode">FIBF</span></td><td>☐</td></tr>
+      <tr><td>沒有在 QAS／PRD 用 Debugger 改值</td><td>—</td><td>☐</td></tr>
+    </tbody>
+  </table>
+  <div class="tip">顧問在 PRD 通常只有 Debug 顯示權（S_DEVELOP DEBUG 03），足以完成本章第 5、6 節的所有定位動作。<b>定位在 PRD 可以做（經核准），修正一律在 DEV 做再傳輸。</b></div>
+
+  <h3 id="ch06-2-16">16. L35 影片索引</h3>
+  <p>素材資料夾 <span class="src">L35_SAP调试技术\视频\</span> 有 5 支影片，合計約 13.8 GB，無法轉成文字。下表依檔名推定主題並對應到第六部的章節，方便日後觀看時對照。</p>
+  <table>
+    <thead><tr><th>檔名</th><th>大小</th><th>依檔名判斷的主題</th><th>對應本部章節</th></tr></thead>
+    <tbody>
+      <tr><td>DEBUG修改后台表.mp4</td><td>1.42 GB</td><td>用 Debugger 修改後台資料表（與 SE16 SHOW→EDIT 同類的危險操作）</td><td>6-2 §14（並參照 <a href="#ch05-4">5-4 章 §15</a> 權限）</td></tr>
+      <tr><td>SAP ABAP DEBGUGGING TECHNIQUES调试技术.mp4</td><td>3.66 GB</td><td>ABAP 除錯技術總覽（中斷點、Watchpoint、Debugger 工具）</td><td><a href="#ch06-1">6-1 章</a>；功能全貌見 <a href="#ch05-4">5-4 章</a></td></tr>
+      <tr><td>SAP ABAP DEBUG操作精讲.mp4</td><td>3.77 GB</td><td>Debugger 操作細節精講（F5～F8、變數、內表操作）</td><td><a href="#ch06-1">6-1 章</a></td></tr>
+      <tr><td>SAP DEBUG解决业务问题720P.mp4</td><td>3.88 GB</td><td>以 Debug 解決業務問題（顧問視角的實例）</td><td>6-2 §2、§10、§13</td></tr>
+      <tr><td>SAP debug调试定位错误.mp4</td><td>1.04 GB</td><td>用 Debug 定位錯誤訊息（可能即 <i>debug定位报错代码行</i> 的影片版，該文末附有影片下載連結）</td><td>6-2 §4～§6</td></tr>
+    </tbody>
+  </table>
+  <div class="note">影片內容未經轉錄，對應關係依檔名推定。檔名中的「DEBGUGGING」為原檔拼字錯誤，照原樣保留以便搜尋。</div>
+
+  <h3 id="ch06-2-qa">練習與自我檢核</h3>
+  <ol>
+    <li><b>使用者回報 ME21N 出現 ME020。</b>請寫出不看程式碼、只用 Debugger 就能定位的步驟。<br><i>參考答案要點：</i>在出錯畫面輸入 /h → 再按 Enter／儲存 → Debugger 中 F9 → 「訊息」頁籤 ID=ME、編號=020 → F8；停在 LMEPOF1V 的 MEPO_ITEM_MAIN_CHECK_1，前一行 SELECT T161P 失敗 → 配置缺漏。</li>
+    <li><b>SE91 Where-used 找不到某訊息，是否代表系統沒有程式丟它？</b><br><i>參考答案要點：</i>否。可能是動態 MESSAGE ID … NUMBER、訊息收進 BAPIRET2／應用日誌、或 Where-used 索引未建立。改用 Breakpoint at Message、Watchpoint SY-MSGNO、在 BALW_BAPIRETURN_GET2／BAL_LOG_MSG_ADD 設中斷點，或 RS_ABAP_SOURCE_SCAN。</li>
+    <li><b>DS017 在 Where-used 有十幾筆結果，如何快速篩選？</b><br><i>參考答案要點：</i>看畫面燈號判斷類型（綠勾＝S），只看 MESSAGE s017 的列；鎖定後設中斷點重現證實。</li>
+    <li><b>只在 CL_EXITHANDLER=&gt;GET_INSTANCE 設中斷點，為什麼可能漏掉 BAdI？</b><br><i>參考答案要點：</i>它只攔得到 Classic BAdI；New BAdI 用 GET BADI 由 Kernel 處理，要另設 Breakpoint at Statement GET BADI。</li>
+    <li><b>Call Stack 看到 FUNCTION EXIT_SAPMM06E_012，接下來查什麼？</b><br><i>參考答案要點：</i>主程式 SAPMM06E 的第 012 號 Customer Exit；由表 MODSAP 或 SMOD 查到增強 MM06E005；CMOD 查專案是否啟用；程式碼在 Include ZXM06U43。</li>
+    <li><b>判斷題：停在標準程式、前一行讀 T 開頭表失敗 → 應先開 SAP Incident。</b><br><i>參考答案要點：</i>錯。這通常是配置缺漏，先補 SPRO 配置；只有在 SAP Note 有相同症狀或邏輯明顯錯誤時才開 Incident。</li>
+    <li><b>ST22 顯示 CONVT_NO_NUMBER，Error analysis 寫「'1,250.00' cannot be interpreted as a number」，誰該處理？</b><br><i>參考答案要點：</i>直接原因是上傳資料格式（千分位），但程式應該用 TRY … CATCH cx_sy_conversion_no_number 給友善訊息，兩邊都要處理。</li>
+    <li><b>使用者說「同事可以存檔，我不行」，第一步做什麼？</b><br><i>參考答案要點：</i>請他出錯後立刻執行 /nSU53 截圖，或用 STAUTHTRACE 追蹤；確認權限物件與欄位值後交給 PFCG 角色管理員。</li>
+    <li><b>客製報表的成本欄位每次執行結果不同，倒查到 SELECT … UP TO 1 ROWS，你的判斷？</b><br><i>參考答案要點：</i>HANA 沒有預設排序，缺 ORDER BY 導致「第一筆」不固定（H／E 兩種角度成本構成不同）；要明確排序或指定條件（該案固定抓 H）。</li>
+    <li><b>主管要你在 PRD 用 Debugger 把 SE16 的 CODE 改成 EDIT 修一筆資料，你怎麼回應？</b><br><i>參考答案要點：</i>拒絕並說明：需 S_DEVELOP DEBUG 02、會記入 SM21、繞過檢查且無變更文件、屬稽核重大缺失；改用業務交易、BAPI、SAP Note 修正報表或經核准傳輸的一次性修正程式。</li>
+    <li><b>請列出本章的「七種武器」並各用一句話說明適用時機。</b><br><i>參考答案要點：</i>Where-used（有訊息號、不必重現）；Watchpoint SY-MSGNO（備援、會變慢）；Breakpoint at Message／Statement MESSAGE（可重現，最推薦／無訊息號時）；RS_ABAP_SOURCE_SCAN／CODE_SCANNER（知道套件、靜態掃）；SAT（Aggregation=None 看完整呼叫樹）；ST05（從查表位置推訊息位置，PRD 用完要關）；搜尋引擎／SAP Note（最快但少了學習）。</li>
+  </ol>
+</section>

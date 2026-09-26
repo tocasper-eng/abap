@@ -1,0 +1,1496 @@
+<section class="chapter" id="ch05-3" data-title="BC402 ABAP 程式設計技術（進階語法、內表、動態程式）">
+  <h2>第 5-3 章 BC402 ABAP 程式設計技術（進階語法、內表、動態程式）</h2>
+  <p class="lede">BC402 是 BC400 之後「把 ABAP 從會寫變成寫得對、寫得快」的課。它不教新工具，而是把語言本身拆開來看：資料型別與運算規則、字串與正規表示式、三種內表與次要鍵、欄位符號與資料參考、程式呼叫與記憶體模型、Shared Objects、動態程式（RTTI／RTTC）、Open SQL 的技術背景與效能，以及 SAT／ST05／SQL Monitor 等分析工具。這一章把强晟 2007 年的自學筆記（R/3 4.6C 版，11 單元）與原廠 Col18 英文教材（Advanced ABAP，7 單元）合併整理，所有程式碼一律改寫成 S/4HANA 1809+（ABAP 7.53）可直接使用的寫法。</p>
+
+  <div class="meta">
+    <div><b>核心 TCODE</b><span class="tcode">SE38</span><span class="tcode">SE80</span><span class="tcode">SE11</span><span class="tcode">SE37</span><span class="tcode">SE24</span><span class="tcode">SGEN</span><span class="tcode">SHMA</span><span class="tcode">SHMM</span><span class="tcode">SAAB</span><span class="tcode">SAT</span><span class="tcode">SE30</span><span class="tcode">ST05</span><span class="tcode">SQLM</span><span class="tcode">SQLMD</span><span class="tcode">SWLT</span><span class="tcode">SCI</span><span class="tcode">ATC</span><span class="tcode">ST22</span><span class="tcode">SPAD</span><span class="tcode">SE84</span></div>
+    <div><b>關鍵物件</b>SFLIGHT、SPFLI、SCARR、SCUSTOM、SBOOK、STRAVELAG、DD03L、DDLOG、TCURC、TTZZ、BDCDATA、BDCMSGCOLL、CTU_PARAMS、RSPARAMS、ABAP_FUNC_PARMBIND_TAB、ABAP_FUNC_EXCPBIND_TAB、ABAP_PARMBIND_TAB、ABAP_EXCPBIND_TAB、CL_SHM_AREA、CL_SHM_UTILITIES、CL_ABAP_TYPEDESCR、CL_ABAP_ELEMDESCR、CL_ABAP_STRUCTDESCR、CL_ABAP_TABLEDESCR、CL_ABAP_REFDESCR、CL_ABAP_CLASSDESCR、CL_ABAP_INTFDESCR、CL_ABAP_OBJECTDESCR、CL_ABAP_DATADESCR、CL_ABAP_DYN_PRG、CL_ABAP_MATH、CX_SY_CONVERSION_ERROR、CX_SY_ITAB_LINE_NOT_FOUND、CX_SY_ITAB_DUPLICATE_KEY、CX_SY_MOVE_CAST_ERROR、CX_SY_OPEN_SQL_DB、CX_SY_DYN_CALL_ERROR</div>
+    <div><b>系統變數</b>sy-subrc、sy-tabix、sy-index、sy-dbcnt、sy-fdpos、sy-datum、sy-uname</div>
+    <div><b>相關章節</b><a href="#ch02-1">2-1 基本語法</a>、<a href="#ch02-2">2-2 內表／ABAP SQL</a>、<a href="#ch02-4">2-4 模組化</a>、<a href="#ch05-1">5-1 BC400</a>、<a href="#ch05-2">5-2 BC401</a>、<a href="#ch05-4">5-4 BC403 除錯</a>、<a href="#ch05-21">5-21 BC490 效能</a></div>
+  </div>
+
+  <h3 id="ch05-3-01">1. 課程定位與教材對照</h3>
+  <p><b>課程等級</b>：BC402 是 BC4xx 開發系列中緊接 BC400 的進階語法課（Col18 版封面直接題名「Advanced ABAP」；原廠評量題的出處同時指向 TAW10 Part I 與 TAW11e，表示它是 ABAP 認證路線的核心教材）。以本圖書館的 100／200／300 分級來看，前半（資料型別、內表、模組化）屬 200 級，後半（動態程式、Shared Objects、RTTC、SQL 效能與追蹤）已是 300 級內容。前置課程：BC400（見 <a href="#ch05-1">5-1 章</a>）；建議與 BC401（<a href="#ch05-2">5-2 章</a>）交錯學習。</p>
+  <p><b>兩份素材</b>：</p>
+  <ul>
+    <li><b>强晟《SAP BC402 課程中文自學筆記》</b>（2007-06，199 頁）：依 2001 年 R/3 4.6C 版原廠教材整理，原教材 11 單元、約 400 頁、3 天課程。筆記作者在後記坦言第 10、11 單元（記憶體模型、動態程式）因與 BC401 重複「基本沒再做」，只寫了指向 BC401 筆記的說明。</li>
+    <li><b>原廠 BC402 Col18 英文教材</b>（Course Version 18，Material Number 50148217，367 頁 PDF）：內容已更新到 NetWeaver 7.40／7.50 語法。以下頁碼一律使用 <b>PDF 頁碼</b>（教材印刷頁碼＝PDF 頁碼 − 8）。</li>
+  </ul>
+
+  <table>
+    <thead><tr><th>本章小節</th><th>强晟筆記（4.6C，11 單元）</th><th>Col18 原廠教材（7 單元）</th></tr></thead>
+    <tbody>
+      <tr><td>2. 程式結構與執行環境</td><td>第二單元 執行時環境 p7–20；附錄一 系統架構 p196</td><td>Unit 2 Lesson 2（Compiler、LOAD、Inactive Sources）p61–65</td></tr>
+      <tr><td>3. 從敘述到運算式</td><td>—（4.6C 尚無）</td><td>Unit 1 Lesson 1 Moving from Statements to Expressions p11–19</td></tr>
+      <tr><td>4. 資料型別與資料物件</td><td>第三單元 第一、二課 p21–33、p52–54</td><td>Unit 1 Lesson 2 Data Types and Data Objects p21–35</td></tr>
+      <tr><td>5. 數值運算</td><td>第三單元 第二課 p34–43</td><td>Unit 3 Lesson 1 Numeric Data Types p121–128</td></tr>
+      <tr><td>6. 字元字串、日期與正規表示式</td><td>第三單元 p44–51；附錄二 字串 p197</td><td>Unit 3 Lesson 2、3 p129–147</td></tr>
+      <tr><td>7. 結構</td><td>第三單元 第三課 結構 p55–65</td><td>（併入 Unit 1 Lesson 2 資料物件分類 p26–27）</td></tr>
+      <tr><td>8. 全域型別與全域常數</td><td>第四單元 p66–82</td><td>—（移到 BC430 資料字典）</td></tr>
+      <tr><td>9. 控制敘述與執行期錯誤</td><td>第五單元 p83–106</td><td>—（移到 BC400）</td></tr>
+      <tr><td>10. 內表 I：表類與存取</td><td>第六單元 第一～四課 p107–142</td><td>Unit 4 Lesson 1 Standard, Sorted, Hashed p159–173</td></tr>
+      <tr><td>11. 內表 II：特殊技巧與次要鍵</td><td>第六單元 第五課 p143–146；附錄三 COLLECT p198</td><td>Unit 4 Lesson 2 Special Techniques p175–187</td></tr>
+      <tr><td>12. 表運算式與建構運算式</td><td>—</td><td>Unit 4 Lesson 3 Table Functions and Expressions p189–194</td></tr>
+      <tr><td>13. 資料參考與欄位符號</td><td>第六單元 p123、p131、p134、p141–142</td><td>Unit 4 Lesson 4 Data References and Field Symbols p195–202</td></tr>
+      <tr><td>14. 子程式與函數模組</td><td>第七單元 p147–154；第八單元 p155–166</td><td>—（移到 BC400／BC401）</td></tr>
+      <tr><td>15. ABAP Objects 入門</td><td>第九單元 p167–188</td><td>—（獨立成 BC401）</td></tr>
+      <tr><td>16. 程式呼叫與記憶體管理</td><td>第十單元 p189–194（記憶體部分筆記未寫）</td><td>Unit 2 Lesson 1、2 p53–87</td></tr>
+      <tr><td>17. Shared Objects</td><td>—（4.6C 尚無，6.40 才推出）</td><td>Unit 2 Lesson 3 p89–110</td></tr>
+      <tr><td>18. 動態程式 I：動態敘述與動態呼叫</td><td>第十一單元 p195（筆記只寫「參見 BC401」）</td><td>Unit 5 Lesson 1、2 p211–223</td></tr>
+      <tr><td>19. 動態程式 II：泛型、RTTI、RTTC</td><td>同上</td><td>Unit 5 Lesson 3、4、5 p225–262</td></tr>
+      <tr><td>20. Open SQL 技術背景：索引與緩衝</td><td>—</td><td>Unit 6 Lesson 1 p275–289；Unit 1 Lesson 3 p37–45</td></tr>
+      <tr><td>21. Open SQL 進階讀取技巧</td><td>—</td><td>Unit 6 Lesson 2～6 p291–327</td></tr>
+      <tr><td>22. 分析與測試工具</td><td>—</td><td>Unit 7 Lesson 1～4 p341–363</td></tr>
+    </tbody>
+  </table>
+
+  <p><b>2007 版與新版的差異</b>（讀舊筆記時一定要知道的事）：</p>
+  <ul>
+    <li><b>課程重心換了</b>：4.6C 版有一半篇幅在講控制敘述、子程式、函數群組、ABAP Objects 入門；Col18 把這些移回 BC400／BC401，改成專講運算式（7.40）、字串與正規表示式、次要鍵、表運算式、RTTC、Open SQL 效能與 SQL Monitor。</li>
+    <li><b>舊語法全面淘汰</b>：筆記中的 <span class="kw">MOVE</span>、<span class="kw">COMPUTE</span>、<span class="kw">SEARCH</span>、<span class="kw">DESCRIBE TABLE ... OCCURS</span>、<span class="kw">CATCH SYSTEM-EXCEPTIONS</span>、帶表頭的內表、<span class="kw">TYPE-POOLS</span>、<span class="kw">FORM/PERFORM</span>，本章都改寫成現代寫法，只在對照表中以文字保留。</li>
+    <li><b>型別更多</b>：新增 <span class="kw">decfloat16</span>、<span class="kw">decfloat34</span>（7.0 EhP2）、<span class="kw">int8</span>（7.50），以及內嵌宣告、建構運算式、新 Open SQL 語法。</li>
+    <li><b>工具換代</b>：SE30 → <span class="tcode">SAT</span>；新增 <span class="tcode">SAAB</span> 檢查點群組、<span class="tcode">SQLM</span> SQL Monitor；ADT（Eclipse）已是 S/4HANA 的主力開發環境（見 <a href="#ch05-5">5-5 章</a>）。</li>
+  </ul>
+  <div class="note">筆記作者在後記的心得值得抄下來：<b>「標準教程代替不了線上說明，真正最有用的還是線上說明（F1 關鍵字文件）和 SAP Notes；教程只是提綱挈領。」</b>在 S/4HANA 時代這句話更成立——ABAP 關鍵字文件（ABAP Keyword Documentation，<span class="tcode">ABAPDOCU</span> 或 ADT 內按 F1）才是語法的最終依據。</div>
+
+  <h3 id="ch05-3-02">2. ABAP 程式的結構與執行環境</h3>
+  <p><b>程式的組成</b>（强晟 p8）：一支 ABAP 程式可包含下列元件——</p>
+  <ul>
+    <li><b>處理區塊（Processing Blocks）</b>：包含 ABAP 敘述；不可再細分或巢狀。</li>
+    <li><b>屬性（Attributes）</b>：程式類型、定點運算開關等技術設定。</li>
+    <li><b>畫面（Screens）</b>：畫面佈局＋流程邏輯（Screen Painter）；選擇畫面與清單則是用 ABAP 敘述產生的特殊畫面。</li>
+    <li><b>GUI 介面（GUI Status／Title）</b>：選單、標準工具列、應用工具列、功能鍵設定。</li>
+    <li><b>文字（Text Elements）</b>與<b>文件（Documentation）</b>：與語言相關、可翻譯。文件要從使用者角度寫；技術說明請寫在程式註解裡。</li>
+    <li><b>變式（Variants）</b>：選擇畫面的預設輸入值。</li>
+  </ul>
+  <p>原始碼分為<b>全域宣告</b>與<b>處理區塊</b>兩部分。處理區塊有兩種：<b>事件區塊</b>（以事件關鍵字開頭，遇到下一個處理區塊即結束）與<b>對話模組和程序</b>（MODULE、METHOD、FUNCTION 等，以成對關鍵字包住）。所有處理區塊的集合稱為處理邏輯。</p>
+
+  <table>
+    <thead><tr><th>程式類型</th><th>可否直接執行</th><th>說明</th></tr></thead>
+    <tbody>
+      <tr><td>1 可執行程式（Report）</td><td>可（SE38 F8、SUBMIT、報表 TCODE、背景）</td><td>事件依固定順序觸發；可輕鬆建立標準選擇畫面與清單</td></tr>
+      <tr><td>M 模組池（Module Pool）</td><td>必須掛對話式 TCODE</td><td>命名規範 <span class="kw">SAPMZ&lt;name&gt;</span>，Include 系統建議 <span class="kw">MZ&lt;name&gt;TOP / O01 / I01 / F01</span></td></tr>
+      <tr><td>F 函數群組（Function Pool）</td><td>否</td><td>函數模組的容器，程式名 <span class="kw">SAPLZ&lt;name&gt;</span></td></tr>
+      <tr><td>K 類別池（Class Pool）</td><td>否</td><td>一個全域類別＋其本地型別與類別</td></tr>
+      <tr><td>J 介面池（Interface Pool）</td><td>否</td><td>一個全域介面</td></tr>
+      <tr><td>S 子程式池（Subroutine Pool）</td><td>否</td><td>筆記註明「類型 S 已廢棄，以函數群組取代」；現行唯一合理用途是 <span class="kw">GENERATE SUBROUTINE POOL</span> 的暫時程式</td></tr>
+      <tr><td>I Include 程式</td><td>否</td><td>只能被 INCLUDE 進主程式，隨主程式一起載入</td></tr>
+    </tbody>
+  </table>
+
+  <p><b>可執行程式的事件順序</b>（强晟 p17–19）：<span class="kw">LOAD-OF-PROGRAM</span> → <span class="kw">INITIALIZATION</span> → 顯示標準選擇畫面（之前觸發 <span class="kw">AT SELECTION-SCREEN OUTPUT</span>，使用者按 Enter／執行後觸發 <span class="kw">AT SELECTION-SCREEN</span>）→ <span class="kw">START-OF-SELECTION</span>（預設事件：沒歸屬任何事件的敘述都算它的）→ 邏輯資料庫的 <span class="kw">GET node</span>／<span class="kw">GET node LATE</span> → <span class="kw">END-OF-SELECTION</span>。清單事件：<span class="kw">TOP-OF-PAGE</span>、<span class="kw">END-OF-PAGE</span>、<span class="kw">AT LINE-SELECTION</span>（功能碼 PICK＝F2／雙擊）、<span class="kw">AT USER-COMMAND</span>，細部清單最多 20 層。</p>
+  <p><b>對話式交易的執行</b>：<span class="kw">LOAD-OF-PROGRAM</span> → 畫面處理器處理 TCODE 定義的初始畫面 → <span class="kw">PROCESS BEFORE OUTPUT</span>（PBO 模組）→ 同名欄位由 ABAP 傳到畫面 → 顯示 → 使用者按功能 → 畫面欄位傳回 ABAP 同名欄位 → <span class="kw">PROCESS AFTER INPUT</span>（PAI）→ 下一個畫面。詳見 <a href="#ch04-2">4-2 章 Dialog</a>、<a href="#ch05-9">5-9 章 BC410</a>。</p>
+
+  <pre><code class="abap">REPORT zbc402_events.
+*&amp;---------------------------------------------------------------------*
+*&amp; 事件區塊示範：事件只負責「接住時機」，邏輯一律放進本地類別
+*&amp;---------------------------------------------------------------------*
+PARAMETERS p_carr TYPE s_carr_id.
+
+CLASS lcl_app DEFINITION FINAL.
+  PUBLIC SECTION.
+    CLASS-METHODS run IMPORTING iv_carrid TYPE s_carr_id.
+ENDCLASS.
+
+CLASS lcl_app IMPLEMENTATION.
+  METHOD run.
+    SELECT carrid, connid, fldate, seatsmax, seatsocc
+      FROM sflight
+      WHERE carrid = @iv_carrid
+      ORDER BY carrid, connid, fldate          "HANA 沒有預設排序：要順序就明寫
+      INTO TABLE @DATA(lt_flights).
+
+    TRY.
+        cl_salv_table=&gt;factory( IMPORTING r_salv_table = DATA(lo_alv)
+                                CHANGING  t_table      = lt_flights ).
+        lo_alv-&gt;get_functions( )-&gt;set_all( abap_true ).
+        lo_alv-&gt;display( ).
+      CATCH cx_salv_msg INTO DATA(lx_salv).
+        MESSAGE lx_salv-&gt;get_text( ) TYPE 'I'.
+    ENDTRY.
+  ENDMETHOD.
+ENDCLASS.
+
+LOAD-OF-PROGRAM.                 "程式載入內部工作階段時觸發一次
+  "（類似類別的靜態建構子；可執行程式很少需要）
+
+INITIALIZATION.                  "只在選擇畫面第一次顯示前執行
+  p_carr = 'LH'.
+
+AT SELECTION-SCREEN OUTPUT.      "每次選擇畫面顯示前（PBO）
+
+AT SELECTION-SCREEN.             "使用者按 Enter／F8 後（PAI）
+  IF p_carr IS INITIAL.
+    MESSAGE '請輸入航空公司' TYPE 'E'.
+  ENDIF.
+
+START-OF-SELECTION.              "預設事件
+  lcl_app=&gt;run( p_carr ).</code></pre>
+
+  <p><b>開發版、非啟用版、啟用版與 LOAD</b>（强晟 p11–13；Col18 p62–65）：</p>
+  <ul>
+    <li><b>開發版</b>存在 Repository，是 Workbench 唯一看得到的版本；要執行必須先由 ABAP Compiler <b>產生（Generate）</b>成執行期物件，也就是 <b>LOAD</b>。</li>
+    <li>筆記作者在 p13 寫下「LOAD 是什麼？不解」。答案（Col18 p63）：<b>LOAD 是程式的執行期物件，主要是連結到 C 函數的位元組碼（byte code）</b>，存在資料庫並緩衝在應用伺服器，避免每次執行都重新編譯。</li>
+    <li>LOAD 自動重新產生的時機：尚無 LOAD、或 LOAD 已過期（開發版被改過、或程式用到的 ABAP Dictionary 物件被改過）。也可手動：ABAP Editor 選單「程式 → 產生」。</li>
+    <li>修改並儲存已啟用的物件，系統會另建一個<b>非啟用版</b>；儲存非啟用版不影響 LOAD，所以語法不必正確。從編輯器直接執行可執行程式時用的是非啟用版（臨時產生、不緩衝不存檔）；其他所有情況都執行啟用版。</li>
+    <li><b>啟用的步驟</b>：① 儲存（產生新的非啟用版）並做語法檢查 → ② 覆蓋目前的啟用版（之後就沒有非啟用版了）→ ③ 產生新的執行期版本、更新 LOAD。</li>
+  </ul>
+  <div class="tip"><b>傳輸之後跑 <span class="tcode">SGEN</span>。</b>系統間傳輸的永遠是開發版；匯入後目標系統會丟棄受影響的 LOAD，但不會自動重新產生，要等第一個使用者呼叫時才產生，所以上線當下使用者會感覺「第一次很慢」。大量傳輸（例如 Support Package、升級）後請 Basis 執行 SAP Load Generator（<span class="tcode">SGEN</span>）。傳輸流程見 <a href="#ch01-1">1-1 章</a>。</div>
+
+  <p><b>工作程序（Work Process）的組成</b>（强晟 附錄一 p196）：畫面處理器（處理 SAP GUI 通訊、畫面流程邏輯、欄位傳遞）、ABAP 處理器（執行處理邏輯、與資料庫介面溝通）、資料庫介面（存取資料表與 Repository 物件、控制交易、管理表緩衝）。工作程序就像「虛擬機器」，讓 ABAP 程式與硬體／作業系統無關。</p>
+
+  <h3 id="ch05-3-03">3. 從敘述到運算式：7.02 與 7.40 的語法演進</h3>
+  <p>Col18 第一課（p11–19）說明 ABAP 從「純敘述語言」走向「運算式導向」的歷程：</p>
+  <ul>
+    <li>早期每個敘述都是「關鍵字＋運算元＋附加項＋句點」。後來 <span class="kw">COMPUTE</span> 變成可省略、<span class="kw">CALL METHOD</span> 被函數式寫法取代、<span class="kw">MOVE</span> 被「=」取代；Web AS 6.10 用 <span class="kw">lines( )</span> 部分取代 <span class="kw">DESCRIBE TABLE</span>。</li>
+    <li><b>NetWeaver 7.02</b>：運算式可以出現在更多位置（例如 <span class="kw">IF lv_date &gt; sy-datum + 7</span>、方法參數直接放算式、<span class="kw">READ TABLE ... INDEX</span> 後放算式），並新增字串運算式與字串函數；函數式方法可以串接（<span class="kw">-&gt;</span> 左邊可以是方法呼叫）。</li>
+    <li><b>NetWeaver 7.40</b>：型別轉換與轉型（CONV、CAST）、條件指派（COND、SWITCH）、建構運算式（VALUE、NEW、REF、CORRESPONDING、EXACT、REDUCE、FILTER）、表運算式、內嵌宣告。</li>
+  </ul>
+  <table>
+    <thead><tr><th>好處</th><th>風險</th></tr></thead>
+    <tbody>
+      <tr><td><b>精簡</b>：一個運算式取代多行敘述；<b>緊湊</b>：省去輔助變數</td><td><b>難讀</b>：巢狀運算式不知從哪裡開始讀；<b>難除錯</b>：中間結果不易檢查（Debugger 需逐步進入）</td></tr>
+    </tbody>
+  </table>
+
+  <pre><code class="abap">*&amp; ① 方法串接：-&gt; 左邊直接放函數式方法呼叫（7.02+）
+lo_carrier-&gt;get_airplane( iv_index = 1 )-&gt;display_attributes( ).
+
+*&amp; ② CONV：依 MOVE 規則轉型；轉不過去丟 CX_SY_CONVERSION_ERROR 子類
+DATA(lv_text) = CONV string( ls_flight-price ).
+lo_log-&gt;add_text( CONV #( lv_char40 ) ).   "# 由形式參數推導型別
+"形式參數若是泛型（例如 TYPE any），就不能用 #，必須寫明目標型別
+
+*&amp; ③ EXACT：無損失轉換。'A22A' 塞進 NUMC 用一般指派會變 0022，EXACT 直接報錯
+TYPES ty_n4 TYPE n LENGTH 4.
+TRY.
+    DATA(lv_n4) = EXACT ty_n4( 'A22A' ).
+  CATCH cx_sy_conversion_error INTO DATA(lx_conv).
+    MESSAGE lx_conv-&gt;get_text( ) TYPE 'I'.
+ENDTRY.
+
+*&amp; ④ SWITCH：取代 CASE ... ENDCASE 的「只為了給值」寫法
+DATA(lv_type_text) = SWITCH string( ls_cust-custtype
+                        WHEN 'P' THEN `個人客戶`
+                        WHEN 'B' THEN `企業客戶`
+                        ELSE `未知類型` ).
+"ELSE 也可以寫 THROW zcx_...( ) 直接丟出類別型例外
+
+*&amp; ⑤ COND：取代 IF ... ELSEIF ... ELSE 的「只為了給值」寫法
+DATA(lv_status) = COND string(
+                    WHEN ls_flight-seatsmax = 0                       THEN `無座位資料`
+                    WHEN ls_flight-seatsocc &gt;= ls_flight-seatsmax     THEN `客滿`
+                    WHEN ls_flight-seatsocc * 100 / ls_flight-seatsmax &gt;= 90 THEN `即將客滿`
+                    ELSE `尚有空位` ).
+
+*&amp; ⑥ CORRESPONDING：取代 MOVE-CORRESPONDING，可加 MAPPING / EXCEPT
+DATA(ls_out) = CORRESPONDING zs_flight_out( ls_flight
+                  MAPPING flight_date = fldate
+                  EXCEPT  price ).</code></pre>
+
+  <p><b>內嵌宣告（Inline Declaration，7.40+）</b>的規則（Col18 p31–35）：</p>
+  <ul>
+    <li>型別由上下文推導；<b>生命週期與可見範圍</b>和「在同一位置用 DATA 靜態宣告」完全相同。放在事件區塊或對話模組裡的 <span class="kw">DATA( )</span> 就是全域變數；放在方法裡才是區域變數。變數在執行期從程式（或方法）一開始就存在，但在宣告位置之前不能被靜態引用。</li>
+    <li>右側運算式的型別必須是靜態已知；泛型回傳值（any、simple、numeric…）不能內嵌宣告；<span class="kw">CONV #( )</span> 放在內嵌宣告右側也不行（左邊沒有型別可推）。</li>
+    <li><b>LOOP／READ TABLE 的內嵌工作區範圍會超出迴圈</b>：同一程序中第二個 <span class="kw">LOOP ... INTO DATA(ls_line)</span> 會語法錯誤。</li>
+  </ul>
+  <div class="warn">原廠的四條建議：① 不要因為懶得查型別就用內嵌宣告；② <b>不要重複使用</b>內嵌宣告的變數（兩個 TRY、兩個迴圈要用同一變數就老實用 DATA 宣告）；③ 不要在離宣告很遠的地方使用；④ 避免用內嵌宣告建立全域資料物件。</div>
+
+  <h3 id="ch05-3-04">4. 資料型別與資料物件</h3>
+  <p><b>資料型別</b>只是描述、不佔記憶體；<b>資料物件</b>是型別的實例、佔記憶體。型別在宣告時靜態綁定，執行期不能改。型別來源有三：預定義 ABAP 型別、全域型別（ABAP Dictionary）、本地型別（TYPES）。</p>
+
+  <table>
+    <thead><tr><th>型別</th><th>說明</th><th>長度（初始長度）</th><th>初始值／值域</th><th>完整／不完整</th></tr></thead>
+    <tbody>
+      <tr><td><b>i</b></td><td>整數</td><td>4 bytes</td><td>−2,147,483,648 ～ +2,147,483,647</td><td>完整</td></tr>
+      <tr><td><b>int8</b></td><td>大整數（7.50+）</td><td>8 bytes</td><td>約 ±9.22×10^18（−9,223,372,036,854,775,808 ～ +…807）</td><td>完整</td></tr>
+      <tr><td><b>p</b></td><td>壓縮數（Packed）</td><td>1～16 bytes（預設 8）</td><td>位數＝2×長度−1；小數最多 <b>14</b> 位</td><td>不完整（需 LENGTH、DECIMALS）</td></tr>
+      <tr><td><b>f</b></td><td>二進位浮點</td><td>8 bytes</td><td>±2.2E−308 ～ ±1.8E+308，16 位精度</td><td>完整</td></tr>
+      <tr><td><b>decfloat16</b></td><td>十進位浮點（7.0 EhP2+）</td><td>8 bytes</td><td>±1E−383 ～ ±1E+385，16 位</td><td>完整</td></tr>
+      <tr><td><b>decfloat34</b></td><td>十進位浮點（7.0 EhP2+）</td><td>16 bytes</td><td>±1E−6143 ～ ±1E+6145，34 位</td><td>完整</td></tr>
+      <tr><td><b>c</b></td><td>字元</td><td>1～65535（預設 1）</td><td>空白</td><td>不完整</td></tr>
+      <tr><td><b>n</b></td><td>數字字元</td><td>1～65535（預設 1）</td><td>全部 0</td><td>不完整</td></tr>
+      <tr><td><b>d</b></td><td>日期 YYYYMMDD</td><td>8</td><td>'00000000'</td><td>完整</td></tr>
+      <tr><td><b>t</b></td><td>時間 HHMMSS</td><td>6</td><td>'000000'</td><td>完整</td></tr>
+      <tr><td><b>x</b></td><td>位元組（十六進位）</td><td>1～65535（預設 1）</td><td>X'00'</td><td>不完整</td></tr>
+      <tr><td><b>string</b>／<b>xstring</b></td><td>可變長字元／位元組</td><td>執行期自動調整</td><td>長度 0</td><td>完整</td></tr>
+    </tbody>
+  </table>
+  <div class="warn"><b>教材勘誤：</b>强晟 p35 寫「小數位數最大為 15 或者數字長度減 1」。正確是<b>最多 14 位小數</b>，且小數點左邊至少要有 1 位數（Col18 p125：「The maximum number of decimal places is 14」）。另外 p 的長度以 byte 計、ABAP Dictionary 的 DEC 長度以「位數」計：DEC 13,2 對應 ABAP 的 <span class="kw">p LENGTH 7 DECIMALS 2</span>（(13+1)/2＝7）。</div>
+
+  <p><b>泛型型別</b>（只能用來定義形式參數與欄位符號，不能宣告資料物件）：</p>
+  <table>
+    <thead><tr><th>泛型</th><th>相容的型別</th></tr></thead>
+    <tbody>
+      <tr><td>any／data</td><td>全部（兩者目前行為相同）</td></tr>
+      <tr><td>simple</td><td>基本型別，或全為字元型的扁平結構</td></tr>
+      <tr><td>numeric</td><td>i、int8、f、p、decfloat16、decfloat34</td></tr>
+      <tr><td>decfloat</td><td>decfloat16、decfloat34（7.0 EhP2+）</td></tr>
+      <tr><td>clike</td><td>c、n、d、t、string（及全字元扁平結構）</td></tr>
+      <tr><td>csequence</td><td>c、string</td></tr>
+      <tr><td>xsequence</td><td>x、xstring</td></tr>
+      <tr><td>any table／index table／standard table／sorted table／hashed table</td><td>對應種類的內表（index table＝standard＋sorted）</td></tr>
+    </tbody>
+  </table>
+
+  <p><b>資料物件分類</b>：依內部結構分為基本欄位、結構、內表、參考；依記憶體管理分為<b>扁平（flat）</b>與<b>深（deep）</b>——string、xstring、內表、參考都是 deep；只要含一個 deep 元件（含 include 與子結構）的結構就是深結構。深結構有許多限制：不能整個放在 SELECT 的 INTO 裡（要列出元件）、不能用位移（offset）存取（筆記引用 SAP Note 176336、176337）。</p>
+  <p><b>字面值（Literals）三種</b>：</p>
+  <ul>
+    <li><b>數值字面值</b>：數字序列（可帶正負號），在 i 值域內就是 i，否則是 p（最多 31 位）。</li>
+    <li><b>文字欄位字面值</b> <span class="kw">'...'</span>：型別 c，1～255 字元，<b>尾端空白會被忽略</b>。</li>
+    <li><b>字串字面值</b> <span class="kw">`...`</span>（反引號）：型別 string，最長 255，<b>保留尾端空白</b>，可以是長度 0。字面值內要放同種引號時連打兩次。</li>
+  </ul>
+  <p><b>可見範圍與生命週期</b>（强晟 p25–28；Col18 p28–31）：</p>
+  <ul>
+    <li>FORM、FUNCTION、METHOD 內的 DATA 是區域變數，生命週期＝該程序執行期間；同名時區域遮蔽全域。</li>
+    <li><b>MODULE 與事件區塊內的 DATA 仍是全域變數</b>——SAP 建議不要在模組和事件區塊中寫 DATA。<span class="kw">TABLES</span> 宣告的結構不論寫在哪裡都是全域。</li>
+    <li>類別屬性的生命週期從實例化開始，到最後一個參考被刪除為止；全域變數與程式同壽。</li>
+    <li><span class="kw">STATICS</span>：可見範圍仍限於該程序，但生命週期延長到整個程式（可用於函數模組、子程式、靜態方法）。</li>
+    <li>初始值的建立時機：全域資料在程式開始時；屬性在實例化時；<b>函數群組的全域資料在該群組第一個函數模組被呼叫時</b>；區域資料在程序被呼叫時。</li>
+  </ul>
+
+  <pre><code class="abap">*&amp; 型別與資料物件的現代宣告
+TYPES ty_amount TYPE p LENGTH 8 DECIMALS 2.          "建議用 LENGTH，不再用 name(8)
+TYPES ty_name   TYPE c LENGTH 30.
+
+DATA lv_amount  TYPE ty_amount.
+DATA lv_big     TYPE int8.                          "7.50+
+DATA lv_dec     TYPE decfloat34.
+DATA lv_text    TYPE string VALUE `尾端空白會保留   `.
+
+CONSTANTS lc_rate TYPE p LENGTH 4 DECIMALS 4 VALUE '0.0727'.  "小數請用文字字面值
+CONSTANTS lc_none TYPE ty_name VALUE IS INITIAL.
+
+*&amp; STATICS：只在靜態方法（或 FM、FORM）裡可用，值在呼叫之間保留
+CLASS lcl_counter DEFINITION FINAL.
+  PUBLIC SECTION.
+    CLASS-METHODS next RETURNING VALUE(rv_no) TYPE i.
+ENDCLASS.
+CLASS lcl_counter IMPLEMENTATION.
+  METHOD next.
+    STATICS sv_last TYPE i.
+    sv_last = sv_last + 1.
+    rv_no   = sv_last.
+  ENDMETHOD.
+ENDCLASS.
+
+*&amp; 內嵌宣告的範圍陷阱
+LOOP AT lt_flights INTO DATA(ls_flight).
+ENDLOOP.
+"LOOP AT lt_other INTO DATA(ls_flight).   "&lt;== 語法錯誤：ls_flight 已存在
+LOOP AT lt_other ASSIGNING FIELD-SYMBOL(&lt;ls_other&gt;).   "換名字或改用欄位符號
+ENDLOOP.</code></pre>
+
+  <p><b>文字符號（Text Symbols）</b>（强晟 p54）：文字元素維護的文字可翻譯、與原始碼分開儲存，適合多語清單與按鈕文字。寫法 <span class="kw">text-001</span>，或 <span class="kw">'預設文字'(001)</span>——登入語言有翻譯就用翻譯，否則用預設文字。建議：程式中儘量不要直接寫文字字面值，改用常數或文字符號，程式較好維護。選擇畫面的中文標籤問題請見 <a href="#ch03-1">3-1 章</a>。</p>
+
+  <h3 id="ch05-3-05">5. 數值運算：整數、壓縮數、浮點與十進位浮點</h3>
+  <p>ABAP 會依運算式裡出現的型別決定用哪一種算術，<b>同一個算式換了型別結果就可能不同</b>。</p>
+  <table>
+    <thead><tr><th>算術</th><th>何時使用（Col18 p127 規則，由上往下判斷）</th><th>特性</th></tr></thead>
+    <tbody>
+      <tr><td><b>十進位浮點</b></td><td>任一運算元或結果欄位是 decfloat16／decfloat34</td><td>「紙筆」算法；decfloat16 溢位時自動以 decfloat34 重算；精度同 p、值域比 f 大</td></tr>
+      <tr><td><b>二進位浮點</b></td><td>有 f 且沒有 decfloat</td><td>IEEE-754 雙精度；二進位誤差難以估計，<b>不適合商業計算</b></td></tr>
+      <tr><td><b>定點（預設）</b></td><td>有 p 且沒有 f、decfloat</td><td>小數點對齊、中間結果用最大長度 p；適合金額</td></tr>
+      <tr><td><b>整數</b></td><td>全部都是 i（或 int8）</td><td>最快；<b>非整數結果四捨五入</b>（不是截斷！），中間結果也會四捨五入</td></tr>
+    </tbody>
+  </table>
+  <p>其他規則：字元型運算元會先轉成數值（有效能成本，儘量讓運算元與結果同型）；三角、雙曲、exp、log、log10、sqrt、以及 <span class="kw">**</span> 次方，一律用浮點（f 或 decfloat）計算；程式屬性「定點運算（Fixed Point Arithmetic）」預設勾選，關掉後 p 的 DECIMALS 只影響輸出、內部當整數算——<b>商業程式不要關</b>。</p>
+
+  <pre><code class="abap">DATA lv_i TYPE i.
+lv_i = 4 / 10.                    " 0
+lv_i = 5 / 10.                    " 1   ← 四捨五入，和 Java/C 的截斷不同
+lv_i = 10 * ( 4 / 10 ).           " 0   ← 中間結果先被四捨五入成 0
+lv_i = ( 10 * 4 ) / 10.           " 4
+lv_i = 7 DIV 2.                   " 3   整數除法
+lv_i = 7 MOD 2.                   " 1   餘數
+lv_i = ( 1 / 4 ) * ( 2 * 2 ).     " 0   整數運算
+lv_i = ( 1 / 4 ) * ( 2 ** 2 ).    " 1   ** 使整個式子改用浮點運算
+
+*&amp; 大數字面值：超過 i 值域就變成 p，算術跟著換
+lv_i = 1000000000 / 300000000 * 3.      " 9   （3.33→3，3×3）
+lv_i = 10000000000 / 3000000000 * 3.    " 10  （定點：3.333…×3＝9.999…→10）
+lv_i = -1000000000 / 300 * 3.           " -9999999
+DATA lv_i2 TYPE i.
+lv_i2 = -10000000000 / 300 * 3.         " -100000000
+
+*&amp; 浮點誤差：7.27% × 73050 應為 5310.735 → 5310.74
+DATA lv_f   TYPE f.
+DATA lv_p   TYPE p LENGTH 8 DECIMALS 2.
+DATA lv_d34 TYPE decfloat34.
+lv_f   = 73050 * '0.0727'.        " 5.3107349999999997E+03
+lv_p   = lv_f.                    " 5310.73   ← 錯一分錢
+lv_p   = 73050 * '0.0727'.        " 5310.74   ← 定點運算正確
+lv_d34 = 73050 * '0.0727'.        " 5310.735  ← 十進位浮點精確
+lv_p   = round( val = lv_d34 dec = 2 mode = cl_abap_math=&gt;round_half_up ).
+
+*&amp; 執行期錯誤改用類別型例外攔截
+TRY.
+    lv_p = lv_amount / lv_qty.
+  CATCH cx_sy_zerodivide.                "除以 0（注意：0 / 0 = 0，不會丟例外）
+    lv_p = 0.
+  CATCH cx_sy_arithmetic_overflow.       "結果超出目標值域
+    MESSAGE '金額溢位' TYPE 'E'.
+  CATCH cx_sy_conversion_no_number.      "字元無法解譯成數字
+    MESSAGE '輸入不是數字' TYPE 'E'.
+ENDTRY.</code></pre>
+  <div class="warn"><b>教材勘誤：</b>① 强晟 p37 寫「73050 × 0.0727 = 5310.7735」，應為 <b>5310.735</b>（Col18 p124 亦同）。② 强晟 p52 的例子寫 <span class="kw">result1 = -1000000000 / 300 * 3</span> 結果「-999999」、<span class="kw">result2 = -10000000000 / 300 * 3</span> 結果「-1000000」，數字都少了位數：整數運算 −1000000000/300 先四捨五入成 −3333333，×3＝<b>−9999999</b>；第二式因字面值超出 i 值域改用定點運算，−33333333.33…×3＝−99999999.99…，存入 i 後為 <b>−100000000</b>。重點觀念沒變：同一算式，只因字面值大小不同就換了算術。</div>
+  <p>運算可能產生的四類執行期錯誤（强晟 p40）：無法解譯成數值、轉換／指派／中間結果值域不足、除以 0、內建函數參數非法（例如 <span class="kw">log( -3 )</span>）。</p>
+
+  <h3 id="ch05-3-06">6. 字元字串、日期時間與正規表示式</h3>
+  <p><b>字元型與位元組型</b>：c、n、d、t、string 是字元型；x、xstring 是位元組型。字元的值域取決於字碼頁（筆記提到用 <span class="tcode">SPAD</span> → 完全管理 → 字元集查詢系統可用字碼頁；S/4HANA 一律是 Unicode）。n 型別指派字串時會忽略字母、只留數字並右對齊補 0；d、t 只在畫面輸入時才檢查合法性（效能考量），程式裡可以塞進非法日期。</p>
+  <table>
+    <thead><tr><th>傳統敘述（强晟 p46）</th><th>作用</th><th>S/4HANA 建議寫法</th></tr></thead>
+    <tbody>
+      <tr><td>SEARCH</td><td>搜尋字串（不分大小寫）</td><td><b>FIND</b>（7.0 起取代 SEARCH）或 <span class="kw">find( )</span>、<span class="kw">contains( )</span></td></tr>
+      <tr><td>REPLACE</td><td>取代第一次出現</td><td><span class="kw">REPLACE ALL OCCURRENCES OF</span>、<span class="kw">replace( )</span></td></tr>
+      <tr><td>TRANSLATE</td><td>大小寫或字元對換</td><td><span class="kw">to_upper( )</span>、<span class="kw">to_lower( )</span>、<span class="kw">translate( )</span></td></tr>
+      <tr><td>SHIFT</td><td>位移</td><td><span class="kw">shift_left( )</span>、<span class="kw">shift_right( )</span></td></tr>
+      <tr><td>CONDENSE</td><td>壓縮空白</td><td><span class="kw">condense( )</span></td></tr>
+      <tr><td>OVERLAY</td><td>覆蓋</td><td>仍可用（少用）</td></tr>
+      <tr><td>CONCATENATE</td><td>串接</td><td>字串範本 <span class="kw">| |</span>、<span class="kw">&amp;&amp;</span>、<span class="kw">concat_lines_of( )</span></td></tr>
+      <tr><td>SPLIT</td><td>拆分</td><td>仍用 <span class="kw">SPLIT ... INTO TABLE</span>，或 <span class="kw">segment( )</span></td></tr>
+    </tbody>
+  </table>
+  <p>傳統敘述把所有運算元當成 c 處理（不是轉型）；除了 TRANSLATE、CONDENSE 之外都會設定 sy-subrc；除了 SEARCH 之外都區分大小寫。處理 x／xstring 時（CONDENSE、OVERLAY 除外）要加 <span class="kw">IN BYTE MODE</span>。</p>
+
+  <p><b>比較運算子</b>（强晟 p92–93；Col18 p132）：</p>
+  <table>
+    <thead><tr><th>運算子</th><th>意義（str1 op str2）</th></tr></thead>
+    <tbody>
+      <tr><td>CO／CN</td><td>str1 只含 str2 裡的字元／不只含（CN ＝ NOT CO）</td></tr>
+      <tr><td>CA／NA</td><td>str1 至少含 str2 中一個字元／完全不含</td></tr>
+      <tr><td>CS／NS</td><td>str1 含有子字串 str2（不分大小寫）／不含</td></tr>
+      <tr><td>CP／NP</td><td>str1 符合樣式 str2／不符合：<span class="kw">*</span> 任意字串、<span class="kw">+</span> 任意單一字元、<span class="kw">#</span> 跳脫字元</td></tr>
+    </tbody>
+  </table>
+  <p>sy-fdpos 存放符合條件的位移（不符合時為 str1 長度）。CO、CN、CA、NA 區分大小寫且會考慮尾端空白。位元組型有對應的 BYTE-CO、BYTE-CN、BYTE-CA、BYTE-NA、BYTE-CS、BYTE-NS。</p>
+
+  <p><b>日期與時間欄位</b>：d 參與算術或指派給數值時，轉成「西元 0001-01-01 起的天數」；t 轉成「午夜起的秒數」。所以 <span class="kw">lv_date + 30</span> 就是加 30 天、兩個日期相減就是天數差。<b>日期起始值一定要用文字字面值</b>（<span class="kw">VALUE '20250101'</span>），因為數值字面值是 i，會被解讀成天數。</p>
+
+  <pre><code class="abap">*&amp; 字串範本與格式選項（7.02+）
+DATA(lv_msg) = |訂單 { lv_vbeln ALPHA = OUT } 金額 { lv_netwr CURRENCY = lv_waers NUMBER = USER } { lv_waers }|.
+DATA(lv_iso) = |{ sy-datum DATE = ISO }T{ sy-uzeit TIME = ISO }|.          "2025-09-25T21:40:00
+DATA(lv_pad) = |{ lv_seq WIDTH = 6 ALIGN = RIGHT PAD = '0' }|.              "000042
+DATA(lv_csv) = lv_matnr &amp;&amp; `;` &amp;&amp; lv_maktx &amp;&amp; cl_abap_char_utilities=&gt;newline.
+"其他格式選項：CASE、SIGN、EXPONENT、DECIMALS、ZERO、STYLE、TIMESTAMP、TIMEZONE、COUNTRY
+
+*&amp; 描述函數、處理函數、述詞函數
+DATA(lv_len)   = strlen( lv_text ).                        "佔用長度（c 型不含尾端空白）
+DATA(lv_pos)   = find( val = lv_text sub = `ABAP` case = abap_false ).   "找不到回 -1
+DATA(lv_cnt)   = count( val = lv_text regex = `\d` ).      "數字個數
+DATA(lv_part)  = substring( val = lv_text off = 0 len = 4 ).
+DATA(lv_clean) = condense( val = lv_text ).
+DATA(lv_third) = segment( val = `A;B;C` index = 3 sep = `;` ).  "C
+DATA(lv_all)   = concat_lines_of( table = lt_lines sep = `, ` ).
+IF contains( val = lv_mail sub = `@` ) AND
+   matches( val = lv_vat regex = `\d{8}` ).                 "統一編號 8 碼
+  "...
+ENDIF.
+
+*&amp; FIND / REPLACE 搭配正規表示式（POSIX；7.55+ 建議改用 PCRE 附加項）
+FIND ALL OCCURRENCES OF REGEX `(\d{4})-(\d{2})-(\d{2})` IN lv_text
+     RESULTS DATA(lt_hits).
+REPLACE ALL OCCURRENCES OF REGEX `\s+` IN lv_text WITH ` `.
+REPLACE ALL OCCURRENCES OF REGEX `(\d{4})(\d{2})(\d{2})` IN lv_text WITH `$1/$2/$3`.
+
+*&amp; 日期計算：當月第一天與最後一天（用 CONV d 確保型別是日期）
+DATA(lv_first) = CONV d( lv_date(6) &amp;&amp; '01' ).
+DATA(lv_next)  = CONV d( lv_first + 31 ).                     "必定落在下個月
+DATA(lv_last)  = CONV d( CONV d( lv_next(6) &amp;&amp; '01' ) - 1 ).
+DATA(lv_days)  = CONV i( lv_last - lv_first ) + 1.            "當月天數</code></pre>
+  <div class="warn">內嵌宣告搭配日期算術要小心：<span class="kw">DATA(x) = lv_date - 1</span> 推導出的型別是算術運算的計算型別，<b>不是 d</b>，後續當日期用就會出錯。一律用 <span class="kw">CONV d( )</span> 包起來。更多日期函數整理見本圖書館「累計心得」擴充章節（規劃中）。</div>
+
+  <p><b>正規表示式要點</b>（Col18 p142–147；7.0 起支援）：</p>
+  <ul>
+    <li>單一字元：<span class="kw">.</span> 任意字元、<span class="kw">\d</span> 數字、<span class="kw">\u</span> 大寫字母、<span class="kw">[ABC]</span> 集合、<span class="kw">[^ABC]</span> 否定集合、<span class="kw">[A-D]</span> 範圍、<span class="kw">[[:digit:]]</span>、<span class="kw">[[:upper:]]</span> 字元類別。特殊字元 <span class="kw">\ ^ [ ] .</span> 前面要加 <span class="kw">\</span> 跳脫。</li>
+      <li>注意 <span class="kw">[a-h][0-4]</span> 是「兩個字元」（例如 a3），<span class="kw">[a-h0-4]</span> 是「一個字元」（a 或 3）。</li>
+    <li>字串：<span class="kw">{n}</span>、<span class="kw">{n,m}</span>、<span class="kw">*</span>、<span class="kw">+</span>、<span class="kw">?</span>、<span class="kw">|</span> 選擇、<span class="kw">( )</span> 子群組、<span class="kw">\1</span> 反向參照（例：<span class="kw">(&gt;|-)ABAP\1</span> 符合「&gt;ABAP&gt;」或「-ABAP-」）；取代時用 <span class="kw">$1</span>、<span class="kw">$&amp;</span>（整段）。</li>
+    <li>錨點：<span class="kw">^</span>、<span class="kw">$</span>（行首行尾）、<span class="kw">\A</span>、<span class="kw">\z</span>（整個字串首尾）、<span class="kw">\&lt;</span>、<span class="kw">\&gt;</span>（字首字尾）。</li>
+    <li>FIND REGEX 採 <b>leftmost-longest</b> 規則：先找最左邊的符合，有多個時取最長，然後從該位置之後繼續，不重疊。</li>
+    <li>支援正規表示式的函數：count、count_…、contains…、find、find_…、match、matches、replace、substring、substring_…。述詞函數只回傳真假，只能用在條件裡。</li>
+  </ul>
+  <div class="warn"><b>教材勘誤：</b>强晟附錄二 p197 列出 SEARCH 的樣式時把 <span class="kw">'str*'</span> 寫了兩次，第二個「以 str 結束」應為 <span class="kw">'*str'</span>。不過 SEARCH 本身在 7.0 已被 FIND 取代，新程式不要再用。另外 <b>POSIX 正規表示式（REGEX 附加項）自 7.55 起被標為過時，建議改用 PCRE</b>；7.55 以前的系統（含 S/4HANA 1809）仍只能用 REGEX。</div>
+
+  <h3 id="ch05-3-07">7. 結構：巢狀、深結構、具名 Include 與指派規則</h3>
+  <p>結構可用 <span class="kw">TYPES BEGIN OF ... END OF</span> 先定義型別再宣告，也可直接 <span class="kw">DATA BEGIN OF</span>（同時隱含建立型別）。元件用 <span class="kw">結構-元件</span> 存取，所以變數名稱不能含連字號。元件可以是另一個結構（巢狀結構，可無限層），也可以是 string、xstring、內表（深結構）。</p>
+  <p><b>具名 Include</b>（强晟 p58–59）：資料庫表只能是扁平結構、ALV 與 Table Control 也只吃簡單結構，此時若仍想把欄位「分組」並整體存取，就用 <span class="kw">INCLUDE TYPE ... AS 名稱</span>。技術上它仍是扁平結構；同一結構 include 兩次時用 <span class="kw">RENAMING WITH SUFFIX</span> 避免名稱衝突。</p>
+
+  <pre><code class="abap">TYPES: BEGIN OF ty_address,
+         city    TYPE s_city,
+         country TYPE land1,
+       END OF ty_address.
+
+*&amp; 具名 Include：仍是扁平結構，可整組存取也可直接存取欄位
+TYPES BEGIN OF ty_customer.
+TYPES   id   TYPE s_customer.
+TYPES   name TYPE s_custname.
+INCLUDE TYPE ty_address AS home   RENAMING WITH SUFFIX _h.
+INCLUDE TYPE ty_address AS office RENAMING WITH SUFFIX _o.
+TYPES END OF ty_customer.
+
+DATA ls_cust TYPE ty_customer.
+ls_cust-home-city = 'TAIPEI'.          "以群組名存取
+ls_cust-city_o    = 'HSINCHU'.         "以改名後的欄位直接存取
+DATA(ls_home) = ls_cust-home.          "整組取出
+
+*&amp; 深結構：含內表元件，不能整個當 SELECT 的 INTO 目標
+TYPES: BEGIN OF ty_carrier_deep,
+         carrid  TYPE s_carr_id,
+         carrname TYPE s_carrname,
+         flights TYPE STANDARD TABLE OF sflight WITH EMPTY KEY,
+       END OF ty_carrier_deep.
+
+*&amp; 從日期取年月日：舊教材用「全字元結構指派」，現代寫法用位移或函數
+DATA(lv_year)  = sy-datum(4).
+DATA(lv_month) = sy-datum+4(2).
+DATA(lv_day)   = substring( val = sy-datum off = 6 len = 2 ).
+
+*&amp; 同名元件指派：運算式版本可加 MAPPING / EXCEPT，比 MOVE-CORRESPONDING 安全
+DATA(ls_addr) = CORRESPONDING ty_address( ls_scustom ).            "只搬 city、country</code></pre>
+
+  <p><b>結構指派的規則與危險</b>（强晟 p60–65）：</p>
+  <ul>
+    <li>兩個結構型別<b>相容</b>（元件型別逐一相同，名稱可不同）才應整體指派；子結構也一樣。深結構只能指派給相容的結構。</li>
+    <li>為了相容舊程式，<b>扁平結構到不相容結構、基本欄位到扁平結構、扁平結構到基本欄位</b>的指派仍被允許：系統把結構當成字元序列，由左到右逐 byte 複製、不轉型，多出的部分補空白。</li>
+    <li>如果來源含數值欄位，除非兩個結構在數值欄位前的字元數完全一樣，否則數值會被錯誤解讀；目標含 i 欄位時，還會因為 4 byte 對齊（alignment）被塞入補位的 0。</li>
+    <li>結論：<b>永遠避免不相容結構的整體指派</b>，除非兩邊都是全字元欄位；要複製就逐欄或用 <span class="kw">CORRESPONDING</span>。位移存取也只該用在全字元結構上。</li>
+    <li><span class="kw">MOVE-CORRESPONDING</span>／<span class="kw">CORRESPONDING</span> 依名稱逐欄複製、套用基本型別的轉換規則，<b>不檢查同名欄位型別是否相同</b>，轉換失敗會發生執行期錯誤。</li>
+  </ul>
+  <div class="note">Unicode 系統（S/4HANA 一定是）對不相容結構指派的限制比 4.6C 嚴格很多：結構的「Unicode 片段視圖（fragment view）」不同時，語法檢查直接報錯。舊程式升級時最常見的錯誤之一就是這類指派，改法就是逐欄或 CORRESPONDING。</div>
+  <p>結構的比較（强晟 p91）：相容的結構逐元件比較；不相容的結構會被當成字元欄位整段比較——結果往往不是你想的，請只比較相容型別。</p>
+
+  <h3 id="ch05-3-08">8. 全域型別與全域常數</h3>
+  <p>ABAP Dictionary 管理整個系統共用的資訊：全域型別（資料元素、結構、表型別）、搜尋說明、資料庫表、視圖、鎖物件。全域型別的好處（强晟 p68–71）：</p>
+  <ul>
+    <li><b>對話中</b>：自動依型別做輸入檢查（非法日期直接跳錯誤對話框）、依使用者主檔格式化日期與數字、金額依幣別決定小數位、資料元素帶出欄位名稱、F1 說明、F4 搜尋說明。</li>
+    <li><b>資料庫存取中</b>：程式變數可直接用資料表的列型別或欄位定義，與資料庫欄位保證一致。</li>
+    <li><b>重用</b>：集中管理、有使用處清單（where-used）；函數模組與全域類別方法的介面參數應以全域型別定義。</li>
+  </ul>
+  <table>
+    <thead><tr><th>Dictionary 物件</th><th>內容</th><th>說明</th></tr></thead>
+    <tbody>
+      <tr><td>Domain（網域）</td><td>純技術屬性：型別、長度、值域、固定值、輸出格式、值表</td><td>技術與語意分離管理，減少維護；例如機場代碼網域同時給出發機場、抵達機場兩個資料元素用</td></tr>
+      <tr><td>Data Element（資料元素）</td><td>語意屬性（欄位標籤、F1 文件、搜尋說明）＋ 技術屬性（引用網域或直接指定預定義型別）</td><td>用資料元素定義一般變數時只複製技術屬性；用在選擇畫面或 Dynpro 欄位時才帶出語意屬性</td></tr>
+      <tr><td>Structure（結構）</td><td>元件可用資料元素、直接型別、結構或表型別</td><td>4.5 起可任意巢狀；金額、數量欄位必須設定參考欄位（幣別／單位）</td></tr>
+      <tr><td>Table Type（表型別）</td><td>全域內表型別：列型別、存取類型（Access＝表種類）、鍵、次要鍵</td><td>Dictionary 裡「表種類」叫 Access Type，避免與資料庫表種類混淆</td></tr>
+      <tr><td>Type Group（型別群組）</td><td>全域常數與型別（名稱最多 5 字元）</td><td>4.5 以前是定義複雜全域型別的唯一方法；現已過時</td></tr>
+    </tbody>
+  </table>
+  <table>
+    <thead><tr><th>Dictionary 型別</th><th>ABAP 型別</th><th>Dictionary 型別</th><th>ABAP 型別</th></tr></thead>
+    <tbody>
+      <tr><td>CHAR n</td><td>c LENGTH n</td><td>DEC n,m／CURR／QUAN</td><td>p LENGTH (n+1)/2 DECIMALS m</td></tr>
+      <tr><td>NUMC n</td><td>n LENGTH n</td><td>INT1／INT2／INT4</td><td>i（INT1、INT2 為內部 b、s）</td></tr>
+      <tr><td>DATS／TIMS</td><td>d／t</td><td>INT8</td><td>int8</td></tr>
+      <tr><td>CLNT／LANG／CUKY／UNIT</td><td>c 3／c 1／c 5／c 3</td><td>FLTP</td><td>f</td></tr>
+      <tr><td>STRING／RAWSTRING</td><td>string／xstring</td><td>D16D、D34D 等</td><td>decfloat16／decfloat34</td></tr>
+    </tbody>
+  </table>
+  <div class="warn"><b>TYPE-POOLS 與 TABLES 在 S/4HANA 的現況</b>：① 自 7.02 起型別群組會自動載入，<span class="kw">TYPE-POOLS</span> 敘述已過時；新的全域常數請放在<b>介面或類別的常數結構</b>，或用 7.51 起的列舉型別（<span class="kw">BEGIN OF ENUM</span>）。② 筆記說「屏幕與程式之間必須用 TABLES 宣告傳輸結構」——這只對傳統 Dynpro 的「以 Dictionary 欄位建立畫面欄位」仍成立；報表與類別中一律禁用 TABLES，改用 DATA 或選擇畫面的 FOR 附加項（見 <a href="#ap-01">附錄舊語法對照</a>）。</div>
+  <pre><code class="abap">*&amp; 全域常數：以介面常數結構取代型別群組
+INTERFACE zif_bc402_const PUBLIC.
+  CONSTANTS: BEGIN OF gc_custtype,
+               private  TYPE s_custtype VALUE 'P',
+               business TYPE s_custtype VALUE 'B',
+             END OF gc_custtype.
+  CONSTANTS gc_max_rows TYPE i VALUE 500.
+ENDINTERFACE.
+
+"使用端
+IF ls_cust-custtype = zif_bc402_const=&gt;gc_custtype-business.
+  "...
+ENDIF.
+
+*&amp; 列舉型別（7.51+）：值只能是列舉成員，編譯期就擋掉錯字
+TYPES: BEGIN OF ENUM ty_status,
+         initial,
+         open,
+         closed,
+       END OF ENUM ty_status.
+DATA lv_status TYPE ty_status VALUE open.
+DATA(lv_status_text) = CONV string( lv_status ).   "得到 'OPEN'
+
+*&amp; 用全域結構的元件定義變數與選擇畫面（語意屬性會帶到選擇畫面）
+DATA lv_city TYPE scustom-city.
+PARAMETERS p_city TYPE scustom-city.</code></pre>
+  <div class="tip">實務原則：<b>先找標準資料元素，找不到再建 Z</b>。S/4HANA 的標準資料元素（例如 MATNR 已擴為 40 碼、金額欄位擴長）會跟著版本升級一起調整；自建一堆「長度剛好」的 Z 資料元素，升級時就要一個個改。這也是 Casper 的「先標準再客製」在最底層的體現。Dictionary 細節見 <a href="#ch01-2">1-2 章</a>、<a href="#ch05-16">5-16 章 BC430</a>。</div>
+
+  <h3 id="ch05-3-09">9. 控制敘述、跳出處理區塊與執行期錯誤</h3>
+  <p>控制結構（IF、CASE、DO、WHILE）只在一個處理區塊<b>內部</b>分支，可以巢狀，但不能跨越事件關鍵字（IF 與 ENDIF 之間不能放事件關鍵字）。</p>
+  <ul>
+    <li><b>IF／ELSEIF／ELSE</b>：依序評估，第一個為真的區塊執行後跳到 ENDIF。</li>
+    <li><b>CASE／WHEN</b>：WHEN 之後可以用 OR 串多個值；都不符合時執行 <span class="kw">WHEN OTHERS</span>。</li>
+    <li><b>邏輯運算優先順序</b>：<b>NOT 強於 AND，AND 強於 OR</b>。<span class="kw">NOT f1 = f2 OR f3 = f4 AND f5 = f6</span> 等於 <span class="kw">( NOT f1 = f2 ) OR ( f3 = f4 AND f5 = f6 )</span>。即使不需要也請加括號，易讀又安全。</li>
+    <li>非數值比較規則：能轉數值就轉（例如十六進位）；日期時間比早晚；其他字元依字碼<b>字典序</b>比較，短的一方尾端補空白；參考只能比是否相等（比位址與型別）。</li>
+    <li><b>DO</b>（可加 <span class="kw">TIMES n</span>，n ≤ 0 就不執行）與 <b>WHILE</b>：迴圈次數在 sy-index；<b>LOOP AT</b> 的列號在 sy-tabix。</li>
+  </ul>
+  <table>
+    <thead><tr><th>敘述</th><th>在迴圈內</th><th>在迴圈外</th></tr></thead>
+    <tbody>
+      <tr><td>CHECK 條件</td><td>條件為假 → 跳到下一圈</td><td>條件為假 → 離開目前處理區塊</td></tr>
+      <tr><td>CONTINUE</td><td>跳到下一圈</td><td>不可用</td></tr>
+      <tr><td>EXIT</td><td>結束整個迴圈</td><td>離開處理區塊（在方法中＝RETURN；在報表事件中行為特殊，見下）</td></tr>
+      <tr><td>RETURN</td><td>—</td><td>離開目前程序（方法、FM）；新程式請用它取代迴圈外的 EXIT／CHECK</td></tr>
+      <tr><td>LEAVE PROGRAM</td><td colspan="2">結束整支程式；若是被 CALL TRANSACTION 或 SUBMIT ... AND RETURN 呼叫，回到呼叫端下一行</td></tr>
+      <tr><td>LEAVE TO TRANSACTION</td><td colspan="2">結束目前程式並啟動新交易（等同指令列 /n）</td></tr>
+      <tr><td>MESSAGE ... TYPE 'A'</td><td colspan="2">顯示訊息後結束程式，並刪除內部工作階段堆疊</td></tr>
+    </tbody>
+  </table>
+  <p>强晟 p98 的整理：迴圈外的 EXIT 在「第一類事件」（LOAD-OF-PROGRAM、START-OF-SELECTION、GET、END-OF-SELECTION）中會直接顯示清單緩衝區；在「第二類事件」（INITIALIZATION、AT SELECTION-SCREEN、TOP-OF-PAGE、END-OF-PAGE、AT LINE-SELECTION、AT USER-COMMAND）中只結束目前事件區塊。這種依事件而異的行為正是「事件裡不要寫邏輯」的另一個理由。</p>
+
+  <p><b>捕捉執行期錯誤</b>：4.6C 用 <span class="kw">CATCH SYSTEM-EXCEPTIONS ... ENDCATCH</span>（以錯誤名或錯誤類別對應 sy-subrc 數字），<b>現已過時</b>；6.10 起改用類別型例外 <span class="kw">TRY ... CATCH cx_... ENDTRY</span>。筆記 p101–106 的三層巢狀範例，改寫如下，執行路徑完全相同：</p>
+  <pre><code class="abap">DATA lv_pack TYPE p LENGTH 4 DECIMALS 2 VALUE '3.14'.   "最大 99999.99
+
+TRY.                                                     "外層
+    TRY.                                                 "中層
+        TRY.                                             "內層
+            lv_pack = lv_pack / 0.                       "① 丟 CX_SY_ZERODIVIDE
+          CATCH cx_sy_itab_line_not_found.               "內層沒有對應的 CATCH
+        ENDTRY.
+        lv_pack = 'ABC'.                                 "② 不會執行（被跳過）
+      CATCH cx_sy_conversion_no_number.
+        MESSAGE '中層：不是數字' TYPE 'I'.
+      CATCH cx_sy_zerodivide.                            "① 在這裡被接住
+        MESSAGE '中層：除以零' TYPE 'I'.
+    ENDTRY.
+    lv_pack = '123456789.987654321'.                     "③ 丟 CX_SY_CONVERSION_OVERFLOW
+  CATCH cx_sy_conversion_no_number.
+    MESSAGE '外層：不是數字' TYPE 'I'.
+  CATCH cx_sy_conversion_overflow INTO DATA(lx_ovf).     "③ 在這裡被接住
+    MESSAGE lx_ovf-&gt;get_text( ) TYPE 'I'.
+ENDTRY.
+"舊寫法對照：① 中層 sy-subrc = 4 → ② 被跳過 → ③ 外層 sy-subrc = 2</code></pre>
+  <ul>
+    <li>例外會由內往外找第一個能處理的 CATCH；處理完從該 ENDTRY 之後繼續。這和舊語法「只捕捉目前呼叫層級」不同：類別型例外可以沿呼叫堆疊往上傳（方法要在 RAISING 宣告）。</li>
+    <li>CATCH 可寫父類別（例如 <span class="kw">cx_sy_arithmetic_error</span>、<span class="kw">cx_sy_conversion_error</span>）一次接住一整族；<b>不要濫用 <span class="kw">cx_root</span></b>，會把程式錯誤也吞掉。</li>
+    <li>需要善後時用 <span class="kw">CLEANUP</span>；要記錄原始例外時用 <span class="kw">previous</span> 串接。詳見 <a href="#ch02-4">2-4 章</a>、<a href="#ch05-2">5-2 章</a>。</li>
+  </ul>
+
+  <h3 id="ch05-3-10">10. 內表 I：三種表類、索引存取與鍵存取</h3>
+  <p>內表是執行期可變長度的動態資料物件，一列一列存放相同結構的資料，列數只受系統容量限制。每個內表有三個屬性：<b>列型別</b>、<b>鍵</b>（欄位、順序、唯一／不唯一）、<b>表種類</b>（決定存取方式）。基本觀念見 <a href="#ch02-2">2-2 章</a>，這裡講 BC402 強調的效能面。</p>
+  <table>
+    <thead><tr><th></th><th>STANDARD</th><th>SORTED</th><th>HASHED</th></tr></thead>
+    <tbody>
+      <tr><td>索引</td><td>有</td><td>有</td><td><b>無</b></td></tr>
+      <tr><td>鍵</td><td>只能 NON-UNIQUE（或 DEFAULT KEY、EMPTY KEY）</td><td>UNIQUE 或 NON-UNIQUE</td><td><b>必須 UNIQUE</b></td></tr>
+      <tr><td>鍵存取</td><td>循序掃描，時間 ∝ 列數（可自行排序後用 BINARY SEARCH）</td><td>自動二分搜尋，∝ log(n)</td><td>雜湊演算法，<b>與列數無關</b></td></tr>
+      <tr><td>最佳化條件</td><td>—</td><td>完整鍵，或<b>由左起、不跳欄、全用 = 的部分鍵</b></td><td>只有<b>完整鍵</b>；其餘一律全表掃描</td></tr>
+      <tr><td>LOOP ... WHERE</td><td>全表掃描</td><td>WHERE 以 = 限定前 n 個鍵欄位時，二分找起點、連續區塊處理完即停</td><td>全表掃描（忽略雜湊板，<b>不會比標準表快</b>）</td></tr>
+      <tr><td>適用</td><td>小表、主要用索引、需要各種排序</td><td>常用部分鍵讀取或部分循序迴圈</td><td>大表、只用完整鍵讀單筆（例如快取主檔）</td></tr>
+    </tbody>
+  </table>
+  <p>標準鍵（DEFAULT KEY）＝列型別中所有字元型欄位（c、n、d、t、x、string、xstring）——通常不是你要的，請明確寫鍵或用 <span class="kw">WITH EMPTY KEY</span>。4.6 以前標準表是 RFC 唯一支援的表種類。單欄內表用虛擬元件 <span class="kw">table_line</span> 當鍵。</p>
+
+  <pre><code class="abap">TYPES ty_flights TYPE SORTED TABLE OF sflight
+                 WITH UNIQUE KEY carrid connid fldate.
+DATA lt_flights TYPE ty_flights.
+DATA lt_carr    TYPE HASHED TABLE OF scarr WITH UNIQUE KEY carrid.
+DATA lt_log     TYPE STANDARD TABLE OF string WITH EMPTY KEY.
+
+*&amp; 新增：鍵存取一律 INSERT ... INTO TABLE（標準表等同 APPEND）
+INSERT VALUE #( carrid = 'LH' connid = '0400' fldate = '20250101' )
+       INTO TABLE lt_flights.
+IF sy-subrc = 4.                          "排序表唯一鍵重複：不插入、sy-subrc = 4
+  "重複鍵處理
+ENDIF.
+"INSERT ... INTO lt_flights INDEX n 對排序表：位置不對會 ITAB_ILLEGAL_SORT_ORDER 短傾印
+
+*&amp; 讀取：WITH TABLE KEY（必須填滿所有鍵欄位）、WITH KEY（任意欄位）
+READ TABLE lt_flights INTO DATA(ls_flight)
+     WITH TABLE KEY carrid = 'LH' connid = '0400' fldate = '20250101'.
+READ TABLE lt_flights WITH KEY carrid = 'LH' connid = '0400'   "排序表：左起部分鍵 → 仍二分
+     TRANSPORTING NO FIELDS.                                 "只檢查存在，不搬資料
+READ TABLE lt_carr ASSIGNING FIELD-SYMBOL(&lt;ls_carr&gt;)
+     WITH TABLE KEY carrid = 'LH'.                           "雜湊：常數時間
+
+*&amp; 修改：鍵存取只改非鍵欄位；排序／雜湊表改鍵欄位 → 不可捕捉的執行期錯誤
+DATA(ls_upd) = VALUE sflight( carrid = 'LH' connid = '0400' fldate = '20250101'
+                              seatsocc = 120 ).
+MODIFY TABLE lt_flights FROM ls_upd TRANSPORTING seatsocc.   "依 ls_upd 的鍵找列
+ls_upd-planetype = 'A380'.
+MODIFY lt_flights FROM ls_upd                                "大量修改必須 TRANSPORTING
+       TRANSPORTING planetype WHERE carrid = 'LH' AND connid = '0400'.
+
+*&amp; 刪除：鍵存取不支援 WITH KEY，只能 FROM 或 WITH TABLE KEY
+DELETE TABLE lt_flights WITH TABLE KEY carrid = 'LH' connid = '0400' fldate = '20250101'.
+DELETE lt_flights WHERE seatsocc = 0.
+
+*&amp; 部分循序迴圈：排序表 + 左起鍵欄位 = → 只掃描連續區塊
+LOOP AT lt_flights ASSIGNING FIELD-SYMBOL(&lt;ls_f&gt;)
+     WHERE carrid = 'LH' AND connid = '0400'.
+  &lt;ls_f&gt;-seatsocc = &lt;ls_f&gt;-seatsocc + 1.                     "直接改原列
+ENDLOOP.</code></pre>
+  <ul>
+    <li>鍵存取的單筆寫入，表名前一定有 <b>TABLE</b>（INTO TABLE、MODIFY TABLE、DELETE TABLE）；索引存取不能加 TABLE——<b>INDEX 與 TABLE 互斥</b>。</li>
+    <li>MODIFY／DELETE 搭配 WHERE 時不加 TABLE；MODIFY + WHERE 一定要 TRANSPORTING。</li>
+    <li>迴圈內省略 INDEX 的單筆寫入（例如 <span class="kw">MODIFY lt_x FROM ls_x</span>）會用目前 sy-tabix；在迴圈外使用<b>語法檢查不會擋</b>，執行時產生 TABLE_ILLEGAL_STATEMENT。</li>
+    <li>READ 的 <span class="kw">COMPARING</span>：找到列且比較欄位都相同 sy-subrc＝0；找到列但欄位不同＝2；找不到列＞2（此附加項在新程式中很少用）。</li>
+    <li>強晟筆記 p130「動態合成的讀取存取」作者不懂——指的是<b>鍵欄位名稱在執行期才決定</b>的讀法，例如 <span class="kw">READ TABLE itab WITH KEY (lv_comp) = lv_value</span>，或用 <span class="kw">FROM wa</span> 讓系統依「該表自己的鍵」讀取，使同一段泛型程式能處理不同鍵定義的表（動態程式見第 18、19 節）。</li>
+    <li>對整個內表的操作：指派（逐列複製，但實際上是共享，見第 16 節）、<span class="kw">CLEAR</span>（清內容、保留記憶體）、<span class="kw">FREE</span>（清內容並釋放記憶體）；內表之間可以比較（先比列數，再逐列比內容）。<span class="kw">DESCRIBE TABLE ... LINES／KIND</span>（KIND 回傳 SYDES_KIND-STANDARD／SORTED／HASHED）已由 <span class="kw">lines( )</span> 與 RTTI 取代；筆記中的 <span class="kw">OCCURS</span> 附加項已過時。</li>
+  </ul>
+  <div class="warn"><b>HANA 沒有預設排序（Casper 實務經驗一）。</b>把 SELECT 結果放進標準表後直接 <span class="kw">READ TABLE ... INDEX 1</span> 或 <span class="kw">WITH KEY</span> 取「第一筆」，在 HANA 上每次拿到的可能不同。成本評價案例中，同一物料同時有 item category「H」與 cost component「E」兩種角度的資料，欄位數不同；程式沒排序時一下抓 H、一下抓 E，結果就不穩定——最後的解法是明確排序並固定抓 H。<b>任何「取第一筆」前，要嘛 SELECT 加 ORDER BY，要嘛用 SORTED 表或先 SORT。</b></div>
+
+  <h3 id="ch05-3-11">11. 內表 II：BINARY SEARCH、去重、COLLECT 與次要鍵</h3>
+  <p><b>標準表的二分搜尋</b>（Col18 p176–178）：對已排序的標準表，<span class="kw">READ TABLE ... WITH KEY ... BINARY SEARCH</span> 讓系統用二分法。前提是<b>表已依搜尋欄位排序</b>，否則找不到明明存在的資料（教材圖例：要找 LH 0402 卻因沒排序被導向前半段）。只為了一次讀取而先排序並不划算；它的價值在「排序一次、讀很多次」以及下面的平行游標迴圈。</p>
+  <pre><code class="abap">*&amp; 平行游標（Parallel Cursor）：用 BINARY SEARCH 找區塊起點，取代巢狀 LOOP ... WHERE
+SORT lt_bookings BY carrid connid fldate.
+LOOP AT lt_flights ASSIGNING FIELD-SYMBOL(&lt;ls_flight&gt;).
+  READ TABLE lt_bookings
+       WITH KEY carrid = &lt;ls_flight&gt;-carrid
+                connid = &lt;ls_flight&gt;-connid
+                fldate = &lt;ls_flight&gt;-fldate
+       BINARY SEARCH
+       TRANSPORTING NO FIELDS.
+  CHECK sy-subrc = 0.                     "BINARY SEARCH 必回傳符合條件的「第一筆」
+  LOOP AT lt_bookings ASSIGNING FIELD-SYMBOL(&lt;ls_book&gt;) FROM sy-tabix.
+    IF &lt;ls_book&gt;-carrid &lt;&gt; &lt;ls_flight&gt;-carrid OR
+       &lt;ls_book&gt;-connid &lt;&gt; &lt;ls_flight&gt;-connid OR
+       &lt;ls_book&gt;-fldate &lt;&gt; &lt;ls_flight&gt;-fldate.
+      EXIT.                               "離開內層迴圈：區塊結束
+    ENDIF.
+    "處理訂位 ...
+  ENDLOOP.
+ENDLOOP.
+"更簡單的現代寫法：把 lt_bookings 宣告成 SORTED 表（鍵 carrid connid fldate），
+"LOOP ... WHERE 以 = 限定左起鍵欄位時，系統自動做同樣的最佳化
+
+*&amp; 內表的 MOVE-CORRESPONDING（7.40+）與 KEEPING TARGET LINES
+MOVE-CORRESPONDING lt_flights TO lt_keys.                        "先清空目標
+MOVE-CORRESPONDING lt_more    TO lt_keys KEEPING TARGET LINES.   "附加在後面
+"目標是排序表 → 依排序順序填入；目標唯一鍵重複 → 丟例外
+
+*&amp; 去除重複：只比「相鄰」列，所以一定先排序
+SORT lt_flights BY carrid connid.
+DELETE ADJACENT DUPLICATES FROM lt_flights COMPARING carrid connid.
+"不寫 COMPARING＝比較主鍵；COMPARING ALL FIELDS＝整列完全相同才刪
+
+*&amp; COLLECT：鍵相同就把非鍵的數值欄位加總，否則新增（最適合雜湊表）
+TYPES: BEGIN OF ty_sum,
+         carrid   TYPE s_carr_id,
+         seatsocc TYPE s_seatsocc,
+       END OF ty_sum.
+DATA lt_sum TYPE HASHED TABLE OF ty_sum WITH UNIQUE KEY carrid.
+DATA ls_sum TYPE ty_sum.
+LOOP AT lt_flights ASSIGNING &lt;ls_flight&gt;.
+  ls_sum = VALUE #( carrid   = &lt;ls_flight&gt;-carrid
+                    seatsocc = &lt;ls_flight&gt;-seatsocc ).
+  COLLECT ls_sum INTO lt_sum.
+ENDLOOP.</code></pre>
+  <div class="warn"><b>COLLECT 用在標準表效能很差</b>：每次都要先循序找相同鍵的列，表越大越慢。原廠建議 COLLECT 只用在 SORTED 或 HASHED 表，最好是 HASHED。現代也可以用 <span class="kw">LOOP AT ... GROUP BY</span> 或 <span class="kw">REDUCE</span> 取代（見 <a href="#ch02-2">2-2 章</a>）。</div>
+
+  <p><b>次要鍵（Secondary Keys，7.0 EhP2+）</b>（Col18 p182–187）：</p>
+  <ul>
+    <li>種類：<b>SORTED（UNIQUE 或 NON-UNIQUE）</b>、<b>HASHED（只能 UNIQUE）</b>；每個次要鍵要有名稱，每個內表<b>最多 15 個</b>次要鍵。Dictionary 表型別有「Secondary Key」頁籤。主鍵的預設名稱是 <span class="kw">primary_key</span>。</li>
+    <li>次要鍵<b>不會自動被選用</b>：必須以 <span class="kw">USING KEY 名稱</span>（LOOP、DELETE、MODIFY、READ 的索引存取）或 <span class="kw">WITH KEY 名稱 COMPONENTS ...</span>（READ、表運算式）指定；若你寫的條件剛好是某次要鍵的欄位卻沒指定，語法檢查會發警告。</li>
+    <li>不能用次要鍵的敘述：APPEND、INSERT、<span class="kw">READ TABLE ... WITH TABLE KEY</span>、<span class="kw">DELETE TABLE ... WITH TABLE KEY</span>。</li>
+    <li><b>延遲更新（lazy update）</b>：NON-UNIQUE 次要鍵只在第一次被使用時才建立，寫入後也要等下次用到才更新——所以效能工具中「第一次透過次要鍵存取」看起來特別貴。UNIQUE 次要鍵在新增／刪除列時立即更新，違反唯一性丟可捕捉的 <span class="kw">CX_SY_ITAB_DUPLICATE_KEY</span>；MODIFY 改到唯一次要鍵欄位造成重複則是<b>不可捕捉</b>的錯誤。</li>
+    <li>用排序次要鍵做索引存取時，sy-tabix 是「該次要鍵」中的位置，後續索引存取也要指定同一個鍵。</li>
+    <li>原廠建議：只在頻繁使用時才加（它有維護成本）；<b>優先用 NON-UNIQUE</b>（延遲更新、不會因重複而短傾印）。</li>
+  </ul>
+  <pre><code class="abap">TYPES ty_customers TYPE HASHED TABLE OF scustom
+      WITH UNIQUE KEY primary_key COMPONENTS id
+      WITH NON-UNIQUE SORTED KEY by_city COMPONENTS city
+      WITH UNIQUE HASHED KEY by_email COMPONENTS email.
+DATA lt_cust TYPE ty_customers.
+
+LOOP AT lt_cust ASSIGNING FIELD-SYMBOL(&lt;ls_cust&gt;) USING KEY by_city
+     WHERE city = 'FRANKFURT'.               "用排序次要鍵 → 二分找區塊
+ENDLOOP.
+
+READ TABLE lt_cust INTO DATA(ls_cust)
+     WITH KEY by_email COMPONENTS email = lv_mail.
+DATA(ls_c) = VALUE scustom( lt_cust[ KEY by_email email = lv_mail ] OPTIONAL ).  "找不到給初始值</code></pre>
+  <p><b>其他特殊情形</b>（强晟 p143–146）：</p>
+  <ul>
+    <li><b>非結構化列型別</b>（單欄內表）用 <span class="kw">WITH KEY table_line</span>；常見用途：<span class="kw">SET PF-STATUS ... EXCLUDING itab</span>、<span class="kw">SPLIT ... INTO TABLE</span>、動態 SELECT 欄位清單與 WHERE、動態方法呼叫參數表。</li>
+    <li><b>帶表頭的內表</b>（WITH HEADER LINE、舊式 DATA BEGIN OF ... OCCURS）已過時，<b>ABAP Objects 中禁用</b>；舊程式裡 <span class="kw">CLEAR itab</span> 只清表頭，要清表身得寫 <span class="kw">CLEAR itab[]</span>——這種歧義就是它被淘汰的原因（見 <a href="#ch02-2">2-2 章</a>）。</li>
+    <li><b>SELECT-OPTIONS 與範圍表</b>：SELECT-OPTIONS 產生帶表頭的選擇表；4.6 起可用 <span class="kw">TYPE RANGE OF</span> 宣告沒有表頭的範圍表，現代寫法常用 <span class="kw">VALUE #( FOR ... )</span> 動態組出範圍表（下一節範例）。</li>
+  </ul>
+
+  <h3 id="ch05-3-12">12. 表運算式與建構運算式</h3>
+  <p><b>表運算式</b> <span class="kw">itab[ ... ]</span>（7.40+）是 READ TABLE 的運算式版本，可放在讀取位置（運算元、ASSIGN、line_exists／line_index 的引數）也可放在寫入位置（直接改列內容）。列的指定方式：<span class="kw">itab[ n ]</span> 索引、<span class="kw">itab[ KEY 鍵名 INDEX n ]</span>、<span class="kw">itab[ col1 = … col2 = … ]</span> 自由鍵、<span class="kw">itab[ KEY 鍵名 col = … ]</span>。</p>
+  <ul>
+    <li><b>找不到時丟 <span class="kw">CX_SY_ITAB_LINE_NOT_FOUND</span></b>；例外：ASSIGN 中設 sy-subrc＝4、<span class="kw">line_exists( )</span> 回傳假、<span class="kw">line_index( )</span> 回傳 0。7.40 SP08 起可在 VALUE／REF 中加 <span class="kw">OPTIONAL</span> 或 <span class="kw">DEFAULT</span>。</li>
+    <li>表運算式<b>不會改 sy-tabix</b>；多列符合時取第一列（又是「第一列」——排序問題同上一節的警告）。</li>
+    <li>空方括號 <span class="kw">itab[]</span> 不是表運算式，而是舊式「表身」寫法。</li>
+    <li>可以串接：<span class="kw">lt_deep[ 1 ]-flights[ 2 ]-fldate</span>；但每一層都要可能丟例外，串太長難除錯。</li>
+  </ul>
+  <pre><code class="abap">*&amp; 表運算式：讀、寫、存在檢查
+DATA(lv_name)  = lt_carr[ carrid = 'LH' ]-carrname.          "找不到丟例外
+DATA(ls_xx)    = VALUE scarr( lt_carr[ carrid = 'XX' ]
+                              DEFAULT VALUE #( carrname = `（無）` ) ).  "7.40 SP08+
+lt_flights[ carrid = 'LH' connid = '0400' fldate = '20250101' ]-seatsocc = 200.  "寫入位置
+IF line_exists( lt_carr[ carrid = 'LH' ] ).
+  DATA(lv_idx) = line_index( lt_flights[ carrid = 'LH' connid = '0400' fldate = '20250101' ] ).
+ENDIF.
+
+*&amp; VALUE：建立內表；BASE 在既有內容上附加
+DATA(lt_carriers) = VALUE ty_carrier_tab( ( carrid = 'AA' ) ( carrid = 'LH' ) ).
+lt_carriers = VALUE #( BASE lt_carriers ( carrid = 'UA' ) ).
+
+*&amp; VALUE + FOR：從 SCARR 組出「幣別為 EUR 的航空公司」範圍表（列舉，不用區間）
+DATA lt_range TYPE RANGE OF s_carr_id.
+lt_range = VALUE #( FOR ls_s IN lt_scarr WHERE ( currcode = 'EUR' )
+                    ( sign = 'I' option = 'EQ' low = ls_s-carrid ) ).
+
+*&amp; REDUCE：彙總（取代 LOOP + 累加）
+DATA(lv_total) = REDUCE i( INIT s = 0
+                           FOR ls_f IN lt_flights WHERE ( carrid = 'LH' )
+                           NEXT s = s + ls_f-seatsocc ).
+
+*&amp; FILTER：需要排序鍵或雜湊鍵（主鍵或次要鍵）
+DATA(lt_lh) = FILTER #( lt_flights WHERE carrid = CONV s_carr_id( 'LH' ) ).
+
+*&amp; LOOP AT ... GROUP BY：分組小計（取代 AT NEW / COLLECT）
+LOOP AT lt_flights INTO DATA(ls_fl)
+     GROUP BY ( carrid = ls_fl-carrid ) INTO DATA(ls_grp).
+  DATA(lv_sum) = REDUCE i( INIT t = 0 FOR m IN GROUP ls_grp NEXT t = t + m-seatsocc ).
+ENDLOOP.</code></pre>
+  <div class="tip"><b>範圍表用列舉 EQ，不要用區間 BT（Casper 實務經驗二）。</b>上面 FOR 組範圍表的例子刻意逐筆產生 <span class="kw">option = 'EQ'</span>。區間比較的是字典序、不是業務語意：號碼段不連續、ALPHA 前導零、編碼規則改過時，BT 就會多抓或漏抓。强晟 p89 也寫得很清楚——非數值欄位是「依字元碼做詞彙比較」，Col18 p302 更提醒 BETWEEN 在字元欄位上的結果可能隨資料庫字碼頁而不同。</div>
+
+  <h3 id="ch05-3-13">13. 資料參考與欄位符號</h3>
+  <p><b>欄位符號（Field Symbol）</b>是「已解參考的指標」：對它的所有存取都直接作用在被指派的資料物件上（值語意）。名稱中的角括號是語法的一部分（<span class="kw">&lt;fs&gt;</span>）。宣告 <span class="kw">FIELD-SYMBOLS &lt;fs&gt; TYPE ...</span>（强晟 p131 寫成「FIELDS-SYMBOLS」是筆誤），用 <span class="kw">ASSIGN dobj TO &lt;fs&gt;</span> 指派，執行期可以重新指向別的物件；型別宣告得越精確，編譯器越能幫你擋錯。</p>
+  <p><b>資料參考（Data Reference）</b>：4.6A 起 ABAP 具備完整的參考語意。<span class="kw">TYPE REF TO type</span> 或泛型 <span class="kw">TYPE REF TO data</span>；存取參考變數本身是存取「位址」，用 <span class="kw">-&gt;*</span> 解參考才是存取內容。7.40 起以 <span class="kw">REF #( )</span> 取代 <span class="kw">GET REFERENCE OF</span>。</p>
+
+  <pre><code class="abap">*&amp; 欄位符號：指派、檢查、轉型存取
+DATA lv_date TYPE d VALUE '20250101'.
+FIELD-SYMBOLS &lt;lv_d&gt; TYPE d.
+ASSIGN lv_date TO &lt;lv_d&gt;.
+IF &lt;lv_d&gt; IS ASSIGNED.
+  &lt;lv_d&gt; = &lt;lv_d&gt; + 1.                     "直接改到 lv_date
+ENDIF.
+UNASSIGN &lt;lv_d&gt;.
+
+*&amp; 資料參考：REF #( ) 取代 GET REFERENCE；-&gt;* 解參考
+DATA lr_date TYPE REF TO d.
+lr_date = REF #( lv_date ).
+lr_date-&gt;* = sy-datum.
+IF lr_date IS BOUND.                        "參考有效（指向存在的物件）
+ENDIF.
+lo_logger-&gt;log_value( ir_data = REF #( ls_flight ) ).  "直接當參數傳，不必輔助變數
+
+*&amp; 內表列存取：ASSIGNING / REFERENCE INTO，不經工作區複製
+LOOP AT lt_flights ASSIGNING FIELD-SYMBOL(&lt;ls_f&gt;).
+  &lt;ls_f&gt;-seatsocc = &lt;ls_f&gt;-seatsocc + 1.
+ENDLOOP.
+LOOP AT lt_flights REFERENCE INTO DATA(lr_f).
+  lr_f-&gt;seatsocc = lr_f-&gt;seatsocc - 1.        "結構元件可直接 -&gt; 存取
+ENDLOOP.
+READ TABLE lt_flights INDEX 1 ASSIGNING FIELD-SYMBOL(&lt;ls_first&gt;).
+
+*&amp; INSERT / APPEND / COLLECT 後直接取得新列的指標
+APPEND INITIAL LINE TO lt_log_tab ASSIGNING FIELD-SYMBOL(&lt;ls_log&gt;).
+&lt;ls_log&gt;-msg = `開始處理`.
+INSERT ls_new INTO TABLE lt_flights REFERENCE INTO DATA(lr_new).</code></pre>
+  <table>
+    <thead><tr><th>比較</th><th>INTO 工作區</th><th>ASSIGNING 欄位符號</th><th>REFERENCE INTO 參考</th></tr></thead>
+    <tbody>
+      <tr><td>資料搬移</td><td>整列複製（改完還要 MODIFY 回去）</td><td>不複製，直接指向列</td><td>不複製，存列的位址</td></tr>
+      <tr><td>效能（强晟 p141 經驗值）</td><td>—</td><td>列寬 &gt; 1000 byte 讀取時明顯較快；讀後要 MODIFY 的話列寬 &gt; 100 byte 就較快；LOOP 超過約 5 次就較快；巢狀內表差距最大</td><td>與欄位符號相近；可以存進內表或當參數傳</td></tr>
+      <tr><td>適合</td><td>需要一份獨立副本</td><td>迴圈內修改、深結構</td><td>需要保存指標以後再用（例如建立索引、樹狀結構）</td></tr>
+    </tbody>
+  </table>
+  <ul>
+    <li>欄位符號與參考在<b>內表重新排序後仍指向原本那一列</b>（不是同一個位置）。</li>
+    <li>排序表與雜湊表的<b>鍵欄位不可經由欄位符號修改</b>，否則執行期錯誤。</li>
+    <li>存取內表列時不能用 <span class="kw">CASTING</span>。</li>
+    <li>强晟筆記（4.6C）列出的 <span class="kw">LOOP ... ASSIGNING</span> 限制——控制層級中不能用 SUM、迴圈內不能重新 ASSIGN／UNASSIGN 迴圈用的欄位符號——部分已在後續版本放寬，請以系統上的關鍵字文件為準；實務上小計改用 REDUCE 或 GROUP BY 迴圈就不會碰到。</li>
+    <li>內嵌 <span class="kw">FIELD-SYMBOL( )</span> 的注意事項與 <span class="kw">DATA( )</span> 相同：不要重複使用、不要離宣告太遠、不要宣告成全域。</li>
+  </ul>
+
+  <h3 id="ch05-3-14">14. 子程式與函數模組：介面、傳遞方式與函數群組</h3>
+  <p><b>子程式</b>（强晟第七單元）寫在 FORM／ENDFORM 之間，介面依序列出 USING、CHANGING 形式參數。它在 S/4HANA 新程式中<b>已禁用</b>（CLAUDE.md 程式碼標準），但它的<b>三種傳遞方式</b>是所有程序介面的共同基礎，一定要懂：</p>
+  <table>
+    <thead><tr><th>傳遞方式</th><th>FORM 寫法（僅文字對照）</th><th>方法的對應寫法</th><th>特性</th></tr></thead>
+    <tbody>
+      <tr><td>傳參考（Call by Reference）</td><td>USING p／CHANGING p</td><td>IMPORTING p（唯讀）／CHANGING p</td><td>傳位址、不複製；FORM 的 USING 與 CHANGING 技術上相同，在 FORM 中改 USING 參數擴充檢查會警告</td></tr>
+      <tr><td>傳值（Call by Value）</td><td>USING VALUE(p)</td><td>IMPORTING VALUE(p)</td><td>傳本地副本，程序內可改但不影響實參</td></tr>
+      <tr><td>傳值並回傳結果（Value and Result）</td><td>CHANGING VALUE(p)</td><td>CHANGING VALUE(p)、EXPORTING VALUE(p)、RETURNING VALUE(r)</td><td>程序<b>正常結束</b>才把副本寫回；異常終止時實參保持原值</td></tr>
+    </tbody>
+  </table>
+  <ul>
+    <li><b>型別指定</b>：不指定型別＝TYPE any，形式參數在執行期「繼承」實參型別；c、n、p、x 這類不完整型別也會繼承缺少的長度；結構與參考必須指定型別；內表可用泛型 <span class="kw">TYPE ANY TABLE／INDEX TABLE／STANDARD TABLE／SORTED TABLE／HASHED TABLE</span>（<span class="kw">TYPE TABLE</span> 是 STANDARD TABLE 的縮寫）或自訂泛型表型別。</li>
+    <li><b>可見性原則</b>（强晟 p153–154）：主程式用全域物件並經介面傳給程序；程序內只用形式參數與區域物件；<b>不要在程序中直接存取全域資料</b>（繞過介面最容易出錯）；用前綴區分全域 gv_、參數 iv_／ev_／cv_、區域 lv_。</li>
+    <li>傳內表時優先傳參考（避免大表複製）；不過第 16 節會看到，因為「表共享」機制，傳值只要不在程序中修改，執行成本其實差不多。</li>
+    <li>ABAP 允許遞迴呼叫，但一定要有可到達的結束條件。</li>
+  </ul>
+
+  <p><b>函數模組 vs 子程式</b>（强晟 p156）：函數模組與 Workbench 整合（Function Builder <span class="tcode">SE37</span>）、可有選擇性參數與預設值、可丟例外、可非同步呼叫（平行處理）、可設為更新模組、可遠端呼叫（RFC）、在增強概念中扮演重要角色。</p>
+  <ul>
+    <li><b>屬性</b>：一般、遠端啟用（RFC，見 <a href="#ch04-1">4-1 章</a>、<a href="#ch05-12">5-12 章 BC415</a>）、更新模組（見 <a href="#ch05-11">5-11 章 BC414</a>）；後兩者的介面有額外限制（例如必須傳值、不能用泛型）。</li>
+    <li><b>介面</b>：IMPORTING、EXPORTING、CHANGING 預設傳參考，FM 內只能改 EXPORTING 與 CHANGING；可勾選 Pass Value 改成傳值；IMPORTING／CHANGING 可設 Optional 與預設值（新增參數時務必設 Optional，才不會打壞既有呼叫端）；EXPORTING 天生是選擇性的。<b>TABLES 參數已過時</b>，只為相容而保留。</li>
+    <li><b>例外</b>：<span class="kw">RAISE exc</span>——呼叫端有列出該例外就回傳 sy-subrc，否則執行期錯誤；<span class="kw">MESSAGE ... RAISING exc</span>——呼叫端有列出時同 RAISE，沒列出時改成發出訊息而不短傾印。呼叫端的例外編號從 1 起依宣告順序，<span class="kw">OTHERS</span> 代表其他全部。6.10 起 FM 也可在介面勾選「例外類別」，改丟類別型例外。</li>
+    <li><b>文件、啟用、測試</b>：FM 是給別人用的，要寫參數與例外的短文與長文件（預設章節 Functions、Example Call、Hints、Further Information）；修改啟用中的 FM 狀態顯示 active(revised)；F8 測試環境可存測試資料、切換除錯與執行期分析。</li>
+    <li>在自己的程式插入呼叫請用編輯器的 <b>Pattern（樣式）</b>按鈕，系統會帶出完整的參數與例外骨架。</li>
+  </ul>
+  <pre><code class="abap">*&amp; 呼叫古典函數模組：例外 → sy-subrc，再轉成類別型例外往上丟
+CALL FUNCTION 'CONVERSION_EXIT_ALPHA_INPUT'
+  EXPORTING
+    input  = lv_input
+  IMPORTING
+    output = lv_matnr.
+
+CALL FUNCTION 'Z_BC402_GET_FLIGHTS'
+  EXPORTING
+    iv_carrid      = p_carr
+  IMPORTING
+    et_flights     = lt_flights
+  EXCEPTIONS
+    not_found      = 1
+    no_authority   = 2
+    error_message  = 3          "把 FM 內未指定 RAISING 的 E/A 訊息也接住
+    OTHERS         = 4.
+CASE sy-subrc.
+  WHEN 0.
+  WHEN 1.
+    RAISE EXCEPTION TYPE zcx_bc402_not_found EXPORTING carrid = p_carr.
+  WHEN OTHERS.
+    MESSAGE ID sy-msgid TYPE 'E' NUMBER sy-msgno
+            WITH sy-msgv1 sy-msgv2 sy-msgv3 sy-msgv4.
+ENDCASE.
+
+*&amp; 新程式：用方法取代 FORM，參數語意更清楚、可回傳值、可丟類別型例外
+CLASS lcl_flight_reader DEFINITION FINAL.
+  PUBLIC SECTION.
+    TYPES ty_flights TYPE STANDARD TABLE OF sflight WITH EMPTY KEY.
+    METHODS get_flights
+      IMPORTING iv_carrid         TYPE s_carr_id
+      RETURNING VALUE(rt_flights) TYPE ty_flights
+      RAISING   zcx_bc402_not_found.
+ENDCLASS.
+CLASS lcl_flight_reader IMPLEMENTATION.
+  METHOD get_flights.
+    SELECT carrid, connid, fldate, price, currency, seatsmax, seatsocc
+      FROM sflight
+      WHERE carrid = @iv_carrid
+      ORDER BY carrid, connid, fldate
+      INTO CORRESPONDING FIELDS OF TABLE @rt_flights.
+    IF sy-subrc &lt;&gt; 0.
+      RAISE EXCEPTION TYPE zcx_bc402_not_found EXPORTING carrid = iv_carrid.
+    ENDIF.
+  ENDMETHOD.
+ENDCLASS.</code></pre>
+  <p><b>函數群組</b>（强晟 p164–166）：函數模組必須屬於某個函數群組；函數群組是類型 F 的程式、不能執行，<b>第一次呼叫其中任一 FM 時整個群組被載入</b>，並觸發它的 LOAD-OF-PROGRAM。群組的全域資料在呼叫結束後仍留在內部工作階段裡，所有 FM 都可存取——這就是「函數群組可以當作有狀態的模組」的原理（也是第 16 節那個危險的來源）。若同一個畫面要被多個程式呼叫，也必須把畫面建在函數群組裡（例如標準的 SP01～SP06）。</p>
+  <table>
+    <thead><tr><th>物件</th><th>命名（群組名 ZBC402）</th><th>內容</th></tr></thead>
+    <tbody>
+      <tr><td>主程式</td><td>SAPLZBC402</td><td>系統產生，只有 INCLUDE 敘述</td></tr>
+      <tr><td>TOP Include</td><td>LZBC402TOP</td><td>FUNCTION-POOL 敘述與群組全域資料</td></tr>
+      <tr><td>UXX Include</td><td>LZBC402UXX</td><td>系統維護，INCLUDE 所有 FM 的 LZBC402U01、U02…</td></tr>
+      <tr><td>FM 原始碼</td><td>LZBC402U01…</td><td>每個 FM 一個，FUNCTION … ENDFUNCTION，介面註解區塊自動更新</td></tr>
+      <tr><td>其他</td><td>LZBC402F01、O01、I01…</td><td>子程式、PBO、PAI 模組等（依縮寫規則自動建議）</td></tr>
+    </tbody>
+  </table>
+
+  <h3 id="ch05-3-15">15. ABAP Objects 入門：從函數群組到類別</h3>
+  <p>强晟第九單元是 4.6C 版的 OO 簡介（現在已獨立成 BC401，完整內容見 <a href="#ch05-2">5-2 章</a>）。它的切入點很好：<b>一個程式可以同時使用多個函數群組的「實例」，但同一個函數群組只能有一個實例</b>；類別解決的正是「同一種東西要多個獨立實例」的問題。函數群組被呼叫時隱式載入，類別則要明確以 NEW／CREATE OBJECT 建立實例，每個實例有唯一身分並經由物件參考存取。</p>
+  <ul>
+    <li><b>可見區段</b>：PUBLIC（類別外部介面）、PROTECTED（自己與子類別）、PRIVATE（只有自己的方法）。所有方法都必須在 IMPLEMENTATION 中實作。</li>
+    <li><b>建構子</b>：<span class="kw">constructor</span>（實例）與 <span class="kw">class_constructor</span>（靜態）由系統自動呼叫，用來設定初始狀態（可類比函數群組的 LOAD-OF-PROGRAM）；實例建構子可有輸入參數與例外。</li>
+    <li><b>參考語意</b>：<span class="kw">TYPE REF TO class</span>；參考變數互相指派只複製位址，多個參考可指向同一物件；CLEAR 參考變數後，沒有任何參考指向的物件由垃圾回收器釋放。方法內存取自己的屬性可省略 <span class="kw">me-&gt;</span>，但筆記建議寫出來，除錯時比較清楚。</li>
+    <li><b>ABAP Objects 的語法限制</b>：只能用 TYPE 引用 Dictionary 型別（不能 LIKE Dictionary 物件）、介面參數必須指定型別、元件名只能含字母數字底線且不能以數字開頭、不能用帶表頭的內表與 TABLES。</li>
+    <li><b>介面（Interface）</b>：只有宣告、與類別獨立定義；類別在 PUBLIC SECTION 以 <span class="kw">INTERFACES</span> 實作，存取介面元件用 <span class="kw">intf~comp</span>；介面參考可以指向任何實作該介面的類別實例——同一呼叫、不同行為，就是<b>多型</b>。介面可以巢狀。</li>
+    <li><b>事件</b>：類別在定義部分宣告 EVENTS（輸出參數只能傳值），方法中 <span class="kw">RAISE EVENT</span> 觸發；處理方法以 <span class="kw">FOR EVENT ... OF</span> 宣告，可接收隱含參數 <span class="kw">sender</span>；執行期用 <span class="kw">SET HANDLER</span> 註冊（<span class="kw">FOR 實例</span> 或 <span class="kw">FOR ALL INSTANCES</span>，後者連尚未建立的實例也包含），<span class="kw">ACTIVATION space</span> 取消註冊。觸發者與接收者互相不知道對方存在。</li>
+    <li><b>Class Builder</b>（<span class="tcode">SE24</span>）：全域類別存在類別池（類型 K），全域介面存在介面池（類型 J），和函數群組一樣不能直接執行。</li>
+  </ul>
+  <pre><code class="abap">*&amp; 筆記 p177 的候補名單範例，改寫為 7.52 寫法
+CLASS lcl_waitlist DEFINITION FINAL.
+  PUBLIC SECTION.
+    EVENTS list_full EXPORTING VALUE(ev_count) TYPE i.
+    METHODS constructor IMPORTING iv_carrid TYPE s_carr_id
+                                  iv_connid TYPE s_conn_id
+                                  iv_fldate TYPE s_date.
+    METHODS add_customer IMPORTING iv_custid TYPE s_customer.
+  PRIVATE SECTION.
+    CONSTANTS c_max TYPE i VALUE 10.
+    DATA mv_carrid    TYPE s_carr_id.
+    DATA mv_connid    TYPE s_conn_id.
+    DATA mv_fldate    TYPE s_date.
+    DATA mt_customers TYPE SORTED TABLE OF s_customer WITH UNIQUE KEY table_line.
+ENDCLASS.
+
+CLASS lcl_waitlist IMPLEMENTATION.
+  METHOD constructor.
+    me-&gt;mv_carrid = iv_carrid.
+    me-&gt;mv_connid = iv_connid.
+    me-&gt;mv_fldate = iv_fldate.
+  ENDMETHOD.
+  METHOD add_customer.
+    INSERT iv_custid INTO TABLE me-&gt;mt_customers.
+    IF lines( me-&gt;mt_customers ) &gt;= c_max.
+      RAISE EVENT list_full EXPORTING ev_count = lines( me-&gt;mt_customers ).
+    ENDIF.
+  ENDMETHOD.
+ENDCLASS.
+
+CLASS lcl_agent DEFINITION FINAL.
+  PUBLIC SECTION.
+    METHODS on_list_full FOR EVENT list_full OF lcl_waitlist
+      IMPORTING ev_count sender.
+ENDCLASS.
+CLASS lcl_agent IMPLEMENTATION.
+  METHOD on_list_full.
+    MESSAGE |候補已滿 { ev_count } 人| TYPE 'S'.
+  ENDMETHOD.
+ENDCLASS.
+
+START-OF-SELECTION.
+  DATA(lo_list1) = NEW lcl_waitlist( iv_carrid = 'LH' iv_connid = '0400' iv_fldate = '20250612' ).
+  DATA(lo_list2) = NEW lcl_waitlist( iv_carrid = 'AA' iv_connid = '0018' iv_fldate = '20250628' ).
+  DATA(lo_list3) = lo_list2.        "兩個參考指向同一個物件
+  CLEAR lo_list2.                   "物件仍被 lo_list3 參考，不會被回收
+  DATA(lo_agent) = NEW lcl_agent( ).
+  SET HANDLER lo_agent-&gt;on_list_full FOR ALL INSTANCES.
+  lo_list1-&gt;add_customer( '00000001' ).</code></pre>
+
+  <h3 id="ch05-3-16">16. 程式呼叫與記憶體管理</h3>
+  <p><b>同步程式呼叫</b>（Col18 p53–60；强晟第十單元）：同一個使用者工作階段中，完整的程式只能依序執行。兩種方式：① <b>插入</b>——暫停呼叫端，被呼叫程式結束後回來（<span class="kw">SUBMIT ... AND RETURN</span>、<span class="kw">CALL TRANSACTION</span>）；② <b>取代</b>——結束呼叫端、啟動新程式（<span class="kw">SUBMIT</span> 不加 AND RETURN、<span class="kw">LEAVE TO TRANSACTION</span>）。要平行執行必須用函數模組 <span class="kw">CALL FUNCTION ... STARTING NEW TASK</span>（見 <a href="#ch04-1">4-1 章</a> aRFC）。</p>
+  <ul>
+    <li><span class="kw">SUBMIT</span>：<span class="kw">VIA SELECTION-SCREEN</span> 顯示被呼叫程式的選擇畫面；<span class="kw">WITH</span> 逐一給參數或選擇條件（運算子 EQ、NE…與 SIGN I／E 同 SELECT-OPTIONS）；多值請給範圍表（<span class="kw">WITH so_x IN lt_range</span>）；<span class="kw">USING SELECTION-SET</span> 指定變式。編輯器的 Pattern 按鈕會自動帶出所有參數名稱。</li>
+    <li><span class="kw">CALL TRANSACTION</span>：<span class="kw">AND SKIP FIRST SCREEN</span> 不顯示第一個畫面（但<b>第一個畫面的流程邏輯仍會執行</b>）；<span class="kw">USING bdcdata</span> 以批次輸入格式餵資料（BDCDATA：PROGRAM 40、DYNPRO 4、DYNBEGIN 1、FNAM 132、FVAL 132；每個畫面第一列只填 PROGRAM、DYNPRO、DYNBEGIN＝'X'，其後每個欄位一列；特殊欄位 BDC_OKCODE、BDC_CURSOR）；<span class="kw">MODE</span> A 全顯示（預設）／E 錯誤才顯示／N 不顯示；<span class="kw">UPDATE</span> A 非同步（預設）／S 同步／L 本地；<span class="kw">MESSAGES INTO</span> 型別 BDCMSGCOLL 的內表。BDC 詳見 <a href="#ch04-4">4-4 章</a>、<a href="#ch05-13">5-13 章 BC420</a>。</li>
+    <li><span class="kw">LEAVE PROGRAM</span>：在被 CALL TRANSACTION 或 SUBMIT ... AND RETURN 呼叫的程式中執行時，回到呼叫端下一行；其他情況回到使用者啟動程式的應用選單。</li>
+  </ul>
+  <pre><code class="abap">*&amp; SUBMIT：以範圍表傳多值，並把清單輸出攔到記憶體
+DATA lt_carr_range TYPE RANGE OF s_carr_id.
+lt_carr_range = VALUE #( sign = 'I' option = 'EQ' ( low = 'LH' ) ( low = 'UA' ) ).  "列舉 EQ
+SUBMIT zbc402_flight_report
+  WITH so_carr IN lt_carr_range
+  WITH p_date  =  sy-datum
+  AND RETURN.
+
+*&amp; CALL TRANSACTION + BDCDATA：S/4HANA 要明寫授權檢查
+DATA lt_bdc TYPE STANDARD TABLE OF bdcdata WITH EMPTY KEY.
+DATA lt_msg TYPE STANDARD TABLE OF bdcmsgcoll WITH EMPTY KEY.
+lt_bdc = VALUE #(
+  ( program = 'SAPMZBC402' dynpro = '0100' dynbegin = 'X' )
+  ( fnam = 'SCUSTOM-NAME' fval = 'Casper' )
+  ( fnam = 'SCUSTOM-CITY' fval = 'TAIPEI' )
+  ( fnam = 'BDC_OKCODE'   fval = '=SAVE' ) ).
+DATA(ls_opt) = VALUE ctu_params( dismode = 'N' updmode = 'S' defsize = 'X' ).
+CALL TRANSACTION 'ZBC402_CUST' WITH AUTHORITY-CHECK
+     USING lt_bdc OPTIONS FROM ls_opt MESSAGES INTO lt_msg.
+IF sy-subrc &lt;&gt; 0.
+  "逐筆檢查 lt_msg（msgtyp = 'E' / 'A'）
+ENDIF.</code></pre>
+
+  <p><b>記憶體的邏輯模型</b>（Col18 p66–79）：</p>
+  <ul>
+    <li><b>PXA（Program Execution Area）</b>：存放程式不可變的部分——位元組碼、常數與字面值、程式文字、畫面定義；整台應用伺服器共用一份並儘量長期緩衝。<b>Roll Area</b>：每次執行各自一份，存放可變的部分（資料物件）；同一使用者執行同一程式兩次也各有各的 Roll Area。</li>
+    <li><b>外部工作階段</b>＝一個 SAP GUI 視窗；NetWeaver 7.0 起最多 16 個，實際上限由參數 <span class="kw">rdisp/max_alt_modes</span> 決定（預設 6）。<b>內部工作階段</b>：每次 SUBMIT、CALL TRANSACTION 等程式呼叫都建立新的內部工作階段，以堆疊存放，<b>最多 9 層</b>。</li>
+    <li><b>插入</b>（SUBMIT AND RETURN／CALL TRANSACTION）：新內部工作階段疊在上面，呼叫端保留；結束後刪除最上層。<b>SUBMIT（無 RETURN）</b>：刪掉最上層（呼叫端）再放入新程式，下層保留。<b>LEAVE TO TRANSACTION</b>：刪掉<b>整個堆疊</b>、重新開始，連 ABAP Memory 也被初始化。</li>
+    <li><b>程式群組</b>：呼叫外部 FM 或全域類別時，不開新的內部工作階段，而是在同一內部工作階段中建立（或沿用）程式群組；每個群組一個主程式，資料只在群組內可見。<b>同一內部工作階段裡，同一個函數群組或類別只載入一次</b>。</li>
+  </ul>
+  <div class="warn"><b>函數群組（與類別靜態屬性）造成的「隱形資料交換」。</b>主程式與函數群組 AB 都呼叫函數群組 XY 時，XY 只載入一次，所以主程式在 XY 緩衝的資料可能被 AB 不經意地覆寫或清空，造成程式中止甚至資料不一致；若 AB 是透過其他 FM 間接呼叫 XY，這種錯誤極難追查。全域類別只有<b>靜態屬性</b>有這個風險——最好的避免方式是改用實例屬性，並讓每個使用者各自建立實例。外部子程式呼叫（呼叫別的程式的 FORM）更糟：被呼叫程式直接載入呼叫端的程式群組、共用 TABLES 工作區與 CALL SCREEN 範圍——原廠建議<b>完全避免</b>。</div>
+
+  <p><b>程式之間傳資料的方式</b>：被呼叫程式的介面（選擇畫面、畫面）、ABAP Memory、SAP Memory、資料庫表、簡報伺服器檔案（GUI_UPLOAD／GUI_DOWNLOAD、CL_GUI_FRONTEND_SERVICES）；另有 EXPORT／IMPORT 到資料庫叢集或 SHARED BUFFER。</p>
+  <table>
+    <thead><tr><th></th><th>ABAP Memory</th><th>SAP Memory</th></tr></thead>
+    <tbody>
+      <tr><td>範圍</td><td>同一外部工作階段中的所有內部工作階段（呼叫鏈）</td><td>使用者登入期間的所有外部工作階段</td></tr>
+      <tr><td>敘述</td><td><span class="kw">EXPORT ... TO MEMORY ID</span>／<span class="kw">IMPORT ... FROM MEMORY ID</span>／<span class="kw">FREE MEMORY ID</span>（ID 最長 60 字元）</td><td><span class="kw">SET PARAMETER ID</span>／<span class="kw">GET PARAMETER ID</span>（參數 ID 維護在 TPARA，F1 → 技術資訊可查）</td></tr>
+      <tr><td>內容</td><td>任意資料物件（資料叢集），以符號名稱標記</td><td>單一欄位值（常用於畫面欄位預設值，例如 CAR、MAT）</td></tr>
+      <tr><td>注意</td><td>同 ID 再 EXPORT 會整個覆蓋；IMPORT 的目標型別要與 EXPORT 時相同；CALL TRANSACTION 只能在「插入」時用它傳資料</td><td>畫面欄位勾 SET／GET 參數就會自動讀寫</td></tr>
+    </tbody>
+  </table>
+  <pre><code class="abap">CONSTANTS lc_mem_id TYPE c LENGTH 20 VALUE 'ZBC402_FLIGHTS'.
+
+*&amp; 呼叫端：以「符號名 = 資料物件」寫入 ABAP Memory（舊的 FROM/TO 與無名寫法已過時）
+EXPORT carrid  = p_carr
+       flights = lt_flights
+  TO MEMORY ID lc_mem_id.
+SUBMIT zbc402_consumer AND RETURN.
+FREE MEMORY ID lc_mem_id.                 "用完就釋放
+
+*&amp; 被呼叫端：型別必須與 EXPORT 時一致
+DATA lv_carrid  TYPE s_carr_id.
+DATA lt_fl      TYPE STANDARD TABLE OF sflight WITH EMPTY KEY.
+IMPORT carrid = lv_carrid flights = lt_fl FROM MEMORY ID lc_mem_id.
+IF sy-subrc &lt;&gt; 0.                         "4 = 找不到該 ID 的叢集
+  MESSAGE '沒有收到上游資料' TYPE 'E'.
+ENDIF.
+
+*&amp; SAP Memory：給畫面欄位預設值，再跳到標準交易
+SET PARAMETER ID 'MAT' FIELD lv_matnr.
+CALL TRANSACTION 'MM03' WITH AUTHORITY-CHECK AND SKIP FIRST SCREEN.</code></pre>
+  <div class="warn">S/4HANA 注意：ABAP Memory、SAP Memory、SUBMIT、CALL TRANSACTION 在 <b>ABAP Cloud（RAP、Steampunk、Tier 1 開發）中都不是 released API</b>，只能在傳統（Classic）ABAP 中使用。新設計若只是元件之間傳資料，請直接用類別的參數或實例；跨交易的使用者預設值在 Fiori 則改用 User Defaults／App State。</div>
+
+  <p><b>動態資料物件的記憶體管理</b>（Col18 p83–87）：</p>
+  <ul>
+    <li>string 與內表（以及參考、含 deep 元件的結構）是深資料物件，系統以內部參考管理：載入時靜態宣告的深資料物件只佔 <b>8 byte</b> 參考；實際使用時才配置<b>表頭（header，約 100 byte，依平台而異）</b>與資料本體，並會多配一些以避免頻繁擴充。單一字串或內表的上限由最大連續記憶體區塊決定（最多 2 GB，通常被參數 <span class="kw">ztta/max_memreq_MB</span> 限制得更低）。</li>
+    <li>內表：<span class="kw">CLEAR</span>、<span class="kw">REFRESH</span> 只刪資料；<span class="kw">FREE</span> 在表頭佔太多時連表頭都釋放。<span class="kw">INITIAL SIZE n</span> 可指定第一個記憶體區塊的列數——只在確知列數時才指定（超過時反而會多配置）；最適合巢狀表中「每個內層表只有幾列」的情況。Dictionary 表型別的「Initial Number of Lines」欄位同義。</li>
+    <li><b>共享（Sharing，寫入時複製）</b>：字串或內表互相指派時先只複製管理資訊、共用同一份資料，直到其中一方被修改才真正複製（內表各有自己的表頭；列型別本身含表型別的內表不共享）。所以傳值給程序時，只要程序內不修改該參數，成本與傳參考幾乎一樣；一旦在程序內修改傳值參數，就會發生昂貴的複製。</li>
+  </ul>
+
+  <h3 id="ch05-3-17">17. Shared Objects：跨工作階段共用記憶體</h3>
+  <p>應用伺服器上的 <b>Shared Memory</b> 是所有在該伺服器上執行的 ABAP 程式都能存取的區域。以前只能用 <span class="kw">EXPORT／IMPORT ... SHARED BUFFER／SHARED MEMORY</span>；6.40 起多了 <b>Shared Objects Memory</b>，可以把<b>類別的實例</b>放進去（資料物件只能以類別屬性的形式存放，參考變數除外）。SAP 自己就用它加速 Workbench 導覽：每個登入約省 3 MB，首次導覽最多快 100 倍。</p>
+  <ul>
+    <li><b>適用</b>：跨程式緩衝「讀很多、寫很少」的資料（例如目錄、設定、主檔快取）；支援同時多人讀取、以鎖機制控制存取；寫入成本高，<b>寫入不能頻繁</b>；記憶體不足會發生執行期錯誤，要捕捉。</li>
+    <li><b>Area（區域）</b>：在 <span class="tcode">SHMA</span> 定義（尚未整合進 SE80，要直接呼叫），系統產生同名、FINAL 的全域<b>區域類別（Area Class）</b>，是 <span class="kw">CL_SHM_AREA</span> 的子類別——所以區域名稱請照類別命名規範，例如 ZCL_…。程式只能透過區域類別的方法存取區域。</li>
+    <li><b>Area Root Class</b>：必須在 SE24 勾選 <b>Shared Memory-Enabled</b>（本地類別加 <span class="kw">SHARED MEMORY ENABLED</span>）；區域類別會產生型別為該根類別的 ROOT 屬性。每個區域實例版本至少要有一個根物件，其他物件都經由它參考。</li>
+    <li><b>Area Instance 與版本</b>：一個區域可有多個以名稱區分的實例；每個實例可有多個版本（屬性 NUMBER OF VERSIONS）。其他屬性：<b>Client-dependent</b>（預設跨 Client，可設為依 Client，方法以 CLIENT 參數指定其他 Client）、<b>Transactional</b>（DETACH_COMMIT 後要等下一次資料庫 COMMIT 才生效，適合購物車）。</li>
+    <li><b>版本生命週期</b>：寫入者設變更鎖 → 產生「建置中版本」與目前的啟用版本並存 → 完成後新版本成為<b>啟用版</b>，舊版標為 <b>OUTDATED</b>（已持有讀鎖的讀者繼續讀舊版，新讀者一律讀啟用版，所以兩個讀者可能讀到不同結果）→ 舊版最後一個讀鎖釋放後變成 <b>EXPIRED</b>，由垃圾回收刪除，也不再計入版本數。</li>
+    <li><b>監控</b>：<span class="tcode">SHMM</span> Shared Memory Monitor，依序檢視 Areas → Area Instances → Versions → Locks，可切換 Overview、Locks、Users、Control（記憶體用量）、All Columns 等檢視；程式中可用 <span class="kw">CL_SHM_UTILITIES</span> 查詢。</li>
+  </ul>
+  <pre><code class="abap">*&amp; 根類別（SE24 勾選 Shared Memory-Enabled）
+CLASS zcl_bc402_catalog_root DEFINITION PUBLIC FINAL CREATE PUBLIC SHARED MEMORY ENABLED.
+  PUBLIC SECTION.
+    TYPES ty_flights TYPE SORTED TABLE OF sflight WITH UNIQUE KEY carrid connid fldate.
+    METHODS load.
+    METHODS get_flights IMPORTING iv_carrid         TYPE s_carr_id
+                        RETURNING VALUE(rt_flights) TYPE ty_flights.
+  PRIVATE SECTION.
+    DATA mt_flights TYPE ty_flights.
+ENDCLASS.
+CLASS zcl_bc402_catalog_root IMPLEMENTATION.
+  METHOD load.
+    SELECT carrid, connid, fldate, price, currency, seatsmax, seatsocc
+      FROM sflight
+      INTO CORRESPONDING FIELDS OF TABLE @mt_flights.
+  ENDMETHOD.
+  METHOD get_flights.
+    rt_flights = FILTER #( mt_flights WHERE carrid = iv_carrid ).
+  ENDMETHOD.
+ENDCLASS.
+
+*&amp; 寫入端：建立區域實例（ZCL_BC402_CATALOG 由 SHMA 產生）
+TRY.
+    DATA(lo_area) = zcl_bc402_catalog=&gt;attach_for_write( ).      "取得變更鎖
+    DATA lo_root TYPE REF TO zcl_bc402_catalog_root.
+    CREATE OBJECT lo_root AREA HANDLE lo_area.                   "在共享記憶體中建立物件
+    lo_root-&gt;load( ).
+    lo_area-&gt;set_root( lo_root ).
+    lo_area-&gt;detach_commit( ).                                   "釋放寫入鎖，版本生效
+  CATCH cx_shm_attach_error cx_shm_error INTO DATA(lx_shm).
+    MESSAGE lx_shm-&gt;get_text( ) TYPE 'I'.
+ENDTRY.
+
+*&amp; 讀取端（可以是其他使用者、其他程式）
+TRY.
+    DATA(lo_read) = zcl_bc402_catalog=&gt;attach_for_read( ).      "設定讀鎖
+    DATA(lt_lh)   = lo_read-&gt;root-&gt;get_flights( 'LH' ).
+    lo_read-&gt;detach( ).                                          "釋放讀鎖
+  CATCH cx_shm_no_active_version.
+    "還沒有啟用版本：退回讀資料庫，或觸發重建
+  CATCH cx_shm_attach_error INTO DATA(lx_att).
+    MESSAGE lx_att-&gt;get_text( ) TYPE 'I'.
+ENDTRY.</code></pre>
+  <div class="tip"><b>先標準再客製（Casper 實務經驗三）也適用在快取。</b>要緩衝一張小而常讀的設定表，第一步是 SE11 技術設定裡的<b>表緩衝</b>（第 20 節），不必寫任何程式；需要跨程式快取「計算後的結果」或複雜物件時才考慮 Shared Objects；只在單一程式內用到的，一個類別的私有 HASHED 表就夠了。Shared Objects 的資料是<b>每台應用伺服器各一份</b>，多台伺服器之間不會自動同步，這點常被忽略。</div>
+
+  <h3 id="ch05-3-18">18. 動態程式 I：動態記號、動態 SQL 與動態呼叫</h3>
+  <p>ABAP 支援的動態程度（Col18 p211–212）：內表與字串的動態擴充、動態位移與長度、<b>動態指定程式物件名稱</b>（資料表、程序、排序條件、控制層級…）、動態型別與資料宣告，最極端是在執行期產生程式。手段有：動態語言元素、執行期產生程式、欄位符號（動態 ASSIGN、CASTING）、資料參考與 CREATE DATA、RTTS（RTTI＋RTTC）。</p>
+  <p><b>動態記號（Tokens）的兩種情況</b>：</p>
+  <ul>
+    <li><b>取代字面值</b>：直接放資料物件即可（數值字面值換成 i 變數、文字字面值換成 c 或 string 變數），例如 <span class="kw">CALL FUNCTION lv_fname</span>、<span class="kw">CALL TRANSACTION lv_tcode</span>。</li>
+    <li><b>取代識別字</b>：要用<b>括號</b>標明「用它的內容」，且括號內不能有空白，例如 <span class="kw">SELECT (lt_fields) FROM (lv_table)</span>、<span class="kw">SORT itab BY (lv_col)</span>、<span class="kw">SUBMIT (lv_prog)</span>、<span class="kw">CALL METHOD lo_obj-&gt;(lv_meth)</span>、<span class="kw">CREATE OBJECT lo TYPE (lv_class)</span>。</li>
+    <li>並非所有敘述都支援動態記號，以各敘述的關鍵字文件為準。<b>靜態寫法會被語法檢查抓到的錯，動態寫法都變成執行期錯誤</b>——這是動態程式最大的代價。</li>
+  </ul>
+  <p><b>動態 Open SQL</b>：SELECT 幾乎所有部分（欄位清單、FROM、WHERE、ORDER BY、GROUP BY、HAVING）都可以用字元型變數或字元型內表動態指定，<b>只有 INTO 子句不行</b>（但 INTO 可以用欄位符號或解參考的資料參考，達到同樣效果）。寫入敘述也支援動態表名。</p>
+  <p><b>動態呼叫的括號規則</b>：<b>函數模組與交易代碼不加括號</b>（取代的是字面值）；<b>子程式、方法、可執行程式要加括號</b>（取代的是識別字）。參數可以靜態傳（前提是所有候選程序介面相同）或動態傳：</p>
+  <table>
+    <thead><tr><th>呼叫</th><th>參數表型別（型別群組 ABAP）</th><th>表種類</th><th>KIND 常數</th></tr></thead>
+    <tbody>
+      <tr><td>CALL FUNCTION ... PARAMETER-TABLE／EXCEPTION-TABLE</td><td>ABAP_FUNC_PARMBIND_TAB／ABAP_FUNC_EXCPBIND_TAB</td><td><b>SORTED</b>（別用 APPEND，用 INSERT INTO TABLE 或 VALUE）</td><td>abap_func_exporting、abap_func_importing、abap_func_changing、abap_func_tables（<b>從 FM 的角度</b>：呼叫端 EXPORTING 的參數 KIND 是 abap_func_exporting）</td></tr>
+      <tr><td>CALL METHOD ...-&gt;(meth) PARAMETER-TABLE／EXCEPTION-TABLE</td><td>ABAP_PARMBIND_TAB／ABAP_EXCPBIND_TAB</td><td><b>HASHED</b>（不能索引存取）</td><td>可留空；要填時用 CL_ABAP_OBJECTDESCR=&gt;EXPORTING 等常數</td></tr>
+      <tr><td>SUBMIT (prog) WITH SELECTION-TABLE</td><td>RSPARAMS 列型別的內表</td><td>—</td><td>KIND＝'P' 參數／'S' 選擇條件；SELNAME 要大寫；S 型填 SIGN、OPTION、LOW、HIGH，P 型只填 LOW</td></tr>
+    </tbody>
+  </table>
+  <p>參數表欄位：NAME（形式參數名，<b>必須大寫</b>）、KIND、VALUE（<span class="kw">TYPE REF TO data</span>，用 <span class="kw">REF #( 實參 )</span> 填）。交易呼叫的參數本來就一律是動態的（BDCDATA）。</p>
+
+  <pre><code class="abap">*&amp; 動態呼叫函數模組：名稱與參數都在執行期決定
+DATA(lv_fname) = CONV rs38l_fnam( 'Z_BC402_GET_FLIGHTS' ).
+DATA lt_result TYPE STANDARD TABLE OF sflight WITH EMPTY KEY.
+
+DATA(lt_ptab) = VALUE abap_func_parmbind_tab(
+  ( name = 'IV_CARRID'  kind = abap_func_exporting value = REF #( p_carr ) )
+  ( name = 'ET_FLIGHTS' kind = abap_func_importing value = REF #( lt_result ) ) ).
+DATA(lt_etab) = VALUE abap_func_excpbind_tab(
+  ( name = 'NOT_FOUND' value = 1 )
+  ( name = 'OTHERS'    value = 9 ) ).
+TRY.
+    CALL FUNCTION lv_fname                       "FM 名稱：不加括號
+      PARAMETER-TABLE lt_ptab
+      EXCEPTION-TABLE lt_etab.
+    IF sy-subrc = 1.
+      MESSAGE '查無資料' TYPE 'S'.
+    ENDIF.
+  CATCH cx_sy_dyn_call_error INTO DATA(lx_dyn).  "FM 不存在、參數名錯、型別不符…
+    MESSAGE lx_dyn-&gt;get_text( ) TYPE 'E'.
+ENDTRY.
+
+*&amp; 動態呼叫方法：類別與方法名稱加括號
+DATA(lt_mptab) = VALUE abap_parmbind_tab(
+  ( name = 'IV_CARRID' kind = cl_abap_objectdescr=&gt;exporting value = REF #( p_carr ) ) ).
+TRY.
+    CALL METHOD (lv_class)=&gt;(lv_method) PARAMETER-TABLE lt_mptab.
+  CATCH cx_sy_dyn_call_illegal_class
+        cx_sy_dyn_call_illegal_method
+        cx_sy_dyn_call_param_missing INTO DATA(lx_meth).
+    MESSAGE lx_meth-&gt;get_text( ) TYPE 'E'.
+ENDTRY.
+
+*&amp; 動態 SUBMIT：以 RSPARAMS 餵選擇畫面
+DATA(lt_sel) = VALUE rsparams_tt(
+  ( selname = 'SO_CARR' kind = 'S' sign = 'I' option = 'EQ' low = 'LH' )
+  ( selname = 'P_DATE'  kind = 'P' low = sy-datum ) ).
+SUBMIT (lv_prog) WITH SELECTION-TABLE lt_sel AND RETURN.  "程式名：加括號</code></pre>
+  <div class="warn"><b>動態 SQL 的資安：SQL Injection。</b>動態 WHERE、表名、欄位名只要有一部分來自使用者輸入，就可能被注入。防護：① 表名、欄位名用<b>白名單</b>（列舉允許值，而不是檢查格式）；② 值一律用主機變數 <span class="kw">@</span> 帶入，不要拼進字串；③ 真的要拼字串時用 <span class="kw">CL_ABAP_DYN_PRG</span>（例如 <span class="kw">escape_quotes( )</span>、<span class="kw">check_column_name( )</span>）。Code Inspector／ATC 的安全檢查會標出可疑的動態 SQL。</div>
+
+  <p><b>執行期產生程式</b>（Col18 p222–223）：</p>
+  <ul>
+    <li><span class="kw">INSERT REPORT prog FROM itab</span>：把內表裡的原始碼（第一行是 REPORT 敘述、別忘了句點）<b>永久存進 Repository</b> 成為可執行程式，再用 SUBMIT 執行。</li>
+    <li><span class="kw">GENERATE SUBROUTINE POOL itab NAME prog</span>：產生只存在於產生者執行期間的暫時子程式池（類型 S），只能用「外部子程式呼叫」執行其中的 FORM。</li>
+  </ul>
+  <div class="warn"><b>S/4HANA 現況：不要產生程式。</b>INSERT REPORT 繞過傳輸與版本管理、在正式系統建立未經審查的程式，稽核與資安一定會被抓；GENERATE SUBROUTINE POOL 依賴 FORM。兩者在 ABAP Cloud 中都不可用。幾乎所有「需要產生程式」的情境，都能用本節與下一節的動態記號、RTTC＋CREATE DATA、動態呼叫解決；報表的動態欄位則交給 SALV（<a href="#ch02-3">2-3 章</a>）或 CDS。</div>
+
+  <h3 id="ch05-3-19">19. 動態程式 II：泛型型別、動態存取、RTTI 與 RTTC</h3>
+  <p><b>泛型參數要「剛好夠泛」</b>（Col18 p228–229）：形式參數型別太寬（例如 any），程序內的敘述就可能在執行期失敗——例如把內表或非字元扁平結構傳給一個會 WRITE 的 any 參數，得到不可捕捉的 OBJECTS_NOT_CHARCONV。在只接受內表的位置（SELECT ... INTO TABLE、LOOP AT）語法檢查只接受泛型表型別。原則：<b>選能涵蓋所有預期實參、又足以讓程序內每個敘述都合法的最窄泛型</b>（例如 simple、csequence、index table）。除了內建泛型，也可以在程式或 Dictionary 定義「只指定列型別、不指定表種類與鍵」的自訂泛型表型別。</p>
+  <ul>
+    <li><b>泛型欄位符號</b>：可以在同一個敘述位置動態指向不同型別的資料物件。</li>
+    <li><b>CASTING</b>：<span class="kw">ASSIGN dobj TO &lt;fs&gt; CASTING [TYPE t | TYPE (name) | TYPE HANDLE rtti]</span> 以另一個型別看待同一塊記憶體（例如把 sy-datum 看成年月日結構）。</li>
+    <li><b>以名稱動態存取資料物件</b>：<span class="kw">ASSIGN (lv_name) TO &lt;fs&gt;</span>；存取屬性時優先用「靜態物件參考＋動態屬性名」：<span class="kw">ASSIGN lo_obj-&gt;(lv_attr) TO &lt;fs&gt;</span>、<span class="kw">ASSIGN (lv_class)=&gt;(lv_attr) TO &lt;fs&gt;</span>——靜態部分有語法檢查，比較不容易錯。</li>
+    <li><b>動態存取結構元件</b>：<span class="kw">ASSIGN COMPONENT name_or_index OF STRUCTURE struc TO &lt;fs&gt;</span>；以位置迴圈就能逐欄處理任意結構。若欄位符號型別是 simple 而結構含不相容元件，得到不可捕捉的 ASSIGN_TYPE_CONFLICT。</li>
+    <li><b>泛型資料參考</b>：只有 <span class="kw">TYPE REF TO data</span>（資料）與 <span class="kw">TYPE REF TO object</span>（物件）兩種泛型。7.40 以前泛型參考唯一能解參考的地方是 ASSIGN（<span class="kw">ASSIGN lr_data-&gt;* TO &lt;fs&gt;</span>）；也可以向下轉型成具體型別的參考（<span class="kw">CAST</span> 或 <span class="kw">?=</span>，型別不符丟 <span class="kw">CX_SY_MOVE_CAST_ERROR</span>）。常見用途：動態呼叫的參數表、CREATE DATA。</li>
+  </ul>
+  <pre><code class="abap">*&amp; 逐欄處理任意扁平結構（例如產生 CSV 行）
+METHOD struct_to_csv.       "IMPORTING is_any TYPE any  RETURNING VALUE(rv_line) TYPE string
+  FIELD-SYMBOLS &lt;lv_value&gt; TYPE any.               "動態 ASSIGN 的目標：明確宣告泛型
+  DATA(lo_struct) = CAST cl_abap_structdescr( cl_abap_typedescr=&gt;describe_by_data( is_any ) ).
+  LOOP AT lo_struct-&gt;components ASSIGNING FIELD-SYMBOL(&lt;ls_comp&gt;).
+    ASSIGN COMPONENT sy-tabix OF STRUCTURE is_any TO &lt;lv_value&gt;.
+    IF sy-subrc &lt;&gt; 0.
+      EXIT.
+    ENDIF.
+    rv_line = COND #( WHEN rv_line IS INITIAL THEN |{ &lt;lv_value&gt; }|
+                      ELSE |{ rv_line };{ &lt;lv_value&gt; }| ).
+  ENDLOOP.
+ENDMETHOD.
+
+*&amp; CASTING：以年月日結構看同一塊記憶體
+TYPES: BEGIN OF ty_ymd,
+         year  TYPE n LENGTH 4,
+         month TYPE n LENGTH 2,
+         day   TYPE n LENGTH 2,
+       END OF ty_ymd.
+FIELD-SYMBOLS &lt;ls_ymd&gt; TYPE ty_ymd.
+ASSIGN sy-datum TO &lt;ls_ymd&gt; CASTING.
+DATA(lv_month) = &lt;ls_ymd&gt;-month.
+
+*&amp; 泛型參考：解參考與向下轉型
+DATA lr_any TYPE REF TO data.
+FIELD-SYMBOLS &lt;ls_any&gt; TYPE any.
+lr_any = REF #( ls_flight ).
+ASSIGN lr_any-&gt;* TO &lt;ls_any&gt;.                      "泛型參考只能經 ASSIGN 解參考
+TRY.
+    DATA(lr_fl) = CAST sflight( lr_any ).          "轉成具體型別的參考
+    lr_fl-&gt;seatsocc = 0.
+  CATCH cx_sy_move_cast_error.
+ENDTRY.</code></pre>
+
+  <p><b>RTTI（Runtime Type Identification，6.10+）</b>：以類別描述型別。在它之前只有 DESCRIBE FIELD／DESCRIBE TABLE，能查的屬性很少。RTTI 由 10 個全域類別組成階層，每個型別在執行期只有一個描述物件。</p>
+  <table>
+    <thead><tr><th>可實例化的類別</th><th>描述</th><th>重要屬性與方法</th></tr></thead>
+    <tbody>
+      <tr><td>CL_ABAP_ELEMDESCR</td><td>基本型別</td><td>TYPE_KIND、LENGTH（byte）、DECIMALS、OUTPUT_LENGTH、GET_DDIC_FIELD（先用 IS_DDIC_TYPE 檢查，否則丟古典例外）</td></tr>
+      <tr><td>CL_ABAP_REFDESCR</td><td>參考型別</td><td>GET_REFERENCED_TYPE（導航到被參考型別的描述物件）</td></tr>
+      <tr><td>CL_ABAP_STRUCTDESCR</td><td>結構</td><td>COMPONENTS（名稱與技術屬性）、STRUCT_KIND、HAS_INCLUDE、GET_COMPONENTS、GET_COMPONENT_TYPE、GET_DDIC_FIELD_LIST</td></tr>
+      <tr><td>CL_ABAP_TABLEDESCR</td><td>表型別</td><td>TABLE_KIND、KEY_DEFKIND、HAS_UNIQUE_KEY、KEY、GET_TABLE_LINE_TYPE</td></tr>
+      <tr><td>CL_ABAP_CLASSDESCR</td><td>類別</td><td>ATTRIBUTES、METHODS（巢狀：每個方法含 PARAMETERS）、EVENTS、INTERFACES、CLASS_KIND、GET_ATTRIBUTE_TYPE、GET_METHOD_PARAMETER_TYPE</td></tr>
+      <tr><td>CL_ABAP_INTFDESCR</td><td>介面</td><td>INTF_KIND（是否由多個介面組成）</td></tr>
+    </tbody>
+  </table>
+  <p>抽象類別：CL_ABAP_TYPEDESCR（根，提供 KIND、TYPE_KIND、ABSOLUTE_NAME 等）、CL_ABAP_DATADESCR、CL_ABAP_COMPLEXDESCR、CL_ABAP_OBJECTDESCR（類別與介面共用的 ATTRIBUTES、METHODS…）。取得描述物件的靜態方法：<span class="kw">DESCRIBE_BY_NAME</span>（型別名，全域或本地皆可，也可以是類別與介面）、<span class="kw">DESCRIBE_BY_DATA</span>（資料物件；泛型參數或欄位符號會回傳<b>目前實際</b>的型別）、<span class="kw">DESCRIBE_BY_DATA_REF</span>（參考指向的物件的動態型別；參考無效時丟例外）、<span class="kw">DESCRIBE_BY_OBJECT_REF</span>。回傳的是 CL_ABAP_TYPEDESCR，要看 KIND 屬性（對應 CL_ABAP_TYPEDESCR 的常數）再向下轉型；確定型別時可直接 <span class="kw">CAST</span> 並捕捉 CX_SY_MOVE_CAST_ERROR。</p>
+  <p><b>動態建立物件與資料</b>（Col18 p254–262）：</p>
+  <ul>
+    <li><span class="kw">CREATE OBJECT ref TYPE (lv_class)</span>：TYPE 後必須是可實例化的類別（不能是介面或抽象類別），參考變數的靜態型別要相容（上層類別、實作的介面、或 <span class="kw">REF TO object</span>）。建構子參數不同時用 PARAMETER-TABLE／EXCEPTION-TABLE。7.40 的 <span class="kw">NEW</span> <b>不支援動態類別名</b>，動態時只能用 CREATE OBJECT。</li>
+    <li><span class="kw">CREATE DATA ref TYPE (lv_type)</span>、<span class="kw">TYPE TABLE OF (lv_type)</span>、<span class="kw">TYPE HANDLE lo_rtti</span>：建立匿名資料物件，執行期才配置記憶體，沒人參考時由垃圾回收釋放。<span class="kw">NEW type( )</span> 只能寫單一型別名，不能 LIKE、不能附加表種類。要當內表用時，欄位符號至少要宣告成 <span class="kw">TYPE ANY TABLE</span>。</li>
+    <li><b>RTTC（Runtime Type Creation，6.40+）</b>：描述類別上的靜態方法可以<b>產生新型別</b>（只限資料型別，不能動態產生類別或介面）：<span class="kw">cl_abap_elemdescr=&gt;get_i( )</span>、<span class="kw">get_p( p_length p_decimals )</span>、<span class="kw">get_c( p_length )</span>、<span class="kw">cl_abap_structdescr=&gt;create( 元件表 )</span>、<span class="kw">cl_abap_tabledescr=&gt;create( p_line_type p_table_kind p_unique p_key )</span>、<span class="kw">cl_abap_refdescr=&gt;create( )</span>。</li>
+  </ul>
+  <pre><code class="abap">*&amp; RTTI + RTTC + 動態 SELECT：使用者指定表名與欄位，程式動態建表、讀資料、丟給 SALV
+PARAMETERS p_tab  TYPE tabname DEFAULT 'SCARR'.
+PARAMETERS p_rows TYPE i DEFAULT 100.
+
+START-OF-SELECTION.
+  "表名白名單：列舉允許值，而不是檢查格式
+  DATA(lt_allowed) = VALUE string_table( ( `SCARR` ) ( `SPFLI` ) ( `SFLIGHT` ) ).
+  IF NOT line_exists( lt_allowed[ table_line = CONV string( p_tab ) ] ).
+    MESSAGE '不允許查詢此資料表' TYPE 'E'.
+  ENDIF.
+
+  TRY.
+      "① RTTI：取得資料表的列結構
+      DATA(lo_line) = CAST cl_abap_structdescr(
+                        cl_abap_typedescr=&gt;describe_by_name( p_tab ) ).
+
+      "② RTTC：依列結構動態產生標準表型別
+      DATA(lo_table) = cl_abap_tabledescr=&gt;create(
+                         p_line_type  = lo_line
+                         p_table_kind = cl_abap_tabledescr=&gt;tablekind_std
+                         p_unique     = abap_false ).
+
+      "③ CREATE DATA ... TYPE HANDLE：建立匿名內表
+      DATA lr_table TYPE REF TO data.
+      FIELD-SYMBOLS &lt;lt_data&gt; TYPE STANDARD TABLE.     "至少要 ANY TABLE 才能當 INTO TABLE 目標
+      CREATE DATA lr_table TYPE HANDLE lo_table.
+      ASSIGN lr_table-&gt;* TO &lt;lt_data&gt;.
+
+      "④ 動態 SELECT：FROM 動態；INTO 用欄位符號
+      "  （通用瀏覽器是少數合理使用 SELECT * 的情境；ORDER BY PRIMARY KEY 對抗 HANA 無序）
+      SELECT * FROM (p_tab)
+        ORDER BY PRIMARY KEY
+        INTO TABLE @&lt;lt_data&gt;
+        UP TO @p_rows ROWS.
+
+      "⑤ 顯示：SALV 接受任何內表
+      cl_salv_table=&gt;factory( IMPORTING r_salv_table = DATA(lo_alv)
+                              CHANGING  t_table      = &lt;lt_data&gt; ).
+      lo_alv-&gt;display( ).
+    CATCH cx_sy_move_cast_error cx_sy_create_data_error
+          cx_sy_dynamic_osql_error cx_salv_msg INTO DATA(lx_err).
+      MESSAGE lx_err-&gt;get_text( ) TYPE 'I'.
+  ENDTRY.</code></pre>
+  <ul>
+    <li>上例的元件長度 <span class="kw">LENGTH</span> 是 <b>byte 數</b>：Unicode 系統中 c 欄位的 byte 數是字元數的 2 倍，要取字元長度請看 OUTPUT_LENGTH 或 Dictionary 資訊。</li>
+    <li>RTTC 也可以「組合」新結構：先取得既有元件表（<span class="kw">lo_line-&gt;get_components( )</span>），再附加一個 <span class="kw">cl_abap_elemdescr=&gt;get_c( 20 )</span> 的新欄位，<span class="kw">cl_abap_structdescr=&gt;create( )</span> 產生新結構——常用於「原表欄位＋計算欄位」的動態報表。</li>
+    <li>筆記 p144 列的單欄內表動態用法（動態欄位清單、動態 WHERE、PARAMETER-TABLE）在這裡全部串起來了；另見 <a href="#ch02-2">2-2 章 動態 SQL</a>。</li>
+  </ul>
+
+  <h3 id="ch05-3-20">20. Open SQL 的技術背景：資料庫介面、索引與 SAP 表緩衝</h3>
+  <p><b>架構</b>（Col18 p38、p276–278）：Open SQL 是完整整合進 ABAP 的標準 SQL 子集，讓程式不必管底層是哪個資料庫；應用層與資料庫之間由 <b>SAP 資料庫介面（DBSS）</b>負責——它把 Open SQL 轉成資料庫專屬 SQL、管理 SAP 表緩衝、處理游標與資料傳輸。資料庫端另有自己的資料緩衝與游標快取（存取路徑），ABAP 開發者無法影響，只能透過 Dictionary 技術設定影響 SAP 表緩衝。7.50 起官方名稱改為 <b>ABAP SQL</b>（見 <a href="#ch02-2">2-2 章</a>）。</p>
+  <p><b>三種讀取型態</b>（Col18 p39–42，三者互斥）：<span class="kw">SELECT SINGLE</span>（單筆，WHERE 應填滿主鍵）、<b>SELECT 迴圈</b>（逐筆，整個迴圈期間要維持資料庫游標，4.6C 筆記也提醒會降低效能——新程式禁用）、<span class="kw">SELECT ... INTO TABLE</span>（Array Fetch，推薦）。sy-subrc＝0 表示至少讀到一筆，sy-dbcnt 是筆數。</p>
+  <p><b>新語法（7.40 SP05 起）</b>：主機變數一律加 <span class="kw">@</span>、欄位清單用逗號分隔、嚴格模式（以前的警告多數變錯誤）；7.40 SP08 起 INTO 可以（也應該）放在最後、可在 INTO 內嵌宣告 <span class="kw">@DATA( )</span>；7.50 起可先寫 FROM 再用 <span class="kw">FIELDS</span> 列欄位（利於程式碼補全）。<b>同一個敘述不能混用新舊語法</b>。</p>
+
+  <p><b>資料庫最佳化器與索引</b>（Col18 p278–282）：</p>
+  <ul>
+    <li>最佳化器依 WHERE 條件、索引與統計資訊決定存取策略（全表掃描或走哪個索引）。</li>
+    <li><b>主索引</b>由主鍵欄位（含 MANDT）組成、唯一；可在 Dictionary 另建<b>次要索引</b>。索引是排好序的 B-tree（根、分支、葉），葉節點指向表中的實際記錄（Oracle 稱 ROWID）。MS SQL Server 的主索引與表資料是一體的。</li>
+    <li><b>索引搜尋字串</b>：WHERE 由左到右連續限定越多索引欄位，搜尋越省力。SFLIGHT 主索引＝MANDT、CARRID、CONNID、FLDATE；限定前三個欄位時搜尋字串是「802AA0017%」，左邊沒有缺口，效率很好；若缺了 CARRID、CONNID，搜尋字串中間出現萬用字元，索引幾乎失效。</li>
+    <li>索引欄位不要太多；某些運算子（NOT、&lt;&gt;、前置 % 的 LIKE…）會讓最佳化器找不到好策略。</li>
+  </ul>
+  <div class="note">HANA 是欄式記憶體資料庫，大部分查詢不需要次要索引也夠快；在 S/4HANA 上新建次要索引前請先確認真的有需求（ST05／SQLM 的證據），並與 Basis 討論。但「WHERE 條件儘量用鍵欄位、儘量少傳資料」的原則在 HANA 上依然成立。</div>
+
+  <p><b>SAP 表緩衝</b>（Col18 p283–289）：應用伺服器共用記憶體中的表內容副本。讀取時間約為：應用伺服器緩衝 0.1 ms／筆、資料庫資料緩衝 1 ms／筆、資料庫磁碟 10 ms／筆。</p>
+  <table>
+    <thead><tr><th>緩衝類型</th><th>技術名</th><th>載入方式</th><th>命中條件</th></tr></thead>
+    <tbody>
+      <tr><td>全表緩衝（n＝0）</td><td>TABL</td><td>第一次存取時載入整張表</td><td>任何讀取（含非鍵條件）</td></tr>
+      <tr><td>泛用緩衝（0 &lt; n &lt; 鍵欄位數）</td><td>TABL</td><td>依前 n 個鍵欄位的值，整個「泛用區域」一起載入</td><td>WHERE 以 = 填滿前 n 個鍵欄位</td></tr>
+      <tr><td>單筆緩衝（n＝鍵欄位數）</td><td>TABLP</td><td>只載入讀到的那一筆</td><td><b>只有 SELECT SINGLE 且 WHERE 填滿所有鍵欄位</b></td></tr>
+    </tbody>
+  </table>
+  <ul>
+    <li><b>緩衝同步</b>：寫入緩衝表時，本機伺服器緩衝立即失效或更新，並在資料表 <b>DDLOG</b> 寫一筆同步記錄；其他伺服器每隔 <span class="kw">rdisp/bufreftime</span> 秒（60～3600，建議 60～240）讀 DDLOG，使自己的緩衝失效。在那之前，其他伺服器讀到的是舊資料——所以只能緩衝「可以容忍短暫不一致」的表。</li>
+    <li><b>失效範圍</b>：工作區模式（單筆 UPDATE／INSERT／MODIFY／DELETE dbtab FROM wa）依緩衝類型分別讓全表、泛用區域或該筆失效；集合模式（UPDATE ... SET ... WHERE、DELETE ... WHERE）通常讓整張表失效。</li>
+    <li><b>適合緩衝的表</b>：小（&lt; 10 MB）、讀多寫少（變更 &lt; 讀取的 1%）、可容忍暫時不一致、主要以鍵欄位存取；新增緩衝前須請系統管理者確認記憶體。</li>
+    <li><b>會繞過緩衝的寫法</b>：<span class="kw">BYPASSING BUFFER</span>、SELECT FOR UPDATE、聚合函數、DISTINCT、IS NULL、JOIN、子查詢、非主鍵的 ORDER BY、單筆緩衝表卻不用 SELECT SINGLE 完整鍵……Code Inspector 有專門檢查「繞過表緩衝的 SELECT」。</li>
+  </ul>
+  <pre><code class="abap">*&amp; 單筆緩衝：只有 SELECT SINGLE + 完整主鍵才會命中
+SELECT SINGLE carrname, currcode
+  FROM scarr
+  WHERE carrid = @p_carr
+  INTO @DATA(ls_scarr).
+
+*&amp; 存在檢查：不要 COUNT(*)（會掃完所有符合的列），用常值 + SINGLE / UP TO 1 ROWS
+SELECT SINGLE @abap_true
+  FROM sbook
+  WHERE carrid = @p_carr
+    AND cancelled = @abap_false
+  INTO @DATA(lv_exists).
+IF lv_exists = abap_true.
+  "至少有一筆有效訂位
+ENDIF.
+
+*&amp; 新語法的子句順序：FROM 在前、FIELDS 列欄位、INTO 放最後（7.50+）
+SELECT FROM sflight
+  FIELDS carrid, connid, fldate, seatsmax, seatsocc
+  WHERE carrid = @p_carr
+    AND fldate &gt;= @sy-datum
+  ORDER BY carrid, connid, fldate
+  INTO TABLE @DATA(lt_open).</code></pre>
+  <div class="tip"><b>先標準再客製</b>：要加速一張小而常讀的客製設定表，先在 SE11 技術設定開緩衝（不寫任何程式），不行才考慮自己在程式中用內表或 Shared Objects 快取（第 17、21 節）。S/4HANA 的 CDS View 也有自己的表緩衝設定（<span class="kw">@AbapCatalog.buffering</span>），見 <a href="#ch05-16">5-16 章</a>。</div>
+
+  <h3 id="ch05-3-21">21. Open SQL 進階：排序、聚合、WHERE、INTO、JOIN 與 FOR ALL ENTRIES</h3>
+  <p><b>排序與壓縮</b>（Col18 p292–300）：</p>
+  <ul>
+    <li><span class="kw">ORDER BY PRIMARY KEY</span> 的前提：FROM 只有<b>一張資料表</b>（不能是視圖或 JOIN），欄位清單包含所有主鍵欄位（<b>含 MANDT，最常被忘記</b>）。<span class="kw">ORDER BY col1, col2 DESCENDING</span> 可排任意欄位；排序欄位不是索引欄位且結果集很大時代價高。不能排序 Pooled／Cluster 表（S/4HANA 已多轉為透明表）。</li>
+    <li><span class="kw">SELECT DISTINCT</span>：以結果集所有欄位去重；欄位不能是 LCHR、LRAW、STRING、RAWSTRING。</li>
+    <li><b>聚合函數</b>：MIN、MAX、SUM（結果型別同欄位）、AVG（結果為 f；7.50 起可 <span class="kw">AVG( col AS type )</span>）、COUNT(*)（i）、COUNT( DISTINCT col )。</li>
+    <li><b>只有聚合函數時結果永遠是一列</b>：即使沒資料也回傳一列（COUNT＝0、其他為初始值），sy-subrc＝0、sy-dbcnt＝1——所以不能用 sy-subrc 判斷「有沒有資料」。例外：只有 COUNT(*) 且省略 INTO 時，沒資料會 sy-subrc＝4、sy-dbcnt＝0。另外 MIN／MAX 沒資料時回傳初始值，要小心與真實的 0 混淆（可用 COUNT 一併判斷）。</li>
+    <li><b>欄位＋聚合</b>時結果是多列，必須 <span class="kw">GROUP BY</span> 所有非聚合欄位；不能 SELECT *；GROUP BY 欄位不能是 STRING、RAWSTRING。<span class="kw">HAVING</span> 在分組後再篩選（可用 COUNT(*) &gt; 1 等聚合條件，不必出現在 SELECT 清單）；HAVING 用了 GROUP BY 以外的欄位不會語法錯誤，而是執行期丟 <span class="kw">CX_SY_OPEN_SQL_DB</span>。</li>
+  </ul>
+  <p><b>WHERE 運算子</b>（Col18 p301–304）：比較運算子、<span class="kw">IN ( v1, v2, … )</span> 值清單、<span class="kw">BETWEEN a AND b</span> 區間（<b>字元欄位的結果可能依資料庫字碼頁而異</b>）、<span class="kw">LIKE</span>（<span class="kw">_</span> 單一字元、<span class="kw">%</span> 任意字串；要找 _ 或 % 本身用 <span class="kw">ESCAPE '!'</span>，例如 <span class="kw">LIKE '%!_%' ESCAPE '!'</span>）、<span class="kw">IN seltab</span>（選擇表）、<span class="kw">IS [NOT] NULL</span>、AND／OR／NOT（AND 先於 OR，用括號改變順序）。同一張表的兩個欄位可以互相比較，欄位要寫成 <span class="kw">表名~欄位</span> 或用 AS 別名。注意：SQL 用 _ 與 %，ABAP 的 CP 與選擇表用 + 與 *。</p>
+  <div class="warn"><b>列舉優於區間（Casper 實務經驗二）在 SQL 層一樣適用。</b><span class="kw">WHERE matnr BETWEEN 'A100' AND 'A199'</span> 比的是字典序：ALPHA 前導零（內部 18／40 碼補零）、編碼規則中途改過、號碼段不連續，都會多抓或漏抓。知道要哪些值就用 <span class="kw">IN ( ... )</span> 或以 EQ 組成的範圍表 <span class="kw">IN @lt_range</span>。</div>
+  <p><b>INTO 的目標</b>（Col18 p305–308）：單列目標（SELECT SINGLE）可以是結構，也可以是欄位清單 <span class="kw">INTO (@lv_a, @lv_b)</span>（比 INTO CORRESPONDING FIELDS OF 更穩健）；多列目標是內表，<span class="kw">APPENDING TABLE</span> 取代 INTO TABLE 就不會先清空（排序表會插到正確位置、雜湊表也可用）。<b>PACKAGE SIZE n</b>：結果集大到內表放不下時，每次取 n 筆處理——它決定資料庫介面每次交給程式的筆數，對資料庫與網路負載影響不大。新程式請用游標搭配 <span class="kw">FETCH NEXT CURSOR ... PACKAGE SIZE</span>（下例）。</p>
+
+  <pre><code class="abap">*&amp; 聚合 + GROUP BY + HAVING（只有聚合欄位以外的欄位要列在 GROUP BY）
+SELECT FROM sflight
+  FIELDS carrid,
+         connid,
+         COUNT(*)        AS flights,
+         SUM( seatsocc ) AS occupied,
+         SUM( seatsmax ) AS capacity
+  WHERE carrid IN @so_carr
+    AND fldate BETWEEN @p_from AND @p_to                   "日期區間：d 型別的區間是安全的
+  GROUP BY carrid, connid
+  HAVING COUNT(*) &gt; 1
+  ORDER BY carrid, connid
+  INTO TABLE @DATA(lt_stats).
+
+*&amp; CAST（7.40 SP05 只能轉 FLTP）：整數欄位相除前先轉成浮點（Col18 p313 的例子）
+SELECT FROM sflight
+  FIELDS carrid, connid, fldate,
+         CAST( seatsocc AS FLTP ) * CAST( 100 AS FLTP )
+           / CAST( seatsmax AS FLTP )                       AS load_pct
+  WHERE carrid IN @so_carr
+    AND seatsmax &gt; 0                                        "避免除以 0
+  ORDER BY carrid, connid, fldate
+  INTO TABLE @DATA(lt_load).
+
+*&amp; 字串運算式與簡單 CASE：在資料庫端組好顯示文字
+SELECT FROM scustom
+  FIELDS id,
+         name &amp;&amp; ' (' &amp;&amp; city &amp;&amp; ')'                        AS display_name,
+         CASE custtype WHEN 'P' THEN 'Private'
+                       WHEN 'B' THEN 'Business'
+                       ELSE 'Unknown' END                   AS type_text
+  WHERE city LIKE 'T%'
+  ORDER BY id
+  INTO TABLE @DATA(lt_cust_disp)
+  UP TO 100 ROWS.
+
+*&amp; 大量資料：游標 + PACKAGE SIZE，逐包處理（取代 SELECT 迴圈加 PACKAGE SIZE）
+OPEN CURSOR @DATA(lv_cursor) FOR
+  SELECT carrid, connid, fldate, bookid, loccuram, loccurkey
+    FROM sbook
+    WHERE fldate BETWEEN @p_from AND @p_to
+    ORDER BY carrid, connid, fldate, bookid.
+DATA lt_pack TYPE STANDARD TABLE OF sbook WITH EMPTY KEY.
+DO.
+  FETCH NEXT CURSOR @lv_cursor
+        INTO CORRESPONDING FIELDS OF TABLE @lt_pack PACKAGE SIZE 10000.
+  IF sy-subrc &lt;&gt; 0.
+    EXIT.
+  ENDIF.
+  "處理這一包 ...
+ENDDO.
+CLOSE CURSOR @lv_cursor.</code></pre>
+  <p>新 Open SQL 補齊的功能（Col18 p309–316）：字串運算子 <span class="kw">&amp;&amp;</span>（7.40 SP05；結果最長 255、只能串基本字元欄位）與函數 CONCAT（恰兩個運算元、最長 1333）、LENGTH、LPAD、LTRIM、RTRIM、RIGHT、REPLACE、SUBSTRING（7.50）；算術 +、−、*、/ 與 ABS、CEIL、FLOOR、DIV、MOD（7.40 SP05，DIV／MOD 只接受整數）、ROUND（7.50）；<span class="kw">CAST</span>（7.40 SP05 只能轉 FLTP，7.50 起支援多數 Dictionary 型別）；欄位清單中的常值（存在檢查用）；簡單與複雜 <span class="kw">CASE</span>；以及 UNION（7.50）、RIGHT OUTER JOIN、ON 條件可用 BETWEEN 與大於小於。</p>
+
+  <p><b>讀多張表</b>（Col18 p317–327）：</p>
+  <ul>
+    <li><b>巢狀 SELECT</b>（在主表迴圈裡逐筆讀副表）是最耗資源的做法，好的設計一律避免。</li>
+    <li><b>JOIN</b>：INNER JOIN 只保留內表有對應資料的外表記錄；LEFT OUTER JOIN 保留外表全部，右表沒資料的欄位為 NULL（進 ABAP 變初始值）。7.40 SP05 以前 OUTER JOIN 有許多限制（右邊只能是單表或視圖、ON 只能 AND、每個比較都要含右表欄位、右表欄位不能出現在 WHERE），新語法已大多解除，也支援 RIGHT OUTER JOIN 與任意括號順序。JOIN 與 Dictionary 視圖都只能用在透明表。</li>
+    <li><b>Dictionary 視圖的優點</b>：可重用、可用 SE84／SE81 搜尋與 where-used、可以緩衝、共同欄位只傳一次；Dictionary 視圖是 INNER JOIN——讀文字表時若不想因缺文字而丟掉主資料，請改用 LEFT OUTER JOIN。S/4HANA 新開發請改用 CDS View（見 <a href="#ch01-3">1-3 章</a>）。</li>
+    <li><b>子查詢</b>：寫在 WHERE 或 HAVING；回傳單一值可用一般比較運算子（LIKE、BETWEEN 除外）；回傳多列單欄時用 IN、或 <span class="kw">ALL／ANY／SOME</span>；<span class="kw">EXISTS</span> 檢查存在。JOIN 常能得到相同結果且較易讀，兩者效能沒有定論，關鍵查詢請用真實資料各做一次效能量測。</li>
+    <li><b>程式內緩衝</b>：JOIN 不可行時（例如來源是 Pooled 表），把讀過的資料存在內表，每次讀資料庫前先查內表（筆記以 STRAVELAG 的靜態內表為例）；現代寫法是類別的私有 HASHED 表屬性。</li>
+    <li><b>FOR ALL ENTRIES</b>：產生於資料庫還不普遍支援 JOIN 的年代；現在常用在「部分資料已在內表、再補讀資料庫」的情境，取代 LOOP 裡的 SELECT SINGLE。資料庫介面會把驅動表拆成多組、各送一個原生 SQL，再合併結果並<b>自動去除重複</b>（每組大小由設定參數控制）。</li>
+  </ul>
+  <pre><code class="abap">*&amp; FOR ALL ENTRIES 的三個鐵則
+IF lt_flights IS NOT INITIAL.                          "① 驅動表空的 → WHERE 等於沒寫，整張表被讀出
+  DATA(lt_keys) = lt_flights.
+  SORT lt_keys BY carrid connid fldate.
+  DELETE ADJACENT DUPLICATES FROM lt_keys COMPARING carrid connid fldate.   "② 先壓縮驅動表
+  SELECT carrid, connid, fldate, bookid, customid      "③ 結果會自動去重：欄位要含完整主鍵，
+    FROM sbook                                         "   否則「看起來重複」的合法資料會被吃掉
+    FOR ALL ENTRIES IN @lt_keys
+    WHERE carrid = @lt_keys-carrid
+      AND connid = @lt_keys-connid
+      AND fldate = @lt_keys-fldate
+    INTO TABLE @DATA(lt_books).
+  SORT lt_books BY carrid connid fldate bookid.        "結果沒有保證順序（HANA 更是如此）
+ENDIF.
+
+*&amp; 多數情況用 JOIN 更簡單：交給資料庫一次做完
+SELECT FROM sflight AS f
+  INNER JOIN sbook AS b
+    ON  b~carrid = f~carrid
+    AND b~connid = f~connid
+    AND b~fldate = f~fldate
+  LEFT OUTER JOIN scustom AS c
+    ON c~id = b~customid
+  FIELDS f~carrid, f~connid, f~fldate, b~bookid, c~name
+  WHERE f~carrid IN @so_carr
+    AND b~cancelled = @abap_false
+  ORDER BY f~carrid, f~connid, f~fldate, b~bookid
+  INTO TABLE @DATA(lt_joined).
+
+*&amp; 子查詢：有訂位的航班
+SELECT FROM sflight AS f
+  FIELDS f~carrid, f~connid, f~fldate
+  WHERE EXISTS ( SELECT bookid FROM sbook
+                   WHERE carrid = f~carrid
+                     AND connid = f~connid
+                     AND fldate = f~fldate )
+  ORDER BY f~carrid, f~connid, f~fldate
+  INTO TABLE @DATA(lt_booked).</code></pre>
+  <p>更多 FAE 陷阱與替代方案（CDS、AMDP、Code Pushdown）見 <a href="#ch02-2">2-2 章</a>；效能調校的完整方法論見 <a href="#ch05-21">5-21 章 BC490</a>。</p>
+
+  <h3 id="ch05-3-22">22. 分析與測試：檢查點、ABAP Trace、SQL Trace 與 SQL Monitor</h3>
+  <p><b>檢查點（Checkpoints）</b>（Col18 p341–347）：只供測試用、不影響程式邏輯的三種敘述。</p>
+  <table>
+    <thead><tr><th>類型</th><th>永遠有效</th><th>可啟用（屬於檢查點群組）</th><th>版本</th></tr></thead>
+    <tbody>
+      <tr><td>中斷點</td><td><span class="kw">BREAK-POINT</span></td><td><span class="kw">BREAK-POINT ID grp</span></td><td>可啟用中斷點 6.10+</td></tr>
+      <tr><td>斷言</td><td><span class="kw">ASSERT log_expr</span></td><td><span class="kw">ASSERT ID grp [SUBKEY sk] [FIELDS f1 … fn] CONDITION log_expr</span></td><td>6.20+</td></tr>
+      <tr><td>日誌點</td><td>—（一定要有 ID）</td><td><span class="kw">LOG-POINT ID grp [SUBKEY sk] [FIELDS f1 … fn]</span></td><td>6.40+</td></tr>
+    </tbody>
+  </table>
+  <ul>
+    <li><b>ASSERT</b>：驗證「程式在這一點一定成立的假設」；條件為真就繼續，為假就執行期錯誤（ASSERTION_FAILED）。比 IF + MESSAGE 更明確地表達「這不該發生」。</li>
+    <li><b>檢查點群組</b>是 Repository 物件（名稱要在客戶命名空間），在 <span class="tcode">SAAB</span> 或 SE80 建立，可依使用者、伺服器設定啟用範圍與期限。斷言可設為 <b>Inactive、Log、Break（進除錯器）、Abort（短傾印）</b>；中斷點可設 Inactive／Break；日誌點可設 Inactive／Log。Log 模式下 FIELDS 列出的資料物件（參考變數除外）內容會寫進該群組的日誌；Abort 時短傾印會顯示 FIELDS 前 8 個資料物件。</li>
+  </ul>
+  <div class="warn">靜態 <span class="kw">BREAK-POINT</span>（以及 <span class="kw">BREAK 使用者名</span>）若沒刪就會被傳輸到正式系統，影響使用者；ATC／擴充程式檢查會抓出來。需要長期保留的診斷點請改用 <span class="kw">BREAK-POINT ID</span>、<span class="kw">LOG-POINT ID</span>，在正式系統平時保持 Inactive，出問題時才對特定使用者啟用。</div>
+  <pre><code class="abap">*&amp; 檢查點群組 ZBC402_CHK（SAAB 建立）
+METHOD find_item.            "IMPORTING iv_key TYPE i  RETURNING VALUE(rs_item) TYPE ty_item
+  DATA(lv_lines) = lines( mt_items ).
+  "前置條件：鍵值必須在有效範圍內（可在 SAAB 切換 Log / Break / Abort）
+  ASSERT ID zbc402_chk SUBKEY 'FIND_ITEM'
+         FIELDS iv_key lv_lines
+         CONDITION iv_key &gt;= 1 AND iv_key &lt;= lv_lines.
+
+  READ TABLE mt_items INTO rs_item WITH KEY table_key = iv_key.
+
+  "後置條件：一定要找得到
+  ASSERT ID zbc402_chk CONDITION sy-subrc = 0.
+
+  LOG-POINT ID zbc402_chk SUBKEY sy-uname FIELDS iv_key.   "記錄呼叫紀錄
+  BREAK-POINT ID zbc402_chk.                               "平時 Inactive
+ENDMETHOD.</code></pre>
+
+  <p><b>ABAP Trace（<span class="tcode">SAT</span>，取代 SE30）</b>（Col18 p349–354）：量測程式的執行時間分佈。結果受系統負載、網路、表緩衝狀態影響，要在測試系統以相近資料量量測並保守解讀。SAT 的優點：新介面、新分析工具、工具之間可互相導覽、能顯示內表的真實名稱（SE30 只顯示 IT_nn）、trace 存在資料庫（任一伺服器都看得到）。</p>
+  <ul>
+    <li><b>測量變式</b>：做效能量測時用 <b>Per Call Position 聚合</b>（同一呼叫位置只記一筆，含次數與總時間，檔案小）；要追程式流程時用<b>不聚合</b>（得到呼叫階層）。用「明確開關量測」只量需要的區段（在除錯器或以 <span class="kw">/ron</span>、<span class="kw">/roff</span> 切換）；在 Program Components 頁籤指定要追蹤的程式、類別、函數群組甚至單一方法。</li>
+    <li><b>評估工具</b>：Hit List（依時間排序的事件清單）、Profile（依元件、套件往下鑽，找出最大消耗者）、Call Hierarchy、Call Stack、Database Tables（耗時的資料庫存取與緩衝表存取）、Times。建議：<b>Profile 找熱點 → Hit List 看細節 → Database Tables 查 SQL</b>。</li>
+    <li>SAT 初始畫面的 <b>Tips &amp; Tricks</b> 提供不同寫法的效能對照範例。</li>
+  </ul>
+  <p><b>SQL Trace（<span class="tcode">ST05</span>）</b>（Col18 p355–359）：</p>
+  <ul>
+    <li>開追蹤前先把程式<b>跑一次</b>，避免把表緩衝、程式緩衝的載入動作也錄進去。可以在正式系統開（不會造成錯誤或不一致）；限定使用者與物件，並確認該使用者沒有在別的視窗或背景作業同時執行，否則結果難讀。每台應用伺服器一次只有一個啟用中的 trace 檔。</li>
+    <li><b>清單欄位</b>：Duration（微秒，受負載影響）、Object Name（表或視圖）、Records（筆數）、Statement（SQL 文字）。</li>
+    <li><b>Display Execution Plan（Explain）</b>：顯示原生 SQL、最佳化器策略、成本、<b>使用的索引</b>與統計資訊；綁定變數（bind variables）按兩下可看實際值。畫面內容依資料庫而異。</li>
+    <li><b>Summarize Trace by SQL Statement</b>：看每個敘述的執行次數、總時間、以及「完全相同（含綁定值）」的比例；選單 Trace → <b>Value-Identical Statements</b> 列出值完全相同的重複 SQL——這些通常可以用程式內緩衝消除，是最直接的最佳化機會。</li>
+  </ul>
+  <p><b>SQL Monitor（<span class="tcode">SQLM</span>／<span class="tcode">SQLMD</span>，7.40+）</b>（Col18 p361–363）：擷取整個系統或特定交易的 <b>SQL Profile</b>——每個 SQL 的執行次數、存取的表、總執行時間、讀取筆數，並對應到原始碼位置與觸發的請求（交易、報表、RFC、URL、Web Dynpro）。設計目標是<b>能在正式系統長期開啟</b>：核心以檔案非同步記錄，額外負擔極小，資料約每 24 小時彙整進 SQLM 資料表（可手動更新）。在 SQLM 啟用（全部或指定伺服器、可設到期日與記錄上限），在 SQLMD 以套件、物件、請求、資料表等條件查詢。搭配 <span class="tcode">SWLT</span>（SQL Performance Tuning Worklist）可把 SQLM 的執行期資料與 Code Inspector 的靜態檢查結果交叉比對，找出「又慢又常被執行」的敘述優先處理。</p>
+  <div class="tip">除錯器的完整用法（含 Layer 除錯、Watchpoint、Debugger Script）見 <a href="#ch05-4">5-4 章 BC403</a>；在 ADT 中也有對應的 ABAP Profiler 與 SQL Trace 檢視（<a href="#ch05-5">5-5 章</a>）。</div>
+
+  <h3 id="ch05-3-qa">練習與自我檢核</h3>
+  <p>以下題目取材自强晟筆記各單元重點與 Col18 各 Unit 的 Learning Assessment，並加入 S/4HANA 實務題。</p>
+  <ol>
+    <li><b>LOAD 是什麼？什麼情況下會失效？為什麼大量傳輸後要跑 SGEN？</b><br>要點：LOAD＝程式的執行期物件（連結 C 函數的位元組碼），存於資料庫並緩衝在應用伺服器；開發版被改或所用的 Dictionary 物件被改時過期；傳輸只帶開發版，匯入後 LOAD 被丟棄、首次呼叫才產生，SGEN 預先產生避免上線初期變慢。</li>
+    <li><b>寫出下列結果：<span class="kw">lv_i = 5 / 10.</span>、<span class="kw">lv_i = 10 * ( 4 / 10 ).</span>、<span class="kw">lv_i = ( 1 / 4 ) * ( 2 ** 2 ).</span>（lv_i TYPE i）</b><br>要點：1（四捨五入）、0（中間結果先四捨五入）、1（** 使整式改用浮點運算）。</li>
+    <li><b>為什麼 73050 × 7.27% 用 f 計算再存入 p 會得到 5310.73？商業計算該用什麼？</b><br>要點：二進位浮點無法精確表示 0.0727，得到 5310.7349999…，捨入成 .73；金額用 p（定點運算）或 decfloat34，並用 round( ) 指定捨入模式。</li>
+    <li><b>三種表種類各在什麼情況下能被最佳化？LOOP ... WHERE 對雜湊表有幫助嗎？</b><br>要點：STANDARD 鍵存取一律循序（除非自行排序後 BINARY SEARCH）；SORTED 在完整鍵或左起無缺口、全用 = 的部分鍵時二分；HASHED 只在完整鍵時常數時間；LOOP WHERE 對雜湊表是全表掃描，不比標準表快。</li>
+    <li><b>一個內表最多可以有幾個次要鍵？NON-UNIQUE 次要鍵何時被建立與更新？為什麼原廠建議優先用 NON-UNIQUE？</b><br>要點：15 個；第一次明確使用時才建立，寫入後延遲到下次使用才更新（lazy update）；延遲更新成本低、且不會因重複鍵發生執行期錯誤。</li>
+    <li><b>表運算式找不到列時會怎樣？有哪三個例外情況？</b><br>要點：丟 CX_SY_ITAB_LINE_NOT_FOUND；ASSIGN 時設 sy-subrc＝4、line_exists 回傳假、line_index 回傳 0（另可用 VALUE ... OPTIONAL／DEFAULT）。</li>
+    <li><b>主程式與它呼叫的函數群組 AB 都呼叫函數群組 XY，會有什麼風險？全域類別呢？</b><br>要點：同一內部工作階段中 XY 只載入一次，全域資料被共用，可能互相覆寫；類別只有靜態屬性有此風險，改用實例屬性並各自建實例即可避免。</li>
+    <li><b>SUBMIT、SUBMIT ... AND RETURN、CALL TRANSACTION、LEAVE TO TRANSACTION 對內部工作階段堆疊與 ABAP Memory 的影響？</b><br>要點：AND RETURN 與 CALL TRANSACTION 疊一層（插入）；SUBMIT 取代最上層；LEAVE TO TRANSACTION 清空整個堆疊並初始化 ABAP Memory；ABAP Memory 只能在插入的情況下傳資料給交易。</li>
+    <li><b>Shared Objects 讀取端釋放讀鎖用哪個方法？寫入端完成建立用哪個方法？版本的 OUTDATED 與 EXPIRED 差在哪？</b><br>要點：DETACH；DETACH_COMMIT（交易型區域還要等資料庫 COMMIT）；OUTDATED＝已有新啟用版但仍有讀者持有讀鎖；最後一個讀鎖釋放後變 EXPIRED 並被垃圾回收。</li>
+    <li><b>動態呼叫時哪些名稱要加括號？ABAP_FUNC_PARMBIND_TAB 與 ABAP_PARMBIND_TAB 的表種類各是什麼？</b><br>要點：子程式、方法、可執行程式（取代識別字）要加；函數模組與交易代碼（取代字面值）不加；前者 SORTED（不要 APPEND）、後者 HASHED。</li>
+    <li><b>RTTI 可以實例化的描述類別有哪六個？要動態建立一個任意資料表的內表，步驟為何？</b><br>要點：ELEMDESCR、REFDESCR、STRUCTDESCR、TABLEDESCR、CLASSDESCR、INTFDESCR；describe_by_name 取得結構 → cl_abap_tabledescr=&gt;create → CREATE DATA ... TYPE HANDLE → ASSIGN 到 TYPE STANDARD TABLE 的欄位符號 → SELECT ... INTO TABLE @&lt;fs&gt;。</li>
+    <li><b>只含聚合函數的 SELECT 在查無資料時 sy-subrc 是多少？為什麼不該用 COUNT(*) 做存在檢查？</b><br>要點：0（且 sy-dbcnt＝1，只有純 COUNT(*) 省略 INTO 時才是 4）；COUNT 會掃完所有符合列，存在檢查用 SELECT SINGLE @abap_true 或 UP TO 1 ROWS。</li>
+    <li><b>FOR ALL ENTRIES 的三大注意事項？</b><br>要點：驅動表空時會讀整張表；結果自動去重，欄位要含完整鍵；先壓縮驅動表、結果不保證順序（HANA 必須自行排序）。</li>
+    <li><b>哪種 SELECT 才會命中單筆緩衝？緩衝同步靠哪張表與哪個參數？</b><br>要點：SELECT SINGLE 且 WHERE 填滿所有鍵欄位；DDLOG 與 rdisp/bufreftime（60～3600 秒，建議 60～240）。</li>
+    <li><b>斷言在 SAAB 中有哪四種狀態？ST05 開追蹤前為什麼要先執行一次程式？</b><br>要點：Inactive、Log、Break、Abort；避免把表緩衝與程式緩衝的初次載入錄進 trace。</li>
+    <li><b>實務題：某成本報表在 HANA 上每次執行結果不同，程式是 SELECT 後 READ TABLE ... WITH KEY matnr = … 取第一筆。請說明原因與修正方式，並說明若條件是「料號 A100～A199」該怎麼寫比較安全。</b><br>要點：HANA 沒有預設排序，同一料號有多筆（例如 H 與 E 兩種成本角度）時取到哪一筆不固定；SELECT 加 ORDER BY 或改用 SORTED 表並明確指定要哪一種（固定抓 H）；料號條件改用列舉值（IN 清單或 EQ 範圍表），避免 BT 字典序比較造成多抓漏抓。</li>
+  </ol>
+  <div class="note">延伸閱讀：<a href="#ch02-2">2-2 章 內表與 ABAP SQL</a>（語法全集與綜合練習）、<a href="#ch02-4">2-4 章 模組化</a>、<a href="#ap-01">附錄 舊語法 → 現代寫法速查</a>、<a href="#ch05-2">5-2 章 BC401</a>（OO 與動態程式的另一種講法）、<a href="#ch05-21">5-21 章 BC490</a>（效能調校）。</div>
+</section>

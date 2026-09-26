@@ -1,0 +1,1307 @@
+<section class="chapter" id="ch05-13" data-title="BC420 資料傳輸（Batch Input、LSMW、Direct Input、BAPI 移轉）">
+  <h2>第 5-13 章 BC420 資料傳輸（Batch Input、LSMW、Direct Input、BAPI 移轉）</h2>
+  <p class="lede">BC420 回答的是導入專案最現實的問題：<b>舊系統的客戶、供應商、物料、未結憑證、固定資產，要怎麼「一致地」搬進 SAP？</b>SAP 不讓你直接 INSERT 資料庫表，而是提供五條「有檢查」的路：Batch Input（批次輸入 Session）、Call Transaction、Direct Input、EDI／IDoc、BAPI，外加 Transaction Recorder（SHDB）當最後手段；再用 DX-WB 與 LSMW 把「讀檔 → 格式化 → 對應 → 匯入」包成專案。本章依强晟筆記的 14 個單元順序整理，並與 <a href="#ch04-4">4-4 章 BDC</a> 互補：4-4 章偏「寫一支介面程式」，本章偏「一次性／週期性的資料移轉方法論與工具」。最後一節說明在 S/4HANA 上 LSMW 的地位，以及 Migration Cockpit（LTMC／LTMOM → Fiori「Migrate Your Data」）這條新路。</p>
+
+  <div class="meta">
+    <div><b>核心 TCODE</b><span class="tcode">SXDA</span><span class="tcode">LSMW</span><span class="tcode">SHDB</span><span class="tcode">SM35</span><span class="tcode">BMV0</span><span class="tcode">AL11</span><span class="tcode">FILE</span><span class="tcode">SM36</span><span class="tcode">SM37</span><span class="tcode">SM13</span><span class="tcode">SM50</span><span class="tcode">WE02</span><span class="tcode">WE20</span><span class="tcode">WE30</span><span class="tcode">WE63</span><span class="tcode">WE64</span><span class="tcode">BD87</span><span class="tcode">SALE</span><span class="tcode">BDBG</span><span class="tcode">SWO1</span><span class="tcode">BAPI</span><span class="tcode">SARA</span><span class="tcode">IBIP</span><span class="tcode">LTMC</span><span class="tcode">LTMOM</span></div>
+    <div><b>關鍵物件</b>BDCDATA、BDCMSGCOLL、CTU_PARAMS、APQI、APQD、BDC_OPEN_GROUP、BDC_INSERT、BDC_CLOSE_GROUP、BDCRECX1、RSBDCSUB、RSBDCREO、RSBDCLOG、RSBDCDRU、BGR00、BI000、BKN00、BKNA1、BBKPF、BBSEG、RFBIBL00、RMDATIND、RVINVB10、RBMVSHOW、TBIST、RDDSRCG0、RDXRUNSTART、/SAPDMC/SAP_LSMW_INTERFACE、FILE_GET_NAME、CONVERSION_EXIT_ALPHA_INPUT、EDIDC、EDID4、EDIDS、FIDCC1、FIKPF、FISEG、BUS1022、BAPI_FIXEDASSET_OVRTAKE_CREATE、BAPI_TRANSACTION_COMMIT、SXDA0～SXDA3、sy-binpt</div>
+  </div>
+
+  <h3 id="ch05-13-01">1. 課程定位與教材對照</h3>
+  <p>本章素材只有<b>强晟《SAP BC420 課程中文自學筆記》</b>（354 頁，2007 年 1 月起筆、2008 年 3 月 18 日完成 v1.0），手邊沒有對應的原廠英文教材，因此下表只列筆記頁碼。筆記依原廠 BC420「Data Transfer」的單元順序逐頁整理，內容基準是 <b>R/3 4.6C～4.7</b>（文中多處提到 4.5、4.6A/B/C 的差異、LSMW 1.7 版）。</p>
+  <table>
+    <thead><tr><th>單元</th><th>主題</th><th>强晟筆記頁碼</th><th>本章小節</th></tr></thead>
+    <tbody>
+      <tr><td>第一單元</td><td>課程概覽（業務情境：客戶、財務憑證、固定資產…）</td><td>p5–p6</td><td>1、2</td></tr>
+      <tr><td>第二單元</td><td>資料傳輸：任務與解決方案（格式化、對應、轉換、DX-WB）</td><td>p7–p15</td><td>2</td></tr>
+      <tr><td>第三單元</td><td>專案概念：技術與工具、專案組織（ASAP）、商業物件 BOR、DX-WB 專案</td><td>p16–p45</td><td>3、4</td></tr>
+      <tr><td>第四單元</td><td>批輸入處理：Batch Input Session、批輸入監視器 SM35</td><td>p46–p67</td><td>5、6</td></tr>
+      <tr><td>第五單元</td><td>標準資料傳輸的原則：格式化規則、SAP 記錄佈局（Record Layout）</td><td>p68–p77</td><td>7</td></tr>
+      <tr><td>第六單元</td><td>更多 DX-WB 功能：檔案工具、測試資料、註冊</td><td>p78–p90</td><td>8</td></tr>
+      <tr><td>第七單元</td><td>循序檔案：AL11、OPEN DATASET、本機檔案、邏輯檔名 FILE</td><td>p91–p121</td><td>9、10</td></tr>
+      <tr><td>第八單元</td><td>遺留系統移轉工作台 LSMW</td><td>p122–p171</td><td>11、12、13</td></tr>
+      <tr><td>第九單元</td><td>直接輸入 Direct Input（BMV0）</td><td>p172–p183</td><td>14</td></tr>
+      <tr><td>第十單元</td><td>EDI：IDoc 基礎、LSMW + IDoc、IDoc 管理</td><td>p184–p230</td><td>15、16</td></tr>
+      <tr><td>第十一單元</td><td>BAPI：BAPI 基礎、固定資產測試資料、以 BAPI 傳輸資產</td><td>p231–p254</td><td>17</td></tr>
+      <tr><td>第十二單元</td><td>交易記錄器（TA Recorder／SHDB）、Batch Input 與 Call Transaction 原理、整合進 DX-WB</td><td>p255–p314</td><td>18、19、20</td></tr>
+      <tr><td>第十三單元</td><td>特殊方法：互動式清單、SAP-LUW、大量資料傳輸、提示與技巧</td><td>p315–p332</td><td>21</td></tr>
+      <tr><td>第十四單元</td><td>背景處理：SM36／SM37、RSBDCSUB 平行處理</td><td>p333–p345</td><td>22</td></tr>
+      <tr><td>附錄</td><td>測試階段、正式傳輸、欄位缺漏處理、系統全景、BAPI 物件清單</td><td>p346–p353</td><td>23</td></tr>
+      <tr><td>後記</td><td>作者心得</td><td>p354</td><td>—</td></tr>
+      <tr><td>（本章補充）</td><td>S/4HANA：LSMW 的地位與 Migration Cockpit</td><td>—</td><td>24</td></tr>
+    </tbody>
+  </table>
+  <p><b>課程等級</b>：筆記未註明等級。BC420 在舊課綱是 ABAP Workbench 的進階選修課，學員需先具備 <a href="#ch05-1">BC400</a> 的語法基礎；內容一半是「工具操作」（SXDA、LSMW、SM35、BMV0），一半是「程式」（檔案處理、BDCDATA、CALL TRANSACTION）。</p>
+  <p><b>2007 版與現況差異</b>：</p>
+  <ul>
+    <li>DX-WB（<span class="tcode">SXDA</span>）幾乎沒人再用；LSMW 在 R/3、ECC 時代是資料移轉的主力，但在 S/4HANA 已被 SAP 定位為「不建議用於資料移轉」（見第 24 節）。</li>
+    <li>筆記中的 <span class="kw">DOWNLOAD</span>／<span class="kw">UPLOAD</span> 函數早已過時，改用 <span class="kw">CL_GUI_FRONTEND_SERVICES</span>；<span class="kw">OPEN DATASET</span> 在 Unicode 系統中必須明確指定模式與編碼。</li>
+    <li>客戶／供應商主檔（筆記的 FD02、BKN00 範例）在 S/4HANA 一律走 <b>Business Partner（BP）</b>，舊的 XD01/FD01/XK01 錄製與 RFBIDE00 類程式不能再用。</li>
+    <li>程式碼一律改寫為 ABAP 7.52 現代語法；筆記中的 <span class="kw">FORM</span>／<span class="kw">WITH HEADER LINE</span> 寫法只以文字對照說明。</li>
+  </ul>
+  <div class="note">筆記作者在後記坦言：「感覺 SAP 總喜歡把簡單的事搞複雜，最終我也沒明白批輸入和其他方式有什麼本質區別。」本章會把這個問題講清楚：<b>本質區別在於「經過畫面（PAI/PBO）」還是「經過函數」，以及「錯誤留在哪裡、能不能重跑」</b>（第 2、20 節）。</div>
+
+  <h3 id="ch05-13-02">2. 資料傳輸的任務與五種方法總覽</h3>
+  <p><b>為什麼不能直接寫資料庫？</b>外部資料直接進 R/3 表無法保證資料一致性。線上交易裡的檢查非常多、而且常常跨應用（一張 FI 憑證會檢查科目、成本中心、期間、稅碼…），自己重寫這些檢查幾乎不可能。所以 SAP 提供「特殊介面」，部分直接利用交易本身的檢查，把資料送進系統。</p>
+  <p>需要傳輸的兩種情境（p8）：① 新裝 SAP，資料要從舊系統一次搬過來（<b>初始移轉</b>）；② 資料固定在外部系統產生，要<b>週期性</b>整合進 SAP。</p>
+  <p><b>三個核心名詞</b>（p13，課程全篇沿用）：</p>
+  <ul>
+    <li><b>格式化（Formatting）</b>：把外部值轉成 SAP 可接受的值集合，例如舊系統語言代碼 <span class="kw">E</span> → <span class="kw">EN</span>。</li>
+    <li><b>分配／對應（Mapping）</b>：決定外部哪個欄位對到 SAP 哪個欄位。</li>
+    <li><b>轉換（Conversion）</b>＝格式化＋對應同時進行。</li>
+  </ul>
+  <p>做對應之前要先分析交易（p11）：TCODE、必填欄位、可用預設值的欄位、欄位名稱／型別／長度；再分類（p12）：可直接搬的欄位、要先在外部系統修正的欄位、要轉型別或長度的欄位。轉換可以在哪裡做（p14）：外部系統、SAP 內用 ABAP（好處是自動型別轉換、可直接用 ABAP 字典結構）、Excel（平面結構）、LSMW 對應工具、SAP 認證的外部產品。</p>
+
+  <table>
+    <thead><tr><th>方法</th><th>原理</th><th>檢查機制</th><th>錯誤處理</th><th>S/4HANA 現況</th></tr></thead>
+    <tbody>
+      <tr><td><b>Batch Input（Session）</b></td><td>模擬使用者操作畫面；先建 Session，再用 <span class="tcode">SM35</span> 處理</td><td>完整的線上交易檢查</td><td>錯誤交易留在 Session，可修正後重跑</td><td>仍可用，但 Enjoy 畫面、Fiori 化交易不適合</td></tr>
+      <tr><td><b>Call Transaction</b></td><td>程式直接呼叫交易並餵 BDCDATA</td><td>同上</td><td>沒有錯誤 Session，要自己收 <span class="kw">MESSAGES INTO</span></td><td>同上；見 <a href="#ch04-4-05">4-4 章第 5 節</a></td></tr>
+      <tr><td><b>Direct Input</b></td><td>用函數取代畫面，檢查後直接更新資料庫</td><td>與線上交易相同的檢查（由函數執行）</td><td>在 <span class="tcode">BMV0</span> 下有重啟機制（TBIST）</td><td>只剩少數物件（如 RFBIBL00）</td></tr>
+      <tr><td><b>EDI／IDoc</b></td><td>ALE 入站函數處理 IDoc 資料</td><td><b>不經畫面</b>，檢查在各應用的函數模組中</td><td>IDoc 狀態記錄，可編輯後重送（BD87）</td><td>主力介面技術之一，見 <a href="#ch05-22">5-22 章</a></td></tr>
+      <tr><td><b>BAPI</b></td><td>呼叫 BOR 物件的方法（RFC 函數）</td><td>與線上相同的檢查</td><td>RETURN 參數；由呼叫端 COMMIT</td><td><b>首選</b>，見 <a href="#ch04-1">4-1 章</a>、<a href="#ch05-12">5-12 章</a></td></tr>
+      <tr><td><b>Transaction Recorder</b></td><td>錄製交易，產生 Batch Input／Call Transaction 程式</td><td>同 Batch Input</td><td>同上</td><td>最後手段</td></tr>
+    </tbody>
+  </table>
+  <p>DX-WB 與 LSMW 本身<b>不傳輸資料</b>（p10）：它們是「中央存取點」，真正寫進 SAP 的是各應用的傳輸程式。DX-WB 以 LSMW 為整合轉換工具，支援：標準傳輸程式、BAPI、EDI 入站（ALE 服務處理 IDoc）、LSMW 的交易錄製（p15）。</p>
+
+  <pre><code class="abap">*&amp;---------------------------------------------------------------*
+*&amp; 「格式化 + 對應 = 轉換」：把舊系統一筆資料轉成 SAP 格式
+*&amp; 對照筆記 p111 的 FORM format（CASE rec_legacy-spras …）
+*&amp;---------------------------------------------------------------*
+TYPES: BEGIN OF ty_legacy,              " 舊系統原始格式
+         cust_no TYPE c LENGTH 10,
+         lang    TYPE c LENGTH 1,        " E / D / 1
+         name    TYPE c LENGTH 40,
+         created TYPE c LENGTH 10,       " 2024/03/18
+       END OF ty_legacy,
+       BEGIN OF ty_convert,              " SAP 側格式
+         kunnr TYPE kunnr,
+         laiso TYPE laiso,               " 2 碼 ISO 語言碼
+         name1 TYPE name1_gp,
+         erdat TYPE erdat,
+       END OF ty_convert.
+
+DATA(ls_leg) = VALUE ty_legacy( cust_no = '4711' lang = '1'
+                                name = '台中精機股份有限公司'
+                                created = '2024/03/18' ).
+
+DATA(ls_conv) = VALUE ty_convert(
+  " 對應 + ALPHA 格式化：'4711' → '0000004711'
+  kunnr = |{ ls_leg-cust_no ALPHA = IN }|
+  " 格式化：舊代碼 → SAP 值集合；找不到就明確標示，不要默默給預設值
+  laiso = SWITCH #( ls_leg-lang WHEN 'E' THEN 'EN'
+                                WHEN 'D' THEN 'DE'
+                                WHEN '1' THEN 'ZH'
+                                ELSE '??' )
+  name1 = ls_leg-name
+  " 日期轉內部格式 YYYYMMDD
+  erdat = replace( val = ls_leg-created sub = '/' with = `` occ = 0 ) ).
+
+IF ls_conv-laiso = '??'.
+  MESSAGE |客戶 { ls_leg-cust_no } 語言代碼 { ls_leg-lang } 無對照| TYPE 'I'.
+ENDIF.
+
+" Batch Input／Call Transaction 要的是「使用者鍵盤輸入的樣子」：
+" 日期、金額必須依執行使用者的格式（SU3 設定）轉成外部格式
+DATA(lv_erdat_ext) = |{ ls_conv-erdat DATE = USER }|.</code></pre>
+  <div class="tip">選方法時先問「<b>標準有沒有</b>」：Migration Cockpit 物件／BAPI／標準傳輸程式都沒有，才考慮錄製交易。這就是 Casper 的第三條經驗「<b>先找標準，再想客製</b>」在資料移轉上的版本——錄製 BDC 就像在標準交易外面自己糊一層，版本升級、畫面改版就壞。</div>
+
+  <h3 id="ch05-13-03">3. 專案概念：技術工具、專案組織與商業物件 BOR</h3>
+  <p><b>第一課：技術與工具（p17–p23）</b>。每個應用都提供自己的傳輸程式，介面各不相同；支援哪幾種方法（Batch Input、Call Transaction、Direct Input、BAPI）完全取決於應用，<b>預期資料量</b>通常是選方法的決定因素。少數應用沒有標準介面，才用交易記錄器（TA），它同時支援 Batch Input 與 Call Transaction。</p>
+  <ul>
+    <li>Batch Input 分兩階段：① 建立含所有資料的 Session；② 處理 Session，把資料匯入 R/3。多數 SAP 標準傳輸程式底層都用 Batch Input。</li>
+    <li>Call Transaction：透過線上交易直接提交資料，功能與 Batch Input 相同。</li>
+    <li>Direct Input：檔案被徹底檢查後直接更新資料庫，<b>以函數呼叫取代線上畫面</b>；並非所有應用都有。</li>
+    <li>EDI：ALE 的入站／出站函數模組處理 IDoc，不用線上交易當檢查機制。</li>
+    <li>BAPI：定義在 BOR 中、屬於 SAP 商業物件或介面型別的方法，執行與線上相同的檢查。</li>
+  </ul>
+  <p><b>第二課：專案組織（p24–p31）</b>。ASAP 路線圖五階段：① 專案準備 ② 業務藍圖 ③ 實施（基線配置＋細節配置兩個工作包）④ 上線準備（系統管理與資料傳輸的測試、使用者訓練）⑤ 上線與支援。<b>ASAP 路線圖中大約有 25 處提到資料傳輸</b>。</p>
+  <ul>
+    <li>資料傳輸專案要為每個應用實施，可拆子專案；組專案團隊、指明任務、分配給成員（一人可兼多角）。</li>
+    <li><b>先決條件：Customizing 至關重要。</b>Customizing 一改，檢查與有效值就變，原本傳得過的資料可能就傳不過——所以<b>每次 Customizing 修改後都要重測資料傳輸</b>。</li>
+    <li>專案任務五件事：<b>萃取、格式化、對應、測試與執行傳輸、檢查資料</b>。</li>
+    <li>測試要用典型資料，「用 100 筆一模一樣的資料測試是完全沒有用的」；測試三階段：轉成介面格式 → 傳入 R/3 → 在 R/3 驗證。資料錯誤要<b>回舊系統修正</b>，舊系統資料必須百分之百正確。</li>
+    <li>文件：<span class="tcode">SXDA</span> →「說明 → 應用程式說明」；SAP Library「跨應用元件 → CA 資料傳輸」。其他外部資料傳輸工作台用於：資金管理 TR、核心業務夥伴、EIS、CO-PA、銀行 BCA；工廠維護物件用 <span class="tcode">IBIP</span>。</li>
+  </ul>
+  <p><b>第三課：商業物件（p32–p33）</b>。BOR（Business Object Repository）是 R/3 的核心知識庫，收錄所有 SAP 商業物件型別、介面型別與它們的方法。<b>到 4.6 版為止，所有傳輸程式都以 BOR 物件組織</b>：每個 BOR 物件可以有多種傳輸方法（BAPI 或傳輸程式），所以 BOR 物件能列出自己可用的所有傳輸程式。BOR 的維護工具是商業物件建構器 <span class="tcode">SWO1</span>，BAPI 瀏覽器是 <span class="tcode">BAPI</span>。</p>
+  <div class="note">「先測 10 筆、再加一個數量級」的測試節奏在附錄（p346）有明講，見第 23 節。</div>
+
+  <h3 id="ch05-13-04">4. DX-WB（SXDA）：專案、子專案、Run 與 Task</h3>
+  <p>資料傳輸工作台 DX-WB（<span class="tcode">SXDA</span>）提供整合的專案管理：專案、子專案、Run（執行）、Task（任務）、排程、建立測試資料、檔案功能，並把標準傳輸程式、BAPI、客戶自己的程式與函數都<b>註冊</b>起來（p34）。「轉到 → 註冊程式」可看到所有商業物件已註冊程式的概覽（DX 庫，p35）。</p>
+  <table>
+    <thead><tr><th>層級</th><th>說明</th></tr></thead>
+    <tbody>
+      <tr><td>專案（Project）</td><td>把商業物件的傳輸分組；名稱在系統內唯一（當作鍵）</td></tr>
+      <tr><td>子專案（Subproject）</td><td>每個子專案指定<b>唯一一個</b>商業物件型別；同一物件型別可建多個子專案；名稱唯一</td></tr>
+      <tr><td>Run 定義</td><td>指定子專案的資料怎麼傳：建立任務、指定檔案；可建多個不同名的 Run 定義來<b>平行傳輸</b></td></tr>
+      <tr><td>Task（任務）</td><td>任務類型 <b>MAP</b>（轉換，可用 LSMW 或註冊的轉換程式；程式類型「LSMW」需指定 LSMW 專案／子專案／物件）；任務類型 <b>LOA</b>（載入；Batch Input 程式用程式類型 <b>BINP</b>，屬性遮罩填「報表」與「變式」，變式要先建好並含轉換後檔名）</td></tr>
+    </tbody>
+  </table>
+  <ul>
+    <li>Run 開始後，系統依流程定義<b>由上到下</b>自動執行任務；任一任務出錯就停。每個 Run 都有狀態與日誌（應用日誌），可重啟未完成的 Run。</li>
+    <li>程式類型為 <b>REPO、BINP、DINP</b> 的任務執行後<b>必須手動設定狀態</b>；其他任務自動設定。可用狀態：任務中止／完成無錯誤／完成有錯誤（不重跑、手動結束）。</li>
+    <li>處理 Run 問題（p45）：<b>繼續 Run</b>（依日誌修正後，游標放在 Run ID 上繼續）、<b>撤銷 Run</b>（必須在執行其他 Run 前撤銷）、<b>撤銷任務</b>（把未完成任務設為完成，繼續時略過）、<b>刪除 Run</b>（已完成或手動中止者）。</li>
+    <li>背景排程：DX-WB 的「計劃 Run」按鈕；需先為 DX-WB 主程式 <span class="kw">RDXRUNSTART</span> 建變式（物件、子物件、Run 定義名稱）（p322）。</li>
+  </ul>
+  <div class="warn"><b>S/4HANA 現況</b>：DX-WB 是 R/3 4.x 時代的框架，SAP 早已不再發展；新專案不要再以它為中心。現在的「專案化資料移轉」由 Migration Cockpit 負責（第 24 節），它同樣有專案、物件、檔案／暫存表、模擬、執行、日誌的概念，可以把 DX-WB 的觀念直接套過去。</div>
+
+  <h3 id="ch05-13-05">5. Batch Input Session 的結構與 BDCDATA</h3>
+  <p>Batch Input，又稱 <b>BDC（Batch Data Communication）</b>，是不經對話、自動把資料傳入 SAP 的程序（p47）。為了讓檢查與更新跟對話處理完全一樣，它<b>模擬使用者對話</b>；核心元件是 <b>Batch Input Session</b>，由 Batch Input 程式建立，再用批輸入監視器處理。自動處理可用程式 <span class="kw">RSBDCSUB</span>（第 22 節）。</p>
+  <ul>
+    <li>Batch Input 程式的功能（p48）：以內表（BDC 表）提供結構化工作區、匯入資料、放進 BDC 表、把 BDC 表寫進 Session。BDC 表結構永遠相同。</li>
+    <li>Session 格式（p49）：<b>Session 表頭</b>用字典結構 <span class="kw">APQI</span> 描述、<b>交易資料</b>用 <span class="kw">APQD</span> 描述；Session 完成（關閉）後才能在監視器處理。</li>
+    <li>每個 Session 必須開啟與關閉；一個 Batch Input 程式可<b>連續</b>建立多個 Session，但 <b>Session 不能平行建立</b>（p50）。</li>
+    <li>處理修改類交易時，<b>先合併資料庫既有資料，再合併 Session 資料</b>到畫面上（p52）。</li>
+    <li>Batch Input 一律<b>同步</b>提交；其他方法（Call Transaction）才可能非同步。</li>
+  </ul>
+  <p><b>BDCDATA 的規則</b>（p51）：每個畫面一筆記錄，用 <span class="kw">PROGRAM</span>、<span class="kw">DYNPRO</span>、<span class="kw">DYNBEGIN</span>='X' 標示；每個欄位值一筆記錄，用 <span class="kw">FNAM</span>、<span class="kw">FVAL</span>。OK 碼欄位名固定是 <span class="kw">BDC_OKCODE</span>：功能鍵用「<b>/＋鍵值</b>」（例如 <span class="kw">'/11'</span> 代表 F11）；選單、按鈕用「<b>=＋功能碼</b>」（例如 <span class="kw">'=SAVE'</span>）。BDC_CURSOR、BDC_SUBSCR 的用法詳見 <a href="#ch04-4-04">4-4 章第 4 節</a>。</p>
+  <p><b>Session 函數（函數群 SBDC，p292–p299）</b>：</p>
+  <table>
+    <thead><tr><th>函數</th><th>必要參數</th><th>選用參數與說明</th></tr></thead>
+    <tbody>
+      <tr><td><span class="kw">BDC_OPEN_GROUP</span></td><td>CLIENT、GROUP（Session 名）、USER</td><td><b>USER 必填</b>：背景處理時用這個使用者做權限檢查（線上處理則用當前使用者）。HOLDDATE（最早可處理日）、KEEP（'X'＝成功後保留；空白＝刪除，<b>有錯誤時此旗標被忽略</b>）、RECORD（'X'＝建立錄製而非 Session）、QID（回傳內部鍵，允許同名 Session）</td></tr>
+      <tr><td><span class="kw">BDC_INSERT</span></td><td>TCODE、DYNPROTAB（BDC 表）</td><td>POST_LOCAL='X' 啟用本地更新（見 <a href="#ch05-11">BC414</a>）；PRINTING='X' 清單立即列印。<b>一次只能放一筆交易</b>，多筆交易要在迴圈中多次呼叫</td></tr>
+      <tr><td><span class="kw">BDC_CLOSE_GROUP</span></td><td>—</td><td>關閉後 Session 才能被處理</td></tr>
+    </tbody>
+  </table>
+
+  <pre><code class="abap">*&amp;---------------------------------------------------------------*
+*&amp; 建立 Batch Input Session：FB01 總帳憑證（S/4HANA 仍可用的交易）
+*&amp; 每 1000 次 BDC_INSERT 做一次 COMMIT WORK，降低回滾段負荷（p331）
+*&amp;---------------------------------------------------------------*
+PARAMETERS: p_group TYPE apqi-groupid DEFAULT 'ZBC420_FI',
+            p_hold  TYPE sy-datum,
+            p_keep  AS CHECKBOX DEFAULT abap_true.
+
+TYPES: BEGIN OF ty_doc,
+         bldat TYPE bldat, budat TYPE budat, bukrs TYPE bukrs,
+         waers TYPE waers, saknr_d TYPE saknr, saknr_c TYPE saknr,
+         wrbtr TYPE wrbtr,
+       END OF ty_doc.
+DATA lt_doc TYPE STANDARD TABLE OF ty_doc WITH EMPTY KEY.
+" … lt_doc 由檔案讀入（第 9 節）…
+
+CALL FUNCTION 'BDC_OPEN_GROUP'
+  EXPORTING
+    client   = sy-mandt
+    group    = p_group
+    user     = sy-uname        " 背景處理時的權限檢查身分
+    keep     = p_keep
+    holddate = p_hold
+  EXCEPTIONS
+    OTHERS   = 1.
+IF sy-subrc &lt;&gt; 0.
+  MESSAGE |Session { p_group } 無法開啟（{ sy-subrc }）| TYPE 'E'.
+ENDIF.
+
+LOOP AT lt_doc INTO DATA(ls_doc).
+  DATA(lv_idx) = sy-tabix.
+  DATA(lo_bdc) = NEW lcl_bdc( ).          " 第 19 節的 BDC 輔助類別
+  lo_bdc-&gt;dynpro( iv_program = 'SAPMF05A' iv_dynpro = '0100'
+      )-&gt;field( iv_fnam = 'BKPF-BLDAT' iv_fval = |{ ls_doc-bldat DATE = USER }|
+      )-&gt;field( iv_fnam = 'BKPF-BLART' iv_fval = 'SA'
+      )-&gt;field( iv_fnam = 'BKPF-BUKRS' iv_fval = ls_doc-bukrs
+      )-&gt;field( iv_fnam = 'BKPF-BUDAT' iv_fval = |{ ls_doc-budat DATE = USER }|
+      )-&gt;field( iv_fnam = 'BKPF-WAERS' iv_fval = ls_doc-waers
+      )-&gt;field( iv_fnam = 'RF05A-NEWBS' iv_fval = '40'
+      )-&gt;field( iv_fnam = 'RF05A-NEWKO' iv_fval = ls_doc-saknr_d
+      )-&gt;field( iv_fnam = 'BDC_OKCODE'  iv_fval = '/00'
+      )-&gt;dynpro( iv_program = 'SAPMF05A' iv_dynpro = '0300'
+      )-&gt;field( iv_fnam = 'BSEG-WRBTR' iv_fval = |{ ls_doc-wrbtr NUMBER = USER }|
+      )-&gt;field( iv_fnam = 'RF05A-NEWBS' iv_fval = '50'
+      )-&gt;field( iv_fnam = 'RF05A-NEWKO' iv_fval = ls_doc-saknr_c
+      )-&gt;field( iv_fnam = 'BDC_OKCODE'  iv_fval = '/00'
+      )-&gt;dynpro( iv_program = 'SAPMF05A' iv_dynpro = '0300'
+      )-&gt;field( iv_fnam = 'BSEG-WRBTR' iv_fval = '*'
+      )-&gt;field( iv_fnam = 'BDC_OKCODE'  iv_fval = '=BU' ).
+
+  CALL FUNCTION 'BDC_INSERT'
+    EXPORTING
+      tcode     = 'FB01'
+    TABLES
+      dynprotab = lo_bdc-&gt;mt_bdc
+    EXCEPTIONS
+      OTHERS    = 1.
+  IF sy-subrc &lt;&gt; 0.
+    MESSAGE |第 { lv_idx } 筆放入 Session 失敗| TYPE 'I'.
+  ENDIF.
+
+  IF lv_idx MOD 1000 = 0.
+    COMMIT WORK.          " 清空資料庫回滾段，不影響 Session 內容
+  ENDIF.
+ENDLOOP.
+
+CALL FUNCTION 'BDC_CLOSE_GROUP'
+  EXCEPTIONS
+    OTHERS = 1.
+MESSAGE |Session { p_group } 已建立 { lines( lt_doc ) } 筆，請至 SM35 處理| TYPE 'S'.</code></pre>
+  <div class="note">畫面 0300 的第二次進入用 <span class="kw">BSEG-WRBTR = '*'</span> 讓系統帶入差額，是 FB01 錄製的常見技巧；實際畫面序列請以你系統的 <span class="tcode">SHDB</span> 錄製為準（欄位狀態群組不同，畫面可能不同）。</div>
+
+  <h3 id="ch05-13-06">6. 批輸入監視器 SM35：處理模式、OK 碼、狀態與日誌</h3>
+  <p>監視器入口：「系統 → 服務 → 批輸入 → Session」或 <span class="tcode">SM35</span>。「系統 → 服務 → 批輸入」下灰色的選單項，只有在<b>前景處理 Session 時</b>才會生效（p53）。系統永遠會標記因錯誤無法處理的交易，這些交易留在 Session（錯誤 Session）中，可修正後重處理。</p>
+  <table>
+    <thead><tr><th>處理模式</th><th>說明</th></tr></thead>
+    <tbody>
+      <tr><td>前景處理（Process/foreground）</td><td>交易在前景對話中逐畫面執行（互動式處理）</td></tr>
+      <tr><td>只顯示錯誤（Display errors only）</td><td>在背景跑，發生錯誤時才把該畫面顯示到前景要求修正</td></tr>
+      <tr><td>背景（Background）</td><td>在背景工作程序中執行</td></tr>
+      <tr><td>目標系統（Target host，選用）</td><td>指定背景處理的應用伺服器；<b>建議留空</b>讓系統自動負載平衡</td></tr>
+    </tbody>
+  </table>
+  <p><b>附加功能</b>（p57）：<b>擴充日誌</b>（除 E 外，W、I、S 訊息也記錄，背景處理也可用）；<b>專家模式</b>（只對互動式有效，關閉訊息 00 344「該畫面沒有批輸入資料」的提示，可以在批輸入中執行額外功能）；<b>畫面標準大小</b>（對話處理時自動用標準大小，和 Table Control、Step Loop 有關）。</p>
+  <p><b>前景處理時的特殊 OK 碼</b>（p58）：</p>
+  <table>
+    <thead><tr><th>OK 碼</th><th>功能</th></tr></thead>
+    <tbody>
+      <tr><td><span class="kw">/N</span></td><td>下一筆交易：結束目前交易並標記為錯誤</td></tr>
+      <tr><td><span class="kw">/BDEL</span></td><td>刪除 Session 中目前這筆交易</td></tr>
+      <tr><td><span class="kw">/BEND</span></td><td>撤銷：結束批輸入處理，Session 標記為錯誤</td></tr>
+      <tr><td><span class="kw">/BDA</span></td><td>從「只顯示錯誤」切換到「前景處理」</td></tr>
+      <tr><td><span class="kw">/BDE</span></td><td>從「前景處理」切換到「只顯示錯誤」</td></tr>
+      <tr><td><span class="kw">/BDX</span></td><td>專家模式：離開批輸入處理時不顯示錯誤訊息</td></tr>
+      <tr><td><span class="kw">/BBEG</span></td><td>重新開始目前交易</td></tr>
+    </tbody>
+  </table>
+  <ul>
+    <li><b>Session 狀態</b>（p60）：新建（未處理）、錯誤（已處理但部分交易有錯）、已處理、處理中、背景、建立中（程式或記錄器正在建立）、鎖定。</li>
+    <li>概覽欄位（p61）：Session 名、建立日期時間、鎖定日（之前不能處理）、建立者、交易數與畫面數、授權使用者（只對背景處理）。</li>
+    <li><b>背景處理的注意事項</b>（p62）：不要用 <span class="kw">/N</span>、<span class="kw">/O</span> 跳到其他交易；畫面間切換用 Enter；4.6 版起前景修正都會記錄在日誌。</li>
+    <li>統計（p63）：交易總數，以及「有錯誤／已處理／已刪除／待處理」各多少筆。</li>
+    <li>日誌（p64）：每次執行都產生；有錯就標為「錯誤」，再處理會產生附加日誌；錯誤訊息含 TCODE 與出錯畫面，並有「合計」統計。</li>
+    <li>分析（p65–p66）：三個頁籤——交易（清單與狀態）、畫面（依 BDCDATA 顯示欄位，雙擊可「畫面模擬」）、日誌。</li>
+    <li>使用者設定：在「預設設定」只顯示前綴為 <span class="kw">BC420*</span> 的 Session。</li>
+    <li>匯出／匯入 Session（p67）：「Utilities → Export/import sessions」，在應用伺服器上以實體或邏輯檔名（<span class="tcode">FILE</span>）執行。</li>
+  </ul>
+
+  <pre><code class="abap">*&amp;---------------------------------------------------------------*
+*&amp; 自製 Session 監控清單：讀 APQI（Session 表頭）
+*&amp; 欄位請以 SE11 確認；QSTATE 的值域以字典定義為準
+*&amp;---------------------------------------------------------------*
+PARAMETERS p_grp TYPE apqi-groupid DEFAULT 'ZBC420*'.
+SELECT-OPTIONS s_cred FOR sy-datum DEFAULT sy-datum.
+
+DATA(lv_pattern) = replace( val = p_grp sub = '*' with = '%' occ = 0 ).
+
+SELECT groupid, qstate, creator, credate, cretime, transcnt
+  FROM apqi
+  WHERE groupid LIKE @lv_pattern
+    AND credate IN @s_cred
+  ORDER BY credate DESCENDING, cretime DESCENDING   " HANA 沒有預設排序！
+  INTO TABLE @DATA(lt_sess).
+
+IF lt_sess IS INITIAL.
+  MESSAGE '找不到符合條件的 Session' TYPE 'S' DISPLAY LIKE 'W'.
+  RETURN.
+ENDIF.
+
+TRY.
+    cl_salv_table=&gt;factory( IMPORTING r_salv_table = DATA(lo_alv)
+                            CHANGING  t_table      = lt_sess ).
+    lo_alv-&gt;get_functions( )-&gt;set_all( abap_true ).
+    lo_alv-&gt;display( ).
+  CATCH cx_salv_msg INTO DATA(lx_salv).
+    MESSAGE lx_salv-&gt;get_text( ) TYPE 'E'.
+ENDTRY.</code></pre>
+  <div class="warn">SM35 的概覽會依建立日期時間排序，但你自己寫的監控程式<b>不會</b>。在 HANA 上沒寫 <span class="kw">ORDER BY</span>，同一段條件每次回傳的順序都可能不同——Casper 在成本評價專案踩過的坑（H 與 E 兩種角度資料交錯出現）在這裡一樣會發生：你以為「第一筆就是最新的 Session」，其實不是。凡是「取第一筆」的邏輯，一律先明確排序。</div>
+
+  <h3 id="ch05-13-07">7. 標準資料傳輸原則：格式化規則與 SAP 記錄佈局</h3>
+  <p>SAP 交付的標準傳輸程式透過「SAP 記錄佈局結構（Record Layout）」這個介面讀檔，外部資料格式必須相容（p69）。轉換可一步完成，也可分格式化、對應兩步。</p>
+  <p><b>格式化規則</b>（p70–p71，使用傳輸程式時）：資料要格式化成<b>和線上使用者用鍵盤輸入一樣</b>——</p>
+  <ul>
+    <li>資料必須是<b>字元格式</b>；</li>
+    <li>欄位長度不能超過 SAP 欄位定義；</li>
+    <li>比 SAP 欄位短的要<b>靠左對齊</b>，右邊補空白；</li>
+    <li>除了 BAPI 與 IDoc 之外，都要考慮<b>使用者特定設定</b>（日期格式、小數點符號、使用者參數檔中的固定值）。線上傳輸用執行者的權限與設定；背景處理必須指定使用者，而這個使用者的設定要一致，權限卻可能不同（例如正式機上真正做傳輸的帳號），<b>權限與設定不一致會造成錯誤</b>（例如沒有該公司代碼的權限）。</li>
+    <li>注意：BAPI、IDoc 例外，它們吃的是<b>內部格式</b>。</li>
+  </ul>
+  <p><b>記錄佈局</b>（p72–p76）：標準程式認定檔案就是相應的記錄佈局格式；不必用到所有結構，哪些必填、哪些選用見結構文件。每個佈局的結構都定義在 ABAP 字典裡。</p>
+  <table>
+    <thead><tr><th>記錄類型</th><th>意義</th><th>客戶主檔範例（p76）</th><th>FI 憑證範例（RFBIBL00）</th></tr></thead>
+    <tbody>
+      <tr><td><b>0</b></td><td>Session 表頭記錄：批輸入檔的管理資料（Session 名、用戶端、使用者、保留旗標、<b>NODATA 字元</b>）。背景執行時用<b>表頭中指定的使用者</b>做權限檢查；設了保留（停止）旗標則處理完 Session 留在系統，否則刪除。檔案中出現新的表頭記錄，就關閉現有 Session、開新 Session</td><td>BGR00</td><td>BGR00</td></tr>
+      <tr><td><b>1</b></td><td>交易表頭：交易碼與初始畫面的值（帳戶群組、公司代碼、憑證類型、帳號…）</td><td>BKN00</td><td>BBKPF</td></tr>
+      <tr><td><b>2</b></td><td>交易資料：主記錄與憑證行項目資料；除記錄類型外還要填<b>結構名</b></td><td>BKNA1、BKNB1、BKNBK、BKNVA、BKNVK、BKNB6</td><td>BBSEG、BBTAX…</td></tr>
+    </tbody>
+  </table>
+  <p><b>支援的方法由程式決定，使用者不能改</b>（p77）。如果資料已是 SAP 記錄佈局、程式又支援多種方法，則<b>不必改結構或檔案內容</b>就能切換方法——典型例子是 <span class="kw">RFBIBL00</span>（傳輸 FI 憑證），Batch Input、Call Transaction、Direct Input 三種都能用。</p>
+  <p><b>NODATA 識別字</b>（p85）：記錄佈局中<b>不需要傳的欄位必須填 NODATA 字元</b>（預設 <span class="kw">/</span>）。沒填 NODATA 的欄位會傳入空白（space），<b>可能覆蓋系統裡的既有值</b>——這是修改類傳輸最危險的地方。DX-WB 建立的檔案會自動填好 NODATA；此規則只適用於 Batch Input、Call Transaction、Direct Input。</p>
+  <p><b>轉換成記錄佈局的八步驟</b>（p108）：① 開啟所有檔案 ② 用 NODATA 字元初始化輔助結構 ③ 讀一筆外部資料 ④ 用輔助結構初始化記錄佈局 ⑤ 格式化外部資料後對應到記錄佈局欄位 ⑥ 把記錄寫入目標檔 ⑦ 回到第 3 步直到檔尾 ⑧ 關閉檔案。</p>
+
+  <pre><code class="abap">*&amp;---------------------------------------------------------------*
+*&amp; 八步驟的現代寫法：NODATA 初始化 + 產生 RFBIBL00 用的 BGR00/BBKPF/BBSEG
+*&amp; 筆記 p109 用 FORM init + ASSIGN COMPONENT；這裡改成類別方法
+*&amp;---------------------------------------------------------------*
+CLASS lcl_layout DEFINITION FINAL.
+  PUBLIC SECTION.
+    CLASS-METHODS init_nodata
+      IMPORTING iv_nodata TYPE c DEFAULT '/'
+      CHANGING  cs_rec    TYPE any.
+ENDCLASS.
+
+CLASS lcl_layout IMPLEMENTATION.
+  METHOD init_nodata.
+    " 逐一定位結構的每個欄位，全部填入 NODATA 字元
+    DO.
+      ASSIGN COMPONENT sy-index OF STRUCTURE cs_rec TO FIELD-SYMBOL(&lt;lv_comp&gt;).
+      IF sy-subrc &lt;&gt; 0.
+        EXIT.
+      ENDIF.
+      &lt;lv_comp&gt; = iv_nodata.
+    ENDDO.
+  ENDMETHOD.
+ENDCLASS.
+
+START-OF-SELECTION.
+  " ② 先做好三個「全 NODATA」的樣板
+  DATA: ls_bgr00_init TYPE bgr00,
+        ls_bbkpf_init TYPE bbkpf,
+        ls_bbseg_init TYPE bbseg.
+  lcl_layout=&gt;init_nodata( CHANGING cs_rec = ls_bgr00_init ).
+  lcl_layout=&gt;init_nodata( CHANGING cs_rec = ls_bbkpf_init ).
+  lcl_layout=&gt;init_nodata( CHANGING cs_rec = ls_bbseg_init ).
+
+  " 記錄類型 0：Session 表頭
+  DATA(ls_bgr00) = ls_bgr00_init.
+  ls_bgr00-stype  = '0'.
+  ls_bgr00-group  = 'ZBC420_FI'.
+  ls_bgr00-mandt  = sy-mandt.
+  ls_bgr00-usnam  = sy-uname.
+  ls_bgr00-xkeep  = abap_true.
+  ls_bgr00-nodata = '/'.
+  TRANSFER ls_bgr00 TO gv_outfile.        " gv_outfile 已用 OPEN DATASET 開啟（第 9 節）
+
+  LOOP AT gt_legacy INTO DATA(ls_leg).    " ③ 外部資料
+    " ④ + ⑤ 每筆都從樣板開始，只覆寫要傳的欄位
+    DATA(ls_bbkpf) = ls_bbkpf_init.
+    ls_bbkpf-stype = '1'.
+    ls_bbkpf-tcode = 'FB01'.
+    ls_bbkpf-bukrs = ls_leg-bukrs.
+    ls_bbkpf-blart = 'SA'.
+    ls_bbkpf-bldat = ls_leg-bldat_ext.    " 外部格式，依 RFBIBL00 文件要求
+    ls_bbkpf-budat = ls_leg-budat_ext.
+    ls_bbkpf-waers = ls_leg-waers.
+    TRANSFER ls_bbkpf TO gv_outfile.      " ⑥
+
+    DATA(ls_bbseg) = ls_bbseg_init.
+    ls_bbseg-stype = '2'.
+    ls_bbseg-tbnam = 'BBSEG'.             " 類型 2 還要填結構名
+    ls_bbseg-newbs = '40'.
+    ls_bbseg-newko = ls_leg-hkont.
+    ls_bbseg-wrbtr = ls_leg-amount_ext.
+    TRANSFER ls_bbseg TO gv_outfile.
+  ENDLOOP.</code></pre>
+  <div class="warn">客戶主檔的 BKN00／BKNA1 記錄佈局（RFBIDE00）與筆記中 FD02 的錄製，在 <b>S/4HANA 都不能用</b>：客戶、供應商主檔必須經由 Business Partner（CVI），交易 XD01/FD01/XK01 會被導向 <span class="tcode">BP</span>。改用 Migration Cockpit 的 Customer／Supplier 物件，或程式中用 <span class="kw">CL_MD_BP_MAINTAIN</span>（見 <a href="#ch04-1">4-1 章</a>）。</div>
+
+  <h3 id="ch05-13-08">8. DX-WB 進階：檔案工具、測試資料與程式註冊</h3>
+  <p>使用 DX-WB 工具前，先依序選擇應用中的物件類型 → 支援的程式類型 → 支援的程式或方法（皆有 F4），再指定檔名與目錄（實體或邏輯檔名，p79）。</p>
+  <table>
+    <thead><tr><th>功能</th><th>重點</th></tr></thead>
+    <tbody>
+      <tr><td>建立檔案</td><td>產生初始檔，含該物件支援的所有結構；標準傳輸程式的記錄佈局一定包含 Session 表頭；結構已預填 NODATA（BAPI 不需要）</td></tr>
+      <tr><td>建立含資料的檔案</td><td>從 R/3 把現有資料抽出當測試資料；只適用於標準傳輸程式與 BAPI，而且<b>與應用有關</b>，不是每個物件都有（附錄 01 有清單）</td></tr>
+      <tr><td>顯示／修改檔案</td><td>標題顯示資料記錄數（看得出有幾筆交易）；欄位依結構與預設長度顯示；不同層級不同顏色；可列印（Table → Print）；概覽中每個結構只顯示前 100 個字元；只適用於 BI／CT／DI</td></tr>
+      <tr><td>複製檔案</td><td>應用伺服器 ↔ 展示伺服器（SAP GUI）之間複製：不轉換；<b>固定長度 → Tab 分隔</b>（只能應用伺服器 → 展示層）；<b>Tab 分隔 → 固定長度</b>（只能展示層 → 應用伺服器）。傳輸程式預期的是固定長度</td></tr>
+      <tr><td>建立測試資料</td><td>在修改模式逐欄輸入，多數欄位有 F4；不需要的欄位要填 NODATA。建立前先做「對應計畫」，最好用表格</td></tr>
+      <tr><td>檢查檔案</td><td>標準傳輸程式物件檢查記錄佈局；IDoc 格式執行所有 EDI 入站檢查；BAPI 物件可忽略「缺少入站夥伴參數」訊息</td></tr>
+      <tr><td>結構 → 顯示／產生</td><td>列出所有結構與欄位（可下載給外部對應工具用）；「結構 → 產生」用程式 <span class="kw">RDDSRCG0</span> 把字典結構翻成 C、COBOL、PL/1、RPG 的 include 檔</td></tr>
+    </tbody>
+  </table>
+  <p><b>註冊</b>（p89–p90）：自己開發的函數模組、類型 1（可執行）程式、BAPI 都能在 DX-WB 使用，但必須先註冊。函數模組需要特殊介面以自動設定日誌狀態；程式在 4.6A 之前需以變式啟動，之後改為不帶變式（與函數一樣要特殊介面，select-options）；BAPI 需先產生 BAPI-ALE 介面，要擴充 SAP 的傳輸 BAPI 請參考 BAPI 程式設計指南。操作：「轉到 → 註冊」→ 填程式或函數名 → 建立註冊 → 選物件類型、任務類型、程式類型（一個任務類型可掛多個程式類型）。</p>
+  <div class="note">筆記 p87 作者註記「懷疑教程在這裡缺了一頁，語焉不詳」——記錄佈局「顯示結構（1）」那頁在筆記中確實缺漏，本節依 p87–p88 內容整理。</div>
+
+  <h3 id="ch05-13-09">9. 循序檔案：AL11 與 OPEN／READ／TRANSFER／CLOSE DATASET</h3>
+  <p>ABAP 在應用伺服器上執行，支援應用伺服器與前端電腦兩邊的檔案傳輸：應用伺服器檔案用 ABAP 語言元素（<span class="kw">OPEN DATASET</span>、<span class="kw">READ DATASET</span>、<span class="kw">TRANSFER</span>、<span class="kw">CLOSE DATASET</span>），展示層檔案用函數（p92）。</p>
+  <p><b>檔案監視器 <span class="tcode">AL11</span></b>（p93–p95）是 CCMS 工具：瀏覽 R/3 目錄結構（跨伺服器傳輸目錄 <span class="kw">\trans</span>、實例目錄 <span class="kw">\work</span>、<span class="kw">\data</span>、<span class="kw">\DVEBMGS..</span>），<b>不能修改伺服器上的資料</b>。左欄是系統內部目錄參數、右欄是實體目錄；<span class="kw">DIR_TRANS</span> 是全域傳輸目錄；子目錄長度顯示為 0。</p>
+  <table>
+    <thead><tr><th>語法</th><th>筆記（R/3 4.6）說法</th><th>Unicode／S/4HANA 的正確觀念</th></tr></thead>
+    <tbody>
+      <tr><td>OPEN DATASET … FOR INPUT／OUTPUT／APPENDING</td><td>INPUT 讀（已開啟則從頭讀，為預設）；OUTPUT 寫（存在則清空、不存在則建立）；APPENDING 追加</td><td>相同</td></tr>
+      <tr><td>IN BINARY MODE／IN TEXT MODE</td><td>BINARY 為預設；BINARY 依結構長度讀寫、TEXT 依記錄結束符；TEXT 模式會刪除行尾空白</td><td><b>Unicode 程式必須明確寫模式</b>；TEXT MODE 必須加 <span class="kw">ENCODING</span>（UTF-8／DEFAULT／NON-UNICODE）</td></tr>
+      <tr><td>MESSAGE &lt;field&gt;</td><td>開檔失敗時回傳作業系統訊息</td><td>相同，排錯必備</td></tr>
+      <tr><td>sy-subrc</td><td>開啟成功 0、失敗 8；READ 到檔尾 4</td><td>相同；另有 <span class="kw">CX_SY_FILE_OPEN</span>、<span class="kw">CX_SY_FILE_AUTHORITY</span>、<span class="kw">CX_SY_FILE_IO</span>、<span class="kw">CX_SY_CONVERSION_CODEPAGE</span> 等例外要 CATCH</td></tr>
+      <tr><td>隱式開檔</td><td>沒開檔就 READ／TRANSFER 會以預設模式自動開檔</td><td><b>Unicode 程式不再允許</b>，未開啟就讀寫會直接 runtime error——一定要明確 OPEN</td></tr>
+      <tr><td>TRANSFER … LENGTH &lt;len&gt;</td><td>只寫前 len 個位元組；結構較短時 TEXT 補空白、BINARY 補 X'00'</td><td>相同</td></tr>
+      <tr><td>READ DATASET … LENGTH &lt;len&gt;</td><td>回傳實際讀到的長度；不做任何隱式轉換</td><td>TEXT 模式讀入字元型目標</td></tr>
+      <tr><td>CLOSE DATASET</td><td>畫面切換時所有檔案被關閉、再開時恢復；程式結束全部關閉；READ 到檔尾<b>不會</b>自動關閉</td><td>相同；建議在 CLEANUP／finally 位置關檔</td></tr>
+      <tr><td>DELETE DATASET</td><td>實體刪除作業系統檔案，成功 sy-subrc = 0</td><td>相同</td></tr>
+    </tbody>
+  </table>
+  <div class="warn"><b>筆記 p106 的自相矛盾</b>：同一頁先說 CLOSE「跟 OPEN DATASET 一樣忽略錯誤」，又說「OPEN DATASET 的好處是開檔出錯（sy-subrc = 8）會造成中止」。正確是：<b>OPEN DATASET 失敗時只是 sy-subrc = 8，不會中止</b>（權限、編碼等特定錯誤才拋例外）；真正會中止的是「沒 OPEN 就 READ／TRANSFER」。所以要自己檢查 sy-subrc。</div>
+
+  <pre><code class="abap">*&amp;---------------------------------------------------------------*
+*&amp; 應用伺服器檔案：讀舊系統檔 → 轉換 → 寫記錄佈局檔（Unicode 正確寫法）
+*&amp;---------------------------------------------------------------*
+PARAMETERS: p_in  TYPE string LOWER CASE DEFAULT '/usr/sap/trans/data/legacy_fi.txt',
+            p_out TYPE string LOWER CASE DEFAULT '/usr/sap/trans/data/rfbibl00_in.txt'.
+
+DATA: lv_line  TYPE string,
+      lv_osmsg TYPE c LENGTH 255,
+      lv_cnt   TYPE i.
+
+TRY.
+    OPEN DATASET p_in FOR INPUT IN TEXT MODE ENCODING UTF-8
+         WITH SMART LINEFEED MESSAGE lv_osmsg.
+    IF sy-subrc &lt;&gt; 0.
+      MESSAGE |無法開啟 { p_in }：{ lv_osmsg }| TYPE 'E'.
+    ENDIF.
+
+    " 記錄佈局檔是固定長度：用 NON-UNICODE 或 UTF-8 需與讀取端一致
+    OPEN DATASET p_out FOR OUTPUT IN TEXT MODE ENCODING UTF-8
+         MESSAGE lv_osmsg.
+    IF sy-subrc &lt;&gt; 0.
+      CLOSE DATASET p_in.
+      MESSAGE |無法建立 { p_out }：{ lv_osmsg }| TYPE 'E'.
+    ENDIF.
+
+    DO.
+      READ DATASET p_in INTO lv_line.
+      IF sy-subrc &lt;&gt; 0.                 " 4 = 檔尾
+        EXIT.
+      ENDIF.
+      SPLIT lv_line AT cl_abap_char_utilities=&gt;horizontal_tab
+            INTO TABLE DATA(lt_col).
+      IF lines( lt_col ) &lt; 5.
+        CONTINUE.                         " 欄數不對的列略過（實務上要記錄）
+      ENDIF.
+      " … 依第 7 節把 lt_col 轉成 BBKPF／BBSEG 後 TRANSFER …
+      TRANSFER lv_line TO p_out.
+      lv_cnt = lv_cnt + 1.
+    ENDDO.
+
+    CLOSE DATASET: p_in, p_out.
+    MESSAGE |已轉換 { lv_cnt } 筆| TYPE 'S'.
+
+  CATCH cx_sy_file_open cx_sy_file_authority
+        cx_sy_file_io cx_sy_conversion_codepage INTO DATA(lx_file).
+    CLOSE DATASET: p_in, p_out.
+    MESSAGE lx_file-&gt;get_text( ) TYPE 'E'.
+ENDTRY.</code></pre>
+  <div class="tip">在程式裡讓使用者直接輸入伺服器路徑有安全風險（路徑穿越）。正式程式請用第 10 節的<b>邏輯檔名</b>，並以 <span class="kw">FILE_VALIDATE_NAME</span> 驗證實體路徑；讀寫權限由 <span class="kw">S_DATASET</span> 權限物件控管（可先用 <span class="kw">AUTHORITY_CHECK_DATASET</span> 檢查）。完整的檔案處理範例見 <a href="#ch04-4-11">4-4 章第 11 節</a>。</div>
+
+  <h3 id="ch05-13-10">10. 本機檔案與邏輯檔名（FILE、FILE_GET_NAME）</h3>
+  <p><b>本機循序檔</b>（p112–p117）：筆記用函數 <span class="kw">DOWNLOAD</span>（內表 → 本機檔；MODE 'A' 追加、空白新建；DOS 下 CODEPAGE 必須是 'IBM'；二進位檔要指定長度且內表只能有一個 X 型欄位）與 <span class="kw">UPLOAD</span>（本機檔 → 內表），範例程式 <span class="kw">SAPBC420_SEQD_DOWNLOAD</span> 從 KNA1 讀 KUNNR、LAND1、NAME1、STRAS、ORT01、PSTLZ 後下載。筆記範例還有錯字 <span class="kw">TABES</span>（應為 TABLES），並使用 <span class="kw">WITH HEADER LINE</span> 與 <span class="kw">INTO CORRESPONDING FIELDS</span>。</p>
+  <div class="warn"><span class="kw">DOWNLOAD</span>／<span class="kw">UPLOAD</span>（以及後繼的 <span class="kw">WS_DOWNLOAD</span>／<span class="kw">WS_UPLOAD</span>）都已過時；請改用 <span class="kw">CL_GUI_FRONTEND_SERVICES=&gt;GUI_DOWNLOAD／GUI_UPLOAD</span>。另外筆記 p345 強調：<b>前端檔案函數是為線上設計的，不能在背景作業執行</b>——背景作業要讀寫檔只能走應用伺服器（第 9 節）。</div>
+  <p><b>邏輯檔名</b>（p118–p121）：原本最常用於 <span class="tcode">SARA</span> 歸檔，但在資料傳輸程式中也非常好用——<b>與平台無關</b>，依作業系統自動套用 <span class="tcode">FILE</span> 中設定的實體路徑。建立步驟：① 定義邏輯路徑 ② 把邏輯路徑分配到實體路徑（必須含保留字 <span class="kw">&lt;FILENAME&gt;</span> 當檔名佔位符）③ 定義邏輯檔案。</p>
+  <p>常用保留字（皆放在角括號中，執行時代入）：<span class="kw">&lt;FILENAME&gt;</span>；日期類 <span class="kw">&lt;DATE&gt; &lt;YEAR&gt; &lt;SYEAR&gt; &lt;MONTH&gt; &lt;DAY&gt; &lt;WEEKDAY&gt;</span>；時間類 <span class="kw">&lt;TIME&gt; &lt;HOUR&gt; &lt;MINUTE&gt; &lt;SECOND&gt;</span>；系統類 <span class="kw">&lt;OPSYS&gt; &lt;INSTANCE&gt; &lt;SYSID&gt; &lt;DBSYS&gt; &lt;SAPRL&gt; &lt;HOST&gt; &lt;CLIENT&gt; &lt;LANGU&gt;</span>；外部參數 <span class="kw">&lt;PARAM_1&gt; &lt;PARAM_2&gt; &lt;PARAM_3&gt;</span>。</p>
+
+  <pre><code class="abap">*&amp;---------------------------------------------------------------*
+*&amp; ① 邏輯檔名 → 實體檔名（FILE_GET_NAME）
+*&amp; ② 前端下載的現代寫法（取代筆記的 DOWNLOAD 函數）
+*&amp;---------------------------------------------------------------*
+DATA lv_phys TYPE filename-fileextern.
+
+" 筆記寫 IMPORTING filename = file（型別 filename-fileeintern），
+" 正確的輸出參數名是 FILE_NAME，型別對應 FILENAME-FILEEXTERN
+CALL FUNCTION 'FILE_GET_NAME'
+  EXPORTING
+    logical_filename = 'Z_BC420_FI_IN'
+    parameter_1      = sy-datum
+  IMPORTING
+    file_name        = lv_phys
+  EXCEPTIONS
+    file_not_found   = 1
+    OTHERS           = 2.
+IF sy-subrc &lt;&gt; 0.
+  MESSAGE '邏輯檔名 Z_BC420_FI_IN 未在 FILE 中定義' TYPE 'E'.
+ENDIF.
+WRITE: / '實體檔名：', lv_phys.
+
+" ---- 前端下載：KNA1 客戶清單（對照 SAPBC420_SEQD_DOWNLOAD）----
+SELECT kunnr, land1, name1, stras, ort01, pstlz
+  FROM kna1
+  ORDER BY kunnr
+  INTO TABLE @DATA(lt_kna1)
+  UP TO 1000 ROWS.
+
+DATA: lv_file TYPE string,
+      lv_path TYPE string,
+      lv_full TYPE string.
+
+cl_gui_frontend_services=&gt;file_save_dialog(
+  EXPORTING default_file_name = 'kna1.txt'
+  CHANGING  filename = lv_file  path = lv_path  fullpath = lv_full
+  EXCEPTIONS OTHERS = 1 ).
+IF sy-subrc &lt;&gt; 0 OR lv_full IS INITIAL.
+  RETURN.
+ENDIF.
+
+cl_gui_frontend_services=&gt;gui_download(
+  EXPORTING filename              = lv_full
+            filetype              = 'DAT'
+            write_field_separator = abap_true     " Tab 分隔
+            codepage              = '4110'        " UTF-8
+  CHANGING  data_tab              = lt_kna1
+  EXCEPTIONS OTHERS               = 1 ).
+IF sy-subrc &lt;&gt; 0.
+  MESSAGE '下載失敗' TYPE 'E'.
+ENDIF.</code></pre>
+
+  <h3 id="ch05-13-11">11. LSMW 基礎：專案結構、物件屬性與來源結構</h3>
+  <p>LSMW（Legacy System Migration Workbench）是基於 R/3 的工具，支援從非 SAP 系統<b>一次性</b>與<b>週期性</b>傳輸資料：先轉換，再以 Batch Input、Call Transaction、Direct Input、BAPI 或 IDoc 匯入；另有「錄製」功能，可從新增／修改交易產生移轉物件（p123）。<b>LSMW 不是標準 R/3 的一部分，3.0 版起以外掛（Add-on）提供</b>（p124，資訊站 service.sap.com/lsmw，含實施檢查清單與簡報）；後來的 NetWeaver 版本才內建。</p>
+  <p>核心功能（p125）：從外部讀資料到 LSMW 內部格式 → 依規則格式化與分配 → 呼叫標準傳輸程式／BAPI／IDoc 寫入 R/3。LSMW <b>從結構定義與轉換規則產生兩支可執行的 ABAP 程式</b>（讀取程式與轉換程式，p127）。</p>
+  <ul>
+    <li>進入：<span class="tcode">LSMW</span>。三層識別：<b>Project</b>（專案，最多 10 字元；多個外部系統可各建一個專案）→ <b>Subproject</b>（最多 10 字元）→ <b>Object</b>（最多 10 字元，一個商業資料物件）。</li>
+    <li>初始畫面：All objects、My objects、All objects in a project（樹狀）、Project documentation（可列印、寄送、存成各種格式）。</li>
+    <li>共有 <b>26 個工作步驟</b>，顯示哪些依物件而定；基本設定只顯示主要步驟，其他可從「Extras → Personal Menu」加入個人選單。主要步驟：定義物件屬性 → 定義來源結構 → 定義來源欄位 → 維護結構關係 → 維護欄位對應與轉換規則 → 指定檔案 → 分配檔案 → 讀取資料 → 轉換資料 → 匯入資料。</li>
+  </ul>
+  <p><b>物件屬性</b>（p133–p135）：Owner 填使用者名稱，之後會出現在「My objects」；選擇<b>只執行一次</b>或<b>週期性</b>——週期性時<b>不能讀 PC 檔案</b>，並多一個步驟「週期資料傳輸的主程式」。匯入方法四選一：</p>
+  <table>
+    <thead><tr><th>匯入方法</th><th>說明</th></tr></thead>
+    <tbody>
+      <tr><td>Standard Batch/Direct Input</td><td>選物件與方法；眼鏡圖示可看程式文件</td></tr>
+      <tr><td>Batch Input Recording</td><td>用自己的錄製（第 18 節）；可按箭頭加入更多錄製</td></tr>
+      <tr><td>Business Object Method（BAPI）</td><td>選商業物件、方法、訊息類型</td></tr>
+      <tr><td>IDoc</td><td>選訊息類型與基本類型</td></tr>
+    </tbody>
+  </table>
+  <div class="warn">選 BAPI 或 IDoc 並存檔時，系統會檢查<b>夥伴參數</b>是否已存在該訊息類型，沒有就嘗試自動建立（第 16 節）。另外在動手前先印出「物件概覽」做一份<b>紙上對應</b>（p135），把 R/3 目標結構欄位和來源欄位一一對好，這一步省不得。</div>
+  <p><b>來源結構的三種型態</b>（p136–p137）：</p>
+  <ul>
+    <li><b>扁平結構</b>：檔案每一行結構都一樣。</li>
+    <li><b>多結構、固定模式</b>：例如一個表頭兩個明細反覆出現，每種記錄類型建一個來源結構。</li>
+    <li><b>表頭／明細、隨機模式</b>：每一行第一個位置必須放記錄類型描述，稱為 <b>ID 欄位</b>，定義欄位時要指定。</li>
+  </ul>
+  <p>維護來源結構時，建立多個結構會詢問關係是「相等（扁平）」或「不相等（層級）」。<b>用交易錄製建立的移轉物件，每個錄製只能有一個來源結構</b>，因為錄製只有一個扁平目標結構（p138）。來源欄位的型別決定匯入時的轉換（p139）：日期轉內部格式 YYYYMMDD；金額欄位轉計算格式（1234.56，無千分位，只能用於兩位小數）；PACn 表示 n 位小數的壓縮欄位。「Selection parameters for importing/converting data」旗標可讓最高層結構的欄位在讀取／轉換時當作選擇參數，常用於測試。</p>
+  <p><b>結構關係</b>（p140–p142）：選好物件與方法後，系統列出可能的目標結構；必選的會提示「This structure must be selected」。游標放在目標結構 → 按「Relation」→ 從來源結構清單挑。要改關係得先刪除現有關係；有檢查功能（「No structure relationship errors found」）。<b>許多 BI／CT／DI 程式用控制記錄 BGR00 或 BI000，一定要把來源的表頭結構指給它</b>。也可以把多個來源結構指給同一目標結構（層級顯示），兩邊的欄位就都能在目標結構中使用。</p>
+
+  <h3 id="ch05-13-12">12. LSMW 欄位對應與轉換規則</h3>
+  <p>「Maintain field mapping and conversion rules」步驟列出所有目標結構的所有欄位，每個欄位顯示：欄位 ID、已分配的來源欄位、規則類型、程式碼（p143）。部分技術欄位已由系統預填預設規則，<b>亂改可能嚴重影響轉換</b>；不小心改了可用「Extras → Restore default」還原。技術結構（BGR00、IDoc 控制記錄）預設灰色，要看得用「Extras → Display variant」勾「Technical fields」；也可顯示「Display processing times」與「Global data definitions」（p144–p145）。</p>
+  <table>
+    <thead><tr><th>規則</th><th>說明</th></tr></thead>
+    <tbody>
+      <tr><td>Initial（初始）</td><td>刪除目標欄位的程式碼與來源分配；結果值：標準 BI／CT／DI 為 NODATA 字元（在 BGR00／BI000 設定）；Batch Input 錄製為 <span class="kw">/</span>；BAPI／IDoc 字元欄位為空、數值欄位為 0</td></tr>
+      <tr><td>Constant（常數）</td><td>指定固定常數</td></tr>
+      <tr><td>Transfer（MOVE）</td><td>分配來源欄位後的預設規則。非 C／N 型的來源：壓縮欄位用 WRITE TO 解壓；日期欄位若目標至少 10 字元則依使用者主檔格式輸出，否則維持內部格式（LSMW 1.7 可指定日期格式）；數量欄位對 BI／DI 依使用者格式，對 BAPI／IDoc 維持內部計算格式</td></tr>
+      <tr><td>Fixed value（固定值）</td><td><b>可重用</b>；可設描述、長度、型別、值、大小寫</td></tr>
+      <tr><td>Translation（翻譯）</td><td><b>可重用</b>；把外部值轉成 SAP 有效值。分<b>一對一</b>與<b>區間</b>翻譯；可設「先查哪張翻譯表、找不到時的替代值」；<b>只有打勾 OK 旗標的值才會被轉換</b>；區間值表可從 PC 檔上傳</td></tr>
+      <tr><td>Prefix／Suffix</td><td>在來源內容前後加字</td></tr>
+      <tr><td>Concatenation（連接）</td><td>合併多個來源欄位；參與的來源欄位都必須先分配到目標欄位</td></tr>
+      <tr><td>Transfer left-justified</td><td>強制靠左對齊</td></tr>
+      <tr><td>ABAP code</td><td>自己寫 ABAP，每筆資料都執行</td></tr>
+      <tr><td>User-defined routine（子程式）</td><td><b>可重用</b>；含轉換邏輯的子程式，每筆執行</td></tr>
+    </tbody>
+  </table>
+  <p><b>可重用規則的命名</b>（p146–p147）：Fixed value、Translation、Own routine 對整個專案有效。指定時系統會依三個層次建議名稱——<b>網域（Domain）</b>、<b>資料元素</b>、<b>欄位名</b>。通常接受建議即可，除非網域太籠統（例如 CHAR1）。這樣能讓規則數量少、轉換一致。所有可重用規則可在「Field mapping and conversion rules」選單下以三個目錄檢視：固定值、翻譯、使用者定義規則。</p>
+  <div class="warn"><b>區間翻譯要非常小心</b>——這正是 Casper 的第二條經驗「<b>列舉（多筆 EQ）比區間（BT）安全</b>」。LSMW 的區間翻譯比的是<b>字元的字典序</b>，不是業務語意：舊料號「A100～A999 → 物料群組 01」看似合理，但 <span class="kw">A1000</span> 在字典序上介於 A100 與 A999 之間會被誤抓，前導零、號碼段不連續、編碼規則改過，都會多抓或漏抓。能列舉就列舉（一對一翻譯＋明確的「找不到就報錯」），區間只留給真正有序、定長的代碼。</div>
+
+  <pre><code class="abap">*&amp;---------------------------------------------------------------*
+*&amp; LSMW「User-defined routine」範例：舊物料類別 → SAP 物料群組
+*&amp; 用明確列舉的對照表，找不到就跳過該筆並記錄（不要給預設值）
+*&amp; （LSMW 產生的轉換程式可用 7.52 語法；這段放在 __GLOBAL_DATA__ 與欄位規則中）
+*&amp;---------------------------------------------------------------*
+" ---- __GLOBAL_DATA__ ----
+TYPES: BEGIN OF ty_map,
+         old TYPE c LENGTH 10,
+         new TYPE matkl,
+       END OF ty_map.
+DATA gt_matkl_map TYPE HASHED TABLE OF ty_map WITH UNIQUE KEY old.
+
+" ---- __BEGIN_OF_PROCESSING__：只建一次對照表 ----
+gt_matkl_map = VALUE #( ( old = 'A100' new = 'ZRAW01' )
+                        ( old = 'A200' new = 'ZRAW02' )
+                        ( old = 'B010' new = 'ZSEMI1' ) ).
+
+" ---- 目標欄位 MATKL 的規則程式碼 ----
+DATA(lv_old) = to_upper( condense( legacy-mat_cat ) ).
+IF line_exists( gt_matkl_map[ old = lv_old ] ).
+  target-matkl = gt_matkl_map[ old = lv_old ]-new.
+ELSE.
+  " 對照不到：寫進轉換日誌並丟棄這筆交易，事後補對照表再轉一次
+  WRITE: / '物料類別無對照：', legacy-mat_nr, lv_old.
+  skip_transaction.        " LSMW 提供的全域指令：略過目前交易
+ENDIF.</code></pre>
+  <div class="note"><span class="kw">skip_transaction</span>、<span class="kw">skip_record</span>、<span class="kw">transfer_record</span>、<span class="kw">transfer_transaction</span> 是 LSMW 轉換程式裡預先定義的全域指令（巨集），只能在 LSMW 的規則程式碼中使用。</div>
+
+  <h3 id="ch05-13-13">13. LSMW 讀取、轉換與匯入；管理與權限</h3>
+  <p><b>指定檔案</b>（p158–p161）：分三類——舊系統資料（在 PC 或 R/3 伺服器上）、匯入資料檔、轉換資料檔。</p>
+  <ul>
+    <li>舊系統資料：路徑、檔名、描述；「Code page ID」填外部系統的字元集；指定記錄描述與分隔符號。</li>
+    <li>R/3 伺服器上是以作業系統使用者 <span class="kw">&lt;sid&gt;adm</span> 身分存取，<b>選定目錄必須有讀寫權限</b>。</li>
+    <li>含多個來源結構資料的檔案可分配給多個來源結構；只含一個結構的檔案只能分配給一個。</li>
+    <li>匯入資料檔名由系統建議；轉換資料檔可用實體或邏輯路徑——只有後續呼叫的 BI／DI 程式支援時才需要填邏輯路徑與邏輯檔名。</li>
+    <li><b>萬用字元</b>：例如 <span class="kw">PO Header 1.txt</span>／<span class="kw">PO Position 1.txt</span>／<span class="kw">PO Header 2.txt</span>／<span class="kw">PO Position 2.txt</span>，用 <span class="kw">*1.txt</span>、<span class="kw">*2.txt</span> 兩組；匯入時先處理檔 1、2，再處理檔 3、4。匯入與轉換資料檔名也可用萬用字元。</li>
+  </ul>
+  <p><b>分配檔案</b>（p162）：把檔案分配給來源結構；之後改檔名或檔案特性，分配不變。</p>
+  <p><b>讀取資料</b>（p163–p165）：可處理全部，或用「交易編號 從…到…」限制範圍；標記為選擇參數的來源欄位也會出現。兩個勾選框：金額欄位轉內部格式（帶小數點）、日期轉內部格式（YYYYMMDD）。有萬用字元時會多一個萬用字元值的選擇參數，不填就全部處理。「Display read data」可表格顯示、切換單行／多行、看顏色圖例。</p>
+  <p><b>轉換資料</b>（p166–p167）：用定義好的規則把讀入資料轉成目標檔。<b>系統會先檢查轉換程式是否最新，不是就自動重新產生</b>。「Display converted data」同樣可檢視。</p>
+  <p><b>開始傳輸</b>（p168–p169）依物件類型而不同：</p>
+  <table>
+    <thead><tr><th>物件類型</th><th>後續步驟</th></tr></thead>
+    <tbody>
+      <tr><td>標準 Batch Input 或錄製</td><td>Create batch input session → Run batch input session（只顯示該物件的 Session）</td></tr>
+      <tr><td>Call Transaction</td><td>直接啟動程式，立即寫入</td></tr>
+      <tr><td>標準 Direct Input</td><td>直接啟動 DI 程式（<b>只用於測試</b>），正式請用 DI 監視器 <span class="tcode">BMV0</span></td></tr>
+      <tr><td>BAPI／IDoc</td><td>Start IDoc generation → Start IDoc processing → Create IDoc overview → Start IDoc follow-up</td></tr>
+    </tbody>
+  </table>
+  <p><b>管理</b>（p170）：「Goto → Administration」可建立、編輯、顯示、刪除、複製、改名專案／子專案／物件／可重用規則，並可加個人備註；每次處理都記錄最後修改人與時間。專案可用「Extras → Export／Import projects」在系統間搬移（補充：<span class="src">（依講義步驟整理）</span>）。</p>
+  <p><b>權限等級</b>（p171）：顯示（只能看）、執行（顯示＋讀取與轉換資料）、修改（執行＋修改與複製物件）、管理（全部功能）。</p>
+  <p><b>週期性傳輸</b>（p323–p324）：物件屬性選週期性後，多出步驟「週期資料傳輸的主程式」；主程式 <span class="kw">/SAPDMC/SAP_LSMW_INTERFACE</span> 讓 LSMW 能自動啟動，為它建變式後排背景作業即可。選擇畫面下半部是特定 BI／CT／DI 程式（例如 RFBIBL00）的參數，清單見 LSMW 文件「週期性資料傳輸」。</p>
+
+  <h3 id="ch05-13-14">14. Direct Input：BMV0 監視器與重啟機制</h3>
+  <p>Direct Input（DI）是 Batch Input 的替代方案（p173）：<b>不建 Session、沒有畫面</b>，透過呼叫函數直接更新資料庫表，並執行必要檢查，效率較高，特別適合大量資料。發生錯誤時有<b>重啟機制</b>，但前提是 DI 程式必須在 DI 監視器下以背景作業執行（程式 <span class="kw">RBMVSHOW</span> 或 <span class="tcode">BMV0</span>）。處理測試資料可在前景直接執行，但此時<b>沒有錯誤日誌，也沒有重啟能力</b>。<b>SAP 強烈建議正式傳輸一律用 BMV0。</b></p>
+  <table>
+    <thead><tr><th>必須在 DI 監視器下執行的程式（p174）</th><th>物件</th></tr></thead>
+    <tbody>
+      <tr><td><span class="kw">RFBIBL00</span></td><td>財務憑證</td></tr>
+      <tr><td><span class="kw">RMDATIND</span></td><td>物料主檔</td></tr>
+      <tr><td><span class="kw">SAPLC131</span>／<span class="kw">SAPLC132</span>／<span class="kw">SAPLC233</span></td><td>環境資料（EHS）</td></tr>
+      <tr><td><span class="kw">RVINVB10</span></td><td>銷售憑證</td></tr>
+    </tbody>
+  </table>
+  <p>其他不必在 DI 監視器下執行的 DI 程式，重啟能力依應用而定，有些根本不需要。</p>
+  <p><b>BMV0 的工作流程</b>（p175–p178）：① 為傳輸程式建變式（每支 DI 程式都要）→ ②「Job administration → Define new job」：作業名（在用戶端內唯一）、報表名（如 RMDATIND）、變式、背景伺服器（可之後覆寫）、執行使用者（<b>需要所有相關應用的授權</b>）→ ③「Start new job」：可改伺服器與使用者，接著輸入列印參數與開始時間（立即、日期時間、依作業、依事件）→ ④ 作業分析：「更新」看最新狀態；若因資料庫錯誤中止，狀態為「Batch: job terminated」，看「Display log」修正後選「Job administration → Reset job」，<b>從中止點繼續</b>。</p>
+  <p>重啟的原理：程式透過部分函數把同步資訊寫入系統表 <span class="kw">TBIST</span>（出錯的資料記錄編號、中止前最後處理的編號），確保<b>不會有資料被重複提交或漏提交</b>。但<b>檔案有格式錯誤（記錄不符 SAP 記錄佈局）時重啟機制無效</b>——處理前務必先用「檢查檔案」。</p>
+  <p><b>錯誤型態</b>（p179–p181）：</p>
+  <ul>
+    <li><b>FI 憑證（RFBIBL00）</b>：傳輸前的格式檢查失敗（例如記錄沒有鍵）→ 作業中止、<b>什麼都不提交</b>，狀態「Background job terminated」。只有<b>邏輯錯誤</b>（例如缺金額）→ 作業完成（「Completed: job executed」），錯誤記錄被放進 Batch Input Session，名稱取第一筆 BGR00 的 Session 名；修正後處理 Session，再用「error processing」把作業設為「Set to done」。筆記另註：RFBIBL00 不經 BMV0 以 DI／CT 執行時只能處理 20 筆（筆記原文如此；總之正式量請走 BMV0）。</li>
+    <li><b>物料主檔（RMDATIND）</b>：可建立錯誤檔並顯示處理（「Applications → Material master industry → Display logical errors」），修正後「Error processing → Repost errors」——資料<b>從處理檔而非原始檔讀取</b>。</li>
+    <li><b>銷售憑證</b>：從詳細作業日誌找錯、修正後重新提交。</li>
+  </ul>
+  <p><b>週期性作業</b>（p182–p183）：作業定義勾「允許週期」、必須用 DI 監視器排程；要加額外步驟，先用「Start data transfer using direct input method」存開始資料，再到 <span class="tcode">SM37</span> 編輯步驟清單。每次執行前檢查完整性——<b>前一次中止，後續作業不會啟動</b>，在「History」中標為「無效」；重啟中止作業前要確認輸入檔<b>沒被換掉</b>，否則會破壞一致性。</p>
+
+  <pre><code class="abap">*&amp;---------------------------------------------------------------*
+*&amp; 送進 BMV0 之前的「檢查檔案」：驗證記錄佈局的類型順序
+*&amp; 格式錯誤會讓 DI 的重啟機制失效，所以要在排作業前擋下來
+*&amp; 規則：第一筆必須是 0；1 之前必須已有 0；2 之前必須已有 1
+*&amp;---------------------------------------------------------------*
+PARAMETERS p_file TYPE string LOWER CASE OBLIGATORY.
+
+TYPES: BEGIN OF ty_err,
+         line TYPE i,
+         text TYPE string,
+       END OF ty_err.
+DATA: lt_err  TYPE STANDARD TABLE OF ty_err WITH EMPTY KEY,
+      lv_line TYPE string,
+      lv_no   TYPE i,
+      lv_last TYPE c LENGTH 1.
+
+TRY.
+    OPEN DATASET p_file FOR INPUT IN TEXT MODE ENCODING UTF-8.
+    IF sy-subrc &lt;&gt; 0.
+      MESSAGE |無法開啟 { p_file }| TYPE 'E'.
+    ENDIF.
+    DO.
+      READ DATASET p_file INTO lv_line.
+      IF sy-subrc &lt;&gt; 0.
+        EXIT.
+      ENDIF.
+      lv_no = lv_no + 1.
+      DATA(lv_stype) = substring( val = lv_line off = 0 len = 1 ).
+
+      DATA(lv_msg) = COND string(
+        WHEN lv_no = 1 AND lv_stype &lt;&gt; '0'
+          THEN '第一筆必須是 Session 表頭（STYPE 0）'
+        WHEN lv_stype NA '012'
+          THEN |未知的記錄類型 { lv_stype }|
+        WHEN lv_stype = '1' AND lv_last IS INITIAL
+          THEN '交易表頭前沒有 Session 表頭'
+        WHEN lv_stype = '2' AND lv_last = '0'
+          THEN '行項目前沒有交易表頭（STYPE 1）' ).
+      IF lv_msg IS NOT INITIAL.
+        APPEND VALUE #( line = lv_no text = lv_msg ) TO lt_err.
+      ENDIF.
+      lv_last = lv_stype.
+    ENDDO.
+    CLOSE DATASET p_file.
+  CATCH cx_sy_file_open cx_sy_file_io cx_sy_conversion_codepage INTO DATA(lx).
+    MESSAGE lx-&gt;get_text( ) TYPE 'E'.
+ENDTRY.
+
+IF lt_err IS INITIAL.
+  MESSAGE |{ lv_no } 筆記錄結構正確，可交給 BMV0 排程| TYPE 'S'.
+ELSE.
+  cl_demo_output=&gt;display( lt_err ).    " 正式程式請改用 CL_SALV_TABLE
+ENDIF.</code></pre>
+  <div class="warn"><b>S/4HANA 現況</b>：RFBIBL00 仍是 FI 憑證的標準批次入帳程式；物料主檔的 RMDATIND 在 S/4HANA 資料模型改變（例如物料號碼延長為 40 碼）後，SAP 建議改用 BAPI（<span class="kw">BAPI_MATERIAL_SAVEDATA</span>）或 Migration Cockpit 的 Product 物件。SD 的 RVINVB10 屬於舊式介面，新專案以 BAPI／IDoc 或 Cockpit 為主。使用前請先查 SAP Simplification List 與該程式的說明。</div>
+
+  <h3 id="ch05-13-15">15. EDI／IDoc 基礎：結構、訊息類型與入站處理</h3>
+  <p><b>EDI</b>（Electronic Data Interchange）是不同應用之間以電子方式交換結構化業務資料。<b>IDoc</b>（Intermediate Document，中介文件）是 SAP 系統間交換資料的標準格式。R/3 內部只用 IDoc 格式，轉成其他 EDI 標準（EDIFACT、ANSI X12）交給 <b>EDI 子系統</b>（非 SAP 提供）——好處是 SAP 應用只需要懂 IDoc 一種格式（p185）。</p>
+  <ul>
+    <li>IDoc 兩大概念（p186）：<b>訊息導向</b>（統一各應用、各廠商的不同格式）；<b>非同步</b>（應用文件建立前資料已在 IDoc 中，錯誤資料可以先在 IDoc 修正，再建應用文件）。</li>
+    <li>EDI 架構（p187）：支援 EDI 的應用、IDoc 介面（IDoc 型別＋函數模組，開放介面）、EDI 子系統。</li>
+    <li><b>EDI vs ALE</b>（p188）：EDI 是<b>不同獨立企業之間</b>的電子資料交換；ALE 是<b>同一企業內不同應用系統之間</b>。應用必須是「IDoc-enabled」才能用。例：分公司 1 用 IDoc 和分公司 2 交換 FI 憑證（ALE），同時透過 EDI 把 FI 文件送給外部系統。</li>
+  </ul>
+  <table>
+    <thead><tr><th>IDoc 組成（p189–p193）</th><th>說明</th><th>資料表（補充）</th></tr></thead>
+    <tbody>
+      <tr><td><b>控制記錄</b>（唯一一筆）</td><td>系統內部指定、唯一的 IDoc 編號（外部狀態回覆都指向它）、夥伴參數鍵欄位、最後處理狀態</td><td>EDIDC</td></tr>
+      <tr><td><b>資料記錄</b>（多筆）</td><td>控制部分＋應用部分；應用資料依區段（Segment）組織。每筆有 SEGNAM（區段）、MANDT、DOCNUM（IDoc 號）、SEGNUM（區段號）、PSGNUM（父區段號）、HLEVEL（層級）；<b>區段欄位一律 CHAR</b></td><td>EDID4（舊版 EDID2/EDID3）</td></tr>
+      <tr><td><b>狀態記錄</b>（多筆）</td><td>處理步驟日誌（已建立、準備分送…）；<b>外部系統送來的 IDoc 不含狀態記錄</b>；通訊錯誤會觸發工作流通知負責人</td><td>EDIDS</td></tr>
+    </tbody>
+  </table>
+  <ul>
+    <li>IDoc 型別由區段、區段階層、順序、是否可重複定義；SAP 交付的叫<b>基本型別</b>，可依規則與客戶擴充組合。顯示結構：<span class="tcode">WE30</span>（Display tree）；區段與型別資訊：<span class="tcode">WE63</span>。</li>
+    <li>命名：<b>區段型別</b>與版本無關，以 <b>E1</b> 開頭（ABAP 字典結構）；<b>區段名稱</b>與版本有關，以 <b>E2</b> 開頭（客戶自訂為 Z1／Z2）。外部系統從區段名稱得知區段版本。</li>
+    <li><b>訊息類型是 IDoc 型別的視圖</b>（p194）：IDoc 型別 EMPINF 含員工全部資訊；訊息類型 EMPADD 只看地址、EMPSYS 只看系統權限。不同版本中，同一訊息類型可指向不同基本型別。</li>
+    <li>出站處理（p196）：提交應用文件 → 建立出站 IDoc（ALE 可能產生多個通訊 IDoc）→ 找夥伴與埠 → 經埠送出。入站處理（p197–p198）：經入站埠收 IDoc → 建立入站 IDoc → 依夥伴參數找應用處理 → 提交應用文件；出錯則啟動獨立的例外處理。</li>
+    <li>入站兩種處理方式：<b>直接</b>（函數模組把 IDoc 資料轉成應用文件；ALE 服務提供過濾與版本處理）；<b>間接</b>（經 SAP Business Workflow）。</li>
+    <li><b>錯誤處理</b>（p199）：無法提交的 IDoc 可修正後再提交，被編輯過的 IDoc 狀態為 <b>69</b>；系統會為修改前的內容另存一份副本（新編號，狀態 70），<b>編修後的 IDoc 保留原編號</b>。IDoc 只能透過<b>歸檔</b>刪除（設刪除旗標 → 歸檔 → 從系統刪除）。</li>
+  </ul>
+
+  <pre><code class="abap">*&amp;---------------------------------------------------------------*
+*&amp; 錯誤 IDoc 監控：抓指定訊息類型、錯誤狀態的入站 IDoc 與最新狀態文字
+*&amp; 狀態碼用「列舉」而非 BETWEEN '51' AND '69'（字典序會多抓 52、53…）
+*&amp;---------------------------------------------------------------*
+PARAMETERS p_mes TYPE edidc-mestyp DEFAULT 'FIDCC1'.
+SELECT-OPTIONS s_cred FOR sy-datum DEFAULT sy-datum.
+
+SELECT docnum, status, mestyp, idoctp, sndprn, credat, cretim
+  FROM edidc
+  WHERE mestyp = @p_mes
+    AND direct = '2'                                   " 入站
+    AND status IN ( '51', '56', '60', '61', '63', '65', '69' )
+    AND credat IN @s_cred
+  ORDER BY docnum
+  INTO TABLE @DATA(lt_idoc).
+
+IF lt_idoc IS INITIAL.
+  MESSAGE '沒有錯誤 IDoc' TYPE 'S'.
+  RETURN.
+ENDIF.
+
+" 每張 IDoc 取「最新一筆」狀態記錄：必須明確排序，HANA 不保證順序
+SELECT docnum, countr, status, statxt, stapa1, stapa2
+  FROM edids
+  FOR ALL ENTRIES IN @lt_idoc
+  WHERE docnum = @lt_idoc-docnum
+  INTO TABLE @DATA(lt_stat).
+SORT lt_stat BY docnum ASCENDING countr DESCENDING.
+DELETE ADJACENT DUPLICATES FROM lt_stat COMPARING docnum.
+
+LOOP AT lt_idoc INTO DATA(ls_idoc).
+  DATA ls_st LIKE LINE OF lt_stat.
+  ls_st = VALUE #( lt_stat[ docnum = ls_idoc-docnum ] OPTIONAL ).
+  WRITE: / ls_idoc-docnum, ls_idoc-status, ls_idoc-sndprn,
+           ls_st-statxt(60).
+ENDLOOP.
+" 重新處理請用 BD87（依狀態分組），不要自己改 EDIDC 狀態</code></pre>
+
+  <h3 id="ch05-13-16">16. LSMW + IDoc：以 FI 憑證為例（含 IDoc 管理設定）</h3>
+  <p>用 LSMW 以 IDoc 傳輸的步驟（p200）：維護物件屬性 → 維護來源結構與欄位 → 維護結構關係 → 維護欄位對應與轉換規則 → 讀取 → 轉換 → <b>Start IDoc generation → Start IDoc processing → Create IDoc overview → Start IDoc follow-up</b>。選 IDoc 匯入技術並存檔時，系統檢查預設夥伴與訊息類型的夥伴參數，不存在就嘗試建立（p201）。</p>
+  <p><b>FI 憑證用 IDoc（訊息類型 FIDCC1、區段 E1FIKPF／E1FISEG）的特殊欄位</b>（p205–p212）：</p>
+  <ul>
+    <li><b>跨系統公司代碼</b>（ALE 場景）：分送時所有公司代碼欄位都換成跨系統公司代碼，目標系統收到再反向轉換。每個跨系統公司代碼有一個核心系統。設定：① 建立跨系統公司代碼 ② 指定給科目表（非核心系統才能確定核心系統的科目表）③ 指定給本地公司代碼。<b>SAP 建議兩者用相同名稱</b>。</li>
+    <li><b>總帳科目補前導零</b>：轉換出口 ALPHA（<span class="kw">CONVERSION_EXIT_ALPHA_INPUT</span>）——全數字（前後可有空白）則右對齊左補 0，例如 <span class="kw">'1234    '</span> → <span class="kw">'00001234'</span>、<span class="kw">' 1234   '</span> → <span class="kw">'00001234'</span>；含非數字則左對齊右補空白，例如 <span class="kw">'ABCD    '</span> 不變。反向用 <span class="kw">CONVERSION_EXIT_ALPHA_OUTPUT</span>。</li>
+    <li><b>總帳交易類型</b>：<span class="kw">FISEG-VORGN = 'RFBU'</span>。</li>
+    <li><b>借貸標識 SHKZG</b>：S＝借方、H＝貸方，依過帳碼決定。</li>
+    <li><b>金額</b>：兩個幣別欄位（本位幣 FIKPF-HWAER、憑證幣 FIKPF-WAERS）與兩個金額欄位（本位幣金額 DMBTR、憑證幣金額 WRBTR）都要填。</li>
+  </ul>
+  <div class="warn"><b>教材修正</b>：筆記 p210 寫 <span class="kw">IF fiseg-bschl = '50'. shkzg = 'H'. ELSE. shkzg = 'S'.</span>——這只在「只用過帳碼 40／50」的教學範例成立。實際上 31、39、50、11、19… 都是貸方，<b>借貸方向應讀過帳碼主檔 TBSL-SHKZG</b>，不要寫死。另外筆記 p211 把金額寫在 <span class="kw">fikpf-dmbtr／wrbtr</span>，但金額實際上屬於行項目區段（FISEG），表頭只放幣別；請以 <span class="tcode">WE60</span>／<span class="tcode">WE30</span> 顯示的區段欄位為準。</div>
+  <p><b>LSMW 的處理時點</b>（p213–p214）：<span class="kw">__GLOBAL_DATA__</span>（全域宣告）、<span class="kw">__BEGIN_OF_PROCESSING__</span>（處理開始前）、<span class="kw">__BEGIN_OF_TRANSACTION__</span>（一筆交易開始前）、<span class="kw">__BEGIN_OF_RECORD__</span>（對來源結構套用規則前）、<span class="kw">__END_OF_RECORD__</span>（套用規則後）、<span class="kw">__END_OF_TRANSACTION__</span>（交易完成後）、<span class="kw">__END_OF_PROCESSING__</span>（全部處理後）。位置計數器（p215）就是典型用法：</p>
+
+  <pre><code class="abap">*&amp;---------------------------------------------------------------*
+*&amp; LSMW 規則程式碼：FI 憑證 IDoc（E1FIKPF / E1FISEG）
+*&amp; 對照筆記 p215 的 pos_counter，並修正借貸方向的判斷
+*&amp;---------------------------------------------------------------*
+" ---- __GLOBAL_DATA__ ----
+DATA: pos_counter TYPE buzei VALUE 0.
+TYPES: BEGIN OF ty_tbsl,
+         bschl TYPE bschl,
+         shkzg TYPE shkzg,
+       END OF ty_tbsl.
+DATA gt_tbsl TYPE HASHED TABLE OF ty_tbsl WITH UNIQUE KEY bschl.
+
+" ---- __BEGIN_OF_PROCESSING__：過帳碼主檔只讀一次 ----
+SELECT bschl, shkzg FROM tbsl INTO TABLE @gt_tbsl.
+
+" ---- 目標結構 FIKPF：__BEGIN_OF_RECORD__ ----
+pos_counter = 0.                        " 每張憑證的行號重新起算
+
+" ---- 目標結構 FISEG：__BEGIN_OF_RECORD__ ----
+pos_counter = pos_counter + 1.
+
+" ---- 欄位 FISEG-BUZEI ----
+fiseg-buzei = pos_counter.
+
+" ---- 欄位 FISEG-VORGN ----
+fiseg-vorgn = 'RFBU'.
+
+" ---- 欄位 FISEG-HKONT：補前導零（ALPHA） ----
+fiseg-hkont = |{ posi-account ALPHA = IN WIDTH = 10 }|.
+
+" ---- 欄位 FISEG-SHKZG：讀 TBSL，不寫死 50 = H ----
+fiseg-shkzg = VALUE #( gt_tbsl[ bschl = posi-bschl ]-shkzg OPTIONAL ).
+IF fiseg-shkzg IS INITIAL.
+  WRITE: / '過帳碼不存在：', posi-bschl.
+  skip_transaction.
+ENDIF.
+
+" ---- 幣別：來源幣別代碼用可重用翻譯規則（筆記 p212 的 lsmw_translate）----
+" fikpf-waers ← 翻譯表 WAERS（舊代碼 → ISO 幣別）
+fiseg-wrbtr = posi-doc_amount.
+fiseg-dmbtr = posi-local_amount.</code></pre>
+
+  <p><b>IDoc 管理（p223–p230）</b>——LSMW 的「Settings → IDoc inbound processing」可進入以下維護交易（LSMW 1.7 起設定與專案相關，之前對所有專案共用）：</p>
+  <table>
+    <thead><tr><th>設定</th><th>重點</th></tr></thead>
+    <tbody>
+      <tr><td>埠（Port）</td><td>交換 IDoc 的通道。筆記列出五種埠類型：檔案、交易式 RFC、CPI-C、網際網路，以及 ABAP 程式介面（筆記寫作「編程接口 PPS」，應為 ABAP-PI）；後續版本另有 XML File、XML HTTP。檔案埠要指定檔名與路徑，<b>即使只用來匯入，埠也必須存在</b></td></tr>
+      <tr><td>夥伴類型</td><td><b>US</b>＝使用者（把錯誤訊息分派給正確的處理者）；<b>LS</b>＝邏輯系統；<b>KU</b>＝客戶、<b>LI</b>＝供應商（筆記把兩者對應寫反了，KU 來自德文 Kunde、LI 來自 Lieferant）；<b>B</b>＝銀行</td></tr>
+      <tr><td>夥伴編號</td><td>出錯時通知「處理者」欄位中的人</td></tr>
+      <tr><td>入站參數（<span class="tcode">WE20</span>）</td><td>「立即觸發」：IDoc 直接交給應用；「透過背景程式觸發」：IDoc 停在狀態 64，由 LSMW 後續處理（或 RBDAPP01）送出。訊息類型 <b>FIDCC1</b> 對應處理碼 <b>FID1</b>；處理碼背後是讀 IDoc 的函數或工作流，改處理碼即可一次替換所有夥伴的處理方式；處理碼文件在 <span class="tcode">WE64</span></td></tr>
+      <tr><td>啟用入站處理</td><td>IDoc 介面 Customizing「Basis → 基礎服務 → IDoc 介面」。入站 IDoc 先存資料庫，再由<b>事件</b>觸發應用處理（tRFC 埠除外），事件接收者連結必須保持啟用</td></tr>
+      <tr><td>工作流 Customizing</td><td>必須全綠：工作流管理員已維護、工作流 RFC 目的地已設定（可「測試 RFC 目的地」）、一般決策任務已分類、發送至物件與 HR 物件已啟用。<b>「監視工作項錯誤的作業」不要啟用</b>，否則系統會不斷重送移轉中產生的問題 IDoc（SAP Note 149368）</td></tr>
+    </tbody>
+  </table>
+  <p><b>IDoc 後續處理的狀態對照</b>（p222）：</p>
+  <table>
+    <thead><tr><th>動作</th><th>適用狀態</th></tr></thead>
+    <tbody>
+      <tr><td>再試一次過帳</td><td>51 應用文件未過帳</td></tr>
+      <tr><td>ALE/EDI 錯誤後重送</td><td>56 含錯誤的 IDoc 已加入；61 儘管語法錯誤仍處理（入站）；63 傳給應用時出錯；65 ALE 服務錯誤</td></tr>
+      <tr><td>忽略語法錯誤</td><td>60 IDoc 語法錯誤（入站）</td></tr>
+      <tr><td>重設狀態</td><td>62 IDoc 已傳給應用</td></tr>
+      <tr><td>過帳</td><td>64 IDoc 準備傳給應用；66 等待前一張 IDoc（序列化）</td></tr>
+      <tr><td>重送編修過的 IDoc</td><td>69 IDoc 已被編輯</td></tr>
+    </tbody>
+  </table>
+  <div class="tip">現在的日常工具：<span class="tcode">WE02</span>／<span class="tcode">WE05</span> 看 IDoc、<span class="tcode">BD87</span> 依狀態重處理、<span class="tcode">WE19</span> 測試工具複製 IDoc 重跑、<span class="tcode">WE20</span> 夥伴參數、<span class="tcode">WE21</span> 埠。ALE 與 IDoc 的完整介面設計見 <a href="#ch05-22">5-22 章 BIT750</a>。</div>
+
+  <h3 id="ch05-13-17">17. BAPI 資料傳輸：以固定資產 BUS1022 為例</h3>
+  <p><b>從 DX-WB 呼叫 BAPI 時，外部資料必須是 IDoc 格式</b>，所以要先用 LSMW 之類的對應工具轉成 IDoc 格式（p232）。BAPI 的特性（p233–p234）：</p>
+  <ul>
+    <li>每個建立或修改資料的 BAPI 都屬於一個能保持資料庫一致的物件：<b>全部做完或完全不做</b>。</li>
+    <li><b>BAPI 本身不下 COMMIT WORK，必須由呼叫程式下</b>（<span class="kw">BAPI_TRANSACTION_COMMIT</span>）。</li>
+    <li>BAPI 是<b>無對話</b>的方法，不能出畫面。</li>
+    <li>外部客戶端可以像呼叫物件方法一樣呼叫；<b>SAP 保證 BAPI 介面不會被修改</b>（相容性保證）；也可在本機用來存取業務資料。</li>
+    <li>回傳參數 <span class="kw">RETURN</span>：依版本可能是不同字典結構（BAPIRETURN、BAPIRET1、BAPIRET2）；成功時為空或 TYPE = 'S'，詳見各 BAPI 文件。BAPIRET2 的正確判讀見 <a href="#ch04-1">4-1 章</a>。</li>
+  </ul>
+  <p><b>商業物件「Asset」</b>（p235–p236）：BUS1022 固定資產——企業長期使用、可在資產負債表中個別區分的項目，可整體或依組件（例如印刷機的「滾筒」、「替換軸」）檢視。在 <span class="tcode">SWO1</span> 顯示 BUS1022 →「BOR 資料模型」→「Utilities → 圖形」可看資料模型。方法 <b>CreateInclValues</b> 用來移轉資產（含價值），對應函數 <span class="kw">BAPI_FIXEDASSET_OVRTAKE_CREATE</span>；可在 <span class="tcode">BAPI</span> 瀏覽器「財務會計 → 資產會計 → 固定資產」找到。</p>
+  <p><b>DX-WB 中的 BAPI 處理</b>（p237）：讀包（Package）中的外部資料 → 對包執行 ALE 入站處理（逐筆傳給 BAPI，收集回傳參數）→ DX-WB 評估狀態 → 寫日誌 → 出錯時建錯誤檔或直接在 R/3 建 IDoc → <b>DX-WB 最後下 COMMIT WORK</b>。<b>LSMW 與 DX-WB 的差別</b>（p238）：LSMW 先把 IDoc 建進資料庫再讀出來交給 BAPI；DX-WB 直接把 IDoc 格式檔交給 BAPI，不建資料庫 IDoc，速度較快。</p>
+  <p><b>建立測試資料</b>（p239–p245）：先用線上交易建一筆（資產類別 3100 車輛，必填「描述」與「成本中心」；資本化日期由首次過帳自動帶入，手動設的日期不會啟用資產，但會作為資產價值日的建議，資料傳輸需要；<b>存檔後記下狀態列的資產號碼</b>）→ DX-WB「轉到 → 工具 → 欄位與資料結構 →用資料建立檔案」→ 系統要求輸入<b>邏輯系統</b>。邏輯系統在 <span class="tcode">SALE</span>（Basis → 分送（ALE）→ 傳送與接收系統 → 邏輯系統 → 定義）；夥伴參數在 <span class="tcode">WE20</span> 以夥伴類型 <b>LS</b> 建立，設出站參數（訊息類型最重要，BAPI 與訊息類型的對應在 <span class="tcode">BDBG</span>），出站模式選「收集 IDoc」。4.6C 的 DX-WB 會自動建邏輯系統，4.6A/B 需手動建。</p>
+  <p><b>對應規則</b>（p247–p249）：IDoc 號必須是流水號；「資產類別」與「成本中心」要定義翻譯；公司代碼、資本化日期、業務範圍只要 MOVE。部分 BAPI 有 <b>X 結構</b>：目標欄位有填值並要傳，對應的 X 欄位就要填 'X'。LSMW 的「填寫 X 結構」會自動產生程式碼（已自訂規則的欄位除外）；若欄位名與 X 結構不一致，產生的程式會有語法錯誤——用「語法檢查」找出位置，<b>一定要在欄位對應中修正，不要改產生的程式</b>。</p>
+  <p><b>BAPI Run 的屬性</b>（p250）：包大小（每個 LUW 傳給 BAPI 的物件數）、中斷前錯誤數（0 或不填＝永不中斷）、輸入檔、刪除檔、無法傳輸的物件存到檔案還是 IDoc。<b>錯誤處理兩條路</b>（p251–p254）：</p>
+  <ul>
+    <li><b>錯誤檔</b>：勾「把 IDoc 寫入檔案」；BAPI 提交無錯記錄，錯誤記錄收進錯誤檔，結束後錯誤檔複製回輸入檔。<b>此時不要勾「刪除檔案」</b>，否則含錯誤記錄的輸入檔會被刪。</li>
+    <li><b>建 IDoc</b>：勾「在 R/3 中儲存 IDoc」；錯誤記錄成為 IDoc，之後經 ALE 服務處理；此時可以勾「刪除檔案」。</li>
+    <li>兩者後續相同：Customizing 錯誤 → 修正後「繼續 Run」／重送 IDoc；資料錯誤少 → 用編輯器改；錯誤多且有系統性 → 重新抽取、轉換、排除錯誤後開新 Run（筆記作者吐槽：「完全跟上一頁一樣，廢話連篇的 SAP」）。</li>
+  </ul>
+
+  <pre><code class="abap">*&amp;---------------------------------------------------------------*
+*&amp; 舊系統資產移轉：BAPI_FIXEDASSET_OVRTAKE_CREATE（BUS1022.CreateInclValues）
+*&amp; 參數結構請以 SE37 為準；累計價值（CUMULATEDVALUES）、年中交易
+*&amp; （TRANSACTIONS）依移轉日與資產會計設定另行填寫
+*&amp;---------------------------------------------------------------*
+PARAMETERS: p_bukrs TYPE bukrs  DEFAULT '1710',
+            p_anlkl TYPE anlkl  DEFAULT '3100',     " 車輛
+            p_kostl TYPE kostl  OBLIGATORY,
+            p_capdt TYPE sy-datum DEFAULT '20231231',
+            p_test  AS CHECKBOX DEFAULT abap_true.
+
+DATA: ls_return TYPE bapiret2,
+      lv_asset  TYPE anln1,
+      lv_sub    TYPE anln2.
+
+DATA(ls_key)      = VALUE bapi1022_key( companycode = p_bukrs ).
+DATA(ls_general)  = VALUE bapi1022_feglg001( assetclass = p_anlkl
+                                             descript   = '公務車 ABC-1234' ).
+DATA(ls_generalx) = VALUE bapi1022_feglg001x( assetclass = abap_true
+                                              descript   = abap_true ).   " X 結構
+DATA(ls_timedep)  = VALUE bapi1022_feglg003( costcenter = p_kostl ).
+DATA(ls_timedepx) = VALUE bapi1022_feglg003x( costcenter = abap_true ).
+DATA(ls_postinf)  = VALUE bapi1022_feglg002( cap_date = p_capdt ).
+DATA(ls_postinfx) = VALUE bapi1022_feglg002x( cap_date = abap_true ).
+
+CALL FUNCTION 'BAPI_FIXEDASSET_OVRTAKE_CREATE'
+  EXPORTING
+    key                 = ls_key
+    testrun             = p_test
+    generaldata         = ls_general
+    generaldatax        = ls_generalx
+    timedependentdata   = ls_timedep
+    timedependentdatax  = ls_timedepx
+    postinginformation  = ls_postinf
+    postinginformationx = ls_postinfx
+  IMPORTING
+    asset               = lv_asset
+    subnumber           = lv_sub
+    return              = ls_return.
+
+IF ls_return-type CA 'EA'.
+  CALL FUNCTION 'BAPI_TRANSACTION_ROLLBACK'.
+  MESSAGE |{ ls_return-id }/{ ls_return-number }：{ ls_return-message }| TYPE 'E'.
+ELSEIF p_test = abap_true.
+  MESSAGE '測試執行成功（未建立資產）' TYPE 'S'.
+ELSE.
+  " BAPI 自己不 COMMIT：呼叫端必須下，且用 WAIT 等更新完成
+  CALL FUNCTION 'BAPI_TRANSACTION_COMMIT'
+    EXPORTING
+      wait = abap_true.
+  MESSAGE |資產 { lv_asset }-{ lv_sub } 已建立| TYPE 'S'.
+ENDIF.</code></pre>
+  <div class="note">S/4HANA 的新資產會計（New Asset Accounting）中，舊資產移轉的價值與交易資料規則和 ECC 不同（例如移轉日、平行評價範圍的處理），手動交易為 <span class="tcode">AS91</span> 與 <span class="tcode">ABLDT</span>。實務上大量資產多半直接用 Migration Cockpit 的固定資產物件；自己呼叫 BAPI 時務必先用 TESTRUN 驗證。</div>
+
+  <h3 id="ch05-13-18">18. 交易記錄器（SHDB）：錄製原理與限制</h3>
+  <p>SAP 標準程式沒提供需要的傳輸功能時，才用交易記錄器（p257）。它以 Batch Input 或 Call Transaction 把資料傳入 R/3，<b>只能處理扁平檔案</b>（沒有階層、沒有子結構；表頭／明細不同記錄結構的檔案不能用）。LSMW 的「錄製」功能底層用的就是它（p258）。錄製前先啟動記錄器，然後像線上一樣執行交易；完成後，錄製內容包含所有畫面號碼、欄位名、欄位值、模組池與 TCODE（p259）。</p>
+  <p><b>錄製注意事項</b>（p260–p266）：</p>
+  <ul>
+    <li>範例：<span class="tcode">FD02</span> 修改客戶。除畫面欄位外，<span class="kw">BDC_CURSOR</span>、<span class="kw">BDC_OKCODE</span> 會自動記錄。</li>
+    <li><b>之後資料傳輸會用到的欄位，錄製時都要「改一下值」</b>——哪怕只是用同一個字元覆蓋一個字元；以 SET/GET 參數帶入的欄位也要改，否則不會被錄進去。</li>
+    <li>線上執行時畫面出現順序可能和錄製不盡相同。</li>
+    <li>子畫面會自動記錄，欄位 <span class="kw">BDC_SUBSCR</span> 存子畫面名稱（筆記寫作 BDC_SUBSCREEN）。客戶主檔的地址資料（中央地址管理）就是一個子畫面。頁籤（Tab strip）其實也是以子畫面實作，查名稱一樣用欄位的 F1。</li>
+    <li>找模組池與畫面號：「系統 → 狀態」；找欄位名：游標放欄位上按 F1 →「技術資訊」。</li>
+    <li><b>Step Loop 與 Table Control</b>：每一行欄位名相同，必須用<b>索引</b>（與行號對應）存取，例如 <span class="kw">MSEG-MATNR(01)</span>；只有畫面上看得到的列才能填，超出要錄翻頁。翻頁功能碼：<span class="kw">/21</span> 首頁、<span class="kw">/22</span> 上頁、<span class="kw">/23</span> 下頁、<span class="kw">/24</span> 末頁（許多新交易改用 <span class="kw">=P+</span>／<span class="kw">=P-</span>，以錄製結果為準）。</li>
+  </ul>
+  <div class="warn"><b>錄製方針</b>（p266）：① F1、F4 以及自己寫的 <span class="kw">PROCESS ON HELP-REQUEST</span>／<span class="kw">PROCESS ON VALUE-REQUEST</span> <b>不會被錄</b>，「系統」與「說明」選單的命令也不會；② 錯誤與警告對話框不會被錄，只錄 OK 碼與後續處理需要的欄位；③ <b>錄製時輸入的資料會真的寫進資料庫</b>——在正式機錄製等於真的過帳；④ 4.6 版之後的 <b>EnjoySAP 控件（ALV Grid、Tree、Text Edit…）除了 Table Control 與頁籤之外，都不支援 Batch Input／Call Transaction</b>。所以 ME21N、MIGO、VA01 新畫面這類 Enjoy 交易錄出來的 BDC 非常脆弱，能用 BAPI 就用 BAPI（見 <a href="#ch04-4-09">4-4 章第 9 節</a>）。</div>
+  <p><b>在 LSMW 中錄製</b>（p267–p274）：「Goto → Recordings」→ 建立（名稱、描述、擁有者）→ 輸入 TCODE → 執行交易並正常結束。<b>一個錄製只能屬於一個專案，名稱必須唯一</b>。結果以樹狀顯示，可增刪欄位。可為每個錄製欄位指定名稱（BDC_OKCODE、BDC_CURSOR、BDC_SUBSCR 除外）：「Default」依目標欄位名自動命名、「Reset」清除、雙擊可編輯名稱、描述與預設值；沒命名的欄位在建立 Session 時使用錄到的值（當常數用，對勾選框特別好用）。同一欄位名可用多次，但欄位對應中只會用一次，所以意義不大。LSMW 支援<b>自動欄位對應</b>（同名欄位自動配對），所以來源結構欄位名最好與目標相同或相近。之後新增畫面欄位時，只能加在畫面支援的位置，否則處理 Session 時會出錯。</p>
+
+  <h3 id="ch05-13-19">19. SHDB 產生程式、函數模組與 BDCRECX1</h3>
+  <p><span class="tcode">SHDB</span> 的錄製可以（p275–p287）：編輯（增刪改行、「檢查」語法、匯出到本機用 PC 編輯器改再匯入）、追加更多交易錄製、直接以 Call Transaction 重播、建立 Batch Input Session、建立測試資料檔（只能存在應用伺服器，未指定路徑則放在 work 目錄，同名檔會追加）、<b>產生程式</b>、<b>產生函數模組</b>。</p>
+  <ul>
+    <li><b>產生程式</b>：兩種填值方式——① 直接用錄製的值；② 參數化，從檔案讀值（建議同時勾選產生測試檔）。程式可用 Batch Input 或 Call Transaction；選 ② 且 Call Transaction 出錯時，錯誤記錄會放進 Batch Input Session。</li>
+    <li><b>產生函數模組</b>：輸入函數名、函數群、短文。輸入介面＝技術參數＋每個輸入欄位一個參數；參數 <b>CTU</b>：空白＝建立 Session、'X'＝Call Transaction 直接更新；其他參數填 Session 表頭。輸出只有 <b>SUBRC</b>（僅 Call Transaction 有效，0＝成功）。表格參數存所有系統訊息（僅 Call Transaction）。<b>每呼叫一次就建一個 Session</b>；要一個 Session 放多筆交易，得把交易錄多次讓介面包含多段交易。</li>
+  </ul>
+  <p><b>產生程式的結構</b>（p288–p290）：主程式（產生部分）＋ SAP 標準 include <span class="kw">BDCRECX1</span>。BDCRECX1 定義 BDC 表與七個子程式：開關檔（open_dataset／close_dataset）、開關 Session（open_group／close_group）、填 BDC 表（bdc_dynpro／bdc_field）、放入 Session 或呼叫交易（bdc_transaction）。讀檔結構自動產生、通常叫 <span class="kw">RECORD</span>：每個欄位兩行，第一行是註解「* data element:」加資料元素，第二行是「欄位名＋三位數位置號」，長度取資料元素長度（無資料元素則取畫面欄位長度）。</p>
+  <p>BDCRECX1 的 bdc_field 有一個重要細節：<b>值等於 NODATA 字元時不寫入 BDCDATA</b>（筆記 p300 的 <span class="kw">IF fval &lt;&gt; nodata</span>）——這就是「沒給值的欄位不動畫面」的實作。筆記 p301 的範例還有兩個錯字：<span class="kw">bdc_dynprt</span>（應為 bdc_dynpro）與 <span class="kw">'KNA1-SPRAS</span> 少了結尾引號。</p>
+  <div class="warn">BDCRECX1 是全域 <span class="kw">WITH HEADER LINE</span> 的 BDCDATA 加一堆 FORM，<b>新程式不要再 INCLUDE 它</b>。下面是取代它的類別：同樣支援 NODATA 略過、鏈式呼叫，可以直接套在第 5、20 節的程式上。</div>
+
+  <pre><code class="abap">*&amp;---------------------------------------------------------------*
+*&amp; 取代 BDCRECX1 的 BDC 輔助類別（ABAP 7.52）
+*&amp;---------------------------------------------------------------*
+CLASS lcl_bdc DEFINITION FINAL.
+  PUBLIC SECTION.
+    TYPES: tt_bdc  TYPE STANDARD TABLE OF bdcdata WITH EMPTY KEY,
+           ty_fval TYPE bdcdata-fval.
+    DATA mt_bdc TYPE tt_bdc READ-ONLY.
+
+    METHODS constructor
+      IMPORTING iv_nodata TYPE ty_fval DEFAULT '/'.
+    METHODS dynpro
+      IMPORTING iv_program     TYPE bdcdata-program
+                iv_dynpro      TYPE bdcdata-dynpro
+      RETURNING VALUE(ro_self) TYPE REF TO lcl_bdc.
+    METHODS field
+      IMPORTING iv_fnam        TYPE bdcdata-fnam
+                iv_fval        TYPE simple
+      RETURNING VALUE(ro_self) TYPE REF TO lcl_bdc.
+    METHODS clear.
+  PRIVATE SECTION.
+    DATA mv_nodata TYPE ty_fval.
+ENDCLASS.
+
+CLASS lcl_bdc IMPLEMENTATION.
+  METHOD constructor.
+    mv_nodata = iv_nodata.
+  ENDMETHOD.
+
+  METHOD dynpro.
+    APPEND VALUE #( program  = iv_program
+                    dynpro   = iv_dynpro
+                    dynbegin = abap_true ) TO mt_bdc.
+    ro_self = me.
+  ENDMETHOD.
+
+  METHOD field.
+    ro_self = me.
+    " 數值請呼叫端先用 |{ x NUMBER = USER }|、日期用 |{ d DATE = USER }|
+    DATA(lv_val) = condense( CONV ty_fval( iv_fval ) ).
+    IF lv_val = mv_nodata.
+      RETURN.                              " NODATA：這個欄位不動畫面
+    ENDIF.
+    APPEND VALUE #( fnam = iv_fnam fval = lv_val ) TO mt_bdc.
+  ENDMETHOD.
+
+  METHOD clear.
+    CLEAR mt_bdc.                          " 每筆交易前清空（筆記：REFRESH）
+  ENDMETHOD.
+ENDCLASS.</code></pre>
+  <p><b>整合進 DX-WB</b>（p312–p314）：產生的程式可整合進 DX-WB，檔案結構要用 ABAP 字典建立，會寫入表 <span class="kw">SXDA0</span>～<span class="kw">SXDA3</span>。4.5 版在 DX-WB 初始畫面「轉到 → 初始化客戶資料傳輸物件」整合；4.5 版的傳輸物件不以 BOR 組織，而用 <b>DX 號（0001～9999，9000～9999 保留給客戶）</b>；新版要把程式指定給 BOR 物件、建短文、指定 include、為字典結構命名。產生的程式會出現在程式類型 <b>BINP</b>（不是 REPO）下。4.5 版工作台中的物件會自動出現在 4.6 版，除了「用傳輸資料建立檔案」外所有功能都能用。</p>
+
+  <h3 id="ch05-13-20">20. Call Transaction：MODE、UPDATE、MESSAGES 與 CTU_PARAMS</h3>
+  <p>Call Transaction 不建 Session，直接把 BDC 表（結構與 Batch Input 相同）餵給交易（p302）。<b>平均比 Batch Input 快 1～3 倍</b>。被呼叫的交易使用一個<b>額外的 roll area</b>，處理完釋放後回到原本的 roll area（p303）。與 Batch Input 不同：<b>沒有錯誤日誌（錯誤 Session）、也沒有重啟功能</b>；用<b>呼叫者本人的權限</b>；BDC 表每次只能放一筆交易的資料，呼叫下一筆前要清空。</p>
+  <table>
+    <thead><tr><th>選項</th><th>值</th><th>說明</th></tr></thead>
+    <tbody>
+      <tr><td rowspan="3">MODE（DISMODE）</td><td>A</td><td>顯示所有畫面（<b>MODE 的預設值</b>）</td></tr>
+      <tr><td>E</td><td>只在錯誤時顯示畫面，可修正</td></tr>
+      <tr><td>N</td><td>完全不顯示；處理完才把控制權還給程式</td></tr>
+      <tr><td rowspan="3">UPDATE（UPDMODE）</td><td>A</td><td>非同步：不等資料庫更新，只交給更新服務；較快但<b>不知道是否真的成功</b>，要看 <span class="tcode">SM13</span>；大量資料不建議。<b>注意：這也是 UPDATE 的預設值</b></td></tr>
+      <tr><td>S</td><td>同步：等更新結束，較慢，但更新錯誤會回報給程式——<b>資料移轉請用 S</b></td></tr>
+      <tr><td>L</td><td>本地更新：在呼叫程式的同一程序中更新（參考 <span class="kw">SET UPDATE TASK LOCAL</span>，見 <a href="#ch05-11">5-11 章</a>）</td></tr>
+    </tbody>
+  </table>
+  <p><b>MESSAGES INTO</b>：執行中所有系統訊息寫入內表，結構必須是 <span class="kw">BDCMSGCOLL</span>。<b>OPTIONS FROM</b> 用結構 <span class="kw">CTU_PARAMS</span> 控制，<b>不能與 MODE、UPDATE 同時使用</b>（p308–p309）：</p>
+  <table>
+    <thead><tr><th>CTU_PARAMS 欄位</th><th>意義</th><th>未指定 OPTIONS 時的預設</th></tr></thead>
+    <tbody>
+      <tr><td>DISMODE</td><td>處理模式</td><td>取自 MODE</td></tr>
+      <tr><td>UPDMODE</td><td>更新模式</td><td>取自 UPDATE</td></tr>
+      <tr><td>CATTMODE</td><td>CATT 控制</td><td>不啟用</td></tr>
+      <tr><td>DEFSIZE</td><td>強制使用標準視窗大小</td><td>不使用（背景處理永遠用標準大小）</td></tr>
+      <tr><td>RACOMMIT</td><td>遇到 COMMIT WORK 不結束（交易中第一次提交不會讓錄製結束）</td><td>COMMIT WORK 後成功結束</td></tr>
+      <tr><td>NOBINPT</td><td>不以批輸入方式執行，即 <span class="kw">sy-binpt = space</span>，交易像線上一樣跑</td><td>批輸入啟用（sy-binpt = 'X'）</td></tr>
+      <tr><td>NOBIEND</td><td>BDC 資料用完後不再是批輸入模式（搭配 E 模式，錯誤時轉前景）</td><td>BDC 資料用完後仍是批輸入模式</td></tr>
+    </tbody>
+  </table>
+  <p><b>sy-binpt</b>（p282）：不是所有交易都能在線上與批輸入兩種模式下執行，交易自己用 <span class="kw">sy-binpt = 'X'</span> 判斷是否處於批輸入（Call Transaction 同樣會設定）。</p>
+  <div class="warn"><b>教材修正（p310）</b>：筆記的回傳碼表寫成「成功 &lt;1000、交易錯誤 &gt;1000」，這是誤植。ABAP 文件的定義是：<span class="kw">sy-subrc = 0</span> 成功；<span class="kw">&lt; 1000</span> 被呼叫的交易發生錯誤（若有送出訊息，存在 sy-msgid、sy-msgty、sy-msgno、sy-msgv1～v4）；<span class="kw">1001</span> 批輸入處理本身出錯。另外 sy-subrc = 0 也不代表單據一定建立成功（UPDATE 'A' 時更新可能事後失敗），<b>一定要檢查 MESSAGES 中的成功訊息</b>。</div>
+
+  <pre><code class="abap">*&amp;---------------------------------------------------------------*
+*&amp; Call Transaction 的標準寫法：CTU_PARAMS + MESSAGES + 錯誤轉 Session
+*&amp; 對照 BDCRECX1 的「E_GROUP：CT 失敗的交易放進錯誤 Session」
+*&amp;---------------------------------------------------------------*
+PARAMETERS: p_mode  TYPE ctu_params-dismode DEFAULT 'N',
+            p_egrp  TYPE apqi-groupid DEFAULT 'ZBC420_ERR'.
+
+DATA: lt_msg          TYPE STANDARD TABLE OF bdcmsgcoll WITH EMPTY KEY,
+      lv_egrp_opened  TYPE abap_bool.
+
+DATA(ls_opt) = VALUE ctu_params( dismode  = p_mode
+                                 updmode  = 'S'          " 移轉一律同步
+                                 defsize  = abap_true
+                                 racommit = abap_false
+                                 nobinpt  = abap_false ).
+
+LOOP AT lt_doc INTO DATA(ls_doc).
+  DATA(lo_bdc) = NEW lcl_bdc( ).
+  " … 依第 5 節組 FB01 的畫面序列 …
+
+  CLEAR lt_msg.
+  TRY.
+      CALL TRANSACTION 'FB01' WITH AUTHORITY-CHECK     " ABAP 7.4 起
+           USING lo_bdc-&gt;mt_bdc
+           OPTIONS FROM ls_opt
+           MESSAGES INTO lt_msg.
+    CATCH cx_sy_authorization_error INTO DATA(lx_auth).
+      MESSAGE lx_auth-&gt;get_text( ) TYPE 'E'.
+  ENDTRY.
+  DATA(lv_rc) = sy-subrc.
+
+  " 成功判斷：看 F5 312「憑證 &amp;1 已在公司代碼 &amp;2 中過帳」
+  DATA ls_ok TYPE bdcmsgcoll.
+  ls_ok = VALUE #( lt_msg[ msgtyp = 'S' msgid = 'F5' msgnr = '312' ] OPTIONAL ).
+  IF lv_rc = 0 AND ls_ok IS NOT INITIAL.
+    WRITE: / '成功，憑證號：', ls_ok-msgv1.
+    CONTINUE.
+  ENDIF.
+
+  " 失敗：把錯誤訊息轉成文字
+  LOOP AT lt_msg INTO DATA(ls_msg) WHERE msgtyp CA 'EA'.
+    MESSAGE ID ls_msg-msgid TYPE 'S' NUMBER ls_msg-msgnr
+            WITH ls_msg-msgv1 ls_msg-msgv2 ls_msg-msgv3 ls_msg-msgv4
+            INTO DATA(lv_text).
+    WRITE: / '錯誤：', lv_text.
+  ENDLOOP.
+
+  " 失敗的交易放進錯誤 Session，之後在 SM35 人工修正（只開一次）
+  IF lv_egrp_opened = abap_false.
+    CALL FUNCTION 'BDC_OPEN_GROUP'
+      EXPORTING client = sy-mandt group = p_egrp user = sy-uname keep = abap_true
+      EXCEPTIONS OTHERS = 1.
+    lv_egrp_opened = xsdbool( sy-subrc = 0 ).
+  ENDIF.
+  IF lv_egrp_opened = abap_true.
+    CALL FUNCTION 'BDC_INSERT'
+      EXPORTING tcode = 'FB01'
+      TABLES    dynprotab = lo_bdc-&gt;mt_bdc
+      EXCEPTIONS OTHERS = 1.
+  ENDIF.
+ENDLOOP.
+
+IF lv_egrp_opened = abap_true.
+  CALL FUNCTION 'BDC_CLOSE_GROUP' EXCEPTIONS OTHERS = 1.
+ENDIF.</code></pre>
+  <p>Call Transaction 程式的執行流程（p311）：線上交易被呼叫並傳入 BDCDATA → 訊息放進 MESSTAB → 輸出為清單 → 若選擇畫面有指定錯誤 Session（E_GROUP 非空白）且呼叫失敗（L_SUBRC ≠ 0），則開啟錯誤 Session（只開一次）並放入資料，後續所有錯誤記錄都放進同一個 Session。訊息轉中文的更多方式（FORMAT_MESSAGE、MESSAGE_TEXT_BUILD）見 <a href="#ch04-4-06">4-4 章第 6 節</a>。</p>
+
+  <h3 id="ch05-13-21">21. 特殊方法：互動式清單、SAP-LUW、實用程式與提示</h3>
+  <p><b>互動式清單</b>（p316–p318）：範例程式 <span class="kw">SAPBC420_SPTD_INTERACTIV_LIST</span> 產生一張可勾選核取方塊看明細的清單（<span class="kw">AT LINE-SELECTION</span>／<span class="kw">AT USER-COMMAND</span>，見 <a href="#ch05-6">5-6 章 BC405</a>、<a href="#ch05-7">5-7 章 BC406</a>）。錄製後會發現<b>清單上的勾選沒被錄到</b>，必須手動補：用「行/列」座標指定位置（<b>清單第一欄的列號是 2</b>）；<b>表頭也算在行數內</b>——表頭兩行時，第四個核取方塊其實在第 6 行，所以 BDC_CURSOR 值是 <span class="kw">'07/02'</span>。</p>
+
+  <pre><code class="abap">*&amp;---------------------------------------------------------------*
+*&amp; 用 BDC 操作清單（List）畫面：清單畫面是 SAPMSSY0 0120
+*&amp; 欄位名用「行/列」座標；講義此處為截圖，依 SAP 清單畫面慣例整理
+*&amp;---------------------------------------------------------------*
+DATA(lt_bdc) = VALUE lcl_bdc=&gt;tt_bdc(
+  ( program = 'SAPMSSY0' dynpro = '0120' dynbegin = abap_true )
+  ( fnam = '06/02'      fval = 'X' )          " 第 6 行、第 2 欄的核取方塊
+  ( fnam = '07/02'      fval = 'X' )
+  ( fnam = 'BDC_CURSOR' fval = '07/02' )
+  ( fnam = 'BDC_OKCODE' fval = '=PICK' )      " 選取明細
+  ( program = 'SAPMSSY0' dynpro = '0120' dynbegin = abap_true )
+  ( fnam = 'BDC_OKCODE' fval = '=BACK' ) ).
+
+CALL TRANSACTION 'ZBC420_LIST' WITH AUTHORITY-CHECK
+     USING lt_bdc
+     MODE 'E'
+     UPDATE 'S'.</code></pre>
+
+  <p><b>SAP-LUW 與同步／非同步</b>（p319–p320）：從業務角度，一個 SAP-LUW＝線上交易（第一部分）＋對應的更新（第二部分）。線上使用者存檔後就能開始下一筆交易（非同步）；<b>Batch Input 則是同步的：LUW 2 要等 LUW 1 的更新完成才開始</b>。Call Transaction 用 UPDATE 'A' 時，下一筆可以在前一筆更新還沒完成時就開始（交疊匯入）——<b>不建議，若要用必須充分測試</b>。相關 SAP Notes：鎖表 17267、13907、97760；更新／重複更新 70085。LUW 與鎖的原理見 <a href="#ch05-11">5-11 章 BC414</a>。</p>
+  <p><b>Batch Input 實用程式</b>（p330）：</p>
+  <table>
+    <thead><tr><th>程式</th><th>功能</th></tr></thead>
+    <tbody>
+      <tr><td><span class="kw">RSBDCREO</span></td><td>刪除已成功但仍留在系統的 Session 及日誌；實體刪除已不存在 Session 的日誌；重組日誌檔（整合在監視器）</td></tr>
+      <tr><td><span class="kw">RSBDCLOG</span></td><td>依 Session 名列出批輸入日誌，可顯示或刪除（Session 存在時可分析）</td></tr>
+      <tr><td><span class="kw">RSBDCDRU</span></td><td>選擇 Session 內容並列印</td></tr>
+      <tr><td><span class="kw">RSBDCSUB</span></td><td>背景自動／平行處理 Session（第 22 節）</td></tr>
+    </tbody>
+  </table>
+  <ul>
+    <li><b>降低回滾段負荷</b>（p331）：BDC_INSERT 會修改資料庫、填滿回滾段（Rollback Segment，存「修改前映像」的緩衝區），建議每 100 或 1000 次迴圈下一次 <span class="kw">COMMIT WORK</span>（第 5 節程式已示範）。</li>
+    <li><b>日誌位置</b>（p332）：批輸入日誌存在應用伺服器目錄 <span class="kw">DIR_GLOBAL</span>（預設 ../global），用 RSBDCREO 重組。</li>
+    <li><b>表空間</b>：Session 存在資料庫表空間 <span class="kw">PSAPSTABD</span>，外部資料量大時可能撐爆，需請 DBA 擴充（HANA 上沒有這個表空間概念，但大量 Session 仍會佔用 APQD 空間，記得清理）。</li>
+    <li><b>DX-WB 與 LSMW 都能在背景傳輸</b>；RSBDCSUB 也可當作 DX-WB 任務，在多個批次工作程序、多台應用伺服器上平行處理（p321）。</li>
+  </ul>
+  <p><b>資料傳輸相關 SAP Notes</b>（p328–p329，全部保留供查詢）：</p>
+  <table>
+    <thead><tr><th>主題</th><th>Note 編號</th></tr></thead>
+    <tbody>
+      <tr><td>LSMW</td><td>101014、168644、158198、158285</td></tr>
+      <tr><td>批輸入記錄器</td><td>78448</td></tr>
+      <tr><td>批輸入日誌與重組</td><td>18307、39282、24438、18319</td></tr>
+      <tr><td>所有重組作業</td><td>16083</td></tr>
+      <tr><td>批輸入與 COMMIT WORK</td><td>26703、24141</td></tr>
+      <tr><td>批輸入與更新</td><td>33421、49633</td></tr>
+      <tr><td>前景的批輸入</td><td>45507、26171、49132</td></tr>
+      <tr><td>批輸入與後續處理</td><td>15999</td></tr>
+      <tr><td>背景的批輸入</td><td>33319、19422</td></tr>
+      <tr><td>批輸入與長文本</td><td>159738</td></tr>
+      <tr><td>批輸入與 Table Control</td><td>11788</td></tr>
+      <tr><td>字元集</td><td>42709</td></tr>
+      <tr><td>確認提示</td><td>13882</td></tr>
+      <tr><td>用 CATT 做資料傳輸</td><td>87162</td></tr>
+      <tr><td>IDoc 移轉時停用工作項錯誤監控</td><td>149368</td></tr>
+    </tbody>
+  </table>
+  <div class="note">這些 Note 多半是 R/3 4.x 年代的編號，部分已被新 Note 取代或下架；在 SAP for Me 查詢時若找不到，請以主題關鍵字搜尋。</div>
+
+  <h3 id="ch05-13-22">22. 背景處理：SM36／SM37 與 RSBDCSUB</h3>
+  <p>R/3 背景處理用來自動化程式作業、最佳化資源使用（p334–p335）：可執行內部與外部程式，把多個程式定義為一個作業的多個<b>作業步驟</b>；有圖形化監視器、作業精靈、以及可程式化的 API。</p>
+  <p><b>建立背景作業六步驟</b>（p336）：① 程式有選擇畫面就先建<b>變式</b> ② 作業定義：作業名稱與優先順序（類別 <b>A 最高、C 最低</b>），目標伺服器可選 ③ 步驟清單：依序處理的所有程式 ④ 設定開始時間 ⑤ 時間到時在空閒的背景工作程序中處理 ⑥ 顯示作業日誌。</p>
+  <ul>
+    <li><span class="tcode">SM36</span> 建立作業（p337–p340）：<b>目標伺服器留空</b>以自動負載平衡；開始條件可指定日期時間、<b>過期日期</b>（到期前沒跑到就永遠不跑，狀態設為「取消」）、週期性。</li>
+    <li><span class="tcode">SM37</span> 作業概覽（p340–p341）：依條件選擇作業；要看依事件排程的作業，「在事件後開始」欄位至少填 <span class="kw">*</span>。可從概覽跳到 Spool 看各步驟輸出、看作業日誌。</li>
+    <li>作業狀態：<b>已計劃</b>（已定義、未指定開始時間）→ <b>已釋放</b>（已指定開始時間）→ <b>準備</b>（時間到、等待執行）→ <b>活動</b>（執行中，可在 <span class="tcode">SM50</span> 看到）→ <b>已結束</b>（無錯誤）／<b>已取消</b>（有錯誤）。</li>
+  </ul>
+  <p><b>RSBDCSUB 平行處理</b>（p325–p327、p342–p345）：多個 Session 由外部資料產生時，RSBDCSUB 會<b>為每個 Session 排一個獨立作業</b>。步驟：① 先用測試模式熟悉選擇畫面 ② 建變式：Session 名稱（可萬用字元如 <span class="kw">BC420*</span>）、建立日期、Session 狀態、目標伺服器最好留空、擴充日誌 ③ 用此變式為 RSBDCSUB 建背景作業。典型作業是<b>兩個步驟</b>：第一步執行 Batch Input 程式讀外部資料、轉換並建立 Session；第二步執行 RSBDCSUB，把剛建的 Session 交給背景處理。結果可在作業概覽與批輸入監視器中檢視。</p>
+
+  <pre><code class="abap">*&amp;---------------------------------------------------------------*
+*&amp; 兩步驟背景作業：① 建 Session 的程式 ② RSBDCSUB 處理 Session
+*&amp; RSBDCSUB 用預先建好的變式 ZBC420（Session 名 ZBC420*、狀態＝新建）
+*&amp;---------------------------------------------------------------*
+DATA: lv_jobname  TYPE tbtcjob-jobname,
+      lv_jobcount TYPE tbtcjob-jobcount.
+
+lv_jobname = |ZBC420_{ sy-datum }|.
+
+CALL FUNCTION 'JOB_OPEN'
+  EXPORTING
+    jobname  = lv_jobname
+    jobclass = 'C'                 " 移轉大量作業用低優先順序，別擠正式作業
+  IMPORTING
+    jobcount = lv_jobcount
+  EXCEPTIONS
+    OTHERS   = 1.
+IF sy-subrc &lt;&gt; 0.
+  MESSAGE '無法建立背景作業' TYPE 'E'.
+ENDIF.
+
+" 步驟 1：讀應用伺服器檔、建立 Session（背景不能用前端檔案函數！）
+SUBMIT zbc420_create_session
+  WITH p_group = 'ZBC420_FI'
+  WITH p_file  = '/usr/sap/trans/data/legacy_fi.txt'
+  VIA JOB lv_jobname NUMBER lv_jobcount
+  AND RETURN.
+
+" 步驟 2：RSBDCSUB 把 ZBC420* 的新 Session 送去背景處理
+SUBMIT rsbdcsub
+  USING SELECTION-SET 'ZBC420'
+  VIA JOB lv_jobname NUMBER lv_jobcount
+  AND RETURN.
+
+CALL FUNCTION 'JOB_CLOSE'
+  EXPORTING
+    jobcount  = lv_jobcount
+    jobname   = lv_jobname
+    strtimmed = abap_true          " 立即開始
+  EXCEPTIONS
+    OTHERS    = 1.
+IF sy-subrc = 0.
+  MESSAGE |作業 { lv_jobname } 已釋放，請至 SM37 追蹤| TYPE 'S'.
+ENDIF.</code></pre>
+  <div class="tip">JOB_OPEN／SUBMIT VIA JOB／JOB_CLOSE 的完整說明與 S/4HANA 的 Application Jobs 見 <a href="#ch04-4-15">4-4 章第 15、16 節</a>。</div>
+
+  <h3 id="ch05-13-23">23. 附錄：測試階段、正式傳輸、欄位缺漏與系統全景</h3>
+  <ul>
+    <li><b>測試階段</b>（p346）：第一次測試<b>少於 10 筆</b>，每次成功後增加一個數量級，最後一次包含全部資料。錯誤分三類處理：資料錯 → 回外部系統修正；Customizing 錯 → 修正設定；轉換程式錯 → 修正程式。只有測試全部成功，才能確保正式傳輸不出錯。</li>
+    <li><b>正式傳輸</b>（p347）：測試結束也不要直接上，先做<b>整合測試</b>——用此時點匯入的資料跑完所有業務流程。整合測試中若改了 Customizing，<b>就要再測一次傳輸</b>。整個測試期間，正式業務仍在外部系統進行；正式傳輸期間所有系統都不能使用，之後由 SAP 接手正式系統的角色。</li>
+    <li><b>SAP 必填、外部系統沒有的欄位</b>（p348）：所有記錄都相同 → 設固定值；有依存關係 → 為每筆記錄決定依存的值。</li>
+    <li><b>外部有、SAP 沒有對應的欄位</b>（p349）：先問業務流程需不需要，不需要就丟棄；或填到某些業務上不直接用到的 SAP 欄位（<b>借用欄位</b>，實務上要寫進規格文件，避免日後誤用）。</li>
+    <li><b>物件順序</b>：業務資料依存於主資料，<b>主資料存在後才能傳業務資料</b>——例如先科目、成本中心，再客戶／供應商，再物料，最後未結項目與庫存。</li>
+    <li><b>系統全景</b>（p350）：一定要區分<b>用戶端相關</b>與<b>跨用戶端</b>的 Customizing。例如在測試系統用戶端 100 測試前，必須先把設定從開發系統的設定用戶端傳過來。日常最常被遺忘的就是這一點，然後傳輸就出錯。傳輸請求的觀念見 <a href="#ch01-1">1-1 章</a>。</li>
+  </ul>
+  <p><b>附錄：DX-WB 支援的 BAPI 物件</b>（p351–p353）：</p>
+  <table>
+    <thead><tr><th>商業物件</th><th>說明</th><th>方法</th><th>程式／測試程式</th></tr></thead>
+    <tbody>
+      <tr><td>BUS1001001</td><td>零售物料</td><td>CLONE、SAVEREPLICA</td><td>RBDSEART_DXWB、RWRPLMAS_DXWB（PARAMETERS／REPLCAMULT）</td></tr>
+      <tr><td>BUS1003</td><td>類別</td><td>CREATE、CREATESUBCLASSALLOCATION、CREATESUBSTRUCTURE</td><td>BAPI_CLASS_CREATE_TEST、BAPI_HIERA_CREATESUBCLASS_TEST、BAPI_HIERA_CREATESUBSTRUC_TEST</td></tr>
+      <tr><td>BUS1012</td><td>作業清單（Routing）</td><td>CREATE</td><td>ROUTING_CREATE_SAMPLE_FILE</td></tr>
+      <tr><td>BUS1022</td><td>固定資產</td><td>CREATEINCLVALUES</td><td>RAALTDBDBR</td></tr>
+      <tr><td>BUS1071</td><td>產品目錄</td><td>SAVEHEADREPLICA、SAVEITEMREPLICA</td><td>RWPCHEAD_DXWB、RWPCITEM_DXWB</td></tr>
+      <tr><td>BUS1080</td><td>物料 BOM</td><td>CREATEBOMGROUP</td><td>MAT_BOMGROUP_CREATE_SAMPLE</td></tr>
+      <tr><td>BUS1088</td><td>特性</td><td>CREATE</td><td>BAPI_CHARACT_CREATE_TEST</td></tr>
+      <tr><td>BUS1191</td><td>檢驗計劃</td><td>CREATE</td><td>RQ_PLAN_CREATE_SAMPLE_FILE</td></tr>
+      <tr><td>BUS2032</td><td>銷售訂單</td><td>CREATEFROMDAT2</td><td>SD_CREATE_TEST_DATA</td></tr>
+      <tr><td>BUS2075</td><td>內部訂單</td><td>CREATE</td><td>R_BAPI_INTERNALORDER_CREATE_T</td></tr>
+      <tr><td>BUS3060</td><td>物件分類</td><td>CREATE</td><td>BAPI_OBJECT_CREATE_TEST</td></tr>
+      <tr><td>BUS4001／4002／4003</td><td>公司組織地址／自然人地址／公司人員地址</td><td>SAVEREPLICA</td><td>RSDXBUS4001／RSDXBUS4002／RSDXBUS4003</td></tr>
+      <tr><td>BUS6002～BUS6007</td><td>會計：貨物移動、發票收據、員工費用、員工應收、員工應付、帳單</td><td>POST</td><td>—</td></tr>
+      <tr><td>BUS6011／6012／6013／6030</td><td>會計：主要成本重過帳、收入重過帳、統計指標、總帳記錄</td><td>POST</td><td>—</td></tr>
+      <tr><td>BUS7023</td><td>薪資轉帳管理／外包</td><td>INSERTLEGACY、INSERTOUTSOURCER</td><td>RPULKTIDOC、RPUOUTIDOC</td></tr>
+      <tr><td>DRAW</td><td>文件（DMS）</td><td>LOAD</td><td>RBDSEDOCUMENT_LOAD_MD</td></tr>
+      <tr><td>TBQMTB／QPGR</td><td>檢驗方法／代碼群組</td><td>SAVEREPLICA</td><td>RBDSEQSMT、RBDSEQPGR</td></tr>
+    </tbody>
+  </table>
+  <div class="note">上表依筆記 p351–p353 的附錄表格整理；原表為截圖轉文字，欄位切分有些模糊（例如「物料訂單 BUS1080」應為物料 BOM、「測試計劃 BUS1191」應為檢驗計劃），已依物件編號更正名稱。</div>
+
+  <h3 id="ch05-13-24">24. S/4HANA：LSMW 的地位與 Migration Cockpit</h3>
+  <p><b>LSMW 在 S/4HANA 的地位</b>：SAP Note <b>2287723</b>（LSMW in SAP S/4HANA on-premise edition）說明 LSMW 在 S/4HANA 技術上仍可使用，但<b>不建議用於資料移轉，使用風險自負</b>；原因是 S/4HANA 的資料模型與交易改變很多（BP 取代客戶／供應商主檔、物料號碼延長、新總帳與新資產會計、許多交易改為 Fiori），LSMW 所依賴的標準 Batch Input／Direct Input 程式與錄製，很多已不再適用或不再被測試。SAP 對初始資料移轉的官方工具是 <b>SAP S/4HANA Migration Cockpit</b>。</p>
+  <table>
+    <thead><tr><th>項目</th><th>LTMC（S/4HANA 1610～1909）</th><th>Fiori「Migrate Your Data – Migration Cockpit」（S/4HANA 2020 起）</th></tr></thead>
+    <tbody>
+      <tr><td>入口</td><td>交易 <span class="tcode">LTMC</span>（WebDynpro）</td><td>Fiori 應用程式 Migrate Your Data（F3473）；LTMC 於 2020 標示淘汰、2021 起移除</td></tr>
+      <tr><td>移轉方式</td><td>檔案（XML 範本）、暫存表（Staging Tables）</td><td>檔案、暫存表、<b>直接傳輸</b>（Direct Transfer，自 SAP ERP 等 SAP 來源系統直接抓）</td></tr>
+      <tr><td>預先定義物件</td><td>數百個標準移轉物件（BP 客戶／供應商、Product、未結項目、庫存、固定資產…）</td><td>持續增加</td></tr>
+      <tr><td>自訂與擴充</td><td><span class="tcode">LTMOM</span>（Migration Object Modeler）：增加自訂欄位、建立自訂物件（以 BAPI 或函數為基礎）、調整規則</td><td>同樣用 LTMOM 或新版的物件建模工具</td></tr>
+      <tr><td>流程</td><td>專案 → 選物件 → 下載範本 → 上傳 → 驗證 → 對應值轉換 → <b>模擬</b> → 執行</td><td>同左，並強化監控與日誌</td></tr>
+    </tbody>
+  </table>
+  <p><b>Casper 的基準版本是 1809</b>：此版本的入口是 <span class="tcode">LTMC</span>（檔案或暫存表），自訂物件用 <span class="tcode">LTMOM</span>；升級到 2020 以上後改用 Fiori 應用程式，觀念相同。</p>
+  <table>
+    <thead><tr><th>BC420 的概念</th><th>Migration Cockpit 對應</th></tr></thead>
+    <tbody>
+      <tr><td>DX-WB／LSMW 專案、子專案、物件</td><td>Migration Project ＋ Migration Objects</td></tr>
+      <tr><td>來源結構／記錄佈局／NODATA</td><td>範本（XML／暫存表）的欄位結構；空白欄位不傳</td></tr>
+      <tr><td>LSMW 轉換規則（翻譯、固定值）</td><td>Mapping Tasks（值對應）；自訂規則在 LTMOM</td></tr>
+      <tr><td>Batch Input／DI／BAPI／IDoc 匯入方法</td><td>底層以 BAPI／函數寫入，使用者不再選方法</td></tr>
+      <tr><td>SM35 錯誤 Session、BMV0 重啟</td><td>模擬（Simulation）＋ 執行日誌，修正後重跑失敗記錄</td></tr>
+      <tr><td>測試少於 10 筆 → 逐步放大</td><td>先模擬、再以少量檔案試跑，完全相同的精神</td></tr>
+    </tbody>
+  </table>
+  <p><b>選型建議（S/4HANA 1809+）</b>：</p>
+  <ol>
+    <li><b>一次性初始移轉</b> → Migration Cockpit（標準物件優先；不足時用 LTMOM 擴充）。</li>
+    <li><b>週期性介面</b> → BAPI／RFC、IDoc、OData／SOAP API（見 <a href="#ch04-1">4-1 章</a>、<a href="#ch05-12">5-12 章</a>、<a href="#ch05-22">5-22 章</a>）；不要拿移轉工具做日常介面。</li>
+    <li><b>少量、臨時的資料修正</b> → 標準大量維護交易（例如 MASS）或 Fiori 大量維護應用；再不行才寫 BAPI 程式。</li>
+    <li><b>以上都沒有</b> → 才考慮 SHDB 錄製 BDC，並接受它「換版就要重錄」的維護成本。</li>
+  </ol>
+  <div class="warn"><b>三條實務經驗在移轉專案全部用得上</b>：① <b>HANA 沒有預設排序</b>——移轉後的對帳程式（舊系統筆數 vs SAP 筆數、金額合計）或 LSMW 規則中查「既有主檔的第一筆」時，沒 ORDER BY 就會每次結果不同；② <b>列舉優於區間</b>——值對應（Mapping Tasks、LSMW 翻譯）一律一對一列舉，區間只用在確定有序、定長的代碼；③ <b>先標準再客製</b>——Cockpit 標準物件 → LTMOM 擴充 → 自寫 BAPI 程式 → 錄製 BDC，每往右一步維護成本高一個量級。</div>
+
+  <h3 id="ch05-13-qa">練習與自我檢核</h3>
+  <ol>
+    <li><b>說出 Batch Input 與 Call Transaction 的三個差異。</b><br>參考答案要點：Batch Input 先建 Session 再由 SM35 處理、有錯誤 Session 可修正重跑、永遠同步提交；Call Transaction 直接呼叫交易、快 1～3 倍、沒有錯誤 Session 與重啟功能，要自己收 MESSAGES INTO，可選 UPDATE A/S/L。兩者都用 BDCDATA、都做完整線上檢查。</li>
+    <li><b>記錄佈局中哪些欄位要填 NODATA？沒填會怎樣？</b><br>參考答案要點：所有不傳的欄位都要填 NODATA（預設 /，在 BGR00 的 NODATA 欄位指定）；沒填會傳入空白，可能覆蓋系統既有值。只適用於 BI／CT／DI，BAPI 不需要。</li>
+    <li><b>記錄類型 0、1、2 分別是什麼？以 RFBIBL00 為例說出對應結構。</b><br>參考答案要點：0＝Session 表頭（BGR00）；1＝交易表頭（BBKPF，含 TCODE 與初始畫面值）；2＝交易資料（BBSEG 等，還要填結構名 TBNAM）。</li>
+    <li><b>Direct Input 為什麼一定要在 BMV0 下執行？重啟靠什麼？什麼情況重啟無效？</b><br>參考答案要點：BMV0 下以背景作業執行才有錯誤日誌與重啟機制；重啟靠 TBIST 記錄的處理位置，避免重複或漏提交；檔案格式錯誤（不符記錄佈局）時重啟無效，所以要先「檢查檔案」。</li>
+    <li><b>CALL TRANSACTION 的 MODE、UPDATE 預設值各是什麼？資料移轉應該怎麼設？</b><br>參考答案要點：MODE 預設 A（全顯示），UPDATE 預設 A（非同步）；移轉建議 DISMODE 'N'（或 'E' 測試）、UPDMODE 'S'，用 CTU_PARAMS 時不能再寫 MODE／UPDATE。</li>
+    <li><b>sy-subrc = 0 就代表單據建立成功嗎？</b><br>參考答案要點：不一定。&lt;1000 是交易錯誤、1001 是批輸入處理錯誤；0 時仍應檢查 MESSAGES 中的成功訊息（如 F5 312），非同步更新還可能事後失敗（看 SM13）。</li>
+    <li><b>錄製交易時有哪些東西不會被錄進去？</b><br>參考答案要點：F1、F4、自訂 POH／POV、系統與說明選單命令、錯誤與警告對話框；沒修改過值的欄位（包含 SET/GET 參數帶入的）；Enjoy 控件（Table Control 與頁籤除外）根本不支援。另外錄製時資料會真的寫入資料庫。</li>
+    <li><b>LSMW 的區間翻譯有什麼風險？應該怎麼做？</b><br>參考答案要點：區間比的是字典序，前導零、長度不同、號碼段不連續都會多抓或漏抓；應改用一對一列舉＋找不到就 skip_transaction 並記錄（Casper 第二條經驗）。</li>
+    <li><b>FI 憑證 IDoc 中，借貸標識 SHKZG 應該怎麼決定？筆記的寫法錯在哪？</b><br>參考答案要點：依過帳碼主檔 TBSL-SHKZG 決定；筆記寫死「50 = H，其他 = S」，遇到 31、39、11、19 等貸方過帳碼就錯。</li>
+    <li><b>BAPI 用於資料傳輸時，誰負責 COMMIT？X 結構是做什麼的？</b><br>參考答案要點：BAPI 本身不 COMMIT，由呼叫端呼叫 BAPI_TRANSACTION_COMMIT（WAIT = 'X'）；X 結構標示哪些欄位有值要更新，對應欄位填 'X'，LSMW 有「填寫 X 結構」自動產生程式碼。</li>
+    <li><b>設計一個兩步驟背景作業，把外部檔案轉成 Session 並自動處理。</b><br>參考答案要點：步驟 1 SUBMIT 建 Session 的程式（讀應用伺服器檔，不能用前端檔案函數）；步驟 2 SUBMIT RSBDCSUB（變式：Session 名 ZBC420*、狀態、目標伺服器留空、擴充日誌）；JOB_OPEN → SUBMIT VIA JOB → JOB_CLOSE，結果看 SM37 與 SM35。</li>
+    <li><b>在 S/4HANA 1809 上要做客戶主檔初始移轉，你會怎麼選工具？為什麼不用 LSMW 錄製 XD01？</b><br>參考答案要點：用 Migration Cockpit（LTMC）的 Customer 物件，必要時 LTMOM 擴充；S/4HANA 客戶主檔必須經 BP／CVI，XD01 已導向 BP，錄製與 RFBIDE00 不可用；SAP Note 2287723 表明 LSMW 不建議用於 S/4HANA 移轉。</li>
+  </ol>
+</section>

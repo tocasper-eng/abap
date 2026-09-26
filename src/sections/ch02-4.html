@@ -1,0 +1,1176 @@
+<section class="chapter" id="ch02-4" data-title="模組化編程：FORM / FUNCTION MODULE / MACRO / INCLUDE / 類別方法">
+  <h2 id="ch02-4">第 2-4 章 模組化編程：FORM / FUNCTION MODULE / MACRO / INCLUDE / 類別方法</h2>
+  <p class="lede">一支程式寫到幾千行、同一段邏輯複製五次，是所有 ABAPer 都會撞到的牆。這一章把 SAP 提供的五種模組化手法一次講齊：<b>FORM（副程式）、FUNCTION MODULE（函數）、MACRO（巨集）、INCLUDE（包含程式）、CLASS/METHOD（類別方法）</b>，說明各自的參數傳遞規則、可見範圍、除錯難易度，以及在 S/4HANA 1809 之後「哪一種還能用、哪一種只能維護不能新寫」。學完之後，你能把一支上千行的報表拆成 TOP／FORM／類別三層，能自己建 Function Group 與 RFC 函數，也知道為什麼老師說「新程式一律寫方法」。</p>
+
+  <div class="meta">
+    <div><b>核心 TCODE</b><span class="tcode">SE37</span><span class="tcode">SE80</span><span class="tcode">SE24</span><span class="tcode">SE38</span><span class="tcode">SE91</span><span class="tcode">SM59</span><span class="tcode">SM13</span><span class="tcode">SM58</span><span class="tcode">SMQ1</span><span class="tcode">SMQ2</span><span class="tcode">SE93</span><span class="tcode">SE41</span><span class="tcode">VA03</span><span class="tcode">/H</span></div>
+    <div><b>關鍵物件</b>VBAK、VBAP、EKKO、EKPO、EKES、MARA、ACDOCA、SAPMV45A、CL_SALV_TABLE、CL_GUI_FRONTEND_SERVICES、CX_STATIC_CHECK、CX_DYNAMIC_CHECK、CX_NO_CHECK、IF_T100_DYN_MSG、ZFM_CASPER_VBAP、ZFM_GET_EBELP</div>
+  </div>
+
+  <h3 id="ch02-4-01">1. 為什麼要模組化：五種手法與選用原則</h3>
+  <p>模組化就是「把程式中一段原始碼獨立出來、封裝成一個特定功能」。講義列的四大好處：<b>提高程式透明度、提高程式碼重用、簡化程式維護、方便程式呼叫</b>。最典型的例子就是「取得每月最後一天」「把檔案上傳成內表」這種到處都要用的小功能。</p>
+
+  <table>
+    <thead><tr><th>手法</th><th>可見範圍</th><th>參數</th><th>可否 Debug</th><th>S/4HANA 建議</th></tr></thead>
+    <tbody>
+      <tr><td><b>METHOD</b>（本地／全域類別）</td><td>本地類別＝程式內；全域類別（SE24）＝全系統</td><td>IMPORTING／EXPORTING／CHANGING／RETURNING／RAISING，強型別</td><td>可，且可單元測試</td><td><b>首選</b>。新程式一律寫方法</td></tr>
+      <tr><td><b>FUNCTION MODULE</b></td><td>全系統（必須放在 Function Group 內）</td><td>IMPORT／EXPORT／CHANGING／TABLES／EXCEPTIONS</td><td>可（SE37 可直接測）</td><td>仍在用。RFC／Update／BAPI 目前<b>只能</b>用 FM</td></tr>
+      <tr><td><b>FORM</b>（副程式 Subroutine）</td><td>同程式內（可用 PERFORM ... IN PROGRAM 外部呼叫）</td><td>USING／CHANGING／TABLES，型別可有可無</td><td>可</td><td><b>已宣告過時</b>，只維護不新寫；ABAP Cloud 禁用</td></tr>
+      <tr><td><b>MACRO</b>（DEFINE）</td><td>同程式內（或 TRMAC 表的全域巨集）</td><td>&amp;1～&amp;9，無型別</td><td><b>不可 debug</b></td><td>不建議。只在極短的重複賦值場合殘留</td></tr>
+      <tr><td><b>INCLUDE</b></td><td>編譯期文字插入，不是真正的模組</td><td>無參數（共用全域變數）</td><td>可（就是主程式的一部分）</td><td>可用，但只用來「切檔案」，不要當封裝手段</td></tr>
+    </tbody>
+  </table>
+
+  <p>參數（Parameter）的用途是「在呼叫程式與模組單元之間交換資料」，定義模組時就決定了有哪些參數。講義的三分法：</p>
+  <ul>
+    <li><b>輸入參數</b>（Importing／USING）：把資料傳給模組。</li>
+    <li><b>匯出參數</b>（Exporting／CHANGING 的回傳側）：把模組內的結果送回呼叫程式。</li>
+    <li><b>變更參數</b>（Changing）：傳進去、改完再傳回來。</li>
+  </ul>
+
+  <div class="tip">老師的口訣（第 10-8 節）：<b>「模組化共有五種手法：FUNCTION、FORM、DEFINE、CLASS、INCLUDE。」</b>面試常問，記起來。真正要選的時候，順序是：<b>CLASS &gt; FUNCTION &gt; FORM &gt; DEFINE</b>，INCLUDE 只是切檔案用的輔助。</div>
+
+  <p>講義開頭那段 <code class="abap">FORM SET_AMOUNT</code> 是很典型的「幣別換算後改寫內表」場景。以下是同一段邏輯改寫成 S/4HANA 現代語法的樣子（把 FORM 改成本地類別方法、內表用 FIELD-SYMBOL 就地修改）：</p>
+
+  <pre><code class="abap">CLASS lcl_amount DEFINITION.
+  PUBLIC SECTION.
+    " 依幣別的小數位換算係數，就地調整 ACDOCA 的三個金額欄位
+    METHODS set_amount
+      IMPORTING iv_waers  TYPE waers
+      CHANGING  ct_acdoca TYPE ty_t_acdoca.
+ENDCLASS.
+
+CLASS lcl_amount IMPLEMENTATION.
+  METHOD set_amount.
+    DATA(lv_factor) = CONV i( 1 ).           " 預設係數 1
+
+    CALL FUNCTION 'CURRENCY_CONVERTING_FACTOR'
+      EXPORTING  currency          = iv_waers
+      IMPORTING  factor            = lv_factor
+      EXCEPTIONS too_many_decimals = 1
+                 OTHERS            = 2.
+    IF sy-subrc &lt;&gt; 0.
+      lv_factor = 1.                          " 取不到就當 1，不要讓金額變 0
+    ENDIF.
+
+    " 舊寫法是 LOOP ... MODIFY it FROM wa；現代用 FIELD-SYMBOL 就地改，快且不必 MODIFY
+    LOOP AT ct_acdoca ASSIGNING FIELD-SYMBOL(&lt;ls&gt;).
+      &lt;ls&gt;-wsl = &lt;ls&gt;-wsl * lv_factor.        " 交易貨幣金額
+      &lt;ls&gt;-tsl = &lt;ls&gt;-tsl * lv_factor.        " 公司代碼貨幣金額
+      &lt;ls&gt;-ksl = &lt;ls&gt;-ksl * lv_factor.        " 集團貨幣金額
+    ENDLOOP.
+  ENDMETHOD.
+ENDCLASS.</code></pre>
+
+  <div class="warn">S/4HANA：ACDOCA 是「通用日記帳（Universal Journal）」，FI（BSEG/BKPF）、CO（COEP/COBK）、AA、ML 的行項目全部落在這一張表。舊程式若還在讀 BSEG 做金額彙總，在 S/4 會抓不到 CO 的資料，也享受不到 HANA 的欄位式壓縮。</div>
+
+  <h3 id="ch02-4-02">2. FORM／PERFORM：語法、USING、CHANGING、TABLES</h3>
+  <p>副程式（Subroutine）是「原始碼裡具有一定獨立功能的模組單元」，用 <code class="abap">FORM</code> 開頭、<code class="abap">ENDFORM</code> 結尾。分兩類：</p>
+  <ul>
+    <li><b>內部副程式</b>：原始碼與呼叫程式在同一支 ABAP 程式中。</li>
+    <li><b>外部副程式</b>：原始碼在別支程式裡，用 <code class="abap">PERFORM form IN PROGRAM prog</code> 呼叫。</li>
+  </ul>
+  <p>基本規則（講義重點）：</p>
+  <ul>
+    <li>語法：<code class="abap">FORM &lt;subroutine&gt; [&lt;pass&gt;]. ... ENDFORM.</code>，參數段可以完全省略。</li>
+    <li>副程式可以直接存取主程式宣告的<b>所有</b>全域變數 —— 這正是它最大的坑。</li>
+    <li>同一程式的所有內部副程式，習慣<b>集中放在程式最末端</b>（或獨立成 F01 include）。</li>
+    <li>副程式的定義<b>不能互相巢狀</b>（FORM 裡不能再寫 FORM），但可以互相呼叫、也可以遞迴。</li>
+    <li><b>形式參數</b>（formal parameters）＝ FORM 上宣告的；<b>實際參數</b>（actual parameters）＝ PERFORM 傳進去的。</li>
+  </ul>
+
+  <pre><code class="abap">REPORT zdemo_form.
+
+PERFORM welcome.                 " 呼叫副程式
+
+DATA(lv_str1) = |Hello|.
+DATA(lv_str2) = |SAP|.
+PERFORM con_str USING lv_str1 lv_str2.
+
+*&amp;--- 副程式定義 -------------------------------------------------------*
+FORM welcome.
+  WRITE / 'Subroutine'.
+ENDFORM.
+
+FORM con_str USING iv_s1 TYPE string
+                   iv_s2 TYPE string.
+  " 舊講義用 CONCATENATE，現代一律用字串範本
+  DATA(lv_all) = |{ iv_s1 } { iv_s2 }|.
+  WRITE / lv_all.
+ENDFORM.</code></pre>
+
+  <p>三種參數段的差別：</p>
+  <table>
+    <thead><tr><th>寫法</th><th>傳遞方式</th><th>語意</th></tr></thead>
+    <tbody>
+      <tr><td><code class="abap">USING p</code></td><td>Call by reference（傳址）</td><td>語意上是「只讀」，但 <b>ABAP 不會擋你改</b>，改了外面真的會變</td></tr>
+      <tr><td><code class="abap">USING VALUE(p)</code></td><td>Call by value（傳值）</td><td>副程式內改動不影響外部變數</td></tr>
+      <tr><td><code class="abap">CHANGING p</code></td><td>Call by reference</td><td>明確表示「要改」</td></tr>
+      <tr><td><code class="abap">CHANGING VALUE(p)</code></td><td>Call by value and result</td><td>執行中不影響外部；<b>ENDFORM 正常結束時</b>才把值寫回</td></tr>
+      <tr><td><code class="abap">TABLES p</code></td><td>Call by reference，內表</td><td><b>已過時</b>：參數會被當成帶表頭行（header line）的內表</td></tr>
+    </tbody>
+  </table>
+
+  <div class="warn"><b>CHANGING VALUE( ) 的隱藏陷阱</b>：值是在 <code class="abap">ENDFORM</code> 正常結束時才回寫。如果副程式中途遇到 <code class="abap">MESSAGE ... TYPE 'E'</code>、<code class="abap">EXIT</code> 離開程式或發生例外，<b>回寫不會發生</b>，呼叫端拿到的還是舊值。這種 bug 非常難查。</div>
+
+  <div class="warn"><b>TABLES 參數已過時</b>：<code class="abap">FORM f TABLES it STRUCTURE mara.</code> 語法檢查會出現「過時」警告。改用型別化的 USING／CHANGING。注意 <code class="abap">FORM f USING it TYPE TABLE OF mara</code> <b>是錯的</b> —— FORM 的參數只能用「已存在的型別名稱」或泛型型別（<code class="abap">TYPE STANDARD TABLE</code>、<code class="abap">TYPE INDEX TABLE</code>、<code class="abap">TYPE ANY TABLE</code>），不能在參數列上就地 <code class="abap">TABLE OF</code>。正確寫法見下例。</div>
+
+  <pre><code class="abap">*&amp;--- 新方法：用 TYPES 先定義表型別，再給 FORM 參數強型別 -------------*
+TYPES ty_t_mara TYPE STANDARD TABLE OF mara WITH EMPTY KEY.
+
+DATA: lt_input  TYPE ty_t_mara,
+      lt_output TYPE ty_t_mara.
+
+PERFORM process_data USING lt_input CHANGING lt_output.
+
+FORM process_data USING    it_input  TYPE ty_t_mara
+                  CHANGING ct_output TYPE ty_t_mara.
+  " 只挑出成品（FERT）
+  ct_output = VALUE #( FOR ls IN it_input
+                       WHERE ( mtart = 'FERT' )
+                       ( ls ) ).
+ENDFORM.
+
+*&amp;--- 舊方法（講義原文，S/4 請勿再寫）---------------------------------*
+* FORM process_data TABLES it_input  STRUCTURE mara
+*                          it_output STRUCTURE mara.
+*   LOOP AT it_input INTO DATA(ls_input).
+*     IF ls_input-mtart = 'FERT'.
+*       APPEND ls_input TO it_output.
+*     ENDIF.
+*   ENDLOOP.
+* ENDFORM.
+* PERFORM process_data TABLES lt_input lt_output.</code></pre>
+
+  <div class="warn"><b>S/4HANA 與 ABAP Cloud 的定調</b>：<code class="abap">FORM</code>／<code class="abap">PERFORM</code> 自 ABAP Objects 推出後就被 SAP 標示為 <i>obsolete</i>；在 <b>ABAP Cloud（ABAP for Cloud Development、BTP ABAP Environment、S/4HANA Cloud 的開發模型）中被完全禁止</b>，語法檢查直接報錯。原因：無法完整型別檢查、沒有 RETURNING、無法單元測試、全域變數污染。<b>舊程式維護可以留，新程式一律改寫成類別方法。</b></div>
+
+  <h3 id="ch02-4-03">3. 三種傳參方式的實證：傳址、傳值、傳值並回傳</h3>
+  <p>講義用三支小程式（ZPU300_06、Z202202_29/30/31）示範同一件事，把三種方式的差異壓在同一個算式上。這裡合併成一支現代寫法的示範程式，一次跑完三種。</p>
+
+  <pre><code class="abap">REPORT zdemo_pass_by.
+
+DATA: lv_a TYPE i VALUE 1,
+      lv_b TYPE i VALUE 2,
+      lv_c TYPE i VALUE 0.
+
+*--- 方式一：call by reference（傳址）------------------------------*
+PERFORM frm_ref USING lv_a lv_b lv_c.
+WRITE: / |方式一 main a={ lv_a } b={ lv_b } c={ lv_c }|.
+
+*--- 方式二：call by value（傳值）----------------------------------*
+lv_a = 1. lv_b = 2. lv_c = 0.
+PERFORM frm_val USING lv_a lv_b lv_c.
+WRITE: / |方式二 main a={ lv_a } b={ lv_b } c={ lv_c }|.
+
+*--- 方式三：call by value and return result -----------------------*
+lv_a = 1. lv_b = 2. lv_c = 0.
+PERFORM frm_val_ret USING lv_a lv_b CHANGING lv_c.
+WRITE: / |方式三 main a={ lv_a } b={ lv_b } c={ lv_c }|.
+
+*------------------------------------------------------------------*
+FORM frm_ref USING p_a TYPE i p_b TYPE i p_c TYPE i.
+  p_c = p_a + p_b.          " 傳址：外面的 lv_c 真的變成 3
+ENDFORM.
+
+FORM frm_val USING VALUE(p_a) TYPE i VALUE(p_b) TYPE i VALUE(p_c) TYPE i.
+  p_c = p_a + p_b.          " 傳值：副程式內 p_c=3，但外面的 lv_c 仍是 0
+ENDFORM.
+
+FORM frm_val_ret USING    VALUE(p_a) TYPE i
+                          VALUE(p_b) TYPE i
+                 CHANGING VALUE(p_c) TYPE i.
+  " 這不是 call by address(reference)，
+  " 而是讓 FORM 能 return 運算結果，稱為 call by value and return result
+  p_c = p_a + p_b.
+  p_a = 0.                  " 改 p_a、p_b 都不會影響外部
+  p_b = 0.
+ENDFORM.                    " &lt;-- 執行到這一行，p_c 的 3 才寫回 lv_c</code></pre>
+
+  <p>執行結果重點：方式一與方式三的 <code class="abap">c</code> 都是 3，但方式三的 <code class="abap">a</code>、<code class="abap">b</code> 保持原值；方式二的 <code class="abap">c</code> 仍是 0。</p>
+
+  <div class="tip">記法：<b>USING = 我給你看；CHANGING = 我給你改；VALUE( ) = 我給你影本。</b>影本在 <code class="abap">CHANGING VALUE()</code> 時，結束才貼回正本。</div>
+
+  <p>對照到現代方法（Method），這三件事變得一目瞭然，而且編譯器會幫你擋錯：</p>
+
+  <pre><code class="abap">CLASS lcl_calc DEFINITION.
+  PUBLIC SECTION.
+    " IMPORTING 在方法內是「唯讀」，編譯器直接擋，比 FORM USING 安全
+    CLASS-METHODS add
+      IMPORTING iv_a          TYPE i
+                iv_b          TYPE i
+      RETURNING VALUE(rv_sum) TYPE i.     " RETURNING 必須是 pass by value
+ENDCLASS.
+
+CLASS lcl_calc IMPLEMENTATION.
+  METHOD add.
+    rv_sum = iv_a + iv_b.
+    " iv_a = 0.   &lt;-- 這一行會直接語法錯誤：IMPORTING 參數不可修改
+  ENDMETHOD.
+ENDCLASS.
+
+START-OF-SELECTION.
+  " RETURNING 讓方法可以像函數一樣直接寫在運算式裡
+  DATA(lv_total) = lcl_calc=&gt;add( iv_a = 1 iv_b = 2 ) * 10.
+  WRITE / |Total: { lv_total NUMBER = USER }|.</code></pre>
+
+  <h3 id="ch02-4-04">4. 區域變數、全域變數，與外部呼叫（IN PROGRAM／SUBMIT／CALL TRANSACTION）</h3>
+  <ul>
+    <li><b>全域變數</b>：在主程式宣告，主程式與它呼叫的每個副程式都看得到、改得動。</li>
+    <li><b>區域變數</b>：在副程式（或方法）內宣告，只活在該副程式中，每次呼叫重新建立在堆疊上 —— 所以<b>遞迴是安全的</b>。</li>
+    <li>同名時<b>區域變數優先</b>，全域變數不受影響。</li>
+    <li><code class="abap">STATICS</code> 宣告的變數例外：它跨呼叫保留值（可用來做計數器／快取），但也是 bug 溫床。</li>
+  </ul>
+  <div class="tip">老師特別強調：<b>「副程式中應避免使用主程式的變數，應使用參數。」</b>這條規矩在寫方法時更嚴格 —— 方法只能透過參數與類別屬性溝通，這正是 OO 比 FORM 好維護的根本原因。</div>
+
+  <p>遞迴示範（副程式與方法都適用，這裡示範方法版）：</p>
+
+  <pre><code class="abap">CLASS lcl_rec DEFINITION.
+  PUBLIC SECTION.
+    CLASS-METHODS factorial
+      IMPORTING iv_n          TYPE i
+      RETURNING VALUE(rv_res) TYPE p LENGTH 16 DECIMALS 0.
+ENDCLASS.
+
+CLASS lcl_rec IMPLEMENTATION.
+  METHOD factorial.
+    " 每一層呼叫都有自己的區域變數，所以遞迴安全
+    rv_res = COND #( WHEN iv_n &lt;= 1
+                     THEN 1
+                     ELSE iv_n * factorial( iv_n - 1 ) ).
+  ENDMETHOD.
+ENDCLASS.</code></pre>
+
+  <p><b>外部呼叫的三種方式</b>（講義 04-9 與第 4 節）：</p>
+
+  <pre><code class="abap">REPORT z027_t.
+
+DATA: lv_num1 TYPE i VALUE 10,
+      lv_num2 TYPE i VALUE 20,
+      lv_num3 TYPE i.
+
+*--- (1) 呼叫另一支程式裡的副程式：外部 PERFORM ---------------------*
+"    好處是共用邏輯，壞處是耦合、無法型別檢查、對方改壞你就 dump
+PERFORM calculator IN PROGRAM z300_common
+        USING lv_num1 lv_num2 CHANGING lv_num3.
+WRITE: / |num1={ lv_num1 } num2={ lv_num2 } num3={ lv_num3 }|.
+
+*--- (2) 呼叫另一支報表：SUBMIT（常用於 drill-down）-----------------*
+SUBMIT z300_report
+       WITH p_bukrs = '1000'
+       WITH s_matnr IN s_matnr        " 把 select-option 整段帶過去
+       VIA SELECTION-SCREEN           " 顯示對方的選擇畫面
+       AND RETURN.                    " 執行完回到本程式
+
+*--- (3) 呼叫交易碼 ------------------------------------------------*
+CALL TRANSACTION 'VA03' AND SKIP FIRST SCREEN.</code></pre>
+
+  <div class="warn"><code class="abap">PERFORM ... IN PROGRAM</code> 講義自己就標了「<b>不建議</b>」。它有幾個致命問題：對方程式若沒載入會 dump（要加 <code class="abap">IF FOUND</code>）、參數完全沒有型別檢查、跨程式相依性在 Where-Used 上看不清楚。要共用邏輯就建 Function Module 或全域類別。<br>另外 <code class="abap">CALL TRANSACTION</code> 在 S/4HANA 仍可用，但在 ABAP Cloud 禁用；Fiori 環境要改用 Intent Navigation。</div>
+
+  <div class="note"><b>DATA BEGIN OF COMMON PART</b>（講義第 7 節提到）是早期讓主程式與外部副程式共用資料區的機制：<code class="abap">DATA: BEGIN OF COMMON PART numbers, num1 TYPE i, ... END OF COMMON PART numbers.</code>。<b>已完全過時</b>，S/4 請勿使用，改用 Function Group 全域資料或類別靜態屬性。</div>
+
+  <h3 id="ch02-4-05">5. Function Group 與 Function Module：SE37／SE80</h3>
+  <p>Function Module（函數模組）是<b>具有全域可見性的特殊程式</b>，全系統任何程式都能呼叫。它<b>只能在 Function Group（函數組）中定義</b> —— Function Group 是 FM 的「主程式」，一個 Group 可以包含多個 FM，通常放同一類物件的操作。</p>
+
+  <table>
+    <thead><tr><th>動作</th><th>入口</th><th>說明</th></tr></thead>
+    <tbody>
+      <tr><td>建立／修改 Function Group</td><td>SE37 → 功能表 Goto → Function Groups → Create/Change/Display/Delete Group</td><td>也可以在 SE80 直接建（建議）</td></tr>
+      <tr><td>顯示 Function Group 結構</td><td>SE80 物件瀏覽器</td><td>可以看到底下所有 Include、FM、畫面</td></tr>
+      <tr><td>建立／修改 Function Module</td><td>SE37</td><td>輸入 FM 名稱 → 選 Function Group → 填描述</td></tr>
+      <tr><td>測試 FM</td><td>SE37 → 測試／執行（F8）</td><td>不用寫呼叫程式就能測</td></tr>
+    </tbody>
+  </table>
+
+  <p><b>Function Group 產生的 Include 結構</b>（假設 Group 名為 <code class="abap">ZFG_SD</code>，主程式為 <code class="abap">SAPLZFG_SD</code>）：</p>
+  <table>
+    <thead><tr><th>Include</th><th>內容</th></tr></thead>
+    <tbody>
+      <tr><td><code class="abap">LZFG_SDTOP</code></td><td>FUNCTION-POOL 敘述與<b>全域資料宣告</b>（本 Group 內所有 FM 共用）</td></tr>
+      <tr><td><code class="abap">LZFG_SDUXX</code></td><td>系統自動產生，內含 <code class="abap">INCLUDE LZFG_SDU01. INCLUDE LZFG_SDU02. ...</code></td></tr>
+      <tr><td><code class="abap">LZFG_SDU01</code>、<code class="abap">U02</code>…</td><td>每個 FM 的實作原始碼（一個 FM 一個 Uxx）</td></tr>
+      <tr><td><code class="abap">LZFG_SDF01</code></td><td>自行建立，放 Group 內共用的 FORM／本地類別</td></tr>
+    </tbody>
+  </table>
+
+  <p><b>函數處理類型（Processing Type）</b>，在屬性頁籤選：</p>
+  <ol>
+    <li><b>Normal Function Module（一般函數模組）</b>：只能在本系統使用。</li>
+    <li><b>Remote-Enabled Module（遠端模組，RFC）</b>：可被其他 SAP 或非 SAP 系統呼叫，呼叫時要指定 <code class="abap">DESTINATION</code>，目的地在 <b>SM59</b> 設定。</li>
+    <li><b>Update Module（更新函數）</b>：用於資料庫資料更新，講義註「常用於系統導入之初的大量數據更新」。</li>
+  </ol>
+
+  <p><b>介面元素</b>（SE37 的五個頁籤）：</p>
+  <table>
+    <thead><tr><th>頁籤</th><th>語意</th><th>是否可選</th></tr></thead>
+    <tbody>
+      <tr><td>Import</td><td>呼叫時把值傳進 FM</td><td>可勾 Optional；可設預設值（Default）</td></tr>
+      <tr><td>Export</td><td>FM 把結果送出</td><td><b>永遠是 Optional</b></td></tr>
+      <tr><td>Changing</td><td>傳進去、改完傳回</td><td>可勾 Optional；可設預設值</td></tr>
+      <tr><td>Tables</td><td>用內表傳參，行為同 Changing</td><td><b>已過時</b>（見下方警告）</td></tr>
+      <tr><td>Exceptions</td><td>錯誤情況；呼叫端用 sy-subrc 檢查</td><td>—</td></tr>
+    </tbody>
+  </table>
+
+  <div class="note"><b>參數型別要怎麼填</b>（講義的三個註記）：輸出結果若是一列資料，Associated Type 填<b>結構</b>（如 VBAK）；若要傳一整張表，用 <b>TABLES</b> 頁籤或在 Export/Changing 填<b>表型別</b>（如 SE11 建的 <code class="abap">VBAP_T</code>）。老師的提醒是：<b>用表型別（Table Type）取代 TABLES 頁籤</b>，才不會被系統標過時。</div>
+
+  <div class="warn"><b>TABLES 參數在 SE37 已被標為過時</b>：講義寫「用 TABLES 頁籤傳回 EKES，系統會提示過時，但強制 ENTER 仍會過」。可以過，但新 FM 請一律改用 <b>Export／Changing ＋ Table Type</b>。唯一例外：<b>RFC FM 的相容性</b>與部分外部系統（如舊版 JCo／pyrfc 呼叫端）仍習慣用 TABLES 參數，此時可保留。</div>
+
+  <div class="tip"><b>測試前一定要全部 ACTIVE</b>：Function Group 和 Function Module 兩者都要激活，否則 SE37 測試會失敗或呼叫端找不到。編輯程式時善用 <b>Ctrl+F6</b> 快速複製既有 FM 的呼叫樣板（SE37 → 模式 Pattern，或編輯器的 Pattern 按鈕，可自動生成完整 CALL FUNCTION 骨架）。</div>
+
+  <div class="note">有些 BASIS 會安裝 <b>BC400</b> 這個 SAP 標準教學包（含 SFLIGHT／SBOOK 練習資料與範例 FM），是 ABAPer 練習 FUNCTION 的最佳教材。講義註明 GBIKE 環境未安裝。</div>
+
+  <h3 id="ch02-4-06">6. 實作案例：ZFM_CASPER_VBAP 與 ZFM_GET_EBELP</h3>
+  <p>講義的第一個 FM 練習：輸入銷售訂單號 <code class="abap">I_VBELN</code>，回傳表頭結構 <code class="abap">E_VBAK</code> 與表身內表 <code class="abap">T_VBAP</code>，找不到就拋 <code class="abap">VBAK_NOT_EXIST</code> 例外。</p>
+
+  <pre><code class="abap">FUNCTION zfm_casper_vbak_vbap.
+*"----------------------------------------------------------------------
+*" IMPORTING  I_VBELN TYPE VBELN_VA
+*" EXPORTING  E_VBAK  TYPE VBAK
+*"            ET_VBAP TYPE ZTT_VBAP        " SE11 建的 Table Type
+*" EXCEPTIONS VBAK_NOT_EXIST
+*"----------------------------------------------------------------------
+
+  CLEAR: e_vbak, et_vbap.
+
+  " 表頭：明列欄位，主機變數加 @
+  SELECT SINGLE vbeln, erdat, auart, vkorg, vtweg, spart, kunnr, netwr, waerk
+    FROM vbak
+    WHERE vbeln = @i_vbeln
+    INTO CORRESPONDING FIELDS OF @e_vbak.
+
+  IF sy-subrc &lt;&gt; 0.
+    RAISE vbak_not_exist.        " 傳統例外：呼叫端用 sy-subrc 接
+  ENDIF.
+
+  " 表身
+  SELECT vbeln, posnr, matnr, arktx, kwmeng, vrkme, netwr, werks
+    FROM vbap
+    WHERE vbeln = @i_vbeln
+    ORDER BY posnr                " 一定要排序，否則順序不保證
+    INTO CORRESPONDING FIELDS OF TABLE @et_vbap.
+
+ENDFUNCTION.</code></pre>
+
+  <p>呼叫端（講義 Z202202_28）現代化版本 —— 注意 <b>ALPHA 轉換</b>：使用者輸入 <code class="abap">40</code>，資料庫存的是 <code class="abap">0000000040</code>。</p>
+
+  <pre><code class="abap">REPORT z202202_28.
+
+PARAMETERS p_vbeln TYPE vbeln_va OBLIGATORY.
+
+START-OF-SELECTION.
+
+  " 舊寫法要 CALL FUNCTION 'CONVERSION_EXIT_ALPHA_INPUT'；
+  " S/4 可以直接用字串範本的 ALPHA 修飾詞，一行搞定
+  DATA(lv_vbeln) = CONV vbeln_va( |{ p_vbeln ALPHA = IN }| ).   " 前補 0
+  " 反向顯示用：|{ lv_vbeln ALPHA = OUT }|  → 去掉前導 0
+
+  DATA ls_vbak  TYPE vbak.
+  DATA lt_vbap  TYPE ztt_vbap.
+
+  CALL FUNCTION 'ZFM_CASPER_VBAK_VBAP'
+    EXPORTING  i_vbeln        = lv_vbeln
+    IMPORTING  e_vbak         = ls_vbak
+               et_vbap        = lt_vbap
+    EXCEPTIONS vbak_not_exist = 1
+               OTHERS         = 2.
+
+  CASE sy-subrc.
+    WHEN 0.
+      WRITE: / |訂單編號存在：{ lv_vbeln ALPHA = OUT }，共 { lines( lt_vbap ) } 個項目|.
+    WHEN 1.
+      WRITE: / |訂單編號不存在：{ lv_vbeln ALPHA = OUT }|.
+    WHEN OTHERS.
+      WRITE: / |呼叫失敗，sy-subrc = { sy-subrc }|.
+  ENDCASE.</code></pre>
+
+  <div class="warn"><b>EXCEPTIONS 一定要寫 OTHERS</b>。如果 FM 拋了一個你沒列在 EXCEPTIONS 區塊的例外，程式會直接以<b>執行階段錯誤（short dump）終止</b>，不是回傳 sy-subrc。講義原文：「如果未列出該異常，則程式會因執行階段錯誤而終止。」</div>
+
+  <p>第二個案例 <code class="abap">ZFM_GET_EBELP</code>：依採購單號＋項次，回傳最近一筆 EKKO／EKPO 與收貨確認 EKES。講義原文用 <code class="abap">SELECT * ... UP TO 1 ROWS ... ORDER BY ... </code> 再 <code class="abap">LOOP</code> 取值，這在 S/4 有明確的寫法問題：</p>
+
+  <div class="warn"><b>講義原程式的三個坑</b>：<br>
+  1. <code class="abap">SELECT ... UP TO 1 ROWS ... ORDER BY x DESCENDING</code> 在傳統 DB 是先排序再取一筆，但語意上易誤解；在 HANA 上要確保 ORDER BY 真的先於 UP TO 生效，建議寫 <code class="abap">SELECT ... ORDER BY ... INTO ... UP TO 1 ROWS</code> 或用 <code class="abap">SELECT SINGLE</code> 搭配明確 key。<br>
+  2. <b><code class="abap">SELECT SINGLE</code> 在沒有指定完整主鍵時，回哪一筆是不保證的</b>（HANA 上的平行處理讓結果更不穩定）。要「最近一筆」就必須 ORDER BY。<br>
+  3. 原程式在 <code class="abap">LOOP ... ENDLOOP</code> 之後才檢查 <code class="abap">sy-subrc</code>，此時 sy-subrc 已被 LOOP 覆寫，<b>檢查的其實是 LOOP 的結果不是 SELECT 的結果</b>。這是老師課堂上要學生自己抓的錯。</div>
+
+  <pre><code class="abap">FUNCTION zfm_get_ebelp.
+*"----------------------------------------------------------------------
+*" IMPORTING  I_EBELN TYPE EBELN
+*"            I_EBELP TYPE EBELP
+*"            I_WERKS TYPE WERKS_D DEFAULT 'TW10'
+*" EXPORTING  E_EKKO  TYPE EKKO
+*"            E_EKPO  TYPE EKPO
+*"            E_EKES  TYPE EKES        " 最近一筆收貨確認
+*" EXCEPTIONS EKPO_NOT_EXIST
+*"----------------------------------------------------------------------
+
+  CLEAR: e_ekko, e_ekpo, e_ekes.
+
+  " 採購單項目（主鍵齊全，用 SELECT SINGLE 最安全）
+  SELECT SINGLE ebeln, ebelp, matnr, werks, menge, meins, netpr, aedat
+    FROM ekpo
+    WHERE ebeln = @i_ebeln
+      AND ebelp = @i_ebelp
+      AND werks = @i_werks
+    INTO CORRESPONDING FIELDS OF @e_ekpo.
+
+  IF sy-subrc &lt;&gt; 0.
+    RAISE ekpo_not_exist.
+  ENDIF.
+
+  " 採購單表頭
+  SELECT SINGLE ebeln, bukrs, bsart, lifnr, bedat, waers
+    FROM ekko
+    WHERE ebeln = @i_ebeln
+    INTO CORRESPONDING FIELDS OF @e_ekko.
+
+  " 最近一筆收貨確認：必須 ORDER BY，UP TO 1 ROWS 才有意義
+  SELECT ebeln, ebelp, etens, eindt, menge, dabmg
+    FROM ekes
+    WHERE ebeln = @i_ebeln
+      AND ebelp = @i_ebelp
+      AND dabmg &gt; 0
+    ORDER BY eindt DESCENDING, etens DESCENDING
+    INTO CORRESPONDING FIELDS OF @e_ekes
+    UP TO 1 ROWS.
+  ENDSELECT.        " 取一筆的 SELECT...UP TO 1 ROWS 必須配 ENDSELECT
+
+ENDFUNCTION.</code></pre>
+
+  <div class="note">上面是少數<b>必須</b>保留 <code class="abap">SELECT ... ENDSELECT</code> 的場合（<code class="abap">UP TO 1 ROWS</code> 搭配 <code class="abap">ORDER BY</code> 寫進工作區）。若不想寫 ENDSELECT，可改成 <code class="abap">... INTO TABLE @DATA(lt_ekes) UP TO 1 ROWS.</code> 再取 <code class="abap">lt_ekes[ 1 ]</code>。</div>
+
+  <h3 id="ch02-4-07">7. Function Group 的全域資料、SET/GET 樣式與 SE37 測試序列</h3>
+  <p>同一個 Function Group 內的所有 FM，共用 <code class="abap">LxxxTOP</code> 裡宣告的<b>全域資料</b>，而且這份資料在<b>整個使用者交談期間（roll area）持續存在</b>，只要 Function Group 被載入就不會消失。這就是 SAP 標準大量使用的 <b>SET/GET 樣式</b>（例如 <code class="abap">SET_PARAMETER</code>／<code class="abap">GET_PARAMETER</code>、各種 <code class="abap">*_INIT</code> ／ <code class="abap">*_SAVE</code> 配對）。</p>
+
+  <pre><code class="abap">*&amp;--- Include LZFG_BUFFERTOP：Function Group 全域資料 -----------------*
+FUNCTION-POOL zfg_buffer.
+
+TYPES: BEGIN OF ty_ctx,
+         bukrs TYPE bukrs,
+         gjahr TYPE gjahr,
+         monat TYPE monat,
+       END OF ty_ctx.
+
+DATA gs_ctx TYPE ty_ctx.          " 整個 Group 共用，跨 FM 呼叫仍存在
+
+*&amp;--- FM 1：設定 --------------------------------------------------*
+FUNCTION z_ctx_set.
+*" IMPORTING IV_BUKRS TYPE BUKRS
+*"           IV_GJAHR TYPE GJAHR
+*"           IV_MONAT TYPE MONAT
+  gs_ctx = VALUE #( bukrs = iv_bukrs gjahr = iv_gjahr monat = iv_monat ).
+ENDFUNCTION.
+
+*&amp;--- FM 2：取用 --------------------------------------------------*
+FUNCTION z_ctx_get.
+*" EXPORTING ES_CTX TYPE TY_CTX
+  es_ctx = gs_ctx.                " 先前 Z_CTX_SET 設的值還在
+ENDFUNCTION.</code></pre>
+
+  <div class="tip"><b>SE37 測試序列（Test Sequence）</b>：要驗證上面這種「先 SET 再 GET」的行為，不必寫呼叫程式。在 SE37 進入 FM 後，功能表 <b>Function Module → Test → Test sequence</b>（測試 → 測試序列），輸入要依序執行的 FM 名稱清單（例如 Z_CTX_SET、Z_CTX_GET），按執行，系統會在<b>同一個 roll area</b> 內依序跑，你就能看到全域資料真的被保留下來。這是測試 SET/GET 型 FM、以及測試 Update FM 的標準手法。</div>
+
+  <div class="warn">全域資料是雙面刃：好處是省下重複查詢（可以當 buffer），壞處是<b>狀態殘留</b>。如果某個 FM 忘了 CLEAR，下一次呼叫可能拿到上一張單據的資料 —— 批次處理時特別容易中招。習慣在每個 FM 開頭 <code class="abap">CLEAR</code> 掉輸出參數。</div>
+
+  <h3 id="ch02-4-08">8. RFC 函數與 Update 函數（V1／V2）</h3>
+  <p><b>RFC-Enabled Function Module</b>：在 SE37 屬性頁籤勾 <i>Remote-Enabled Module</i>。呼叫時指定 <code class="abap">DESTINATION</code>，目的地在 <b>SM59</b> 維護（ABAP Connection、TCP/IP Connection、HTTP Connection…）。</p>
+
+  <pre><code class="abap">*--- (1) 同步 RFC（sRFC）：最常見，呼叫端會等 -----------------------*
+CALL FUNCTION 'ZFM_GET_STOCK'
+  DESTINATION 'PRD100'                 " SM59 定義的目的地
+  EXPORTING  iv_werks              = '1000'
+  IMPORTING  et_stock              = lt_stock
+  EXCEPTIONS system_failure        = 1  MESSAGE lv_msg
+             communication_failure = 2  MESSAGE lv_msg
+             resource_failure      = 3
+             OTHERS                = 4.
+IF sy-subrc &lt;&gt; 0.
+  MESSAGE |RFC 失敗（{ sy-subrc }）：{ lv_msg }| TYPE 'E'.
+ENDIF.
+
+*--- (2) 非同步 aRFC：不等回應，可平行處理 --------------------------*
+CALL FUNCTION 'ZFM_HEAVY_JOB'
+  STARTING NEW TASK 'JOB01'
+  DESTINATION 'NONE'
+  EXPORTING iv_werks = '1000'.
+
+*--- (3) 交易式 tRFC / 佇列式 qRFC：保證只執行一次、可排隊 ----------*
+CALL FUNCTION 'ZFM_SEND_IDOC'
+  IN BACKGROUND TASK
+  DESTINATION 'MW100'
+  EXPORTING iv_docnum = lv_docnum.
+COMMIT WORK.                            " tRFC 要 COMMIT 才會真的送出</code></pre>
+
+  <table>
+    <thead><tr><th>種類</th><th>語法</th><th>監控 TCODE</th></tr></thead>
+    <tbody>
+      <tr><td>sRFC 同步</td><td><code class="abap">DESTINATION</code></td><td>SM59（連線測試）</td></tr>
+      <tr><td>aRFC 非同步</td><td><code class="abap">STARTING NEW TASK</code></td><td>SM50／SM66</td></tr>
+      <tr><td>tRFC 交易式</td><td><code class="abap">IN BACKGROUND TASK</code></td><td><b>SM58</b></td></tr>
+      <tr><td>qRFC 佇列式</td><td><code class="abap">IN BACKGROUND UNIT</code></td><td><b>SMQ1</b>（出）／<b>SMQ2</b>（入）</td></tr>
+    </tbody>
+  </table>
+
+  <div class="warn"><b>RFC FM 的介面限制</b>：所有參數必須是<b>傳值（pass by value）</b>；型別必須是 DDIC 型別（不能用程式內定義的本地型別）；不能有深層巢狀的非 DDIC 結構；必須宣告 <code class="abap">SYSTEM_FAILURE</code> 與 <code class="abap">COMMUNICATION_FAILURE</code> 兩個標準例外。另外 RFC FM 內<b>不能</b>做螢幕輸出（WRITE／POPUP）。</div>
+
+  <p><b>Update Function Module（更新函數，V1／V2）</b>：用 <code class="abap">CALL FUNCTION ... IN UPDATE TASK</code> 呼叫，實際的資料庫更新<b>不會立刻執行</b>，而是登錄在更新佇列裡，等到 <code class="abap">COMMIT WORK</code> 才由更新工作程序（update work process）執行。</p>
+
+  <table>
+    <thead><tr><th>類型</th><th>SE37 屬性設定</th><th>執行時機</th><th>失敗影響</th></tr></thead>
+    <tbody>
+      <tr><td><b>V1</b>（Update Module）</td><td>Update Module，<b>不</b>勾 Start immediately 之外的選項</td><td>COMMIT WORK 後<b>立即</b>、且在同一個 DB LUW 內依序執行</td><td>失敗則整個 V1 全部 rollback，單據不會產生</td></tr>
+      <tr><td><b>V2</b>（Update Module，延遲）</td><td>Update Module (delayed) / Start delayed</td><td>所有 V1 成功後才執行，獨立 LUW</td><td>V2 失敗<b>不影響</b> V1；適合統計、次要資料</td></tr>
+      <tr><td><b>Collective run</b></td><td>Collective run</td><td>由 RSM13005 排程批次執行</td><td>用於可延後的大量更新</td></tr>
+    </tbody>
+  </table>
+
+  <pre><code class="abap">*--- 呼叫端：整個交易的邏輯工作單元（LUW）--------------------------*
+CALL FUNCTION 'Z_POST_HEADER'  IN UPDATE TASK    " V1：關鍵資料
+  EXPORTING is_head = ls_head.
+
+CALL FUNCTION 'Z_POST_STATIS'  IN UPDATE TASK    " V2：統計資料
+  EXPORTING is_stat = ls_stat.
+
+IF lv_error IS INITIAL.
+  COMMIT WORK AND WAIT.        " AND WAIT：等更新真的做完才往下走
+ELSE.
+  ROLLBACK WORK.               " 取消整批登錄的更新
+ENDIF.</code></pre>
+
+  <div class="tip"><b>SM13</b> 看更新請求（Update Requests）的狀態與錯誤，<b>SM14</b> 管理更新機制的啟停。程式明明沒報錯但資料沒進去，第一個要看的就是 SM13。<br><b>COMMIT WORK AND WAIT</b> 與 <b>COMMIT WORK</b> 的差別是後續程式能不能立刻讀到剛寫的資料 —— 呼叫 BAPI 後馬上要 SELECT 驗證，一定要加 <code class="abap">AND WAIT</code>。</div>
+
+  <div class="warn">在 Update FM 裡<b>不可以</b>使用 <code class="abap">COMMIT WORK</code>、不可以呼叫對話式畫面、不可以用 <code class="abap">MESSAGE ... TYPE 'E'</code>（會造成更新終止且使用者看不到）。要回報錯誤請用 <code class="abap">MESSAGE ... TYPE 'A'</code> 或寫進 log。</div>
+
+  <h3 id="ch02-4-09">9. MACRO：DEFINE … END-OF-DEFINITION</h3>
+  <p>巨集（Macro）是「一段獨立的程式碼，能實現資料的運算與輸出，功能與副程式類似，主要用於同一程式中重複的運算，以簡化程式碼」。語法：</p>
+
+  <pre><code class="abap">REPORT z202202_32.
+
+DATA lv_a TYPE i VALUE 1.
+DATA lv_b TYPE i VALUE 10.
+
+DEFINE increment.          " increment 為巨集名稱
+  &amp;1 = &amp;1 + 1.             " &amp;1 = 第 1 個參數，最多到 &amp;9
+  WRITE / &amp;1.
+  WRITE / &amp;2.
+END-OF-DEFINITION.
+
+increment lv_a lv_b.       " 呼叫：不加逗號、不加括號，參數用空白隔開</code></pre>
+
+  <p>規則（講義重點）：</p>
+  <ul>
+    <li>用 <b>&amp;1～&amp;9</b> 接收參數，最多九個，<b>不需要也不能宣告型別</b>。</li>
+    <li>巨集<b>只能被本程式中「定義於巨集之後」的敘述呼叫</b>，所以巨集一律寫在程式最前面。</li>
+    <li>展開發生在<b>編譯期</b>（純文字替換），所以<b>巨集無法 debug</b> —— 這是它最大的缺點，講義特別註明「marco 是無法被 debug 的，因此程式不宜太長」。</li>
+    <li>另有存在 <code class="abap">TRMAC</code> 表的全域巨集，用 SE38 → 功能表 → 巨集維護，可跨程式使用（更不建議）。</li>
+  </ul>
+
+  <p>老師示範的兩個實務用法都是「建 ALV Field Catalog」—— 這正是巨集最經典的使用場景，因為要重複填十幾個欄位：</p>
+
+  <pre><code class="abap">*--- 講義 05-2／05-3：用 DEFINE 快速堆 Field Catalog ----------------*
+DEFINE add_col.
+  ls_fieldcat-fieldname = &amp;1.
+  ls_fieldcat-seltext_m = &amp;2.
+  ls_fieldcat-outputlen = &amp;3.
+  ls_fieldcat-col_pos   = &amp;4.
+  APPEND ls_fieldcat TO lt_fieldcat.
+  CLEAR ls_fieldcat.
+END-OF-DEFINITION.
+
+add_col 'MATNR' '物料編號macro' 40 1.
+add_col 'MATKL' '物料群組macro'  9 2.
+add_col 'MAKTX' '物料描述macro' 40 3.</code></pre>
+
+  <div class="warn"><b>講義 05-3 的血淚教訓（20250424 實作）</b>：「為了求快，沒有將 <b>SORT 的欄位</b>也放入 ALV，造成 ABAP DUMP，而且從錯誤訊息不易察覺。」原因就是巨集展開後沒有行號可對應，Runtime Error 指到的是展開後的位置，Debug 也停不進去。<b>這就是為什麼現在不建議用 MACRO。</b></div>
+
+  <p><b>S/4HANA 的替代寫法</b>：同樣的需求，用 <code class="abap">CL_SALV_TABLE</code> 根本不需要 Field Catalog；就算要細調欄位，也用型別安全的方法或 <code class="abap">VALUE #( )</code> 一次建好：</p>
+
+  <pre><code class="abap">*--- 替代 1：CL_SALV_TABLE，欄位標題直接改，不用 fieldcat ------------*
+TRY.
+    cl_salv_table=&gt;factory(
+      IMPORTING r_salv_table = DATA(lo_alv)
+      CHANGING  t_table      = lt_data ).
+
+    DATA(lo_cols) = lo_alv-&gt;get_columns( ).
+    lo_cols-&gt;set_optimize( abap_true ).
+
+    DATA(lo_col) = CAST cl_salv_column_table( lo_cols-&gt;get_column( 'MATNR' ) ).
+    lo_col-&gt;set_long_text( '物料編號' ).
+    lo_col-&gt;set_output_length( 40 ).
+
+    lo_alv-&gt;display( ).
+  CATCH cx_salv_msg cx_salv_not_found INTO DATA(lx).
+    MESSAGE lx-&gt;get_text( ) TYPE 'E'.
+ENDTRY.
+
+*--- 替代 2：真的要 fieldcat（CL_GUI_ALV_GRID），用 VALUE # 一次建好 --*
+DATA(lt_fcat) = VALUE lvc_t_fcat(
+  ( fieldname = 'MATNR' scrtext_l = '物料編號' outputlen = 40 col_pos = 1 )
+  ( fieldname = 'MATKL' scrtext_l = '物料群組' outputlen =  9 col_pos = 2 )
+  ( fieldname = 'MAKTX' scrtext_l = '物料描述' outputlen = 40 col_pos = 3 )
+  ( fieldname = 'MFRPN' scrtext_l = '標記(改)' outputlen = 40 col_pos = 4 edit = abap_true ) ).</code></pre>
+
+  <div class="tip"><b>作業（05-1）</b>：用 SE80 打開 VA03 的主程式 <b>SAPMV45A</b>，在物件樹裡找 <b>Macros</b> 節點，看 SAP 標準怎麼用巨集（例如各種 <code class="abap">*_message</code>、欄位搬移巨集）。結論：「模組顧問又多認識一種模組化編程的技巧了。」</div>
+
+  <h3 id="ch02-4-10">10. INCLUDE：把程式切成 TOP／F01／O01／I01／E01</h3>
+  <p>INCLUDE 的定位要先講清楚：<b>它不是模組化封裝，而是「把一個檔案切成多個檔案」</b>。編譯時系統把 include 的內容原地展開，執行期完全等同於寫在一起。用途是：共用資料宣告、讓大程式好維護、讓多人可以同時編輯不同 include。</p>
+  <ul>
+    <li>語法：<code class="abap">INCLUDE &lt;include 程式名&gt;.</code></li>
+    <li>被包含的程式<b>不能有 PROGRAM 或 REPORT 敘述</b>（其程式類型要設為 <i>Include program</i>，即 I 型）。</li>
+    <li>Include <b>不能包含自己</b>（不可遞迴）。</li>
+    <li>Include 內必須是<b>完整的敘述</b>，不能把一句 ABAP 切成兩半放在兩個 include。</li>
+  </ul>
+
+  <p><b>SAP 標準命名慣例</b>（Module Pool／大型報表都照這個切，非常重要）：</p>
+  <table>
+    <thead><tr><th>後綴</th><th>內容</th><th>對應</th></tr></thead>
+    <tbody>
+      <tr><td><b>TOP</b></td><td>全域宣告：TYPES、DATA、CONSTANTS、TABLES、SELECTION-SCREEN</td><td>所有程式都會有</td></tr>
+      <tr><td><b>F01</b>（F02…）</td><td>FORM 副程式／本地類別實作</td><td>報表主邏輯</td></tr>
+      <tr><td><b>O01</b></td><td><code class="abap">MODULE ... OUTPUT</code>（PBO，Process Before Output）</td><td>Dialog 程式</td></tr>
+      <tr><td><b>I01</b></td><td><code class="abap">MODULE ... INPUT</code>（PAI，Process After Input）</td><td>Dialog 程式</td></tr>
+      <tr><td><b>E01</b></td><td><code class="abap">AT SELECTION-SCREEN</code>／事件區塊</td><td>選擇畫面事件</td></tr>
+      <tr><td><b>C01</b> / <b>CL1</b></td><td>本地類別定義（CLASS DEFINITION）</td><td>OO 化之後常用</td></tr>
+    </tbody>
+  </table>
+
+  <p>講義 7-2 的 include 案例，改寫成 S/4HANA 版本（原文用 <code class="abap">OCCURS 0 WITH HEADER LINE</code> ＋ <code class="abap">REUSE_ALV_GRID_DISPLAY</code>，這裡全部現代化）：</p>
+
+  <pre><code class="abap">*&amp;--- 主程式 ZINCLUDE ------------------------------------------------*
+REPORT zinclude.
+
+INCLUDE zinclude_top.        " 宣告
+INCLUDE zinclude_c01.        " 本地類別定義
+INCLUDE zinclude_f01.        " 實作
+
+START-OF-SELECTION.
+  lcl_app=&gt;get_data( ).
+  lcl_app=&gt;display_alv( ).
+
+*&amp;--- Include ZINCLUDE_TOP -------------------------------------------*
+TYPES: BEGIN OF ty_acdoca,
+         rldnr TYPE acdoca-rldnr,
+         rbukrs TYPE acdoca-rbukrs,
+         gjahr  TYPE acdoca-gjahr,
+         belnr  TYPE acdoca-belnr,
+         docln  TYPE acdoca-docln,
+         racct  TYPE acdoca-racct,
+         hsl    TYPE acdoca-hsl,
+         rhcur  TYPE acdoca-rhcur,
+       END OF ty_acdoca.
+TYPES ty_t_acdoca TYPE STANDARD TABLE OF ty_acdoca WITH EMPTY KEY.
+
+*&amp;--- Include ZINCLUDE_C01 -------------------------------------------*
+CLASS lcl_app DEFINITION.
+  PUBLIC SECTION.
+    CLASS-DATA gt_out TYPE ty_t_acdoca.
+    CLASS-METHODS get_data.
+    CLASS-METHODS display_alv.
+ENDCLASS.
+
+*&amp;--- Include ZINCLUDE_F01 -------------------------------------------*
+CLASS lcl_app IMPLEMENTATION.
+
+  METHOD get_data.
+    " 明列欄位、加 @、限筆數；不要 SELECT * INTO CORRESPONDING FIELDS
+    SELECT rldnr, rbukrs, gjahr, belnr, docln, racct, hsl, rhcur
+      FROM acdoca
+      INTO TABLE @gt_out
+      UP TO 100 ROWS.
+  ENDMETHOD.
+
+  METHOD display_alv.
+    TRY.
+        cl_salv_table=&gt;factory(
+          IMPORTING r_salv_table = DATA(lo_alv)
+          CHANGING  t_table      = gt_out ).
+        lo_alv-&gt;get_columns( )-&gt;set_optimize( abap_true ).   " 取代 colwidth_optimize
+        lo_alv-&gt;get_functions( )-&gt;set_all( abap_true ).
+        lo_alv-&gt;display( ).
+      CATCH cx_salv_msg INTO DATA(lx).
+        MESSAGE lx-&gt;get_text( ) TYPE 'E'.
+    ENDTRY.
+  ENDMETHOD.
+
+ENDCLASS.</code></pre>
+
+  <div class="warn">講義原文的 <code class="abap">DATA: LT_acdoca LIKE acdoca OCCURS 0 WITH HEADER LINE.</code> ＋ <code class="abap">REUSE_ALV_FIELDCATALOG_MERGE</code> ＋ <code class="abap">REUSE_ALV_GRID_DISPLAY</code> 這一套，在 S/4HANA 雖然還能跑，但：<b>WITH HEADER LINE 與 OCCURS 0 已過時且 OO 環境禁用</b>；<code class="abap">REUSE_ALV_*</code> 系列是 Function ALV，未列入 ABAP Cloud 的釋出 API。<b>新程式一律用 CL_SALV_TABLE。</b></div>
+
+  <div class="tip"><b>作業 7-3</b>：把 Z202202_26 改寫成 include 模式，結構如下 ——<br>
+  <code class="abap">INCLUDE Z00_26_TOP</code>（宣告變數）／<code class="abap">INCLUDE Z00_26_FORM</code>（副程式），主程式只留：<br>
+  <code class="abap">PERFORM GET_DATA</code>（取得資料）→ <code class="abap">PERFORM LAYOUT</code>（設定 Layout）→ <code class="abap">PERFORM FIELDCAT</code>（設定欄位屬性）→ <code class="abap">PERFORM EVENT</code>（設定事件）→ <code class="abap">PERFORM DISPLAY_ALV</code>（顯示結果）。<br>
+  進階版：把五個 PERFORM 改成五個 <code class="abap">lcl_app=&gt;method( )</code>，就完成了 OO 重構。</div>
+
+  <h3 id="ch02-4-11">11. 本地類別與全域類別（SE24）：模組化的終點</h3>
+  <p>前面四種手法都有各自的限制，OO 的方法（Method）把它們全部解決了：型別安全、參數唯讀保護、可回傳值、可繼承、可測試、可在 ABAP Cloud 使用。</p>
+
+  <table>
+    <thead><tr><th></th><th>本地類別（Local Class）</th><th>全域類別（Global Class）</th></tr></thead>
+    <tbody>
+      <tr><td>建立方式</td><td>直接寫在報表／Include 內</td><td><b>SE24</b> 或 SE80／ADT</td></tr>
+      <tr><td>可見範圍</td><td>只有本程式</td><td>全系統</td></tr>
+      <tr><td>取代對象</td><td>FORM</td><td>FUNCTION MODULE</td></tr>
+      <tr><td>可否被 RFC 呼叫</td><td>否</td><td>否（RFC 目前仍只能是 FM，需包一層 FM）</td></tr>
+    </tbody>
+  </table>
+
+  <p><b>方法的五種參數</b>：</p>
+  <table>
+    <thead><tr><th>參數</th><th>方向</th><th>預設傳遞</th><th>備註</th></tr></thead>
+    <tbody>
+      <tr><td><code class="abap">IMPORTING</code></td><td>傳入</td><td>by reference</td><td>方法內<b>唯讀</b>，編譯器強制</td></tr>
+      <tr><td><code class="abap">EXPORTING</code></td><td>傳出</td><td>by reference</td><td>方法開頭自動被清空</td></tr>
+      <tr><td><code class="abap">CHANGING</code></td><td>雙向</td><td>by reference</td><td>—</td></tr>
+      <tr><td><code class="abap">RETURNING</code></td><td>傳出</td><td><b>必須 by value</b></td><td>只能有<b>一個</b>；有了它方法可寫在運算式裡（functional call），且不能與 EXPORTING／CHANGING 併用</td></tr>
+      <tr><td><code class="abap">RAISING</code></td><td>—</td><td>—</td><td>宣告本方法可能拋出的 class-based exception</td></tr>
+    </tbody>
+  </table>
+  <p>要改成傳值，在參數名外面包 <code class="abap">VALUE( )</code>，例如 <code class="abap">IMPORTING VALUE(iv_x) TYPE i</code>。<b>大內表請務必用 by reference（預設），用 VALUE 會整份複製，效能災難。</b></p>
+
+  <pre><code class="abap">*--- SE24 建的全域類別，取代 ZFM_CASPER_VBAK_VBAP -------------------*
+CLASS zcl_sd_order DEFINITION
+  PUBLIC
+  FINAL
+  CREATE PUBLIC.
+
+  PUBLIC SECTION.
+    TYPES ty_t_vbap TYPE STANDARD TABLE OF vbap WITH EMPTY KEY.
+
+    METHODS constructor
+      IMPORTING iv_vbeln TYPE vbeln_va
+      RAISING   zcx_sd_order_not_found.        " 建構失敗直接拋例外
+
+    METHODS get_header  RETURNING VALUE(rs_vbak) TYPE vbak.
+    METHODS get_items   RETURNING VALUE(rt_vbap) TYPE ty_t_vbap.
+    METHODS get_net_amount RETURNING VALUE(rv_amt) TYPE netwr.
+
+  PRIVATE SECTION.
+    DATA ms_vbak TYPE vbak.
+    DATA mt_vbap TYPE ty_t_vbap.
+ENDCLASS.
+
+CLASS zcl_sd_order IMPLEMENTATION.
+
+  METHOD constructor.
+    DATA(lv_vbeln) = CONV vbeln_va( |{ iv_vbeln ALPHA = IN }| ).
+
+    SELECT SINGLE vbeln, erdat, auart, vkorg, kunnr, netwr, waerk
+      FROM vbak WHERE vbeln = @lv_vbeln
+      INTO CORRESPONDING FIELDS OF @ms_vbak.
+
+    IF sy-subrc &lt;&gt; 0.
+      " 用訊息類別產生例外，訊息文字仍可在 SE91 維護
+      RAISE EXCEPTION TYPE zcx_sd_order_not_found
+        MESSAGE e001(zmessage) WITH lv_vbeln.
+    ENDIF.
+
+    SELECT vbeln, posnr, matnr, arktx, kwmeng, vrkme, netwr
+      FROM vbap WHERE vbeln = @lv_vbeln
+      ORDER BY posnr
+      INTO CORRESPONDING FIELDS OF TABLE @mt_vbap.
+  ENDMETHOD.
+
+  METHOD get_header.  rs_vbak = ms_vbak.  ENDMETHOD.
+  METHOD get_items.   rt_vbap = mt_vbap.  ENDMETHOD.
+
+  METHOD get_net_amount.
+    " REDUCE 一行完成加總，取代 LOOP ... ADD
+    rv_amt = REDUCE netwr( INIT s = CONV netwr( 0 )
+                           FOR ls IN mt_vbap
+                           NEXT s = s + ls-netwr ).
+  ENDMETHOD.
+
+ENDCLASS.</code></pre>
+
+  <pre><code class="abap">*--- 呼叫端：比 CALL FUNCTION 短、且是型別安全的 ---------------------*
+REPORT zdemo_order.
+
+PARAMETERS p_vbeln TYPE vbeln_va OBLIGATORY.
+
+START-OF-SELECTION.
+  TRY.
+      DATA(lo_order) = NEW zcl_sd_order( p_vbeln ).
+
+      cl_demo_output=&gt;write( lo_order-&gt;get_header( ) ).
+      WRITE: / |項目數：{ lines( lo_order-&gt;get_items( ) ) }|,
+             / |淨值合計：{ lo_order-&gt;get_net_amount( ) NUMBER = USER }|.
+
+    CATCH zcx_sd_order_not_found INTO DATA(lx_nf).
+      MESSAGE lx_nf-&gt;get_text( ) TYPE 'E'.
+  ENDTRY.</code></pre>
+
+  <div class="tip"><b>用 SE24 做 refactor 的實務步驟</b>：<br>
+  1. 先在原報表裡把 FORM 一個一個搬成<b>本地類別</b>的方法（先能跑、行為不變）。<br>
+  2. 把全域變數改成類別的私有屬性，用 <code class="abap">constructor</code> 或 setter 帶入。<br>
+  3. 確認邏輯與 UI 分離（取資料的方法不要 WRITE／不要 CALL SCREEN）。<br>
+  4. 在 SE24 建全域類別，把本地類別整段貼進去（SE24 → 功能表 Goto → <b>Source Code-Based（原始碼模式）</b>，可以像寫 include 一樣整段編輯）。<br>
+  5. 用 SE24 工具列的 <b>Refactoring Assistant（重構助手）</b> 把方法／屬性往上搬到父類別、或改名。ADT（Eclipse）的重構更強：Rename、Extract Method、Change Signature、Pull Up 都有。<br>
+  6. 最後加 <b>ABAP Unit</b> 測試類別（<code class="abap">FOR TESTING</code>），這是 FORM 時代做不到的事。</div>
+
+  <div class="warn">在 SE24 建的類別，如果要讓 <b>RFC 呼叫端</b>（pyrfc、JCo、外部系統）使用，仍必須包一層 RFC-enabled Function Module 當門面，因為 RFC 協定只認得 FM。這也是 FM 到今天還沒被完全取代的主因之一（另一個是 Update FM 與 BAdI 的 filter FM）。</div>
+
+  <h3 id="ch02-4-12">12. Class-Based Exception：三種基底類別與 TRY–CATCH–CLEANUP</h3>
+  <p>FM 的傳統例外（<code class="abap">RAISE &lt;exception&gt;</code> ＋ sy-subrc）有兩個問題：例外沒有型別、沒有訊息內容、忘了寫 OTHERS 就 dump。方法用的是 <b>class-based exception</b>：例外本身是一個物件，可以攜帶訊息、屬性、甚至前一個例外（previous）。</p>
+
+  <table>
+    <thead><tr><th>基底類別</th><th>是否必須在 RAISING 宣告</th><th>使用時機</th></tr></thead>
+    <tbody>
+      <tr><td><code class="abap">CX_STATIC_CHECK</code></td><td><b>必須</b>，語法檢查會擋</td><td>呼叫端「應該要處理」的業務錯誤（訂單不存在、金額不合法）。<b>自建例外的預設首選</b></td></tr>
+      <tr><td><code class="abap">CX_DYNAMIC_CHECK</code></td><td>不必宣告，但沒接到就 runtime error</td><td>理論上不該發生、呼叫端可自行避免的錯（如 <code class="abap">CX_SY_ZERODIVIDE</code>、<code class="abap">CX_SY_CONVERSION_NO_NUMBER</code>）</td></tr>
+      <tr><td><code class="abap">CX_NO_CHECK</code></td><td>不必宣告，會自動往上層傳播</td><td>無法在區域處理的系統性錯誤（如 <code class="abap">CX_SY_NO_HANDLER</code>、資源不足）</td></tr>
+    </tbody>
+  </table>
+  <p>三者都繼承自 <code class="abap">CX_ROOT</code>；<code class="abap">CX_SY_*</code> 是 SAP 的系統例外。</p>
+
+  <pre><code class="abap">*--- 完整的 TRY / CATCH / CLEANUP 範例 ------------------------------*
+DATA lo_file TYPE REF TO if_x.
+
+TRY.
+    " (1) 主邏輯
+    DATA(lv_result) = lcl_calc=&gt;divide( iv_a = 10 iv_b = lv_divisor ).
+    DATA(lo_order)  = NEW zcl_sd_order( p_vbeln ).
+
+  CATCH cx_sy_zerodivide INTO DATA(lx_zero).
+    " (2) 抓特定例外
+    MESSAGE |除數為零：{ lx_zero-&gt;get_text( ) }| TYPE 'I'.
+
+  CATCH zcx_sd_order_not_found INTO DATA(lx_nf).
+    MESSAGE lx_nf-&gt;get_text( ) TYPE 'I'.
+
+  CATCH cx_root INTO DATA(lx_root).
+    " (3) 最後防線：cx_root 一定要放最後，因為 CATCH 由上往下比對
+    MESSAGE |未預期的錯誤：{ lx_root-&gt;get_text( ) }| TYPE 'E'.
+
+  CLEANUP.
+    " (4) 只有在「例外往外層傳播」時才執行，用來釋放資源
+    "     注意：被本 TRY 的 CATCH 接住時，CLEANUP 不會執行
+    CLEAR lo_file.
+
+ENDTRY.</code></pre>
+
+  <pre><code class="abap">*--- 自建例外類別（SE24，繼承 CX_STATIC_CHECK）----------------------*
+* 建立時勾選「with message class」，介面加 IF_T100_MESSAGE / IF_T100_DYN_MSG
+* 之後就能把 SE91 的訊息當成例外文字使用
+
+METHOD check_amount.
+  IF iv_amt &lt; 0.
+    " 方式 1：綁 SE91 訊息（最常用，文字可翻譯）
+    RAISE EXCEPTION TYPE zcx_amount_invalid
+      MESSAGE e010(zmessage) WITH iv_amt.
+  ENDIF.
+
+  IF iv_amt &gt; 9999999.
+    " 方式 2：7.52+ 的簡寫，直接傳建構子參數
+    RAISE EXCEPTION NEW zcx_amount_invalid( iv_amount = iv_amt ).
+  ENDIF.
+
+  " 方式 3：包住前一個例外，保留完整呼叫鏈（很重要，別把原因吃掉）
+  TRY.
+      lo_helper-&gt;do_something( ).
+    CATCH cx_helper_error INTO DATA(lx_prev).
+      RAISE EXCEPTION TYPE zcx_amount_invalid
+        EXPORTING previous = lx_prev.
+  ENDTRY.
+ENDMETHOD.</code></pre>
+
+  <div class="tip"><b>怎麼把舊的 FM 例外轉成新的</b>：在包裝方法裡把 sy-subrc 轉成例外 ——<br>
+  <code class="abap">IF sy-subrc &lt;&gt; 0. RAISE EXCEPTION TYPE zcx_x MESSAGE ID sy-msgid TYPE sy-msgty NUMBER sy-msgno WITH sy-msgv1 sy-msgv2 sy-msgv3 sy-msgv4. ENDIF.</code><br>
+  這樣呼叫端就能統一用 TRY/CATCH，不必再記每支 FM 的 sy-subrc 代碼。</div>
+
+  <div class="warn"><b>不要 <code class="abap">CATCH cx_root</code> 之後什麼都不做</b>（空的 CATCH 區塊）。這是實務上最常見的災難：錯誤被吞掉，資料寫了一半沒人知道。至少要 log 或 MESSAGE。</div>
+
+  <h3 id="ch02-4-13">13. 常用標準函數清單（背下來會省很多時間）</h3>
+  <p>講義列的常用 FM ＋ 實務上一定會遇到的補充。<b>粗體＝老師點名的</b>。</p>
+
+  <table>
+    <thead><tr><th>Function Module</th><th>用途</th><th>S/4HANA 現代替代</th></tr></thead>
+    <tbody>
+      <tr><td><b>GUI_UPLOAD</b></td><td>把前端檔案上載成內表</td><td><code class="abap">cl_gui_frontend_services=&gt;gui_upload( )</code></td></tr>
+      <tr><td><b>GUI_DOWNLOAD</b></td><td>把內表下載成前端檔案</td><td><code class="abap">cl_gui_frontend_services=&gt;gui_download( )</code></td></tr>
+      <tr><td><b>WS_FILENAME_GET</b></td><td>取得檔案名稱（開檔對話框）</td><td><code class="abap">cl_gui_frontend_services=&gt;file_open_dialog( )</code> / <code class="abap">file_save_dialog( )</code></td></tr>
+      <tr><td><b>CLOI_PUT_SIGN_IN_FRONT</b></td><td>把負號從數字後面搬到前面（SAP 預設負號在後）</td><td>字串範本 <code class="abap">|{ lv_amt SIGN = LEFT }|</code></td></tr>
+      <tr><td><b>CONVERSION_EXIT_ALPHA_INPUT</b></td><td>數字串前補 0（顯示值 → 內部值）</td><td><code class="abap">|{ lv_x ALPHA = IN }|</code></td></tr>
+      <tr><td><b>CONVERSION_EXIT_ALPHA_OUTPUT</b></td><td>去掉前導 0（內部值 → 顯示值）</td><td><code class="abap">|{ lv_x ALPHA = OUT }|</code></td></tr>
+      <tr><td>POPUP_TO_CONFIRM</td><td>是／否確認視窗，回傳 ANSWER = '1'/'2'/'A'</td><td>仍用它；Fiori 環境改用前端對話框</td></tr>
+      <tr><td>POPUP_TO_DECIDE / POPUP_TO_INFORM</td><td>多選項決定視窗／訊息視窗</td><td>—</td></tr>
+      <tr><td>F4IF_INT_TABLE_VALUE_REQUEST</td><td>用內表自製 F4 搜尋說明</td><td>仍是標準做法（配 <code class="abap">AT SELECTION-SCREEN ON VALUE-REQUEST</code>）</td></tr>
+      <tr><td>F4IF_FIELD_VALUE_REQUEST</td><td>用 DDIC 欄位叫出標準 F4</td><td>—</td></tr>
+      <tr><td>SO_NEW_DOCUMENT_ATT_SEND_API1</td><td>寄送含附件的郵件</td><td><code class="abap">CL_BCS</code>（<code class="abap">cl_bcs=&gt;create_persistent( )</code>）</td></tr>
+      <tr><td>NUMBER_GET_NEXT</td><td>依號碼範圍物件（SNRO/SNUM）取下一號</td><td>仍是標準做法；<b>必須先 COMMIT 才不會跳號</b></td></tr>
+      <tr><td>NUMBER_RANGE_INTERVAL_LIST</td><td>查號碼範圍區間</td><td>—</td></tr>
+      <tr><td>DATE_CONVERT_TO_FACTORYDATE</td><td>依工廠行事曆換算工作日</td><td>—</td></tr>
+      <tr><td>FIMA_DAYS_AND_MONTHS_AND_YEARS</td><td>兩日期間的天／月／年數</td><td>ABAP SQL 的 <code class="abap">DATS_DAYS_BETWEEN( )</code></td></tr>
+      <tr><td>LAST_DAY_OF_MONTHS</td><td>某日期所在月的最後一天</td><td>算術：下月 1 日 - 1</td></tr>
+      <tr><td>RP_CALC_DATE_IN_INTERVAL</td><td>日期加減天／月／年</td><td>ABAP SQL 的 <code class="abap">DATS_ADD_DAYS( )</code>／<code class="abap">DATS_ADD_MONTHS( )</code></td></tr>
+      <tr><td>HR_HK_DIFF_BT_2_DATES</td><td>兩日期差（年月日）</td><td>—</td></tr>
+      <tr><td>RFC_READ_TABLE</td><td>遠端讀任一資料表（外部系統常用）</td><td>建議自建 RFC FM 或用 OData／CDS，RFC_READ_TABLE 有欄位長度 512 限制</td></tr>
+      <tr><td>BAPI_MATERIAL_GET_ALL</td><td>讀取物料主檔全部視圖</td><td>S/4 建議 <code class="abap">BAPI_MATERIAL_GET_DETAIL</code> 或 CDS <code class="abap">I_Product</code></td></tr>
+      <tr><td>CURRENCY_CONVERTING_FACTOR</td><td>取幣別小數位換算係數</td><td>—</td></tr>
+      <tr><td>CONVERT_TO_LOCAL_CURRENCY</td><td>依匯率換算幣別</td><td>ABAP SQL 的 <code class="abap">CURRENCY_CONVERSION( )</code></td></tr>
+      <tr><td>REUSE_ALV_FIELDCATALOG_MERGE / REUSE_ALV_GRID_DISPLAY</td><td>舊式 Function ALV</td><td><b>改用 CL_SALV_TABLE</b></td></tr>
+      <tr><td>SAPGUI_PROGRESS_INDICATOR</td><td>顯示執行進度條</td><td>—</td></tr>
+      <tr><td>ENQUEUE_/DEQUEUE_E&lt;table&gt;</td><td>鎖／解鎖物件（SE11 Lock Object 產生）</td><td>—</td></tr>
+    </tbody>
+  </table>
+
+  <pre><code class="abap">*--- 兩個最常用的實戰片段 -------------------------------------------*
+
+* (1) 確認視窗
+CALL FUNCTION 'POPUP_TO_CONFIRM'
+  EXPORTING titlebar              = '確認'
+            text_question         = |確定要更新 { lines( lt_data ) } 筆資料嗎？|
+            text_button_1         = '是'
+            text_button_2         = '否'
+            default_button        = '2'
+            display_cancel_button = abap_true
+  IMPORTING answer                = DATA(lv_answer)
+  EXCEPTIONS text_not_found = 1
+             OTHERS         = 2.
+IF lv_answer &lt;&gt; '1'.
+  MESSAGE '使用者取消' TYPE 'S' DISPLAY LIKE 'W'.
+  RETURN.
+ENDIF.
+
+* (2) 自製 F4：把內表當成搜尋說明
+AT SELECTION-SCREEN ON VALUE-REQUEST FOR p_matnr.
+  SELECT matnr, maktx FROM makt
+    WHERE spras = @sy-langu
+    INTO TABLE @DATA(lt_f4)
+    UP TO 500 ROWS.
+
+  CALL FUNCTION 'F4IF_INT_TABLE_VALUE_REQUEST'
+    EXPORTING retfield        = 'MATNR'
+              dynpprog        = sy-repid
+              dynpnr          = sy-dynnr
+              dynprofield     = 'P_MATNR'
+              value_org       = 'S'
+    TABLES    value_tab       = lt_f4
+    EXCEPTIONS parameter_error = 1
+               no_values_found = 2
+               OTHERS          = 3.</code></pre>
+
+  <div class="warn"><b>ABAP Cloud 的釋出（Released）API 概念</b>：在 S/4HANA Cloud 與 BTP ABAP Environment，只有 SAP 標記為 <i>Released for Cloud Development</i> 的 FM／類別才能呼叫。<b>GUI_UPLOAD、GUI_DOWNLOAD、POPUP_TO_CONFIRM、REUSE_ALV_* 等 SAP GUI 相依的 FM 全部不在名單內</b>。判斷方式：在 ADT 中查看物件的 <i>API State</i>，或用 <code class="abap">SE84 → Released Objects</code>。On-premise（S/4HANA 1809～2023）用傳統寫法仍可以，但寫新程式時要有意識。</div>
+
+  <h3 id="ch02-4-14">14. 日期與時間運算（講義第 10 節）</h3>
+  <p>ABAP 的日期型別 <code class="abap">d</code> 以<b>天</b>為單位做加減，時間型別 <code class="abap">t</code> 以<b>秒</b>為單位。搭配字元偏移（offset）就能做出大部分需求，不一定要呼叫 FM。</p>
+
+  <pre><code class="abap">*--- 純 ABAP 寫法（不必呼叫 FM，效能最好）--------------------------*
+DATA(lv_today) = sy-datum.                          " 伺服器當前日期
+WRITE / |今天：{ lv_today DATE = USER }|.
+
+" 本月第一天：字元偏移，把日部分設成 01
+DATA(lv_first) = lv_today.
+lv_first+6(2) = '01'.
+WRITE / |本月 1 日：{ lv_first DATE = USER }|.
+
+" 上月最後一天＝本月第一天 - 1
+DATA(lv_prev_last) = CONV d( lv_first - 1 ).
+
+" 本月最後一天＝下月第一天 - 1
+DATA(lv_next_first) = CONV d( |{ lv_today+0(6) }01| ).
+lv_next_first = lv_next_first + 45.                 " 先跳到下個月的某天
+lv_next_first+6(2) = '01'.
+DATA(lv_last) = CONV d( lv_next_first - 1 ).
+WRITE / |本月最後一天：{ lv_last DATE = USER }|.
+
+*--- 時間 ---------------------------------------------------------*
+DATA(lv_time) = sy-uzeit.                           " 伺服器當前時間
+DATA lv_t TYPE t.
+lv_t = '000000'.
+lv_t = lv_t + 60 * 60.                              " 加一小時 → 010000
+lv_t+0(2) = '02'.                                   " 直接把小時改成 02
+
+*--- ABAP SQL 內建日期函數（HANA 下推，處理大量資料時最快）---------*
+SELECT belnr, budat,
+       dats_days_between( budat, @sy-datum )  AS days_open,
+       dats_add_months( budat, 1 )            AS next_month,
+       dats_add_days( budat, 30 )             AS due_date
+  FROM bkpf
+  WHERE bukrs = @p_bukrs
+    AND gjahr = @p_gjahr
+  INTO TABLE @DATA(lt_aging).</code></pre>
+
+  <p>對應的傳統 FM 寫法（講義原文）：</p>
+
+  <pre><code class="abap">* 10-1 兩日期間的天／月／年數
+CALL FUNCTION 'FIMA_DAYS_AND_MONTHS_AND_YEARS'
+  EXPORTING i_date_from = '20080101'
+            i_date_to   = '20090508'
+  IMPORTING e_days      = DATA(lv_days)
+            e_months    = DATA(lv_months)
+            e_years     = DATA(lv_years).
+
+* 10-2 某月最後一天
+CALL FUNCTION 'LAST_DAY_OF_MONTHS'
+  EXPORTING  day_in            = lv_first
+  IMPORTING  last_day_of_month = DATA(lv_lastday)
+  EXCEPTIONS day_in_no_date    = 1
+             OTHERS            = 2.
+
+* 10-3 日期加減
+CALL FUNCTION 'RP_CALC_DATE_IN_INTERVAL'
+  EXPORTING date      = lv_lastday
+            days      = 1
+            months    = 0
+            years     = 0
+            signum    = '+'
+  IMPORTING calc_date = DATA(lv_calc).</code></pre>
+
+  <div class="warn"><b>ABAP Cloud 不能用 <code class="abap">sy-datum</code>／<code class="abap">sy-uzeit</code></b>（它們是使用者時區的值，語意不明確）。改用：<br>
+  <code class="abap">cl_abap_context_info=&gt;get_system_date( )</code>、<code class="abap">get_system_time( )</code>、<code class="abap">get_user_time_zone( )</code>、<code class="abap">get_user_technical_name( )</code>（取代 sy-uname）。</div>
+
+  <h3 id="ch02-4-15">15. 超級 Debug 模式 /H：追出程式用了哪些資料表</h3>
+  <p>講義第 6 節這一招非常實用：第一次上課時我們想盡辦法要找到「畫面上的欄位來自哪張表」，學會 ABAP 之後只要用 <code class="abap">/H</code> 就能直接看。</p>
+  <ol>
+    <li>進入交易碼（例如 <b>VA03</b>）。</li>
+    <li>在指令欄輸入 <b>/H</b> → Enter，畫面出現「Debugging switched on」。</li>
+    <li>再按 Enter 執行下一個動作，就會進入 Debugger。</li>
+    <li>按 <b>F9</b>（設中斷點）→ 選 <b>Breakpoint at Statement</b> → 輸入 <b>SELECT</b>。</li>
+    <li>按 <b>F8</b> 執行，每遇到一句 SELECT 就停下來，看它讀哪一張表。</li>
+    <li>用 <b>F5</b>（單步）、<b>F6</b>（略過副程式）、<b>F7</b>（執行完目前副程式返回）、<b>F8</b>（繼續）搭配追蹤。</li>
+    <li>查完記得<b>取消中斷點</b>（Breakpoints 頁籤 → 刪除），否則之後每支程式都會停。</li>
+  </ol>
+
+  <div class="tip"><b>其他常用的 Debugger 中斷點類型</b>（Breakpoint at …）：<br>
+  <b>Statement</b>（如 SELECT、CALL FUNCTION、MESSAGE、AUTHORITY-CHECK）／<b>Function Module</b>（追某支 FM 被誰呼叫）／<b>Method</b>／<b>Subroutine</b>／<b>Exception</b>（抓 dump 的來源）。<br>
+  <b>Watchpoint（監視點）</b>：對某個變數設條件，「當 sy-subrc &lt;&gt; 0」或「當 lv_matnr = '123'」時才停；若不指定條件，則<b>該變數值一被改變就停下來</b>。這是抓「值被誰改掉了」的唯一有效手段。<br>
+  Debug 也可以<b>事後補勾</b>：進了 Debugger 才決定要不要進某段程式。<br>
+  兩種 Debugger：<b>Classic Debugger</b>（同一個視窗，功能少）與 <b>New Debugger</b>（獨立視窗、多頁籤、可看物件與內表全貌）—— 在 Debugger 內 Settings 可切換。</div>
+
+  <div class="note"><b>作業（第 6 節）</b>：找出 VA03 用了多少個資料表？（抓到感覺即可）<br>提示：VA03 → /H → Enter → F9 → SELECT → F5/F6/F7/F8 → 取消斷點。<br>會看到 VBAK、VBAP、VBUK/VBUP（S/4 已併入 VBAK/VBAP 的狀態欄位）、VBEP、VBKD、KONV（S/4 改為 <b>PRCD_ELEMENTS</b>）、KNA1、MARA、TVAK… 幾十張表。這個練習的目的是體會「一個標準交易背後有多複雜」。</div>
+
+  <h3 id="ch02-4-16">16. SE91 Message：模組化的錯誤訊息管理</h3>
+  <p>寫死在程式裡的中文字串無法翻譯、無法統一維護。SE91 的訊息類別（Message Class）就是「訊息的模組化」。</p>
+
+  <table>
+    <thead><tr><th>類型</th><th>名稱</th><th>行為</th><th>顯示位置</th></tr></thead>
+    <tbody>
+      <tr><td><b>I</b></td><td>Information</td><td>使用者確認後，程式從 MESSAGE 敘述之後繼續</td><td>對話框</td></tr>
+      <tr><td><b>S</b></td><td>Status</td><td>程式正常繼續</td><td>下一個畫面的狀態列</td></tr>
+      <tr><td><b>W</b></td><td>Warning</td><td>視程式情境，出現錯誤對話框、程式停止或終止，使用者須採取行動</td><td>狀態列</td></tr>
+      <tr><td><b>E</b></td><td>Error</td><td>視程式情境，程式停止或終止，使用者須採取行動</td><td>狀態列或對話框</td></tr>
+      <tr><td><b>A</b></td><td>Termination</td><td>使用者確認後程式終止，控制權回到上層區域功能表</td><td>對話框</td></tr>
+      <tr><td><b>X</b></td><td>Exit</td><td>程式以 short dump 終止，<b>不顯示訊息</b>；dump 內含訊息 ID</td><td>—</td></tr>
+    </tbody>
+  </table>
+
+  <pre><code class="abap">REPORT zmessage MESSAGE-ID zmessage.        " 宣告預設訊息類別
+
+* (1) 用預設訊息類別，&amp;1~&amp;4 由 WITH 填入
+MESSAGE s003 WITH '第01組' '第02組' '第03組'.
+
+* (2) 明確指定訊息類別
+MESSAGE i006(zmessage) WITH lv_msg1 lv_msg2 lv_msg3.
+
+* (3) 完整動態寫法（呼叫 FM/BAPI 後標準的錯誤轉呈）
+CALL FUNCTION 'Z_SOMETHING'.
+IF sy-subrc &lt;&gt; 0.
+  MESSAGE ID sy-msgid TYPE sy-msgty NUMBER sy-msgno
+          WITH sy-msgv1 sy-msgv2 sy-msgv3 sy-msgv4.
+ENDIF.
+
+* (4) 最簡易的即興訊息（不必建 SE91，適合開發期）
+MESSAGE |{ lv_ok_cnt } 筆，更新成功！| TYPE 'I'.
+
+* (5) 改變顯示方式：用 S 型別但長得像錯誤，不中斷流程
+MESSAGE '資料不存在' TYPE 'S' DISPLAY LIKE 'E'.
+
+* (6) 把訊息收進 BAPIRET2 內表，最後一次顯示（批次處理標準做法）
+MESSAGE e010(zmessage) WITH lv_matnr INTO DATA(lv_dummy).
+APPEND VALUE bapiret2( type = sy-msgty id = sy-msgid number = sy-msgno
+                       message_v1 = sy-msgv1 message_v2 = sy-msgv2
+                       message    = lv_dummy ) TO lt_return.</code></pre>
+
+  <div class="warn"><b>MESSAGE TYPE 'E' 的行為會隨情境改變</b>：在 <code class="abap">START-OF-SELECTION</code> 中它會終止程式並回選擇畫面；在 <code class="abap">AT SELECTION-SCREEN</code> 中它會停在該欄位讓使用者改；在<b>迴圈中</b>用 E 會直接中斷整批處理 —— 批次程式請改用「收進 BAPIRET2 內表，跑完再一次顯示」的做法。<br>在 <b>Update FM</b> 或 <b>RFC FM</b> 內用 E 更危險（見第 8 節）。</div>
+
+  <div class="tip"><b>練習 09-3</b>：把 Z202202_26 改寫成用 MESSAGE，只需改兩個地方 ——<br>
+  1. <code class="abap">REPORT z202202_26_000 MESSAGE-ID zmessage.</code>（在 REPORT 行加訊息類別）<br>
+  2. 把原本的 <code class="abap">WRITE</code> 改成 <code class="abap">MESSAGE s000 WITH 'ZADD'.</code></div>
+
+  <h3 id="ch02-4-17">17. 綜合演練：把一支千行報表拆成三層</h3>
+  <p>這是本章所有觀念的收斂。同一支報表用三種模組化程度呈現，你可以看出「重構」實際上在做什麼。</p>
+
+  <pre><code class="abap">*&amp;--- 第 0 級：全部寫在一起（初學者的樣子，不要留在正式系統）------*
+REPORT z_flat.
+PARAMETERS p_werks TYPE werks_d.
+SELECT matnr, werks, maktx FROM ... INTO TABLE @DATA(lt).
+LOOP AT lt INTO DATA(ls). ... ENDLOOP.
+cl_salv_table=&gt;factory( ... ).
+
+*&amp;--- 第 1 級：INCLUDE + FORM（講義的目標，可維護）-----------------*
+REPORT z_form_level.
+INCLUDE z_form_level_top.      " 宣告
+INCLUDE z_form_level_f01.      " FORM
+START-OF-SELECTION.
+  PERFORM get_data.
+  PERFORM display_alv.
+
+*&amp;--- 第 2 級：本地類別（S/4 建議的最低標準）-----------------------*
+REPORT z_oo_level.
+INCLUDE z_oo_level_top.
+INCLUDE z_oo_level_c01.        " CLASS DEFINITION
+INCLUDE z_oo_level_f01.        " CLASS IMPLEMENTATION
+START-OF-SELECTION.
+  DATA(lo_app) = NEW lcl_app( iv_werks = p_werks ).
+  TRY.
+      lo_app-&gt;run( ).
+    CATCH zcx_app_error INTO DATA(lx).
+      MESSAGE lx-&gt;get_text( ) TYPE 'E'.
+  ENDTRY.</code></pre>
+
+  <pre><code class="abap">*&amp;--- 第 3 級：全域類別（SE24）＋ 薄報表，邏輯可被別人重用 ---------*
+* 報表只剩「收參數、呼叫、顯示」三件事
+REPORT z_clean.
+
+PARAMETERS: p_werks TYPE werks_d OBLIGATORY.
+SELECT-OPTIONS s_matnr FOR ('MARA-MATNR').
+
+START-OF-SELECTION.
+  TRY.
+      " 所有業務邏輯都在 SE24 的全域類別裡，可被其他報表、FM、RAP 重用
+      DATA(lo_srv) = NEW zcl_mm_stock_report( iv_werks = p_werks ).
+      DATA(lt_out) = lo_srv-&gt;get_stock( it_matnr = s_matnr[] ).
+
+      cl_salv_table=&gt;factory(
+        IMPORTING r_salv_table = DATA(lo_alv)
+        CHANGING  t_table      = lt_out ).
+      lo_alv-&gt;get_columns( )-&gt;set_optimize( abap_true ).
+      lo_alv-&gt;get_functions( )-&gt;set_all( abap_true ).
+      lo_alv-&gt;display( ).
+
+    CATCH zcx_mm_error cx_salv_msg INTO DATA(lx).
+      MESSAGE lx-&gt;get_text( ) TYPE 'E'.
+  ENDTRY.</code></pre>
+
+  <div class="tip"><b>老師的第 11 節思考題：「您將如何累積自己的工作經驗？」</b><br>
+  建議做法：把每次寫過的通用邏輯（日期計算、檔案上下載、訊息收集、ALV 顯示、Excel 匯出）整理成<b>自己的 Function Group（例如 Z_FG_000）或全域類別（ZCL_UTIL_*）</b>，並且寫上註解與範例。三年後你會發現，別人還在複製貼上，你已經有一整套工具箱。這正是「模組化」對個人職涯的意義。</div>
+
+  <h3 id="ch02-4-qa">練習與自我檢核</h3>
+  <ol>
+    <li><b>第 28 個練習</b>：建立 Function Group <code class="abap">Z_FG_000</code> 與 Function Module <code class="abap">ZFM_CASPER_VBAP</code>，輸入 <code class="abap">I_VBELN</code>，輸出 <code class="abap">E_VBAK</code>（結構）與 <code class="abap">T_VBAP</code>（表型別），找不到時 RAISE <code class="abap">VBAK_NOT_EXIST</code>。再寫報表 <code class="abap">Z202202_28</code> 呼叫它。<br><i>檢核點：Function Group 與 FM 都要 ACTIVE；輸入 40 要能用 ALPHA 轉成 0000000040；EXCEPTIONS 一定要補 OTHERS。</i></li>
+
+    <li>建立 <code class="abap">ZFM_GET_EBELP</code>：輸入 <code class="abap">I_EBELN</code>＋<code class="abap">I_EBELP</code>，回傳最近一筆 EKKO／EKPO／EKES。<br><i>檢核點：「最近一筆」一定要 ORDER BY；sy-subrc 要在 SELECT 之後立刻檢查，不要被 LOOP 覆寫。</i></li>
+
+    <li>寫三支小程式（或一支程式三個 FORM）分別示範 <b>call by reference</b>、<b>call by value</b>、<b>call by value and return result</b>，用 WRITE 印出主程式與副程式中的變數值，說明為什麼結果不同。<br><i>答案要點：VALUE( ) 是影本；CHANGING VALUE( ) 在 ENDFORM 才回寫。</i></li>
+
+    <li><b>05-1</b>：用 SE80 打開 <code class="abap">SAPMV45A</code>（VA03 主程式），找出 Macros 節點，列出三個 SAP 標準用的巨集名稱與用途。</li>
+
+    <li>把 ALV Field Catalog 的建立用 <code class="abap">DEFINE add_col</code> 寫一次，再用 <code class="abap">VALUE lvc_t_fcat( )</code> 寫一次，比較行數與可讀性。<br><i>提醒：講義 05-3 的教訓 —— 少放一個 SORT 用到的欄位就 DUMP，且巨集無法 debug。</i></li>
+
+    <li><b>7-3</b>：把 <code class="abap">Z202202_26</code> 改成 include 模式：<code class="abap">Z00_26_TOP</code>（宣告）＋<code class="abap">Z00_26_FORM</code>（副程式），主程式依序 <code class="abap">PERFORM GET_DATA / LAYOUT / FIELDCAT / EVENT / DISPLAY_ALV</code>。<b>進階</b>：再把五個 FORM 改成本地類別方法。</li>
+
+    <li><b>第 6 節作業</b>：用 <code class="abap">/H</code> ＋ F9（Breakpoint at Statement: SELECT）追出 VA03 讀了哪些資料表，至少列出 8 張。</li>
+
+    <li><b>09-3</b>：用 SE91 建訊息類別 <code class="abap">ZMESSAGE</code>，把 <code class="abap">Z202202_26</code> 的輸出改成 <code class="abap">MESSAGE</code>，並示範 I／S／W／E／A 五種類型的行為差異。</li>
+
+    <li><b>10-6</b>：試用 <code class="abap">RFC_READ_TABLE</code> 讀 MARA 的前 10 筆（注意 QUERY_TABLE、DELIMITER、FIELDS、OPTIONS 四個參數的用法，以及 512 字元的回傳限制）。</li>
+
+    <li><b>10-7</b>：試用 <code class="abap">BAPI_MATERIAL_GET_ALL</code> 讀一個物料的完整視圖，並比較它與直接 SELECT MARA/MARC 的差異（權限檢查、單位換算、多語系描述）。</li>
+
+    <li>把第 1 題的 <code class="abap">ZFM_CASPER_VBAP</code> 重構成 SE24 全域類別 <code class="abap">ZCL_SD_ORDER</code>：用 constructor 帶入 VBELN、用 RETURNING 方法回傳表頭與明細、用自建 <code class="abap">ZCX_SD_ORDER_NOT_FOUND</code>（繼承 CX_STATIC_CHECK）取代 RAISE。<br><i>檢核點：呼叫端改用 TRY/CATCH；例外要能帶出 SE91 的訊息文字。</i></li>
+
+    <li>思考題：<code class="abap">CX_STATIC_CHECK</code>、<code class="abap">CX_DYNAMIC_CHECK</code>、<code class="abap">CX_NO_CHECK</code> 三者差在哪？自建業務例外應該繼承哪一個？為什麼？<br><i>答案要點：STATIC_CHECK 必須宣告在 RAISING、語法檢查會強迫呼叫端面對它，最適合業務錯誤。</i></li>
+
+    <li>思考題：為什麼 S/4HANA 到今天還不能完全廢掉 Function Module？<br><i>答案要點：RFC 協定只認 FM、Update Task（V1/V2）只能是 FM、部分 BAdI／Enhancement 的介面仍是 FM、BAPI 本身就是 FM。</i></li>
+
+    <li><b>第 11 節</b>：規劃你自己的工具箱 —— 列出五個你已經重複寫過兩次以上的邏輯，把它們設計成 <code class="abap">ZCL_UTIL_*</code> 的方法簽章（參數名稱、型別、例外）。</li>
+  </ol>
+</section>

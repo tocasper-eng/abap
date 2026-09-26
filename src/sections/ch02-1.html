@@ -1,0 +1,1483 @@
+<section class="chapter" id="ch02-1" data-title="基本語法：資料型別 / 判斷式 / 迴圈 / 日期時間 / 字串處理">
+  <h2 id="ch02-1">第 2-1 章 基本語法：資料型別 / 判斷式 / 迴圈 / 日期時間 / 字串處理</h2>
+  <p class="lede">這一章是 ABAP 的地基：宣告什麼型別、值怎麼在型別之間搬、判斷與迴圈怎麼寫、日期時間怎麼算、字串怎麼切怎麼拼、金額小數怎麼才不會差一塊錢。老師在講義裡放了 20 支練習程式（ZDATATYPE01～ZDATATYPE20）與 10 個作業，這裡全部整理成可查閱的條目，並把 1992 年代的舊寫法一律改寫成 S/4HANA 1809 以後可直接編譯執行的現代 ABAP。學完之後，你看到任何一段別人寫的老程式，都能立刻判斷它在做什麼、以及該怎麼改。</p>
+
+  <div class="meta">
+    <div><b>核心 TCODE</b><span class="tcode">SE38</span><span class="tcode">SE11</span><span class="tcode">SE37</span><span class="tcode">SE80</span><span class="tcode">SE24</span><span class="tcode">SE91</span><span class="tcode">SU3</span><span class="tcode">ABAPDOCU</span><span class="tcode">ABAPHELP</span><span class="tcode">ICON</span><span class="tcode">SE54</span><span class="tcode">SM30</span><span class="tcode">SCU3</span><span class="tcode">STZAC</span></div>
+    <div><b>關鍵物件</b>SYST（SY-*）、TCURX、TCURC、T009/T009B、TFACD/TFACS、TTZZ/TTZCU、CL_ABAP_MATH、CL_ABAP_TSTMP、CL_ABAP_CONTEXT_INFO、CL_ABAP_CODEPAGE、CL_SALV_TABLE、RP_LAST_DAY_OF_MONTHS、HR_JP_MONTH_BEGIN_END_DATE、RP_CALC_DATE_IN_INTERVAL、CONVERT_DATE_TO_INTERNAL、BAPI_CURRENCY_CONV_TO_INTERNAL</div>
+  </div>
+
+  <h3 id="ch02-1-01">1. 內建資料型別總表（先把這張表背起來）</h3>
+  <p>ABAP 的「資料型別」本身不佔記憶體，只有「資料物件（變數／常數）」才佔記憶體。型別可以是系統預定義（built-in）、也可以是 <span class="kw">SE11</span> 裡的 Data Element / Domain。下表是講義的核心表格，加上 S/4HANA 常用但講義只帶過的幾個型別。</p>
+
+  <table>
+    <thead><tr><th>縮寫</th><th>型別</th><th>預設長度</th><th>允許長度</th><th>初始值</th><th>說明與典型用途</th></tr></thead>
+    <tbody>
+      <tr><td>C</td><td>文字型 Character</td><td>1</td><td>1～262143</td><td>space</td><td>固定長度字串。取值靠左，超長截斷。MATNR、KUNNR 這類 key 都是 C</td></tr>
+      <tr><td>N</td><td>數字字串 Numeric text</td><td>1</td><td>1～262143</td><td>'00…0'</td><td>只放 0～9 的字串。取值靠右、左補 0。單據號、月份、POSNR 用它</td></tr>
+      <tr><td>D</td><td>日期 Date</td><td>8</td><td>固定 8</td><td>'00000000'</td><td>內部格式一律 YYYYMMDD，可直接加減（單位＝天）</td></tr>
+      <tr><td>T</td><td>時間 Time</td><td>6</td><td>固定 6</td><td>'000000'</td><td>內部格式一律 HHMMSS，可直接加減（單位＝秒）</td></tr>
+      <tr><td>I</td><td>整數 Integer</td><td>4 bytes</td><td>固定</td><td>0</td><td>-2 147 483 648 ～ 2 147 483 647，計數器用</td></tr>
+      <tr><td>INT8</td><td>長整數</td><td>8 bytes</td><td>固定</td><td>0</td><td>約 ±9.2×10^18。筆數／金額分位加總避免溢位</td></tr>
+      <tr><td>P</td><td>壓縮數 Packed</td><td>8</td><td>1～16 bytes（1～31 位）</td><td>0</td><td>定點十進位，小數最多 14 位。<b>所有金額、數量都是 P</b></td></tr>
+      <tr><td>F</td><td>二進位浮點 Float</td><td>8 bytes</td><td>固定</td><td>0</td><td>約 15～16 位有效數字，<b>不精確</b>。只用在科學計算</td></tr>
+      <tr><td>DECFLOAT16</td><td>十進位浮點</td><td>8 bytes</td><td>固定</td><td>0</td><td>16 位精確十進位，運算比 P 快、比 F 準</td></tr>
+      <tr><td>DECFLOAT34</td><td>十進位浮點</td><td>16 bytes</td><td>固定</td><td>0</td><td>34 位，超大／超精密數字（利率、匯率連乘）首選</td></tr>
+      <tr><td>STRING</td><td>可變長字串</td><td>動態</td><td>不限</td><td>``（空字串）</td><td>長度隨內容變動，保留尾端空白</td></tr>
+      <tr><td>X</td><td>位元組 Byte</td><td>1</td><td>1～524287</td><td>X'00'</td><td>二進位資料、GUID、旗標位元</td></tr>
+      <tr><td>XSTRING</td><td>可變長位元組串</td><td>動態</td><td>不限</td><td>空</td><td>檔案上傳／下載、PDF、附件內容</td></tr>
+    </tbody>
+  </table>
+
+  <div class="note">另有 <b>b（INT1）</b> 與 <b>s（INT2）</b> 兩個小整數型別，<b>不能</b>直接寫在 <span class="kw">DATA ... TYPE b</span>，必須透過 DDIC 的資料元素 <span class="kw">INT1</span> / <span class="kw">INT2</span> 使用（講義的 <span class="kw">TYPE int2</span> 就是這個）。<span class="kw">INT8</span> 是 ABAP 7.54（S/4HANA 1909）才成為內建型別；1809 上請用 DDIC 資料元素 <span class="kw">INT8</span>。</div>
+
+  <p>講義強調的五個取值規則，實務上天天踩到：</p>
+  <ul>
+    <li>不寫 TYPE 時，預設型別是 <b>C</b>（<span class="kw">DATA lv_a(10).</span> 等同 <span class="kw">TYPE c</span>）。</li>
+    <li><b>C 型從左取、N 型從右取</b>，超過定義長度就截斷。</li>
+    <li>C 可以放數字、文字或混合；但把 C 當數值用時是<b>靠右對齊</b>解讀。</li>
+    <li>D 與 T 可以直接做四則運算（D 加減的單位是「天」，T 加減的單位是「秒」）。</li>
+    <li>P 一定要用 <span class="kw">DECIMALS</span> 宣告小數位，沒寫就等於整數。</li>
+  </ul>
+
+  <pre><code class="abap">REPORT zdatatype01.
+" 練習 01：C N D T I P F 的初始值 — 看清楚每個型別「空的時候長什麼樣」
+DATA lv_c TYPE c LENGTH 1.
+DATA lv_d TYPE d.
+DATA lv_f TYPE f.
+DATA lv_i TYPE i.
+DATA lv_n TYPE n LENGTH 1.
+DATA lv_p TYPE p LENGTH 8 DECIMALS 2.
+DATA lv_t TYPE t.
+
+cl_demo_output=&gt;write( |LV_C: &gt;{ lv_c }&lt;| ).      " space
+cl_demo_output=&gt;write( |LV_D: { lv_d }| ).          " 00000000
+cl_demo_output=&gt;write( |LV_F: { lv_f }| ).          " 0.0
+cl_demo_output=&gt;write( |LV_I: { lv_i }| ).          " 0
+cl_demo_output=&gt;write( |LV_N: { lv_n }| ).          " 0
+cl_demo_output=&gt;write( |LV_P: { lv_p }| ).          " 0.00
+cl_demo_output=&gt;write( |LV_T: { lv_t }| ).          " 000000
+cl_demo_output=&gt;display( ).</code></pre>
+
+  <div class="tip">老師的口訣：<b>「C 靠左、N 靠右、D 八碼、T 六碼、P 才是錢」</b>。任何金額欄位若看到有人宣告成 <span class="kw">TYPE f</span>，直接視為 bug。</div>
+
+  <h3 id="ch02-1-02">2. TYPES / DATA / CONSTANTS / STATICS：宣告的四把刀</h3>
+  <p><span class="kw">TYPES</span> 定義的是「型別」，不能賦值；<span class="kw">DATA</span> 才是「變數」；<span class="kw">CONSTANTS</span> 是一經定義就不能改的常數；<span class="kw">STATICS</span> 是「離開副程式仍然記得上次的值」的區域變數。</p>
+
+  <table>
+    <thead><tr><th>關鍵字</th><th>語法骨架</th><th>重點</th></tr></thead>
+    <tbody>
+      <tr><td>TYPES</td><td><span class="kw">TYPES ty_x TYPE ... .</span></td><td>只是型別；不能 <span class="kw">ty_x = 1</span></td></tr>
+      <tr><td>DATA</td><td><span class="kw">DATA lv_x TYPE ty_x VALUE '...'.</span></td><td>真正配置記憶體</td></tr>
+      <tr><td>CONSTANTS</td><td><span class="kw">CONSTANTS c_pi TYPE p LENGTH 8 DECIMALS 5 VALUE '3.14159'.</span></td><td>必須有 VALUE，執行期不可改</td></tr>
+      <tr><td>STATICS</td><td><span class="kw">STATICS lv_cnt TYPE i.</span></td><td>只在副程式／方法內宣告，值跨呼叫保留</td></tr>
+      <tr><td>LIKE</td><td><span class="kw">DATA lv_d LIKE sy-datum.</span></td><td>參照「既有資料物件」；TYPE 才是參照「型別」</td></tr>
+      <tr><td>DATA(x)</td><td><span class="kw">DATA(lv_x) = ...</span></td><td>7.40 起的<b>內嵌宣告</b>，型別由右式推導</td></tr>
+    </tbody>
+  </table>
+
+  <pre><code class="abap">REPORT zdatatype02.
+" 練習 02：字面值、系統變數、日期可運算
+CONSTANTS c_pi TYPE p LENGTH 8 DECIMALS 5 VALUE '3.14159'.
+
+DATA lv_c TYPE c LENGTH 10 VALUE 'ABCDEFGHIJK'.   " 超過 10 碼 → 右邊被截掉
+DATA lv_n TYPE n LENGTH 10 VALUE '123456789'.     " N 靠右、左補 0 → 0123456789
+DATA lv_p TYPE p LENGTH 8 DECIMALS 2 VALUE '1234567890.88'.
+"  P 有小數時，VALUE 一定要用單引號括起來，否則語法錯誤
+
+DATA(lv_today) = sy-datum.                        " 內嵌宣告，型別自動是 D
+DATA(lv_now)   = sy-uzeit.                        " 型別自動是 T
+
+DATA(lv_d30)  = CONV d( lv_today + 30 ).          " 日期 +30 天
+DATA(lv_t1h)  = CONV t( lv_now + 3600 ).          " 時間 +3600 秒 = 1 小時
+
+cl_demo_output=&gt;write( |C(截斷)  : { lv_c }| ).
+cl_demo_output=&gt;write( |N(補零)  : { lv_n }| ).
+cl_demo_output=&gt;write( |P        : { lv_p }| ).
+cl_demo_output=&gt;write( |今天      : { lv_today DATE = USER }| ).
+cl_demo_output=&gt;write( |30 天後   : { lv_d30 DATE = USER }| ).
+cl_demo_output=&gt;write( |現在      : { lv_now TIME = USER }| ).
+cl_demo_output=&gt;write( |一小時後  : { lv_t1h TIME = USER }| ).
+cl_demo_output=&gt;write( |PI        : { c_pi }| ).
+cl_demo_output=&gt;display( ).</code></pre>
+
+  <div class="warn">講義示範的 <span class="kw">TYPES: address(50) TYPE c.</span>、<span class="kw">DATA: BEGIN OF wa ... OCCURS 0 ... END OF wa.</span>、<span class="kw">TYPES P_TYPE(3) TYPE P DECIMALS 2.</span> 這種「長度括號」＋<span class="kw">OCCURS</span>＋<span class="kw">WITH HEADER LINE</span> 的寫法，在 Unicode 與 ABAP Objects 環境已被禁用或列為 obsolete。一律改成 <span class="kw">TYPE c LENGTH 50</span>、<span class="kw">TYPE p LENGTH 3 DECIMALS 2</span>、<span class="kw">TYPE STANDARD TABLE OF ... WITH EMPTY KEY</span>。</div>
+
+  <p><b>靜態變數 STATICS（練習 18）</b>：同一支程式裡，<span class="kw">STATICS</span> 只初始化一次，之後每次進來都保留上次的值；<span class="kw">DATA</span> 則每次進來都重新歸零。這是做「累計計數器」「只執行一次的初始化」最省事的手法。</p>
+
+  <pre><code class="abap">REPORT zdatatype18.
+" 練習 18：STATICS vs DATA — 現代寫法改用區域類別的方法，行為完全相同
+CLASS lcl_demo DEFINITION.
+  PUBLIC SECTION.
+    METHODS with_statics.
+    METHODS with_data.
+ENDCLASS.
+
+CLASS lcl_demo IMPLEMENTATION.
+  METHOD with_statics.
+    STATICS lv_val TYPE i.        " 跨呼叫保留
+    lv_val = lv_val + 1.
+    cl_demo_output=&gt;write( |STATICS: { lv_val }| ).   " 1 2 3
+  ENDMETHOD.
+  METHOD with_data.
+    DATA lv_val TYPE i.           " 每次重新歸零
+    lv_val = lv_val + 1.
+    cl_demo_output=&gt;write( |DATA   : { lv_val }| ).   " 1 1 1
+  ENDMETHOD.
+ENDCLASS.
+
+START-OF-SELECTION.
+  DATA(lo_demo) = NEW lcl_demo( ).
+  DO 3 TIMES.
+    lo_demo-&gt;with_statics( ).
+  ENDDO.
+  DO 3 TIMES.
+    lo_demo-&gt;with_data( ).
+  ENDDO.
+  cl_demo_output=&gt;display( ).</code></pre>
+
+  <h3 id="ch02-1-03">3. 結構、繼承（INCLUDE TYPE）與 CORRESPONDING</h3>
+  <p>結構就是「一列資料」。講義示範三種寫法：<span class="kw">TYPES BEGIN OF ... END OF</span>（推薦）、<span class="kw">DATA BEGIN OF ... END OF</span>（可用但不建議）、以及參照 SE11 的 Structure。結構要「繼承」欄位時用 <span class="kw">INCLUDE</span>。</p>
+
+  <div class="warn">老師特別標紅的坑：<b>自訂型別要用 <span class="kw">INCLUDE TYPE</span>，不可用 <span class="kw">INCLUDE STRUCTURE</span></b>；<span class="kw">INCLUDE STRUCTURE</span> 只能用在 <span class="kw">DATA BEGIN OF</span> 裡引用「資料物件或 DDIC 結構」。而且 <span class="kw">INCLUDE</span> 那一行結尾是<b>句號</b>不是逗號，前後的 <span class="kw">DATA:</span> / <span class="kw">TYPES:</span> 要重新起頭 — 這是初學者最常見的語法錯誤。</div>
+
+  <pre><code class="abap">REPORT zdatatype03.
+" 練習 03：型別、結構、繼承（INCLUDE TYPE）
+TYPES ty_bu_partner  TYPE c LENGTH 10.
+TYPES ty_bu_partner1 TYPE bu_partner.        " 直接參照 DDIC Data Element
+TYPES ty_bu_partner2 TYPE ty_bu_partner.     " 型別再參照型別
+
+TYPES: BEGIN OF ty_partner_info,
+         nam TYPE c LENGTH 10,
+         age TYPE i,
+         tel TYPE n LENGTH 12,
+       END OF ty_partner_info.
+
+" 繼承：把 ty_partner_info 的欄位整批納入，再加自己的欄位
+TYPES: BEGIN OF ty_customer.
+         INCLUDE TYPE ty_partner_info.      " 注意：自訂型別用 INCLUDE TYPE
+TYPES:   adr TYPE c LENGTH 40,
+       END OF ty_customer.
+
+START-OF-SELECTION.
+  " VALUE #( ) 一次把整個結構填好，取代逐欄位 = 的舊寫法
+  DATA(ls_info) = VALUE ty_partner_info( nam = 'RICKY'
+                                         age = 30
+                                         tel = '0930463002' ).
+
+  " 欄位完全相同 → 直接用 =；欄位不同 → 用 CORRESPONDING #( )
+  DATA(ls_cust) = CORRESPONDING ty_customer( ls_info ).
+  ls_cust-nam = '繼承的'.
+  ls_cust-adr = '桃園市中大路 300 號'.
+
+  cl_demo_output=&gt;write_data( ls_info ).
+  cl_demo_output=&gt;write_data( ls_cust ).
+  cl_demo_output=&gt;display( ).</code></pre>
+
+  <p>結構賦值的三種情境，老師的總結是：<b>「完全相同用 =，否則用 CORRESPONDING」</b>。<span class="kw">MOVE-CORRESPONDING</span> 仍可用（它不是 obsolete），但新程式建議用建構式版本，因為它能寫在運算式裡、還能改欄位對應。</p>
+
+  <pre><code class="abap">" 三種等價寫法（由舊到新）
+MOVE-CORRESPONDING ls_from TO ls_to.               " 舊：只能當敘述句
+ls_to = CORRESPONDING #( ls_from ).                " 新：可寫在任何運算式裡
+
+" 欄位名稱不同時，用 MAPPING 對應、用 EXCEPT 排除
+ls_to = CORRESPONDING #( ls_from
+                         MAPPING kunnr = customer_id
+                                 name1 = customer_name
+                         EXCEPT  mandt ).</code></pre>
+
+  <div class="warn"><span class="kw">CORRESPONDING</span> / <span class="kw">MOVE-CORRESPONDING</span> <b>只比對欄位名稱，不管順序、也不管型別</b>。若來源是 CHAR20、目標是 CHAR10，會靜靜地截掉後面 10 碼而不報錯 — 這是報表資料「莫名其妙變短」的頭號元兇。</div>
+
+  <h3 id="ch02-1-04">4. 賦值、offset+length、指標（FIELD-SYMBOLS / REF）</h3>
+  <p>ABAP 給值的方式，講義列了三種：<span class="kw">=</span>、<span class="kw">MOVE</span>、<span class="kw">WRITE ... TO ...</span>。其中 <span class="kw">MOVE</span> 已是 obsolete，<span class="kw">WRITE ... TO ...</span> 是「帶格式的賦值」（不是輸出），只在需要套用輸出格式時才用。</p>
+
+  <p><b>offset + length 寫法</b>是 ABAP 最有特色的語法：<span class="kw">lv_field+3(5)</span> 表示「跳過 3 個字元，取 5 個字元」，<span class="kw">+3(*)</span> 表示「跳過 3 個之後全取」。它可以出現在等號左邊（部分覆寫），這在處理日期字串時非常好用。</p>
+
+  <pre><code class="abap">REPORT zdatatype05.
+" 練習 05：offset+length、WRITE TO、日期部分覆寫
+DATA(lv_date1) = sy-datum.
+DATA(lv_date2) = sy-datum.
+
+lv_date2+6(2) = '30'.            " 把 YYYYMMDD 的 DD 換成 30（等號左邊也能用 offset）
+
+DATA(lv_ymd) = CONV char8( '20220126' ).
+DATA(lv_yyyy)   = lv_ymd+0(4).   " 2022
+DATA(lv_mm)     = lv_ymd+4(2).   " 01
+DATA(lv_dd)     = lv_ymd+6(2).   " 26
+DATA(lv_yymmdd) = lv_ymd+2(*).   " 220126 ← (*) 表示後面全取
+
+" 現代等價寫法：substring( )，可讀性更好、也能用在字串型別
+DATA(lv_yyyy2) = substring( val = lv_ymd off = 0 len = 4 ).
+DATA(lv_ymd2)  = substring_from( val = lv_ymd off = 2 ).
+
+" WRITE ... TO ... 是「賦值」不是輸出，可帶格式
+DATA lv_target TYPE c LENGTH 20.
+WRITE sy-datum TO lv_target DD/MM/YYYY.
+
+cl_demo_output=&gt;write( |{ lv_date1 } / { lv_date2 } / { lv_yyyy }-{ lv_mm }-{ lv_dd } / { lv_yymmdd } / { lv_target }| ).
+cl_demo_output=&gt;display( ).</code></pre>
+
+  <div class="warn">用 offset+length 時，<b>整段運算式中間不可以有空格</b>（<span class="kw">lv_a+3(5)</span> 對，<span class="kw">lv_a + 3(5)</span> 錯，後者會被當成加法）。另外對 <span class="kw">TYPE string</span> 使用 <span class="kw">+off(len)</span> 在 Unicode 系統會有限制，字串請一律改用 <span class="kw">substring( )</span>。</div>
+
+  <p><b>FIELD-SYMBOLS 是指標（分身）</b>：它本身不是變數，存的是別的變數的位址。改 <span class="kw">&lt;fs&gt;</span> 就等於改本尊。<span class="kw">IS ASSIGNED</span> 用來檢查有沒有指到東西 — 沒指到就用，會 dump。</p>
+
+  <pre><code class="abap">REPORT zdatatype06.
+" 練習 06：FIELD-SYMBOLS 指向結構，改分身＝改本尊
+TYPES: BEGIN OF ty_body,
+         name   TYPE c LENGTH 30,
+         high   TYPE p LENGTH 5 DECIMALS 2,
+         weight TYPE p LENGTH 5 DECIMALS 2,
+       END OF ty_body.
+
+DATA(ls_body) = VALUE ty_body( name = 'CASPER' high = '1.73' weight = '80' ).
+
+FIELD-SYMBOLS &lt;fs_body&gt; TYPE ty_body.
+ASSIGN ls_body TO &lt;fs_body&gt;.
+
+IF &lt;fs_body&gt; IS ASSIGNED.
+  &lt;fs_body&gt;-name   = 'RESET'.       " 改分身
+  &lt;fs_body&gt;-high   = '0.00'.
+  &lt;fs_body&gt;-weight = '0.00'.
+ENDIF.
+
+cl_demo_output=&gt;write_data( ls_body ).   " 本尊也跟著變了
+" 內表迴圈的現代用法：直接內嵌宣告 field symbol，省一次搬資料
+"   LOOP AT lt_x ASSIGNING FIELD-SYMBOL(&lt;ls_x&gt;).
+"     &lt;ls_x&gt;-flag = 'X'.               " 直接改內表，不必 MODIFY
+"   ENDLOOP.
+cl_demo_output=&gt;display( ).</code></pre>
+
+  <div class="tip">S/4HANA 的三種「指到別人」的手段：<b>FIELD-SYMBOL</b>（<span class="kw">ASSIGNING</span>，最快、可直接改內表）、<b>資料參考 REF TO</b>（<span class="kw">REFERENCE INTO DATA(lr_x)</span>，可存起來傳來傳去）、<b>值拷貝</b>（<span class="kw">INTO DATA(ls_x)</span>，最安全但最慢）。百萬筆迴圈務必用前兩者。</div>
+
+  <h3 id="ch02-1-05">5. 型別轉換的陷阱（老師說一定要小心驗算）</h3>
+  <p>不同型別互相賦值時，ABAP 會「自動轉換」，但規則很多而且不一定符合直覺。講義的三個經典陷阱：</p>
+
+  <p><b>陷阱一：C → N → I 的資訊遺失。</b>C 轉 N 時只保留數字字元，其他丟掉；N 再轉 I 時若超出範圍會 dump。</p>
+
+  <pre><code class="abap">REPORT zdatatype08a.
+" 陷阱一：'ABC1234567' 轉 N 只剩數字，且靠右對齊補 0
+DATA lv_c TYPE c LENGTH 10 VALUE 'ABC1234567'.
+DATA lv_n TYPE n LENGTH 10.
+DATA lv_i TYPE i.
+
+lv_n = lv_c.        " → 0001234567（字母被丟棄，右靠齊左補 0）
+lv_i = lv_n.        " → 1234567
+
+cl_demo_output=&gt;write( |C={ lv_c } N={ lv_n } I={ lv_i }| ).
+cl_demo_output=&gt;display( ).</code></pre>
+
+  <p><b>陷阱二：整數除法會四捨五入，不是無條件捨去。</b>這是 ABAP 跟 C / Java 最大的差別。</p>
+
+  <pre><code class="abap">REPORT zdatatype08b.
+" 陷阱二：/ 、DIV 、MOD 的差別（結果型別是 N 或 I 時會先四捨五入）
+DATA lv_r TYPE n LENGTH 2.
+
+lv_r = 45 / 7.      cl_demo_output=&gt;write( |45 /   7 = { lv_r }| ).  " 6  (6.43 四捨五入)
+lv_r = 45 DIV 7.    cl_demo_output=&gt;write( |45 DIV 7 = { lv_r }| ).  " 6  (整數商)
+lv_r = 45 MOD 7.    cl_demo_output=&gt;write( |45 MOD 7 = { lv_r }| ).  " 3  (餘數)
+
+" 更容易中招的：5 / 2 = 3 而不是 2
+DATA(lv_i) = 5 / 2.
+cl_demo_output=&gt;write( |5 / 2 存成 I = { lv_i }| ).                  " 3
+" 要得到 2.5 必須讓結果型別有小數
+DATA(lv_p) = CONV decfloat34( 5 ) / 2.
+cl_demo_output=&gt;write( |改用 DECFLOAT34 = { lv_p }| ).               " 2.5
+cl_demo_output=&gt;display( ).</code></pre>
+
+  <div class="warn">ABAP 的 <span class="kw">MOD</span> 對負數的結果永遠是「非負數」（<span class="kw">-5 MOD 3 = 1</span>），跟 C / Java 的 <span class="kw">%</span>（會得到 -2）不同。從其他語言移植演算法時務必驗算。</div>
+
+  <p><b>陷阱三：先轉型再運算，還是先運算再轉型？</b>講義的 <span class="kw">sqrt( 5 ) + sqrt( 6 )</span> 例子非常經典：<span class="kw">sqrt()</span> 回傳的是 F 型別，直接相加後才轉整數得 5（2.236+2.449=4.685→5）；若各自先 <span class="kw">CONV i( )</span> 變成 2+2 就只有 4。</p>
+
+  <pre><code class="abap">REPORT zdatatype09.
+" 練習 09：CONV 的位置決定答案
+DATA(lv_f1) = sqrt( 5 ).                          " 2.2360679...
+DATA(lv_f2) = sqrt( 6 ).                          " 2.4494897...
+
+DATA lv_int1 TYPE i.
+DATA lv_int2 TYPE i.
+
+lv_int1 = sqrt( 5 ) + sqrt( 6 ).                  " 先加再轉 → 4.685 → 5
+lv_int2 = CONV i( sqrt( 5 ) ) + CONV i( sqrt( 6 ) ).  " 先各自轉 → 2 + 2 → 4
+
+cl_demo_output=&gt;write( |F1={ lv_f1 } F2={ lv_f2 }| ).
+cl_demo_output=&gt;write( |先加再轉 = { lv_int1 }，先轉再加 = { lv_int2 }| ).
+
+" EXACT #( ) ：不允許失真，一旦要四捨五入就丟例外 → 財務欄位建議用它
+TRY.
+    DATA(lv_exact) = EXACT i( '2.5' ).
+  CATCH cx_sy_conversion_rounding INTO DATA(lx_round).
+    cl_demo_output=&gt;write( |EXACT 攔到失真：{ lx_round-&gt;get_text( ) }| ).
+ENDTRY.
+cl_demo_output=&gt;display( ).</code></pre>
+
+  <p><b>數學函數一覽</b>（ABAPDOCU 的 Numeric Calculations 節點共 17 個，最常用的是這些）：</p>
+  <table>
+    <thead><tr><th>函數</th><th>意義</th><th>-5.55 的結果</th></tr></thead>
+    <tbody>
+      <tr><td><span class="kw">abs( )</span></td><td>絕對值</td><td>5.55</td></tr>
+      <tr><td><span class="kw">sign( )</span></td><td>正負號（1 / 0 / -1）</td><td>-1</td></tr>
+      <tr><td><span class="kw">ceil( )</span></td><td>無條件進位（往 +∞）</td><td>-5</td></tr>
+      <tr><td><span class="kw">floor( )</span></td><td>無條件捨去（往 -∞）</td><td>-6</td></tr>
+      <tr><td><span class="kw">trunc( )</span></td><td>去掉小數（往 0）</td><td>-5</td></tr>
+      <tr><td><span class="kw">frac( )</span></td><td>只留小數部分</td><td>-0.55</td></tr>
+      <tr><td><span class="kw">round( val = x dec = n mode = ... )</span></td><td>指定小數位四捨五入，mode 見 CL_ABAP_MATH</td><td>依 mode</td></tr>
+      <tr><td><span class="kw">sqrt( ) / exp( ) / log( ) / log10( )</span></td><td>開根號、指數、對數（回傳 F）</td><td>—</td></tr>
+      <tr><td><span class="kw">sin( ) cos( ) tan( ) acos( ) …</span></td><td>三角函數（回傳 F）</td><td>—</td></tr>
+      <tr><td><span class="kw">ipow( base = x exp = n )</span></td><td>整數次方；一般次方用 <span class="kw">**</span></td><td>—</td></tr>
+    </tbody>
+  </table>
+
+  <pre><code class="abap">REPORT zmath_demo.
+" 四捨五入的五種模式（cl_abap_math 常數），財務報表一定要指定 mode
+DATA(lv_val) = CONV decfloat34( '2.345' ).
+
+cl_demo_output=&gt;write( |half_up   : { round( val = lv_val dec = 2 mode = cl_abap_math=&gt;round_half_up ) }| ).
+cl_demo_output=&gt;write( |half_down : { round( val = lv_val dec = 2 mode = cl_abap_math=&gt;round_half_down ) }| ).
+cl_demo_output=&gt;write( |half_even : { round( val = lv_val dec = 2 mode = cl_abap_math=&gt;round_half_even ) }| ).  " 銀行家捨入
+cl_demo_output=&gt;write( |ceiling   : { round( val = lv_val dec = 2 mode = cl_abap_math=&gt;round_ceiling ) }| ).
+cl_demo_output=&gt;write( |floor     : { round( val = lv_val dec = 2 mode = cl_abap_math=&gt;round_floor ) }| ).
+
+" 計算順序：函數 &gt; 次方(**) &gt; 乘除(* / DIV MOD) &gt; 加減(+ -)
+" 運算子與運算元之間「一定要有空格」，這是 ABAP 的硬規定
+DATA(lv_dist) = ( ( 2 - -2 ) ** 2 + ( -1 - 2 ) ** 2 ) ** '0.5'.   " 歐幾里德距離 = 5
+cl_demo_output=&gt;write( |歐氏距離 = { lv_dist }| ).
+cl_demo_output=&gt;display( ).</code></pre>
+
+  <div class="warn"><b>P 型態注意事項（講義第 08 節）</b>：P 是「壓縮定點數」，兩個十進位數字壓進一個位元組，正負號與小數點另佔半個位元組。<b>在 ABAP 程式裡</b>，有效數字可到 1～31 位、小數最多 14 位，例如 <span class="kw">DATA lv_p TYPE p LENGTH 16 DECIMALS 14.</span> 可以放 <span class="kw">'12345678901234567.89012345678901'</span> 這種數字；<b>但在 SE11 的 DOMAIN 裡</b>，DEC 型別的「長度」欄位填的是<b>含小數在內的總位數</b>（例如整數 9 位＋小數 2 位要填長度 11、小數位 2），兩邊的計數方式不一樣，這是初學者對照 SE11 時最容易搞混的地方。<span class="src">（依講義截圖步驟整理）</span></div>
+
+  <div class="note">講義使用的 <span class="kw">CALL FUNCTION 'ROUND'</span>（參數 <span class="kw">decimals</span>、<span class="kw">input</span>、<span class="kw">sign</span>：<span class="kw">'X'</span>＝四捨五入、<span class="kw">'+'</span>＝無條件進位、<span class="kw">'-'</span>＝無條件捨去）仍然可用，但新程式直接用內建 <span class="kw">round( )</span> 即可，不必呼叫 FM、也不用處理 <span class="kw">overflow</span> / <span class="kw">input_invalid</span> 例外。</div>
+
+  <h3 id="ch02-1-06">6. 判斷式：IF / CASE / COND / SWITCH</h3>
+  <p>比較運算子與邏輯運算子：</p>
+  <table>
+    <thead><tr><th>符號</th><th>文字</th><th>意義</th><th>備註</th></tr></thead>
+    <tbody>
+      <tr><td>=</td><td>EQ</td><td>等於</td><td>老師要求：<b>一律用符號</b>，不要用 EQ / NE 這種文字寫法</td></tr>
+      <tr><td>&lt;&gt;</td><td>NE</td><td>不等於</td><td>舊式的 <span class="kw">&gt;&lt;</span> 禁用</td></tr>
+      <tr><td>&lt;</td><td>LT</td><td>小於</td><td>—</td></tr>
+      <tr><td>&lt;=</td><td>LE</td><td>小於等於</td><td>舊式的 <span class="kw">=&lt;</span> 禁用</td></tr>
+      <tr><td>&gt;</td><td>GT</td><td>大於</td><td>—</td></tr>
+      <tr><td>&gt;=</td><td>GE</td><td>大於等於</td><td>舊式的 <span class="kw">=&gt;</span> 禁用</td></tr>
+      <tr><td><span class="kw">AND / OR / NOT</span></td><td>—</td><td>且 / 或 / 非</td><td>NOT 的優先權最高</td></tr>
+      <tr><td><span class="kw">IS INITIAL</span></td><td>—</td><td>是否為型別初始值</td><td>判斷空值一律用它，不要跟 <span class="kw">= ''</span> 比</td></tr>
+      <tr><td><span class="kw">IS NOT INITIAL</span></td><td>—</td><td>非初始值</td><td>比 <span class="kw">NOT ... IS INITIAL</span> 好讀</td></tr>
+      <tr><td><span class="kw">IS ASSIGNED / IS BOUND / IS SUPPLIED</span></td><td>—</td><td>field symbol 已指定 / 參考已建立 / 參數有傳入</td><td>用前先檢查，避免 dump</td></tr>
+      <tr><td><span class="kw">BETWEEN a AND b</span></td><td>—</td><td>區間</td><td>含頭含尾</td></tr>
+      <tr><td><span class="kw">IN itab_range</span></td><td>—</td><td>符合 RANGE / SELECT-OPTIONS</td><td><b>空的 range 恆為真</b>；且「用區間」與「用列舉」的結果可能不同，列舉較精確</td></tr>
+      <tr><td><span class="kw">CO / CN / CA / NA / CS / NS / CP / NP</span></td><td>—</td><td>字元類比較</td><td><span class="kw">CS</span>＝包含子字串、<span class="kw">CP</span>＝萬用字元比對（<span class="kw">*</span>、<span class="kw">+</span>）</td></tr>
+    </tbody>
+  </table>
+
+  <pre><code class="abap">REPORT zdatatype14.
+" 練習 14：IF 判斷奇偶數、CASE 判斷餘數
+DATA(lv_cnt) = 6.
+
+IF lv_cnt MOD 2 = 0.
+  cl_demo_output=&gt;write( |{ lv_cnt } 是偶數| ).
+ELSEIF lv_cnt &lt; 0.
+  cl_demo_output=&gt;write( |{ lv_cnt } 是負數| ).
+ELSE.
+  cl_demo_output=&gt;write( |{ lv_cnt } 是奇數| ).
+ENDIF.
+
+DATA(lv_rec) = 8.
+CASE lv_rec MOD 3.
+  WHEN 0.       cl_demo_output=&gt;write( |{ lv_rec } mod 3 餘 0| ).
+  WHEN 1.       cl_demo_output=&gt;write( |{ lv_rec } mod 3 餘 1| ).
+  WHEN OTHERS.  cl_demo_output=&gt;write( |{ lv_rec } mod 3 餘 2| ).
+ENDCASE.
+
+" CASE TYPE OF：物件導向常用，依實際類別分支
+" CASE TYPE OF lo_obj.
+"   WHEN TYPE cl_a INTO DATA(lo_a).  ...
+"   WHEN OTHERS.                     ...
+" ENDCASE.
+cl_demo_output=&gt;display( ).</code></pre>
+
+  <p><b>COND 與 SWITCH（7.40 起）</b>是「運算式版」的 IF / CASE，可以直接寫在等號右邊、參數裡、字串範本裡，讓程式短一半。</p>
+
+  <pre><code class="abap">REPORT zdatatype07.
+" 練習 07：COND #( ) 與 SWITCH #( )
+" COND = 條件式 IF；每個 WHEN 是完整條件
+DATA(lv_role1) = COND string( WHEN sy-uname = 'CASPER' THEN 'TEACHER'
+                              WHEN sy-uname = 'IT03'   THEN 'IT'
+                              ELSE 'STUDENT' ).
+
+" SWITCH = 單一運算元的 CASE；WHEN 後面只寫值
+DATA(lv_role2) = SWITCH string( sy-uname
+                                WHEN 'CASPER' THEN 'TEACHER'
+                                WHEN 'IT03'   THEN 'IT'
+                                ELSE 'STUDENT' ).
+
+" 直接嵌在字串範本裡，連中間變數都省了
+cl_demo_output=&gt;write( |使用者 { sy-uname } 的角色是 { lv_role1 } / { lv_role2 }| ).
+
+" COND 也可以 THROW 例外
+" DATA(lv_x) = COND i( WHEN lv_a &gt; 0 THEN lv_a ELSE THROW cx_sy_conversion_error( ) ).
+cl_demo_output=&gt;display( ).</code></pre>
+
+  <div class="tip">口訣：<b>「多條件用 COND，單變數用 SWITCH」</b>。兩者都必須有 <span class="kw">ELSE</span>（或確定條件涵蓋全部），否則沒命中時回傳型別初始值，容易產生「金額變 0」的隱形錯誤。</div>
+
+  <h3 id="ch02-1-07">7. 迴圈：DO / WHILE / LOOP 與 CHECK / EXIT / CONTINUE</h3>
+  <p>ABAP 共有五大迴圈：<span class="kw">DO</span>、<span class="kw">WHILE</span>、<span class="kw">LOOP AT</span>、<span class="kw">SELECT ... ENDSELECT</span>（禁用）、<span class="kw">PROVIDE</span>（幾乎沒人用）。控制指令四個：</p>
+
+  <table>
+    <thead><tr><th>指令</th><th>作用</th><th>用在哪</th></tr></thead>
+    <tbody>
+      <tr><td><span class="kw">CONTINUE</span></td><td>無條件結束本圈，直接跑下一圈</td><td>所有迴圈</td></tr>
+      <tr><td><span class="kw">CHECK cond</span></td><td>條件<b>不成立</b>時等同 CONTINUE（跳過本圈）</td><td>迴圈內；在副程式／方法內則是直接離開</td></tr>
+      <tr><td><span class="kw">EXIT</span></td><td>離開<b>最內層</b>迴圈；不在迴圈裡則離開該處理區塊</td><td>所有迴圈</td></tr>
+      <tr><td><span class="kw">STOP</span></td><td>中止 <span class="kw">START-OF-SELECTION</span>，直接跳到 <span class="kw">END-OF-SELECTION</span></td><td>只在 Report 事件區塊；已列 obsolete</td></tr>
+      <tr><td><span class="kw">RETURN</span></td><td>立刻離開整個副程式／方法</td><td>方法內建議用它取代 EXIT</td></tr>
+    </tbody>
+  </table>
+
+  <div class="warn">最常見的誤解：<b><span class="kw">CHECK</span> 在迴圈裡是「跳過這一圈」，不是「跳出迴圈」</b>；而 <span class="kw">EXIT</span> 只跳出<b>一層</b>。雙層迴圈想一次跳出兩層，只能靠旗標變數或把內層抽成方法用 <span class="kw">RETURN</span>。</div>
+
+  <pre><code class="abap">REPORT zdatatype15.
+" 練習 15：DO / 巢狀 DO / 無 TIMES 的 DO / WHILE
+DO 2 TIMES.
+  cl_demo_output=&gt;write( |This Index is { sy-index }| ).
+ENDDO.
+
+" 巢狀迴圈：SY-INDEX 只代表「當前這一層」的圈數，外層要自己存起來
+DO 3 TIMES.
+  DATA(lv_outer) = sy-index.
+  DO 2 TIMES.
+    cl_demo_output=&gt;write( |外層 { lv_outer } / 內層 { sy-index }| ).
+  ENDDO.
+ENDDO.
+
+" 沒有 TIMES 的 DO 是無窮迴圈，一定要自己 EXIT，否則 timeout
+DO.
+  IF sy-index = 3.
+    EXIT.
+  ENDIF.
+ENDDO.
+cl_demo_output=&gt;write( |離開迴圈後 SY-INDEX 歸零 = { sy-index }| ).
+
+" WHILE：1+2+...+10
+DATA(lv_i) = 1.
+DATA(lv_sum) = 0.
+WHILE lv_i &lt;= 10.
+  lv_sum = lv_sum + lv_i.
+  lv_i   = lv_i + 1.
+ENDWHILE.
+cl_demo_output=&gt;write( |1+2+...+10 = { lv_sum }| ).
+
+" 現代等價：REDUCE 一行搞定
+DATA(lv_sum2) = REDUCE i( INIT s = 0 FOR n = 1 UNTIL n &gt; 10 NEXT s = s + n ).
+cl_demo_output=&gt;write( |REDUCE 版 = { lv_sum2 }| ).
+cl_demo_output=&gt;display( ).</code></pre>
+
+  <p><b>雙迴圈的改寫</b>：講義的 ZMMB0021 × EKES 雙層 <span class="kw">LOOP</span>，是把採購收貨排程（EKES）的最新一筆補回主表。雙層 <span class="kw">LOOP AT ... WHERE</span> 在資料量大時是 O(n×m)，S/4HANA 上要改成「先排序＋<span class="kw">READ TABLE ... BINARY SEARCH</span>」或「用 SORTED / HASHED 內表」或「<span class="kw">LOOP AT ... GROUP BY</span>」。</p>
+
+  <pre><code class="abap">REPORT zloop_two_level.
+" 講義的雙迴圈（PO 收貨排程 EKES 回填）改寫成 SORTED 內表 + 單層迴圈
+TYPES: BEGIN OF ty_ekes,
+         ebeln TYPE ekes-ebeln,
+         ebelp TYPE ekes-ebelp,
+         etens TYPE ekes-etens,
+         eindt TYPE ekes-eindt,
+         menge TYPE ekes-menge,
+         dabmg TYPE ekes-dabmg,
+       END OF ty_ekes.
+
+DATA lt_ekes TYPE SORTED TABLE OF ty_ekes
+             WITH NON-UNIQUE KEY ebeln ebelp etens.
+
+SELECT ebeln, ebelp, etens, eindt, menge, dabmg
+  FROM ekes
+  INTO TABLE @lt_ekes
+ WHERE ebeln IN @s_ebeln.               " SELECT-OPTIONS，主機變數一律加 @
+
+LOOP AT lt_po ASSIGNING FIELD-SYMBOL(&lt;ls_po&gt;).
+  " 只掃描 key 相符的區段，SORTED 表用二分搜尋定位，不會全表掃
+  LOOP AT lt_ekes ASSIGNING FIELD-SYMBOL(&lt;ls_ekes&gt;)
+       WHERE ebeln = &lt;ls_po&gt;-ebeln
+         AND ebelp = &lt;ls_po&gt;-ebelp
+         AND etens &lt;&gt; &lt;ls_po&gt;-ekes_etens.
+    CHECK &lt;ls_ekes&gt;-etens IS NOT INITIAL.   " 條件不成立就跳下一圈
+    &lt;ls_po&gt;-ekes_eindt = &lt;ls_ekes&gt;-eindt.
+    &lt;ls_po&gt;-ekes_etens = &lt;ls_ekes&gt;-etens.
+    &lt;ls_po&gt;-ekes_menge = &lt;ls_ekes&gt;-menge.
+    &lt;ls_po&gt;-ekes_dabmg = &lt;ls_ekes&gt;-dabmg.
+  ENDLOOP.
+ENDLOOP.</code></pre>
+
+  <pre><code class="abap">" LOOP AT ... GROUP BY：取代「排序後自己比 key 換組」的老寫法
+LOOP AT lt_items INTO DATA(ls_item)
+     GROUP BY ( matnr = ls_item-matnr werks = ls_item-werks )
+     ASCENDING
+     ASSIGNING FIELD-SYMBOL(&lt;group&gt;).
+
+  DATA(lv_qty) = REDUCE menge_d(
+                   INIT q = 0
+                   FOR &lt;m&gt; IN GROUP &lt;group&gt;
+                   NEXT q = q + &lt;m&gt;-menge ).
+
+  cl_demo_output=&gt;write( |{ &lt;group&gt;-matnr } / { &lt;group&gt;-werks } 合計 { lv_qty }| ).
+ENDLOOP.</code></pre>
+
+  <div class="warn">禁用 <span class="kw">SELECT ... ENDSELECT</span>（尤其放在 <span class="kw">LOOP</span> 裡）。講義第 10-5 節的反例：迴圈裡逐筆查價格，10 000 筆就是 10 000 次資料庫往返。正解是一次 <span class="kw">SELECT ... FOR ALL ENTRIES</span> 或 <span class="kw">JOIN</span> 撈進內表，再用 <span class="kw">READ TABLE ... BINARY SEARCH</span> / HASHED 表對應。<b>並且 <span class="kw">FOR ALL ENTRIES</span> 的驅動內表若為空，會撈出整張表</b> — 前面一定要加 <span class="kw">IF lt_items IS NOT INITIAL.</span></div>
+
+  <h3 id="ch02-1-08">8. 日期與時間運算</h3>
+  <p>D 型別可以直接加減，單位是<b>天</b>；T 型別可以直接加減，單位是<b>秒</b>。兩個日期相減得到天數（型別要用 I），兩個時間相減得到秒數。</p>
+
+  <pre><code class="abap">REPORT zdate_basic.
+" 日期／時間的基本運算
+DATA(lv_today) = sy-datum.
+
+" 1. 本月月初：把 DD 改成 01
+DATA(lv_first) = lv_today.
+lv_first+6(2) = '01'.
+
+" 2. 上月月底 = 本月月初 - 1
+DATA(lv_prev_last) = CONV d( lv_first - 1 ).
+
+" 3. 本月月底 = 下月月初 - 1（+31 天必定落在下個月的 1~4 日）
+DATA(lv_next_first) = CONV d( lv_first + 31 ).
+lv_next_first+6(2) = '01'.
+DATA(lv_last) = CONV d( lv_next_first - 1 ).
+
+" 4. 兩日期相差幾天：直接相減
+DATA(lv_days) = CONV i( lv_last - lv_first ) + 1.   " 本月天數
+
+" 5. 時間相減得秒數
+DATA lv_t1 TYPE t VALUE '183000'.
+DATA lv_t2 TYPE t VALUE '200000'.
+DATA(lv_sec)  = CONV i( lv_t2 - lv_t1 ).            " 5400
+DATA(lv_hour) = lv_sec / 3600.                      " 注意：存成 I 會四捨五入成 2
+DATA(lv_hour_exact) = CONV decfloat34( lv_sec ) / 3600.   " 1.5
+
+cl_demo_output=&gt;write( |月初 { lv_first } 月底 { lv_last } 上月底 { lv_prev_last } 本月 { lv_days } 天| ).
+cl_demo_output=&gt;write( |時差 { lv_sec } 秒 = { lv_hour_exact } 小時| ).
+cl_demo_output=&gt;display( ).</code></pre>
+
+  <div class="warn"><b>跨月／跨年陷阱</b>：<span class="kw">lv_date+4(2) = lv_date+4(2) + 1</span>（月份直接加 1）在 12 月會變成 '13'，成為無效日期，後續運算會 dump 或得到怪值。「加 N 個月」<b>一定</b>要用 <span class="kw">RP_CALC_DATE_IN_INTERVAL</span> 或 <span class="kw">CCM_GO_BACK_MONTHS</span>，不要自己算。另外「1/31 加一個月」是 2/28 還是 3/3，各家 FM 行為不同，需求要先講清楚。</div>
+
+  <p><b>系統日期時間欄位的差別</b>（做全球化系統時最容易出錯的地方）：</p>
+  <table>
+    <thead><tr><th>欄位</th><th>意義</th><th>使用時機</th></tr></thead>
+    <tbody>
+      <tr><td><span class="kw">SY-DATUM</span> / <span class="kw">SY-UZEIT</span></td><td>應用伺服器的日期／時間（多半是 UTC 或系統時區）</td><td>寫入 DB 的建檔時間戳</td></tr>
+      <tr><td><span class="kw">SY-DATLO</span> / <span class="kw">SY-TIMLO</span></td><td>使用者<b>本地</b>日期／時間（依 SU3 的時區）</td><td>顯示給使用者看的畫面、報表抬頭</td></tr>
+      <tr><td><span class="kw">SY-ZONLO</span></td><td>使用者的時區代碼（如 UTC+8、CST）</td><td>做時區轉換的來源</td></tr>
+      <tr><td><span class="kw">SY-TZONE</span></td><td>系統時區與 UTC 的秒差</td><td>粗略換算</td></tr>
+      <tr><td><span class="kw">TIMESTAMP</span> (DEC 15)</td><td>YYYYMMDDHHMMSS，UTC 短時間戳</td><td>CDS / 變更文件</td></tr>
+      <tr><td><span class="kw">TIMESTAMPL</span> (DEC 21,7)</td><td>含 7 位小數秒的長時間戳</td><td>高頻交易、序號</td></tr>
+    </tbody>
+  </table>
+
+  <pre><code class="abap">REPORT ztimestamp_demo.
+" 時間戳與時區轉換（S/4HANA 標準做法）
+GET TIME STAMP FIELD DATA(lv_ts).                     " UTC 短時間戳 TIMESTAMP
+GET TIME STAMP FIELD DATA(lv_tsl).                    " 若宣告為 TIMESTAMPL 則含小數秒
+
+" UTC 時間戳 → 使用者時區的日期時間
+CONVERT TIME STAMP lv_ts TIME ZONE sy-zonlo
+        INTO DATE DATA(lv_loc_date) TIME DATA(lv_loc_time).
+
+" 日期時間 → UTC 時間戳
+CONVERT DATE lv_loc_date TIME lv_loc_time
+        INTO TIME STAMP DATA(lv_ts2) TIME ZONE sy-zonlo.
+
+" 兩個時間戳相差幾秒（跨日跨年都正確）
+DATA(lv_diff_sec) = cl_abap_tstmp=&gt;subtract( tstmp1 = lv_ts2 tstmp2 = lv_ts ).
+
+" 時間戳加 8 小時
+DATA(lv_ts_plus) = cl_abap_tstmp=&gt;add( tstmp = lv_ts secs = 8 * 3600 ).
+
+cl_demo_output=&gt;write( |UTC 時間戳 { lv_ts TIMESTAMP = ISO }| ).
+cl_demo_output=&gt;write( |本地時間  { lv_loc_date DATE = USER } { lv_loc_time TIME = USER }（時區 { sy-zonlo }）| ).
+cl_demo_output=&gt;write( |相差 { lv_diff_sec } 秒| ).
+cl_demo_output=&gt;display( ).</code></pre>
+
+  <div class="tip">ABAP Cloud / RAP 環境不允許直接讀 <span class="kw">SY-</span> 欄位，改用 <span class="kw">cl_abap_context_info=&gt;get_system_date( )</span>、<span class="kw">get_system_time( )</span>、<span class="kw">get_user_technical_name( )</span>、<span class="kw">get_user_time_zone( )</span>。新專案建議一開始就用這組 API，日後上雲不必改。</div>
+
+  <p><b>工作天（Factory Calendar）</b>：SAP 的「幾號到幾號中間有幾個工作天」不能自己算，要走工廠日曆（<span class="tcode">SCAL</span> 維護，表 TFACD / TFACS，假日表 THOC / THOL）。</p>
+
+  <pre><code class="abap">REPORT zworkday_demo.
+PARAMETERS: p_from TYPE d DEFAULT sy-datum,
+            p_to   TYPE d,
+            p_cal  TYPE wfcid DEFAULT 'TW'.   " 工廠日曆代碼
+
+START-OF-SELECTION.
+  " 1) 判斷某天是不是工作天，並取得工廠日曆序號
+  DATA lv_factory_from TYPE fabkl_num.
+  DATA lv_wd_ind       TYPE c LENGTH 1.
+
+  CALL FUNCTION 'DATE_CONVERT_TO_FACTORYDATE'
+    EXPORTING
+      correct_option               = '+'          " 非工作天時往後找
+      date                         = p_from
+      factory_calendar_id          = p_cal
+    IMPORTING
+      factorydate                  = lv_factory_from
+      workingday_indicator         = lv_wd_ind    " 空白＝是工作天
+    EXCEPTIONS
+      calendar_buffer_not_loadable = 1
+      correct_option_invalid       = 2
+      date_after_range             = 3
+      date_before_range            = 4
+      date_invalid                 = 5
+      factory_calendar_not_found   = 6
+      OTHERS                       = 7.
+  IF sy-subrc &lt;&gt; 0.
+    MESSAGE |工廠日曆 { p_cal } 讀取失敗 subrc={ sy-subrc }| TYPE 'E'.
+  ENDIF.
+
+  " 2) 兩日期之間的工作天數 = 兩個工廠日曆序號相減
+  DATA lv_factory_to TYPE fabkl_num.
+  CALL FUNCTION 'DATE_CONVERT_TO_FACTORYDATE'
+    EXPORTING correct_option      = '-'
+              date                = p_to
+              factory_calendar_id = p_cal
+    IMPORTING factorydate         = lv_factory_to
+    EXCEPTIONS OTHERS             = 1.
+
+  DATA(lv_workdays) = CONV i( lv_factory_to - lv_factory_from ) + 1.
+  cl_demo_output=&gt;write( |{ p_from } ~ { p_to } 共 { lv_workdays } 個工作天| ).
+  cl_demo_output=&gt;display( ).</code></pre>
+
+  <h3 id="ch02-1-09">9. 常用日期／時間函數（FM）速查表</h3>
+  <p>講義第 06 節列的清單全部保留，這是老師要求「用 <span class="tcode">SE37</span> 這個超級 TCODE 直接測試」的重點資產。</p>
+
+  <p><b>SE37 超級 TCODE 的用法</b>（講義 6-1 節，以 <span class="kw">DATE_GET_WEEK</span> 與 <span class="kw">FIMA_DAYS_AND_MONTHS_AND_YEARS</span> 為例）<span class="src">（依講義截圖步驟整理）</span>：</p>
+  <ol>
+    <li>進 <span class="tcode">SE37</span>，函數模組欄位輸入函數名（不確定名字就用 <span class="kw">*DATE*WEEK*</span> 之類的萬用字元按 F4 找）。</li>
+    <li>按「顯示」看 <b>Import / Export / Changing / Tables / Exceptions</b> 四個頁籤，先搞清楚要餵什麼、會吐什麼。</li>
+    <li>按 <b>執行（F8）</b>直接測試：畫面會列出所有 Import 參數，填好值再按 F8。</li>
+    <li>結果畫面會顯示 Export 參數的值、以及 <span class="kw">RUNTIME</span> 執行時間（微秒），可以順便比較兩支函數誰快。</li>
+    <li>測完滿意後，回到 <span class="tcode">SE38</span> 程式中按 <b>Ctrl+F6</b>（插入 CALL FUNCTION 樣板），輸入函數名，SAP 會自動把完整的 <span class="kw">CALL FUNCTION</span> 骨架連同註解貼進來，只要填值即可。</li>
+  </ol>
+
+  <table>
+    <thead><tr><th>函數模組</th><th>用途</th><th>關鍵參數</th></tr></thead>
+    <tbody>
+      <tr><td>RP_CALC_DATE_IN_INTERVAL</td><td>取輸入日期前／後的年月日（最常用）</td><td>date, days, months, years, signum('+'/'-') → calc_date</td></tr>
+      <tr><td>FIMA_DATE_CREATE</td><td>同上，FI 版本，可指定日曆與月底規則</td><td>i_date, i_flg_end_of_month, i_months → e_date</td></tr>
+      <tr><td>RP_LAST_DAY_OF_MONTHS</td><td>取當月最後一天</td><td>day_in → last_day_of_month</td></tr>
+      <tr><td>LAST_DAY_OF_MONTHS</td><td>同上（另一個名字）</td><td>day_in → last_day_of_month</td></tr>
+      <tr><td>BKK_GET_MONTH_LASTDAY</td><td>同上（銀行模組版）</td><td>i_date → e_date</td></tr>
+      <tr><td>HR_JP_MONTH_BEGIN_END_DATE</td><td><b>一次拿到月初＋月底</b>，最省事</td><td>iv_date → ev_month_begin_date, ev_month_end_date</td></tr>
+      <tr><td>CCM_GO_BACK_MONTHS</td><td>取 N 個月前的日期</td><td>currdate, backmonths → newdate</td></tr>
+      <tr><td>MONTH_PLUS_DETERMINE</td><td>取 N 個月後的日期</td><td>months, olddate → newdate</td></tr>
+      <tr><td>DATE_GET_WEEK</td><td>取該日期是該年第幾週（YYYYWW）</td><td>date → week</td></tr>
+      <tr><td>WEEK_GET_FIRST_DAY</td><td>取某週的第一天</td><td>week → date</td></tr>
+      <tr><td>DAY_IN_WEEK</td><td>該天是星期幾（1=一 … 7=日）</td><td>datum → wotnr</td></tr>
+      <tr><td>GET_WEEK_INFO_BASED_ON_DATE</td><td>該年週數＋該週週一／週日日期（週起始＝週一）</td><td>date → week, monday, sunday</td></tr>
+      <tr><td>HR_GBSSP_GET_WEEK_DATES</td><td>同上但週起始＝週日，另回傳星期幾</td><td>iv_date → ev_week, ev_start_date, ev_end_date</td></tr>
+      <tr><td>HOLIDAY_CHECK_AND_GET_INFO</td><td>判斷某天是否假日</td><td>date, holiday_calendar_id → holiday_found</td></tr>
+      <tr><td>DAY_ATTRIBUTES_GET</td><td>日期屬性批次查（星期幾、第幾天、是否公共假期）</td><td>date_from, date_to, factory_calendar, holiday_calendar → TABLES day_attributes</td></tr>
+      <tr><td>DATE_CONVERT_TO_FACTORYDATE</td><td>日期 → 工廠日曆序號（算工作天）</td><td>date, factory_calendar_id → factorydate, workingday_indicator</td></tr>
+      <tr><td>FACTORYDATE_CONVERT_TO_DATE</td><td>工廠日曆序號 → 日期</td><td>factorydate, factory_calendar_id → date</td></tr>
+      <tr><td>CONVERT_DATE_TO_INTERNAL</td><td>使用者格式日期字串 → 內部 YYYYMMDD</td><td>date_external → date_internal（例外 date_external_is_invalid）</td></tr>
+      <tr><td>CONVERT_DATE_TO_EXTERNAL</td><td>內部 YYYYMMDD → 使用者格式字串</td><td>date_internal → date_external</td></tr>
+      <tr><td>HR_99S_INTERVAL_BETWEEN_DATES</td><td>兩日期間的天／週／月／年數，含各月起訖日</td><td>begda, endda → 多個輸出</td></tr>
+      <tr><td>FIMA_DAYS_AND_MONTHS_AND_YEARS</td><td>兩日期間的天數／月數／年數</td><td>i_date_from, i_date_to → e_days, e_months, e_years</td></tr>
+      <tr><td>FIMA_DATE_COMPARE</td><td>比較兩日期，回傳 GT / EQ / LT</td><td>i_date_1, i_date_2 → e_result</td></tr>
+      <tr><td>SD_DATETIME_DIFFERENCE</td><td>兩個「日期＋時間」相減</td><td>date1,time1,date2,time2 → datediff, timediff</td></tr>
+      <tr><td>HRVE_CONVERT_TIME</td><td>12 小時制 ↔ 24 小時制</td><td>type, input_time → output_time</td></tr>
+      <tr><td>MONTH_NAMES_GET</td><td>取所有月份名稱（依語言）</td><td>language → TABLES month_names</td></tr>
+      <tr><td>WEEKDAY_GET</td><td>取所有星期名稱</td><td>language → TABLES weekday</td></tr>
+      <tr><td>F4_DATE</td><td>彈出日曆讓使用者挑日期</td><td>date_for_first_month → select_date</td></tr>
+      <tr><td>F4_CLOCK</td><td>彈出時鐘讓使用者挑時間</td><td>→ select_time</td></tr>
+      <tr><td>POPUP_TO_SELECT_MONTH</td><td>彈出年月選擇視窗</td><td>actual_month → selected_month</td></tr>
+      <tr><td>STRING_REVERSE</td><td>字串反轉（作業三要求「不准用它」自己寫）</td><td>string, lang → rstring</td></tr>
+      <tr><td>CONVERSION_EXIT_ALPHA_INPUT / OUTPUT</td><td>前置補零 / 去掉前置零</td><td>input → output</td></tr>
+    </tbody>
+  </table>
+
+  <pre><code class="abap">REPORT zdatatype16.
+" 練習 16：呼叫日期 FM 取「本月／上月／去年同期」
+DATA(lv_today) = sy-datum.
+
+" 上個月同日
+CALL FUNCTION 'RP_CALC_DATE_IN_INTERVAL'
+  EXPORTING date      = lv_today
+            days      = 0
+            months    = 1
+            signum    = '-'          " '+' 未來、'-' 過去
+            years     = 0
+  IMPORTING calc_date = DATA(lv_prev_month).
+
+" 去年同期
+CALL FUNCTION 'RP_CALC_DATE_IN_INTERVAL'
+  EXPORTING date      = lv_today
+            days      = 0
+            months    = 0
+            signum    = '-'
+            years     = 1
+  IMPORTING calc_date = DATA(lv_last_year).
+
+" 一次拿到本月月初與月底
+CALL FUNCTION 'HR_JP_MONTH_BEGIN_END_DATE'
+  EXPORTING iv_date              = lv_today
+  IMPORTING ev_month_begin_date  = DATA(lv_bom)
+            ev_month_end_date    = DATA(lv_eom).
+
+" 標準日期字串 → 內部格式（處理 EXCEL / CSV 匯入最常用）
+DATA lv_int_date TYPE d.
+CALL FUNCTION 'CONVERT_DATE_TO_INTERNAL'
+  EXPORTING date_external            = '2025/09/30'
+  IMPORTING date_internal            = lv_int_date
+  EXCEPTIONS date_external_is_invalid = 1
+             OTHERS                   = 2.
+IF sy-subrc &lt;&gt; 0.
+  MESSAGE '外部日期格式不合法' TYPE 'E'.
+ENDIF.
+
+cl_demo_output=&gt;write( |本月 { lv_today+0(6) }／上月 { lv_prev_month+0(6) }／去年同期 { lv_last_year+0(6) }| ).
+cl_demo_output=&gt;write( |月初 { lv_bom } 月底 { lv_eom } 轉入日期 { lv_int_date }| ).
+cl_demo_output=&gt;display( ).</code></pre>
+
+  <div class="warn">日期的<b>外部格式取決於使用者主檔</b>（<span class="tcode">SU3</span> → 預設值 → 日期格式／小數點格式）。所以同一支程式，A 使用者看到 <span class="kw">30.09.2025</span>、B 使用者看到 <span class="kw">2025/09/30</span>。<b>資料庫裡永遠是 YYYYMMDD</b>；要比較、要排序、要存檔一律用內部格式，只有畫面輸出才轉外部格式。</div>
+
+  <h3 id="ch02-1-10">10. 字串處理：八大指令與現代寫法</h3>
+  <p>講義整理的「字串處理八大指令」，配上 S/4HANA 建議的現代替代方案：</p>
+
+  <table>
+    <thead><tr><th>指令</th><th>作用</th><th>現代替代 / 備註</th></tr></thead>
+    <tbody>
+      <tr><td><span class="kw">FIND</span></td><td>搜尋字串（可 REGEX、可全找）</td><td>取代 <span class="kw">SEARCH</span>；或用函數 <span class="kw">find( )</span>、<span class="kw">count( )</span></td></tr>
+      <tr><td><span class="kw">REPLACE</span></td><td>字串置換</td><td>函數版 <span class="kw">replace( val = sub = with = occ = )</span></td></tr>
+      <tr><td><span class="kw">TRANSLATE</span></td><td>大小寫轉換／逐字元對應置換</td><td>函數版 <span class="kw">to_upper( ) to_lower( ) translate( )</span></td></tr>
+      <tr><td><span class="kw">SHIFT</span></td><td>整串位移、刪頭刪尾</td><td>函數版 <span class="kw">shift_left( ) shift_right( )</span></td></tr>
+      <tr><td><span class="kw">CONDENSE</span></td><td>去前置空白並壓縮中間空白</td><td>函數版 <span class="kw">condense( val = del = from = to = )</span></td></tr>
+      <tr><td><span class="kw">OVERLAY</span></td><td>用另一串填補空白位置</td><td>少用，保留認識即可</td></tr>
+      <tr><td><span class="kw">CONCATENATE</span></td><td>字串相接</td><td>改用 <span class="kw">&amp;&amp;</span> 或字串範本 <span class="kw">| |</span></td></tr>
+      <tr><td><span class="kw">SPLIT</span></td><td>字串切割</td><td>切成內表用 <span class="kw">SPLIT ... INTO TABLE</span>；取第 n 段用 <span class="kw">segment( )</span></td></tr>
+    </tbody>
+  </table>
+
+  <pre><code class="abap">REPORT zdatatype10.
+" 練習 10：SHIFT / REPLACE / TRANSLATE（保留敘述式，再對照函數式）
+DATA(lv_str) = |abcdefg|.
+
+SHIFT lv_str BY 3 PLACES LEFT.       " → defg
+SHIFT lv_str BY 3 PLACES RIGHT.      " → 前面補 3 個空白
+SHIFT lv_str LEFT DELETING LEADING space.   " 刪掉前置空白 = CONDENSE
+
+lv_str = |abcdefg|.
+SHIFT lv_str LEFT  DELETING LEADING  'abc'.   " 刪掉左邊的 abc → defg
+SHIFT lv_str RIGHT DELETING TRAILING 'efg'.   " 刪掉右邊的 efg
+" 實務常見用途：清掉動態 WHERE 條件尾巴的 ' AND '
+"（不過老師建議：條件開頭直接寫 1 = 1，就不必砍尾巴了）
+
+DATA lv_rep TYPE c LENGTH 10 VALUE 'ABCDEFGHI'.
+REPLACE 'DEF' WITH '123' INTO lv_rep.          " → ABC123GHI
+
+DATA lv_city TYPE c LENGTH 6 VALUE 'taipei'.
+TRANSLATE lv_city TO UPPER CASE.               " → TAIPEI
+TRANSLATE lv_city TO LOWER CASE.               " → taipei
+
+" === 同樣的事，用函數式一行完成（不改動原變數，可寫在運算式裡） ===
+DATA(lv_f1) = shift_left(  val = |  abcdefg| sub = ` ` ).   " 去左空白
+DATA(lv_f2) = replace( val = |ABCDEFGHI| sub = 'DEF' with = '123' occ = 1 ).
+DATA(lv_f3) = to_upper( |taipei| ).
+DATA(lv_f4) = to_mixed( val = 'TAIPEI CITY' sep = ' ' ).    " → Taipei City
+
+cl_demo_output=&gt;write( |{ lv_f1 } / { lv_f2 } / { lv_f3 } / { lv_f4 }| ).
+cl_demo_output=&gt;display( ).</code></pre>
+
+  <p><b>SEARCH（舊）vs FIND（新）</b>：講義的練習 11 用 <span class="kw">SEARCH ... FOR ...</span>，成功時 <span class="kw">SY-SUBRC = 0</span> 且 <span class="kw">SY-FDPOS</span> 是起始位置（<b>從 0 開始算</b>），失敗時 <span class="kw">SY-SUBRC = 4</span>、<span class="kw">SY-FDPOS = 0</span>。搜尋 <span class="kw">*</span>、<span class="kw">@</span>、<span class="kw">.</span> 這類特殊符號時，要在前後各加一個句點（如 <span class="kw">'.*.'</span>）。</p>
+
+  <pre><code class="abap">REPORT zdatatype11.
+" 練習 11：SEARCH（舊）改寫成 FIND（新）
+DATA(lv_text) = |Welcome to SAP world!|.
+
+" --- 舊寫法（僅供辨識別人的程式） ---
+" SEARCH lv_text FOR 'rld'.    "  SY-SUBRC=0、SY-FDPOS=17（位置從 0 起算）
+" SEARCH lv_text FOR '.*.'.    "  找特殊字元 * 要前後加句點
+
+" --- 新寫法：FIND，位置與次數都用具名輸出，不必看 SY- ---
+FIND FIRST OCCURRENCE OF 'rld' IN lv_text
+     MATCH OFFSET DATA(lv_off)
+     MATCH LENGTH DATA(lv_len).
+IF sy-subrc = 0.
+  cl_demo_output=&gt;write( |找到 'rld'，位置 { lv_off }，長度 { lv_len }| ).
+ELSE.
+  cl_demo_output=&gt;write( |找不到| ).
+ENDIF.
+
+" 只想知道「有沒有」→ 用 CS 或 contains( )
+IF lv_text CS 'SAP'.
+  cl_demo_output=&gt;write( |CS：字串含有 SAP| ).
+ENDIF.
+IF contains( val = lv_text sub = 'SAP' ).
+  cl_demo_output=&gt;write( |contains( )：字串含有 SAP| ).
+ENDIF.
+
+" 想知道「有幾個」→ count( )；想拿位置 → find( )
+cl_demo_output=&gt;write( |字母 o 出現 { count( val = lv_text sub = 'o' ) } 次| ).
+cl_demo_output=&gt;write( |'world' 位置 { find( val = lv_text sub = 'world' ) }| ).
+
+" 找全部出現位置 → FIND ALL OCCURRENCES ... RESULTS
+FIND ALL OCCURRENCES OF 'o' IN lv_text RESULTS DATA(lt_matches).
+LOOP AT lt_matches INTO DATA(ls_match).
+  cl_demo_output=&gt;write( |第 { sy-tabix } 個 o 在 offset { ls_match-offset }| ).
+ENDLOOP.
+cl_demo_output=&gt;display( ).</code></pre>
+
+  <p><b>正規表示式</b>：<span class="kw">FIND</span> / <span class="kw">REPLACE</span> 都可以加 <span class="kw">REGEX</span>，字串函數也有 <span class="kw">matches( ) / match( ) / count( )</span> 的 regex 版本。</p>
+
+  <pre><code class="abap">REPORT zregex_demo.
+" 正規表示式：抓出字串中所有數字段落、驗證 Email、遮罩身分證
+DATA(lv_src) = |PO 4500001234 於 2025/09/30 收貨 120 EA|.
+
+" 1) 全部數字段落
+FIND ALL OCCURRENCES OF REGEX '\d+' IN lv_src RESULTS DATA(lt_nums).
+LOOP AT lt_nums INTO DATA(ls_num).
+  cl_demo_output=&gt;write( |數字段：{ substring( val = lv_src off = ls_num-offset len = ls_num-length ) }| ).
+ENDLOOP.
+
+" 2) 驗證格式（matches 回傳 abap_bool）
+IF matches( val = |casper@ncu.edu.tw| regex = '^[\w\.\-]+@[\w\-]+(\.[\w\-]+)+$' ) = abap_true.
+  cl_demo_output=&gt;write( |Email 格式正確| ).
+ENDIF.
+
+" 3) 遮罩：把身分證中間四碼換成 ****
+DATA(lv_id) = replace( val   = |A123456789|
+                       regex = '^(.{4})(.{4})(.*)$'
+                       with  = '$1****$3'
+                       occ   = 1 ).
+cl_demo_output=&gt;write( |遮罩後 { lv_id }| ).
+cl_demo_output=&gt;display( ).</code></pre>
+
+  <div class="warn">S/4HANA 1809 的核心是 ABAP 7.53，<span class="kw">REGEX</span> 用的是 SAP 自家的 POSIX 風格引擎。ABAP 7.55（S/4HANA 2020）之後才新增 <span class="kw">PCRE</span> 附加項（<span class="kw">FIND ... PCRE ...</span>、<span class="kw">matches( val = ... pcre = ... )</span>），效能與相容性都比較好，SAP 也建議新程式改用 PCRE。<b>寫程式前先確認系統版本</b>，1809 上寫 <span class="kw">PCRE</span> 會語法錯誤。</div>
+
+  <h3 id="ch02-1-11">11. 字串相接、切割、壓縮</h3>
+  <p><b>相接</b>有四種寫法，老師要求新程式一律用後兩種：</p>
+
+  <pre><code class="abap">REPORT zdatatype12.
+" 練習 12：CONCATENATE / &amp; / &amp;&amp; / 字串範本 | |
+DATA(lv_cash) = CONV p( '123.456' ).   " 實務上宣告 TYPE p LENGTH 8 DECIMALS 3
+
+" 1. 舊寫法（仍合法，處理固定長度 C 欄位時仍好用）
+DATA lv_r1 TYPE string.
+CONCATENATE 'Hello' 'SAP' INTO lv_r1 SEPARATED BY space.
+
+" 2. &amp; ：只能接「字面值」，編譯期就併好（不能接變數）
+DATA(lv_r2) = `string1 ` &amp; ` string2`.
+
+" 3. &amp;&amp; ：執行期串接，可接變數，會自動轉字串
+DATA(lv_r3) = `string1 ` &amp;&amp; lv_cash &amp;&amp; ` string2`.
+
+" 4. 字串範本 |...{ }...| ：最推薦，可帶格式化選項
+DATA(lv_r4) = |string1 { lv_cash } string2|.
+DATA(lv_r5) = |金額右靠齊 [{ lv_cash WIDTH = 12 ALIGN = RIGHT }]|.
+DATA(lv_r6) = |置中 [{ lv_cash WIDTH = 12 ALIGN = CENTER PAD = '.' }]|.
+
+" 字串範本中的跳脫字元：\| \{ \} \\
+DATA(lv_r7) = |跳脫示範 \| \{ \} \\|.
+
+cl_demo_output=&gt;write( lv_r1 ).
+cl_demo_output=&gt;write( lv_r3 ).
+cl_demo_output=&gt;write( lv_r4 ).
+cl_demo_output=&gt;write( lv_r5 ).
+cl_demo_output=&gt;write( lv_r6 ).
+cl_demo_output=&gt;write( lv_r7 ).
+cl_demo_output=&gt;display( ).</code></pre>
+
+  <p><b>字串範本的格式化選項</b>是把數字／日期漂亮印出來的關鍵，常用如下：</p>
+  <table>
+    <thead><tr><th>選項</th><th>作用</th><th>範例</th></tr></thead>
+    <tbody>
+      <tr><td><span class="kw">NUMBER = USER</span></td><td>依使用者的小數點／千分位設定</td><td><span class="kw">|{ lv_amt NUMBER = USER }|</span></td></tr>
+      <tr><td><span class="kw">NUMBER = RAW</span></td><td>原始值，不做在地化</td><td>寫檔／介面用</td></tr>
+      <tr><td><span class="kw">DATE = USER / ISO / ENVIRONMENT</span></td><td>日期格式</td><td><span class="kw">|{ sy-datum DATE = ISO }|</span> → 2025-09-30</td></tr>
+      <tr><td><span class="kw">TIME = USER / ISO</span></td><td>時間格式</td><td><span class="kw">|{ sy-uzeit TIME = ISO }|</span></td></tr>
+      <tr><td><span class="kw">TIMESTAMP = ISO</span></td><td>時間戳格式</td><td>—</td></tr>
+      <tr><td><span class="kw">CURRENCY = 'TWD'</span></td><td>依幣別小數位輸出金額</td><td><span class="kw">|{ lv_amt CURRENCY = 'JPY' }|</span></td></tr>
+      <tr><td><span class="kw">DECIMALS = n</span></td><td>指定小數位</td><td><span class="kw">|{ lv_p DECIMALS = 2 }|</span></td></tr>
+      <tr><td><span class="kw">WIDTH / ALIGN / PAD</span></td><td>欄寬、對齊、填補字元</td><td>做固定寬度報表／文字檔</td></tr>
+      <tr><td><span class="kw">SIGN = LEFT / LEFTPLUS / RIGHT</span></td><td>正負號位置</td><td>負數顯示成 -100 而非 100-</td></tr>
+      <tr><td><span class="kw">ALPHA = IN / OUT</span></td><td>前置補零 / 去前置零</td><td><span class="kw">|{ lv_matnr ALPHA = OUT }|</span> 取代 CONVERSION_EXIT_ALPHA_OUTPUT</td></tr>
+      <tr><td><span class="kw">CASE = UPPER / LOWER</span></td><td>大小寫</td><td>—</td></tr>
+      <tr><td><span class="kw">XSD = X</span></td><td>XML/JSON 標準格式</td><td>介面用</td></tr>
+    </tbody>
+  </table>
+
+  <pre><code class="abap">REPORT zdatatype13.
+" 練習 13：SPLIT / CONDENSE / CLEAR，並附作業六、七的完整解
+DATA(lv_names) = |HELLO,CASPER,SAP|.
+
+" 1) 切成固定幾個變數（剩下的全部塞給最後一個）
+SPLIT lv_names AT ',' INTO DATA(lv_1) DATA(lv_2).
+cl_demo_output=&gt;write( |lv_1={ lv_1 } lv_2={ lv_2 }| ).
+
+" 2) 切成內表（最常用）
+SPLIT |ONE,TWO,THREE,FOUR,FIVE,SIX,SEVEN,EIGHT,NINTH,TEN,ELEVEN,TWELVE|
+      AT ',' INTO TABLE DATA(lt_words).
+
+" 3) 只想取第 n 段 → segment( )，不必先切成內表
+cl_demo_output=&gt;write( |第 3 段 = { segment( val = lv_names sep = ',' index = 3 ) }| ).
+
+" === 作業六＋作業七：輸入 '  pad , book ,phone ,  earphone '，去空白後排序輸出 ===
+DATA(lv_input) = |  pad   , book ,phone ,  earphone |.
+SPLIT lv_input AT ',' INTO TABLE DATA(lt_items).
+
+LOOP AT lt_items ASSIGNING FIELD-SYMBOL(&lt;lv_item&gt;).
+  CONDENSE &lt;lv_item&gt;.                 " 去前後空白並壓縮中間空白
+ENDLOOP.
+DELETE lt_items WHERE table_line IS INITIAL.
+SORT lt_items ASCENDING.               " 作業七：遞增排序
+
+LOOP AT lt_items INTO DATA(lv_item).
+  cl_demo_output=&gt;write( lv_item ).     " book / earphone / pad / phone
+ENDLOOP.
+
+" 4) CONDENSE 的兩種模式
+DATA lv_name TYPE c LENGTH 30.
+lv_name+0(10)  = '  Dr.'.
+lv_name+10(10) = 'Michael'.
+lv_name+20(10) = 'Hofmann'.
+CONDENSE lv_name.                       " → 'Dr. Michael Hofmann'（中間留一格）
+cl_demo_output=&gt;write( |CONDENSE      : [{ lv_name }]| ).
+
+DATA lv_t TYPE c LENGTH 10 VALUE ' abc abc '.
+CONDENSE lv_t NO-GAPS.                  " → 'abcabc'（中間空白也刪光）
+cl_demo_output=&gt;write( |CONDENSE NO-GAPS: [{ lv_t }]| ).
+
+CLEAR lv_t.                             " 清成初始值（常數不能 CLEAR）
+cl_demo_output=&gt;write( |CLEAR 之後     : [{ lv_t }]| ).
+cl_demo_output=&gt;display( ).</code></pre>
+
+  <div class="warn"><span class="kw">STRLEN( )</span> 對 <b>C 型別會忽略尾端空白</b>（<span class="kw">char20</span> 只放 13 個字，<span class="kw">strlen</span> 回傳 13），但對 <span class="kw">STRING</span> 型別會如實計算含尾端空白的長度。做「補到固定寬度」的文字檔輸出時，這個差異會造成欄位錯位。要算「佔幾個位元組」請用 <span class="kw">numofchar( )</span> 與 <span class="kw">xstrlen( )</span> 區分。</div>
+
+  <p><b>字串函數速查</b>（全部可寫在運算式裡，不改動原變數）：</p>
+  <table>
+    <thead><tr><th>函數</th><th>作用</th></tr></thead>
+    <tbody>
+      <tr><td><span class="kw">strlen( ) / numofchar( ) / xstrlen( )</span></td><td>字元數 / 有效字元數 / 位元組數</td></tr>
+      <tr><td><span class="kw">substring( val = off = len = )</span></td><td>取子字串</td></tr>
+      <tr><td><span class="kw">substring_before / after / from / to</span></td><td>依分隔子字串取前段／後段</td></tr>
+      <tr><td><span class="kw">segment( val = sep = index = )</span></td><td>取第 n 段（等同 SPLIT 後 READ）</td></tr>
+      <tr><td><span class="kw">to_upper / to_lower / to_mixed / from_mixed</span></td><td>大小寫與駝峰轉換</td></tr>
+      <tr><td><span class="kw">shift_left / shift_right( val = sub = places = circular = )</span></td><td>位移／刪頭尾</td></tr>
+      <tr><td><span class="kw">condense( val = del = from = to = )</span></td><td>壓縮空白，可指定要刪的字元</td></tr>
+      <tr><td><span class="kw">replace( val = sub = with = occ = )</span></td><td>置換，<span class="kw">occ = 0</span> 表示全部</td></tr>
+      <tr><td><span class="kw">translate( val = from = to = )</span></td><td>逐字元對應置換</td></tr>
+      <tr><td><span class="kw">insert( val = sub = off = )</span></td><td>插入</td></tr>
+      <tr><td><span class="kw">repeat( val = occ = )</span></td><td>重複 n 次（做分隔線很方便）</td></tr>
+      <tr><td><span class="kw">reverse( )</span></td><td>字串反轉（作業三的標準答案）</td></tr>
+      <tr><td><span class="kw">concat_lines_of( table = sep = )</span></td><td>把內表所有列串成一個字串</td></tr>
+      <tr><td><span class="kw">escape( val = format = )</span></td><td>跳脫（URL / XML / JSON / SQL）</td></tr>
+      <tr><td><span class="kw">contains( ) / matches( ) / count( ) / find( )</span></td><td>包含判斷 / 格式驗證 / 計次 / 找位置</td></tr>
+      <tr><td><span class="kw">cl_abap_codepage=&gt;convert_to / convert_from</span></td><td>STRING ↔ XSTRING（取代 CL_ABAP_CONV_OUT_CE）</td></tr>
+    </tbody>
+  </table>
+
+  <pre><code class="abap">REPORT zstring_reverse.
+" 作業三：不准用 STRING_REVERSE，自己把 'I-LOVE-ABAP' 反轉成 'PABA-EVOL-I'
+DATA(lv_s) = |I-LOVE-ABAP|.
+
+" 解法 A：講義的 DO + offset 逐字取（最貼近作業要求）
+DATA lv_out TYPE string.
+DATA(lv_n) = strlen( lv_s ).
+DO lv_n TIMES.
+  DATA(lv_pos) = lv_n - sy-index.
+  lv_out = lv_out &amp;&amp; substring( val = lv_s off = lv_pos len = 1 ).
+ENDDO.
+cl_demo_output=&gt;write( |解法 A：{ lv_out }| ).
+
+" 解法 B：內建函數（知道就好，作業不准用）
+cl_demo_output=&gt;write( |解法 B：{ reverse( lv_s ) }| ).
+
+" 解法 C：REDUCE 一行版
+cl_demo_output=&gt;write( |解法 C：{ REDUCE string( INIT r = `` FOR i = 1 UNTIL i &gt; strlen( lv_s )
+                                                 NEXT r = substring( val = lv_s off = i - 1 len = 1 ) &amp;&amp; r ) }| ).
+cl_demo_output=&gt;display( ).</code></pre>
+
+  <h3 id="ch02-1-12">12. 金額與數量的小數處理（CURR / QUAN / TCURX）</h3>
+  <p>SAP 的金額欄位（DDIC 型別 <b>CURR</b>）與數量欄位（<b>QUAN</b>）在資料庫裡都是 <b>P 型別</b>，而且<b>一定要搭配一個參考欄位</b>：CURR 參考幣別欄位（CUKY，如 WAERS），QUAN 參考單位欄位（UNIT，如 MEINS）。沒有參考欄位，SE11 不讓你啟用。</p>
+
+  <div class="warn"><b>TCURX 陷阱（實務上最貴的一個 bug）</b>：資料庫裡的 CURR 欄位一律以「2 位小數」儲存。若幣別的實際小數位不是 2（如 JPY 日圓 0 位、KWD 科威特第納爾 3 位，定義在表 <b>TCURX</b>），DB 裡的數字與畫面上的數字會差 10 的次方倍。<br>例：日圓 1000 元，<span class="kw">BSEG-WRBTR</span> 存的是 <span class="kw">10.00</span>；你若直接 <span class="kw">SELECT</span> 出來加總並輸出，會少 100 倍。<b>只要用 ALV／WRITE 並指定 CURRENCY 參考欄位，SAP 會自動換算</b>；但若你把它丟給 Excel、丟給介面、或轉成 STRING，就必須自己呼叫換算函數。</div>
+
+  <pre><code class="abap">REPORT zcurrency_demo.
+" 幣別小數位換算：DB 內部值 ↔ 外部顯示值
+PARAMETERS: p_waers TYPE waers DEFAULT 'JPY',
+            p_amt   TYPE bseg-wrbtr DEFAULT '10.00'.   " DB 內部值
+
+START-OF-SELECTION.
+  " 1) 查這個幣別有幾位小數（TCURX；查不到就是 2 位）
+  CALL FUNCTION 'BAPI_CURRENCY_GETDECIMALS'
+    EXPORTING currency        = p_waers
+    IMPORTING decimals        = DATA(lv_dec).
+
+  " 2) 內部值 → 外部值（給人看、給介面）
+  DATA lv_ext TYPE bapicurr-bapicurr.
+  CALL FUNCTION 'BAPI_CURRENCY_CONV_TO_EXTERNAL'
+    EXPORTING currency             = p_waers
+              amount_internal      = p_amt
+    IMPORTING amount_external      = lv_ext.
+
+  " 3) 外部值 → 內部值（要寫回 SAP 表 / 呼叫 BAPI 前）
+  DATA lv_int TYPE bseg-wrbtr.
+  CALL FUNCTION 'BAPI_CURRENCY_CONV_TO_INTERNAL'
+    EXPORTING currency             = p_waers
+              amount_external      = lv_ext
+              max_number_of_digits = 23
+    IMPORTING amount_internal      = lv_int.
+
+  cl_demo_output=&gt;write( |{ p_waers } 小數位 = { lv_dec }| ).
+  cl_demo_output=&gt;write( |DB 內部值 { p_amt } → 外部值 { lv_ext } → 再轉回 { lv_int }| ).
+
+  " 4) 直接輸出時，用字串範本的 CURRENCY 選項讓系統自己處理
+  cl_demo_output=&gt;write( |格式化輸出：{ p_amt CURRENCY = p_waers NUMBER = USER }| ).
+  cl_demo_output=&gt;display( ).</code></pre>
+
+  <p>同一組函數還有 IDoc / BAPI / 顯示三種變體，處理介面時很常用：</p>
+  <table>
+    <thead><tr><th>函數</th><th>方向</th><th>典型場景</th></tr></thead>
+    <tbody>
+      <tr><td>BAPI_CURRENCY_GETDECIMALS</td><td>查小數位</td><td>先問清楚再換算</td></tr>
+      <tr><td>BAPI_CURRENCY_CONV_TO_EXTERNAL</td><td>內部 → 外部</td><td>輸出報表、寫 CSV</td></tr>
+      <tr><td>BAPI_CURRENCY_CONV_TO_INTERNAL</td><td>外部 → 內部</td><td>呼叫 BAPI 前的準備</td></tr>
+      <tr><td>CURRENCY_AMOUNT_SAP_TO_IDOC</td><td>SAP → IDoc</td><td>EDI / ALE 介面</td></tr>
+      <tr><td>CURRENCY_AMOUNT_IDOC_TO_SAP</td><td>IDoc → SAP</td><td>介面回寫</td></tr>
+      <tr><td>CURRENCY_AMOUNT_SAP_TO_DISPLAY</td><td>SAP → 顯示</td><td>Dialog 畫面</td></tr>
+      <tr><td>CONVERT_TO_LOCAL_CURRENCY</td><td>外幣 → 本位幣</td><td>依 TCURR 匯率換算</td></tr>
+      <tr><td>CONVERT_TO_FOREIGN_CURRENCY</td><td>本位幣 → 外幣</td><td>同上，反方向</td></tr>
+      <tr><td>UNIT_CONVERSION_SIMPLE</td><td>數量單位換算</td><td>KG ↔ G、EA ↔ CAR（表 T006）</td></tr>
+      <tr><td>MD_CONVERT_MATERIAL_UNIT</td><td>物料專屬單位換算</td><td>依 MARM 的物料換算率</td></tr>
+    </tbody>
+  </table>
+
+  <div class="tip">老師的實務口訣：<b>「金額三件事 — 型別用 P、一定帶幣別、輸出前先問小數位」</b>。另外「加總金額」的內表欄位務必宣告得比來源長（例如來源 <span class="kw">CURR 13,2</span>，加總欄位用 <span class="kw">TYPE p LENGTH 13 DECIMALS 2</span> 甚至更長），否則百萬筆加總會 <span class="kw">CX_SY_ARITHMETIC_OVERFLOW</span>。</div>
+
+  <h3 id="ch02-1-13">13. SY 系統欄位：一定要記住的十個</h3>
+  <p>系統欄位放在結構 <b>SYST</b>（<span class="tcode">SE11</span> 可查全部）。老師點名的十個：</p>
+
+  <table>
+    <thead><tr><th>#</th><th>欄位</th><th>意義</th><th>使用要點</th></tr></thead>
+    <tbody>
+      <tr><td>1</td><td><span class="kw">SY-SUBRC</span></td><td>上一個指令的回傳碼，0＝成功</td><td><b>資料庫／READ／CALL FUNCTION 之後必檢查</b>；下一個指令就會被覆寫，要用就馬上存起來</td></tr>
+      <tr><td>2</td><td><span class="kw">SY-UNAME</span></td><td>登入者帳號</td><td>權限判斷、記錄異動者</td></tr>
+      <tr><td>3</td><td><span class="kw">SY-DATUM</span></td><td>系統日期</td><td>寫入 DB 用；顯示給人看用 SY-DATLO</td></tr>
+      <tr><td>4</td><td><span class="kw">SY-UZEIT</span></td><td>系統時間</td><td>同上，本地時間用 SY-TIMLO</td></tr>
+      <tr><td>5</td><td><span class="kw">SY-TCODE</span></td><td>目前執行的交易碼</td><td>增強／BAdI 裡判斷「從哪個畫面進來的」</td></tr>
+      <tr><td>6</td><td><span class="kw">SY-INDEX</span></td><td>DO / WHILE 目前跑第幾圈</td><td>巢狀時只代表最內層；離開迴圈後歸零</td></tr>
+      <tr><td>7</td><td><span class="kw">SY-TABIX</span></td><td>LOOP AT / READ TABLE 目前是內表第幾筆</td><td><b>只對 INDEX TABLE 有意義</b>；HASHED 表恆為 0</td></tr>
+      <tr><td>8</td><td><span class="kw">SY-MANDT</span></td><td>用戶端（Client）</td><td>開表時第一個欄位；ABAP SQL 會自動加條件</td></tr>
+      <tr><td>9</td><td><span class="kw">SY-ULINE</span></td><td>橫線字串</td><td>WRITE 報表畫線</td></tr>
+      <tr><td>10</td><td><span class="kw">SY-VLINE</span></td><td>直線字元</td><td>WRITE 報表畫格線</td></tr>
+    </tbody>
+  </table>
+
+  <p>另外五個高頻但講義未列的：<span class="kw">SY-DBCNT</span>（上個 SQL 影響／讀到幾筆）、<span class="kw">SY-REPID</span>（目前程式名）、<span class="kw">SY-LANGU</span>（登入語言）、<span class="kw">SY-DYNNR</span>（目前畫面號碼）、<span class="kw">SY-BATCH</span>（是否背景執行，'X'＝是）、<span class="kw">SY-LINNO</span> / <span class="kw">SY-PAGNO</span>（清單列號／頁碼）、<span class="kw">SY-FDPOS</span>（SEARCH 找到的位置）、<span class="kw">SY-LISEL</span>（游標所在那一列的內容）。</p>
+
+  <pre><code class="abap">REPORT zsy_fields.
+" SY-SUBRC 的正確用法：立刻檢查、立刻存起來
+SELECT SINGLE matnr, maktx
+  FROM makt
+  INTO @DATA(ls_makt)
+ WHERE matnr = @p_matnr
+   AND spras = @sy-langu.
+
+DATA(lv_rc) = sy-subrc.        " 馬上存起來，後面的指令會蓋掉它
+IF lv_rc &lt;&gt; 0.
+  MESSAGE |物料 { p_matnr } 找不到描述| TYPE 'S' DISPLAY LIKE 'W'.
+ELSE.
+  cl_demo_output=&gt;write( |{ ls_makt-matnr ALPHA = OUT } { ls_makt-maktx }| ).
+ENDIF.
+
+" SY-DBCNT：上一個 SQL 讀到／異動幾筆
+SELECT matnr, mtart FROM mara INTO TABLE @DATA(lt_mara) UP TO 10 ROWS
+  ORDER BY matnr.                       " 沒有 ORDER BY 就沒有順序保證
+cl_demo_output=&gt;write( |讀到 { sy-dbcnt } 筆（lines( ) = { lines( lt_mara ) }）| ).
+
+" SY-BATCH：背景執行時不要跳對話框
+IF sy-batch = abap_false.
+  " 只有前景才彈視窗
+ENDIF.
+cl_demo_output=&gt;display( ).</code></pre>
+
+  <div class="warn"><span class="kw">SELECT SINGLE</span> 在沒有指定完整主鍵時，<b>不保證取到哪一筆</b>（HANA 上的結果順序可能每次都不同）。若語意是「取最新一筆」，一定要寫 <span class="kw">SELECT ... ORDER BY ... UP TO 1 ROWS</span> 或用 <span class="kw">MAX( )</span> 子查詢。這正是專案裡「成本一下抓到 H、一下抓到 E」這類不穩定結果的根本原因。</div>
+
+  <h3 id="ch02-1-14">14. 資料輸出：WRITE 與現代替代方案</h3>
+  <p><span class="kw">WRITE</span> 是傳統 List 輸出。老師的態度很明確：<b>「會 ALV 的話 WRITE 不必太深入，遇到再查」</b>。但看懂舊程式、做套版列印（對位報表）時還是需要。</p>
+
+  <p>語法：<span class="kw">WRITE AT [/] [&lt;pos&gt;] [(&lt;len&gt;)] &lt;資料項&gt; &lt;格式參數&gt;</span>。<span class="kw">/</span>＝換行、<span class="kw">pos</span>＝第幾欄開始、<span class="kw">(len)</span>＝顯示長度。</p>
+
+  <table>
+    <thead><tr><th>格式參數</th><th>作用</th></tr></thead>
+    <tbody>
+      <tr><td>LEFT-JUSTIFIED / CENTERED / RIGHT-JUSTIFIED</td><td>靠左 / 置中 / 靠右</td></tr>
+      <tr><td>UNDER &lt;g&gt;</td><td>對齊到欄位 g 的起始欄位置</td></tr>
+      <tr><td>NO-GAP</td><td>緊接著上一個欄位，不留空格</td></tr>
+      <tr><td>USING EDIT MASK &lt;m&gt; / USING NO EDIT MASK</td><td>套用內嵌字元遮罩，如 <span class="kw">'__:__:__'</span></td></tr>
+      <tr><td>NO-ZERO</td><td>前置 0 不顯示</td></tr>
+      <tr><td>NO-SIGN</td><td>不顯示正負號</td></tr>
+      <tr><td>DECIMALS &lt;d&gt;</td><td>顯示 d 位小數</td></tr>
+      <tr><td>EXPONENT &lt;e&gt;</td><td>浮點數指數位</td></tr>
+      <tr><td>ROUND &lt;r&gt;</td><td>以 10^r 為單位四捨五入（如 ROUND 3＝以千為單位）</td></tr>
+      <tr><td>CURRENCY &lt;c&gt;</td><td>依幣別小數位顯示金額（<b>金額欄位務必加</b>）</td></tr>
+      <tr><td>UNIT &lt;u&gt;</td><td>依單位小數位顯示數量</td></tr>
+      <tr><td>DD/MM/YY、MM/DD/YY、DD/MM/YYYY、MM/DD/YYYY、DDMMYY、MMDDYY、YYMMDD</td><td>日期格式</td></tr>
+      <tr><td>AS CHECKBOX / AS SYMBOL / AS ICON / AS LINE</td><td>輸出成勾選框 / 符號 / 圖示 / 線條</td></tr>
+      <tr><td>COLOR n、INTENSIFIED ON/OFF、INVERSE ON/OFF、HOTSPOT ON</td><td>顏色、加深、反白、熱點</td></tr>
+      <tr><td>SKIP [n]、SKIP TO LINE n、NEW-PAGE、ULINE、NEW-LINE</td><td>空行 / 跳到第 n 行 / 換頁 / 畫橫線 / 換行</td></tr>
+    </tbody>
+  </table>
+
+  <pre><code class="abap">REPORT zdatatype04 LINE-SIZE 120.
+" 練習 04：CHECKBOX、SYMBOL、ICON、顏色（TCODE: ICON 可查所有圖示名稱；
+"          SE11 → Type Group 輸入 SYM / ICON 也看得到）
+INCLUDE &lt;symbol&gt;.
+INCLUDE &lt;icon&gt;.
+
+DATA(lv_flag1) = ' '.
+DATA(lv_flag2) = 'X'.
+
+WRITE: /12 'CHECK FLAG 1:', lv_flag1 AS CHECKBOX.
+WRITE: /12 'CHECK FLAG 2:', lv_flag2 AS CHECKBOX.
+WRITE: /12 'Phone Symbol:', sym_phone  AS SYMBOL.
+WRITE: /12 'Alarm  Icon :', icon_alarm AS ICON.
+
+" 八種背景色 + 三種字體效果
+DO 8 TIMES.
+  DATA(lv_col) = sy-index - 1.
+  FORMAT COLOR = lv_col.
+  WRITE: / lv_col           COLOR OFF,
+           'INTENSIFIED ON'  INTENSIFIED ON,
+           'INTENSIFIED OFF' INTENSIFIED OFF,
+           'INVERSE ON'      INVERSE ON.
+ENDDO.
+FORMAT COLOR OFF.</code></pre>
+
+  <p><b>基本報表（BASIC LIST REPORT）的骨架</b>：講義第 10 節示範 <span class="kw">TOP-OF-PAGE</span> / <span class="kw">END-OF-PAGE</span> / <span class="kw">AT LINE-SELECTION</span> 與內表控制中斷（<span class="kw">AT FIRST</span> / <span class="kw">AT NEW</span> / <span class="kw">AT END OF</span> / <span class="kw">AT LAST</span>），並用 <span class="kw">READ LINE ... OF PAGE ...</span> + <span class="kw">MODIFY CURRENT LINE</span> 回頭把總頁數 <span class="kw">'***'</span> 換成實際頁數。這是套版對位列印的經典技巧。</p>
+
+  <pre><code class="abap">REPORT zdatatype20 NO STANDARD PAGE HEADING LINE-SIZE 160 LINE-COUNT 40(3).
+" 基本報表：ACDOCA 傳票明細（S/4HANA 已用 ACDOCA 取代 BKPF/BSEG 的查詢角色）
+TYPES: BEGIN OF ty_out,
+         bldat TYPE acdoca-bldat,   " 憑證日期
+         usnam TYPE acdoca-usnam,   " 輸入人員
+         belnr TYPE acdoca-belnr,   " 傳票號碼
+         blart TYPE acdoca-blart,   " 文件類型
+         bschl TYPE acdoca-bschl,   " 過帳代碼
+         racct TYPE acdoca-racct,   " 會計科目
+         rwcur TYPE acdoca-rwcur,   " 交易幣別
+         tsl   TYPE acdoca-tsl,     " 交易金額
+       END OF ty_out.
+
+DATA gt_out TYPE STANDARD TABLE OF ty_out WITH EMPTY KEY.
+
+SELECT-OPTIONS: s_bldat FOR sy-datum,
+                s_usnam FOR sy-uname.
+PARAMETERS      p_blart TYPE acdoca-blart DEFAULT 'WA'.
+
+START-OF-SELECTION.
+  " 明列欄位、主機變數加 @、用列舉式 SELECT-OPTIONS（區間與列舉的結果可能不同）
+  SELECT bldat, usnam, belnr, blart, bschl, racct, rwcur, tsl
+    FROM acdoca
+    INTO TABLE @gt_out
+   WHERE rldnr = '0L'                 " 帳簿：只取主要分類帳
+     AND bldat IN @s_bldat
+     AND blart = @p_blart
+     AND usnam IN @s_usnam
+   ORDER BY bldat, usnam, belnr.      " HANA 上沒有 ORDER BY 就沒有順序保證
+
+  IF gt_out IS INITIAL.
+    MESSAGE '查無資料' TYPE 'S' DISPLAY LIKE 'W'.
+    RETURN.
+  ENDIF.
+
+  LOOP AT gt_out INTO DATA(ls_out).
+    AT NEW usnam.
+      WRITE: / |── 輸入人員 { ls_out-usnam } ──|.
+    ENDAT.
+
+    WRITE: /010 sy-vline,
+            014 sy-tabix,
+            030 sy-vline,
+            034 ls_out-belnr,
+            050 sy-vline,
+            054 ls_out-racct,
+            070 sy-vline,
+            074 ls_out-rwcur,
+            090 sy-vline,
+            094 ls_out-tsl CURRENCY ls_out-rwcur,   " 金額一定要帶 CURRENCY
+            160 sy-vline.
+
+    AT END OF usnam.
+      SUM.                                " 自動加總數值欄位
+      WRITE: /034 '小計', 094 ls_out-tsl CURRENCY ls_out-rwcur.
+    ENDAT.
+  ENDLOOP.
+
+TOP-OF-PAGE.
+  WRITE: /070 'χχ科技股份有限公司'.
+  WRITE: /076 '傳票明細表'.
+  WRITE: /135 'Page:', sy-pagno.
+  WRITE: /010 sy-uline(151).
+
+END-OF-PAGE.
+  WRITE: /060 '--------------------- END OF PAGE ---------------------'.
+
+AT LINE-SELECTION.
+  " 雙擊某列時，用視窗顯示該列內容
+  WINDOW STARTING AT 21 10 ENDING AT 150 18.
+  WRITE: /003 sy-lisel.</code></pre>
+
+  <div class="tip"><b>控制中斷四兄弟</b>：<span class="kw">AT FIRST</span>（第一筆，只跑一次）→ <span class="kw">AT NEW f</span>（欄位 f 換值時）→ 明細 → <span class="kw">AT END OF f</span>（欄位 f 即將換值前，可搭 <span class="kw">SUM</span> 自動小計）→ <span class="kw">AT LAST</span>（最後一筆）。使用前<b>必須先 SORT</b>，而且 <span class="kw">AT NEW f</span> 是看「f 及其左邊所有欄位」的組合有沒有變，不是只看 f。</div>
+
+  <div class="warn">現代替代：全螢幕報表請優先用 <span class="kw">cl_salv_table=&gt;factory( )</span>（三行就有排序／篩選／匯出／版面配置）；需要編輯與事件才用 <span class="kw">CL_GUI_ALV_GRID</span>。<span class="kw">REUSE_ALV_GRID_DISPLAY</span> 與 <span class="kw">TYPE-POOLS: slis</span> 仍然存在（講義附錄的 ZUSERS_002 就是），但只建議用來讀懂舊程式。純除錯輸出用 <span class="kw">cl_demo_output</span> 最快。</div>
+
+  <pre><code class="abap">REPORT zsalv_quick.
+" 講義附錄 ZUSERS_002（VBAK/VBAP 主子檔）的現代版：一次 JOIN，三行 ALV
+SELECT-OPTIONS s_vbeln FOR ('VBAK-VBELN').
+
+START-OF-SELECTION.
+  SELECT p~vbeln,
+         p~posnr,
+         p~matnr,
+         p~kwmeng,
+         p~netwr,
+         p~waerk,
+         k~erdat,
+         k~kunnr
+    FROM vbap AS p
+    INNER JOIN vbak AS k ON k~vbeln = p~vbeln
+    INTO TABLE @DATA(lt_out)
+   WHERE p~vbeln IN @s_vbeln
+   ORDER BY p~vbeln, p~posnr.
+
+  IF lt_out IS INITIAL.
+    MESSAGE '查無訂單資料' TYPE 'S' DISPLAY LIKE 'W'.
+    RETURN.
+  ENDIF.
+
+  TRY.
+      cl_salv_table=&gt;factory( IMPORTING r_salv_table = DATA(lo_alv)
+                              CHANGING  t_table      = lt_out ).
+      lo_alv-&gt;get_functions( )-&gt;set_all( abap_true ).      " 開啟所有工具列功能
+      lo_alv-&gt;get_columns( )-&gt;set_optimize( abap_true ).   " 自動調欄寬
+      lo_alv-&gt;get_display_settings( )-&gt;set_striped_pattern( abap_true ).
+      lo_alv-&gt;get_display_settings( )-&gt;set_list_header( |ZUSERS 訂單列表（VBAK / VBAP）| ).
+      lo_alv-&gt;display( ).
+    CATCH cx_salv_msg INTO DATA(lx_salv).
+      MESSAGE lx_salv-&gt;get_text( ) TYPE 'E'.
+  ENDTRY.</code></pre>
+
+  <h3 id="ch02-1-15">15. 實用小案例（講義第 07 / 09 / 10 節）</h3>
+
+  <p><b>案例 1：用帳號前四碼區分權限</b>（第 09-1 節）。</p>
+  <pre><code class="abap">" 舊寫法用 substring( )，新寫法可再簡化成一個 COND 或內表比對
+DATA(lv_user4) = substring( val = sy-uname off = 0 len = 4 ).
+DATA(lv_switch) = COND abap_bool( WHEN lv_user4 = 'T1MC' OR lv_user4 = 'T1PC'
+                                  THEN abap_true ELSE abap_false ).
+
+" 更好：把允許清單抽成常數內表，日後維護不必改程式邏輯
+DATA(lt_allow) = VALUE string_table( ( `T1MC` ) ( `T1PC` ) ( `T1SD` ) ).
+DATA(lv_ok) = xsdbool( line_exists( lt_allow[ table_line = lv_user4 ] ) ).</code></pre>
+
+  <p><b>案例 2：西元轉民國年</b>（作業四）。</p>
+  <pre><code class="abap">REPORT zroc_date.
+" 20250930 → 1140930；重點在 N / I / C 的型別轉換
+DATA(lv_today) = sy-datum.
+
+DATA(lv_year_ad)  = CONV i( lv_today+0(4) ).      " C → I
+DATA(lv_year_roc) = lv_year_ad - 1911.            " 民國年
+
+" 用字串範本 + WIDTH/PAD 補零，不必宣告一堆中間變數
+DATA(lv_roc) = |{ lv_year_roc WIDTH = 3 ALIGN = RIGHT PAD = '0' }{ lv_today+4(4) }|.
+
+cl_demo_output=&gt;write( |西元 { lv_today } → 民國 { lv_roc }| ).
+
+" 反向：民國轉西元
+DATA(lv_roc_in) = |1140930|.
+DATA(lv_ad) = CONV d( |{ CONV i( lv_roc_in+0(3) ) + 1911 }{ lv_roc_in+3(4) }| ).
+cl_demo_output=&gt;write( |民國 { lv_roc_in } → 西元 { lv_ad }| ).
+cl_demo_output=&gt;display( ).</code></pre>
+
+  <p><b>案例 3：Z-score 與歐幾里德距離</b>（作業一、二、十）。Z-score＝某數值距離平均值幾個標準差，用途是「不同單位的數值也能互相比較」，在資料探勘用來找異常值。</p>
+  <table>
+    <thead><tr><th>Z-score</th><th>解釋</th></tr></thead>
+    <tbody>
+      <tr><td>0</td><td>正好是平均值</td></tr>
+      <tr><td>&gt; 0</td><td>高於平均值</td></tr>
+      <tr><td>&lt; 0</td><td>低於平均值</td></tr>
+      <tr><td>&gt; 2 或 &lt; -2</td><td>比較「極端」的值（超出約 95% 區間）</td></tr>
+    </tbody>
+  </table>
+
+  <pre><code class="abap">REPORT zscore_demo.
+" 作業一／二／十：平均、母體標準差、Z-score、歐氏距離
+TYPES ty_num_tab TYPE STANDARD TABLE OF decfloat34 WITH EMPTY KEY.
+DATA(lt_val) = VALUE ty_num_tab( ( 10 ) ( 12 ) ( 23 ) ( 23 ) ( 16 ) ( 23 ) ( 21 ) ( 16 ) ).
+
+DATA(lv_n)   = CONV decfloat34( lines( lt_val ) ).
+DATA(lv_sum) = REDUCE decfloat34( INIT s = 0 FOR v IN lt_val NEXT s = s + v ).
+DATA(lv_avg) = lv_sum / lv_n.                                   " = AVERAGE( )
+
+" 變異數 = 「標準差還沒開根號的值」（母體 VAR.P）
+DATA(lv_var) = REDUCE decfloat34( INIT s = 0 FOR v IN lt_val
+                                  NEXT s = s + ( v - lv_avg ) ** 2 ) / lv_n.
+DATA(lv_std) = sqrt( lv_var ).                                  " = STDEV.P( )
+
+cl_demo_output=&gt;write( |筆數 { lv_n } 總和 { lv_sum } 平均 { lv_avg DECIMALS = 4 }| ).
+cl_demo_output=&gt;write( |變異數 { lv_var DECIMALS = 4 } 標準差 { lv_std DECIMALS = 4 }| ).
+
+LOOP AT lt_val INTO DATA(lv_v).
+  DATA(lv_z) = COND decfloat34( WHEN lv_std &gt; 0 THEN ( lv_v - lv_avg ) / lv_std ELSE 0 ).
+  cl_demo_output=&gt;write( |值 { lv_v } 的 Z-score = { lv_z DECIMALS = 3 }| &amp;&amp;
+                         COND string( WHEN abs( lv_z ) &gt; 2 THEN '  ← 極端值' ELSE `` ) ).
+ENDLOOP.
+
+" 作業一：歐幾里德距離（找異常／找相似的勾稽用）
+DATA(lv_dist) = sqrt( ( 2 - -2 ) ** 2 + ( -1 - 2 ) ** 2 ).      " = 5
+cl_demo_output=&gt;write( |歐幾里德距離 = { lv_dist }| ).
+cl_demo_output=&gt;display( ).</code></pre>
+
+  <p><b>案例 4：勞保費級距計算</b>（第 10-3 節 PU 期中專題 ZPU300_01）。表 ZPU300 用 <span class="tcode">SE11</span> 建、<span class="tcode">SE54</span> 產生維護畫面、<span class="tcode">SM30</span> 維護資料。投保級距簡化成五級，費率 11%，雇主 70%／員工 20%／政府 10%。</p>
+
+  <pre><code class="abap">REPORT zpu300_01.
+" 勞保費級距：找出「第一個大於薪資」的級距，算出三方分攤
+TYPES: BEGIN OF ty_grade,
+         num       TYPE i,
+         insurance TYPE p LENGTH 9 DECIMALS 2,
+       END OF ty_grade.
+
+CONSTANTS c_rate TYPE p LENGTH 5 DECIMALS 4 VALUE '0.1100'.   " 費率 11%
+
+START-OF-SELECTION.
+  " 級距表：SORTED 內表保證由小到大，找到第一個就是答案
+  DATA lt_grade TYPE SORTED TABLE OF ty_grade WITH UNIQUE KEY insurance.
+  lt_grade = VALUE #( ( num = 1 insurance = '19047' )
+                      ( num = 2 insurance = '28800' )
+                      ( num = 3 insurance = '30300' )
+                      ( num = 4 insurance = '40100' )
+                      ( num = 5 insurance = '50600' ) ).
+
+  SELECT num, name, birthday, payroll
+    FROM zpu300
+    INTO TABLE @DATA(lt_emp).
+
+  LOOP AT lt_emp ASSIGNING FIELD-SYMBOL(&lt;ls_emp&gt;).
+    " 找第一個「級距 &gt;= 薪資」的級距；超過最高級就用最高級
+    DATA(lv_base) = VALUE #( lt_grade[ 1 ]-insurance OPTIONAL ).
+    LOOP AT lt_grade INTO DATA(ls_grade).
+      lv_base = ls_grade-insurance.
+      IF &lt;ls_emp&gt;-payroll &lt;= ls_grade-insurance.
+        EXIT.                      " 找到就跳出內層迴圈
+      ENDIF.
+    ENDLOOP.
+
+    " 保費四捨五入到整數（財務欄位一定要指定 mode）
+    DATA(lv_fee) = round( val  = lv_base * c_rate
+                          dec  = 0
+                          mode = cl_abap_math=&gt;round_half_up ).
+
+    cl_demo_output=&gt;write(
+      |{ &lt;ls_emp&gt;-num } { &lt;ls_emp&gt;-name } 薪資 { &lt;ls_emp&gt;-payroll } | &amp;&amp;
+      |投保 { lv_base } 保費 { lv_fee } | &amp;&amp;
+      |雇主 { round( val = lv_fee * '0.7' dec = 0 mode = cl_abap_math=&gt;round_half_up ) } | &amp;&amp;
+      |員工 { round( val = lv_fee * '0.2' dec = 0 mode = cl_abap_math=&gt;round_half_up ) } | &amp;&amp;
+      |政府 { round( val = lv_fee * '0.1' dec = 0 mode = cl_abap_math=&gt;round_half_up ) }| ).
+  ENDLOOP.
+  cl_demo_output=&gt;display( ).</code></pre>
+
+  <div class="note"><b>案例 5：採購單「交貨已完成」議題</b>（第 10-4 節）。EKPO 的「交貨已完成標識（ELIKZ）」控制採購項目是否還算未清項：勾了之後 MRP 就不再把未收數量當作待供應。<br>方案一（配置）：<span class="tcode">OMCQ</span> 把訊息號 <b>163</b> 設為 E，再用 <span class="tcode">ME22N</span> 手動勾「交貨已完成」並把「最近交貨日期」設為過去日期。<br>方案二（增強）：加判斷條件，一旦勾了「已完成收貨」就不允許再收貨。</div>
+
+  <p><b>案例 6：結構的整批運算</b>（第 09-2 節）。<span class="kw">MULTIPLY-CORRESPONDING</span>、<span class="kw">ADD-CORRESPONDING</span>、<span class="kw">SUBTRACT-CORRESPONDING</span>、<span class="kw">DIVIDE-CORRESPONDING</span> 這四個指令會把兩個結構中「同名欄位」逐一運算。它們已被列為 obsolete，在 ABAP Objects 內不可使用。</p>
+
+  <pre><code class="abap">REPORT zstruct_calc.
+" 舊：MULTIPLY-CORRESPONDING gs_2 BY gs_1.（obsolete，Class 內不可用）
+" 新：欄位少就直接寫，欄位多就用 RTTS 動態跑欄位清單
+TYPES: BEGIN OF ty_rate,
+         n1 TYPE decfloat34,
+         n2 TYPE decfloat34,
+       END OF ty_rate.
+
+DATA(ls_rate) = VALUE ty_rate( n1 = '0.8' n2 = '0.9' ).
+DATA(ls_qty)  = VALUE ty_rate( n1 = 10    n2 = 20 ).
+
+ls_qty = VALUE #( n1 = ls_qty-n1 * ls_rate-n1
+                  n2 = ls_qty-n2 * ls_rate-n2 ).
+
+cl_demo_output=&gt;write( |結果：{ ls_qty-n1 } / { ls_qty-n2 }| ).   " 8 / 18
+cl_demo_output=&gt;display( ).</code></pre>
+
+  <h3 id="ch02-1-16">16. 從「寫對」到「寫好」：18 條實務守則</h3>
+  <p>講義第 10-5 節的清單，這是老師整章最想留下來的東西。</p>
+  <ol>
+    <li><b>命名規則</b>：<span class="kw">lv_</span>（區域變數）、<span class="kw">gv_</span>（全域變數）、<span class="kw">iv_</span>（輸入參數）、<span class="kw">ev_</span>（輸出參數）、<span class="kw">cv_</span>（可改參數）、<span class="kw">rv_</span>（回傳值）、<span class="kw">lt_/gt_</span>（內表）、<span class="kw">ls_/wa_</span>（工作區）、<span class="kw">lo_</span>（物件）、<span class="kw">lr_</span>（參考）、<span class="kw">&lt;fs_&gt;</span>（field symbol）。</li>
+    <li><b>常數與程序名一眼看得懂</b>：<span class="kw">CONSTANTS c_max_attempts TYPE i VALUE 3.</span>；程序名用「模組＋物件＋動作」如 <span class="kw">ZMM_PO_CREATE_AND_VALIDATE</span>。</li>
+    <li><b>模組化</b>：一個方法只做一件事，超過一個畫面高度就該拆。</li>
+    <li><b>一定要寫註解</b>：註解寫「為什麼」，不要寫「做什麼」。</li>
+    <li><b>內縮與對齊</b>：ABAP Editor 的 <span class="kw">Ctrl+Shift+F1</span>（Pretty Printer）養成習慣。</li>
+    <li><b>迴圈中少用 SELECT SINGLE</b>：改成一次撈進內表再對應（<span class="kw">FOR ALL ENTRIES</span> 或 JOIN）。</li>
+    <li><b>少用 SELECT *</b>：只取需要的欄位，HANA 是欄式儲存，多取一欄就多一份成本。</li>
+    <li><b>注意索引</b>：WHERE 條件的欄位若不在索引上，效能會斷崖式下降；用 <span class="tcode">ST05</span> / <span class="tcode">SAT</span> 驗證。</li>
+    <li><b>內表操作注意排序</b>：<span class="kw">READ TABLE ... BINARY SEARCH</span> 之前一定要先 <span class="kw">SORT</span> 同樣的 key，否則會讀不到。</li>
+    <li><b>HASHED 表加速查詢</b>：<span class="kw">DATA lt_cust TYPE HASHED TABLE OF ... WITH UNIQUE KEY customer_id.</span>（只能用完整 key 讀，但 O(1)）。</li>
+    <li><b>批次取代逐筆</b>：<span class="kw">APPEND LINES OF</span> 取代逐行 <span class="kw">APPEND</span>；<span class="kw">INSERT ... FROM TABLE</span> 取代逐筆 <span class="kw">INSERT</span>。</li>
+    <li><b>用 LOOP AT ... GROUP BY 取代雙迴圈</b>。</li>
+    <li><b>重要片段做例外處理</b>：<span class="kw">TRY ... CATCH cx_...</span>。</li>
+    <li><b>SY-SUBRC 檢查</b>：資料庫操作後必加。</li>
+    <li><b>訊息用 SE91 訊息類別</b>：<span class="kw">MESSAGE e001(zmm_po) WITH lv_ebeln.</span> 才能多語言，不要硬編中文字串。</li>
+    <li><b>OO 可以不會寫，但要看得懂</b>：<span class="kw">PUBLIC</span>（對外開放）、<span class="kw">PROTECTED</span>（子類可用）、<span class="kw">PRIVATE</span>（只有自己用）。</li>
+    <li><b>禁止 SELECT ... ENDSELECT</b>，尤其放在迴圈裡。</li>
+    <li><b>多表操作用內表與透明表交互</b>：先 <span class="kw">FOR ALL ENTRIES</span> 撈價格表，再用 <span class="kw">READ TABLE</span> 對應，不要在迴圈裡查 DB。</li>
+  </ol>
+
+  <pre><code class="abap">REPORT zbest_practice.
+" 守則 6 / 17 / 18 的正確做法 + 守則 13 的例外處理
+IF lt_items IS INITIAL.
+  RETURN.                       " FOR ALL ENTRIES 空表 = 撈全表，務必先擋
+ENDIF.
+
+SELECT item_id, price, waers
+  FROM zitem_price
+  INTO TABLE @DATA(lt_prices)
+  FOR ALL ENTRIES IN @lt_items
+ WHERE item_id = @lt_items-item_id.
+
+" 用 SORTED / HASHED 表或 line_exists( ) 做對應，不再回資料庫
+DATA lv_total TYPE p LENGTH 15 DECIMALS 2.
+
+LOOP AT lt_items INTO DATA(ls_item).
+  IF line_exists( lt_prices[ item_id = ls_item-item_id ] ).
+    DATA(ls_price) = lt_prices[ item_id = ls_item-item_id ].
+    lv_total = lv_total + ls_item-quantity * ls_price-price.
+  ENDIF.
+ENDLOOP.
+
+" 例外處理：除以 0
+TRY.
+    DATA(lv_avg) = lv_total / lines( lt_items ).
+    cl_demo_output=&gt;write( |合計 { lv_total } 平均 { lv_avg }| ).
+  CATCH cx_sy_zerodivide INTO DATA(lx_zero).
+    MESSAGE lx_zero-&gt;get_text( ) TYPE 'E'.
+  CATCH cx_sy_arithmetic_overflow INTO DATA(lx_ovf).
+    MESSAGE lx_ovf-&gt;get_text( ) TYPE 'E'.
+ENDTRY.
+cl_demo_output=&gt;display( ).</code></pre>
+
+  <div class="tip">老師的結語：<b>ABAP 世界裡同時存在 1992～2024 將近三個世代的語法</b>。你自己寫新程式一定要用現代寫法，但一定要看得懂舊寫法 — 因為職場上要維護的，多半是別人十年前寫的。學會用 <span class="tcode">SE38</span> 輸入 <span class="kw">DEMO*</span> 按 F4 查 SAP 內建的示範程式、用 <span class="tcode">ABAPDOCU</span> 查語法、用 <span class="tcode">SE37</span> 直接試跑函數，這三招比背語法有用。</div>
+
+  <h3 id="ch02-1-qa">練習與自我檢核</h3>
+  <p>講義的 20 支練習程式（ZDATATYPE01～ZDATATYPE20）主題對照：01 型別初始值／02 SY-DATUM 與字面值／03 結構與繼承／04 顏色與 ICON／05 MOVE 與 FIELD-SYMBOLS／06 FIELD-SYMBOLS 結構版／07 COND 與 SWITCH／08 STRLEN 與型別轉換／09 CONV 位置／10 SHIFT REPLACE TRANSLATE／11 SEARCH／12 CONCATENATE 新用法／13 SPLIT CONDENSE／14 IF CASE／15 DO WHILE 雙迴圈／16 CALL FUNCTION 日期／17 LOOP AT 與 KNA1／18 STATICS／19 MULTIPLY-CORRESPONDING／20 WRITE 報表。</p>
+
+  <ol>
+    <li><b>作業一（歐幾里德距離）</b>：設 x1,y1,x2,y2 四個變數，把距離存入 dist。提示：<span class="kw">** '0.5'</span> 或 <span class="kw">sqrt( )</span>；用途是找異常值／相似度勾稽。答案見第 15 節。</li>
+    <li><b>作業二（Z-score）</b>：設 x、u（平均）、stdv（標準差），求 <span class="kw">z = ( x - u ) / stdv</span>。想想為什麼型別要用 DECFLOAT34 而不是 I。</li>
+    <li><b>作業三（字串反轉）</b>：禁用 <span class="kw">STRING_REVERSE</span>，把 <span class="kw">'I-LOVE-ABAP'</span> 變成 <span class="kw">'PABA-EVOL-I'</span>。提示：<span class="kw">strlen( )</span> + <span class="kw">DO n TIMES</span> + <span class="kw">substring( )</span>；注意 offset 從 0 起算，所以 <span class="kw">pos = 11 - sy-index</span>。</li>
+    <li><b>作業四（民國年）</b>：把 <span class="kw">'20220315'</span> 顯示成 <span class="kw">'1110315'</span>。提示：C→I 轉型、減 1911、再補零成 3 碼。踩雷點：直接用 N 型別相減會失去型別長度控制。</li>
+    <li><b>作業五（本月／上月／去年同期）</b>：上網找出標準函數並實作。答案：<span class="kw">RP_CALC_DATE_IN_INTERVAL</span>（signum '+'／'-'）、<span class="kw">HR_JP_MONTH_BEGIN_END_DATE</span>、<span class="kw">RP_LAST_DAY_OF_MONTHS</span>。</li>
+    <li><b>作業六（字串逐行輸出）</b>：輸入 80 碼、逗號分隔的字串，一列一列輸出。提示：<span class="kw">SPLIT ... INTO TABLE</span> + <span class="kw">CONDENSE</span>。</li>
+    <li><b>作業七（排序輸出）</b>：同作業六，但存入內表並遞增排序。提示：<span class="kw">SORT lt ASCENDING.</span>；別忘了先 <span class="kw">DELETE lt WHERE table_line IS INITIAL.</span>。</li>
+    <li><b>作業八（KNA1 前 5 筆）</b>：建內表 IT_KNA1，把 KNA1 依 KUNNR 排序取前 5 筆的 KUNNR、NAME1。<b>現代解</b>：<span class="kw">SELECT kunnr, name1 FROM kna1 INTO TABLE @DATA(lt_kna1) UP TO 5 ROWS ORDER BY kunnr.</span> — 注意 <span class="kw">UP TO n ROWS</span> 若沒有 <span class="kw">ORDER BY</span>，在 HANA 上每次結果可能不同。</li>
+    <li><b>作業九（學會線上搜尋）</b>：練習用 <span class="tcode">SE37</span> 直接執行函數、用 <span class="tcode">SE38</span> 輸入 <span class="kw">DEMO*</span> 按 F4 找 SAP 示範程式、用 <span class="tcode">ABAPDOCU</span> 查語法樹。</li>
+    <li><b>作業十（標準差複習）</b>：用 Excel 對 10,12,23,23,16,23,21,16 算 <span class="kw">=AVERAGE( )</span>、<span class="kw">=VAR.P( )</span>、<span class="kw">=STDEV.P( )</span>、<span class="kw">=SQRT(144/8)</span>，再用 ABAP 寫出同樣結果（見第 15 節）。記住：<b>變異數就是標準差還沒開根號的值</b>。</li>
+    <li><b>自我檢核 A</b>：<span class="kw">DATA(lv_x) = 5 / 2.</span> 的結果是多少？為什麼？要得到 2.5 該怎麼改？</li>
+    <li><b>自我檢核 B</b>：<span class="kw">-5 MOD 3</span> 在 ABAP 是多少？跟 C / Java 有何不同？</li>
+    <li><b>自我檢核 C</b>：日圓 1000 元在 BSEG-WRBTR 裡存的是什麼數字？要用哪個 BAPI 換算？表 TCURX 的作用是什麼？</li>
+    <li><b>自我檢核 D</b>：<span class="kw">CHECK</span> 寫在 <span class="kw">LOOP</span> 裡跟寫在 <span class="kw">FORM</span> 裡，行為有什麼不同？</li>
+    <li><b>自我檢核 E</b>：<span class="kw">strlen( )</span> 對 <span class="kw">TYPE c LENGTH 20</span> 但只放 13 個字的變數回傳多少？換成 <span class="kw">TYPE string</span> 呢？</li>
+    <li><b>自我檢核 F</b>：<span class="kw">SY-TABIX</span> 在 HASHED 內表的 LOOP 裡是多少？為什麼？</li>
+    <li><b>自我檢核 G</b>：為什麼 <span class="kw">SELECT SINGLE</span> 沒帶完整主鍵時結果不穩定？跟本專案 ZKEPH「一下抓 H 一下抓 E」的成本不穩定，是不是同一類問題？</li>
+  </ol>
+</section>

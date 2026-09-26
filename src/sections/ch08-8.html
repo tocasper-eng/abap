@@ -1,0 +1,1055 @@
+<section class="chapter" id="ch08-8" data-title="實戰源碼庫（八）：外部介面整合——物流追蹤、電商訂貨、費控、PayPal 與退換貨平台">
+  <h2>第 8-8 章 實戰源碼庫（八）：外部介面整合——物流追蹤、電商訂貨、費控、PayPal 與退換貨平台</h2>
+  <p class="lede">這一章拆解「某醫療器材公司」實際上線的 7 支介面相關程式：向快遞100訂閱物流軌跡、把物流軌跡回推給下游、交貨單增量同步、U 訂貨發貨回寫、供應商（含員工收款人）同步到費控系統、向 PayPal 查詢發票是否已付款，以及依條碼交易日誌自動開換貨單的「退換貨平台」。它們有一個共同骨架：<b>SPROXY 產生的 Consumer Proxy 經 PI/PO 出站 → 自建日誌表記結果 → 前台 ALV 手工重送、背景作業自動送</b>。本章把這個骨架講透，並補上原程式缺的四件事：<b>金鑰管理、OAuth token 快取、冪等性、可控的重送機制</b>。</p>
+  <div class="meta">
+    <div><b>核心 TCODE</b><span class="tcode">SPROXY</span><span class="tcode">SOAMANAGER</span><span class="tcode">SXMB_MONI</span><span class="tcode">SRT_MONI</span><span class="tcode">SRT_UTIL</span><span class="tcode">SM59</span><span class="tcode">STRUST</span><span class="tcode">SECSTORE</span><span class="tcode">OA2C_CONFIG</span><span class="tcode">SLG0</span><span class="tcode">SLG1</span><span class="tcode">SM37</span><span class="tcode">SNRO</span><span class="tcode">SE11</span><span class="tcode">SE37</span><span class="tcode">VL03N</span><span class="tcode">VL02N</span><span class="tcode">VA03</span><span class="tcode">BP</span></div>
+    <div><b>關鍵物件</b>CL_PROXY_CLIENT、IF_PROXY_CLIENT、CX_AI_SYSTEM_FAULT、CX_AI_APPLICATION_FAULT、PRXCTRLTAB、CL_HTTP_CLIENT、CL_HTTP_UTILITY、/UI2/CL_JSON、CL_OAUTH2_CLIENT、CL_SYSTEM_UUID、CL_ABAP_TSTMP、BAL_LOG_CREATE、BAPI_SALESORDER_CREATEFROMDAT2、SD_SALESDOCUMENT_CREATE、READ_TEXT、NUMBER_GET_NEXT、LIKP、LIPS、VBKD、VBAK、VBAP、VBPA、VBFA、VBRK、VBRP、T173、T173T、MCHA、ADRC、CDHDR、CDPOS、LFA1、LFBK、LFB1、LFM1、BUT000、BUT0BK、CVI_VEND_LINK</div>
+  </div>
+
+  <div class="warn"><b>資安聲明：</b>原始碼中含有寫死的 API key、app_key／app_security、回呼網址、收件人電話與員工個人銀行帳號。本章所有範例一律改用佔位符（<span class="kw">'&lt;YOUR_API_KEY&gt;'</span>、<span class="kw">https://api.example.com/...</span>、<span class="kw">'C000001'</span>），個資欄位只描述結構、不列任何實際值。你自己的專案請照 <a href="#ch08-8-14">第 14 節</a> 的方式管理金鑰——<b>任何金鑰只要進過原始碼，就等於外洩</b>，因為版本管理、傳輸請求、SE38 列印、甚至網路流傳的「源碼包」都會帶著它走。</div>
+
+  <h3 id="ch08-8-01">1. 案例索引</h3>
+  <p>本章負責的 7 個案例如下。「規模」以原始碼行數估算（含註解與註解掉的舊碼）；「截圖」指資料夾內或 docx 內附的 SE11／SE24／SE37／選擇畫面截圖。</p>
+  <table>
+    <thead><tr><th>案例（原資料夾）</th><th>程式</th><th>功能</th><th>模組</th><th>原始檔構成</th><th>規模</th><th>截圖／範本</th><th>本章小節</th></tr></thead>
+    <tbody>
+      <tr><td>ZSDU005 快递100</td><td>ZSDU005</td><td>以 Excel 上傳交貨單號，批量向快遞100「重新訂閱」物流軌跡</td><td>SD/WM</td><td>單一 REPORT（FORM 3 個）＋說明.txt</td><td>約 200 行</td><td>選擇畫面、RLGRAP、ZSDT015、ZSDT018、Proxy 類別 ZCL_CO_SI_SUBSCRIBE_OUT（5 張）、MT/DT 結構（5 張）</td><td>3、4</td></tr>
+      <tr><td>ZSDU028 快递100信息接口</td><td>ZSDU028</td><td>讀快遞100 回推的軌跡日誌（ZSDT015），組裝後推給下游系統；背景自動送、前台勾選重送</td><td>SD/WM</td><td>主程式＋ZSDU028_CLASS、_STATUS_9001、_USER_COMMAND_9001（Dynpro 9001＋CL_GUI_ALV_GRID）</td><td>約 1,100 行</td><td>docx：選擇畫面、ZSDT015、ZWMT011、ZWMT012、ZSDT018</td><td>5</td></tr>
+      <tr><td>ZSDU011 交货单信息同步接口</td><td>ZSDU011（TCODE 同名）</td><td>以 CDHDR 變更文件＋水位線表抓交貨單增量（含刪除），推送給下游 ERP／經銷系統</td><td>SD</td><td>主程式＋_TOP、_S01、_FORMS；訊息類別 ZMSG_CN</td><td>約 900 行</td><td>選擇畫面、ZMSG_CN、ZSDT011、ZWMT011/012、Proxy 類別 ZCL_CO_SI_TRANSACTION_ALL_SYNC、MT/DT 結構（共 13 張）</td><td>6、7</td></tr>
+      <tr><td>ZSDU019 u订货同步</td><td>ZSDU019</td><td>把「U 訂貨／CRM 來源」訂單的發貨過帳與過帳沖銷回寫給經銷商訂貨平台</td><td>SD/WM</td><td>主程式＋_TOP、_SRC、_FRM</td><td>約 750 行</td><td>選擇畫面</td><td>8</td></tr>
+      <tr><td>供应商主数据同步费控系统</td><td>ZMMU024</td><td>供應商（含員工個人收款人）與銀行明細同步到外部費控系統：先取 token，再新增或更新收款人</td><td>MM/FI</td><td>單一 REPORT（docx）＋ALV 匯出樣本 xlsx</td><td>約 450 行</td><td>選擇畫面、ALV 結果、ZMMT021、ZMMS021_IN／_OUT／_RE</td><td>9、10</td></tr>
+      <tr><td>获取PAYPAL接口数据</td><td>ZFIU006＋函數 ZSDFM006_INT_INVOICE_DETAILS</td><td>逐張查詢 PayPal 發票狀態，已付款者標記為 P，供後續入帳</td><td>FI/SD</td><td>主程式＋_TOP、_S01、_FORMS；函數群組 ZSDFG006</td><td>約 200 行</td><td>選擇畫面、ZFIT002、函數屬性／匯入／匯出／原始碼</td><td>11、12</td></tr>
+      <tr><td>退换货平台</td><td>ZSDU030</td><td>依條碼交易日誌計算「本月可換貨量」，勾選後自動建立換貨訂單（Z008）並記錄退換貨日誌</td><td>SD</td><td>單一 REPORT（docx），含 ALV 可編輯事件類別</td><td>約 1,100 行</td><td>選擇畫面、ZSDT001、ZSDT023、ZSDT034、ZSDT030</td><td>13</td></tr>
+    </tbody>
+  </table>
+  <p>通用主題分布在：第 2 節（介面選型：Proxy vs CL_HTTP_CLIENT）、第 3 節（Proxy 解剖）、第 10 節（OAuth token 取得與快取）、第 12 節（直連 REST 與 JSON 序列化）、第 14 節（金鑰管理）、第 15 節（介面日誌表與重送）、第 16 節（冪等性）、第 17 節（上線檢核與 S/4HANA 差異總表）。與既有章節的分工：RFC／BAPI 基礎見 <a href="#ch04-1">4-1 章</a>，ICF 與 HTTP 用戶端基本寫法見 <a href="#ch05-17">5-17 章</a>（特別是 <a href="#ch05-17-19">5-17 第 19 節</a>），IDoc 與 AIF 見 <a href="#ch05-22">5-22 章</a>，PI/PO 平台定位見 <a href="#ch05-24">5-24 章</a>，PayPal 付款連結寫進報價單／發票表單的部分見 <a href="#ch08-2">8-2 章</a>。</p>
+
+  <h3 id="ch08-8-02">2. 共同骨架與選型：Proxy（SPROXY）vs CL_HTTP_CLIENT 直連</h3>
+  <p>七支程式裡有六支走 <b>PI/PO 的 ABAP Proxy</b>：ABAP 端只呼叫 SPROXY 產生的類別方法，把 ABAP 結構交給 PI；PI 負責對映（Mapping）、轉成外部要的 JSON/REST 或 SOAP、打到外部 URL，再把回應轉回來。退換貨平台則完全在 SAP 內部完成（BAPI 建單），但它讀的條碼日誌表是由外部 WMS／掃描系統寫進來的，所以同樣要處理「重複執行」的問題。</p>
+  <table>
+    <thead><tr><th>比較項</th><th>ABAP Proxy 經 PI/PO（本章 ZSDU005/011/028、ZMMU024、ZFIU006）</th><th>CL_HTTP_CLIENT 直連（本章第 10、12 節示範）</th></tr></thead>
+    <tbody>
+      <tr><td>產生方式</td><td><span class="tcode">SPROXY</span> 依 ESR 的 Service Interface 產生類別（ZCL_CO_…）與結構（ZCL_MT_…／ZCL_DT_…）</td><td>手寫；型別自己定義或由 JSON 樣本推</td></tr>
+      <tr><td>通訊協定</td><td>SAP 端是 XI 3.0 協定（或 SOAP）到 PI；PI 端 REST Adapter 轉 JSON</td><td>ABAP 直接 HTTP(S)，自己組 JSON</td></tr>
+      <tr><td>URL／帳密放哪</td><td>PI 的 Communication Channel（ABAP 端完全看不到）</td><td><span class="tcode">SM59</span> 型別 G 目的地＋<span class="tcode">STRUST</span> 憑證</td></tr>
+      <tr><td>監控</td><td><span class="tcode">SXMB_MONI</span>（XI 協定）／<span class="tcode">SRT_MONI</span>、<span class="tcode">SRT_UTIL</span>（SOAP）＋PI 的 Message Monitor</td><td>要自己寫日誌（第 15 節），HTTP trace 用 <span class="tcode">SMICM</span></td></tr>
+      <tr><td>同步／非同步</td><td>Service Interface 定義；非同步時要 <span class="kw">COMMIT WORK</span> 才真的送出，且有 Exactly Once 保證</td><td>天生同步；非同步要自己用 bgRFC 或背景作業包</td></tr>
+      <tr><td>優點</td><td>集中管理、可重送、改 URL／格式不用改 ABAP</td><td>沒有中介、延遲低、少一套平台授權與維運</td></tr>
+      <tr><td>缺點</td><td>要有 PI/PO（或 Integration Suite）；除錯要跨兩個系統</td><td>重試、冪等、日誌、金鑰全部自己負責</td></tr>
+    </tbody>
+  </table>
+  <div class="note"><b>S/4HANA 時代的選型</b>：SAP PO 7.5 的主流維護已宣布只到 2027 年底（延伸維護至 2030 年），新專案多半改用 SAP Integration Suite（Cloud Integration，見 <a href="#ch05-24-11">5-24 第 11 節</a>）。<b>ABAP 端的寫法幾乎不用變</b>——Consumer Proxy 一樣可以透過 <span class="tcode">SOAMANAGER</span> 的邏輯埠指到 Cloud Integration 的 SOAP 端點。反過來說，若對方只是一個公開的 REST API、沒有對映需求，直連（第 12 節）往往更省事。</div>
+  <div class="tip"><b>先找標準，再想客製</b>（Casper 實務經驗第 3 條）：物流追蹤、電子發票、銀行付款在 S/4HANA 都有標準或合作夥伴方案（例如 SAP Business Network for Logistics、Advanced Compliance Reporting、Multi-Bank Connectivity）。這批程式寫於 2020–2023 年、面向中國本地 SaaS，客製有其道理；但同樣需求換到新專案，第一步仍是確認標準方案與授權。</div>
+
+  <h3 id="ch08-8-03">3. 解剖 SPROXY 產生的 Consumer Proxy：ZCL_CO_SI_SUBSCRIBE_OUT</h3>
+  <p>ZSDU005 資料夾附了 Proxy 類別在 <span class="tcode">SE24</span> 的五個頁籤截圖，ZSDU011 也附了同型的 ZCL_CO_SI_TRANSACTION_ALL_SYNC。兩者結構一模一樣，整理如下：</p>
+  <table>
+    <thead><tr><th>頁籤</th><th>內容（依截圖）</th><th>說明</th></tr></thead>
+    <tbody>
+      <tr><td>Properties</td><td>Superclass <b>CL_PROXY_CLIENT</b>；Instance Generation 2 Public；Package ZDEV；Program Status P；ABAP Language Version X Standard ABAP (Unicode)</td><td>所有 Consumer Proxy 都繼承 CL_PROXY_CLIENT。<b>不要手改</b>，改了下次在 SPROXY 重新產生就被覆蓋</td></tr>
+      <tr><td>Interfaces</td><td>IF_PROXY_BASIS、IF_PROXY_BASIS_INTERNAL、IF_PROXY_CLIENT</td><td>IF_PROXY_BASIS 提供 GET_PROTOCOL，可取得 WS-RM、Message ID 等協定物件</td></tr>
+      <tr><td>Attributes</td><td>PROXY_FRAMEWORK（REF TO IF_PROXY_FRAMEWORK_OUTBOUND）、常數 CO_INTERFACE_DIRECTION_OUT、ENH_NAME（CHAR30）</td><td>全部 Protected，程式不直接碰</td></tr>
+      <tr><td>Methods</td><td>IF_PROXY_BASIS_INTERNAL~CREATE_FRAMEWORK（Static）、IF_PROXY_BASIS~GET_PROTOCOL、~GET_TRANSPORT_BINDING、IF_PROXY_CLIENT~EXECUTE、CONSTRUCTOR、<b>SI_SUBSCRIBE_OUT</b></td><td>業務方法名＝Service Interface 名（本例 SI_SUBSCRIBE_OUT）。CONSTRUCTOR 有選填參數 LOGICAL_PORT_NAME</td></tr>
+      <tr><td>Aliases</td><td>GET_PROTOCOL、GET_TRANSPORT_BINDING（Public）</td><td>所以可以寫 <span class="kw">lo_proxy-&gt;get_protocol( … )</span></td></tr>
+    </tbody>
+  </table>
+  <p>訊息型別（Message Type）與資料型別（Data Type）的結構截圖：</p>
+  <table>
+    <thead><tr><th>結構</th><th>元件（依截圖）</th></tr></thead>
+    <tbody>
+      <tr><td>ZCL_MT_SUBSCRIBE_ERP_REQ（請求 MT）</td><td>CONTROLLER（PRXCTRLTAB）、MT_SUBSCRIBE_ERP_REQ（→ DT）</td></tr>
+      <tr><td>ZCL_DT_SUBSCRIBE_ERP_REQ_COM（每筆訂閱）</td><td>CONTROLLER、COMPANY、NUMBER、FROM、TO、KEY（皆 STRING）、PARAMETERS（表格型別 ZCL_DT_SUBSCRIBE_ERP_REQ_C_TAB）</td></tr>
+      <tr><td>ZCL_DT_SUBSCRIBE_ERP_REQ_COM_P（參數）</td><td>CONTROLLER、CALLBACKURL、SALT、RESULTV2、AUTO_COM、INTER_COM、DEPARTURE_COUNTRY、DEPARTURE_COM、DESTINATION_COUNTRY、DESTINATION_COM、PHONE（皆 STRING）</td></tr>
+      <tr><td>ZCL_MT_SUBSCRIBE_ERP_RES（回應 MT）</td><td>CONTROLLER、MT_SUBSCRIBE_ERP_RES（→ ZCL_DT_SUBSCRIBE_ERP_RES）</td></tr>
+      <tr><td>ZCL_DT_SUBSCRIBE_ERP_RES</td><td>CONTROLLER、RESULT、RETURN_CODE、MESSAGE</td></tr>
+    </tbody>
+  </table>
+  <p>命名規則：<b>CO_</b>＝Consumer（出站）類別、<b>MT_</b>＝Message Type、<b>DT_</b>＝Data Type；本案在前面加了 ZCL_ 前綴。每個結構都有 <b>CONTROLLER（PRXCTRLTAB）</b>：用來標記「哪個欄位要送 nil／要不要送」，一般留空即可；若對方 API 要區分「沒給」與「給空字串」，就要在 CONTROLLER 裡設定。</p>
+  <pre><code class="abap">*&amp;-------------------------------------------------------------*
+*&amp; Consumer Proxy 標準呼叫範本（同步介面）
+*&amp;  - 邏輯埠在 SOAMANAGER 設定；XI 協定可省略 logical_port_name
+*&amp;  - 技術錯誤 CX_AI_SYSTEM_FAULT；介面若定義 Fault Message，
+*&amp;    另有 CX_AI_APPLICATION_FAULT 子類別
+*&amp;-------------------------------------------------------------*
+DATA ls_res TYPE zcl_mt_subscribe_erp_res.
+
+DATA(ls_req) = VALUE zcl_mt_subscribe_erp_req(
+  mt_subscribe_erp_req-param = VALUE #(
+    ( company    = lv_carrier_code          "物流商 API 代碼（第 4 節由設定表取得）
+      number     = lv_tracking_no
+      key        = lv_api_key               "由安全儲存取得，不可寫死（第 14 節）
+      parameters = VALUE #( ( callbackurl = lv_callback_url
+                              phone       = lv_phone ) ) ) ) ).
+
+TRY.
+    DATA(lo_proxy) = NEW zcl_co_si_subscribe_out( ).
+    lo_proxy-&gt;si_subscribe_out( EXPORTING output = ls_req
+                                IMPORTING input  = ls_res ).
+    DATA(lv_status) = COND char1( WHEN ls_res-mt_subscribe_erp_res-result = 'true' THEN 'S' ELSE 'E' ).
+    DATA(lv_msg)    = |{ ls_res-mt_subscribe_erp_res-return_code } { ls_res-mt_subscribe_erp_res-message }|.
+  CATCH cx_ai_application_fault INTO DATA(lx_app).
+    lv_status = 'E'.
+    lv_msg    = lx_app-&gt;get_text( ).
+  CATCH cx_ai_system_fault INTO DATA(lx_sys).
+    lv_status = 'E'.
+    lv_msg    = |{ lx_sys-&gt;code } { lx_sys-&gt;errortext }|.   "不是 sy-msgid！
+ENDTRY.</code></pre>
+  <div class="warn"><b>原程式通病：例外後用 <span class="kw">MESSAGE ID sy-msgid TYPE sy-msgty …</span> 取訊息。</b>CX_AI_SYSTEM_FAULT 是類別型例外，<b>不會填 sy-msgid／sy-msgno</b>；那行只會丟出上一個殘留訊息或空白訊息（sy-msgty 為空時甚至直接 DUMP）。正確做法是讀例外物件的 <span class="kw">get_text( )</span>，或 CX_AI_SYSTEM_FAULT 的公開屬性 CODE、ERRORTEXT。ZSDU005、ZSDU011、ZFIU006 都有這個錯。</div>
+  <div class="note"><b>同步與非同步的 COMMIT WORK：</b>非同步（Outbound Asynchronous）介面在呼叫方法時只是把訊息放進本地佇列，<b>要等 COMMIT WORK 才真正送出</b>，而且「呼叫成功」只代表進了佇列，不代表對方收到——要看 <span class="tcode">SXMB_MONI</span>。ZSDU011 的 SI_TRANSACTION_ALL_SYNC_OUT 只有 output、沒有 input，極可能是非同步介面，因此它在 ALV 上顯示的「發送成功！」其實只是「已排入 PI 佇列」。同步介面則不需要 COMMIT WORK；原程式在同步呼叫後照樣 COMMIT，會順帶提交同一 LUW 內其他尚未提交的更新，要小心。</div>
+
+  <h3 id="ch08-8-04">4. ZSDU005：快遞100 手工重新訂閱</h3>
+  <p><b>業務情境</b>：出貨後倉庫在揀貨單（自建 WMS 表 ZWMT011 表頭／ZWMT012 行項目）登錄快遞單號，系統透過 PI 向「快遞100」訂閱該單號的物流軌跡，快遞100 之後會把軌跡變化回推到 PI 的 REST 回呼端點，再寫進 SAP 的 ZSDT015（見第 5 節）。若當初訂閱失敗、或單號後來更正，就用這支程式「手工重新訂閱」。說明.txt 只有一句：「快递100手工重新订阅」。</p>
+  <p><b>選擇畫面（依截圖）</b>：標題「批量重新訂閱快遞100」，只有一個必填參數「文件名」（型別 RLGRAP-FILENAME，CHAR128），F4 開檔案對話框，讀 Excel 第 1 欄、第 2 列起的交貨單號。附的 RLGRAP 截圖顯示這個結構有 FILENAME、FILETYPE、FILEMODE、PRINTER、FILEFM_UL 五個欄位。</p>
+  <p><b>用到的表與物件</b>：</p>
+  <table>
+    <thead><tr><th>物件</th><th>用途</th><th>欄位重點（依截圖）</th></tr></thead>
+    <tbody>
+      <tr><td>LIKP</td><td>取交貨單的裝運類型 VSART</td><td>—</td></tr>
+      <tr><td>T173</td><td>VSART → 運輸類型 VKTRA（Z1~Z5），再用 CASE 對映成快遞100 的物流商代碼</td><td>原程式寫死：Z1 yunda、Z2 shentong、Z3 ztky、Z4 shunfeng、Z5 ems</td></tr>
+      <tr><td>ZWMT012／ZWMT011</td><td>交貨單 → 揀貨單（PIBILL）→ 快遞單號 ZEXPRESS、收貨人電話 SHRTEL</td><td>ZWMT011：PIBILL（鍵）、ZTYPE、BWART、KOSTL、FLGNUM／FWERKS／FLGORT…（來源倉）、SWERKS／SLGORT…（目的倉）、SHR 收貨人、SHRTEL 收貨人電話、SHADDR 收貨地址、ZEXPRESS 快遞單號、ZBOX 包裹數、UNAME／DATUM／UZEIT</td></tr>
+      <tr><td>ZSDT018</td><td>「快遞100訂閱介面返回結果日誌表」</td><td>MANDT、VBELN（VBELN_VL，鍵）、E_RESULT（CHAR5）、E_RETURNCODE（CHAR3）、E_MESSAGE（CHAR100）</td></tr>
+      <tr><td>ZCL_CO_SI_SUBSCRIBE_OUT</td><td>同步 Consumer Proxy，方法 SI_SUBSCRIBE_OUT</td><td>見第 3 節</td></tr>
+      <tr><td>WS_FILENAME_GET、ALSM_EXCEL_TO_INTERNAL_TABLE</td><td>選檔、讀 Excel</td><td>兩者都是舊函數（前者已過時）</td></tr>
+    </tbody>
+  </table>
+  <p><b>程式架構</b>：AT SELECTION-SCREEN ON VALUE-REQUEST 裡同時選檔又讀檔（所以使用者一按 F4 資料就讀進來了）→ START-OF-SELECTION 做 frm_post：一次讀進 LIKP、T173、ZWMT012、ZWMT011 → 逐張交貨單組請求、呼叫 Proxy、把結果 MODIFY 進 ZSDT018、COMMIT、<span class="kw">WAIT UP TO 2 SECONDS</span>（避免被對方限流）。</p>
+  <p><b>現代改寫</b>：(1) 不需要 Excel——交貨單號用 SELECT-OPTIONS 的多重選擇，使用者從 Excel 複製一整欄貼上即可，而且是<b>一筆筆 EQ 列舉</b>；(2) 物流商代碼改由設定表維護；(3) 金鑰與回呼網址由安全儲存取得。</p>
+  <pre><code class="abap">*&amp;-------------------------------------------------------------*
+*&amp; ZSDU005 現代版：選擇畫面 + 一次 JOIN 取齊資料
+*&amp;-------------------------------------------------------------*
+DATA gv_vbeln TYPE likp-vbeln.
+SELECT-OPTIONS s_vbeln FOR gv_vbeln OBLIGATORY NO INTERVALS.   "只允許列舉，不給區間
+
+START-OF-SELECTION.
+  " 多重選擇貼上的號碼會自動走 VBELN 的 ALPHA 轉換，
+  " 不必像原程式用 UNPACK 補前導零
+  SELECT l~vbeln,
+         l~vsart,
+         t~vktra,
+         m~carrier_code,                        "自建設定表 ZSD_CARRIER_MAP
+         h~zexpress,
+         h~shrtel
+    FROM likp AS l
+    INNER JOIN t173            AS t ON t~vsart  = l~vsart
+    LEFT OUTER JOIN zsd_carrier_map AS m ON m~vktra  = t~vktra
+    LEFT OUTER JOIN zwmt012    AS d ON d~zvbeln = l~vbeln
+                                   AND d~zdel   = @space
+    LEFT OUTER JOIN zwmt011    AS h ON h~pibill = d~pibill
+    WHERE l~vbeln IN @s_vbeln
+    ORDER BY l~vbeln, d~pibill, d~zitem                "HANA 無預設排序，「取第一筆」前一定要排
+    INTO TABLE @DATA(lt_dlv).
+
+  " 一張交貨單可能對到多筆揀貨行：只留第一筆有快遞單號的
+  DELETE lt_dlv WHERE zexpress IS INITIAL.
+  DELETE ADJACENT DUPLICATES FROM lt_dlv COMPARING vbeln.
+
+  LOOP AT lt_dlv INTO DATA(ls_dlv).
+    IF ls_dlv-carrier_code IS INITIAL.
+      " 寫日誌：運輸類型 ls_dlv-vktra 尚未在 ZSD_CARRIER_MAP 維護
+      CONTINUE.
+    ENDIF.
+    " … 依第 3 節範本組請求並呼叫 Proxy，結果寫入介面日誌（第 15 節）
+  ENDLOOP.</code></pre>
+  <div class="tip"><b>列舉比區間安全</b>（Casper 實務經驗第 2 條）：重新訂閱的對象是「出問題的那幾張」，本來就是離散號碼。用 NO INTERVALS 強迫列舉，就不會有人輸入「80001000 到 80009999」一次把幾千張單重新訂閱、把對方的額度打爆。</div>
+  <p><b>原程式的問題與改進</b>：</p>
+  <ul>
+    <li><b>工作區殘值導致資料錯置（含個資）</b>：迴圈內 <span class="kw">READ TABLE … INTO DATA(ls_zwmt011)</span> 讀不到時，ls_zwmt011 保留<b>上一張交貨單</b>的內容，而程式緊接著用 <span class="kw">IF ls_zwmt011 IS NOT INITIAL</span> 判斷要不要填收件人電話——結果是 A 單的收件人電話被送去訂閱 B 單。ls_t173 也有同樣問題（物流商代碼沿用上一筆）。改法：每圈開頭 CLEAR，或像上面一樣用一次 JOIN 取回，根本不需要逐筆 READ。</li>
+    <li>ZWMT012 先 <span class="kw">SORT BY pibill</span> 再 <span class="kw">DELETE ADJACENT DUPLICATES COMPARING pibill</span>，等於「每張揀貨單只留一行」，之後卻用 ZVBELN 去 READ（線性搜尋）。一張揀貨單若含多張交貨單，後面幾張就找不到快遞單號。</li>
+    <li>API key（快遞100 授權碼）與 PI REST Adapter 回呼網址寫死在程式裡，且正式／測試共用——見第 14 節。</li>
+    <li>ZSDT018 以 VBELN 為唯一鍵、用 MODIFY 覆寫：只留最後一次結果，沒有歷史，也沒有時間戳記。</li>
+    <li>選檔與讀檔寫在 ON VALUE-REQUEST 裡：使用者直接在欄位輸入路徑而不按 F4 時，gt_vbeln 永遠是空的。</li>
+    <li>OCCURS 0 WITH HEADER LINE、ALSM_EXCEL_TO_INTERNAL_TABLE（依賴前端 OLE，背景不能跑）都屬淘汰寫法。</li>
+  </ul>
+  <div class="warn"><b>上線注意</b>：快遞100 對部分物流商（例如順豐）要求提供收件人或寄件人電話才能查詢軌跡，推測這就是 2023 年補上 PHONE 欄位的原因。電話屬個資：日誌表只存必要的末四碼，ALV 顯示遮罩，並確認對外傳送符合當地個資法規（中國《個人信息保護法》、台灣《個人資料保護法》）。</div>
+
+  <h3 id="ch08-8-05">5. ZSDU028：快遞100 物流資訊回推下游</h3>
+  <p><b>業務情境</b>：快遞100 把軌跡變化推到 PI 的 REST 端點，PI 以入站 Proxy 寫入 SAP 的 <b>ZSDT015「快遞100 返回介面日誌」</b>；ZSDU028 再把這些軌跡組合交貨單、揀貨單、物流商名稱後，透過另一個出站 Proxy（ZCO_SI_LG_DATA_OUT，方法 SI_LG_DATA_OUT）推給下游平台（經銷商／客服系統）。背景作業（<span class="kw">sy-batch = 'X'</span>）自動送所有未成功者；前台則開 Dynpro 9001 上的 CL_GUI_ALV_GRID，讓使用者勾選後按工具列「發送」（功能碼 ZPOST）重送。</p>
+  <p><b>選擇畫面（依截圖）</b>：標題「快遞100物流資訊介面」，篩選條件「字符表單中的 UUID」（S_UUID）、「快遞單號」（S_EXPSS）；另有 S_DATUM、S_UZEIT 設為 NO-DISPLAY（保留給背景變式使用）。</p>
+  <table>
+    <thead><tr><th>ZSDT015 欄位（依截圖，13 欄）</th><th>型別</th><th>說明</th></tr></thead>
+    <tbody>
+      <tr><td>MANDT、<b>UUID</b>（鍵）</td><td>CLNT3、CHAR32（SYSUUID_C）</td><td>每筆回推一個 UUID</td></tr>
+      <tr><td>ZEXPRESS</td><td>CHAR20</td><td>快遞單號</td></tr>
+      <tr><td>ZGXZT／ZDATE／ZGXXQ</td><td>CHAR1／CHAR19／CHAR200</td><td>快遞單更新狀態、更新時間（yyyy-mm-dd hh:mm:ss 字串）、更新詳情</td></tr>
+      <tr><td>DATUM／UZEIT</td><td>DATS／TIMS</td><td>寫入日期時間</td></tr>
+      <tr><td>ZFLAG／MSG</td><td>CHAR1／CHAR256</td><td>發送標記（S＝成功）、訊息</td></tr>
+      <tr><td>SNAME／SDATE／STIME</td><td>CHAR12／DATS／TIMS</td><td>發送者、發送日期、時間</td></tr>
+    </tbody>
+  </table>
+  <p>下游請求結構 ZDT_LG_DATA_REQ_DATA 的對映（程式註解）：PUID←UUID、SUBSCRIBED←ZSDT018-E_RESULT（是否已訂閱）、UPDATETIME←ZDATE、LGSTATUS←ZGXZT、LGINFO←ZGXXQ、DELIVERYORDER←交貨單、LGCOMPANYID←LIKP-VSART、LGCOMPANYNAME←T173T-BEZEI、COURIERNO←快遞單號、PHONE←收貨人電話（2023 年新增）。ALV 另外顯示揀貨單號、訂閱消息，並可雙擊交貨單號跳 <span class="tcode">VL03N</span>。</p>
+  <p><b>程式架構</b>：ZSDU028_CLASS 內宣告全域資料、事件類別 LCL_APPLICATION（TOOLBAR、DOUBLE_CLICK、HOTSPOT_CLICK、USER_COMMAND、DATA_CHANGED 五個靜態事件處理器，全部轉呼叫 FORM）以及一整套「萬用 ALV 工具 FORM」；STATUS_9001 PBO 建 ALV、USER_COMMAND_9001 處理返回。實際業務邏輯只有 FRM_GET_BASEDATA 與 F_HANDLE_USER_COMMAND 兩段，而且<b>兩段幾乎一模一樣</b>（背景送、前台送各寫一次）。</p>
+  <pre><code class="abap">*&amp;-------------------------------------------------------------*
+*&amp; ZSDU028 核心：背景與前台共用同一個發送方法，逐筆記錄狀態
+*&amp;-------------------------------------------------------------*
+METHOD send_tracking.   "IMPORTING it_rows TYPE tt_show  CHANGING ct_log TYPE tt_zsdt015
+  DATA ls_res TYPE zmt_lg_data_res.
+
+  DATA(ls_req) = VALUE zmt_lg_data_req(
+    mt_lg_data_req-data = VALUE #(
+      FOR r IN it_rows WHERE ( zflag &lt;&gt; 'S' )
+      ( puid          = r-uuid
+        subscribed    = r-result
+        updatetime    = r-zdate
+        lgstatus      = r-zgxzt
+        lginfo        = r-zgxxq
+        deliveryorder = r-zvbeln
+        lgcompanyid   = r-vsart
+        lgcompanyname = r-bezei
+        courierno     = r-zexpress
+        phone         = r-shrtel ) ) ).
+  CHECK ls_req-mt_lg_data_req-data IS NOT INITIAL.
+
+  TRY.
+      NEW zco_si_lg_data_out( )-&gt;si_lg_data_out( EXPORTING output = ls_req
+                                                 IMPORTING input  = ls_res ).
+      DATA(lv_flag) = COND char1( WHEN to_upper( ls_res-mt_lg_data_res-code ) = 'OK' THEN 'S' ELSE 'E' ).
+      DATA(lv_msg)  = |{ ls_res-mt_lg_data_res-code },{ ls_res-mt_lg_data_res-msg }|.
+    CATCH cx_ai_system_fault INTO DATA(lx_sys).
+      lv_flag = 'E'.                                "原程式背景模式吞掉例外，ZFLAG 變空白
+      lv_msg  = lx_sys-&gt;get_text( ).
+  ENDTRY.
+
+  LOOP AT ct_log ASSIGNING FIELD-SYMBOL(&lt;ls_log&gt;)
+       WHERE zflag &lt;&gt; 'S'.
+    CHECK line_exists( it_rows[ uuid = &lt;ls_log&gt;-uuid ] ).
+    &lt;ls_log&gt;-zflag     = lv_flag.
+    &lt;ls_log&gt;-msg       = lv_msg.
+    &lt;ls_log&gt;-sname     = sy-uname.
+    &lt;ls_log&gt;-sdate     = sy-datum.
+    &lt;ls_log&gt;-stime     = sy-uzeit.
+    &lt;ls_log&gt;-retry_cnt = &lt;ls_log&gt;-retry_cnt + 1.   "建議新增欄位：重送次數
+  ENDLOOP.
+  UPDATE zsdt015 FROM TABLE @ct_log.
+ENDMETHOD.</code></pre>
+  <p><b>原程式的問題與改進</b>：</p>
+  <ul>
+    <li><b>整批一個回應碼</b>：下游只回一個 CODE／MSG，程式把它套在這批所有列上。一筆資料有誤就整批標 E，下次又整批重送；應要求下游逐筆回應（回傳 PUID 對應的結果），或至少把批量切小。</li>
+    <li><b>背景模式吞例外</b>：CATCH 後什麼都不做，GV_CODE 為空、ZFLAG 被寫成空白——下一次背景作業又會重送，<b>無上限地重試</b>。要有重送次數上限與告警（第 15 節）。</li>
+    <li>GT_FLOW 先 <span class="kw">SORT BY PIBILL ZITEM</span> 又立刻 <span class="kw">SORT BY ZEXPRESS PIBILL ZITEM</span>，第一次排序是多餘的；以快遞單號 BINARY SEARCH 只取第一筆，一個快遞單號對多張交貨單時會漏資料。</li>
+    <li>FRM_SET_SCREEN 去改一個不存在的欄位 S_DIREC-LOW（還重複寫兩次），是從別支程式複製過來的殘骸；FRM_READ_TXT、FRM_AT_SELECTION 是空 FORM。</li>
+    <li>「萬用 ALV 工具 FORM」（BUILD_FIELDCAT1 參照一個跟本案無關的 EPIC_S_EBR_HDR 結構、FRM_CONFIRM、FRM_BAPI_COMMIT…）大多沒被呼叫。範本化是好事，但要放在可重用的類別裡（參考 <a href="#ch03-2">3-2 章</a> OOALV 與 <a href="#ch07-5">7-5 章</a> 設計模式），而不是每支程式複製一份。</li>
+  </ul>
+
+  <h3 id="ch08-8-06">6. ZSDU011：交貨單資訊同步——業務、資料與輸出</h3>
+  <p><b>業務情境</b>：把「出貨點 1000、1004 且銷售組織 1000/1001」的交貨單（含行項目、批次、效期、快遞單號、已開票金額）同步給下游系統。背景作業每隔一段時間跑一次，只送「上次執行以來新增或變更」的交貨單；被刪除的交貨單也要通知下游刪除。前台可依日期查詢並手工重送。</p>
+  <p><b>選擇畫面（依截圖）</b>：「交貨單號」S_VBELN、「交貨單更新日期」S_ERDAT（預設 sy-datum、必填）。</p>
+  <p><b>輸出與日誌表 ZSDT011「交貨單資訊同步介面 LOG 表」（依截圖 34 欄）</b>：</p>
+  <table>
+    <thead><tr><th>分組</th><th>欄位</th></tr></thead>
+    <tbody>
+      <tr><td>鍵</td><td>MANDT、<b>CRDAT、CRTIM</b>（發送日期時間）、VBELN（VBELN_VL）、POSNR（POSNR_VL）——鍵含發送時間，所以每送一次就多一筆歷史</td></tr>
+      <tr><td>單據</td><td>ERDAT、ERZET、AEDAT、CRNAM、BSTKD（客戶參考）、WADAT_IST（實際發貨日）、ZEXPRESS、VSART、BEZEI（VERSARTBEZ）</td></tr>
+      <tr><td>客戶</td><td>KUNAG、NAME1、NAME2（客戶簡稱）、KUNNR（開票方）</td></tr>
+      <tr><td>行項目</td><td>VGBEL、VGPOS、POSEX（ZU_ZID，外部行項目 ID）、WERKS、LGORT、SONUM（LVS_SONUM，經銷商庫存地點）、MATNR（CHAR40）、LFIMG、NETWR（NETWR_FP，已開票金額）、CHARG、QNDAT（效期）、ZZBATCH（廠內批號）</td></tr>
+      <tr><td>狀態</td><td>MSGTY、ICON（紅綠燈）、MESSAGE（BAPI_MSG）、SGFLG（手工發送標記）</td></tr>
+    </tbody>
+  </table>
+  <p>水位線表 ZSDT014（程式推得）：CPROG（程式名，鍵）、UDATE、UTIME、UNAME——記錄每支程式上次執行到哪個時間點。訊息類別 ZMSG_CN 的截圖列出 040~065 號訊息（委外採購單類型檢查、揀配單沖銷、快遞單號含空格…），本程式用到 008「沒有滿足條件的資料！」與 009「請選擇需要操作的資料！」。</p>
+  <p><b>出站 Proxy</b>：ZCL_CO_SI_TRANSACTION_ALL_SYNC（方法 SI_TRANSACTION_ALL_SYNC_OUT，只有 output）。表頭 DT ZCL_DT_TRANSACTION_ALL_SYNC_O1：VBELN、VGBEL、BSTKD、WADAT_IST、ZEXPRESS、BEZEI、KUNAG、NAME1、NAME2、KUNNR、ITEMS；行項目 DT ZCL_DT_TRANSACTION_ALL_SYNC_OU：POSNR、POSEX、VGBEL、VGPOS、MATNR、LFIMG、CHARG、QNDAT、LGORT、SONUM、NETWR、ZZBATCH（全部 STRING）。</p>
+  <p><b>取數邏輯</b>：</p>
+  <ol>
+    <li>CDHDR（OBJECTCLAS = 'LIEFERUNG'）找時間窗內有變更的交貨單 → JOIN LIKP、LIPS、KNA1 取明細。</li>
+    <li>另以 LIKP-ERDAT/ERZET 抓時間窗內「新建」的交貨單（原程式假設新建不一定產生變更文件）。</li>
+    <li>CDHDR 有、LIKP 已不存在 → 視為<b>已刪除</b>，送一筆只有 VBELN、FLAG='X' 的資料。</li>
+    <li>VBRP＋VBRK（FKART NOT IN 'S1','S2' 且 FKSTO 空白）依 VGBEL/VGPOS 彙總 NETWR＋MWSBP＝已開票含稅金額。</li>
+    <li>VBKD 取 BSTKD；外部行項目 ID：銷售組織 1000 取 VBAP-ZUZID（自建欄位），其他取 VBKD-IHREZ；VBPA 取 PARVW='RE' 的開票方；MCHA 取 QNDAT、ZZBATCH；T173T 取物流商名稱；ZWMT011/012 取快遞單號。</li>
+    <li>出貨點 1004 只保留銷售辦公室 1017 的單，其他刪除。</li>
+  </ol>
+  <pre><code class="abap">*&amp;-------------------------------------------------------------*
+*&amp; 已開票金額：讓資料庫彙總，不要在 ABAP 用 AT END OF + SUM
+*&amp;-------------------------------------------------------------*
+DATA lr_dlv TYPE RANGE OF vbeln_vl.
+lr_dlv = VALUE #( FOR GROUPS g OF a IN lt_alv GROUP BY a-vbeln
+                  ( sign = 'I' option = 'EQ' low = g ) ).        "列舉 EQ
+
+IF lr_dlv IS NOT INITIAL.
+  SELECT p~vgbel,
+         p~vgpos,
+         SUM( p~netwr ) AS netwr,
+         SUM( p~mwsbp ) AS mwsbp
+    FROM vbrp AS p
+    INNER JOIN vbrk AS k ON k~vbeln = p~vbeln
+    WHERE p~vgbel IN @lr_dlv
+      AND k~fkart NOT IN ( 'S1', 'S2' )      "排除取消發票
+      AND k~fksto = @space                   "排除已被取消者
+    GROUP BY p~vgbel, p~vgpos
+    INTO TABLE @DATA(lt_billed).
+ENDIF.
+
+LOOP AT lt_alv ASSIGNING FIELD-SYMBOL(&lt;ls_alv&gt;).
+  &lt;ls_alv&gt;-netwr = VALUE #( lt_billed[ vgbel = &lt;ls_alv&gt;-vbeln
+                                       vgpos = &lt;ls_alv&gt;-posnr ]-netwr OPTIONAL )
+                 + VALUE #( lt_billed[ vgbel = &lt;ls_alv&gt;-vbeln
+                                       vgpos = &lt;ls_alv&gt;-posnr ]-mwsbp OPTIONAL ).
+ENDLOOP.</code></pre>
+  <div class="note">RANGE 表若會超過數千筆，請分批（例如每 1,000 筆一段）或改用 FOR ALL ENTRIES 搭配不含彙總的 SELECT；某些資料庫對 IN 清單長度有上限。多幣別時 NETWR 要搭配 WAERK 一起彙總，不同幣別不可直接相加。</div>
+
+  <h3 id="ch08-8-07">7. ZSDU011：增量水位線、刪除同步與「發送後才推進水位」</h3>
+  <p>這支程式最值得學的是<b>增量抽取</b>的設計，最值得警惕的也是它的實作錯誤。原程式背景模式的 CDHDR 條件如下（用文字描述）：</p>
+  <ul>
+    <li>上次執行是今天：（UDATE＝上次日 且 UTIME ≥ 上次時）<b>且</b>（UDATE＝今天 且 UTIME ≤ 現在）——正確。</li>
+    <li>上次執行不是今天：（UDATE＝上次日 且 UTIME 介於上次時～23:59:59）<b>或</b>（UDATE＝今天 且 UTIME <b>≤ 00:00:00</b> 且 UTIME ≤ 現在）——<b>錯</b>。第二段應是 UTIME ≥ 00:00:00，寫成 ≤ 之後，今天午夜之後到現在的變更全部漏抓；而對應 LIKP 的那段（lv_sql1）卻寫對了，兩段邏輯不一致。</li>
+    <li>若背景作業停過一天以上（例如系統維護），中間那幾天<b>完全不在任何條件內</b>。</li>
+    <li>水位線在<b>取數時就更新並 COMMIT</b>，此時資料還沒送出；若之後發送失敗，下一次執行會從新水位開始，<b>失敗的那批再也不會自動重送</b>。</li>
+    <li>時間窗兩端都用 ≥／≤，邊界那一秒的變更會被抓兩次——下游必須能處理重複（冪等，第 16 節）。</li>
+  </ul>
+  <pre><code class="abap">*&amp;-------------------------------------------------------------*
+*&amp; 正確的增量水位線：跨日也不漏；成功後才推進水位
+*&amp;-------------------------------------------------------------*
+CONSTANTS c_lag_sec TYPE i VALUE 120.   "安全邊界：略過最近 2 分鐘，避免抓到尚未 COMMIT 的 LUW
+
+SELECT SINGLE udate, utime FROM zsdt014
+  WHERE cprog = @sy-repid
+  INTO @DATA(ls_wm).
+IF sy-subrc &lt;&gt; 0.
+  ls_wm = VALUE #( udate = '19000101' utime = '000000' ).   "首次執行：全量（或改成由使用者指定起點）
+ENDIF.
+
+" CDHDR 的 UDATE/UTIME 記的是「系統時區」時間（不是使用者時區 sy-zonlo）
+SELECT SINGLE tzonesys FROM ttzcu INTO @DATA(lv_sys_tz).
+GET TIME STAMP FIELD DATA(lv_now).
+DATA(lv_to_ts) = cl_abap_tstmp=&gt;subtractsecs( tstmp = lv_now secs = c_lag_sec ).
+DATA lv_to_date TYPE d.
+DATA lv_to_time TYPE t.
+CONVERT TIME STAMP lv_to_ts TIME ZONE lv_sys_tz
+  INTO DATE lv_to_date TIME lv_to_time.
+
+" 半開區間 [from, to)：下限含、上限不含，相鄰兩次執行不重疊也不漏
+SELECT DISTINCT objectid
+  FROM cdhdr
+  WHERE objectclas = 'LIEFERUNG'
+    AND ( udate &gt; @ls_wm-udate
+       OR ( udate = @ls_wm-udate AND utime &gt;= @ls_wm-utime ) )
+    AND ( udate &lt; @lv_to_date
+       OR ( udate = @lv_to_date AND utime &lt; @lv_to_time ) )
+  INTO TABLE @DATA(lt_changed).
+
+" … 同樣條件抓 LIKP-ERDAT/ERZET 的新建單；組資料；發送 …
+
+IF lv_send_ok = abap_true.
+  " 只有全部送達（或已寫入可重送的日誌表）才推進水位
+  MODIFY zsdt014 FROM @( VALUE zsdt014( cprog = sy-repid
+                                         udate = lv_to_date
+                                         utime = lv_to_time
+                                         uname = sy-uname ) ).
+  COMMIT WORK.
+ENDIF.</code></pre>
+  <div class="tip"><b>刪除同步的技巧</b>：交貨單刪除後 LIKP 沒了，但 CDHDR 會留下紀錄，所以「CDHDR 有、LIKP 沒有」就能判定刪除。原程式註解坦白寫著「刪除的單無法區分中國／美國公司，所以刪除單一律都會發」——因為刪除後已經查不到銷售組織。改進做法：CDPOS 中刪除紀錄（CHNGIND = 'D'）通常帶有欄位舊值，或在交貨單建立時就把 VBELN＋組織寫進自己的介面日誌表，刪除時查日誌即可判斷。S/4HANA 中 CDPOS 已由叢集表改為透明表，直接 SELECT 沒問題。</div>
+  <p><b>其他問題</b>：</p>
+  <ul>
+    <li>動態 WHERE 用字串拼出含 <span class="kw">@GS_ZSDT014-UDATE</span> 的條件，可讀性差也難以靜態檢查；上面的靜態寫法完全可行。</li>
+    <li>frm_send_data 迴圈結束後直接用 &lt;fs_alv&gt;（指向最後一列）當範本，再 <span class="kw">MODIFY … TRANSPORTING … WHERE box = abap_true</span> 批次覆寫狀態；「一次呼叫、整批同一結果」的設計讓錯誤無法定位到單據。</li>
+    <li>迴圈內 <span class="kw">SELECT SINGLE kunnr FROM vbpa</span>（每一行項目一次），應在迴圈外一次取回。</li>
+    <li>ALV 用 REUSE_ALV_GRID_DISPLAY_LVC＋DEFINE 巨集建欄位目錄，現代寫法見 <a href="#ch02-3">2-3 章</a>。</li>
+  </ul>
+  <div class="warn"><b>S/4HANA 注意</b>：KNA1 仍可讀，但客戶主檔的維護入口是 <span class="tcode">BP</span>；NAME1/NAME2 在 BP 組織名稱是 BUT000-NAME_ORG1~4，若下游要「客戶簡稱」，確認資料到底維護在哪個欄位。物料號為 40 碼（ZSDT011-MATNR 已是 CHAR40，Proxy 用 STRING 也沒問題）。交貨單狀態欄位已從 VBUK/VBUP 併入 LIKP/LIPS（例如 LIKP-WBSTK），新程式不要再 JOIN VBUK。</div>
+
+  <h3 id="ch08-8-08">8. ZSDU019：U 訂貨發貨／沖銷回寫</h3>
+  <p><b>業務情境</b>：經銷商在 U 訂貨平台（或 CRM）下單，SAP 以訂單號記錄在 ZSDT009（「U 訂貨或 CRM 建立的 SO」）。倉庫發貨過帳後，要把「交貨單號、客戶 PO（BSTKD）、實際發貨日、快遞單號、物流商、收貨地址電話、每行數量、批號、廠內批號、效期」回寫平台；若發貨過帳被沖銷，也要通知平台。</p>
+  <p><b>選擇畫面（依截圖）</b>：標題「交貨過帳介面傳輸手工處理」，條件：交貨 S_VBELN、銷售組織 S_VKORG、交貨類型 S_LFART、建立日期 S_ERDAT；單選鈕「發貨過帳」rb_po（預設）／「過帳沖銷」rb_re。</p>
+  <table>
+    <thead><tr><th>模式</th><th>取數</th><th>呼叫的自建函數</th><th>ALV 欄位</th></tr></thead>
+    <tbody>
+      <tr><td>發貨過帳</td><td>LIKP＋LIPS，WBSTK = 'C'（已完成發貨），且參考訂單存在 ZSDT009</td><td>ZSDFM007_POST_DELIVERY（傳 VBELN、BSTKD、WADAT_IST、EXPRESS、EXPCOMP、送貨地址 STREET/STR_SUPPL1~3/LOCATION/NAME_CO/TEL_NUMBER，TABLES IT_ITEM：POSNR、LFIMG、CHARG、POSEX、ZZBATCH、QNDAT）</td><td>VBELN、BSTKD、WADAT_IST、ZEXPRESS、BEZEI、POSNR、POSEX、LFIMG、CHARG、ZZBATCH、QNDAT、ZUZID、MSG，燈號欄 DENG</td></tr>
+      <tr><td>過帳沖銷</td><td>LIKP 條件相同；以 VBFA（VBTYP_N = 'J'）找參考訂單，訂單須存在 ZSDT009</td><td>ZSDFM007_CANCEL_DELIVERY（VBELN、WBSTK = 'X'）</td><td>VBELN、WBSTK、MSG、DENG</td></tr>
+    </tbody>
+  </table>
+  <p>效期邏輯（2021-08-18 修改）：先從條碼記錄表 ZWMT008 取滅菌效期 STERILIZE（揀貨單號＋物料＋批次、未刪除），取不到才呼叫 ZWMFU0 以生產日期 HSDAT 推算。地址取自 VBPA（PARVW = 'WE' 送達方）JOIN ADRC。ZSDFM007_* 兩支函數的內部未附原始碼，推測是包裝 HTTP 或 Proxy 的呼叫；回傳 I_CODE（E＝失敗）與 I_MESASGE（原文拼字如此）。</p>
+  <pre><code class="abap">*&amp;-------------------------------------------------------------*
+*&amp; ZSDU019 修正版：① 背景模式真的會送 ② 一次 SQL 取代迴圈內 7 次 SELECT
+*&amp;-------------------------------------------------------------*
+START-OF-SELECTION.
+  SELECT h~vbeln, h~wbstk, h~wadat_ist, h~vsart, h~vkorg,
+         d~posnr, d~matnr, d~werks, d~charg, d~lfimg, d~vgbel, d~vgpos,
+         k~bstkd,
+         t~bezei,
+         b~zzbatch, b~hsdat
+    FROM likp AS h
+    INNER JOIN lips AS d            ON d~vbeln = h~vbeln
+    LEFT OUTER JOIN vbkd AS k       ON k~vbeln = d~vgbel AND k~posnr = '000000'
+    LEFT OUTER JOIN t173t AS t      ON t~vsart = h~vsart AND t~spras = @sy-langu
+    LEFT OUTER JOIN mcha AS b       ON b~matnr = d~matnr AND b~werks = d~werks
+                                   AND b~charg = d~charg
+    WHERE h~vbeln IN @s_vbeln
+      AND h~vkorg IN @s_vkorg
+      AND h~lfart IN @s_lfart
+      AND h~erdat IN @s_erdat
+      AND h~wbstk = 'C'                               "S/4：狀態已在 LIKP，不必 JOIN VBUK
+      AND d~vgbel &lt;&gt; @space
+      AND EXISTS ( SELECT vbeln FROM zsdt009 WHERE vbeln = d~vgbel )   "只取平台來源訂單
+    ORDER BY h~vbeln, d~posnr
+    INTO TABLE @DATA(lt_po).
+
+  " 原程式：CASE 'X'. WHEN 'rb_po'. … —— 比的是字面值 'rb_po'，永遠不成立
+  IF sy-batch = abap_true.
+    CASE abap_true.
+      WHEN rb_po. lo_app-&gt;send_post( lt_po ).
+      WHEN rb_re. lo_app-&gt;send_reversal( lt_re ).   "lt_re：以 VBFA（VBTYP_N = 'J'）取參考訂單，同樣用 EXISTS 過濾
+    ENDCASE.
+  ELSE.
+    lo_app-&gt;display( ).
+  ENDIF.</code></pre>
+  <div class="warn"><b>最嚴重的錯：背景模式什麼都沒送。</b>原程式 END-OF-SELECTION 寫 <span class="kw">CASE 'X'. WHEN 'rb_po'.</span>——單引號裡是<b>字面字串</b> 'rb_po'，不是參數 rb_po 的值，'X' 永遠不等於 'rb_po'，於是背景作業每次都跑完取數、然後安靜結束，工作日誌也不會有任何錯誤。前台分支寫的是 <span class="kw">WHEN rb_po</span>（沒引號）所以正常，這也是為什麼測試時沒人發現。<b>任何背景介面上線前，都要用 SM37 實際排一次作業，並到對方系統確認資料有到。</b></div>
+  <p><b>原程式的其他問題與改進</b>：</p>
+  <ul>
+    <li>LOOP 內 <span class="kw">DELETE gt_result_po</span>（刪除目前列）雖然合法，但搭配 ASSIGNING 很容易出錯；用 EXISTS 子查詢在 SQL 就過濾掉更清楚。</li>
+    <li>每一列都做 <span class="kw">SELECT COUNT(*) FROM likp WHERE vkorg = '1000' AND vbeln = …</span> 只為了判斷組織——LIKP-VKORG 早就在結果裡了。</li>
+    <li>發貨過帳在迴圈中 <span class="kw">WAIT UP TO 2 SECONDS</span> 並在每張單後 COMMIT WORK；限流應以設定值控制，且 WAIT 會隱含觸發資料庫 COMMIT，要清楚知道它的副作用。</li>
+    <li>送出成功後沒有寫任何日誌表，只改畫面上的燈號；關掉畫面就不知道送過沒有。平台端若沒有依交貨單號去重，<b>重按「發送」就會重複入庫</b>（第 16 節）。</li>
+    <li>OCCURS 0 表頭行、迴圈內重複宣告同名變數（l_hsdat、sterilize 在同一 FORM 宣告兩次）、前台與背景各寫一份相同的組裝邏輯。</li>
+  </ul>
+
+  <h3 id="ch08-8-09">9. ZMMU024：供應商主資料同步費控系統</h3>
+  <p><b>業務情境</b>：員工報銷與對外付款在外部「費控系統」發起，收款人（供應商與員工）及其銀行帳號必須與 SAP 一致。程式抓指定日期區間內新建或變更的供應商（帳戶群組 Z003、Z006、Z007，採購組織 1000 或公司代碼 1000），比對日誌表 ZMMT021：從沒同步成功過 → 新增（ZFLAG='1'），同一供應商＋銀行明細識別碼已同步過但內容變了 → 更新（ZFLAG='2'，帶回上次的 ID），完全相同 → 跳過。</p>
+  <p><b>選擇畫面（依截圖）</b>：標題「供應商主數據同步費控系統」，開始日期 P_BDATE、結束日期 P_EDATE（皆預設今天）、供應商 S_LIFNR。ALV 工具列多一個「同步」按鈕（功能碼 SAVE）。結果畫面欄位：標識、供應商編碼、供應商名稱、銀行明細標識、銀行代碼、開戶帳戶、銀行帳戶的參考規定、同步日期、同步時間、是否同步成功、返回 ID、消息編號、消息文本。</p>
+  <table>
+    <thead><tr><th>物件</th><th>欄位（依截圖）</th></tr></thead>
+    <tbody>
+      <tr><td>ZMMT021「供應商主數據同步費控系統介面日誌表」</td><td>MANDT、LIFNR、BVTYP（鍵）；BANKL（CHAR15）、BANKN（CHAR18）、BKREF（CHAR20）、NAME1（NAME1_GP）、ERDAT／ERTIM（同步日期時間）、ZFLAG、STATUS、ID（CHAR30 返回 ID）、MSGNUM、MESSAGE（CHAR600）</td></tr>
+      <tr><td>ZMMS021_IN（入參）</td><td>LIFNR</td></tr>
+      <tr><td>ZMMS021_OUT（送出資料）</td><td>ZFLAG、REMARK（LIFNR）、NAME、TYPE（供應商類別）、BRANCH（BANKL）、CARD_NO（CHAR38）、ACCESS_TOKEN（STRING）、OWNER（所有者類型）、ID</td></tr>
+      <tr><td>ZMMS021_RE（返回）</td><td>ID、ERRORCODE、ERRORMESSAGE</td></tr>
+      <tr><td>Proxy</td><td>ZCO_SI_TOKEN_OUT（取 token）、ZCO_SI_PAYEE_INFOS_OUT（新增收款人）、ZCO_SI_UPDATE_PAYEE_INFOS_OUT（更新收款人）</td></tr>
+    </tbody>
+  </table>
+  <p>欄位對映：CARD_NO＝BANKN＆BKREF（中國銀行帳號常超過 18 碼，溢出部分放 BKREF，這是 SAP 的標準做法）；BANK_LINK_NO＝銀行代碼（聯行號），BRANCH 固定 '1'；OWNER 固定 'CORPORATION'；TYPE：員工收款人（以特定前綴編碼）為 PERSONAL，其餘 PUBLIC；VISIBILITY-FULL_VISIBLE＝'X'。</p>
+  <div class="warn"><b>個資與金流風險最高的一支。</b>原附檔的 ALV 截圖與 xlsx 匯出內容是<b>員工的姓名與個人銀行帳號</b>（本章不重現任何一筆）。這類程式：① ALV／日誌中帳號只顯示末四碼；② 匯出功能要有權限物件控管；③ 日誌表設權限群組並停用 <span class="tcode">SE16</span> 瀏覽；④ 傳輸時絕不帶資料；⑤ 在測試系統用去識別化資料。銀行帳號被竄改＝付款被導走，變更必須有雙人覆核（S/4HANA 可用 BP 的「敏感欄位雙重控制」，Customizing：Cross-Application Components → SAP Business Partner → Business Partner → Settings for Sensitive Fields…）。</div>
+  <pre><code class="abap">*&amp;-------------------------------------------------------------*
+*&amp; S/4HANA 取數：供應商＝BP；以 CVI_VEND_LINK 對映，不假設編號相同
+*&amp; 差異偵測：對「要送出去的內容」算雜湊，一次比對取代 6 欄 COUNT(*)
+*&amp;-------------------------------------------------------------*
+" lr_date：由 P_BDATE／P_EDATE 組成的日期 RANGE（只給開始日則 EQ，兩者皆有則 BT）
+SELECT DISTINCT l~lifnr, l~name1, k~bvtyp, k~bankl, k~bankn, k~bkref
+  FROM lfa1 AS l
+  INNER JOIN lfbk AS k          ON k~lifnr = l~lifnr
+  INNER JOIN cvi_vend_link AS c ON c~vendor = l~lifnr
+  INNER JOIN but000 AS b        ON b~partner_guid = c~partner_guid
+  WHERE l~lifnr IN @s_lifnr
+    AND l~ktokk IN ( 'Z003', 'Z006', 'Z007' )                "列舉，不用區間
+    AND ( b~crdat IN @lr_date OR b~chdat IN @lr_date )
+    AND (    EXISTS ( SELECT lifnr FROM lfm1 WHERE lifnr = l~lifnr AND ekorg = '1000' )
+          OR EXISTS ( SELECT lifnr FROM lfb1 WHERE lifnr = l~lifnr AND bukrs = '1000' ) )
+  ORDER BY l~lifnr, k~bvtyp
+  INTO TABLE @DATA(lt_vendor).
+
+SELECT lifnr, bvtyp, id, payload_hash
+  FROM zmmt021
+  WHERE status = 'S'
+  INTO TABLE @DATA(lt_synced).                  "建議新增欄位 PAYLOAD_HASH
+SORT lt_synced BY lifnr bvtyp.
+
+LOOP AT lt_vendor INTO DATA(ls_v).
+  DATA lv_hash TYPE hash160.
+  TRY.
+      cl_abap_message_digest=&gt;calculate_hash_for_char(
+        EXPORTING if_algorithm  = 'SHA1'
+                  if_data       = |{ ls_v-name1 }{ ls_v-bankl }{ ls_v-bankn }{ ls_v-bkref }|
+        IMPORTING ef_hashstring = lv_hash ).
+    CATCH cx_abap_message_digest.
+      CONTINUE.
+  ENDTRY.
+
+  READ TABLE lt_synced INTO DATA(ls_s) WITH KEY lifnr = ls_v-lifnr bvtyp = ls_v-bvtyp BINARY SEARCH.
+  DATA(lv_action) = COND char1( WHEN sy-subrc &lt;&gt; 0           THEN '1'    "新增
+                                WHEN ls_s-payload_hash &lt;&gt; lv_hash THEN '2'    "更新（帶 ls_s-id）
+                                ELSE space ).                            "無變更，跳過
+  CHECK lv_action IS NOT INITIAL.
+  " … 組 ZMMS021_OUT，依 lv_action 呼叫新增或更新介面 …
+ENDLOOP.</code></pre>
+  <p><b>原程式的問題與改進</b>：</p>
+  <ul>
+    <li><b>正式機與測試機的 app_key／app_security 以 <span class="kw">IF sy-mandt = '…'</span> 寫死在程式裡</b>，兩組金鑰隨程式傳到每一套系統。改法見第 14 節——目的地不同，程式就不必知道自己在哪套系統。</li>
+    <li><span class="kw">TRY … CATCH cx_ai_system_fault. ENDTRY. IF sy-subrc = 0. COMMIT WORK.</span>：方法呼叫不設定 sy-subrc，這個判斷永遠看到的是前一個敘述的殘值。</li>
+    <li>token 只 READ 第一筆，沒檢查是否取得成功；取不到 token 仍繼續呼叫新增／更新，得到一堆「未授權」錯誤。</li>
+    <li>建立 Proxy 物件的 CATCH 是空的，建立失敗後照樣呼叫方法 → 空參考 DUMP。</li>
+    <li>錯誤訊息用 <span class="kw">SPLIT lv_msg AT 'Message:'</span> 從例外文字硬切，對方改一個字就失效；應以 Fault Message 或 HTTP 狀態碼判斷。</li>
+    <li>JOIN LFM1、LFB1 用 LEFT JOIN 再以 OR 過濾，會產生笛卡兒積重複（所以才需要 DISTINCT）；改 EXISTS 子查詢語意正確且不重複。</li>
+    <li>RANGES、表頭行 LT_SORT WITH HEADER LINE、每列一次 SELECT COUNT(*)（兩次）＋ SELECT SINGLE。</li>
+  </ul>
+  <div class="note"><b>S/4HANA 主資料差異</b>：<span class="tcode">XK01</span>/<span class="tcode">XK02</span> 已停用，供應商一律用 <span class="tcode">BP</span> 維護，LFA1/LFBK 由 CVI（Customer Vendor Integration）同步產生，所以讀 LFA1/LFBK 仍然正確；但「變更時間」請看 BUT000-CHDAT 或 BP 變更文件，而不是 LFA1-ERDAT。BP 的銀行明細本體在 BUT0BK（鍵 PARTNER＋BKVID），LFBK-BVTYP 與 BUT0BK-BKVID 對應。原程式以 <span class="kw">but000~partner = lfa1~lifnr</span> JOIN，只有在 BP 與供應商編號範圍設成「相同編號」時才成立；用 CVI_VEND_LINK 才是通用寫法。</div>
+
+  <h3 id="ch08-8-10">10. OAuth token 取得與快取（通用元件）</h3>
+  <p>ZMMU024 每次執行都先呼叫 SI_TOKEN_OUT 取一次 token，這在一天跑幾次的批次沒問題；但若把同樣寫法放進「每張單據觸發一次」的增強點（例如交貨單過帳時即時回寫），就會對 token 端點造成大量請求，常見後果是被對方限流或封鎖。正確做法是<b>取一次、在有效期內重用、快到期才更新</b>。</p>
+  <p>SAP 標準提供 OAuth 2.0 用戶端：<span class="tcode">OA2C_CONFIG</span> 建立 OAuth 2.0 Client（Client ID／Secret 存在系統安全儲存），程式用 <span class="kw">CL_OAUTH2_CLIENT</span> 取得並把 token 附到 HTTP 請求上；token 的保存與更新由框架負責。<b>能用標準就用標準</b>。以下是對方不是標準 OAuth（例如自訂的 app_key＋app_security 換 token）時的自製快取寫法：</p>
+  <pre><code class="abap">*&amp;-------------------------------------------------------------*
+*&amp; Token 快取：Singleton + 到期前 60 秒更新
+*&amp;  金鑰由 SM59 目的地的 Basic 認證帶入，程式裡看不到任何密鑰
+*&amp;-------------------------------------------------------------*
+CLASS zcl_if_token_provider DEFINITION PUBLIC FINAL CREATE PRIVATE.
+  PUBLIC SECTION.
+    CLASS-METHODS get_instance
+      IMPORTING iv_dest           TYPE rfcdest
+      RETURNING VALUE(ro_instance) TYPE REF TO zcl_if_token_provider.
+    METHODS get_token
+      RETURNING VALUE(rv_token) TYPE string
+      RAISING   zcx_if_error.
+  PRIVATE SECTION.
+    TYPES: BEGIN OF ty_token_resp,
+             access_token TYPE string,
+             token_type   TYPE string,
+             expires_in   TYPE i,
+           END OF ty_token_resp.
+    CLASS-DATA go_instance TYPE REF TO zcl_if_token_provider.
+    DATA mv_dest       TYPE rfcdest.
+    DATA mv_token      TYPE string.
+    DATA mv_expires_at TYPE timestamp.
+    METHODS fetch RAISING zcx_if_error.
+ENDCLASS.
+
+CLASS zcl_if_token_provider IMPLEMENTATION.
+  METHOD get_instance.
+    IF go_instance IS NOT BOUND OR go_instance-&gt;mv_dest &lt;&gt; iv_dest.
+      go_instance = NEW #( ).
+      go_instance-&gt;mv_dest = iv_dest.
+    ENDIF.
+    ro_instance = go_instance.
+  ENDMETHOD.
+
+  METHOD get_token.
+    GET TIME STAMP FIELD DATA(lv_now).
+    IF mv_token IS INITIAL
+       OR cl_abap_tstmp=&gt;add( tstmp = lv_now secs = 60 ) &gt;= mv_expires_at.
+      fetch( ).
+    ENDIF.
+    rv_token = mv_token.
+  ENDMETHOD.
+
+  METHOD fetch.
+    DATA lo_http TYPE REF TO if_http_client.
+    cl_http_client=&gt;create_by_destination(
+      EXPORTING  destination = mv_dest            "例：Z_EXPENSE_TOKEN（型別 G，Basic＝client id/secret）
+      IMPORTING  client      = lo_http
+      EXCEPTIONS OTHERS      = 1 ).
+    IF sy-subrc &lt;&gt; 0.
+      RAISE EXCEPTION NEW zcx_if_error( textid = zcx_if_error=&gt;destination_error ).
+    ENDIF.
+
+    lo_http-&gt;propertytype_logon_popup = if_http_client=&gt;co_disabled.
+    lo_http-&gt;request-&gt;set_method( if_http_request=&gt;co_request_method_post ).
+    cl_http_utility=&gt;set_request_uri( request = lo_http-&gt;request uri = '/oauth/token' ).
+    lo_http-&gt;request-&gt;set_content_type( 'application/x-www-form-urlencoded' ).
+    lo_http-&gt;request-&gt;set_cdata( `grant_type=client_credentials` ).
+
+    lo_http-&gt;send( EXCEPTIONS OTHERS = 1 ).
+    IF sy-subrc = 0.
+      lo_http-&gt;receive( EXCEPTIONS OTHERS = 1 ).
+    ENDIF.
+    IF sy-subrc &lt;&gt; 0.
+      lo_http-&gt;close( ).
+      RAISE EXCEPTION NEW zcx_if_error( textid = zcx_if_error=&gt;communication_error ).
+    ENDIF.
+
+    lo_http-&gt;response-&gt;get_status( IMPORTING code = DATA(lv_code) ).
+    DATA(lv_json) = lo_http-&gt;response-&gt;get_cdata( ).
+    lo_http-&gt;close( ).
+    IF lv_code &lt;&gt; 200.
+      RAISE EXCEPTION NEW zcx_if_error( textid = zcx_if_error=&gt;http_error ).   "不要把回應內文寫進日誌：可能含敏感資訊
+    ENDIF.
+
+    DATA ls_resp TYPE ty_token_resp.
+    /ui2/cl_json=&gt;deserialize( EXPORTING json        = lv_json
+                                         pretty_name = /ui2/cl_json=&gt;pretty_mode-low_case
+                               CHANGING  data        = ls_resp ).
+    GET TIME STAMP FIELD DATA(lv_now).
+    mv_token      = ls_resp-access_token.
+    mv_expires_at = cl_abap_tstmp=&gt;add( tstmp = lv_now secs = ls_resp-expires_in ).
+  ENDMETHOD.
+ENDCLASS.</code></pre>
+  <div class="note"><b>快取的生命週期</b>：CLASS-DATA 只活在同一個內部 Session（同一次程式執行、同一個背景作業步驟）。這對批次已經足夠——ZMMU024 一次執行只要取一次 token。若要跨使用者、跨作業共用，可用 Shared Objects（<span class="tcode">SHMA</span>）；<b>不建議把 token 寫進資料庫表</b>，那等於多一份需要保護的憑證。Singleton 模式的更多討論見 <a href="#ch07-5">7-5 章</a>。<span class="kw">pretty_mode-low_case</span> 讓 ABAP 欄位 ACCESS_TOKEN 對映 JSON 的 access_token；若對方用 camelCase（accessToken）則改用 <span class="kw">pretty_mode-camel_case</span>。</div>
+
+  <h3 id="ch08-8-11">11. ZFIU006：取得 PayPal 已付款資料</h3>
+  <p><b>業務情境</b>：外銷客戶透過 PayPal 發票付款。報價單／發票列印程式（見 <a href="#ch08-2">8-2 章</a>）建立 PayPal 發票後，把 PayPal 發票 ID 與付款連結寫進 ZFIT002（狀態 S＝已建立）。ZFIU006 逐張向 PayPal 查詢發票狀態，<b>PAID</b> 者把狀態改為 P，並記錄更新人與時間，後續據以入帳沖銷應收（ZFIT002 預留了 BELNR、GJAHR、BUKRS 欄位）。</p>
+  <p><b>選擇畫面（依截圖）</b>：標題「獲取 Paypal 介面數據」，條件：發票號 S_VBELN（VBRK-VBELN）、建立日期 S_CRDAT、建立人 S_CRNAM。原有的狀態條件 S_STATU 被註解，改在 SQL 寫死 <span class="kw">zstatus = 'S'</span>。</p>
+  <table>
+    <thead><tr><th>ZFIT002「Paypal 介面抬頭數據」（依截圖）</th><th>說明</th></tr></thead>
+    <tbody>
+      <tr><td>MANDT、<b>ZPAYPALID</b>（CHAR50）、<b>VBELN</b>（VBELN_VF）</td><td>鍵：PayPal 發票 ID＋開票憑證</td></tr>
+      <tr><td>SOFLG、ZSTATUS（CHAR1）</td><td>SO 標記；PayPal 狀態（S 已建立、P 已付款）</td></tr>
+      <tr><td>HEFLINK（CHAR1200）</td><td>PayPal 付款連結</td></tr>
+      <tr><td>BSTNK_VF、REFERENCE、INVOICE_DATE、NOTE、AMOUNT（CURR 13,2）、CURRENCY_CODE</td><td>客戶參考、參考、開票日期、備註、金額、幣別</td></tr>
+      <tr><td>MESSAGE（BAPI_MSG）、BELNR、GJAHR、BUKRS</td><td>訊息；入帳後的會計憑證</td></tr>
+      <tr><td>.INCLUDE ZFIS001：CRDAT、CRTIM、CRNAM、UDATE、UTIME、UNAME</td><td>建立／修改資訊（稽核欄位做成共用 include，是好習慣）</td></tr>
+    </tbody>
+  </table>
+  <p><b>函數 ZSDFM006_INT_INVOICE_DETAILS（依截圖）</b>：函數群組 ZSDFG006，一般函數模組（非 RFC），短文「Interface: Show Invoice Details」。匯入 IV_PAYPALID（ZDE_PAYPALID，傳值）；匯出 EV_RET（CHAR1，E-error/S-success）、EV_MSG（CHAR100）、ES_INPUT（ZCL_MT_SHOW_INVOICE_DETAILS_R3，Proxy 結構，傳參考）。內部建立 ZCL_CO_SI_SHOW_INVOICE_DETAILS，呼叫 SI_SHOW_INVOICE_DETAILS_OUT。</p>
+  <pre><code class="abap">*&amp;-------------------------------------------------------------*
+*&amp; ZFIU006 改寫：單張失敗不影響其他張；逐張記錄結果
+*&amp;-------------------------------------------------------------*
+SELECT zpaypalid, vbeln, zstatus
+  FROM zfit002
+  WHERE vbeln   IN @s_vbeln
+    AND zstatus  = 'S'
+    AND crdat   IN @s_crdat
+    AND crnam   IN @s_crnam
+  ORDER BY vbeln
+  INTO TABLE @DATA(lt_inv).
+
+DATA lo_proxy TYPE REF TO zcl_co_si_show_invoice_details.
+TRY.
+    lo_proxy = NEW #( ).
+  CATCH cx_ai_system_fault INTO DATA(lx_init).
+    MESSAGE lx_init-&gt;get_text( ) TYPE 'E'.
+ENDTRY.
+
+DATA(lv_date) = sy-datum.
+DATA(lv_time) = sy-uzeit.
+DATA(lv_ok) = 0.
+DATA(lv_err) = 0.
+LOOP AT lt_inv INTO DATA(ls_inv).
+  DATA ls_res TYPE zcl_mt_show_invoice_details_r3.
+  CLEAR ls_res.
+  TRY.
+      lo_proxy-&gt;si_show_invoice_details_out(
+        EXPORTING output = VALUE #( invoice_id = ls_inv-zpaypalid )
+        IMPORTING input  = ls_res ).
+    CATCH cx_ai_system_fault INTO DATA(lx_sys).
+      lv_err = lv_err + 1.                             "（7.54 起可寫 lv_err += 1）
+      DATA(lv_errtxt) = CONV bapi_msg( lx_sys-&gt;get_text( ) ).
+      UPDATE zfit002 SET message = @lv_errtxt
+        WHERE zpaypalid = @ls_inv-zpaypalid AND vbeln = @ls_inv-vbeln.
+      CONTINUE.                                        "原程式：一張失敗，後面全部 CHECK 掉
+  ENDTRY.
+
+  IF ls_res-status = 'PAID'.
+    UPDATE zfit002 SET zstatus = 'P',
+                       udate   = @lv_date,
+                       utime   = @lv_time,
+                       uname   = @sy-uname,
+                       message = @space
+      WHERE zpaypalid = @ls_inv-zpaypalid AND vbeln = @ls_inv-vbeln
+        AND zstatus   = 'S'.                           "樂觀鎖：只從 S 改成 P，重跑不會重複處理
+    lv_ok = lv_ok + sy-dbcnt.
+  ENDIF.
+ENDLOOP.
+COMMIT WORK.
+MESSAGE |已付款 { lv_ok } 張，查詢失敗 { lv_err } 張（詳見 ZFIT002-MESSAGE）| TYPE 'S'.</code></pre>
+  <p><b>原程式的問題與改進</b>：</p>
+  <ul>
+    <li><b>一張失敗、全部停擺</b>：失敗時設 gv_error = 'X' 並 CONTINUE，但下一圈一開頭就 <span class="kw">CHECK gv_error IS INITIAL</span>，於是之後所有發票都被略過；最後卻照樣顯示「Get Paypal Interface Data Successfully!」。</li>
+    <li>函數內例外處理用 <span class="kw">MESSAGE ID sy-msgid … INTO ev_msg</span>，訊息內容不可信（第 3 節）。</li>
+    <li>整張表讀出來（SELECT *）改一個欄位再 MODIFY 整筆寫回，若同時有別的程式（例如列印程式更新付款連結）在改同一筆，後寫者覆蓋先寫者。改成 UPDATE … SET 只動需要的欄位，並加上原狀態條件。</li>
+    <li>明細（ZFIT003：PayPal 發票行項目、稅、折扣）整段被註解掉，表還在；未使用的表與程式碼應該清掉或註明原因。</li>
+    <li>輸出只有一行訊息；應至少列出每張發票的結果（SALV 即可），失敗者可重跑。</li>
+  </ul>
+  <div class="tip"><b>查詢型介面本身就應該冪等</b>：查 PayPal 發票狀態不會改變 PayPal 端任何東西，所以重跑無害；要小心的是 SAP 端的「狀態轉換」——上面用 <span class="kw">WHERE zstatus = 'S'</span> 當條件，確保同一張發票只會從 S 變 P 一次，後續入帳程式也只處理 P 且尚未有 BELNR 者。</div>
+
+  <h3 id="ch08-8-12">12. 直連 REST：CL_HTTP_CLIENT ＋ /UI2/CL_JSON 序列化與反序列化</h3>
+  <p>同樣的 PayPal 發票查詢，若不經 PI，改由 ABAP 直連 REST API，重點是：<b>SM59 型別 G 目的地</b>（主機、SSL、<span class="tcode">STRUST</span> 的 SSL Client PSE）、<b>Bearer token</b>（第 10 節）、<b>JSON 對映</b>。基本的 GET 寫法已在 <a href="#ch05-17-19">5-17 第 19 節</a>，這裡示範出站 POST（以交貨單同步為例）與巢狀結構的反序列化。</p>
+  <pre><code class="abap">*&amp;-------------------------------------------------------------*
+*&amp; 出站 POST：ABAP 結構 → JSON（camelCase、略過空值）
+*&amp;-------------------------------------------------------------*
+TYPES: BEGIN OF ty_item,
+         posnr   TYPE string,
+         matnr   TYPE string,
+         lfimg   TYPE string,
+         charg   TYPE string,
+         exp_date TYPE string,
+       END OF ty_item,
+       tt_item TYPE STANDARD TABLE OF ty_item WITH EMPTY KEY,
+       BEGIN OF ty_delivery,
+         delivery_no TYPE string,
+         customer_po TYPE string,
+         goods_issue TYPE string,
+         tracking_no TYPE string,
+         items       TYPE tt_item,
+       END OF ty_delivery.
+
+DATA(ls_payload) = VALUE ty_delivery(
+  delivery_no = |{ ls_likp-vbeln ALPHA = OUT }|
+  customer_po = ls_vbkd-bstkd
+  goods_issue = |{ ls_likp-wadat_ist DATE = ISO }|            "2026-09-26，不要送 20260926
+  tracking_no = lv_express
+  items = VALUE #( FOR p IN lt_lips WHERE ( lfimg &gt; 0 )
+                   ( posnr    = |{ p-posnr ALPHA = OUT }|
+                     matnr    = |{ p-matnr ALPHA = OUT }|
+                     lfimg    = |{ p-lfimg NUMBER = RAW }|
+                     charg    = p-charg ) ) ).
+
+DATA(lv_body) = /ui2/cl_json=&gt;serialize(
+                  data        = ls_payload
+                  compress    = abap_true                           "空欄位不輸出
+                  pretty_name = /ui2/cl_json=&gt;pretty_mode-camel_case ). "delivery_no → deliveryNo
+
+DATA lo_http TYPE REF TO if_http_client.
+cl_http_client=&gt;create_by_destination( EXPORTING  destination = 'Z_DLV_PLATFORM'
+                                       IMPORTING  client      = lo_http
+                                       EXCEPTIONS OTHERS      = 1 ).
+IF sy-subrc &lt;&gt; 0.
+  RETURN.
+ENDIF.
+lo_http-&gt;propertytype_logon_popup = if_http_client=&gt;co_disabled.
+lo_http-&gt;request-&gt;set_method( if_http_request=&gt;co_request_method_post ).
+cl_http_utility=&gt;set_request_uri( request = lo_http-&gt;request uri = '/api/v1/deliveries' ).
+lo_http-&gt;request-&gt;set_content_type( 'application/json; charset=utf-8' ).
+lo_http-&gt;request-&gt;set_header_field(
+  name  = 'Authorization'
+  value = |Bearer { zcl_if_token_provider=&gt;get_instance( 'Z_DLV_TOKEN' )-&gt;get_token( ) }| ).
+lo_http-&gt;request-&gt;set_header_field( name = 'Idempotency-Key' value = lv_msg_guid ).   "第 16 節
+lo_http-&gt;request-&gt;set_cdata( lv_body ).
+
+lo_http-&gt;send( EXCEPTIONS OTHERS = 1 ).
+IF sy-subrc = 0.
+  lo_http-&gt;receive( EXCEPTIONS OTHERS = 1 ).
+ENDIF.
+DATA(lv_subrc) = sy-subrc.
+IF lv_subrc = 0.
+  lo_http-&gt;response-&gt;get_status( IMPORTING code = DATA(lv_code) ).
+  DATA(lv_resp) = lo_http-&gt;response-&gt;get_cdata( ).
+ENDIF.
+lo_http-&gt;close( ).
+
+" 回應分類：2xx 成功；409 已存在（冪等成功）；4xx 資料錯（不重送）；5xx／通訊失敗（可重送）
+DATA(lv_status) = COND char1( WHEN lv_subrc &lt;&gt; 0                  THEN 'R'
+                              WHEN lv_code BETWEEN 200 AND 299     THEN 'S'
+                              WHEN lv_code = 409                   THEN 'S'
+                              WHEN lv_code = 429 OR lv_code &gt;= 500 THEN 'R'
+                              ELSE 'E' ).</code></pre>
+  <pre><code class="abap">*&amp;-------------------------------------------------------------*
+*&amp; 反序列化巢狀 JSON（發票查詢回應的一部分）
+*&amp;  { "id":"INV2-XXXX", "status":"PAID",
+*&amp;    "amount":{ "currency_code":"USD", "value":"120.00" },
+*&amp;    "payments":{ "transactions":[ { "payment_id":"...", "payment_date":"2026-09-20" } ] } }
+*&amp;-------------------------------------------------------------*
+TYPES: BEGIN OF ty_money,
+         currency_code TYPE string,
+         value         TYPE string,          "金額先收字串，再用 CONV 轉，避免小數點格式問題
+       END OF ty_money,
+       BEGIN OF ty_txn,
+         payment_id   TYPE string,
+         payment_date TYPE string,
+       END OF ty_txn,
+       tt_txn TYPE STANDARD TABLE OF ty_txn WITH EMPTY KEY,
+       BEGIN OF ty_payments,
+         transactions TYPE tt_txn,
+       END OF ty_payments,
+       BEGIN OF ty_invoice,
+         id       TYPE string,
+         status   TYPE string,
+         amount   TYPE ty_money,
+         payments TYPE ty_payments,
+       END OF ty_invoice.
+
+DATA ls_inv TYPE ty_invoice.
+/ui2/cl_json=&gt;deserialize( EXPORTING json        = lv_resp
+                                     pretty_name = /ui2/cl_json=&gt;pretty_mode-low_case
+                           CHANGING  data        = ls_inv ).
+
+DATA(lv_amount) = CONV wrbtr( ls_inv-amount-value ).
+DATA(lv_paydate) = COND d( WHEN ls_inv-payments-transactions IS NOT INITIAL
+                           THEN replace( val  = ls_inv-payments-transactions[ 1 ]-payment_date
+                                         sub  = '-' with = '' occ = 0 ) ).</code></pre>
+  <div class="warn"><b>JSON 對映的四個坑</b>：① 日期要 ISO 格式（<span class="kw">DATE = ISO</span>），不要送 ABAP 內部格式；② 數量／金額用字串承接再轉型，JSON 數字的小數點與千分位跟使用者設定無關，但 WRITE 轉出來的字串有關；③ 內部號碼（VBELN、MATNR、POSNR）送出前做 <span class="kw">ALPHA = OUT</span>，收進來時做 <span class="kw">ALPHA = IN</span>——這也是 Casper 實務經驗第 2 條提醒的「ALPHA 前導零」陷阱；④ 反序列化找不到對應欄位時<b>不會報錯</b>，只是留空，所以一定要檢查關鍵欄位（例如 status）有沒有值。</div>
+
+  <h3 id="ch08-8-13">13. ZSDU030：退換貨平台——依條碼日誌自動建立換貨訂單</h3>
+  <p><b>業務情境</b>：醫療耗材以條碼（UDI）追蹤。經銷商每月可依「換貨數量」條款換貨：銷售訂單行（訂單類型 Z001）上有自建欄位 VBAP-ZZHHSL（換貨數量），實際換貨受「本月交貨量」「過去累計已發量」「經銷商端庫存（條碼交易日誌）」三者限制。程式算出每一交貨行「本月可換貨量」，業務勾選後按「生成憑證」（功能碼 ZZX），系統以原訂單為範本建立換貨訂單（類型 <b>Z008</b>），並寫入退換貨日誌。</p>
+  <p><b>選擇畫面（依截圖）</b>：標題「銷售退換貨平台」，條件：客戶編碼、物料編碼、銷售訂單、交貨單（當月）、SAP 訂單號、外部訂單號、交貨單過帳日期、存貨編碼（VBAP-ZZBISMT）、存貨合同分類（MVKE-MVGR3）、客戶簡稱（P_NAME2，程式自動包成 *…* 做 CP 模糊比對）。交貨過帳日期另外強制限制在<b>本月 1 日～月底</b>（LAST_DAY_OF_MONTHS）。</p>
+  <table>
+    <thead><tr><th>表</th><th>說明</th><th>欄位（依截圖）</th></tr></thead>
+    <tbody>
+      <tr><td>ZSDT001「條碼交易日誌表」</td><td>經銷商端出入庫條碼（由外部掃描／WMS 寫入）</td><td>ID（鍵，CHAR15）、ZBILL、BARCODE（CHAR60）、CODE69、KUNNR、WERKS、MATNR、UDI、GOODSCODE、CHARG、QUANTITY、MEINS、PRODATE、ZBATCH、ZNAME（員工工號）、CPUDT、LOEKZ、POST、NAME1、ZSL、MAKTX、CRDAT、BWART、ZDY01~04（自訂欄位）、MVGR3</td></tr>
+      <tr><td>ZSDT023「VL02N 發貨過帳或沖銷後同步更新表」</td><td>交貨過帳／沖銷時由增強寫入</td><td>ID（鍵）、VBELN、POSNR、BWART（654 表沖銷，數量取負）、KUNNR、NAME1、WERKS、MATNR、MAKTX、UDI、GOODSCODE、CHARG、QUANTITY、MEINS、PRODATE、ZBATCH、ZNAME、CPUDT、UZEIT、LOEKZ</td></tr>
+      <tr><td>ZSDT034「退換貨日誌」</td><td>已用掉的換貨額度</td><td>ZID、ID（鍵）、KUNNR、WERKS、MATNR、MVGR3、VBELN、ZSL、CRDAT、ERZET</td></tr>
+      <tr><td>ZSDT030「銷售退換貨後台表」</td><td>交貨行 → 已建立的換貨訂單</td><td>JHD、JHDH（鍵：交貨單＋行）、VBELN（換貨訂單）、ZTEXT、CDATE、CTIME、CUSER</td></tr>
+    </tbody>
+  </table>
+  <p><b>計算邏輯</b>（ALV 欄位名稱照原程式）：本需要換 ZBXYH＝ZHHSL－截至上月累計已發量 LFIMGS；本月可以 ZBYKY＝min（本月交貨量 LFIMG, ZBXYH）；庫存 ZKC＝ZSDT001 數量－ZSDT023 數量（依客戶＋物料＋工廠彙總，654 取負）；若 ZKC &lt; ZBYKY 則紅燈「庫存小於本月可以退的數量」，否則黃燈、本月可換貨 ZBYKHH＝ZBXYH；已在 ZSDT030 有換貨單者綠燈，若換貨單行已有拒絕原因（ABGRU）則回黃燈「訂單已拒絕！」。另外顯示抬頭文本（VBBK/Z002）、項目文本（VBBP/0002）、表頭客戶備注（VBBK/Z001）、累計開票數量、退貨數量累計、本月理論需要換貨數量、對應庫存數量、差額。客戶欄位可在 ALV 直接修改（DATA_CHANGED 事件重算物料與庫存）。</p>
+  <pre><code class="abap">*&amp;-------------------------------------------------------------*
+*&amp; 建立換貨訂單：用 released BAPI；每張訂單的內表在迴圈內重新宣告
+*&amp;  → 杜絕原程式 lt_conditions 未清空、條件跨訂單累積的錯誤
+*&amp;-------------------------------------------------------------*
+LOOP AT lt_out INTO DATA(ls_grp)
+     WHERE sel = abap_true AND zstat &lt;&gt; icon_green_light AND zbxyh &gt; 0
+     GROUP BY ls_grp-vgbel INTO DATA(lv_ref_so).
+
+  " 冪等：同一交貨行若已有換貨單就跳過（第 16 節）
+  " 並發：兩位業務同時按，用自建鎖物件鎖住參考訂單
+  CALL FUNCTION 'ENQUEUE_EZSD_EXCHANGE'
+    EXPORTING  vgbel = lv_ref_so
+    EXCEPTIONS foreign_lock = 1 OTHERS = 2.
+  IF sy-subrc &lt;&gt; 0.
+    CONTINUE.                                    "寫日誌：他人處理中
+  ENDIF.
+
+  SELECT SINGLE vkorg, vtweg, spart, vkgrp, vkbur FROM vbak
+    WHERE vbeln = @lv_ref_so INTO @DATA(ls_ref).
+  SELECT parvw, kunnr, lifnr, parnr FROM vbpa
+    WHERE vbeln = @lv_ref_so AND posnr = '000000' INTO TABLE @DATA(lt_ref_pa).
+
+  DATA(ls_head)  = VALUE bapisdhd1( doc_type = 'Z008'  sales_org = ls_ref-vkorg
+                                    distr_chan = ls_ref-vtweg division = ls_ref-spart
+                                    sales_grp = ls_ref-vkgrp sales_off = ls_ref-vkbur ).
+  DATA lt_partner TYPE STANDARD TABLE OF bapiparnr WITH EMPTY KEY.
+  lt_partner = VALUE #( FOR pa IN lt_ref_pa
+                     ( partn_role = pa-parvw
+                       partn_numb = COND #( WHEN pa-kunnr IS NOT INITIAL THEN pa-kunnr
+                                            WHEN pa-lifnr IS NOT INITIAL THEN pa-lifnr
+                                            ELSE pa-parnr ) ) ).       "原程式只帶 KUNNR，聯絡人／供應商夥伴會遺失
+  DATA lt_item  TYPE STANDARD TABLE OF bapisditm  WITH EMPTY KEY.
+  DATA lt_sched TYPE STANDARD TABLE OF bapischdl  WITH EMPTY KEY.
+  DATA lt_cond  TYPE STANDARD TABLE OF bapicond   WITH EMPTY KEY.
+  DATA lt_ret   TYPE STANDARD TABLE OF bapiret2   WITH EMPTY KEY.
+  CLEAR: lt_item, lt_sched, lt_cond, lt_ret.
+  DATA(lv_posnr) = CONV posnr_va( 0 ).
+
+  LOOP AT GROUP lv_ref_so ASSIGNING FIELD-SYMBOL(&lt;ls_row&gt;).
+    CHECK NOT line_exists( lt_done[ jhd = &lt;ls_row&gt;-jhd jhdh = &lt;ls_row&gt;-jhdh ] ).   "ZSDT030 已有者
+    lv_posnr = lv_posnr + 10.
+    &lt;ls_row&gt;-posnr = lv_posnr.
+    lt_item  = VALUE #( BASE lt_item
+      ( itm_number    = lv_posnr
+        material_long = &lt;ls_row&gt;-matnr                                  "S/4：40 碼物料
+        plant         = &lt;ls_row&gt;-werks
+        target_qty    = &lt;ls_row&gt;-zbykhh
+        cust_mat35    = |{ &lt;ls_row&gt;-jhd ALPHA = OUT }&amp;{ &lt;ls_row&gt;-jhdh ALPHA = OUT }| ) ).  "回溯來源交貨行
+    lt_sched = VALUE #( BASE lt_sched ( itm_number = lv_posnr req_qty = &lt;ls_row&gt;-zbykhh ) ).
+    lt_cond  = VALUE #( BASE lt_cond
+      ( itm_number = lv_posnr
+        cond_type  = gv_price_cond                 "設定值；S/4 新定價程序多為 PPR0，原程式用 PR01
+        cond_value = &lt;ls_row&gt;-cmpre
+        currency   = &lt;ls_row&gt;-waerk ) ).
+  ENDLOOP.
+
+  IF lt_item IS NOT INITIAL.
+    DATA lv_new_so TYPE vbeln_va.
+    CLEAR lv_new_so.
+    CALL FUNCTION 'BAPI_SALESORDER_CREATEFROMDAT2'
+      EXPORTING
+        order_header_in     = ls_head
+      IMPORTING
+        salesdocument       = lv_new_so
+      TABLES
+        return              = lt_ret
+        order_items_in      = lt_item
+        order_partners      = lt_partner
+        order_schedules_in  = lt_sched
+        order_conditions_in = lt_cond.
+
+    IF lv_new_so IS NOT INITIAL AND NOT line_exists( lt_ret[ type = 'E' ] ).
+      " 業務表與 BAPI 在同一個 LUW，一起提交
+      DATA lt_030 TYPE STANDARD TABLE OF zsdt030 WITH EMPTY KEY.
+      lt_030 = VALUE #( FOR r IN GROUP lv_ref_so WHERE ( posnr IS NOT INITIAL )
+                        ( jhd = r-jhd jhdh = r-jhdh vbeln = lv_new_so
+                          cdate = sy-datum ctime = sy-uzeit cuser = sy-uname ) ).
+      MODIFY zsdt030 FROM TABLE @lt_030.
+      CALL FUNCTION 'BAPI_TRANSACTION_COMMIT' EXPORTING wait = abap_true.
+    ELSE.
+      CALL FUNCTION 'BAPI_TRANSACTION_ROLLBACK'.
+    ENDIF.
+  ENDIF.
+
+  CALL FUNCTION 'DEQUEUE_EZSD_EXCHANGE' EXPORTING vgbel = lv_ref_so.
+ENDLOOP.</code></pre>
+  <div class="note">上例的 lt_out 行結構需另含參考訂單行的 CMPRE（淨價）與 WAERK（幣別），可在取數時一併 JOIN VBAP 取回；原程式是在建單迴圈內逐行 <span class="kw">SELECT SINGLE * FROM vbap</span>。鎖物件 EZSD_EXCHANGE 需在 <span class="tcode">SE11</span> 自建（以 VBAK-VBELN 為鎖參數），名稱為示意。</div>
+  <p><b>原程式的問題與改進</b>：</p>
+  <ul>
+    <li><b>條件記錄跨訂單累積</b>：每張新訂單開始時 REFRESH 了 lt_return、lt_parnr、lt_items、lt_itemsx、lt_schedules、lt_schedulesx，<b>唯獨漏了 lt_conditions</b>。第二張換貨訂單會帶著第一張的價格條件（行號 10、20… 對到錯的行），價格因此錯亂。上面改寫把所有內表放在迴圈內清空，從結構上杜絕。</li>
+    <li>SD_SALESDOCUMENT_CREATE 不是 released API；建立銷售訂單請用 <b>BAPI_SALESORDER_CREATEFROMDAT2</b>（或其上層 BAPI_SALESDOCUMENT_CREATE 系列），並檢查 RETURN 中有無 E/A 類訊息，不能只看有沒有回傳單號。</li>
+    <li>計算區段中 <span class="kw">LOOP AT gt_out INTO gs_out WHERE vgbel = gs_out-vgbel …</span>——WHERE 右邊用的是迴圈自己的工作區，應為外層的 ls_out；<span class="kw">LOOP AT lt_logb … WHERE id = ls_zsdt034-id</span> 用錯了變數（應為 ls_zsdt034b）。兩處都讓「本月可換貨」分配與額度日誌計算失準。</li>
+    <li>SUB_GET_MATNR 以 <span class="kw">werks = lt_mvke-vkorg</span> 把銷售組織當工廠比對，只有在組織代碼剛好等於工廠代碼時才成立。</li>
+    <li>ZSDT030 的「已處理」判斷是冪等的關鍵，但沒有鎖：兩人同時按「生成憑證」會各建一張換貨單。</li>
+    <li>業務表 ZSDT030／ZSDT034 在 BAPI_TRANSACTION_COMMIT <b>之後</b>另外 COMMIT WORK AND WAIT；中間失敗會出現「換貨單已建、日誌沒寫」，下次又會再建一張。應放同一個 LUW。</li>
+    <li>迴圈內 READ_TEXT 三次、SELECT COUNT(*)、SELECT SINGLE BUT000；FOR ALL ENTRIES 前 gt_out 已檢查不為空，但 lt_mvke 的 FAE 沒有排除重複；大量資料時效能很差。</li>
+    <li><b>HANA 無預設排序</b>（Casper 實務經驗第 1 條）：「本月可換貨量」是依交貨行順序逐筆扣減換貨額度的，原程式 SELECT 沒有 ORDER BY、之後也沒有 SORT 就開始扣——HANA 回傳順序不固定，<b>同一份資料每次執行可能把額度分給不同的交貨行</b>。任何「依序扣減、先到先得」的邏輯，都要先明確排序（例如依過帳日期、交貨單、行號）。</li>
+  </ul>
+  <div class="warn"><b>S/4HANA 注意</b>：客戶名稱原程式取 BUT000-NAME_ORG1~4 串接（已是 BP 思維，值得肯定），但 ALV 另一欄又從 KNA1-NAME2 取「客戶簡稱」，兩者維護來源要一致。定價在 S/4HANA 的標準條件類型為 PPR0（視你的定價程序而定），條件類型請做成設定值，不要寫死。</div>
+
+  <h3 id="ch08-8-14">14. 金鑰管理：不要寫在程式、不要寫在變式、不要寫在傳輸</h3>
+  <p>本章 7 支程式中，有 2 支把金鑰或網址寫死在原始碼：ZSDU005（快遞100 授權碼＋PI 回呼網址）、ZMMU024（正式與測試兩組 app_key／app_security，用 <span class="kw">sy-mandt</span> 切換）。其餘走 PI 的介面，金鑰在 PI 的 Communication Channel 裡——這其實就是正確做法的一種。以下依優先順序列出 ABAP 端的正確放法：</p>
+  <table>
+    <thead><tr><th>順位</th><th>放在哪裡</th><th>適用</th><th>要點</th></tr></thead>
+    <tbody>
+      <tr><td>1</td><td>中介平台（PI/PO Channel、Integration Suite Security Material）</td><td>走中介的介面</td><td>ABAP 完全不接觸金鑰；權責分離給整合團隊</td></tr>
+      <tr><td>2</td><td><span class="tcode">OA2C_CONFIG</span> OAuth 2.0 Client ＋ <span class="kw">CL_OAUTH2_CLIENT</span></td><td>標準 OAuth 2.0（Client Credentials、Authorization Code…）</td><td>Client Secret 存在系統安全儲存；token 由框架管理</td></tr>
+      <tr><td>3</td><td><span class="tcode">SM59</span> 型別 G 目的地的 Logon &amp; Security（Basic 認證／SSL 用戶端憑證）</td><td>Basic、自訂「key＋secret 換 token」</td><td>密碼存在 Secure Storage（可在 <span class="tcode">SECSTORE</span> 檢查一致性），程式用目的地名稱即可；<b>目的地不隨傳輸，各系統各自設定</b>——DEV/QAS/PRD 自然連到各自的端點</td></tr>
+      <tr><td>4</td><td><span class="tcode">STRUST</span> SSL Client PSE</td><td>HTTPS、雙向 TLS</td><td>對方根憑證要匯入；憑證到期日要列入維運行事曆</td></tr>
+      <tr><td>5</td><td>自建設定表（權限群組保護、不可傳輸內容、欄位加密）</td><td>非機密設定：回呼網址、物流商代碼對映、逾時秒數、重送次數</td><td><b>真正的密鑰不建議放這裡</b>；若不得不放，至少用權限物件限制讀取、設 Delivery Class 為不傳輸值、並記錄變更文件</td></tr>
+    </tbody>
+  </table>
+  <pre><code class="abap">*&amp;-------------------------------------------------------------*
+*&amp; 反例 vs 正例：同一段邏輯，差別在「程式知不知道金鑰」
+*&amp;-------------------------------------------------------------*
+" ✗ 反例（原程式寫法的抽象化）：金鑰進了原始碼與每一個傳輸
+" IF sy-mandt = '&lt;PRD_CLIENT&gt;'.
+"   ls_req-app_key = '&lt;APP_KEY&gt;'.  ls_req-app_security = '&lt;APP_SECRET&gt;'.
+" ELSE. … 另一組 … ENDIF.
+
+" ✓ 正例：程式只知道「邏輯名稱」，實際連線與憑證由各系統設定決定
+SELECT SINGLE rfc_dest, callback_url, timeout_sec, max_retry
+  FROM zif_config                                "非機密設定（權限群組保護）
+  WHERE if_id = 'EXPENSE_PAYEE'
+  INTO @DATA(ls_cfg).
+IF sy-subrc &lt;&gt; 0.
+  MESSAGE |介面 EXPENSE_PAYEE 未設定，請洽系統管理員| TYPE 'E'.
+ENDIF.
+
+DATA(lv_token) = zcl_if_token_provider=&gt;get_instance( ls_cfg-rfc_dest )-&gt;get_token( ).
+" token 只存在記憶體；不寫日誌、不顯示在 ALV、不放進 ZMMS021_OUT 這種會被 MOVE-CORRESPONDING 到日誌表的結構</code></pre>
+  <div class="warn"><b>原程式把 ACCESS_TOKEN 放在 ZMMS021_OUT 結構裡</b>，而這個結構又與日誌表欄位相近、到處 MOVE-CORRESPONDING；只要有人哪天在日誌表加一個 ACCESS_TOKEN 欄位，token 就會被永久寫進資料庫。<b>憑證與業務資料要用不同的結構傳遞</b>。另外：金鑰一旦寫進過原始碼，就要當作已外洩處理——到對方平台<b>作廢並重新產生</b>，光是把程式改掉並不夠，因為舊版本仍在版本管理（<span class="tcode">SE38</span> 版本比較）與傳輸檔裡。</div>
+
+  <h3 id="ch08-8-15">15. 介面日誌表設計與重送機制</h3>
+  <p>本章每支程式都有自己的日誌表（ZSDT011、ZSDT015、ZSDT018、ZMMT021、ZFIT002、ZSDT030），欄位各自為政：有的鍵含時間戳（保留歷史）、有的以業務鍵覆寫（只留最後一次）、有的完全沒有重送次數。建議統一成一張通用日誌表＋各介面的業務表：</p>
+  <table>
+    <thead><tr><th>欄位</th><th>型別</th><th>說明</th></tr></thead>
+    <tbody>
+      <tr><td>MANDT、<b>MSG_GUID</b>（鍵）</td><td>CLNT3、SYSUUID_C32</td><td>每一則訊息一個 GUID；<b>重送沿用同一個 GUID</b>（冪等鍵，第 16 節）</td></tr>
+      <tr><td>IF_ID、DIRECTION</td><td>CHAR30、CHAR1</td><td>介面代號（例：DLV_SYNC、TRACK_SUB）、O 出站／I 入站</td></tr>
+      <tr><td>OBJ_TYPE、OBJ_KEY</td><td>CHAR10、CHAR70</td><td>業務物件與鍵（例：LIKP／交貨單號），建次要索引</td></tr>
+      <tr><td>STATUS</td><td>CHAR1</td><td>N 待送、S 成功、E 資料錯誤（不重送）、R 可重送、X 放棄（超過上限）</td></tr>
+      <tr><td>RETRY_CNT、NEXT_RETRY_AT</td><td>INT2、TIMESTAMP</td><td>重送次數與下次可重送時間（指數退避）</td></tr>
+      <tr><td>HTTP_CODE、EXT_ID、MESSAGE</td><td>INT2、CHAR50、CHAR255</td><td>對方回應碼、對方單號（例：收款人 ID）、訊息</td></tr>
+      <tr><td>PAYLOAD_HASH</td><td>CHAR40</td><td>送出內容的雜湊，用來判斷「內容有沒有變」（第 9 節）</td></tr>
+      <tr><td>CREATED_AT、SENT_AT、CREATED_BY、SENT_BY、MANUAL</td><td>TIMESTAMP、TIMESTAMP、UNAME、UNAME、CHAR1</td><td>稽核；MANUAL＝前台手工送（對應原程式的 SGFLG）</td></tr>
+    </tbody>
+  </table>
+  <p><b>不要在日誌表存完整 payload</b>——它往往含個資（電話、地址、銀行帳號）。要留原文供除錯，請放在 PI 監控（有保留期限與權限）或 BAL 應用日誌中遮罩後的版本。應用日誌用 <span class="tcode">SLG0</span> 建物件／子物件，<span class="tcode">SLG1</span> 查詢：</p>
+  <pre><code class="abap">*&amp;-------------------------------------------------------------*
+*&amp; 重送作業：每 15 分鐘由 SM37 排程；指數退避 + 上限 + BAL 日誌
+*&amp;-------------------------------------------------------------*
+CONSTANTS c_max_retry TYPE i VALUE 5.
+
+GET TIME STAMP FIELD DATA(lv_now).
+SELECT msg_guid, if_id, obj_key, retry_cnt
+  FROM zif_msg_log
+  WHERE status        = 'R'
+    AND next_retry_at &lt;= @lv_now
+    AND retry_cnt     &lt;  @c_max_retry
+  ORDER BY created_at                             "先進先送，順序要明確
+  INTO TABLE @DATA(lt_retry)
+  UP TO 500 ROWS.
+
+DATA lv_log_handle TYPE balloghndl.
+DATA(ls_bal) = VALUE bal_s_log( object    = 'ZIF'              "SLG0 建立的物件／子物件
+                                subobject = 'RETRY'
+                                extnumber = |{ sy-datum }{ sy-uzeit }|
+                                aluser    = sy-uname
+                                alprog    = sy-repid ).
+CALL FUNCTION 'BAL_LOG_CREATE'          "CALL FUNCTION 的實參請用資料物件，不要放建構運算式
+  EXPORTING  i_s_log      = ls_bal
+  IMPORTING  e_log_handle = lv_log_handle
+  EXCEPTIONS OTHERS       = 1.
+
+LOOP AT lt_retry INTO DATA(ls_r).
+  DATA(lv_result) = zcl_if_dispatcher=&gt;resend( ls_r-msg_guid ).     "回傳 S / E / R
+  DATA(lv_cnt)    = ls_r-retry_cnt + 1.
+  " 指數退避：2、4、8、16… 分鐘
+  DATA(lv_wait)   = CONV i( 60 * 2 ** lv_cnt ).
+  DATA(lv_next)   = cl_abap_tstmp=&gt;add( tstmp = lv_now secs = lv_wait ).
+  DATA(lv_status) = COND char1( WHEN lv_result = 'R' AND lv_cnt &gt;= c_max_retry THEN 'X'
+                                ELSE lv_result ).
+  UPDATE zif_msg_log SET status        = @lv_status,
+                         retry_cnt     = @lv_cnt,
+                         next_retry_at = @lv_next,
+                         sent_at       = @lv_now
+    WHERE msg_guid = @ls_r-msg_guid.
+
+  IF lv_status = 'X'.
+    DATA lv_text TYPE c LENGTH 200.
+    lv_text = |{ ls_r-if_id } { ls_r-obj_key } 重送 { lv_cnt } 次仍失敗，已停止重送|.
+    CALL FUNCTION 'BAL_LOG_MSG_ADD_FREE_TEXT'
+      EXPORTING  i_log_handle = lv_log_handle
+                 i_msgty      = 'E'
+                 i_text       = lv_text
+      EXCEPTIONS OTHERS       = 1.
+  ENDIF.
+  COMMIT WORK.                                   "逐筆提交：中途 DUMP 不影響已處理者
+ENDLOOP.
+
+DATA(lt_handles) = VALUE bal_t_logh( ( lv_log_handle ) ).
+CALL FUNCTION 'BAL_DB_SAVE'
+  EXPORTING  i_t_log_handle = lt_handles
+  EXCEPTIONS OTHERS         = 1.
+COMMIT WORK.</code></pre>
+  <div class="tip"><b>重送的三條規則</b>：① 只重送「可能自己會好」的錯（通訊失敗、逾時、HTTP 429/5xx），資料錯（HTTP 4xx、BAPI E 訊息）重送一百次也一樣錯，要轉人工；② 有上限，超過就停並告警（原 ZSDU028 會無限重送）；③ 重送用同一個訊息 GUID。若公司已有 AIF（見 <a href="#ch05-22">5-22 章</a>與 <a href="#ch05-24-12">5-24 第 12 節</a>），把這些規則交給 AIF 的錯誤處理與重處理，比自己寫更好維護。背景作業排程與工作日誌見 <a href="#ch04-4">4-4 章</a>。</div>
+
+  <h3 id="ch08-8-16">16. 冪等性（Idempotency）：重送一百次，結果都一樣</h3>
+  <p>介面「至少送一次」很容易做到，「剛好一次」很難；實務上的解法是<b>允許重送，但讓重複的訊息不產生重複的效果</b>。本章各程式在這方面的表現：</p>
+  <table>
+    <thead><tr><th>程式</th><th>重複執行會怎樣</th><th>冪等手段（現況 → 建議）</th></tr></thead>
+    <tbody>
+      <tr><td>ZSDU005 重新訂閱</td><td>對方同一單號重複訂閱，多半覆蓋舊訂閱</td><td>對方天然冪等（以單號為鍵）；保留即可，但要限制頻率</td></tr>
+      <tr><td>ZSDU028 軌跡回推</td><td>同一 UUID 可能多次送達下游</td><td>已帶 PUID（UUID）→ 要求下游以 PUID 去重</td></tr>
+      <tr><td>ZSDU011 交貨單同步</td><td>時間窗邊界、手工重送都會重複</td><td>下游應以「交貨單＋行」做 upsert；另帶訊息 GUID</td></tr>
+      <tr><td>ZSDU019 U 訂貨發貨</td><td><b>可能重複入庫</b>（平台端若以新增處理）</td><td>無日誌 → 加日誌表；請平台以交貨單號去重，或送 Idempotency-Key</td></tr>
+      <tr><td>ZMMU024 收款人同步</td><td>新增若重送，對方會出現兩個收款人</td><td>以 ZMMT021 的 ID 判斷新增或更新 ✓；但新增成功、寫日誌前失敗的空窗仍會重複 → 新增前先以供應商編號查詢對方</td></tr>
+      <tr><td>ZFIU006 PayPal 查詢</td><td>查詢本身無副作用</td><td>狀態轉換加條件 <span class="kw">WHERE zstatus = 'S'</span>（第 11 節）</td></tr>
+      <tr><td>ZSDU030 換貨訂單</td><td><b>可能重複建單</b></td><td>ZSDT030 以交貨行為鍵 ✓ → 加鎖、與 BAPI 同一 LUW 提交（第 13 節）</td></tr>
+    </tbody>
+  </table>
+  <pre><code class="abap">*&amp;-------------------------------------------------------------*
+*&amp; 出站訊息的冪等鍵：先落地、再發送；重送沿用同一把鑰匙
+*&amp;-------------------------------------------------------------*
+METHOD get_or_create_msg.   "IMPORTING iv_if_id iv_obj_key iv_hash  RETURNING VALUE(rv_guid) TYPE sysuuid_c32
+  " 同一物件、同一內容、尚未成功 → 沿用舊 GUID（視為同一則訊息的重送）
+  SELECT SINGLE msg_guid FROM zif_msg_log
+    WHERE if_id        = @iv_if_id
+      AND obj_key      = @iv_obj_key
+      AND payload_hash = @iv_hash
+      AND status       IN ( 'N', 'R', 'E' )
+    INTO @rv_guid.
+  IF sy-subrc = 0.
+    RETURN.
+  ENDIF.
+
+  TRY.
+      rv_guid = cl_system_uuid=&gt;create_uuid_c32_static( ).
+    CATCH cx_uuid_error INTO DATA(lx_uuid).
+      RAISE EXCEPTION NEW zcx_if_error( previous = lx_uuid ).
+  ENDTRY.
+
+  GET TIME STAMP FIELD DATA(lv_now).
+  INSERT zif_msg_log FROM @( VALUE zif_msg_log( msg_guid     = rv_guid
+                                                if_id        = iv_if_id
+                                                obj_key      = iv_obj_key
+                                                payload_hash = iv_hash
+                                                status       = 'N'
+                                                created_at   = lv_now
+                                                created_by   = sy-uname ) ).
+  " 與業務更新同一 LUW 提交：業務成立 ⇔ 待送訊息存在（Outbox 模式）
+ENDMETHOD.</code></pre>
+  <div class="note"><b>Outbox 模式</b>：在業務交易（例如交貨單過帳的增強點）中<b>只寫一筆「待送」紀錄</b>，由背景作業負責真正發送。好處是 SAP 交易不會因為外部系統慢或掛掉而卡住，也不會出現「SAP 回滾了、外部卻已收到」的不一致。這正是 tRFC／qRFC／bgRFC 與非同步 Proxy 的原理（見 <a href="#ch04-1-03">4-1 第 3 節</a>）；在增強點裡直接同步呼叫外部 HTTP，是最常見的反模式。</div>
+
+  <h3 id="ch08-8-17">17. 上線檢核清單與 S/4HANA 差異總表</h3>
+  <p><b>上線前檢核</b>（每一支介面都要過一遍）：</p>
+  <ol>
+    <li><b>金鑰</b>：原始碼、變式、文字元素、日誌表中沒有任何金鑰／token；對方平台上曾寫進程式的舊金鑰已作廢。</li>
+    <li><b>目的地</b>：<span class="tcode">SM59</span> 連線測試通過；<span class="tcode">STRUST</span> 憑證有效期已登記；<span class="tcode">SOAMANAGER</span> 邏輯埠（或 PI 的 Channel）在每一套系統都各自設定、指向正確環境。</li>
+    <li><b>背景作業</b>：用 <span class="tcode">SM37</span> 真的排一次，到對方系統確認資料有到（ZSDU019 的教訓）；作業使用者是系統帳號，不是個人帳號。</li>
+    <li><b>監控</b>：知道去哪裡看——<span class="tcode">SXMB_MONI</span>／<span class="tcode">SRT_MONI</span>、PI Message Monitor、<span class="tcode">SLG1</span>、自建日誌表；有人負責每天看，或有告警。</li>
+    <li><b>重送</b>：錯誤分類（可重送／不可重送）、上限、退避、手工重送的權限。</li>
+    <li><b>冪等</b>：重送或重按按鈕不會產生重複單據；有鎖。</li>
+    <li><b>排序</b>：所有「取第一筆」「依序扣減」的邏輯都有明確 ORDER BY／SORT（HANA 無預設排序）。</li>
+    <li><b>個資</b>：電話、地址、銀行帳號在 ALV／日誌中遮罩；匯出有權限控管；測試資料去識別化。</li>
+    <li><b>效能</b>：沒有迴圈內 SELECT；大量資料分批送（每批筆數可設定）；限流以設定值控制而非寫死 WAIT。</li>
+  </ol>
+  <table>
+    <thead><tr><th>主題</th><th>原程式（ECC 思維）</th><th>S/4HANA 1809+ 做法</th></tr></thead>
+    <tbody>
+      <tr><td>供應商／客戶主檔</td><td>LFA1/LFBK、KNA1；BUT000 以 PARTNER = LIFNR 硬 JOIN</td><td>BP 為唯一入口（XK01/XD01 停用）；對映用 CVI_VEND_LINK／CVI_CUST_LINK；銀行明細 BUT0BK</td></tr>
+      <tr><td>交貨單狀態</td><td>（本章已直接用 LIKP-WBSTK，正確）</td><td>VBUK/VBUP 已併入 LIKP/LIPS、VBAK/VBAP，不要再 JOIN VBUK</td></tr>
+      <tr><td>物料號</td><td>CHAR18 假設、字串拼接</td><td>40 碼；BAPI 用 MATERIAL_LONG 欄位</td></tr>
+      <tr><td>變更文件</td><td>CDHDR＋CDPOS（叢集表）</td><td>CDPOS 已為透明表；增量抽取也可考慮 CDS 的變更追蹤或 Change Data Capture（SLT）</td></tr>
+      <tr><td>建立銷售訂單</td><td>SD_SALESDOCUMENT_CREATE、條件 PR01</td><td>BAPI_SALESORDER_CREATEFROMDAT2；條件類型依定價程序（新定價常見 PPR0），做成設定</td></tr>
+      <tr><td>ALV</td><td>REUSE_ALV_GRID_DISPLAY_LVC＋DEFINE 巨集、Dynpro＋CL_GUI_ALV_GRID</td><td>CL_SALV_TABLE；需編輯才用 CL_GUI_ALV_GRID（<a href="#ch02-3">2-3 章</a>）；或做成 Fiori Elements 監控 App</td></tr>
+      <tr><td>檔案上傳</td><td>WS_FILENAME_GET、ALSM_EXCEL_TO_INTERNAL_TABLE</td><td>SELECT-OPTIONS 多重選擇貼上；或 CL_GUI_FRONTEND_SERVICES＋XLSX 解析類別（<a href="#ch04-4">4-4 章</a>）</td></tr>
+      <tr><td>中介平台</td><td>SAP PI/PO（XI 協定 Proxy）</td><td>PO 維護期有限，新專案評估 Integration Suite；Proxy 寫法可沿用</td></tr>
+      <tr><td>HTTP 用戶端</td><td>—</td><td>1809 on-premise：CL_HTTP_CLIENT；ABAP Cloud／新版：CL_WEB_HTTP_CLIENT_MANAGER（released API）</td></tr>
+      <tr><td>日誌</td><td>各程式自建表、無重送上限</td><td>統一日誌＋BAL（SLG1）；有 AIF 就交給 AIF</td></tr>
+    </tbody>
+  </table>
+
+  <h3 id="ch08-8-qa">練習與自我檢核</h3>
+  <ol>
+    <li><b>找錯</b>：ZSDU019 背景作業排了三個月，對方說從沒收到任何資料，工作日誌也全部「已完成」。請指出原因並寫出修正。<br><i>參考答案：</i>END-OF-SELECTION 寫 <span class="kw">CASE 'X'. WHEN 'rb_po'.</span>，比的是字面值 'rb_po'，永遠不成立。改為 <span class="kw">CASE abap_true. WHEN rb_po. … WHEN rb_re. …</span>。教訓：背景分支必須實際排程測試並到對方確認。</li>
+    <li><b>找錯</b>：ZSDU005 上線後客服反映「A 客戶收到 B 客戶包裹的物流簡訊」。可能的程式原因？<br><i>參考答案：</i>迴圈內 READ TABLE INTO 工作區讀不到時不清空，ls_zwmt011 殘留上一張交貨單的收件人電話，接著被填進本張的 PHONE 參數。每圈開頭 CLEAR，或改一次 JOIN 取回。</li>
+    <li><b>設計</b>：ZSDU011 用 CDHDR 做增量。請寫出「跨日不漏、相鄰兩次不重疊」的時間窗條件，並說明水位線應在何時更新。<br><i>參考答案：</i>半開區間 [上次水位, 現在－安全邊界)：<span class="kw">( udate &gt; 起日 OR ( udate = 起日 AND utime &gt;= 起時 ) ) AND ( udate &lt; 迄日 OR ( udate = 迄日 AND utime &lt; 迄時 ) )</span>；水位只在資料成功送出（或已落地到可重送的日誌表）後才更新。</li>
+    <li><b>觀念</b>：CX_AI_SYSTEM_FAULT 被 CATCH 後，用 <span class="kw">MESSAGE ID sy-msgid TYPE sy-msgty NUMBER sy-msgno …</span> 取錯誤訊息，有什麼問題？<br><i>參考答案：</i>類別型例外不填 sy-msg* 系統欄位，得到的是殘值或空白（sy-msgty 空白時可能 DUMP）。應用 <span class="kw">lx-&gt;get_text( )</span> 或 CODE／ERRORTEXT 屬性。</li>
+    <li><b>觀念</b>：非同步 Outbound Proxy 呼叫方法後沒有例外，是否代表對方已收到？<br><i>參考答案：</i>否。只代表訊息進了本地佇列，且要 COMMIT WORK 才會送出；是否送達要看 SXMB_MONI／PI 監控。</li>
+    <li><b>資安</b>：ZMMU024 以 <span class="kw">IF sy-mandt = …</span> 切換正式／測試金鑰。請提出至少三項改善。<br><i>參考答案：</i>① 金鑰移到 SM59 目的地（或 OA2C_CONFIG／PI Channel），各系統各自設定、不隨傳輸；② 舊金鑰到對方平台作廢重發；③ token 只放記憶體並快取到期前重用，不放進會寫入日誌的結構；④ 回應內文不整段寫日誌。</li>
+    <li><b>找錯</b>：ZSDU030 連續建立兩張換貨訂單後，第二張的價格明顯不對。原因？<br><i>參考答案：</i>每張訂單開始時沒有 REFRESH lt_conditions，第二張帶著第一張的條件行（行號 10、20…對到錯的品項）。改為迴圈內宣告／清空全部 BAPI 內表。</li>
+    <li><b>Casper 經驗</b>：退換貨平台依交貨行「依序扣減」本月換貨額度。為什麼同一份資料在 HANA 上每次跑出的分配可能不同？怎麼修？<br><i>參考答案：</i>HANA 沒有預設排序，SELECT 未 ORDER BY 時回傳順序不固定，依序扣減的結果就會變。扣減前明確 SORT（例如過帳日期、交貨單、行號），或在 SQL 加 ORDER BY。</li>
+    <li><b>選型</b>：公司沒有 PI/PO，要呼叫一個公開的物流追蹤 REST API（OAuth 2.0 Client Credentials）。請列出 ABAP 端需要的設定與類別。<br><i>參考答案：</i>SM59 型別 G 目的地＋STRUST 匯入對方根憑證；OA2C_CONFIG 建 OAuth 2.0 Client，程式用 CL_OAUTH2_CLIENT 附 token（或自製 token 快取）；CL_HTTP_CLIENT 發送、/UI2/CL_JSON 序列化；自建日誌表＋重送作業；Idempotency-Key。</li>
+    <li><b>冪等</b>：什麼是 Outbox 模式？為什麼不建議在交貨單過帳的增強點裡直接同步呼叫外部 HTTP？<br><i>參考答案：</i>在業務交易中只寫「待送」紀錄、由背景作業負責發送。直接同步呼叫會讓過帳被外部系統的延遲或當機卡住；且 SAP 交易若之後回滾，外部已收到的資料無法撤回，造成不一致。</li>
+    <li><b>S/4HANA</b>：ZMMU024 以 <span class="kw">but000~partner = lfa1~lifnr</span> JOIN 在什麼情況下會出錯？正確寫法？<br><i>參考答案：</i>BP 編號與供應商編號不相同時（號碼範圍未設為同號）。應經 CVI_VEND_LINK（VENDOR ↔ PARTNER_GUID）對映到 BUT000。</li>
+    <li><b>實作</b>：把 ZFIU006 改成「單張失敗不影響其他張、重跑不會重複處理」，關鍵是哪兩行？<br><i>參考答案：</i>① CATCH 後記錄該張錯誤並 CONTINUE，不設全域錯誤旗標；② 狀態更新用 <span class="kw">UPDATE zfit002 SET zstatus = 'P' … WHERE … AND zstatus = 'S'</span>，只允許 S→P 轉換一次。</li>
+  </ol>
+</section>

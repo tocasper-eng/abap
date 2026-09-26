@@ -1,0 +1,929 @@
+<section class="chapter" id="ch07-5" data-title="OOP 範例庫（五）：設計模式在 ABAP 的實作（書第 7 章）">
+  <h2>第 7-5 章 OOP 範例庫（五）：設計模式在 ABAP 的實作（書第 7 章）</h2>
+  <p class="lede">本章對應《SAP ABAP 面向對象程序設計 – 原則．模式．實踐》第 7 章的 27 支隨書範例（7.1～7.27），逐一拆解六個 GoF 設計模式在 ABAP 的落地寫法：<b>Singleton</b>（日誌類別 ZCL_LOG）、<b>Adapter</b>（把舊函數模組 ZFM_CREATE_DOC_DB 包成介面）、<b>Bridge</b>（生產訂單類型 × 輸出文件類型）、<b>Facade</b>（供應商評估系統）、<b>Observer</b>（庫存管理通知採購組，外加 ABAP 原生 EVENTS／SET HANDLER）、<b>Strategy</b>（MRP 策略）。每個模式都給「文字版 UML 結構 → 改寫成 S/4HANA 1809+ 的現代程式 → 與原範例的差異 → SAP 標準中的實例與實務提醒」。設計原則（開放封閉、依賴反轉⋯）是模式的理由，請搭配 <a href="#ch07-4">7-4 章</a>；Factory、Singleton 的原廠說法見 <a href="#ch05-2">5-2 章</a> 第 19 節。</p>
+  <div class="meta">
+    <div><b>核心 TCODE</b><span class="tcode">SE24</span><span class="tcode">SE80</span><span class="tcode">SE37</span><span class="tcode">SE38</span><span class="tcode">SE18</span><span class="tcode">SE19</span><span class="tcode">SPAD</span><span class="tcode">ME61</span><span class="tcode">ME63</span><span class="tcode">ME65</span><span class="tcode">OMDQ</span><span class="tcode">OMI4</span><span class="tcode">MD04</span></div>
+    <div><b>關鍵物件</b>ZCL_LOG、ZIF_TARGET、ZCL_ADAPTER、ZFM_CREATE_DOC_DB、TSP03D、ZIF_PROD_ORDER_OUTPUT、ZCL_PROD_ORDER、ZCL_PICK_LIST、ZCL_OPER_CONTROL_TICKET、ZCL_FACADE_EVALUATION、ZCL_INVENTORY_MGMT、ZIF_PURCHASING_GROUP、ZCL_SUBJECT、ZCL_OBSERVER、ZCL_MRP、ZCL_STRATEGY、T024、MARC-DISMM、CX_SY_CREATE_OBJECT_ERROR、CL_ABAP_TYPEDESCR、CL_GUI_ALV_GRID、CL_SALV_EVENTS_TABLE、GET BADI</div>
+  </div>
+
+  <h3 id="ch07-5-01">1. 範例索引</h3>
+  <p>書中第 7 章的範例多半只貼「一個方法的實作」，類別定義要靠上下文推回來。下表列出全部 27 支，「原名」欄是範例中出現的 REPORT／類別／方法；標「推定」的是範例沒寫出、依呼叫端屬性名稱推回的類別名。</p>
+  <table>
+    <thead><tr><th>編號</th><th>原 REPORT／類別．方法</th><th>主題一句話</th><th>本章講解</th></tr></thead>
+    <tbody>
+      <tr><td>7.1</td><td>ZCL_LOG=&gt;GET_INSTANCE</td><td>Singleton：第一次呼叫才建立唯一實例（lazy）</td><td><a href="#ch07-5-03">第 3 節</a></td></tr>
+      <tr><td>7.2</td><td>ZCL_LOG-&gt;SET_MSG</td><td>設定日誌訊息屬性</td><td><a href="#ch07-5-03">第 3 節</a></td></tr>
+      <tr><td>7.3</td><td>ZCL_LOG-&gt;PRINT_MSG</td><td>以 WRITE 印出訊息（改寫為 GET_MSG）</td><td><a href="#ch07-5-03">第 3 節</a></td></tr>
+      <tr><td>7.4</td><td>REPORT ZREP_CLS_C02</td><td>兩次 GET_INSTANCE 取得同一個物件，比較參照相等</td><td><a href="#ch07-5-04">第 4 節</a></td></tr>
+      <tr><td>7.5</td><td>FUNCTION ZFM_CREATE_DOC_DB</td><td>Adaptee：讀 TSP03D 取得主機名、模擬寫入文件資料庫的舊函數模組</td><td><a href="#ch07-5-05">第 5 節</a></td></tr>
+      <tr><td>7.6</td><td>ZCL_ADAPTER-&gt;ZIF_TARGET~CREATE_DOC</td><td>Adapter：以介面方法包裝函數模組呼叫</td><td><a href="#ch07-5-06">第 6 節</a></td></tr>
+      <tr><td>7.7</td><td>REPORT ZREP_CLS_026</td><td>用 ZIF_TARGET 參照、以 ZCL_ADAPTER 建立實例並呼叫</td><td><a href="#ch07-5-06">第 6 節</a></td></tr>
+      <tr><td>7.8</td><td>ZCL_PICK_LIST-&gt;ZIF_PROD_ORDER_OUTPUT~PRINT_OUTPUT</td><td>Bridge 實作端：揀貨單（Pick List）</td><td><a href="#ch07-5-07">第 7 節</a></td></tr>
+      <tr><td>7.9</td><td>ZCL_OPER_CONTROL_TICKET-&gt;ZIF_PROD_ORDER_OUTPUT~PRINT_OUTPUT</td><td>Bridge 實作端：作業控制單（Operation Control Ticket）</td><td><a href="#ch07-5-07">第 7 節</a></td></tr>
+      <tr><td>7.10</td><td>ZCL_PROD_ORDER_PP01-&gt;PRINT_ORDER_DOCUMENT</td><td>Bridge 抽象端：PP01 類型生產訂單輸出文件</td><td><a href="#ch07-5-07">第 7 節</a></td></tr>
+      <tr><td>7.11</td><td>ZCL_PROD_ORDER_PP02-&gt;PRINT_ORDER_DOCUMENT</td><td>Bridge 抽象端：PP02 類型生產訂單輸出文件</td><td><a href="#ch07-5-07">第 7 節</a></td></tr>
+      <tr><td>7.12</td><td>REPORT ZREP_CLS_027</td><td>動態 CREATE OBJECT TYPE (名稱)，自由組合訂單類型與文件類型</td><td><a href="#ch07-5-08">第 8 節</a></td></tr>
+      <tr><td>7.13</td><td>ZCL_PRICE_EVALUATION-&gt;EVALUATION（推定）</td><td>Facade 子系統：價格評估</td><td><a href="#ch07-5-09">第 9 節</a></td></tr>
+      <tr><td>7.14</td><td>品質／服務／交貨評估-&gt;EVALUATION、ZCL_EVALUATION_CALCULATION-&gt;CALCULATION（推定）</td><td>Facade 子系統：其餘三項評估＋加權計算（一個檔案含四個類別的方法）</td><td><a href="#ch07-5-09">第 9 節</a></td></tr>
+      <tr><td>7.15</td><td>ZCL_FACADE_EVALUATION-&gt;EVALUATION</td><td>Facade：一個方法串起五個子系統</td><td><a href="#ch07-5-10">第 10 節</a></td></tr>
+      <tr><td>7.16</td><td>REPORT ZREP_CLS_028</td><td>外部程式只呼叫 Facade 一個方法</td><td><a href="#ch07-5-10">第 10 節</a></td></tr>
+      <tr><td>7.17</td><td>CLASS ZCL_INVENTORY_MGMT DEFINITION</td><td>Observer 被觀察者（Subject）抽象類別：觀察者清單＋三個方法</td><td><a href="#ch07-5-11">第 11 節</a></td></tr>
+      <tr><td>7.18</td><td>ZCL_INVENTORY_MGMT-&gt;ATTACH</td><td>註冊觀察者（採購組）</td><td><a href="#ch07-5-11">第 11 節</a></td></tr>
+      <tr><td>7.19</td><td>ZCL_INVENTORY_MGMT-&gt;DETACH</td><td>移除觀察者</td><td><a href="#ch07-5-11">第 11 節</a></td></tr>
+      <tr><td>7.20</td><td>ZCL_INVENTORY_MGMT-&gt;NOTIFY_REORDER</td><td>逐一通知觀察者更新工作狀態</td><td><a href="#ch07-5-11">第 11 節</a></td></tr>
+      <tr><td>7.21</td><td>ZCL_INVENTORY_MGMT_PL01-&gt;NOTIFY_REORDER</td><td>具體被觀察者（PL01 工廠）重定義並呼叫 SUPER</td><td><a href="#ch07-5-12">第 12 節</a></td></tr>
+      <tr><td>7.22</td><td>REPORT ZREP_CLS_029</td><td>註冊三個採購組、通知、移除一個、再通知</td><td><a href="#ch07-5-12">第 12 節</a></td></tr>
+      <tr><td>7.23</td><td>REPORT ZREP_CLS_032（ZCL_SUBJECT／ZCL_OBSERVER）</td><td>用 ABAP 原生事件 RAISE EVENT／SET HANDLER 實作 Observer</td><td><a href="#ch07-5-13">第 13 節</a></td></tr>
+      <tr><td>7.24</td><td>ZCL_STRATEGY_Z1-&gt;CALL_ALGORITHM</td><td>Strategy 具體策略 Z1 的演算法</td><td><a href="#ch07-5-14">第 14 節</a></td></tr>
+      <tr><td>7.25</td><td>ZCL_MRP-&gt;SET_STRATEGY</td><td>Context 注入策略物件</td><td><a href="#ch07-5-14">第 14 節</a></td></tr>
+      <tr><td>7.26</td><td>ZCL_MRP-&gt;MAKE_PLAN</td><td>Context 委派給目前策略執行</td><td><a href="#ch07-5-14">第 14 節</a></td></tr>
+      <tr><td>7.27</td><td>REPORT ZREP_CLS_033</td><td>依「資料庫讀到的策略名稱」動態建立 Z1／Z2／Z3 並執行</td><td><a href="#ch07-5-15">第 15 節</a></td></tr>
+    </tbody>
+  </table>
+  <div class="note">書中 REPORT 名稱從 ZREP_CLS_026 跳到 029、再跳到 032／033（030、031 不在本章），7.4 又叫 ZREP_CLS_C02，命名不連續是原書如此，不影響理解。勘誤表（2018/11/29）十條中沒有落在第 7 章的項目；本章指出的錯誤都是讀程式時發現的，會在各節「與原範例的差異」逐條說明。</div>
+
+  <h3 id="ch07-5-02">2. 設計模式總覽：ABAP 的特殊條件與本章地圖</h3>
+  <p>設計模式（Design Pattern）是「反覆出現的設計問題 ＋ 經過驗證的解法結構」。GoF（Gang of Four）把 23 個模式分成三類：<b>建立型</b>（怎麼產生物件）、<b>結構型</b>（物件怎麼組合）、<b>行為型</b>（物件怎麼分工與溝通）。本章六個模式的歸屬如下：</p>
+  <table>
+    <thead><tr><th>分類</th><th>模式</th><th>一句話意圖</th><th>書中情境</th><th>SAP 標準中看得到的影子</th></tr></thead>
+    <tbody>
+      <tr><td>建立型</td><td>Singleton</td><td>一個類別只允許一個實例，並提供全域存取點</td><td>日誌 ZCL_LOG</td><td>持久化服務的類別代理 <span class="kw">ZCA_xxx=&gt;AGENT</span>；RTTI 對同一型別只產生一個描述物件（<span class="kw">CL_ABAP_TYPEDESCR=&gt;DESCRIBE_BY_NAME</span>）</td></tr>
+      <tr><td>結構型</td><td>Adapter</td><td>把既有介面轉成客戶端期待的介面</td><td>把函數模組包成 ZIF_TARGET</td><td>Clean Core 建議：以自建 wrapper 類別包裝未釋出的 API 再給 ABAP Cloud 程式使用</td></tr>
+      <tr><td>結構型</td><td>Bridge</td><td>抽象與實作分離，兩個維度各自擴充</td><td>訂單類型 × 輸出文件類型</td><td>概念上類似輸出控制的「輸出類型 × 傳送媒體」兩維組合</td></tr>
+      <tr><td>結構型</td><td>Facade</td><td>給複雜子系統一個簡單的統一入口</td><td>供應商評估</td><td>BAPI 本身：一個 BAPI_PO_CREATE1 背後是整套採購單處理邏輯</td></tr>
+      <tr><td>行為型</td><td>Observer</td><td>一對多相依，狀態改變時自動通知所有觀察者</td><td>庫存變動通知採購組</td><td>ABAP 事件；<span class="kw">CL_GUI_ALV_GRID</span> 的 DOUBLE_CLICK／TOOLBAR 事件；BOR／工作流程事件</td></tr>
+      <tr><td>行為型</td><td>Strategy</td><td>一族演算法各自封裝、執行期可互換</td><td>MRP 策略 Z1／Z2／Z3</td><td>帶過濾器（Filter）的 BAdI：同一介面多個實作，依過濾值挑一個執行</td></tr>
+    </tbody>
+  </table>
+  <p>把 Java／C# 教科書上的模式搬到 ABAP，要先認清 ABAP 的幾個先天條件，後面每一節都會用到：</p>
+  <ul>
+    <li><b>沒有方法多載（Overloading）</b>：同一類別不能有同名方法（勘誤表第 3 條也特別更正了「覆蓋 Overriding／重載 Overloading」的中英對照）。需要多種建立方式時用多個 factory 方法或 OPTIONAL 參數。</li>
+    <li><b>靜態屬性的生命週期是「內部工作階段」（internal session）</b>：Singleton 只在同一支程式的同一次執行中唯一，不是跨使用者、跨應用伺服器的唯一。</li>
+    <li><b>語言內建事件</b>：<span class="kw">EVENTS</span>／<span class="kw">RAISE EVENT</span>／<span class="kw">SET HANDLER</span> 就是語言層的 Observer，多數情況不必自己維護觀察者清單（第 13 節）。</li>
+    <li><b>動態建立物件</b>：<span class="kw">CREATE OBJECT ref TYPE (類別名變數)</span> 讓 Bridge／Strategy 可以「由設定表決定用哪個類別」。這是少數 <span class="kw">NEW</span> 做不到、必須保留 <span class="kw">CREATE OBJECT</span> 的地方（第 8 節）。</li>
+    <li><b>單一繼承＋多重介面</b>：模式裡的「抽象角色」優先用介面（INTERFACE）表達，抽象類別只在需要共用實作時使用。</li>
+  </ul>
+  <div class="tip"><b>本章示範程式的輸出方式：</b>原範例全部用 <span class="kw">WRITE</span> 清單輸出，而且把 WRITE 寫在業務類別的方法裡。改寫版一律讓方法「回傳文字（string_table）」，由呼叫端的 REPORT 用 <span class="kw">CL_DEMO_OUTPUT</span> 顯示。這樣業務類別不綁畫面技術，同一個類別可以被 ALV、Fiori、背景作業、ABAP Unit 重用（單一職責原則，見 <a href="#ch07-4">7-4 章</a>）。</div>
+  <div class="warn"><span class="kw">CL_DEMO_OUTPUT</span> 是 SAP 提供給示範與測試用的類別，<b>不可用於正式程式</b>。正式報表請用 <span class="kw">CL_SALV_TABLE</span>（見 <a href="#ch02-3">2-3 章</a>），日誌請寫應用日誌（Application Log，<span class="tcode">SLG1</span> 查詢）。</div>
+
+  <h3 id="ch07-5-03">3. Singleton（一）：ZCL_LOG 的結構（7.1～7.3）</h3>
+  <p><b>觀念：</b>系統中某些物件只該有一份：日誌收集器、設定快取、與外部系統的連線管理員。如果任何人都能 <span class="kw">NEW</span>，就會出現多個日誌物件各記各的，最後誰也拼不出完整訊息。Singleton 的三個要件：</p>
+  <ol>
+    <li>類別宣告 <span class="kw">CREATE PRIVATE</span>：外界不能建立實例。</li>
+    <li>私有<b>靜態</b>屬性保存唯一實例。</li>
+    <li>公開<b>靜態</b>方法 <span class="kw">GET_INSTANCE</span> 回傳那個實例（沒有就先建立）。</li>
+  </ol>
+  <p>另外強烈建議加 <span class="kw">FINAL</span>：若允許繼承，子類別可能繞過唯一性。</p>
+  <pre><code class="text">UML（文字版）
++---------------------------------------------+
+| ZCL_LOG            {FINAL, CREATE PRIVATE}  |
++---------------------------------------------+
+| - go_instance : REF TO zcl_log   {static}   |
+| - mv_msg      : string                      |
++---------------------------------------------+
+| + get_instance( ) : REF TO zcl_log {static} |
+| + set_msg( iv_msg : string )                |
+| + get_msg( ) : string                       |
++---------------------------------------------+
+Client ---uses---&gt; ZCL_LOG=&gt;get_instance( )   （沒有人能直接 NEW zcl_log( )）</code></pre>
+  <p><b>範例（改寫後）：</b>7.1 的 GET_INSTANCE、7.2 的 SET_MSG 原樣保留語意；7.3 的 PRINT_MSG 改為 GET_MSG 回傳字串。</p>
+  <pre><code class="abap">CLASS zcl_log DEFINITION PUBLIC FINAL CREATE PRIVATE.
+  PUBLIC SECTION.
+    CLASS-METHODS get_instance                   "7.1
+      RETURNING VALUE(ro_log) TYPE REF TO zcl_log.
+    METHODS set_msg IMPORTING iv_msg TYPE string. "7.2
+    METHODS get_msg RETURNING VALUE(rv_msg) TYPE string. "7.3（原 PRINT_MSG）
+  PRIVATE SECTION.
+    CLASS-DATA go_instance TYPE REF TO zcl_log.   "唯一實例（靜態）
+    DATA mv_msg TYPE string.
+ENDCLASS.
+
+CLASS zcl_log IMPLEMENTATION.
+  METHOD get_instance.
+    " 延遲建立（lazy）：第一次被要求時才 NEW
+    IF go_instance IS NOT BOUND.
+      go_instance = NEW #( ).   "CREATE PRIVATE：只有類別自己能 NEW
+    ENDIF.
+    ro_log = go_instance.
+  ENDMETHOD.
+
+  METHOD set_msg.
+    mv_msg = iv_msg.
+  ENDMETHOD.
+
+  METHOD get_msg.
+    rv_msg = mv_msg.
+  ENDMETHOD.
+ENDCLASS.</code></pre>
+  <p>另一種寫法是<b>預先建立（eager）</b>：在靜態建構子 <span class="kw">CLASS_CONSTRUCTOR</span> 裡 NEW，靜態屬性設成 <span class="kw">READ-ONLY</span> 公開，連 GET_INSTANCE 都可以省掉（原廠 BC401 的三種 Singleton 寫法見 <a href="#ch05-2">5-2 章</a> 第 19 節）。</p>
+  <pre><code class="abap">CLASS zcl_log_eager DEFINITION PUBLIC FINAL CREATE PRIVATE.
+  PUBLIC SECTION.
+    CLASS-DATA go_instance TYPE REF TO zcl_log_eager READ-ONLY.
+    CLASS-METHODS class_constructor.
+    METHODS set_msg IMPORTING iv_msg TYPE string.
+  PRIVATE SECTION.
+    DATA mv_msg TYPE string.
+ENDCLASS.
+
+CLASS zcl_log_eager IMPLEMENTATION.
+  METHOD class_constructor.
+    " 類別第一次被存取時（本工作階段）自動執行一次
+    go_instance = NEW #( ).
+  ENDMETHOD.
+  METHOD set_msg.
+    mv_msg = iv_msg.
+  ENDMETHOD.
+ENDCLASS.
+
+" 使用端：zcl_log_eager=&gt;go_instance-&gt;set_msg( `...` ).</code></pre>
+  <p><b>與原範例的差異：</b></p>
+  <ul>
+    <li>7.1 用 <span class="kw">CREATE OBJECT mo_log</span>，改為 <span class="kw">NEW #( )</span>；另外原範例把「靜態屬性」命名為 <span class="kw">MO_LOG</span>，<span class="kw">MO_</span> 前綴在一般命名慣例表示「實例屬性（member）」，靜態屬性應用 <span class="kw">GO_</span>（或 <span class="kw">SO_</span>）以免誤讀，改寫版改為 <span class="kw">GO_INSTANCE</span>。原範例 <span class="kw">ro_log = mo_log.</span> 的縮排跑到 IF 裡，看起來像在 IF 內，其實在外面，屬於排版問題。</li>
+    <li>範例只貼了方法實作，沒有類別定義；書中 SE24 畫面應為 Instantiation = Private。若忘了設 CREATE PRIVATE，GET_INSTANCE 雖然可以用，但別人仍能 NEW 出第二個實例，Singleton 形同虛設。</li>
+    <li>7.3 在業務類別裡 <span class="kw">WRITE</span>，改為回傳字串，輸出交給呼叫端。</li>
+  </ul>
+
+  <h3 id="ch07-5-04">4. Singleton（二）：測試程式與實務邊界（7.4）</h3>
+  <p><b>範例（改寫後）：</b>第一次取得實例並設定訊息，第二次再取得時讀到的是同一段訊息，參照比較結果為 Equal。</p>
+  <pre><code class="abap">REPORT zrep_cls_c02.
+
+START-OF-SELECTION.
+  DATA(lo_out) = cl_demo_output=&gt;new( ).
+
+  " 用 =&gt; 呼叫靜態方法 GET_INSTANCE
+  DATA(lo_log_1) = zcl_log=&gt;get_instance( ).
+  lo_out-&gt;write( |log_1（設定前）：{ lo_log_1-&gt;get_msg( ) }| ).
+
+  lo_log_1-&gt;set_msg( `Instance object 0001 message` ).
+  lo_out-&gt;write( |log_1（設定後）：{ lo_log_1-&gt;get_msg( ) }| ).
+
+  " 再次取得：拿到的是同一個實例，所以讀得到 log_1 設定的訊息
+  DATA(lo_log_2) = zcl_log=&gt;get_instance( ).
+  lo_out-&gt;write( |log_2：{ lo_log_2-&gt;get_msg( ) }| ).
+
+  " 參照比較：比的是「是否指向同一個物件」，不是內容
+  lo_out-&gt;write( COND string( WHEN lo_log_1 = lo_log_2 THEN `Equal`
+                                                      ELSE `Not Equal` ) ).
+
+  " DATA(lo_x) = NEW zcl_log( ).   → 語法錯誤：ZCL_LOG 是 CREATE PRIVATE
+  lo_out-&gt;display( ).</code></pre>
+  <p><b>與原範例的差異：</b>原範例用 <span class="kw">DATA ... TYPE REF TO</span> 先宣告再賦值、以 <span class="kw">WRITE</span> 輸出、用 <span class="kw">EQ</span> 比較；改寫版用內嵌宣告、字串範本、<span class="kw">COND</span>。邏輯完全相同。</p>
+  <p><b>實務提醒：Singleton 的「唯一」到哪裡為止？</b></p>
+  <table>
+    <thead><tr><th>範圍</th><th>是否唯一</th><th>說明</th></tr></thead>
+    <tbody>
+      <tr><td>同一支程式、同一次執行</td><td>是</td><td>靜態屬性存在內部工作階段（internal session）</td></tr>
+      <tr><td><span class="kw">SUBMIT</span>／<span class="kw">CALL TRANSACTION</span> 叫起的另一支程式</td><td>否</td><td>新的 internal session，重新建立</td></tr>
+      <tr><td>同一使用者的另一個 GUI 視窗、另一位使用者、背景作業</td><td>否</td><td>完全不同的工作階段</td></tr>
+      <tr><td>RFC 呼叫進來的遠端程式</td><td>否</td><td>遠端系統自己的工作階段</td></tr>
+    </tbody>
+  </table>
+  <ul>
+    <li>真正要「跨使用者共用一份資料」，要用共用記憶體物件（Shared Objects，<span class="tcode">SHMA</span>）或資料庫表，不是 Singleton。</li>
+    <li>Singleton 等於一個全域變數，會讓單元測試變難（前一個測試留下的狀態會影響下一個）。常見折衷：GET_INSTANCE 回傳<b>介面</b>型別，並提供測試用的注入點（例如 ABAP Unit 的 <span class="kw">FOR TESTING</span> 友誼類別替換實例），詳見 <a href="#ch07-6">7-6 章</a>。</li>
+    <li>日誌類別在正式專案中通常不是自己寫 WRITE，而是包裝應用日誌（Application Log）：7.53 可用函數 <span class="kw">BAL_LOG_CREATE</span>／<span class="kw">BAL_LOG_MSG_ADD</span>／<span class="kw">BAL_DB_SAVE</span>，較新版本另有類別 API <span class="kw">CL_BALI_LOG</span>（ABAP Cloud 用；在 on-premise 需較新的 S/4HANA 版本才有，1809 請用 BAL 函數）。這時 ZCL_LOG 做 Singleton 就很合理：整支程式共用一個 log handle，最後一次存檔。</li>
+  </ul>
+
+  <h3 id="ch07-5-05">5. Adapter（一）：觀念與被轉接的舊函數模組（7.5）</h3>
+  <p><b>觀念：</b>新程式希望透過一個乾淨的介面（Target）工作，但實際能做事的是一段介面不相容的既有程式（Adaptee，這裡是函數模組）。Adapter 實作 Target 介面，內部去呼叫 Adaptee，負責參數對應與錯誤轉換。客戶端從頭到尾只認得 Target。</p>
+  <pre><code class="text">UML（文字版，物件轉接器 Object Adapter）
+ Client ----------&gt; «interface» ZIF_TARGET
+                     + create_doc( iv_output_device ) : host_name
+                              ^
+                              | implements
+                     ZCL_ADAPTER
+                     + zif_target~create_doc( )  ---calls---&gt;  FUNCTION ZFM_CREATE_DOC_DB
+                                                                (Adaptee：舊介面、傳統例外)</code></pre>
+  <p>GoF 另有「類別轉接器（Class Adapter）」：Adapter 同時繼承 Adaptee 類別並實作 Target 介面。ABAP 是單一繼承，但 Adaptee 若是類別，仍可「繼承 Adaptee ＋ 實作 Target 介面」。本例 Adaptee 是函數模組，只能用物件轉接器（組合／呼叫）。</p>
+  <p><b>範例（改寫後）：</b>函數模組依輸出裝置名稱讀取 <b>TSP03D</b>（輸出裝置主檔，<span class="tcode">SPAD</span> 維護）的 <b>PAPROSNAME</b>，當作「文件資料庫主機」回傳。</p>
+  <pre><code class="abap">FUNCTION zfm_create_doc_db.
+*"----------------------------------------------------------------------
+*"*"Local Interface:
+*"  IMPORTING
+*"     VALUE(OUTPUT_DEVICE) TYPE  TSP03D-NAME
+*"  EXPORTING
+*"     VALUE(HOST_NAME) TYPE  TSP03D-PAPROSNAME
+*"  EXCEPTIONS
+*"      DEVICE_NOT_FOUND
+*"----------------------------------------------------------------------
+  CLEAR host_name.
+
+  IF output_device IS INITIAL.
+    RAISE device_not_found.
+  ENDIF.
+
+  " 原範例用迴圈式 SELECT 讀一筆；只要一筆就用 SELECT SINGLE
+  SELECT SINGLE paprosname
+    FROM tsp03d
+    WHERE name = @output_device
+    INTO @host_name.
+  IF sy-subrc &lt;&gt; 0.
+    RAISE device_not_found.
+  ENDIF.
+
+  " 模擬：連線文件資料庫 → 建立文件 → 中斷連線
+  " （原範例在此用 WRITE 印三行；函數模組不應直接輸出畫面，改由呼叫端記錄）
+ENDFUNCTION.</code></pre>
+  <p><b>與原範例的差異（含範例錯誤修正）：</b></p>
+  <ul>
+    <li><b>邏輯錯誤：</b>原範例的 <span class="kw">IF sy-subrc = 0.</span> 寫在 <span class="kw">IF output_device IS NOT INITIAL ... ENDIF.</span> 之<b>外</b>。當輸入空白時根本沒有執行 SELECT，sy-subrc 是「前一個敘述」留下的值，很可能剛好是 0，就會印出「連接到文件資料庫：（空白）」。改寫版在空白時直接 RAISE。</li>
+    <li>原範例用 <span class="kw">SELECT ... INTO (host_name) ... WHERE ...</span> 的迴圈式寫法（以 ENDSELECT 收尾）只為讀一筆，改為 <span class="kw">SELECT SINGLE</span>＋<span class="kw">@</span> 主機變數，並把 INTO 放在最後（7.40 SP08 以後的嚴格模式寫法）。</li>
+    <li>原範例 <span class="kw">WRITE: / '連接到文檔數據庫:', host_name..</span> 多打了一個句點（多出來的句點在 ABAP 是一個空敘述，不會報錯，但屬於筆誤）。</li>
+    <li>原範例沒有定義任何例外，呼叫端無法得知失敗；改寫版加上傳統例外 <span class="kw">DEVICE_NOT_FOUND</span>，因為這支是「舊介面」，刻意保留傳統例外，讓下一節的 Adapter 示範「把傳統例外轉成類別式例外」。</li>
+    <li><b>欄位語意提醒：</b>TSP03D-PAPROSNAME 在標準系統中是輸出裝置在主機（作業系統）端的印表機名稱，書中只是借用這個欄位「模擬」文件資料庫主機名，並非 SAP 有這種用途。TSP03D 的主鍵是 PADEST（短名）；NAME 是長名稱，在 SPAD 中同樣不可重複，所以用 SELECT SINGLE 讀取沒有問題。</li>
+  </ul>
+
+  <h3 id="ch07-5-06">6. Adapter（二）：轉接器類別與呼叫端（7.6、7.7）</h3>
+  <p><b>範例（改寫後）：</b>Target 介面宣告類別式例外；Adapter 把函數模組的 sy-subrc 轉成例外物件。先在 <span class="tcode">SE24</span> 建一個例外類別 ZCX_DOC_DB（繼承 <span class="kw">CX_STATIC_CHECK</span>，加一個屬性 DEVICE 與對應的訊息文字）。</p>
+  <pre><code class="abap">INTERFACE zif_target PUBLIC.
+  METHODS create_doc
+    IMPORTING iv_output_device   TYPE tsp03d-name
+    RETURNING VALUE(rv_host_name) TYPE tsp03d-paprosname
+    RAISING   zcx_doc_db.
+ENDINTERFACE.
+
+CLASS zcl_adapter DEFINITION PUBLIC FINAL CREATE PUBLIC.
+  PUBLIC SECTION.
+    INTERFACES zif_target.
+ENDCLASS.
+
+CLASS zcl_adapter IMPLEMENTATION.
+  METHOD zif_target~create_doc.                          "7.6
+    " 參數對應：新介面 iv_/rv_ ←→ 舊函數 OUTPUT_DEVICE / HOST_NAME
+    CALL FUNCTION 'ZFM_CREATE_DOC_DB'
+      EXPORTING
+        output_device    = iv_output_device
+      IMPORTING
+        host_name        = rv_host_name
+      EXCEPTIONS
+        device_not_found = 1
+        OTHERS           = 2.
+    IF sy-subrc &lt;&gt; 0.
+      " 錯誤轉換：傳統例外 → 類別式例外（這正是 Adapter 的價值之一）
+      RAISE EXCEPTION TYPE zcx_doc_db
+        EXPORTING
+          device = iv_output_device.
+    ENDIF.
+  ENDMETHOD.
+ENDCLASS.</code></pre>
+  <pre><code class="abap">REPORT zrep_cls_026.                                     "7.7
+
+START-OF-SELECTION.
+  " 以介面型別宣告，以 Adapter 類別建立實例
+  DATA lo_target TYPE REF TO zif_target.
+  lo_target = NEW zcl_adapter( ).
+
+  TRY.
+      " 傳入文件資料庫（輸出裝置）名稱，連到對應主機
+      DATA(lv_host) = lo_target-&gt;create_doc( 'DOC_BASE_01' ).
+      MESSAGE |已建立文件，主機：{ lv_host }| TYPE 'S'.
+    CATCH zcx_doc_db INTO DATA(lx_doc).
+      MESSAGE lx_doc-&gt;get_text( ) TYPE 'I' DISPLAY LIKE 'E'.
+  ENDTRY.</code></pre>
+  <p><b>與原範例的差異：</b></p>
+  <ul>
+    <li>原範例 <span class="kw">CREATE OBJECT go_target TYPE zcl_adapter.</span> 改為 <span class="kw">lo_target = NEW zcl_adapter( ).</span>（目標是介面參照，NEW 後面必須寫具體類別名，不能用 #）。</li>
+    <li>原範例建立後檢查 <span class="kw">IF go_target IS NOT INITIAL</span>；靜態 NEW 不會「建立失敗但回傳空參照」，這個檢查可省略。</li>
+    <li>原範例 7.6 的 CALL FUNCTION 沒有 EXCEPTIONS 子句，也沒檢查 sy-subrc；若函數模組 RAISE 了未處理的傳統例外，程式會直接短傾印（dump）。</li>
+  </ul>
+  <p><b>實務提醒：</b></p>
+  <ul>
+    <li><b>S/4HANA／Clean Core 的 Adapter：</b>ABAP Cloud 開發模型只能呼叫 SAP 釋出（released）的 API。SAP 對「還沒有釋出替代品的舊 BAPI／函數模組」的建議做法，就是在傳統 ABAP 層（Tier 2）寫一個 wrapper 類別並釋出給 Cloud 程式用——這正是 Adapter 模式。細節見 <a href="#ch03-4">3-4 章</a> 第 17 節的三層擴充模型。</li>
+    <li>寫 BAPI 的 wrapper 時，Adapter 還要負責把 <span class="kw">BAPIRET2</span> 的 E／A 訊息轉成例外，並決定由誰 <span class="kw">BAPI_TRANSACTION_COMMIT</span>（見 <a href="#ch04-1">4-1 章</a>）。一般建議 wrapper 本身不 COMMIT，交由最外層的呼叫者控制交易邊界。</li>
+    <li><b>先標準再客製：</b>包 wrapper 之前先查有沒有已釋出的 CDS View、RAP BO 或類別 API 可直接用，Adapter 是「沒有標準時」的第二選擇。</li>
+  </ul>
+
+  <h3 id="ch07-5-07">7. Bridge（一）：訂單類型 × 輸出文件類型（7.8～7.11）</h3>
+  <p><b>觀念：</b>生產訂單有 PP01、PP02⋯多種類型，輸出文件有揀貨單、作業控制單⋯多種。如果用繼承硬做，就會長出「PP01 揀貨單、PP01 作業控制單、PP02 揀貨單⋯」的 m × n 個類別。Bridge 把兩個維度拆開：<b>抽象端</b>（訂單類型的類別階層）持有<b>實作端</b>（輸出文件介面）的參照，兩邊各自擴充，類別數降為 m ＋ n。</p>
+  <pre><code class="text">UML（文字版）
+     抽象端（Abstraction）                          實作端（Implementor）
+  +------------------------------+   uses    +-------------------------------------+
+  | ZCL_PROD_ORDER {ABSTRACT}    |----------&gt;| «interface» ZIF_PROD_ORDER_OUTPUT   |
+  | + print_order_document(      |           | + print_output( ) : string_table    |
+  |     ii_prod_order_output )   |           +-------------------------------------+
+  +------------------------------+                  ^                    ^
+        ^                ^                          |                    |
+  ZCL_PROD_ORDER_PP01  ZCL_PROD_ORDER_PP02    ZCL_PICK_LIST   ZCL_OPER_CONTROL_TICKET
+  （7.10）             （7.11）               （7.8）         （7.9）
+  新增訂單類型 PP03 → 只加一個子類別；新增文件類型 → 只加一個實作類別</code></pre>
+  <p><b>範例（改寫後）：</b>實作端（7.8、7.9）：</p>
+  <pre><code class="abap">INTERFACE zif_prod_order_output PUBLIC.
+  METHODS print_output RETURNING VALUE(rt_lines) TYPE string_table.
+ENDINTERFACE.
+
+CLASS zcl_pick_list DEFINITION PUBLIC FINAL CREATE PUBLIC.
+  PUBLIC SECTION.
+    INTERFACES zif_prod_order_output.
+ENDCLASS.
+CLASS zcl_pick_list IMPLEMENTATION.
+  METHOD zif_prod_order_output~print_output.             "7.8
+    rt_lines = VALUE #( ( `///////////////////////////` )
+                        ( `//  揀貨單（Pick List）  //` )
+                        ( `///////////////////////////` ) ).
+  ENDMETHOD.
+ENDCLASS.
+
+CLASS zcl_oper_control_ticket DEFINITION PUBLIC FINAL CREATE PUBLIC.
+  PUBLIC SECTION.
+    INTERFACES zif_prod_order_output.
+ENDCLASS.
+CLASS zcl_oper_control_ticket IMPLEMENTATION.
+  METHOD zif_prod_order_output~print_output.             "7.9
+    rt_lines = VALUE #( ( `******************************************` )
+                        ( `**作業控制單（Operation Control Ticket）**` )
+                        ( `******************************************` ) ).
+  ENDMETHOD.
+ENDCLASS.</code></pre>
+  <p>抽象端（7.10、7.11）。原範例在兩個子類別裡各寫一份幾乎相同的 PRINT_ORDER_DOCUMENT，只差第一行標題；改寫版把共同流程上移到抽象類別，子類別只提供標題（這其實又套用了 Template Method 模式）：</p>
+  <pre><code class="abap">CLASS zcl_prod_order DEFINITION PUBLIC ABSTRACT CREATE PUBLIC.
+  PUBLIC SECTION.
+    METHODS print_order_document
+      IMPORTING ii_prod_order_output TYPE REF TO zif_prod_order_output
+      RETURNING VALUE(rt_lines)      TYPE string_table.
+  PROTECTED SECTION.
+    METHODS get_header ABSTRACT RETURNING VALUE(rv_text) TYPE string.
+ENDCLASS.
+
+CLASS zcl_prod_order IMPLEMENTATION.
+  METHOD print_order_document.
+    rt_lines = VALUE #( ( get_header( ) ) ).
+    IF ii_prod_order_output IS BOUND.
+      " 橋接點：把「怎麼輸出」委派給實作端
+      DATA(lt_doc) = ii_prod_order_output-&gt;print_output( ).
+      APPEND LINES OF lt_doc TO rt_lines.
+    ENDIF.
+  ENDMETHOD.
+ENDCLASS.
+
+CLASS zcl_prod_order_pp01 DEFINITION PUBLIC
+  INHERITING FROM zcl_prod_order FINAL CREATE PUBLIC.
+  PROTECTED SECTION.
+    METHODS get_header REDEFINITION.
+ENDCLASS.
+CLASS zcl_prod_order_pp01 IMPLEMENTATION.
+  METHOD get_header.                                     "7.10
+    rv_text = `PP01 類型生產訂單執行文件輸出`.
+  ENDMETHOD.
+ENDCLASS.
+
+CLASS zcl_prod_order_pp02 DEFINITION PUBLIC
+  INHERITING FROM zcl_prod_order FINAL CREATE PUBLIC.
+  PROTECTED SECTION.
+    METHODS get_header REDEFINITION.
+ENDCLASS.
+CLASS zcl_prod_order_pp02 IMPLEMENTATION.
+  METHOD get_header.                                     "7.11
+    rv_text = `執行 PP02 類型的生產訂單列印`.
+  ENDMETHOD.
+ENDCLASS.</code></pre>
+  <p><b>與原範例的差異：</b></p>
+  <ul>
+    <li>原 7.8／7.9 在實作類別裡 WRITE 圖框文字，改為回傳 string_table。</li>
+    <li>原 7.10／7.11 兩份重複程式合併到抽象類別，子類別只 REDEFINITION 一個受保護的 GET_HEADER。這樣新增訂單類型時不可能「忘了呼叫實作端」。</li>
+    <li>嚴格的 GoF Bridge 是「抽象端在建構時就持有實作端參照」（通常經由 CONSTRUCTOR 注入），書中改為每次呼叫時傳入參數，較接近「方法參數注入」。兩者都能解耦；如果一張訂單終生只用一種文件，建構子注入較清楚；如果同一張訂單要輸出多種文件（如 7.12 的 PP01 同時印兩種），用參數傳入較方便。</li>
+  </ul>
+  <div class="note"><b>SAP 標準中的影子：</b>生產訂單的車間文件列印（shop floor papers）本來就是「訂單類型 × 列印清單類型」的組合設定：揀貨單、作業控制單（Operation Control Ticket）、工作票等都是標準列表，在 PP 的列印設定中與訂單類型搭配，不必寫程式。書中範例是以此為題材示範 Bridge；實務上請先確認標準設定能不能滿足（先標準再客製）。</div>
+
+  <h3 id="ch07-5-08">8. Bridge（二）：動態建立物件與安全的組合清單（7.12）</h3>
+  <p><b>觀念：</b>既然兩個維度都是「類別名稱」，就能在執行期用字串決定要建立哪個類別：<span class="kw">CREATE OBJECT ref TYPE (lv_class_name)</span>。原範例的註解「類名必須大寫」是對的：動態類別名稱會以大寫比對，傳小寫會找不到類別並觸發 <span class="kw">CX_SY_CREATE_OBJECT_ERROR</span>。</p>
+  <div class="warn"><b>為什麼這裡還用 CREATE OBJECT？</b>本部規定一律用 <span class="kw">NEW</span> 取代 CREATE OBJECT，但 <span class="kw">NEW</span> 的型別必須在編譯時確定，<b>不支援動態類別名</b>。需要「類別名來自變數」時，<span class="kw">CREATE OBJECT ... TYPE (name)</span> 仍是標準且唯一的語法（ABAP Cloud 同樣可用）。靜態已知的類別才用 NEW。</div>
+  <p><b>範例（改寫後）：</b>把「允許的組合」列舉成一張表（實務上放自建設定表，以 <span class="tcode">SM30</span> 維護），迴圈動態建立。</p>
+  <pre><code class="abap">REPORT zrep_cls_027.
+
+TYPES: BEGIN OF ty_combo,
+         order_class TYPE seoclsname,   "類別名必須大寫
+         doc_class   TYPE seoclsname,
+       END OF ty_combo,
+       ty_combos TYPE STANDARD TABLE OF ty_combo WITH EMPTY KEY.
+
+START-OF-SELECTION.
+  " 允許的組合一筆一筆列舉（對應原範例：PP01×兩種文件、PP02×一種文件）
+  DATA(lt_combo) = VALUE ty_combos(
+    ( order_class = 'ZCL_PROD_ORDER_PP01' doc_class = 'ZCL_PICK_LIST' )
+    ( order_class = 'ZCL_PROD_ORDER_PP01' doc_class = 'ZCL_OPER_CONTROL_TICKET' )
+    ( order_class = 'ZCL_PROD_ORDER_PP02' doc_class = 'ZCL_OPER_CONTROL_TICKET' ) ).
+
+  DATA lo_order  TYPE REF TO zcl_prod_order.
+  DATA li_output TYPE REF TO zif_prod_order_output.
+  DATA lt_all    TYPE string_table.
+
+  LOOP AT lt_combo INTO DATA(ls_combo).
+    TRY.
+        " 動態類別名：NEW 做不到，必須用 CREATE OBJECT ... TYPE (變數)
+        CREATE OBJECT lo_order  TYPE (ls_combo-order_class).
+        CREATE OBJECT li_output TYPE (ls_combo-doc_class).
+        DATA(lt_lines) = lo_order-&gt;print_order_document( li_output ).
+        APPEND LINES OF lt_lines TO lt_all.
+        APPEND `` TO lt_all.
+      CATCH cx_sy_create_object_error INTO DATA(lx_create).
+        " 類別不存在、是抽象類別、或不允許建立
+        APPEND |{ ls_combo-order_class } / { ls_combo-doc_class }：{ lx_create-&gt;get_text( ) }|
+          TO lt_all.
+    ENDTRY.
+  ENDLOOP.
+
+  cl_demo_output=&gt;display( lt_all ).</code></pre>
+  <p><b>與原範例的差異：</b>原範例把四個類別名寫在四個 string 變數，建立→呼叫的程式重複三次；改寫版用組合表＋迴圈，並把 TRY 放進迴圈內——原範例的 TRY 包住全部，第一個組合失敗就後面全部不執行。原範例宣告了 <span class="kw">exc_ref TYPE REF TO cx_root</span> 卻只 CATCH CX_SY_CREATE_OBJECT_ERROR，型別宣告過寬，改寫版用內嵌宣告讓型別與 CATCH 一致。</p>
+  <p><b>實務提醒（Casper 的第二條經驗）：</b>允許建立哪些類別，<b>請逐筆列舉</b>，不要用「類別名以 ZCL_PROD_ORDER_ 開頭就放行」這種樣式或區間比對。動態建立等於「讓資料決定執行哪段程式」，範圍寫寬了，任何後來有人建的同前綴類別都會被執行到；列舉清單則是明確的白名單。同理，設定表讀出來的類別名要先 <span class="kw">to_upper( )</span> 再用。</p>
+
+  <h3 id="ch07-5-09">9. Facade（一）：供應商評估的子系統（7.13、7.14）</h3>
+  <p><b>觀念：</b>供應商評估牽涉價格、品質、服務、交貨四個面向，再加一個加權計算。外部程式如果要自己依序呼叫五個類別，就得知道所有類別、呼叫順序與參數。Facade 提供一個「一鍵評估」的入口，把子系統的複雜度藏起來；子系統類別仍然存在，進階使用者照樣可以直接用。</p>
+  <pre><code class="text">UML（文字版）
+ Client ---&gt; ZCL_FACADE_EVALUATION
+             + evaluation( iv_vendor_id )
+                  |  建立並依序呼叫
+                  +--&gt; ZCL_PRICE_EVALUATION      （7.13：價格水準、價格歷史）
+                  +--&gt; ZCL_QUALITY_EVALUATION    （7.14：收貨檢驗、品質稽核、抱怨／拒收水準）
+                  +--&gt; ZCL_SERVICE_EVALUATION    （7.14：可靠性、持續改善、服務時間彈性）
+                  +--&gt; ZCL_DELIVERY_EVALUATION   （7.14：準時交貨、數量可靠性、遵守裝運須知、確認日期）
+                  +--&gt; ZCL_EVALUATION_CALCULATION（7.14：加權 價格40% 品質30% 服務20% 交貨10%）</code></pre>
+  <p><b>範例（改寫後）：</b>四個評估類別實作同一個介面，Facade 就能用一個迴圈呼叫；加權計算改成真的用 <span class="kw">REDUCE</span> 算出總分，而不是只印出權重。</p>
+  <pre><code class="abap">INTERFACE zif_vendor_evaluation PUBLIC.
+  METHODS evaluation
+    IMPORTING iv_vendor_id    TYPE lifnr
+    RETURNING VALUE(rt_lines) TYPE string_table.
+ENDINTERFACE.
+
+CLASS zcl_price_evaluation DEFINITION PUBLIC FINAL CREATE PUBLIC.
+  PUBLIC SECTION.
+    INTERFACES zif_vendor_evaluation.
+ENDCLASS.
+CLASS zcl_price_evaluation IMPLEMENTATION.
+  METHOD zif_vendor_evaluation~evaluation.               "7.13
+    rt_lines = VALUE #( ( |1. 價格：{ iv_vendor_id ALPHA = OUT }| )
+                        ( `1.1 價格水準` )
+                        ( `1.2 價格歷史` ) ).
+  ENDMETHOD.
+ENDCLASS.
+
+" ZCL_QUALITY_EVALUATION / ZCL_SERVICE_EVALUATION / ZCL_DELIVERY_EVALUATION 同樣寫法（7.14）：
+"   2. 品質：2.1 收貨檢驗、2.2 品質稽核、2.3 抱怨／拒收水準
+"   3. 服務：3.1 可靠性、3.2 持續改善的服務、3.3 服務執行時間的彈性
+"   4. 交貨準確度：4.1 按時交貨表現、4.2 數量可靠性、4.3 遵守裝運須知、4.4 確認日期
+
+CLASS zcl_evaluation_calculation DEFINITION PUBLIC FINAL CREATE PUBLIC.
+  PUBLIC SECTION.
+    TYPES: BEGIN OF ty_score,
+             criterion TYPE string,
+             score     TYPE i,          "0~100 分
+             weight    TYPE i,          "百分比
+           END OF ty_score,
+           ty_scores TYPE STANDARD TABLE OF ty_score WITH EMPTY KEY.
+    METHODS calculation
+      IMPORTING it_scores       TYPE ty_scores
+      RETURNING VALUE(rv_total) TYPE decfloat34.
+ENDCLASS.
+CLASS zcl_evaluation_calculation IMPLEMENTATION.
+  METHOD calculation.                                    "7.14（加權平均）
+    rv_total = REDUCE decfloat34( INIT lv_sum = CONV decfloat34( 0 )
+                                  FOR ls_s IN it_scores
+                                  NEXT lv_sum = lv_sum + ls_s-score * ls_s-weight / 100 ).
+  ENDMETHOD.
+ENDCLASS.</code></pre>
+  <p><b>與原範例的差異：</b></p>
+  <ul>
+    <li><b>7.14 一個檔案放了四個類別的方法</b>（三個 EVALUATION 與一個 CALCULATION），檔案裡沒有類別名，實際上分屬不同類別；類別名是依 7.15 的屬性 MO_PRICE_EVALUATION、MO_QUALITY_EVALUATION、MO_SERVICE_EVALUATION、MO_DELIVERY_EVALUATION、MO_EVALUATION_CALCULATION 推定。</li>
+    <li>原範例四個子系統沒有共同介面，Facade 只能逐一寫死；改寫版抽出 ZIF_VENDOR_EVALUATION，新增第五個評估面向時 Facade 只要多註冊一個物件。</li>
+    <li>原範例 CALCULATION 只 WRITE 出「價格 40%、品質 30%⋯」四行字，沒有計算；改寫版傳入分數表實際算出加權總分。</li>
+    <li>原範例供應商編號用字元參數 '1297'；改寫版型別用 <span class="kw">LIFNR</span>，顯示時用 <span class="kw">ALPHA = OUT</span> 去前導零。</li>
+  </ul>
+
+  <h3 id="ch07-5-10">10. Facade（二）：統一入口與呼叫端（7.15、7.16）</h3>
+  <pre><code class="abap">CLASS zcl_facade_evaluation DEFINITION PUBLIC FINAL CREATE PUBLIC.
+  PUBLIC SECTION.
+    METHODS constructor.
+    METHODS evaluation
+      IMPORTING iv_vendor_id    TYPE lifnr
+      RETURNING VALUE(rt_lines) TYPE string_table.
+  PRIVATE SECTION.
+    DATA mt_parts TYPE STANDARD TABLE OF REF TO zif_vendor_evaluation WITH EMPTY KEY.
+    DATA mo_calc  TYPE REF TO zcl_evaluation_calculation.
+ENDCLASS.
+
+CLASS zcl_facade_evaluation IMPLEMENTATION.
+  METHOD constructor.
+    " 子系統只建立一次（原範例每呼叫一次 EVALUATION 就重建五個物件）
+    mt_parts = VALUE #( ( NEW zcl_price_evaluation( ) )
+                        ( NEW zcl_quality_evaluation( ) )
+                        ( NEW zcl_service_evaluation( ) )
+                        ( NEW zcl_delivery_evaluation( ) ) ).
+    mo_calc = NEW #( ).
+  ENDMETHOD.
+
+  METHOD evaluation.                                     "7.15
+    LOOP AT mt_parts INTO DATA(li_part).
+      DATA(lt_part) = li_part-&gt;evaluation( iv_vendor_id ).
+      APPEND LINES OF lt_part TO rt_lines.
+    ENDLOOP.
+
+    " 示範分數；正式情境應讀取評估結果或由各子系統回傳分數
+    DATA(lv_total) = mo_calc-&gt;calculation( VALUE #(
+      ( criterion = `價格` score = 80 weight = 40 )
+      ( criterion = `品質` score = 90 weight = 30 )
+      ( criterion = `服務` score = 70 weight = 20 )
+      ( criterion = `交貨` score = 85 weight = 10 ) ) ).
+    APPEND |加權總分（價格40% 品質30% 服務20% 交貨10%）：{ lv_total DECIMALS = 1 }| TO rt_lines.
+  ENDMETHOD.
+ENDCLASS.</code></pre>
+  <pre><code class="abap">REPORT zrep_cls_028.                                     "7.16
+
+START-OF-SELECTION.
+  " LIFNR 為 CHAR10、有 ALPHA 轉換：先放進 LIFNR 型別變數再補前導零
+  DATA lv_lifnr TYPE lifnr VALUE '1297'.
+  lv_lifnr = |{ lv_lifnr ALPHA = IN }|.        "→ 0000001297
+
+  " 外部程式呼叫複雜的評估系統時，只需要這一行
+  DATA(lt_result) = NEW zcl_facade_evaluation( )-&gt;evaluation( lv_lifnr ).
+  cl_demo_output=&gt;display( lt_result ).</code></pre>
+  <p><b>與原範例的差異：</b></p>
+  <ul>
+    <li>原 7.15 在 EVALUATION 方法裡 <span class="kw">CREATE OBJECT</span> 五個子系統物件並存進實例屬性，每呼叫一次就重建一次；改寫版移到 CONSTRUCTOR。</li>
+    <li>原 7.16 用 TRY 包住 <span class="kw">CREATE OBJECT go_facade_evaluation</span> 並 CATCH CX_SY_CREATE_OBJECT_ERROR；這個例外只會在<b>動態</b>建立時發生，靜態建立一個已存在的類別不會拋出，那段 TRY 沒有作用，改寫版拿掉。</li>
+    <li><b>ALPHA 的坑：</b>直接寫 <span class="kw">|{ '1297' ALPHA = IN }|</span> 不會補零，因為字面值長度只有 4，ALPHA = IN 以「嵌入物件的長度」補零。必須先放進 LIFNR（CHAR10）變數再轉換。這也是 Casper 強調「區間比字典序」會出事的根源之一：有沒有前導零，'1297' 與 '0000001297' 在字典序上完全不同位置。</li>
+  </ul>
+  <div class="note"><b>SAP 標準中的影子與先標準再客製：</b>SAP MM 本身就有供應商評估（Vendor Evaluation）：<span class="tcode">ME61</span> 維護、<span class="tcode">ME63</span> 自動評估、<span class="tcode">ME65</span> 評估排名清單，主要準則正是價格、品質、交貨、服務，權重在設定中維護。書中的評估系統是教學用的簡化版；專案上被要求「做一支供應商評分報表」時，先確認標準評估是否已啟用，再決定是讀它的結果還是客製。更廣義地說，<b>每一個 BAPI 都是 Facade</b>：BAPI_PO_CREATE1 一個呼叫，背後是檢查、定價、稅、交貨排程、版本管理一整套子系統。</div>
+
+  <h3 id="ch07-5-11">11. Observer（一）：手工實作被觀察者（7.17～7.20）</h3>
+  <p><b>觀念：</b>庫存低於再訂購點時，要通知「關心這個物料」的多個採購組。被觀察者（Subject，庫存管理）不應該寫死「通知哪幾個採購組、怎麼通知」，而是維護一份觀察者清單，狀態改變時逐一呼叫觀察者的統一介面方法。觀察者可以隨時加入（attach）或退出（detach）。</p>
+  <pre><code class="text">UML（文字版）
++------------------------------------------+        +--------------------------------------+
+| ZCL_INVENTORY_MGMT {ABSTRACT}  (Subject) | 1    * | «interface» ZIF_PURCHASING_GROUP     |
+| # mt_purchasing_group : 觀察者清單        |&lt;&gt;-----&gt;| + get_group_id( ) : ekgrp            |
+| + attach( ii_purchasing_group )          |        | + update_task_status( iv_status )    |
+| + detach( iv_group_id )                  |        +--------------------------------------+
+| + notify_reorder( iv_status )            |                        ^
++------------------------------------------+                        | implements
+                 ^ inherits                             ZCL_PURCHASING_GROUP_PL01 (ConcreteObserver)
+   ZCL_INVENTORY_MGMT_PL01 (ConcreteSubject，7.21)</code></pre>
+  <p><b>範例（改寫後）：</b></p>
+  <pre><code class="abap">INTERFACE zif_purchasing_group PUBLIC.
+  METHODS get_group_id RETURNING VALUE(rv_group_id) TYPE ekgrp.
+  METHODS update_task_status
+    IMPORTING iv_status      TYPE string
+    RETURNING VALUE(rv_line) TYPE string.
+ENDINTERFACE.
+
+CLASS zcl_inventory_mgmt DEFINITION PUBLIC ABSTRACT CREATE PUBLIC.   "7.17
+  PUBLIC SECTION.
+    METHODS attach
+      IMPORTING ii_purchasing_group TYPE REF TO zif_purchasing_group.
+    METHODS detach
+      IMPORTING iv_group_id TYPE ekgrp.
+    METHODS notify_reorder
+      IMPORTING iv_status       TYPE string
+      RETURNING VALUE(rt_lines) TYPE string_table.
+  PROTECTED SECTION.
+    TYPES: BEGIN OF ty_purchasing_group,
+             group_id TYPE ekgrp,
+             group    TYPE REF TO zif_purchasing_group,
+           END OF ty_purchasing_group.
+    " SORTED＋UNIQUE KEY：同一採購組不會重複註冊，通知順序固定
+    DATA mt_purchasing_group TYPE SORTED TABLE OF ty_purchasing_group
+                             WITH UNIQUE KEY group_id.
+ENDCLASS.
+
+CLASS zcl_inventory_mgmt IMPLEMENTATION.
+  METHOD attach.                                         "7.18
+    IF ii_purchasing_group IS NOT BOUND.
+      RETURN.
+    ENDIF.
+    INSERT VALUE #( group_id = ii_purchasing_group-&gt;get_group_id( )
+                    group    = ii_purchasing_group )
+      INTO TABLE mt_purchasing_group.
+    " 已註冊過 → sy-subrc = 4，不會重複通知
+  ENDMETHOD.
+
+  METHOD detach.                                         "7.19
+    DELETE TABLE mt_purchasing_group WITH TABLE KEY group_id = iv_group_id.
+  ENDMETHOD.
+
+  METHOD notify_reorder.                                 "7.20
+    rt_lines = VALUE #( FOR ls_grp IN mt_purchasing_group
+                        ( |採購組 { ls_grp-group_id }：{ ls_grp-group-&gt;update_task_status( iv_status ) }| ) ).
+  ENDMETHOD.
+ENDCLASS.</code></pre>
+  <p><b>與原範例的差異（含範例錯誤修正）：</b></p>
+  <ul>
+    <li><b>命名不一致：</b>7.17 的結構元件叫 <span class="kw">GI_GROUP</span>，但 7.18 寫入 <span class="kw">ms_purchasing_group-group</span>、7.20 讀取 <span class="kw">ms_purchasing_group-group-&gt;group_id</span>，照書抄會語法錯誤。改寫版統一為 <span class="kw">GROUP</span>。</li>
+    <li><b>簽名不完整：</b>7.17 的 <span class="kw">METHODS attach . detach . notify_reorder .</span> 沒有任何參數，但 7.18～7.20 用到 II_PURCHASING_GROUP、IV_GROUP_ID、IV_STATUS。書中應是在 SE24 的 Parameters 頁籤另外定義，範例原始碼沒有列出；改寫版補齊。</li>
+    <li>原範例觀察者清單 <span class="kw">MT_PURCHASING_GROUP</span> 放在 PUBLIC SECTION，任何人都能直接改清單繞過 attach／detach，違反封裝；改為 PROTECTED。</li>
+    <li>原範例是 STANDARD TABLE WITH KEY group_id：非唯一鍵，同一採購組 attach 兩次會被通知兩次。改為 SORTED UNIQUE。</li>
+    <li>7.18、7.20 的區域變數用 <span class="kw">MS_</span> 前綴（M 代表 member），區域變數應為 <span class="kw">LS_</span>；改寫版直接用內嵌宣告。</li>
+    <li>ZCL_INVENTORY_MGMT 宣告為 ABSTRACT 但沒有任何抽象方法——這是合法的，意思是「只能被繼承、不能直接建立」，書中用來強迫每個工廠建立自己的子類別。</li>
+  </ul>
+
+  <h3 id="ch07-5-12">12. Observer（二）：具體主題、採購組與執行（7.21、7.22）</h3>
+  <pre><code class="abap">CLASS zcl_inventory_mgmt_pl01 DEFINITION PUBLIC
+  INHERITING FROM zcl_inventory_mgmt FINAL CREATE PUBLIC.
+  PUBLIC SECTION.
+    METHODS notify_reorder REDEFINITION.
+ENDCLASS.
+
+CLASS zcl_inventory_mgmt_pl01 IMPLEMENTATION.
+  METHOD notify_reorder.                                 "7.21
+    rt_lines = VALUE #( ( `PL01 工廠庫存管理通知：` ) ).
+    DATA(lt_notified) = super-&gt;notify_reorder( iv_status ).
+    APPEND LINES OF lt_notified TO rt_lines.
+  ENDMETHOD.
+ENDCLASS.
+
+CLASS zcl_purchasing_group_pl01 DEFINITION PUBLIC FINAL CREATE PUBLIC.
+  PUBLIC SECTION.
+    INTERFACES zif_purchasing_group.
+    METHODS constructor IMPORTING iv_group_id TYPE ekgrp.
+  PRIVATE SECTION.
+    DATA mv_group_id TYPE ekgrp.
+ENDCLASS.
+
+CLASS zcl_purchasing_group_pl01 IMPLEMENTATION.
+  METHOD constructor.
+    mv_group_id = iv_group_id.
+  ENDMETHOD.
+  METHOD zif_purchasing_group~get_group_id.
+    rv_group_id = mv_group_id.
+  ENDMETHOD.
+  METHOD zif_purchasing_group~update_task_status.
+    " 實務上可在此建立採購工作清單、發 Mail、寫 Workflow 事件⋯
+    rv_line = |已更新補貨工作狀態（{ iv_status }）|.
+  ENDMETHOD.
+ENDCLASS.</code></pre>
+  <p>執行程式：原範例用「模擬從資料庫表讀取採購組」的寫死值，改寫版真的從採購組主檔 <b>T024</b>（欄位 EKGRP、EKNAM）讀取，並用列舉的 EQ 範圍＋明確排序。</p>
+  <pre><code class="abap">REPORT zrep_cls_029.                                     "7.22
+
+START-OF-SELECTION.
+  DATA(lo_inv_mgmt) = NEW zcl_inventory_mgmt_pl01( ).
+
+  " 要通知的採購組逐筆列舉（EQ），不用 BT 區間
+  DATA lt_ekgrp_rng TYPE RANGE OF ekgrp.
+  lt_ekgrp_rng = VALUE #( sign = 'I' option = 'EQ'
+                          ( low = '100' ) ( low = '302' ) ( low = '404' ) ).
+
+  " HANA 沒有預設排序：要固定通知順序就一定要 ORDER BY
+  SELECT ekgrp, eknam
+    FROM t024
+    WHERE ekgrp IN @lt_ekgrp_rng
+    ORDER BY ekgrp
+    INTO TABLE @DATA(lt_groups).
+
+  " 逐一建立採購組觀察者並註冊到庫存管理（被觀察者）
+  LOOP AT lt_groups INTO DATA(ls_group).
+    lo_inv_mgmt-&gt;attach( NEW zcl_purchasing_group_pl01( ls_group-ekgrp ) ).
+  ENDLOOP.
+
+  DATA(lo_out) = cl_demo_output=&gt;new( ).
+  " 庫存發生變化 → 通知所有觀察者
+  lo_out-&gt;write( lo_inv_mgmt-&gt;notify_reorder( `Re-order 2017/09/30` ) ).
+
+  " 移除一個觀察者後再次通知
+  lo_inv_mgmt-&gt;detach( '302' ).
+  lo_out-&gt;write( lo_inv_mgmt-&gt;notify_reorder( `Re-order 2017/10/10` ) ).
+  lo_out-&gt;display( ).</code></pre>
+  <p><b>與原範例的差異（含範例錯誤修正）：</b></p>
+  <ul>
+    <li><b>資料型別錯誤：</b>原範例採購組編號用 '1001'、'3023'、'4045' 四碼字串。SAP 採購組 EKGRP 是 <b>CHAR3</b>，四碼的值放不進標準欄位（會被截斷成 '100'、'302'、'404'，而且兩個不同的四碼值可能截成同一個三碼）。改寫版型別改為 EKGRP，示範值改為三碼。</li>
+    <li>原範例用 <span class="kw">go_purch_group_pl01-&gt;zif_purchasing_group~group_id = gv_group_id.</span> 直接寫入<b>介面的公開屬性</b>。介面屬性等於公開可寫的欄位，任何人都能在註冊後改掉 ID，導致清單中的鍵與物件內的 ID 不一致；改寫版改由建構子傳入、介面只提供 GET_GROUP_ID。</li>
+    <li>原範例每圈 <span class="kw">FREE go_purch_group_pl01</span>。FREE 只是清掉這個參照變數，物件因為已經被觀察者清單參照，不會被垃圾回收——這正是 Observer 能運作的原因；用 NEW 內嵌傳參後這一步就不需要了。</li>
+    <li>原範例用 <span class="kw">SKIP 2</span> 分隔輸出、TRY 包住全部並 CATCH CX_SY_CREATE_OBJECT_ERROR（同第 10 節，靜態建立不會拋出），改寫版移除。</li>
+  </ul>
+  <div class="warn"><b>Casper 的兩條經驗在這裡同時出現：</b>① <b>HANA 沒有預設排序</b>——沒有 ORDER BY，今天通知順序是 100→302→404，明天可能變 404→100→302；如果觀察者之間有先後依賴（例如第一個觀察者建立的工作要給第二個用），結果就會時好時壞。② <b>列舉優於區間</b>——若寫 <span class="kw">EKGRP BETWEEN '100' AND '404'</span>，會把中間所有採購組（包括已停用、別的工廠的）都抓進來通知。</div>
+
+  <h3 id="ch07-5-13">13. Observer（三）：ABAP 原生事件 EVENTS／SET HANDLER（7.23）</h3>
+  <p><b>觀念：</b>ABAP Objects 語言本身就內建 Observer：被觀察者宣告 <span class="kw">EVENTS</span> 並在狀態改變時 <span class="kw">RAISE EVENT</span>；觀察者宣告 <span class="kw">METHODS ... FOR EVENT ... OF</span> 處理方法；由第三方（通常是主程式）用 <span class="kw">SET HANDLER</span> 把兩者接起來。觀察者清單由執行環境維護，被觀察者甚至不需要知道觀察者的類別或介面——耦合度比第 11 節的手工版更低。原廠語法細節見 <a href="#ch05-2">5-2 章</a> 第 12 節。</p>
+  <table>
+    <thead><tr><th>Observer 角色</th><th>手工版（7.17～7.22）</th><th>原生事件版（7.23）</th></tr></thead>
+    <tbody>
+      <tr><td>觀察者清單</td><td>自己維護內表 MT_PURCHASING_GROUP</td><td>執行環境維護（handler table）</td></tr>
+      <tr><td>註冊／移除</td><td>attach( )／detach( )</td><td><span class="kw">SET HANDLER ... FOR obj</span>／加 <span class="kw">ACTIVATION abap_false</span></td></tr>
+      <tr><td>通知</td><td>LOOP 呼叫 update_task_status( )</td><td><span class="kw">RAISE EVENT</span></td></tr>
+      <tr><td>觀察者必須</td><td>實作 ZIF_PURCHASING_GROUP</td><td>有一個 FOR EVENT 處理方法（任何類別都可以）</td></tr>
+      <tr><td>回傳值</td><td>可以（方法有 RETURNING）</td><td><b>不行</b>：事件只能有 EXPORTING 參數，處理方法無法回傳結果給觸發者</td></tr>
+      <tr><td>一次註冊所有實例</td><td>要自己寫</td><td><span class="kw">SET HANDLER ... FOR ALL INSTANCES</span></td></tr>
+    </tbody>
+  </table>
+  <p><b>範例（改寫後）：</b>原 7.23 只有測試程式，ZCL_SUBJECT／ZCL_OBSERVER 的定義沒有列出，以下依呼叫方式補齊。</p>
+  <pre><code class="abap">CLASS zcl_subject DEFINITION PUBLIC CREATE PUBLIC.
+  PUBLIC SECTION.
+    EVENTS status_changed EXPORTING VALUE(ev_status) TYPE string.
+    METHODS change_status IMPORTING iv_status TYPE string.
+    DATA mv_status TYPE string READ-ONLY.
+ENDCLASS.
+
+CLASS zcl_subject IMPLEMENTATION.
+  METHOD change_status.
+    mv_status = iv_status.
+    " 狀態改變 → 觸發自身事件；不知道也不關心有誰在聽
+    RAISE EVENT status_changed EXPORTING ev_status = iv_status.
+  ENDMETHOD.
+ENDCLASS.
+
+CLASS zcl_observer DEFINITION PUBLIC CREATE PUBLIC.
+  PUBLIC SECTION.
+    METHODS constructor IMPORTING iv_name TYPE string.
+    METHODS action_on_subject_changed
+      FOR EVENT status_changed OF zcl_subject
+      IMPORTING ev_status sender.        "sender：觸發事件的物件（自動提供）
+    DATA mt_log TYPE string_table READ-ONLY.
+  PRIVATE SECTION.
+    DATA mv_name TYPE string.
+ENDCLASS.
+
+CLASS zcl_observer IMPLEMENTATION.
+  METHOD constructor.
+    mv_name = iv_name.
+  ENDMETHOD.
+  METHOD action_on_subject_changed.
+    APPEND |{ mv_name } 收到通知：{ ev_status }（目前狀態 { sender-&gt;mv_status }）| TO mt_log.
+  ENDMETHOD.
+ENDCLASS.</code></pre>
+  <pre><code class="abap">REPORT zrep_cls_032.                                     "7.23
+
+START-OF-SELECTION.
+  DATA(lo_subject)   = NEW zcl_subject( ).
+  DATA(lo_observer1) = NEW zcl_observer( `觀察者1` ).
+  DATA(lo_observer2) = NEW zcl_observer( `觀察者2` ).
+
+  " 把兩個觀察者的事件處理方法註冊到被觀察者
+  SET HANDLER lo_observer1-&gt;action_on_subject_changed FOR lo_subject.
+  SET HANDLER lo_observer2-&gt;action_on_subject_changed FOR lo_subject.
+
+  " 被觀察者狀態修改 → 觸發事件 → 兩個處理方法都被呼叫
+  lo_subject-&gt;change_status( `庫存低於再訂購點` ).
+
+  " 解除觀察者2 的註冊後再改一次：只有觀察者1 收到
+  SET HANDLER lo_observer2-&gt;action_on_subject_changed FOR lo_subject ACTIVATION abap_false.
+  lo_subject-&gt;change_status( `已建立採購申請` ).
+
+  cl_demo_output=&gt;new( )-&gt;write( lo_observer1-&gt;mt_log
+                      )-&gt;write( lo_observer2-&gt;mt_log
+                      )-&gt;display( ).</code></pre>
+  <p><b>與原範例的差異：</b>原範例三個 <span class="kw">CREATE OBJECT</span> 改為 NEW；原範例沒有示範解除註冊，改寫版加上 <span class="kw">ACTIVATION abap_false</span>；處理方法加上 <span class="kw">sender</span>，示範觀察者如何回頭讀被觀察者的狀態。原範例註解「設定觀察者1 的事件句柄指向被觀察者」，較精確的說法是「把觀察者1 的處理方法登記為被觀察者事件的處理者」。</p>
+  <p><b>SAP 標準中的實例與實務提醒：</b></p>
+  <ul>
+    <li><b>OOALV 就是 Observer：</b><span class="kw">CL_GUI_ALV_GRID</span> 是被觀察者，宣告了 DOUBLE_CLICK、HOTSPOT_CLICK、TOOLBAR、USER_COMMAND、DATA_CHANGED 等事件；你寫的事件處理類別是觀察者，用 <span class="kw">SET HANDLER</span> 接上。SALV 則透過 <span class="kw">CL_SALV_TABLE-&gt;GET_EVENT( )</span> 取得 <span class="kw">CL_SALV_EVENTS_TABLE</span> 物件後註冊（見 <a href="#ch03-2">3-2 章</a>、<a href="#ch02-3">2-3 章</a>）。</li>
+    <li><b>業務層的 Observer：</b>BOR 物件事件與工作流程（例如採購單核發觸發工作流程）、以及 RAP 的 Business Events，本質都是「狀態改變 → 發事件 → 不特定多個接收者處理」，只是跨越了交易與系統邊界。</li>
+    <li>處理方法被呼叫的先後次序不要當成業務規則依賴；需要順序就別用事件，改成明確的流程呼叫。</li>
+    <li>長時間執行的程式裡，不再需要的處理者要明確 <span class="kw">ACTIVATION abap_false</span> 解除註冊，避免重複觸發，也避免物件因仍被登記而一直留在記憶體中。</li>
+    <li>事件處理方法不能把類別式例外（CX_STATIC_CHECK／CX_DYNAMIC_CHECK）傳播回 RAISE EVENT 的觸發者；處理方法內可能出錯的地方請自行 TRY／CATCH，並以日誌或狀態屬性回報。</li>
+  </ul>
+
+  <h3 id="ch07-5-14">14. Strategy（一）：MRP 策略的結構（7.24～7.26）</h3>
+  <p><b>觀念：</b>MRP 計劃可以用不同演算法（策略 Z1、Z2、Z3⋯），而且要能在執行期切換。Strategy 把每個演算法封裝成一個類別，實作同一個抽象；使用演算法的 Context（ZCL_MRP）只持有「目前策略」的參照並委派呼叫。新增演算法 = 新增一個類別，ZCL_MRP 不用改（開放封閉原則）。</p>
+  <pre><code class="text">UML（文字版）
++------------------------------+          +--------------------------------------+
+| ZCL_MRP (Context)            | has-a    | ZCL_STRATEGY {ABSTRACT} (Strategy)   |
+| - mo_strategy                |---------&gt;| + call_algorithm( ) {ABSTRACT}       |
+| + set_strategy( io_strategy )|          +--------------------------------------+
+| + make_plan( )               |              ^            ^            ^
++------------------------------+        ZCL_STRATEGY_Z1  ..._Z2      ..._Z3
+                                         （7.24）        （ConcreteStrategy）</code></pre>
+  <p><b>與 Bridge 的差別：</b>兩者結構幾乎一樣（都是「持有一個介面參照再委派」），差在<b>意圖</b>：Bridge 是結構型，解決「兩個維度的類別爆炸」，雙方都會有繼承階層；Strategy 是行為型，解決「同一件事有多種做法、要能替換」，Context 通常只有一個類別。</p>
+  <p><b>範例（改寫後）：</b>沿用原書「抽象類別 ZCL_STRATEGY」的設計（7.27 以 <span class="kw">TYPE REF TO zcl_strategy</span> 宣告）。如果策略之間沒有共用程式，也可以改用介面 ZIF_MRP_STRATEGY，彈性更高。</p>
+  <pre><code class="abap">CLASS zcl_strategy DEFINITION PUBLIC ABSTRACT CREATE PUBLIC.
+  PUBLIC SECTION.
+    METHODS call_algorithm ABSTRACT RETURNING VALUE(rv_result) TYPE string.
+ENDCLASS.
+CLASS zcl_strategy IMPLEMENTATION.
+ENDCLASS.
+
+CLASS zcl_strategy_z1 DEFINITION PUBLIC
+  INHERITING FROM zcl_strategy FINAL CREATE PUBLIC.
+  PUBLIC SECTION.
+    METHODS call_algorithm REDEFINITION.
+ENDCLASS.
+CLASS zcl_strategy_z1 IMPLEMENTATION.
+  METHOD call_algorithm.                                 "7.24
+    rv_result = `CALL ALGORITHM Z1.`.
+  ENDMETHOD.
+ENDCLASS.
+" ZCL_STRATEGY_Z2 / ZCL_STRATEGY_Z3 同樣寫法
+
+CLASS zcl_mrp DEFINITION PUBLIC FINAL CREATE PUBLIC.
+  PUBLIC SECTION.
+    METHODS set_strategy IMPORTING io_strategy TYPE REF TO zcl_strategy.
+    METHODS make_plan    RETURNING VALUE(rv_result) TYPE string.
+  PRIVATE SECTION.
+    DATA mo_strategy TYPE REF TO zcl_strategy.
+ENDCLASS.
+
+CLASS zcl_mrp IMPLEMENTATION.
+  METHOD set_strategy.                                   "7.25
+    IF io_strategy IS BOUND.
+      mo_strategy = io_strategy.
+    ENDIF.
+  ENDMETHOD.
+
+  METHOD make_plan.                                      "7.26
+    rv_result = COND #( WHEN mo_strategy IS BOUND
+                        THEN mo_strategy-&gt;call_algorithm( )
+                        ELSE `尚未設定 MRP 策略` ).
+  ENDMETHOD.
+ENDCLASS.</code></pre>
+  <p><b>與原範例的差異：</b>7.24 的 WRITE 改為回傳字串；7.25 語意不變（<span class="kw">me-&gt;</span> 可省略）；7.26 原本在沒有策略時「什麼都不做、也不告知」，改寫版用 <span class="kw">COND</span> 回傳明確訊息（正式程式建議拋出例外）。</p>
+
+  <h3 id="ch07-5-15">15. Strategy（二）：由設定決定策略、BAdI 過濾器就是 Strategy（7.27）</h3>
+  <p><b>範例（改寫後）：</b>原範例三次「模擬從資料庫表讀取策略資訊」再動態建立。改寫版用一張「策略代碼 → 類別名」的對照表（實務上是自建設定表），迴圈執行；也示範用 <span class="kw">line_exists( )</span> 檢查使用者指定的代碼是否在白名單中。</p>
+  <pre><code class="abap">REPORT zrep_cls_033.                                     "7.27
+
+TYPES: BEGIN OF ty_map,
+         code  TYPE char2,
+         class TYPE seoclsname,     "類別名必須大寫
+       END OF ty_map,
+       ty_maps TYPE SORTED TABLE OF ty_map WITH UNIQUE KEY code.
+
+PARAMETERS p_code TYPE char2 DEFAULT 'Z2'.
+
+START-OF-SELECTION.
+  " 策略代碼 → 類別名：逐筆列舉的白名單（實務上放自建設定表，SM30 維護）
+  DATA(lt_map) = VALUE ty_maps( ( code = 'Z1' class = 'ZCL_STRATEGY_Z1' )
+                                ( code = 'Z2' class = 'ZCL_STRATEGY_Z2' )
+                                ( code = 'Z3' class = 'ZCL_STRATEGY_Z3' ) ).
+  DATA(lo_mrp) = NEW zcl_mrp( ).
+  DATA lo_strategy TYPE REF TO zcl_strategy.
+  DATA lt_out      TYPE string_table.
+
+  " ① 對應原範例：同一個 ZCL_MRP 物件，依序切換 Z1 → Z2 → Z3
+  LOOP AT lt_map INTO DATA(ls_map).
+    TRY.
+        CREATE OBJECT lo_strategy TYPE (ls_map-class).   "動態類別名只能用 CREATE OBJECT
+        lo_mrp-&gt;set_strategy( lo_strategy ).
+        APPEND |{ ls_map-code }：{ lo_mrp-&gt;make_plan( ) }| TO lt_out.
+      CATCH cx_sy_create_object_error INTO DATA(lx_create).
+        APPEND |{ ls_map-code }：{ lx_create-&gt;get_text( ) }| TO lt_out.
+    ENDTRY.
+  ENDLOOP.
+
+  " ② 使用者指定策略代碼：先確認在白名單中，才動態建立
+  IF line_exists( lt_map[ code = p_code ] ).
+    DATA(lv_class) = lt_map[ code = p_code ]-class.
+    TRY.
+        CREATE OBJECT lo_strategy TYPE (lv_class).
+        lo_mrp-&gt;set_strategy( lo_strategy ).
+        APPEND |指定策略 { p_code }：{ lo_mrp-&gt;make_plan( ) }| TO lt_out.
+      CATCH cx_sy_create_object_error INTO lx_create.
+        APPEND lx_create-&gt;get_text( ) TO lt_out.
+    ENDTRY.
+  ELSE.
+    APPEND |策略代碼 { p_code } 不在允許清單中| TO lt_out.
+  ENDIF.
+
+  cl_demo_output=&gt;display( lt_out ).</code></pre>
+  <p><b>與原範例的差異：</b></p>
+  <ul>
+    <li>原範例相同的「設定類別名 → CREATE OBJECT → set_strategy → make_plan」寫了三次，改為對照表＋迴圈。</li>
+    <li>原範例的 TRY 包住全部，Z2 若不存在，Z3 也不會執行；改寫版每筆各自 TRY。</li>
+    <li>原範例宣告 <span class="kw">go_strategy TYPE REF TO zcl_strategy</span>，ZCL_STRATEGY 是抽象類別：參照變數可以是抽象類別型別，但若類別名稱誤設為 'ZCL_STRATEGY'（抽象類別本身），動態建立會拋出 CX_SY_CREATE_OBJECT_ERROR——這也是白名單要逐筆列舉具體類別的原因。</li>
+    <li>原範例的策略字串直接寫在程式裡、註解說「模擬從資料庫表讀取」；改寫版至少把設定集中成一張表，並加上使用者輸入的白名單檢查（<span class="kw">line_exists</span>＋表格運算式）。</li>
+  </ul>
+  <p><b>SAP 標準做法：帶過濾器的 BAdI 就是 Strategy。</b>「同一個介面、多個實作、執行期依某個值挑一個」正是新式 BAdI 的過濾器機制：BAdI 定義就是 Strategy 抽象，每個 BAdI 實作是一個具體策略，過濾值就是策略代碼，GET BADI 則取代了自建的對照表與動態 CREATE OBJECT。好處是有 Enhancement Spot 管理、可切換啟用、傳輸與升級工具（SPAU_ENH）都支援。完整建立步驟見 <a href="#ch03-4">3-4 章</a> 第 9～11 節。</p>
+  <pre><code class="abap">" SE18：Enhancement Spot ZES_MRP_STRATEGY，BAdI 定義 ZBADI_MRP_STRATEGY（單一使用）
+"       介面 ZIF_BADI_MRP_STRATEGY：METHODS call_algorithm EXPORTING ev_result TYPE string.
+"       過濾器 STRATEGY（CHAR2）
+" SE19：為 Z1 / Z2 / Z3 各建一個 BAdI 實作，分別設定過濾值
+
+DATA lo_badi   TYPE REF TO zbadi_mrp_strategy.
+DATA lv_result TYPE string.
+
+TRY.
+    GET BADI lo_badi FILTERS strategy = p_code.      "依過濾值選出一個實作＝選策略
+    CALL BADI lo_badi-&gt;call_algorithm IMPORTING ev_result = lv_result.
+    MESSAGE lv_result TYPE 'S'.
+  CATCH cx_badi_not_implemented.
+    MESSAGE |策略 { p_code } 沒有任何啟用中的實作| TYPE 'I' DISPLAY LIKE 'E'.
+  CATCH cx_badi_multiply_implemented.
+    MESSAGE |策略 { p_code } 有多個實作同時啟用（單一使用 BAdI 不允許）| TYPE 'I' DISPLAY LIKE 'E'.
+ENDTRY.</code></pre>
+  <div class="warn"><b>先標準再客製（Casper 的第三條經驗）：</b>書中以「MRP 策略」為題材，但真實的 MRP 演算法<b>不要自己重寫</b>。SAP 標準以設定提供了大量「策略」：MRP 類型（MARC-DISMM，如 PD、VB、VM、ND；設定 <span class="tcode">OMDQ</span>）、批量程序（MARC-DISLS，如 EX、FX、HB；設定 <span class="tcode">OMI4</span>）、計劃策略（策略群組）。順序永遠是：標準設定 → BAdI／Enhancement Spot → Enhancement Point → 修改標準，每往右一步升級成本高一個量級。自建 Strategy 模式適合用在「確實沒有標準、且你自己的 Z 程式有多種演算法要切換」的情境，例如自建報表的多種成本分攤方式。</div>
+  <div class="tip"><b>又是 HANA 排序的坑：</b>如果策略是「從設定表讀出第一筆符合的規則」，例如同一物料同時符合兩條規則，就必須在 SELECT 加 <span class="kw">ORDER BY</span>（或在設定表加優先順序欄位），否則 HANA 今天給你 Z1、明天給你 Z2，MRP 結果就會不穩定——這和 Casper 遇到的成本評價「一下抓到 H、一下抓到 E」是同一種問題，結論也一樣：明確排序、固定規則。</div>
+
+  <h3 id="ch07-5-16">16. 六個模式的比較與選用</h3>
+  <table>
+    <thead><tr><th>模式</th><th>要解決的痛點</th><th>ABAP 關鍵語法</th><th>什麼時候不要用</th></tr></thead>
+    <tbody>
+      <tr><td>Singleton</td><td>某個物件只能有一份（日誌、快取、連線）</td><td>CREATE PRIVATE、FINAL、CLASS-DATA、CLASS_CONSTRUCTOR</td><td>只是懶得傳參數時；需要跨使用者共用時（改用 Shared Objects 或 DB）</td></tr>
+      <tr><td>Adapter</td><td>現成功能的介面跟我要的不一樣</td><td>INTERFACES、CALL FUNCTION、例外轉換 RAISE EXCEPTION TYPE</td><td>已有 released API 可以直接用時</td></tr>
+      <tr><td>Bridge</td><td>兩個維度組合造成類別爆炸（m × n）</td><td>抽象類別＋介面參照、動態 CREATE OBJECT TYPE (name)</td><td>只有一個會變的維度（那是 Strategy）</td></tr>
+      <tr><td>Facade</td><td>子系統太複雜，呼叫端要知道太多</td><td>一個公開方法、建構子組裝子系統</td><td>Facade 開始長出業務邏輯、變成「上帝類別」時</td></tr>
+      <tr><td>Observer</td><td>一個狀態改變要通知不特定多個對象</td><td>EVENTS、RAISE EVENT、SET HANDLER（或自建清單）</td><td>通知對象固定且有先後依賴時（直接依序呼叫更清楚）</td></tr>
+      <tr><td>Strategy</td><td>同一件事有多種演算法，要在執行期切換</td><td>抽象類別／介面、setter 注入、BAdI 過濾器</td><td>標準設定已提供選項時；只有兩種且不會再增加時（COND／SWITCH 就夠）</td></tr>
+    </tbody>
+  </table>
+  <p><b>模式之間的組合</b>在實務中很常見：本章的 Bridge 抽象類別內含 Template Method；Strategy 物件常由 Factory 建立；Facade 常做成 Singleton；Adapter 常藏在 Facade 後面。模式是溝通用的詞彙——在設計文件寫「ZCL_MRP 用 Strategy，策略由 BAdI 過濾器提供」，團隊成員一眼就懂結構。</p>
+  <div class="note"><b>舊語法對照（本章範例出現過的）：</b><span class="kw">CREATE OBJECT x.</span> → <span class="kw">x = NEW #( ).</span>；<span class="kw">CREATE OBJECT x TYPE zcl_y.</span> → <span class="kw">x = NEW zcl_y( ).</span>；<span class="kw">CREATE OBJECT x TYPE (lv_name).</span> → <b>維持不變</b>（動態）；<span class="kw">CALL METHOD super-&gt;m EXPORTING iv = v.</span> → <span class="kw">super-&gt;m( v ).</span>；在類別方法內 <span class="kw">WRITE</span> → 方法回傳資料、由呼叫端決定輸出；迴圈式 SELECT 讀單筆 → <span class="kw">SELECT SINGLE ... INTO @var</span>。更多對照見 <a href="#ap-01">附錄 ap-01</a>。</div>
+
+  <h3 id="ch07-5-qa">練習與自我檢核</h3>
+  <ol>
+    <li><b>Singleton 的三個要件是什麼？若 ZCL_LOG 忘了設 CREATE PRIVATE，7.4 的測試結果會改變嗎？</b><br>參考答案：CREATE PRIVATE（外界不能 NEW）、私有靜態屬性保存實例、公開靜態 GET_INSTANCE；建議再加 FINAL。忘了設 CREATE PRIVATE 時，7.4 仍印出 Equal（因為兩次都走 GET_INSTANCE），但別的程式可以 NEW 出第二個實例，唯一性沒有被強制——測試通過不代表設計正確。</li>
+    <li><b>使用者 A 與使用者 B 同時執行同一支用 ZCL_LOG 的報表，他們共用同一個日誌物件嗎？</b><br>參考答案：不共用。靜態屬性存在各自的 internal session；跨使用者共用要用 Shared Objects（SHMA）或資料庫。</li>
+    <li><b>指出 7.5 函數模組的邏輯錯誤並修正。</b><br>參考答案：IF sy-subrc = 0 放在 IF output_device IS NOT INITIAL 之外，輸入空白時 sy-subrc 是前一敘述留下的值；應在空白時直接回報錯誤，並把迴圈式 SELECT 改為 SELECT SINGLE ... WHERE name = @output_device INTO @host_name。另有「host_name..」多一個句點的筆誤。</li>
+    <li><b>Adapter 除了「轉呼叫」之外還應該負責什麼？在 S/4HANA Clean Core 中它扮演什麼角色？</b><br>參考答案：參數與型別對應、把傳統例外／BAPIRET2 轉成類別式例外、交易邊界不在 wrapper 內 COMMIT。Clean Core 中，為未釋出的舊 API 建立 Tier 2 wrapper 類別給 ABAP Cloud 使用，就是 Adapter。</li>
+    <li><b>生產訂單有 4 種類型、輸出文件有 5 種，用純繼承與用 Bridge 各需要幾個具體類別？</b><br>參考答案：純繼承 4 × 5 = 20 個；Bridge 為 4 ＋ 5 = 9 個（另加一個抽象類別與一個介面）。</li>
+    <li><b>為什麼 7.12、7.27 不能把 CREATE OBJECT 改成 NEW？動態建立要注意什麼？</b><br>參考答案：NEW 的型別必須編譯期確定，不支援 TYPE (變數)。注意：類別名要大寫；允許的類別要逐筆列舉成白名單而不是用前綴或區間放行；每筆各自 TRY CATCH cx_sy_create_object_error。</li>
+    <li><b>7.16 的 TRY … CATCH cx_sy_create_object_error 包住靜態 CREATE OBJECT，有作用嗎？</b><br>參考答案：沒有。這個例外只在動態建立（類別不存在、抽象、不可建立）時發生，靜態建立已存在的類別在編譯期就檢查過了。</li>
+    <li><b>找出 7.17～7.20 之間的兩個不一致。</b><br>參考答案：① 結構元件在 7.17 叫 GI_GROUP，7.18／7.20 卻使用 GROUP；② 7.17 的 attach／detach／notify_reorder 定義沒有參數，但實作用到 II_PURCHASING_GROUP、IV_GROUP_ID、IV_STATUS。另外觀察者清單放在 PUBLIC、非唯一鍵、區域變數用 MS_ 前綴，也都需要調整。</li>
+    <li><b>7.22 的採購組編號 '1001'、'3023'、'4045' 放到標準欄位 EKGRP 會發生什麼事？</b><br>參考答案：EKGRP 是 CHAR3，會被截成 '100'、'302'、'404'，不同的四碼值可能截成相同三碼而互相覆蓋，應直接使用三碼的真實採購組並以 T024 驗證。</li>
+    <li><b>手工 Observer（7.17～7.22）與原生事件（7.23）各有什麼優缺點？什麼情況下只能選手工版？</b><br>參考答案：原生事件耦合更低、不用自建清單、支援 FOR ALL INSTANCES，但事件處理方法無法回傳值給觸發者；需要收集觀察者的回應（例如每個採購組回報處理結果）時，用手工版（介面方法有 RETURNING）。</li>
+    <li><b>自建 Strategy 讀設定表「取第一筆符合規則」時要注意什麼？</b><br>參考答案：HANA 沒有預設排序，必須 ORDER BY 或設優先順序欄位，否則結果不穩定（同 Casper 成本評價 H／E 案例）。</li>
+    <li><b>SAP 標準中哪個機制最接近 Strategy？哪些模式可以在 OOALV 中看到？</b><br>參考答案：帶過濾器的新式 BAdI（GET BADI … FILTERS）。CL_GUI_ALV_GRID 的事件（DOUBLE_CLICK、TOOLBAR、USER_COMMAND）是 Observer；CL_SALV_TABLE=&gt;FACTORY 是 Factory，SALV 本身對 ALV 的複雜功能而言也是一種 Facade。</li>
+    <li><b>實作題：</b>把第 13 節的 ZCL_SUBJECT 改寫成「庫存物件」，事件帶出 MATNR、WERKS 與可用量；寫兩個觀察者：一個在可用量低於安全庫存時記錄訊息、另一個統計被通知次數，並示範 FOR ALL INSTANCES 註冊。<br>參考答案要點：EVENTS stock_low EXPORTING VALUE(ev_matnr) TYPE matnr VALUE(ev_werks) TYPE werks_d VALUE(ev_qty) TYPE labst；處理方法 FOR EVENT stock_low OF zcl_stock IMPORTING ev_matnr ev_werks ev_qty sender；SET HANDLER lo_obs-&gt;on_stock_low FOR ALL INSTANCES 後，之後新建立的每個 zcl_stock 實例觸發事件都會被處理。</li>
+  </ol>
+</section>

@@ -1,0 +1,1198 @@
+<section class="chapter" id="ch05-16" data-title="BC430 ABAP 資料字典（表格、索引、緩衝、檢查、View、Search Help）">
+  <h2>第 5-16 章 BC430 ABAP 資料字典（表格、索引、緩衝、檢查、View、Search Help）</h2>
+  <p class="lede">BC430 是 BC400 之後的第一門核心課：它不教你寫程式，而是教你「程式底下那一層」——Domain／Data Element 兩層式型別、透明表的技術設定、索引與表格緩衝、外來鍵輸入檢查、字典物件的啟用與相依、表格轉換（QCM 暫存表）、Append 增強、Database／Maintenance View 與 Search Help。這一章依原廠課程單元順序整理，與 <a href="#ch01-2">1-2 章 資料字典</a> 互補：1-2 章偏「怎麼建」，本章偏「為什麼這樣設計、改了會發生什麼事、在 S/4HANA 上還成不成立」。</p>
+
+  <div class="meta">
+    <div><b>核心 TCODE</b><span class="tcode">SE11</span><span class="tcode">SE12</span><span class="tcode">SE13</span><span class="tcode">SE14</span><span class="tcode">SE15</span><span class="tcode">SE16</span><span class="tcode">SE16N</span><span class="tcode">SE54</span><span class="tcode">SE63</span><span class="tcode">SE84</span><span class="tcode">SM30</span><span class="tcode">SM34</span><span class="tcode">SCU3</span><span class="tcode">SPDD</span><span class="tcode">SM21</span><span class="tcode">ST22</span><span class="tcode">ST10</span><span class="tcode">ST02</span><span class="tcode">AL12</span><span class="tcode">SDSH_CONFIG</span></div>
+    <div><b>關鍵物件</b>Domain、Data Element、Structure、Table Type、Type Group、Transparent／Pooled／Cluster Table、Primary／Secondary／Extension Index、Append Structure、CI_ Customizing Include、Database／Maintenance／Help View、View Cluster、Elementary／Collective／Append Search Help、F4IF_SHLP_EXIT_EXAMPLE、F4UT_RESULTS_MAP、F4UT_OPTIMIZE_COLWIDTH、F4IF_INT_TABLE_VALUE_REQUEST、F4IF_FIELD_VALUE_REQUEST、VIEW_MAINTENANCE_CALL、DD02L、DD03L、DD04L、DD01L、DD07L、DD08L、DD09L、DD12L、DBTABLOG、QCM／QCM8 暫存表、rec/client、rdisp/bufreftime、SPFLI、SFLIGHT、SBOOK、SCARR、SCOUNTER、SBUSPART、STRAVELAG、SCUSTOM、SMEAL、SMEALT</div>
+  </div>
+
+  <h3 id="ch05-16-01">1. 課程定位與教材對照</h3>
+  <p>强晟在 2007 年的筆記前言講得很精準：<b>「ABAP 字典是 SAP 中所有資料的基礎，它在業務邏輯與底層資料庫之間建立對應關係，是 SAP 資料庫無關性的重要實現手段。」</b>也因此他建議「所有變數盡量參照字典中定義的資料物件，不要用基礎型別定義，在 BAPI 中尤其如此」。這句話到今天仍然成立——你在 <a href="#ch04-1">4-1 章 RFC/BAPI</a> 看到的所有介面參數都必須是 DDIC 型別。</p>
+
+  <table>
+    <thead><tr><th>本章小節</th><th>主題</th><th>强晟筆記（2007，159 頁）</th><th>原廠 BC430 Col18（2022，214 頁；頁碼為 PDF 頁）</th></tr></thead>
+    <tbody>
+      <tr><td>2</td><td>ABAP 字典的功能與服務</td><td>第一單元 p4–p11</td><td>Unit 1 Lesson 1 p11–p15</td></tr>
+      <tr><td>3</td><td>Domain、Data Element 與兩層式 Domain 概念</td><td>第二單元 p15–p17</td><td>Unit 2 Lesson 1 p21–p27；Unit 3 Lesson 1 p49–p50</td></tr>
+      <tr><td>4</td><td>Structure、Table Type、深層結構、Ranges</td><td>第一單元 p8–p9（僅概念）</td><td>Unit 2 Lesson 2、3 p29–p35</td></tr>
+      <tr><td>5</td><td>Type Group（已不建議）</td><td>—</td><td>Unit 2 Lesson 4 p37–p38</td></tr>
+      <tr><td>6</td><td>透明表、Include、參考欄位</td><td>第二單元 p14、p18–p20</td><td>Unit 3 Lesson 1 p47–p52</td></tr>
+      <tr><td>7</td><td>技術設定：Data Class、Size Category、Logging</td><td>第二單元 p21–p26</td><td>Unit 3 Lesson 1 p53–p58</td></tr>
+      <tr><td>8</td><td>Pooled Table 與 Cluster Table</td><td>—</td><td>Unit 3 Lesson 2 p59–p62</td></tr>
+      <tr><td>9</td><td>索引</td><td>第三單元 p29–p32</td><td>Unit 4 Lesson 1 p73–p76</td></tr>
+      <tr><td>10</td><td>表格緩衝的三種型態與決策樹</td><td>第三單元 p33–p42；附錄二 p147</td><td>Unit 4 Lesson 2 p78–p82、p89</td></tr>
+      <tr><td>11</td><td>緩衝同步（12 個時間點）</td><td>第三單元 p43–p49</td><td>Unit 4 Lesson 2 p82–p89</td></tr>
+      <tr><td>12</td><td>固定值、外來鍵、Value Table、Text Table</td><td>第四單元 p50–p66</td><td>Unit 5 Lesson 1–3 p99–p112</td></tr>
+      <tr><td>13</td><td>啟用版本、Runtime Object、Where-Used</td><td>第五單元 p67–p75</td><td>Unit 6 Lesson 1–2 p121–p129</td></tr>
+      <tr><td>14</td><td>表格轉換（QCM）與中止處理</td><td>第六單元 p76–p89</td><td>Unit 7 Lesson 1 p137–p147</td></tr>
+      <tr><td>15</td><td>Append Structure 與 Enhancement Category</td><td>第六單元 p90–p93</td><td>Unit 7 Lesson 2 p149–p154</td></tr>
+      <tr><td>16</td><td>Database View、Inner／Outer Join、Append View</td><td>第七單元 p94–p110</td><td>Unit 8 Lesson 1 p161–p172</td></tr>
+      <tr><td>17</td><td>Maintenance View、SE54、View Cluster</td><td>第七單元 p111–p112</td><td>Unit 8 Lesson 2、3 p173–p182</td></tr>
+      <tr><td>18</td><td>Elementary Search Help 與附加機制</td><td>第八單元 p113–p134；附錄三 p148–p157</td><td>Unit 9 Lesson 1 p189–p202</td></tr>
+      <tr><td>19</td><td>Collective／Append Search Help、Search Help Exit</td><td>第八單元 p135–p140；附錄三 p150–p153</td><td>Unit 9 Lesson 2 p205–p210</td></tr>
+      <tr><td>20</td><td>航班資料模型與 TCODE 速查</td><td>附錄一 p141–p146；附錄四 p158</td><td>散見各 Unit</td></tr>
+    </tbody>
+  </table>
+
+  <p><b>課程等級</b>：BC430 是 ABAP Workbench 基礎課程，原廠答案頁都寫著「in the course BC430 or TAW10 Part II」——也就是說它是 TAW10（ABAP Workbench Fundamentals）的第二部分，緊接 <a href="#ch05-1">5-1 章 BC400</a>。本圖書館把它歸為 <b>200 級核心課</b>：不懂它，後面的 <a href="#ch05-9">BC410 Dynpro</a>、<a href="#ch05-11">BC414 資料庫更新</a>、<a href="#ch05-21">BC490 效能調校</a> 都會卡住。Col18 標示為 3 天課程（Material Number 50147783）。</p>
+
+  <p><b>2007 版與 Col18 版的差異</b>：</p>
+  <ul>
+    <li>2007 版 8 個單元；Col18 版 9 個單元——新增 <b>Unit 2「字典中的資料型別」</b>（Domain／Data Element／Structure／Table Type／Type Group 獨立成單元）。</li>
+    <li>Col18 新增 <b>Pooled／Cluster Table</b>（Unit 3 Lesson 2）、<b>Extension Index</b>、<b>Enhancement Category</b>、<b>Fixed Value Append</b>、<b>View Cluster</b>（Unit 8 Lesson 3）、<b>External View</b>（HANA 代理物件）、<b>DB-Specific Properties（HANA 欄式儲存）</b>、<b>Type-ahead／Full Text／Fuzzy Search</b>。</li>
+    <li>2007 版 Size Category 是 0～4，Col18 寫 0～9；2007 版的航班範例年份是 2007，Col18 是 1997（原廠圖檔沿用舊資料）。</li>
+    <li>兩版都<b>沒有</b> CDS View、AMDP、RAP——這是 S/4HANA 時代最大的缺口，本章在相關小節以「S/4HANA 現況」注意方塊補上。</li>
+  </ul>
+  <div class="note">强晟筆記有幾頁坦白寫「這段我完全沒看懂」（固定值、值表那三頁內容重複、輸入說明的顯示方式）。本章在對應位置直接以 Col18 英文原廠教材的正確說法補齊，並標出筆記與原廠的出入。</div>
+
+  <h3 id="ch05-16-02">2. ABAP 字典的功能與服務（Unit 1）</h3>
+  <p>ABAP 字典讓系統中<b>所有資料定義集中管理</b>。它做三件事：</p>
+  <ol>
+    <li><b>定義使用者型別</b>：Data Element、Structure、Table Type，供 ABAP 程式、函數模組介面、類別方法介面使用。</li>
+    <li><b>定義資料庫物件</b>：Table、Index、View。啟用（Activate）時自動在底層資料庫建立；定義變更也自動反映到資料庫。</li>
+    <li><b>提供開發服務</b>：</li>
+  </ol>
+  <table>
+    <thead><tr><th>服務</th><th>字典物件</th><th>效果</th><th>本圖書館延伸</th></tr></thead>
+    <tbody>
+      <tr><td>輸入說明（F4）</td><td>Search Help</td><td>畫面欄位自動出現可選值清單</td><td>本章 18、19 節</td></tr>
+      <tr><td>欄位說明（F1）</td><td>Data Element 的 Documentation</td><td>所有參照該 Data Element 的畫面欄位都有 F1</td><td>本章 3 節</td></tr>
+      <tr><td>輸入檢查</td><td>Foreign Key、Fixed Value</td><td>畫面輸入不合法值時直接擋下</td><td>本章 12 節</td></tr>
+      <tr><td>鎖定</td><td>Lock Object（自動產生 ENQUEUE_／DEQUEUE_ 函數）</td><td>邏輯鎖，避免兩人同時改同一筆</td><td><a href="#ch05-11">5-11 章 BC414</a>、<a href="#ch01-2-11">1-2 章第 11 節</a></td></tr>
+      <tr><td>緩衝</td><td>Technical Settings</td><td>讀取效能提升 10～100 倍</td><td>本章 10、11 節</td></tr>
+      <tr><td>日誌（Logging）</td><td>Technical Settings</td><td>自動記錄表格內容變更</td><td>本章 7 節</td></tr>
+    </tbody>
+  </table>
+  <p><b>與開發／執行環境的連結</b>：字典的任何修改<b>立即</b>影響使用它的程式與畫面。</p>
+  <ul>
+    <li>程式或畫面產生（generate）時，ABAP 直譯器與畫面直譯器讀取字典中的型別定義。</li>
+    <li>Screen Painter 的 <b>Get from Dictionary</b> 按鈕可直接把表格或結構欄位拉到畫面上（原廠 Unit 1 評量題：答案是 Screen Painter，不是 Function Builder）。</li>
+    <li>資料庫介面（Database Interface）依字典中的表格／View 資訊存取資料——包括是否依用戶端（client-dependent）、緩衝方式、主鍵。</li>
+  </ul>
+
+  <pre><code class="abap">*&amp;---------------------------------------------------------------------*
+*&amp; 字典型別 vs. 基礎型別：强晟與原廠共同的建議——一律參照 DDIC
+*&amp;---------------------------------------------------------------------*
+REPORT zbc430_types_demo.
+
+" ✗ 基礎型別：長度自己猜、沒有 F1/F4、沒有轉換常式、欄位標籤要自己寫
+DATA lv_carrid_bad TYPE c LENGTH 3.
+
+" ✓ 參照 Data Element：技術屬性來自 Domain，語意（標籤、F1、F4）來自 Data Element
+DATA lv_carrid TYPE s_carr_id.
+
+" ✓ 參照表格欄位（等同參照該欄位的 Data Element）
+DATA lv_connid TYPE spfli-connid.
+
+" ✓ 參照整張表的列結構、以及 DDIC Table Type
+DATA ls_flight  TYPE sflight.
+DATA lt_flights TYPE STANDARD TABLE OF sflight WITH EMPTY KEY.
+
+" 7.40+ 內嵌宣告：型別直接由 DDIC 推導
+SELECT FROM spfli
+  FIELDS carrid, connid, cityfrom, cityto, fltime
+  WHERE carrid = @lv_carrid
+  ORDER BY carrid, connid                 "HANA 沒有預設排序，要穩定結果就明寫
+  INTO TABLE @DATA(lt_spfli).
+
+" 用 RTTI 印出欄位的 DDIC 標籤——證明語意資訊跟著 Data Element 走
+DATA(lo_elem) = CAST cl_abap_elemdescr(
+                  cl_abap_typedescr=&gt;describe_by_name( 'S_CARR_ID' ) ).
+DATA(ls_dfies) = lo_elem-&gt;get_ddic_field( p_langu = sy-langu ).
+WRITE: / |Data Element S_CARR_ID：Domain { ls_dfies-domname }，| &amp;&amp;
+         |長度 { ls_dfies-leng }，中標籤「{ ls_dfies-scrtext_m }」|.</code></pre>
+
+  <h3 id="ch05-16-03">3. Domain、Data Element 與兩層式 Domain 概念（Unit 2 Lesson 1）</h3>
+  <p><b>Domain 管技術、Data Element 管語意。</b>這是整門課的第一條口訣。</p>
+  <table>
+    <thead><tr><th>物件</th><th>管什麼</th><th>程式能否直接用</th><th>重點屬性</th></tr></thead>
+    <tbody>
+      <tr><td><b>Domain</b></td><td>技術屬性：資料型別、長度、小數位；值域（固定值、Value Table）；輸出特性</td><td><b>不能</b>（程式無法 TYPE 一個 Domain）</td><td>Format、Output Characteristics、Conversion Routine、Sign、Lowercase、Value Range</td></tr>
+      <tr><td><b>Data Element</b></td><td>語意：欄位標籤（短／中／長／標題）、F1 文件、Search Help、SET/GET 參數</td><td>可以</td><td>Data Type 頁籤（Domain 或 Built-in Type 或 Reference Type）、Field Label、Further Characteristics</td></tr>
+    </tbody>
+  </table>
+
+  <p><b>兩層式 Domain 概念（Two-Level Domain Concept）</b>——原廠的經典例子：航班時刻表 <b>SPFLI</b> 的 <b>AIRPFROM</b>（出發機場）與 <b>AIRPTO</b>（抵達機場）都使用 Domain <b>S_AIRPID</b>（技術上都是機場代碼），但語意不同，所以分別用 Data Element <b>S_FROMAIRP</b> 與 <b>S_TOAIRP</b>。</p>
+
+  <p><b>常用 Built-in Type（Col18 p23–p24）</b>：</p>
+  <ul>
+    <li><b>CHAR</b>：表格中最多 255 字元；更長要用 <b>LCHR</b>（或新開發用 STRING／SSTRING）。在結構中沒有此長度限制。</li>
+    <li><b>DATS</b>：固定 8 碼（YYYYMMDD），輸出格式依使用者設定檔。</li>
+    <li><b>DEC</b>：最多 31 位，含小數點、正負號、千分位。</li>
+    <li><b>NUMC</b>：最多 255 字元，只能放數字（但本質是字元型別！）。</li>
+    <li><b>CURR／QUAN</b> 必須有參考欄位（CUKY／UNIT），見第 6 節。</li>
+  </ul>
+
+  <p><b>Domain 的輸出特性</b>：</p>
+  <ul>
+    <li><b>Output Length</b>：依格式自動計算，可覆寫。</li>
+    <li><b>Conversion Routine</b>：例如 <span class="kw">ALPHA</span>（補前導零）、<span class="kw">MATN1</span>、<span class="kw">CUNIT</span>。畫面欄位在「顯示格式 ↔ 內部格式」轉換時執行，<span class="kw">WRITE</span> 時也會執行。</li>
+    <li><b>Sign</b>：DEC、FLTP、QUAN、CURR 可勾「+/-」，畫面輸出長度會自動 +1。</li>
+    <li><b>Lowercase</b>：沒勾的話，使用者按 Enter 後小寫會被轉成大寫。</li>
+  </ul>
+
+  <p><b>Data Element 的其他選項（Further Characteristics）</b>：</p>
+  <ul>
+    <li><b>Documentation</b>：寫了就是所有參照畫面欄位的 F1。</li>
+    <li><b>Search Help</b>：附加在 Data Element 上的 F4（第 18 節的第三種附加機制）。</li>
+    <li><b>SET/GET Parameter ID</b>：例如物料的 <span class="kw">MAT</span>、公司代碼的 <span class="kw">BUK</span>。離開畫面時把值寫進 SAP Memory，下一個參照同一 Data Element 的畫面自動帶入；只在登入期間有效，登出即消失，<b>與 SAP GUI 本機輸入歷史無關</b>。</li>
+    <li><b>Default Component Name</b>：只在 Data Element 被用於 BAPI 結構時有意義（BAPI 欄位用英文長名稱）。</li>
+    <li><b>Change Document</b>：勾了此旗標，變更文件（CDHDR／CDPOS）才會記錄該欄位。</li>
+    <li><b>Input History</b>：關閉 SAP GUI 對該欄位的輸入歷史。</li>
+    <li><b>Reference Type</b>：Data Element 也可以定義成 <span class="kw">REF TO</span> 任何 DDIC 型別或泛型 <span class="kw">ANY／OBJECT／DATA</span>，等同程式中的 <span class="kw">TYPES tr_dt TYPE REF TO data</span>。</li>
+  </ul>
+  <div class="tip">欄位標籤要翻譯：SE11 初始畫面 Goto → Translation，或 <span class="tcode">SE63</span>。長度要預留——同一個詞在德文、日文可能長很多。</div>
+
+  <pre><code class="abap">*&amp;---------------------------------------------------------------------*
+*&amp; Domain 的轉換常式（Conversion Routine）在程式中的正確用法
+*&amp;   畫面會自動轉換，但「程式自己組條件」時不會——最常見的漏抓原因
+*&amp;---------------------------------------------------------------------*
+PARAMETERS p_kunnr TYPE kna1-kunnr.          "Domain KUNNR 有 ALPHA 轉換常式
+
+" 使用者在選擇畫面輸入 4711，畫面層已轉成 0000004711 → 直接可查
+SELECT SINGLE FROM kna1
+  FIELDS kunnr, name1
+  WHERE kunnr = @p_kunnr
+  INTO @DATA(ls_kna1).
+
+" 但若值來自檔案／介面，沒有經過畫面，就必須自己轉
+DATA(lv_from_file) = CONV kunnr( '4711' ).
+lv_from_file = |{ lv_from_file ALPHA = IN }|.  "7.40+ 字串範本取代 CONVERSION_EXIT_ALPHA_INPUT
+SELECT SINGLE FROM kna1
+  FIELDS kunnr, name1
+  WHERE kunnr = @lv_from_file
+  INTO @DATA(ls_kna1_file).
+
+" 輸出時轉回外部格式（去掉前導零）
+WRITE: / |客戶：{ ls_kna1_file-kunnr ALPHA = OUT } { ls_kna1_file-name1 }|.</code></pre>
+  <div class="warn">Casper 的實務經驗之二：<b>條件用列舉（多筆 EQ）比用區間（BT）安全。</b>ALPHA 前導零正是區間比較出事的典型原因——<span class="kw">BT '100' AND '200'</span> 比的是字典序，外部格式與內部格式混用時會漏抓或多抓。NUMC 也一樣是字元型別。</div>
+
+  <h3 id="ch05-16-04">4. Structure、Table Type、深層結構與 Ranges Table Type（Unit 2 Lesson 2、3）</h3>
+  <p><b>Structure 的元件可以是</b>：Data Element、Built-in Type、Table Type、資料庫表或 View 的定義、其他 Structure。</p>
+  <ul>
+    <li><b>Flat Structure（扁平結構）</b>：元件全部參照 Data Element，產生的資料物件是一維的。用 <span class="kw">結構名-元件名</span> 存取。</li>
+    <li><b>Nested Structure（巢狀結構）</b>：元件本身又是結構。以 Include 方式納入時可以給一個 <b>Group 名稱</b>，程式中可用群組名一次存取整組元件。</li>
+    <li><b>Deep Structure（深層結構）</b>：<b>只要有一個元件是 Table Type</b> 就是深層。該元件可以像內表一樣 <span class="kw">LOOP AT</span>、<span class="kw">INSERT … INTO TABLE</span>。</li>
+  </ul>
+  <div class="warn"><b>資料庫表只能 Include 扁平結構。</b>深層結構不能當表格欄位。</div>
+
+  <p>原廠的 EMPLOYEE 例子：結構 EMPLOYEE 有 NAME、ADDRESS、TELEPHONE 三個元件；NAME 是結構（FIRST NAME、LAST NAME）、ADDRESS 是結構的結構（STREET、HOUSE NO、ZIP、TOWN…）、<b>TELEPHONE 用 Table Type</b>——因為一個員工可以有多支電話。</p>
+
+  <p><b>Table Type 的定義要素</b>：</p>
+  <table>
+    <thead><tr><th>要素</th><th>選項</th><th>備註</th></tr></thead>
+    <tbody>
+      <tr><td>Line Type</td><td>資料庫表、Structure、View、Data Element、直接型別、其他 Table Type</td><td>Domain 與 Type Group <b>不能</b>當行型別（評量題）</td></tr>
+      <tr><td>Access Mode</td><td>Standard／Sorted／Hashed／Index Table／Not Specified</td><td>後兩者是泛型</td></tr>
+      <tr><td>Primary Key</td><td>Unique／Non-unique／Not specified</td><td>Hashed 必為 Unique；Sorted 三者皆可</td></tr>
+      <tr><td>Secondary Key（選用）</td><td>Hashed 或 Sorted；Sorted 可 Unique／Non-unique</td><td>對應 7.02+ 的內表次要鍵</td></tr>
+    </tbody>
+  </table>
+  <p><b>泛型 Table Type</b>：Access Mode 選 Index Table 或 Not Specified、未指定鍵、未指定鍵類別、或允許更多次要鍵時，就是泛型——用來定義函數模組的泛型表格參數。</p>
+  <p><b>Ranges Table Type</b>：SE11 建 Table Type 時選 Edit → Define as ranges table type。行結構固定為 <b>SIGN、OPTION、LOW、HIGH</b>，永遠是 Standard Table、非唯一標準鍵。用於 <span class="kw">SELECT</span>、<span class="kw">IF</span>、<span class="kw">WHILE</span>、<span class="kw">CHECK</span> 的 <span class="kw">IN</span> 條件，或傳給選擇表。</p>
+
+  <pre><code class="abap">*&amp;---------------------------------------------------------------------*
+*&amp; 深層結構 + Ranges：用 DDIC Table Type 組條件（列舉優於區間）
+*&amp;---------------------------------------------------------------------*
+" 假設 SE11 已建：
+"   Ranges Table Type ZTT_R_CARRID（LOW/HIGH 參照 S_CARR_ID）
+"   Structure ZS_CARRIER_DEEP：CARRID, CARRNAME, CONNECTIONS TYPE ZTT_SPFLI（深層）
+DATA lt_r_carrid TYPE ztt_r_carrid.
+
+" ✓ 列舉：多筆 I/EQ，語意明確，號碼不連續也不會漏
+lt_r_carrid = VALUE #( sign = 'I' option = 'EQ'
+                       ( low = 'AA' ) ( low = 'LH' ) ( low = 'SQ' ) ).
+
+" ✗ 避免：I/BT 'AA'～'SQ' 會把中間所有字典序的航空公司都抓進來
+" lt_r_carrid = VALUE #( ( sign = 'I' option = 'BT' low = 'AA' high = 'SQ' ) ).
+
+SELECT FROM scarr
+  FIELDS carrid, carrname
+  WHERE carrid IN @lt_r_carrid
+  ORDER BY carrid
+  INTO TABLE @DATA(lt_scarr).
+
+" 組成深層結構：每家航空公司底下掛一張航線內表
+DATA lt_deep TYPE STANDARD TABLE OF zs_carrier_deep WITH EMPTY KEY.
+LOOP AT lt_scarr INTO DATA(ls_scarr).
+  APPEND VALUE #( carrid   = ls_scarr-carrid
+                  carrname = ls_scarr-carrname ) TO lt_deep
+         ASSIGNING FIELD-SYMBOL(&lt;ls_deep&gt;).
+  SELECT FROM spfli
+    FIELDS *
+    WHERE carrid = @ls_scarr-carrid
+    ORDER BY connid
+    INTO CORRESPONDING FIELDS OF TABLE @&lt;ls_deep&gt;-connections.
+ENDLOOP.
+
+" 深層元件就是一張內表
+LOOP AT lt_deep ASSIGNING &lt;ls_deep&gt;.
+  WRITE: / &lt;ls_deep&gt;-carrid, &lt;ls_deep&gt;-carrname,
+           |航線數：{ lines( &lt;ls_deep&gt;-connections ) }|.
+ENDLOOP.</code></pre>
+  <div class="note">上例為了示範深層結構在 LOOP 中逐筆 SELECT；正式程式請改成一次讀 SPFLI（<span class="kw">FOR ALL ENTRIES</span> 或 JOIN）再用 <span class="kw">FILTER</span>／<span class="kw">GROUP BY</span> 分配，避免 N+1 查詢（見 <a href="#ch02-2">2-2 章</a>、<a href="#ch05-21">5-21 章 BC490</a>）。</div>
+
+  <h3 id="ch05-16-05">5. Type Group：已不建議使用（Unit 2 Lesson 4）</h3>
+  <p>Type Group（Type Pool）是 4.5A 以前字典還不支援複雜型別時的產物，可以放全域的 <span class="kw">TYPES</span>、<span class="kw">CONSTANTS</span> 與巨集。規則：</p>
+  <ul>
+    <li>名稱最多 <b>5 個字元</b>（評量題）。</li>
+    <li>第一句一定是 <span class="kw">TYPE-POOL &lt;name&gt;.</span>；所有型別與常數名稱必須以「群組名＋底線」開頭，例如 <span class="kw">zmytp_</span>。</li>
+    <li>可在 <span class="tcode">SE11</span> 或 <span class="tcode">SE38</span> 維護。</li>
+    <li><b>NW AS 7.02 以前</b>程式要宣告 <span class="kw">TYPE-POOLS zmytp.</span> 才能用；7.02 起不必宣告，直接使用即自動載入。</li>
+  </ul>
+  <p>原廠明確說：<b>「仍有程式在用，但不再建議。」</b>替代方案：複雜型別用 DDIC Structure／Table Type；全域常數用<b>類別的常數屬性</b>。常見仍會碰到的標準 Type Group：<span class="kw">ABAP</span>（abap_true）、<span class="kw">SLIS</span>（舊 ALV）、<span class="kw">ICON</span>、<span class="kw">CNTL</span>。</p>
+
+  <pre><code class="abap">*&amp;---------------------------------------------------------------------*
+*&amp; 取代 Type Group：用 ABSTRACT FINAL 類別集中全域常數與型別
+*&amp;---------------------------------------------------------------------*
+CLASS zcl_bc430_const DEFINITION PUBLIC ABSTRACT FINAL.
+  PUBLIC SECTION.
+    TYPES: BEGIN OF ty_route,
+             carrid TYPE s_carr_id,
+             connid TYPE s_conn_id,
+           END OF ty_route,
+           tt_route TYPE SORTED TABLE OF ty_route WITH UNIQUE KEY carrid connid.
+
+    CONSTANTS:
+      BEGIN OF gc_class,                       "SBOOK-CLASS 的固定值
+        economy  TYPE s_class VALUE 'Y',
+        business TYPE s_class VALUE 'C',
+        first    TYPE s_class VALUE 'F',
+      END OF gc_class.
+ENDCLASS.
+
+CLASS zcl_bc430_const IMPLEMENTATION.
+ENDCLASS.
+
+" 使用端：不必 TYPE-POOLS，也不會和其他群組撞名
+DATA lt_route TYPE zcl_bc430_const=&gt;tt_route.
+SELECT FROM sbook
+  FIELDS carrid, connid, fldate, bookid
+  WHERE class = @zcl_bc430_const=&gt;gc_class-first
+  INTO TABLE @DATA(lt_first).</code></pre>
+
+  <h3 id="ch05-16-06">6. 透明表、Include 結構與參考欄位（Unit 3 Lesson 1）</h3>
+  <p>應用物件的結構對應到資料庫的表格，物件屬性對應表格欄位。表有名稱與屬性（<b>Delivery Class</b>、<b>維護權限</b>）；欄位有唯一名稱與屬性（是否鍵欄位）。一或多個鍵欄位合稱<b>主鍵（Primary Key）</b>，其值唯一決定一筆資料。</p>
+  <ul>
+    <li><b>欄位不是獨立物件</b>，只能在表中維護。可以不用 Data Element、直接給型別與長度（<b>Predefined Type／直接型別</b>），但失去 F1、標籤與重用性。</li>
+    <li><b>透明表啟用時自動建到資料庫</b>，同名、同欄位名；DDIC 型別轉成資料庫對應型別。</li>
+    <li><b>DDIC 中的欄位順序可以和資料庫不同</b>——所以新增欄位不必轉換表格，資料庫只做 <span class="kw">ALTER TABLE</span> 修改目錄（第 14 節）。</li>
+    <li>ABAP 存取透明表兩種方式：用 ABAP SQL（舊稱 Open SQL；或 Native SQL）讀寫資料；或把表格當作<b>結構型別</b>宣告變數。</li>
+    <li>字典中「沒有對應資料庫物件」的結構化型別就是 <b>Structure</b>。</li>
+  </ul>
+
+  <p><b>參考欄位規則</b>：型別 <b>CURR</b>（金額）或 <b>QUAN</b>（數量）的欄位必須指定「參考表」與「參考欄位」，參考欄位型別必須是 <b>CUKY</b>（幣別）或 <b>UNIT</b>（單位）。執行時才依參考欄位決定小數位——例如日圓 0 位小數、台幣在 SAP 內部也以 2 位存放（TCURX 設定例外幣別）。</p>
+
+  <p><b>Include 結構</b>：避免重複定義。</p>
+  <ul>
+    <li>結構可以被 Include 到表或其他結構；Include 可以再 Include。</li>
+    <li><b>表不能 Include 另一張表</b>（2007 筆記的說法是「一條 Include 鏈只能容納一張資料庫表」）。</li>
+    <li>Include 結構上定義的<b>外來鍵會傳遞到包含它的表</b>——所以外來鍵依賴 Include 中的定義。</li>
+  </ul>
+
+  <pre><code class="abap">*&amp;---------------------------------------------------------------------*
+*&amp; ADT 原始碼形式的表格定義（S/4HANA 的 ADT 可直接編輯；SE11 仍可用表單）
+*&amp;   技術設定（Data Class/Size Category/Buffering）在 ADT 是另一個編輯器
+*&amp;---------------------------------------------------------------------*
+@EndUserText.label : 'BC430 練習：航班預訂紀錄'
+@AbapCatalog.enhancement.category : #EXTENSIBLE_CHARACTER_NUMERIC
+@AbapCatalog.tableCategory : #TRANSPARENT
+@AbapCatalog.deliveryClass : #A
+@AbapCatalog.dataMaintenance : #RESTRICTED
+define table zbc430_book {
+  key client   : abap.clnt not null;
+  key carrid   : s_carr_id not null;
+  key connid   : s_conn_id not null;
+  key fldate   : s_date not null;
+  key bookid   : s_book_id not null;
+  customid     : s_customer;
+  counter      : s_countnum;
+  @Semantics.amount.currencyCode : 'zbc430_book.forcurkey'
+  forcuram     : s_f_cur_pr;
+  forcurkey    : s_curr;
+  @Semantics.quantity.unitOfMeasure : 'zbc430_book.wunit'
+  luggweight   : s_lugweigh;
+  wunit        : s_weiunit;
+  include zbc430_s_admin;             "共用的建立者/時間戳 Include 結構
+}</code></pre>
+  <div class="warn">Data Element 名稱（S_CARR_ID、S_CUSTOMER、S_F_CUR_PR…）請在你的系統用 SE11 確認後再用；上例重點是<b>金額與數量欄位必須以 @Semantics 註解指到幣別／單位欄位</b>，等同 SE11 的「Currency/Quantity Fields」頁籤。原始碼式的 <span class="kw">define table</span> 在 ADT 中才能編輯。</div>
+
+  <h3 id="ch05-16-07">7. 技術設定：Data Class、Size Category、Logging（Unit 3 Lesson 1）</h3>
+  <p>技術設定（<span class="tcode">SE13</span>，或 SE11 → Technical Settings）決定表在資料庫的<b>儲存需求</b>與<b>存取行為</b>：建在哪、預期多大、要不要緩衝、要不要記日誌。完整的操作畫面見 <a href="#ch01-2-03">1-2 章第 3 節</a>，這裡補原廠的「為什麼」。</p>
+
+  <table>
+    <thead><tr><th>Data Class</th><th>意義</th><th>例子</th></tr></thead>
+    <tbody>
+      <tr><td><b>APPL0</b> 主資料</td><td>很少修改</td><td>客戶名稱、地址、電話</td></tr>
+      <tr><td><b>APPL1</b> 交易資料</td><td>經常修改</td><td>倉庫庫存（每張採購單都會變）</td></tr>
+      <tr><td><b>APPL2</b> 組織資料</td><td>安裝／Customizing 時定義，之後幾乎不變</td><td>國家代碼</td></tr>
+      <tr><td>系統資料（SDIC、SSRC、SLOAD…）</td><td>R/3 系統本身需要</td><td>程式原始碼、系統設定</td></tr>
+      <tr><td><b>USER、USER1…</b> 客戶資料類</td><td>客戶開發用</td><td>須在資料庫另外配置儲存區</td></tr>
+    </tbody>
+  </table>
+  <p>Data Class 在 Oracle 對應 <b>Tablespace</b>。選對了，啟用時表就自動建在正確的儲存區。</p>
+
+  <p><b>Size Category</b>：預期資料量。建表時先配一個初始 extent（所有類別大小相同），不夠再依 Size Category 決定的固定大小追加 extent。選太小 → 大量小 extent、碎片化；選太大 → 浪費空間。<b>2007 筆記寫 0～4，Col18 寫 0～9</b>，以你系統 SE13 的下拉選單為準。</p>
+
+  <p><b>碎片化（Col18 新增）</b>：交易資料表因快速成長、頻繁新增刪除，配置空間會有大量空洞；索引也會碎片化。</p>
+  <ul>
+    <li>索引可重建（rebuild）。重建期間程式仍可讀表，但<b>該索引不能用</b>，大表（&gt; 100,000 筆）可能數分鐘到數小時，期間可能 Full Table Scan。</li>
+    <li>表格重建（透過資料庫工具／<span class="tcode">SE14</span>）期間<b>不能讀也不能改</b>，要排在夜間離峰，由 Basis／DBA 執行；重建前先檢查並調整 Size Category。</li>
+  </ul>
+
+  <p><b>Log Data Changes（表格日誌）</b>：</p>
+  <ul>
+    <li>技術設定勾 <b>Log Data Changes</b> 還不夠，必須系統參數 <b>rec/client</b> 也開啟：<span class="kw">ALL</span>（所有用戶端）、<span class="kw">000[,…]</span>（指定用戶端）、<span class="kw">OFF</span>（不記錄）。</li>
+    <li>日誌與更新（update）獨立記錄，寫在表 <b>DBTABLOG</b>；用 <span class="tcode">SCU3</span>（Table History）顯示。</li>
+    <li><b>代價</b>：每次修改都多一次寫入；所有使用者共用同一張日誌表，即使大家改的是不同應用表，也可能<b>互相鎖住</b>。</li>
+  </ul>
+  <p><b>其他設定（Col18）</b>：</p>
+  <ul>
+    <li><b>Write Access Only with Java</b>：限定只有 Java 端能改；ABAP 寫入的資料不保證 Java 讀得正確（ASCII 資料除外）。</li>
+    <li><b>DB-Specific Properties</b>：NW 7.4 起可選 SAP HANA 的 <b>Row Store／Column Store</b>；在 HANA 上用 DDIC 建的表<b>預設 Column Store</b>（整欄連續序列化存放）。</li>
+  </ul>
+
+  <pre><code class="abap">*&amp;---------------------------------------------------------------------*
+*&amp; 用程式盤點 Z 表的技術設定（DD09L）與表格類型（DD02L）
+*&amp;   DD09L-TABART=Data Class、TABKAT=Size Category、PUFFERUNG=緩衝型態、
+*&amp;   BUFALLOW=是否允許緩衝、PROTOKOLL=是否記日誌
+*&amp;---------------------------------------------------------------------*
+SELECT FROM dd02l AS t
+  INNER JOIN dd09l AS s
+    ON  s~tabname  = t~tabname
+    AND s~as4local = t~as4local
+    AND s~as4vers  = t~as4vers
+  FIELDS t~tabname, t~tabclass, t~contflag,
+         s~tabart, s~tabkat, s~bufallow, s~pufferung, s~protokoll
+  WHERE t~tabname  LIKE 'Z%'
+    AND t~as4local = 'A'                "只看啟用版本
+    AND t~tabclass = 'TRANSP'
+  ORDER BY t~tabname
+  INTO TABLE @DATA(lt_tech).
+
+LOOP AT lt_tech INTO DATA(ls_tech).
+  DATA(lv_buf) = SWITCH string( ls_tech-pufferung
+                   WHEN 'X' THEN `全緩衝`
+                   WHEN 'G' THEN `一般緩衝`
+                   WHEN 'P' THEN `單筆緩衝`
+                   ELSE          `不緩衝` ).
+  DATA(lv_warn) = COND string(
+                   WHEN ls_tech-protokoll = abap_true AND ls_tech-tabart = 'APPL1'
+                   THEN `⚠ 交易資料表開了日誌，注意效能` ).
+  WRITE: / ls_tech-tabname, ls_tech-contflag, ls_tech-tabart,
+           ls_tech-tabkat, lv_buf, lv_warn.
+ENDLOOP.</code></pre>
+
+  <h3 id="ch05-16-08">8. Pooled Table 與 Cluster Table（Unit 3 Lesson 2）</h3>
+  <p>除了透明表（DDIC 與資料庫一對一），SAP 還有兩種「多張邏輯表放進一張實體表」的型態，主要用於系統內部資料；<b>業務資料應存在透明表</b>。</p>
+  <table>
+    <thead><tr><th></th><th>Cluster Table（表叢集）</th><th>Pooled Table（表池）</th></tr></thead>
+    <tbody>
+      <tr><td>放什麼</td><td><b>功能相依</b>、分散在多張表的資料</td><td><b>互不相依</b>的小表</td></tr>
+      <tr><td>實體鍵</td><td>各邏輯表鍵欄位的交集＝<b>Cluster Key</b>，加 <b>PAGNO</b> 保證唯一</td><td><b>TABNAME</b>（邏輯表名）＋<b>VARKEY</b>（邏輯表鍵欄位串接，所以鍵欄位必須是 C 型）</td></tr>
+      <tr><td>非鍵資料</td><td>壓縮存在 <b>VARDATA</b>；放不下產生 overflow 記錄；TIMESTAMP、PAGELG 是管理欄位</td><td>壓縮存在 <b>VARDATA</b>，長度在 <b>DATALN</b></td></tr>
+      <tr><td>經典例子</td><td>BSEG（RFBLG）、KONV（KOCLU）、CDPOS（CDCLS）</td><td>A0xx 條件表（KAPOL）、部分 Customizing 表（ATAB）</td></tr>
+    </tbody>
+  </table>
+  <p><b>優點</b>：表與欄位數少、資料壓縮（省記憶體與網路）、SQL 陳述種類少、管理簡單；Cluster 的相依資料一次讀回。<b>缺點</b>：不能 Native SQL、不能建 View 或 ABAP JOIN、不能建二級索引、不能 Append；Pooled 只把鍵欄位條件送到資料庫，Cluster 只把 Cluster Key 條件送到資料庫，非鍵欄位的 ORDER BY／GROUP BY 不會下推；Pooled 需要比語意更長的鍵。技術設定多一個 <b>Convert to transparent table</b> 旗標。</p>
+  <div class="warn"><b>S/4HANA 現況</b>：在 SAP HANA 上，Pool／Cluster 表已全面<b>轉成透明表</b>（depooling／declustering）。BSEG 在 S/4HANA 是透明表；KONV 被 <b>PRCD_ELEMENTS</b> 取代；財務明細的單一事實來源是 <b>ACDOCA</b>。新開發<b>不要再建立</b> Pool／Cluster 表。舊程式裡「因為 BSEG 是 cluster 表所以不能 JOIN」的繞路寫法，在 S/4HANA 可以改回正常 JOIN——但仍要評估改讀 ACDOCA 或標準 CDS View（例如 I_JournalEntryItem）。</div>
+
+  <pre><code class="abap">*&amp;---------------------------------------------------------------------*
+*&amp; 舊寫法 vs. S/4HANA：讀會計明細
+*&amp;   R/3：BSEG 是 cluster 表 → 不能 JOIN，只能先讀 BKPF 再 FOR ALL ENTRIES
+*&amp;   S/4HANA：BSEG 已是透明表，且 ACDOCA 是 Universal Journal
+*&amp;---------------------------------------------------------------------*
+PARAMETERS: p_bukrs TYPE bukrs OBLIGATORY,
+            p_gjahr TYPE gjahr OBLIGATORY.
+DATA gv_racct TYPE racct.                   "SELECT-OPTIONS 需要參照變數
+SELECT-OPTIONS s_racct FOR gv_racct.
+
+SELECT FROM acdoca
+  FIELDS rbukrs, gjahr, belnr, docln, racct, budat,
+         hsl, rhcur, prctr, kostl
+  WHERE rldnr  = '0L'                       "主帳
+    AND rbukrs = @p_bukrs
+    AND gjahr  = @p_gjahr
+    AND racct IN @s_racct
+  ORDER BY rbukrs, gjahr, belnr, docln      "HANA 沒有預設排序：要「第一筆」就先排
+  INTO TABLE @DATA(lt_items)
+  UP TO 1000 ROWS.
+
+cl_salv_table=&gt;factory( IMPORTING r_salv_table = DATA(lo_alv)
+                        CHANGING  t_table      = lt_items ).
+lo_alv-&gt;display( ).</code></pre>
+
+  <h3 id="ch05-16-09">9. 索引：Primary、Secondary、Extension（Unit 4 Lesson 1）</h3>
+  <p>索引可以看成「資料庫表縮減到特定欄位的<b>排序副本</b>」，讓資料庫用二分搜尋快速定位，並帶一個指回原表記錄的指標以讀取其他欄位。</p>
+  <table>
+    <thead><tr><th>種類</th><th>說明</th></tr></thead>
+    <tbody>
+      <tr><td><b>Primary Index</b></td><td>由主鍵組成，<b>永遠唯一</b>；表第一次啟用時自動建立；索引 ID <b>0</b> 保留給它</td></tr>
+      <tr><td><b>Secondary Index</b></td><td>大表經常以非鍵欄位查詢時建立；多數非唯一，也可唯一（唯一索引保證資料不重複）</td></tr>
+      <tr><td><b>Extension Index</b>（Col18 新增）</td><td>屬 Enhancement Framework。以前客戶直接在 SAP 表加 Z 索引，升級後會被刪掉要重建；Extension Index 升級時自動帶過、不需修改調整</td></tr>
+    </tbody>
+  </table>
+  <p><b>規則</b>：索引 ID 三碼；客戶在 SAP 表上建的索引 ID 必須以 <b>Y 或 Z</b> 開頭。可指定「啟用時是否建到資料庫」以及<b>只建在特定資料庫系統清單</b>上（有些索引只對某些 DB 有效）。建立步驟：<span class="tcode">SE11</span> → 表名 → <b>Indexes</b> → Create → 選欄位 → 選 Unique／Non-unique → 啟用。Secondary 與 Extension Index 步驟相同。</p>
+  <p><b>設計索引的原則（兩版教材一致）</b>：</p>
+  <ul>
+    <li>索引要小，只放 WHERE 中常用的欄位；<b>最常被篩選的欄位放前面</b>，WHERE 的欄位順序配合索引順序。</li>
+    <li>只放<b>有鑑別度</b>的欄位（能有效縮小資料量）。</li>
+    <li>每次新增、修改、刪除都要調整所有索引；<b>經常異動的表不要建太多索引</b>。</li>
+    <li>同一張表的索引彼此盡量不重疊。</li>
+    <li>用哪個索引由<b>資料庫最佳化器（Optimizer）</b>決定，不是 ABAP 決定。</li>
+  </ul>
+  <div class="note">2007 筆記寫「索引只能用到選擇中最後指定的欄位」，原意是：索引只能用到<b>從最左邊開始、連續有指定條件的欄位為止</b>。例如索引 (A, B, C)，WHERE 只給 A 和 C，則只有 A 能走索引，C 要逐筆比對。</div>
+
+  <pre><code class="abap">*&amp;---------------------------------------------------------------------*
+*&amp; 寫出「索引友善」的 ABAP SQL
+*&amp;   假設 SBOOK 有 Z 索引 Z01 = (MANDT, CUSTOMID, FLDATE)
+*&amp;---------------------------------------------------------------------*
+DATA gv_fldate TYPE s_date.
+PARAMETERS p_cust TYPE s_customer OBLIGATORY.
+SELECT-OPTIONS s_date FOR gv_fldate.
+
+" ✓ 從索引最左欄開始給條件（MANDT 由系統自動補）
+SELECT FROM sbook
+  FIELDS carrid, connid, fldate, bookid, class, forcuram, forcurkey
+  WHERE customid = @p_cust
+    AND fldate  IN @s_date
+    AND cancelled = @abap_false        "SBOOK 的欄位名是 CANCELLED（兩個 L）
+  ORDER BY fldate, carrid, connid, bookid
+  INTO TABLE @DATA(lt_book).
+
+" ✗ 跳過最左欄：只給 FLDATE，Z01 用不上 → 大表可能 Full Table Scan
+" SELECT ... FROM sbook WHERE fldate IN @s_date ...
+
+" ✗ 對索引欄位做運算或否定條件，最佳化器通常無法用索引
+" WHERE customid &lt;&gt; @p_cust   /   WHERE substring( customid, 1, 4 ) = ...</code></pre>
+  <div class="warn"><b>S/4HANA 上的索引觀念要更新</b>：HANA 是欄式記憶體資料庫，每一欄本身就有字典壓縮與快速掃描能力，<b>大部分二級索引不再需要</b>（SAP 對 Suite on HANA 的建議見 SAP Note 1794297）。在 S/4HANA 建新索引前，先用 <span class="tcode">ST05</span>／SQL Monitor 證明瓶頸真的在「缺索引」，而不是讀了太多欄位（<span class="kw">SELECT *</span>）或太多次（迴圈內 SELECT）。</div>
+
+  <h3 id="ch05-16-10">10. 表格緩衝：三種型態與決策樹（Unit 4 Lesson 2）</h3>
+  <p>被緩衝的表，記錄直接從<b>執行該交易的應用伺服器本地緩衝區</b>讀取，免去資料庫存取，效能提升 <b>10～100 倍</b>。緩衝區滿了，<b>最久未被存取</b>的資料被替換（非同步、動態決定時機，只在剩餘空間低於門檻或存取品質不佳時才替換）。</p>
+  <table>
+    <thead><tr><th>型態</th><th>讀一筆時載入什麼</th><th>適用</th><th>注意</th></tr></thead>
+    <tbody>
+      <tr><td><b>Full Buffering（全緩衝）</b></td><td>整張表</td><td>小、讀多、寫少；<b>經常查「不存在」的記錄</b>（緩衝區就能判斷不存在）</td><td>緩衝區內依主鍵排序；只能用到「最後一個有指定的鍵欄位」為止——第一個鍵欄位沒給就是整張表掃描，此時若有合適二級索引，直接查 DB 可能更快</td></tr>
+      <tr><td><b>Generic Buffering（一般緩衝）</b></td><td>與該筆<b>一般鍵（主鍵左邊 n 欄）</b>相同的所有記錄</td><td>只有少數一般區域常被處理</td><td>一般鍵太小→區域太多太碎（不如全緩衝）；太大→一筆異動就讓大量資料失效。<b>依用戶端的全緩衝表會自動變成以 MANDT 為一般鍵的一般緩衝</b>；語言相依表的一般鍵是到語言欄位為止的所有鍵</td></tr>
+      <tr><td><b>Single-Record Buffering（單筆緩衝）</b></td><td>只有被讀的那一筆</td><td><b>大表</b>，但經常以 <span class="kw">SELECT SINGLE</span> 重複讀少數幾筆</td><td>省空間但管理成本高、載入需多次 DB 存取；查無資料也會記成「不存在」避免重查；<b>不是 SELECT SINGLE（完整主鍵）的存取一律繞過緩衝</b></td></tr>
+    </tbody>
+  </table>
+  <p>設定位置：<span class="tcode">SE11</span> → Technical Settings（或 <span class="tcode">SE13</span>）→ Buffering not allowed／Buffering allowed but switched off／Buffering switched on → 選型態（Generic 要填一般鍵欄位數）。Database View 也能緩衝（第 16 節）。</p>
+
+  <p><b>附錄二：緩衝決策樹</b>（强晟筆記 p147、Col18 p89，依原圖整理）：</p>
+  <ol>
+    <li>讀資料時能否接受<b>暫時不一致</b>？否 → <b>不緩衝</b>。</li>
+    <li>大多數存取是<b>唯讀</b>嗎？否 → <b>不緩衝</b>。</li>
+    <li>預估表大小 <b>&lt; 8 KB</b>？是 → <b>全緩衝</b>。</li>
+    <li>否則：大多用 <span class="kw">SELECT SINGLE</span> 存取嗎？是 → <b>單筆緩衝</b>。</li>
+    <li>否則：預估 <b>&gt; 1 MB（超過約 1000 筆）</b>？是 → 依系統安裝狀況決定，需再考慮「全緩衝或一般緩衝？」「二級索引還是緩衝？」</li>
+    <li>否則：存取時經常指定鍵的左邊部分？是 → <b>一般緩衝</b>（一般鍵欄位數適當）；否 → <b>全緩衝</b>。</li>
+  </ol>
+
+  <pre><code class="abap">*&amp;---------------------------------------------------------------------*
+*&amp; 會「用到緩衝」與會「繞過緩衝」的寫法
+*&amp;   SCARR 在航班模型中是全緩衝的小表
+*&amp;---------------------------------------------------------------------*
+" ✓ 用到緩衝：以主鍵讀取
+SELECT SINGLE FROM scarr
+  FIELDS carrname, currcode
+  WHERE carrid = 'LH'
+  INTO @DATA(ls_carr).
+
+" ✗ 明確繞過：需要讀到「此刻資料庫的真實值」時才用
+SELECT SINGLE FROM scarr
+  FIELDS carrname
+  WHERE carrid = 'LH'
+  INTO @DATA(lv_name_db)
+  BYPASSING BUFFER.
+
+" ✗ 以下類型的查詢一般會繞過表格緩衝直接到資料庫（細節依版本而異，
+"    請以 ABAP 關鍵字文件「Table Buffering - Restrictions」為準）：
+"    - SELECT ... FOR UPDATE（要鎖資料庫列）
+"    - 聚合函數 COUNT/SUM/MAX…、GROUP BY、DISTINCT
+"    - WHERE ... IS NULL、子查詢
+"    - ORDER BY 非主鍵欄位
+"    - Native SQL（ADBC 等原生 SQL 介面）
+SELECT FROM scarr
+  FIELDS COUNT(*) AS cnt
+  INTO @DATA(lv_cnt).                    "聚合 → 直接查 DB
+
+" 單筆緩衝表：只有 SELECT SINGLE + 完整主鍵才會用到緩衝
+" 寫成 SELECT ... UP TO 1 ROWS 或只給部分鍵 → 繞過緩衝</code></pre>
+  <div class="tip">緩衝相關監控：<span class="tcode">ST10</span>（表格呼叫統計，看哪張表讀寫比例適合緩衝）、<span class="tcode">ST02</span>（緩衝區調校、Swap 次數）、<span class="tcode">AL12</span>（緩衝監控）。緩衝適不適合，要用資料說話，不是憑感覺。</div>
+
+  <h3 id="ch05-16-11">11. 緩衝同步：12 個時間點（Unit 4 Lesson 2）</h3>
+  <p>緩衝區在<b>各應用伺服器本地</b>，某台改了資料，其他台怎麼知道？答案：<b>固定間隔同步</b>。間隔由系統參數 <b>rdisp/bufreftime</b>（秒）設定，範圍 60～3600，<b>建議 60～240</b>。</p>
+  <div class="warn">Col18 英文教材 p83 把參數名印成「rdisp/buffertime」，是錯字；正確名稱是 2007 筆記寫的 <b>rdisp/bufreftime</b>（同步模式另有 rdisp/bufrefmode）。</div>
+  <p>原廠用兩台應用伺服器、全緩衝表（2007 版叫 TAB，Col18 用 SCARR）演示：</p>
+  <table>
+    <thead><tr><th>時間點</th><th>伺服器 1</th><th>伺服器 2</th></tr></thead>
+    <tbody>
+      <tr><td>起始</td><td colspan="2">兩台都還沒讀過該表，本地緩衝都沒有</td></tr>
+      <tr><td>1</td><td>從資料庫讀取記錄</td><td></td></tr>
+      <tr><td>2</td><td>整張表載入本地緩衝，之後讀緩衝</td><td></td></tr>
+      <tr><td>3</td><td></td><td>本地還沒有，從資料庫讀</td></tr>
+      <tr><td>4</td><td></td><td>整張表載入本地緩衝</td></tr>
+      <tr><td>5</td><td>刪除記錄並更新資料庫</td><td></td></tr>
+      <tr><td>6</td><td>在<b>同步表（DDLOG）</b>寫入一筆異動紀錄</td><td></td></tr>
+      <tr><td>7</td><td>更新自己的本地緩衝</td><td></td></tr>
+      <tr><td>8</td><td>讀不到已刪記錄（正確）</td><td><b>仍從本地緩衝讀到已被刪除的記錄</b>——程式行為取決於跑在哪台伺服器</td></tr>
+      <tr><td>9</td><td colspan="2">同步時間到，兩台都去檢查同步表</td></tr>
+      <tr><td>10</td><td>是自己改的，不必失效</td><td>發現被伺服器 1 改過 → <b>本地緩衝該表失效</b></td></tr>
+      <tr><td>11</td><td></td><td>再讀時走資料庫</td></tr>
+      <tr><td>12</td><td></td><td>重新載入緩衝，三方再度一致</td></tr>
+    </tbody>
+  </table>
+  <p><b>優點</b>：網路負載最小（若每次異動都立即廣播給所有伺服器，效能會很差）。<b>缺點</b>：兩次同步之間，本地緩衝可能是<b>過時資料</b>。結論：</p>
+  <ul>
+    <li>只緩衝<b>很少寫入（讀多）</b>或<b>暫時不一致無所謂</b>的表。</li>
+    <li>經常異動的表<b>不要緩衝</b>，否則不斷失效、重載，反而更慢。</li>
+  </ul>
+  <div class="warn">命令列輸入 <span class="kw">/$TAB</span> 會重置<b>目前這台</b>應用伺服器的表格緩衝（<span class="kw">/$SYNC</span> 重置所有緩衝）。只在確定緩衝不一致時使用——大型系統重新填滿緩衝可能要<b>數小時</b>，期間效能明顯下降。生產機上請找 Basis 評估，不要當作「資料怪怪的就按一下」的萬用鍵。</div>
+
+  <h3 id="ch05-16-12">12. 輸入檢查：固定值、外來鍵、Value Table、Text Table（Unit 5）</h3>
+  <p><b>固定值（Fixed Values）</b>：Domain 的值域若只允許有限幾個值，就定義為固定值（可逐一列出或定義區間）。固定值同時提供 <b>F4 清單</b>與<b>畫面輸入檢查</b>。Col18 新增 <b>Fixed Value Append</b>：一個 Append 只屬於一個 Domain，一個 Domain 可有多個；是免修改的標準增強，升級時自動帶過。</p>
+  <div class="note">强晟筆記 p52、p53、p64 三頁的原文完全一樣（都在講 cardinality），他自己也吐槽「SAP 犯錯了」。正確內容以 Col18 為準：p52 應是<b>固定值</b>（上一段）、p53 應是 <b>Value Table</b>（下方）、p64 才是<b>語意屬性（Cardinality、外來鍵欄位型態）</b>。</div>
+
+  <p><b>外來鍵（Foreign Key）</b>——原廠例子：客人要訂美國航空（AA）0017 班機，在 <b>8 號櫃台</b>訂位。<b>SBOOK</b> 存所有訂位，<b>SCOUNTER</b> 存各航空公司的有效櫃台。AA 沒有 8 號櫃台，所以 SCOUNTER 查不到 → SBOOK 的輸入被拒絕。</p>
+  <table>
+    <thead><tr><th>檢查表（Check Table）SCOUNTER</th><th>外來鍵表（Foreign Key Table）SBOOK</th></tr></thead>
+    <tbody>
+      <tr><td>MANDT</td><td>MANDT</td></tr>
+      <tr><td>CARRID</td><td>CARRID</td></tr>
+      <tr><td>COUNTNUM</td><td><b>COUNTER</b>（← 檢查欄位 Check Field）</td></tr>
+    </tbody>
+  </table>
+  <ul>
+    <li><b>定義</b>：一張表中的某個欄位組合，若是另一張表的主鍵，就稱為外來鍵。外來鍵連接兩張表。</li>
+    <li><b>檢查表</b>（又稱參考表）＝被檢查的那張；<b>檢查欄位</b>＝外來鍵表中要被檢查的欄位。</li>
+    <li><b>只在畫面輸入與 F4 時檢查</b>。ABAP 程式直接 <span class="kw">INSERT</span>／<span class="kw">MODIFY</span> 資料庫<b>完全不會</b>檢查外來鍵——這是新手最常誤會的一點。</li>
+    <li><b>檢查欄位與檢查表對應鍵欄位必須用同一個 Domain</b>（Data Element 可以不同）；其他外來鍵欄位只要型別與長度相同即可，但仍應盡量同 Domain——日後改長度時才不會失去一致。</li>
+  </ul>
+
+  <p><b>Value Table 與 Check Table 不同</b>：</p>
+  <ul>
+    <li>Value Table 寫在 <b>Domain</b> 上，只是讓系統在你定義外來鍵時<b>自動提出檢查表建議</b>。<b>光設 Value Table 不會有任何 F4 或檢查</b>，一定要再定義外來鍵（Col18 p106 明講；2007 筆記把它理解成「值範圍存在表中」，不完整）。</li>
+    <li>建議不一定對：SBOOK-AGENCYNUM 的 Domain 的 Value Table 是 <b>SBUSPART</b>（所有航空公司業務夥伴），但這個欄位只允許<b>旅行社</b>，正確的檢查表是 <b>STRAVELAG</b>（SBUSPART 的子集）。必須手動覆蓋建議；不知道該選哪張，系統可列出所有以 Domain S_BUSPANUM 為鍵欄位的表。</li>
+    <li>SAIRPORT-AIRPORT 所用 Domain 的 Value Table 就是 SAIRPORT 本身——這是正確的，但這個欄位本身<b>不會</b>定義外來鍵（避免自我循環）。</li>
+  </ul>
+
+  <p><b>語意屬性</b>：</p>
+  <ul>
+    <li><b>Cardinality（基數）</b>：一律從檢查表的角度描述，例如 1:N、1:CN。</li>
+    <li><b>外來鍵欄位型態</b>：<b>Not specified</b>；<b>No key fields/candidates</b>（外來鍵欄位不是外來鍵表的主鍵，也不能唯一識別）；<b>Key fields/candidates</b>（是主鍵或候選鍵）；<b>Key fields of a text table</b>（後者的特例：外來鍵表是檢查表的文字表）。</li>
+  </ul>
+
+  <p><b>Text Table</b>：<b>SMEAL</b>（機上餐點）的名稱存在 <b>SMEALT</b>。SMEALT 的鍵＝SMEAL 的全部鍵＋一個語言欄位（型別 LANG）。外來鍵從 <b>SMEALT 指向 SMEAL</b>，外來鍵欄位型態選 <b>Key fields of a text table</b>。<b>一張表最多只能有一張 Text Table</b>。</p>
+
+  <pre><code class="abap">*&amp;---------------------------------------------------------------------*
+*&amp; 程式寫入不會檢查外來鍵 → 自己用 line_exists / 檢查表驗證
+*&amp;   同時示範：讀 Domain 固定值、以登入語言 JOIN 文字表
+*&amp;---------------------------------------------------------------------*
+" 1) 取 Domain S_CLASS 的固定值（含說明）
+DATA(lo_class) = CAST cl_abap_elemdescr(
+                   cl_abap_typedescr=&gt;describe_by_name( 'S_CLASS' ) ).
+DATA(lt_fix) = lo_class-&gt;get_ddic_fixed_values( p_langu = sy-langu ).
+
+DATA(ls_new) = VALUE sbook( carrid = 'AA' connid = '0017'
+                            fldate = '20071122' class = 'Y' counter = '00000008' ).
+
+" 2) 檢查固定值
+IF NOT line_exists( lt_fix[ low = ls_new-class ] ).
+  MESSAGE |艙等 { ls_new-class } 不是合法固定值| TYPE 'E'.
+ENDIF.
+
+" 3) 模擬外來鍵檢查：SBOOK-COUNTER → SCOUNTER(CARRID, COUNTNUM)
+SELECT SINGLE FROM scounter
+  FIELDS @abap_true
+  WHERE carrid   = @ls_new-carrid
+    AND countnum = @ls_new-counter
+  INTO @DATA(lv_ok).
+IF lv_ok = abap_false.
+  MESSAGE |{ ls_new-carrid } 沒有 { ls_new-counter ALPHA = OUT } 號櫃台，拒絕寫入| TYPE 'E'.
+ENDIF.
+
+" 4) 文字表：用登入語言取餐點名稱（LEFT OUTER 避免沒翻譯就整筆消失）
+SELECT FROM smeal AS m
+  LEFT OUTER JOIN smealt AS t
+    ON  t~carrid     = m~carrid
+    AND t~mealnumber = m~mealnumber
+    AND t~spras      = @sy-langu
+  FIELDS m~carrid, m~mealnumber, m~mealtype, t~text
+  WHERE m~carrid = 'LH'
+  ORDER BY m~carrid, m~mealnumber
+  INTO TABLE @DATA(lt_meal).</code></pre>
+  <div class="note">SMEALT 語言欄位的實際欄位名請以 SE11 為準（多數 SAP 文字表叫 SPRAS，航班模型部分表用 SPRACHE／LANGU）；上例重點是<b>語言條件要放在 ON 子句</b>，放到 WHERE 會把 LEFT OUTER JOIN 變回 INNER JOIN。</div>
+
+  <h3 id="ch05-16-13">13. 字典物件的相依：啟用版本、Runtime Object、Where-Used（Unit 6）</h3>
+  <p><b>Active／Inactive 版本</b>：</p>
+  <ul>
+    <li><b>Active 版本</b>：執行環境（ABAP 處理器、資料庫介面）讀的版本。</li>
+    <li><b>Inactive 版本</b>：修改已啟用物件時產生，可不檢查就存檔，<b>不影響執行系統</b>。</li>
+    <li><b>啟用（Activate）</b>：先做一致性檢查，通過才取代 Active 版本。例：結構原有 3 欄，加 1 欄後同時存在 3 欄的 Active 與 4 欄的 Inactive；啟用後 Active 變成 4 欄。</li>
+    <li>相依物件多、預期執行很久（例如改一個被大量表使用的 Domain）時，選 <b>Activate in background</b>。</li>
+  </ul>
+  <p><b>Mass Activation（大量啟用，Col18）</b>：傳輸請求匯入時自動呼叫。優點：多個 Domain／Data Element 影響同一張表時只重新啟用一次；相關物件（如 Domain 與其 Value Table）可一起啟用。單獨啟用則要自己照順序——先 Domain、Data Element，再表。</p>
+
+  <p><b>Runtime Object（執行時期物件，俗稱 Nametab）</b>：表或結構的資訊分散在 Domain、Data Element、結構定義裡；啟用時合併成一個為 ABAP 最佳化的物件並<b>被緩衝</b>。內容包含：</p>
+  <ul>
+    <li>整體資訊：欄位數等。</li>
+    <li>各欄位：名稱、位置、型別、長度、小數位、參考欄位、參考表、檢查表、轉換常式。</li>
+    <li>資料庫介面需要的：是否依用戶端、緩衝、鍵欄位。</li>
+  </ul>
+  <p>可在 SE11 → Utilities → Runtime Object 檢視。會產生 Runtime Object 的物件：<b>Data Element、Table Type、View、Structure、Table</b>——也就是所有能在 ABAP 當型別用的字典物件。啟用時，Runtime Object 與所有使用它的程式、畫面的<b>時間戳</b>都會被調整（所以程式下次執行會重新產生）。</p>
+
+  <p><b>相依物件處理</b>：已啟用物件被修改並啟用時，系統找出相依物件並重新啟用它們的 Active 版本（<b>相依物件自己的 Inactive 新版本不會被動到</b>）。例如改 Domain 型別 → 所有用到它的 Data Element、結構、表自動重新啟用；若相依的是資料庫表，還可能觸發表格調整（第 14 節）。</p>
+
+  <p><b>Where-Used List</b>：每個字典物件的維護畫面都能叫出。可選要找的使用物件類型（例如「所有用到此 Data Element 的結構與表」），也能找非字典物件（「所有用到這張表的程式」），可限縮套件（2007 版叫開發類）或命名空間；使用者很多時放背景執行。</p>
+  <p><b>Repository Information System</b>：<span class="tcode">SE84</span>（整體）、<span class="tcode">SE15</span>（ABAP 字典部分）。可依屬性（例如表的緩衝型態）、套件、短描述、作者、最後修改日期找物件，清單可直接跳到維護交易。</p>
+
+  <pre><code class="abap">*&amp;---------------------------------------------------------------------*
+*&amp; 修改 Domain 前的影響評估：找出所有用到某 Domain 的表欄位
+*&amp;   （SE11 Where-Used 的程式版，方便匯出給 PM 評估轉換風險）
+*&amp;---------------------------------------------------------------------*
+PARAMETERS p_domain TYPE domname DEFAULT 'S_AIRPID'.
+
+SELECT FROM dd03l AS f
+  INNER JOIN dd02l AS t
+    ON  t~tabname  = f~tabname
+    AND t~as4local = f~as4local
+  FIELDS f~tabname, f~position, f~fieldname, f~rollname, f~keyflag, t~tabclass
+  WHERE f~domname  = @p_domain
+    AND f~as4local = 'A'
+  ORDER BY f~tabname, f~position
+  INTO TABLE @DATA(lt_used).
+
+" 只有 TRANSP 的表在改 Domain 後可能需要轉換；INTTAB 是結構
+DATA(lt_db_tables) = VALUE string_table(
+  FOR GROUPS grp OF u IN lt_used
+      WHERE ( tabclass = 'TRANSP' )
+      GROUP BY u-tabname
+  ( CONV string( grp ) ) ).
+
+WRITE: / |Domain { p_domain } 被 { lines( lt_used ) } 個欄位使用，| &amp;&amp;
+         |其中透明表 { lines( lt_db_tables ) } 張（改長度可能觸發轉換）|.
+LOOP AT lt_used INTO DATA(ls_used).
+  WRITE: / ls_used-tabname, ls_used-fieldname, ls_used-rollname,
+           ls_used-keyflag, ls_used-tabclass.
+ENDLOOP.</code></pre>
+
+  <h3 id="ch05-16-14">14. 表格轉換：QCM 暫存表與中止處理（Unit 7 Lesson 1）</h3>
+  <p>ABAP 程式要能正確存取表，<b>Runtime Object 必須與資料庫結構一致</b>。每次在 DDIC 改表並啟用，系統都判斷資料庫要不要跟著調整。有些修改不必動資料庫——例如調整非鍵欄位的順序。</p>
+  <p><b>三種調整方式</b>：</p>
+  <table>
+    <thead><tr><th>方式</th><th>做法</th><th>資料</th></tr></thead>
+    <tbody>
+      <tr><td>刪除重建</td><td>刪掉資料庫表、啟用新定義、重建</td><td><b>全部遺失</b>（表是空的才會這樣做）</td></tr>
+      <tr><td>ALTER TABLE</td><td>只改資料庫目錄</td><td>保留；索引可能要重建</td></tr>
+      <tr><td>表格轉換（Conversion）</td><td>建新表、搬資料</td><td>保留；<b>最耗時、最耗資源</b></td></tr>
+    </tbody>
+  </table>
+  <div class="note">2007 筆記把「轉換表」寫成「最節約時間的辦法」，是翻譯錯誤；原廠原文是 <b>the most time-consuming way</b>（最耗時）。系統的判斷順序：表沒資料 → 刪除重建；有資料 → 先試 ALTER TABLE；資料庫做不到 → 轉換。</div>
+
+  <p><b>轉換流程</b>（例：表 TAB 的欄位 3 從 60 字元縮成 30，有二級索引 A11，表內已有資料）：</p>
+  <ol>
+    <li><b>鎖表</b>，禁止再改結構；轉換中止時鎖會保留。所有相依 View 被停用。</li>
+    <li>資料庫表 TAB <b>改名為 QCMTAB</b>（若已存在舊的 QCMTAB 先刪除）；所有二級索引被刪除。</li>
+    <li>啟用 DDIC 的 Inactive 版本，以新結構建立 <b>QCM8TAB</b>（含主索引），此時是空表。<b>資料庫裡此刻不存在名為 TAB 的表</b>，存取它的程式都會失敗。</li>
+    <li>用 <b>MOVE-CORRESPONDING</b> 把 QCMTAB 的資料搬回 QCM8TAB；縮短的欄位多餘部分被<b>截掉</b>。每搬 <b>16 MB</b> 做一次資料庫 Commit（所以 Rollback Segment 需要 16 MB），Commit 釋放鎖、下一段再申請。</li>
+    <li>全部搬完後刪除 QCMTAB（若因縮短主鍵產生重複而有記錄沒搬過去，<b>為安全起見保留 QCMTAB</b>）。</li>
+    <li>QCM8TAB <b>改名回 TAB</b>，重建二級索引，重新啟用第 1 步停用的 View。</li>
+    <li>解除第 1 步的鎖；刪除重啟日誌（reset/restart log）。</li>
+  </ol>
+  <div class="note">2007 筆記的第 5、6 步順序是「先改名、再刪 QCMTAB」，Col18 是「先刪 QCMTAB（或保留）、再改名」，並補了「有重複就保留 QCMTAB」的安全機制；以 Col18 為準。</div>
+
+  <p><b>轉換可能的問題</b>：</p>
+  <ul>
+    <li><b>Tablespace 溢位</b>：轉換期間資料同時存在兩張表，空間需求加倍。溢位就中止，擴充後在 SE14 重新開始。大表轉換前先確認空間。</li>
+    <li><b>縮短主鍵造成資料遺失</b>：移除鍵欄位或縮短鍵長度 → 多筆記錄鍵值相同，只能搬回其中一筆，<b>無法預測是哪一筆</b>。移除用戶端欄位時，甚至無法保證留下來的都來自同一個用戶端。要保留特定記錄就必須<b>轉換前先清資料</b>。</li>
+    <li><b>不合法的型別變更</b>：只有 MOVE-CORRESPONDING 能做的型別轉換才允許，否則搬回時中止。此時要用資料庫工具刪表、把 QCM 表改回原名、在 SE14 重建 Runtime Object、DDIC 結構改回原狀再啟用。</li>
+    <li>Pool／Cluster 表轉換時，QCM 表以透明表建立；欄位數若超過資料庫單表上限就無法轉換。</li>
+  </ul>
+
+  <p><b>恢復中止的轉換</b>：鎖還在，<span class="tcode">SE11</span> 不能再改這張表。用 <b>Database Utility <span class="tcode">SE14</span></b> 分析：先看物件日誌（Object Log），沒線索再看 <span class="tcode">SM21</span> 系統日誌或 <span class="tcode">ST22</span> 短傾印。修正原因後按 <b>Continue adjustment</b> 從中止處繼續。另一個按鈕 <b>Unlock table</b> 只刪鎖——<b>若資料只存在暫存表（在第 3、4 步中止）絕對不能按</b>。</p>
+  <div class="warn">原廠用粗體寫：<b>不可以在生產期間做結構調整</b>；所有存取該表的應用必須停用。實務上，Z 表改鍵、縮長度這類變更要排維護時段，並在 QAS 用生產資料量先演練一次，量測轉換時間。</div>
+
+  <pre><code class="abap">*&amp;---------------------------------------------------------------------*
+*&amp; 縮短主鍵前的必做檢查：新鍵值會不會重複？
+*&amp;   例：ZBC430_BOOK 打算把主鍵從 (CARRID, CONNID, FLDATE, BOOKID)
+*&amp;       縮成 (CARRID, FLDATE, BOOKID)
+*&amp;---------------------------------------------------------------------*
+SELECT FROM zbc430_book
+  FIELDS carrid, fldate, bookid, COUNT(*) AS dup_cnt
+  GROUP BY carrid, fldate, bookid
+  HAVING COUNT(*) &gt; 1
+  ORDER BY dup_cnt DESCENDING, carrid, fldate, bookid
+  INTO TABLE @DATA(lt_dup).
+
+IF lt_dup IS INITIAL.
+  WRITE: / '新主鍵無重複，可安全轉換（仍請先在 QAS 以正式資料量演練）'.
+ELSE.
+  WRITE: / |⚠ 有 { lines( lt_dup ) } 組新鍵值重複，轉換後每組只會留下「不可預測的一筆」|.
+  LOOP AT lt_dup INTO DATA(ls_dup).
+    WRITE: / ls_dup-carrid, ls_dup-fldate, ls_dup-bookid, ls_dup-dup_cnt.
+  ENDLOOP.
+ENDIF.
+
+" 另一種常見檢查：欄位縮短後會不會被截斷
+DATA(lv_newlen) = 30.
+SELECT FROM zbc430_book
+  FIELDS carrid, connid, fldate, bookid
+  WHERE length( passname ) &gt; @lv_newlen      "假設 PASSNAME 要從 60 縮成 30
+  INTO TABLE @DATA(lt_trunc)
+  UP TO 100 ROWS.</code></pre>
+
+  <h3 id="ch05-16-15">15. Append Structure、Customizing Include 與 Enhancement Category（Unit 7 Lesson 2）</h3>
+  <p><b>Append Structure</b> 讓客戶<b>不修改表定義</b>就能在 SAP 標準表或結構尾端加欄位：</p>
+  <ul>
+    <li>一個 Append 只屬於<b>一張</b>表；一張表可有<b>多個</b> Append。</li>
+    <li>表啟用時，系統找出所有已啟用的 Append，把欄位接在後面；Append 建立或修改後啟用，所屬表也會一起啟用。</li>
+    <li>Append 本身也是結構，可當 ABAP 型別。</li>
+    <li>4.6C 起，可用 Append 為表中<b>既有欄位</b>加外來鍵與 Search Help。</li>
+    <li>建在客戶命名空間 → 升級時不會被覆蓋，<b>不需要 <span class="tcode">SPDD</span> 調整</b>；新版標準表啟用時自動把 Append 欄位接上。</li>
+    <li>因為 DDIC 欄位順序可與資料庫不同，加 Append 或在 Append 加欄位<b>不必轉換</b>，只做 ALTER TABLE。</li>
+    <li>複製一張帶 Append 的透明表時，Append 的欄位會變成一般欄位（Col18 提示）。</li>
+  </ul>
+  <div class="warn"><b>Append 的限制</b>：① Pool／Cluster 表不能加 Append；② 表中有 <b>LCHR／LRAW</b> 長欄位就不能加（長欄位必須在最後）；③ Append 中的欄位名必須在客戶命名空間 <b>YY 或 ZZ</b> 開頭（强晟特別提醒：SAP 自己也有 Y、Z 開頭的欄位，只用單一 Z 仍可能撞名）；④ 有自己保留命名空間的合作夥伴要用自己的命名空間。</div>
+
+  <p><b>兩種增強方式</b>：</p>
+  <ul>
+    <li><b>Customizing Include（CI_ 開頭）</b>：SAP 在標準結構／表中<b>預留位置</b>，客戶在預留處填欄位（例如銷售文件的 CI_ 結構）。</li>
+    <li><b>Append</b>：不需預留，接在尾端。</li>
+  </ul>
+  <p><b>Append 可能帶來的問題</b>：被增強的結構若被其他結構以 Include 方式放在<b>中間</b>，後面欄位會位移；Unicode 檢查開啟的程式，增強會影響賦值、運算元檢查、offset/length 存取（例如在純字元結構中插入數值或深層元件，片段視圖改變）。</p>
+  <p><b>Enhancement Category</b>（SE11 → Extras → Enhancement Category）：</p>
+  <table>
+    <thead><tr><th>類別</th><th>意義</th></tr></thead>
+    <tbody>
+      <tr><td>Not classified</td><td>未分類</td></tr>
+      <tr><td>Cannot be enhanced</td><td>不可增強</td></tr>
+      <tr><td>Can be enhanced (character-type)</td><td>所有元件與增強都必須是字元型（C、D、N、T）</td></tr>
+      <tr><td>Can be enhanced (character-type or numeric)</td><td>不可含深層型別（STRING、XSTRING、內表）</td></tr>
+      <tr><td>Can be enhanced (deep)</td><td>任意型別</td></tr>
+    </tbody>
+  </table>
+  <p>含 Include 或子結構時，<b>Include 的等級不能比外層結構更寬鬆</b>（例如外層含一個 level 4 的 Include，外層就不能選 level 2、3）。</p>
+
+  <pre><code class="abap">*&amp;---------------------------------------------------------------------*
+*&amp; 使用 Append 欄位：程式端和一般欄位一樣，重點是「只讀需要的欄位」
+*&amp;   假設 MARA 已有 Append ZAMARA：ZZ_BRAND、ZZ_SERIES
+*&amp;---------------------------------------------------------------------*
+DATA gv_matnr TYPE matnr.
+SELECT-OPTIONS s_matnr FOR gv_matnr.
+
+SELECT FROM mara
+  FIELDS matnr, mtart, matkl, zz_brand, zz_series
+  WHERE matnr IN @s_matnr
+  ORDER BY matnr
+  INTO TABLE @DATA(lt_mara).
+
+" 若要讓 Append 欄位也出現在標準 CDS／Fiori，S/4HANA 的正規做法是
+" 「擴充欄位（Custom Fields）」或 CDS EXTEND VIEW (ENTITY)，
+" 不要再去改標準 View 或畫面。
+LOOP AT lt_mara ASSIGNING FIELD-SYMBOL(&lt;ls_mara&gt;)
+     WHERE zz_brand IS INITIAL.
+  WRITE: / |物料 { &lt;ls_mara&gt;-matnr ALPHA = OUT } 尚未維護品牌|.
+ENDLOOP.</code></pre>
+  <div class="tip">Casper 的實務經驗之三：<b>先找標準，再想客製。</b>加欄位之前先問：標準是否已有可用欄位（例如 MARA 的 EXTWG、PRDHA）？有沒有 Customizing Include 預留位？S/4HANA 有沒有 Custom Fields and Logic 應用？都沒有才用 Append；<b>絕對不要</b>直接修改標準表定義（那會進 SPDD，每次升級都要處理）。增強框架的全貌見 <a href="#ch05-14">5-14 章 BC425</a>、<a href="#ch05-15">5-15 章 BC427</a>。</div>
+
+  <h3 id="ch05-16-16">16. Database View、Inner／Outer Join 與 Append View（Unit 8 Lesson 1）</h3>
+  <p>一個應用物件的資料常分散在多張表，View 讓你用「應用的角度」看資料。建構 View 的三個動作：</p>
+  <ul>
+    <li><b>Join（連接）</b>：從兩表的<b>笛卡兒積</b>出發，用連接條件留下有意義的組合（例：SCARR-CARRID = SFLIGHT-CARRID）。</li>
+    <li><b>Projection（投影）</b>：只留想看的欄位（例：隱藏 PLANETYPE）。</li>
+    <li><b>Selection（選擇）</b>：用選擇條件限縮記錄（例：只看 CARRID = 'DL'）；條件可以用 View 中沒有的欄位。</li>
+  </ul>
+  <p>原廠例子：旅行社要查「哪位客人訂了哪些航班」，資料分散在 <b>SCUSTOM</b>（客戶）、<b>SBOOK</b>（訂位）、<b>SPFLI</b>（航班）。連接條件：</p>
+  <ul>
+    <li>SBOOK-MANDT = SCUSTOM-MANDT；SBOOK-CUSTOMID = SCUSTOM-ID</li>
+    <li>SPFLI-MANDT = SBOOK-MANDT；SPFLI-CARRID = SBOOK-CARRID；SPFLI-CONNID = SBOOK-CONNID</li>
+    <li>選擇條件：只看未取消的訂位 SBOOK-CANCELLED &lt;&gt; 'X'（教材寫 CANCELED，實際欄位名是 CANCELLED）</li>
+  </ul>
+  <p>連接條件可以從既有外來鍵複製（維護畫面有 Relationships 按鈕）。兩表有同名欄位要放進 View 時，必須替其中一個改名。</p>
+
+  <p><b>Inner vs. Outer Join</b>：Inner 只取「所有表都有對應記錄」的資料；Outer 則即使部分表沒有對應也會選出。Inner 的結果是 Outer 的子集。<b>Database View 一律 Inner Join；Maintenance View（與 Help View）是 Outer Join。</b></p>
+
+  <p><b>Database View 的特性</b>：</p>
+  <ul>
+    <li>啟用時在資料庫建立；存取直接交給資料庫執行。改定義時只要刪掉重建（View 不存資料）。</li>
+    <li>可用 ABAP SQL 與 Native SQL 存取。</li>
+    <li><b>多表 View 只能讀</b>（Maintenance Status 設為 read only）。</li>
+    <li>可以緩衝，設定同表格緩衝；任何基底表異動就讓緩衝的 View 資料失效。</li>
+    <li>用 View 選取比分別存取個別表快，但仍要確認基底表有合適索引。原廠註明：<b>ABAP SQL JOIN 的效能不如靜態定義的 Database View</b>（這在傳統資料庫成立；HANA 上兩者都會下推，差異不大）。</li>
+    <li><b>整張表 Include 進 View</b>：View field 填 <span class="kw">*</span>、Table 填表名、Field name 填 <span class="kw">*</span>；要排除某欄，View field 填 <span class="kw">-</span>、Field name 填該欄。基底表加欄位（含 Append）時 View 自動跟著調整。</li>
+    <li><b>Append View</b>（4.6C 起）：不修改就把基底表欄位加進 Database View；一個 Append View 只屬於一個 View，一個 View 可有多個 Append View。</li>
+    <li><b>External View</b>（NW 7.4 起、Col18 新增）：HANA 資料庫上的 HANA View 在 ABAP 端的代理物件，<b>只能用 ADT 建立</b>，SE11 只能顯示。</li>
+  </ul>
+
+  <pre><code class="abap">*&amp;---------------------------------------------------------------------*
+*&amp; 同一需求的三種寫法：DDIC View / ABAP SQL JOIN / CDS View
+*&amp;   原廠例：從 SCARR+SPFLI+SFLIGHT 找出還有空位的航班
+*&amp;---------------------------------------------------------------------*
+DATA gs_spfli TYPE spfli.
+SELECT-OPTIONS: so_cityf FOR gs_spfli-cityfrom,
+                so_cityt FOR gs_spfli-cityto.
+
+" (A) 讀 DDIC Database View（課程範例 View SV_FLIGHTS）
+SELECT FROM sv_flights
+  FIELDS carrid, carrname, connid, cityfrom, cityto, fldate, seatsmax, seatsocc
+  WHERE cityfrom IN @so_cityf
+    AND cityto   IN @so_cityt
+    AND seatsocc &lt; sv_flights~seatsmax
+  ORDER BY carrid, connid, fldate
+  INTO TABLE @DATA(lt_view).
+
+" (B) 直接寫 ABAP SQL JOIN（結果與 Inner Join 的 View 相同）
+SELECT FROM scarr AS c
+  INNER JOIN spfli   AS p ON p~carrid = c~carrid
+  INNER JOIN sflight AS f ON f~carrid = p~carrid
+                         AND f~connid = p~connid
+  FIELDS c~carrid, c~carrname, p~connid, p~cityfrom, p~cityto,
+         f~fldate, f~seatsmax, f~seatsocc
+  WHERE p~cityfrom IN @so_cityf
+    AND p~cityto   IN @so_cityt
+    AND f~seatsocc &lt; f~seatsmax
+  ORDER BY c~carrid, p~connid, f~fldate
+  INTO TABLE @DATA(lt_join).</code></pre>
+  <div class="note">强晟筆記 p105 抄錄的 JOIN 範例有兩個錯：<span class="kw">P~CARRDI</span> 應為 <span class="kw">P~CARRID</span>；JOIN 版本的 WHERE 仍寫 <span class="kw">SV_FLIGHTS~SEATSMAX</span>，應改為 <span class="kw">F~SEATSMAX</span>（Col18 p168 已更正）。</div>
+
+  <pre><code class="sql">// (C) S/4HANA 的正解：CDS View
+// S/4HANA 1809（7.53）請用 DDIC-based CDS View：
+@AbapCatalog.sqlViewName: 'ZV_BC430FREE'
+@AccessControl.authorizationCheck: #NOT_REQUIRED
+@EndUserText.label: '還有空位的航班'
+define view ZI_BC430_FreeFlight
+  as select from sflight as f
+    inner join   spfli   as p on  p.carrid = f.carrid
+                              and p.connid = f.connid
+    inner join   scarr   as c on  c.carrid = f.carrid
+{
+  key f.carrid,
+  key f.connid,
+  key f.fldate,
+      c.carrname,
+      p.cityfrom,
+      p.cityto,
+      f.seatsmax,
+      f.seatsocc,
+      f.seatsmax - f.seatsocc as seatsfree
+}
+where f.seatsocc &lt; f.seatsmax
+
+// ABAP 7.55（S/4HANA 2020）起建議改用 CDS View Entity（不再產生 SQL View）：
+// define view entity ZI_BC430_FreeFlight as select from sflight as f ... { ... }</code></pre>
+  <div class="warn"><b>S/4HANA 現況</b>：新開發不要再用 SE11 建 Database View，改用 <b>CDS View</b>（ADT 建立）。CDS 能做 Outer Join、Union、計算欄位、Association、權限（DCL），也是 Fiori／RAP 的基礎。7.55 起的 <b>DEFINE VIEW ENTITY</b> 取代 DDIC-based CDS View（後者在新版本已標為過時）。另外，<b>View 沒有預設排序</b>——Casper 的實務經驗之一：HANA 上任何「取第一筆」都必須先 <span class="kw">ORDER BY</span>，成本評價曾因同時存在 item category H 與 cost component E 兩種角度、沒排序導致結果時而抓 H 時而抓 E，最後固定抓 H 才穩定。延伸見 <a href="#ch01-2-13">1-2 章第 13 節</a>、<a href="#ch01-3">1-3 章</a>。</div>
+
+  <h3 id="ch05-16-17">17. Maintenance View、SE54 與 View Cluster（Unit 8 Lesson 2、3）</h3>
+  <p>分散在多張表、構成一個邏輯單元的資料稱為<b>應用物件</b>。使用者不在乎資料分在幾張表——<b>Maintenance View</b> 讓你一次維護，系統自動把資料分配回各基底表。</p>
+  <ul>
+    <li>所有表<b>必須以外來鍵相連</b>，連接條件一律從外來鍵來，<b>不能像 Database View 那樣直接輸入</b>。</li>
+    <li>維護介面要用 <span class="tcode">SE54</span>（Generate Table Maintenance Dialog）或 SE11 → Utilities → Table Maintenance Generator 產生；產生時會自動產生把資料分配到基底表的函數模組。</li>
+    <li>用 <span class="tcode">SM30</span> 維護資料。</li>
+  </ul>
+  <p><b>建立 Maintenance View 的要點</b>：View Type 選 Maintenance View；主表的所有鍵欄位都要放進 View；依用戶端的表要包含 MANDT（畫面不顯示）；<b>文字表的語言欄位不要複製</b>（維護時自動帶登入語言）；先放鍵欄位再放功能欄位。步驟：① 複製表（在主表上按 Relationships 選外來鍵；基數不適合的關聯列在「Relationships with unsuitable cardinality」下）→ ② 複製 View 欄位（主表全部鍵欄位，以及次表中未透過連接條件連到已選鍵欄位的鍵欄位）→ ③ 選擇條件（選用）→ ④ Maintenance Status → ⑤ 啟用（Utilities → Activation log）。</p>
+  <table>
+    <thead><tr><th>維護屬性</th><th>意義</th></tr></thead>
+    <tbody>
+      <tr><td><b>R</b>（Read only）</td><td>畫面不可輸入；新增記錄時必須在背景自動填值。參照表的欄位固定是 R</td></tr>
+      <tr><td><b>H</b>（Hidden）</td><td>畫面不顯示；存檔時 R、H 欄位與其他欄位一樣寫入資料庫</td></tr>
+      <tr><td><b>S</b>（Subset）</td><td>限縮工作範圍：只顯示該欄位為指定值的記錄，新增時也受限</td></tr>
+      <tr><td><b>P</b></td><td>可在 SE11 的 View 定義中對個別欄位指定</td></tr>
+    </tbody>
+  </table>
+  <p><b>Maintenance View Variant</b>：產生好的維護對話的「部分視圖」（更少欄位或更嚴的選擇），沒有自己的維護對話。<b>注意</b>：View 的選擇條件要在<b>產生維護對話之後才會生效</b>；事後在字典加條件但沒重新產生，Variant 不會套用。</p>
+  <p><b>SE54 產生時要填</b>：Function Group（沒有就建）、<b>Authorization Group</b>（誰能維護）、Maintenance Type（<b>一步式</b>：只有總覽畫面；<b>二步式</b>：總覽只顯示鍵與長度 &gt; 20 的文字欄位，雙擊進明細）、Maintenance Screen 編號（Find Screen Numbers 可建議）、<b>Recording Routine</b>（維護的資料是否、如何進傳輸請求）。</p>
+  <p><b>優缺點</b>：能很快做出簡單維護畫面；但<b>沒有非同步更新</b>，只適合少數人維護<b>Customizing 表與中小量客戶表</b>，不該讓大量使用者日常使用。</p>
+
+  <p><b>View Cluster（Col18 新增，Unit 8 Lesson 3）</b>：把多個已產生的維護對話組成一個維護單元。</p>
+  <ul>
+    <li>Maintenance View 只能維護 1:1 關係的表（語言相依文字表例外）；View Cluster 可維護 <b>N:M</b>，也能組合沒有鍵相依的 View。</li>
+    <li>適合多層 Master–Detail；一或多個根對話；<b>最多 14 個</b>維護對話；每個可以是一步或二步式。</li>
+    <li>先為每個 View 產生維護對話，再組成 Cluster；用 <span class="tcode">SM34</span> 維護。</li>
+    <li>好處：對話間導覽方便；刪除、複製、存檔、取回、手動傳輸時保持一致——刪上層記錄會自動刪下層相依記錄。</li>
+  </ul>
+
+  <pre><code class="abap">*&amp;---------------------------------------------------------------------*
+*&amp; 從自訂 TCODE／程式直接開啟 SM30 維護畫面，並帶入篩選條件
+*&amp;---------------------------------------------------------------------*
+PARAMETERS p_carr TYPE s_carr_id DEFAULT 'LH'.
+
+DATA lt_seltab TYPE STANDARD TABLE OF vimsellist WITH EMPTY KEY.
+lt_seltab = VALUE #( ( viewfield = 'CARRID' operator = 'EQ'
+                       value = p_carr and_or = space ) ).
+
+CALL FUNCTION 'VIEW_MAINTENANCE_CALL'
+  EXPORTING
+    action                       = 'U'            "S=顯示 U=修改 T=傳輸
+    view_name                    = 'ZV_BC430_COUNTER'
+  TABLES
+    dba_sellist                  = lt_seltab
+  EXCEPTIONS
+    client_reference             = 1
+    foreign_lock                 = 2
+    invalid_action               = 3
+    no_clientindependent_auth    = 4
+    no_database_function         = 5
+    no_editor_function           = 6
+    no_show_auth                 = 7
+    no_tvdir_entry               = 8
+    no_upd_auth                  = 9
+    only_show_allowed            = 10
+    system_failure               = 11
+    unknown_field_in_dba_sellist = 12
+    view_not_found               = 13
+    OTHERS                       = 14.
+IF sy-subrc &lt;&gt; 0.
+  MESSAGE |無法開啟維護畫面（sy-subrc = { sy-subrc }）| TYPE 'I'.
+ENDIF.</code></pre>
+  <div class="note">DBA_SELLIST 的行結構 VIMSELLIST 還有其他欄位（例如 NEGATION、CONVERTED），使用前請在 SE37 確認介面。自訂 TCODE 的另一個常見作法是建 Parameter Transaction：<span class="tcode">SE93</span> → 預設交易 SM30、畫面欄位 VIEWNAME／UPDATE（見 <a href="#ch01-2-07">1-2 章第 7 節</a>）。</div>
+  <div class="warn"><b>S/4HANA／ABAP Cloud</b>：SM30 在 S/4HANA 私有雲與本地部署仍完全可用。ABAP Cloud（BTP、S/4HANA Cloud Public Edition）沒有 SE54／SM30，Customizing 表的維護改用 RAP 的 <b>Business Configuration Maintenance Object</b> 與 Fiori「Custom Business Configurations」應用。</div>
+
+  <h3 id="ch05-16-18">18. Elementary Search Help 與附加機制（Unit 9 Lesson 1）</h3>
+  <p>F4 輸入說明是 SAP 標準功能，整個系統外觀與行為一致。F4 必須滿足四個需求：考慮<b>上下文</b>（使用者已輸入的值、前面步驟的資訊）、決定<b>可選值與輔助資訊</b>、提供<b>對話</b>（清單＋必要時的條件畫面）、把<b>選中的值傳回</b>（包括更新其他顯示欄位）。</p>
+
+  <p><b>Search Help 的結構</b>——和函數模組一樣分<b>介面</b>與<b>內部行為</b>：</p>
+  <table>
+    <thead><tr><th>元件</th><th>說明</th></tr></thead>
+    <tbody>
+      <tr><td><b>Selection Method</b></td><td>資料從哪張表或 View 來。資料在一張表（含其文字表）就用表，系統自動以登入語言取文字；跨多表用 View。<b>不可用 Maintenance View</b>；一般用 Database View（Inner Join），需要 Outer Join 時用 <b>Help View</b>。選擇方法依用戶端時只查登入用戶端，參數中不可有用戶端欄位</td></tr>
+      <tr><td><b>Dialog Type</b></td><td>限制條件畫面是否先於命中清單出現：<b>Display values immediately</b>／<b>Dialog with value restriction</b>／<b>Dialog depends on set of values</b>（筆數少直接列、多則先給條件畫面）</td></tr>
+      <tr><td><b>Parameters</b></td><td>用選擇方法的欄位（用戶端除外）與文字表非鍵欄位；<b>LPos</b>＝命中清單位置、<b>SPos</b>＝條件畫面位置；型別由 Data Element 決定</td></tr>
+      <tr><td><b>IMPORT／EXPORT</b></td><td>IMPORT：從畫面帶進 F4；EXPORT：從 F4 傳回畫面。兩者合起來就是介面。也可以有不出現在兩個對話框、只負責回填畫面欄位的介面參數</td></tr>
+      <tr><td><b>Default Value</b></td><td>可給固定文字、系統欄位、GET 參數；可用來做簡單的選擇條件</td></tr>
+      <tr><td><b>Hot Key</b></td><td>一個字母或數字；畫面輸入 <span class="kw">=&lt;hot key&gt;.&lt;SEL1&gt;.&lt;SEL2&gt;</span> 按 F4 會直接以此條件（尾端自動加 *）顯示命中清單</td></tr>
+      <tr><td><b>Search Help Exit</b></td><td>見第 19 節</td></tr>
+    </tbody>
+  </table>
+  <p><b>搜尋欄位（Search Field）</b>是特例：只有它的內容是搜尋字串（含 * 或 +）且對應參數為 IMPORT 時，才會帶進 F4。只含輔助資訊的參數<b>不要</b>設 IMPORT，否則使用者每次重新選值前都得先清空那些畫面欄位。</p>
+  <div class="note">强晟筆記 p128 寫「搜尋欄位必須分配成搜尋說明的<b>輸入</b>參數」，與原廠不符。Col18 p198 原文：搜尋欄位<b>必須</b>對應到 <b>EXPORT</b> 參數（才能把值傳回），而<b>也應該</b>是 IMPORT 參數（才能利用使用者已輸入的搜尋樣式）。</div>
+
+  <p><b>Search Help 附加到字典欄位的三種方式</b>：</p>
+  <ol>
+    <li><b>直接附加到表或結構的欄位</b>：定義方式類似外來鍵，依系統建議對應介面參數與欄位。</li>
+    <li><b>透過檢查表</b>：欄位有檢查表時，檢查表的鍵欄位自動成為 F4 可選值；若檢查表有文字表，顯示其第一個字元型非鍵欄位。不滿意標準顯示，可把 Search Help 附加到<b>檢查表</b>，所有以它為檢查表的欄位都受用。</li>
+    <li><b>附加到 Data Element</b>：所有參照它的欄位都有效；必須指定一個 EXPORT 參數做資料傳遞。</li>
+  </ol>
+  <p>附加到檢查表或 Data Element 重用性高，但介面能傳的值較受限制。<b>一個欄位、表或 Data Element 只能附加一個 Search Help</b>——要多條搜尋路徑，就附加 Collective Search Help。</p>
+
+  <p><b>輸入說明機制的優先順序</b>（原廠總覽圖，由左至右、由上至下，先找到先用）：</p>
+  <ol>
+    <li>畫面的 <span class="kw">PROCESS ON VALUE-REQUEST</span>（POV 自寫 F4）</li>
+    <li>畫面欄位附加的 Search Help（Screen Painter）</li>
+    <li>畫面流程邏輯中的輸入檢查（<span class="kw">FIELD … VALUES／SELECT</span>，已過時）</li>
+    <li>字典欄位附加的 Search Help</li>
+    <li>檢查表附加的 Search Help</li>
+    <li>檢查表＋文字表／檢查表的鍵值</li>
+    <li>Domain 固定值</li>
+    <li>Data Element 附加的 Search Help</li>
+    <li>日曆／時間說明（DATS／TIMS）</li>
+  </ol>
+  <div class="tip">搞不清楚 F4 是哪個機制在作用？在命中清單按右鍵 → <b>Technical Info</b>，會顯示是哪個 Search Help、從哪層附加。</div>
+
+  <p><b>F4 效能</b>：大量資料時要限縮命中清單（從上下文或條件畫面）；對用來限縮的欄位建索引通常效果顯著；選擇方法的資料量小時，檢查能否緩衝。<b>顯示方式</b>：List Box（單欄、無條件，在 Screen Painter 設定，見 <a href="#ch05-9">5-9 章 BC410</a>）、Control（非模態，可 Hold list 連續填多欄）、Dialog（模態）；使用者可在 Help → Settings 選偏好，管理員可設預設值。</p>
+  <p><b>Help View</b>：只能當 Search Help 的選擇方法，定義方式同 Maintenance View、使用 Outer Join 邏輯；因為系統無法把 Help View 直接下推到資料庫，要產生自己的存取常式，所以<b>優先用 Database View</b>。命名慣例 <b>H_</b>，客戶用 <b>H_Y／H_Z</b>。表＋文字表的選擇等同一個「虛擬 Help View」，不必另建——除非主表與文字表有同名的非鍵欄位且 F4 需要文字表那一欄。</p>
+  <p><b>增強搜尋（Col18 新增）</b>：SE11 中每個 Elementary Search Help 可開啟 <b>Proposal Search for Input Fields</b>（Type-ahead，邊打邊列出建議，預設 10 筆，所有資料庫都可用，欄位出現放大鏡圖示）、<b>Multi-column Full Text Search</b>（資料庫支援時才有，選擇方法限表、文字表、標準／Projection View）、<b>Accuracy Value</b>（0～1 的容錯值，Fuzzy Search 目前僅 HANA）。前提：SAP GUI for Windows 7.30 PL5（建議 PL6）以上、NW 7.4 SP06；Web Dynpro 不支援（SAP Note 1861491）。全系統可在 <span class="tcode">SDSH_CONFIG</span> 關閉（需 S_DEVELOP 活動 02）。</p>
+
+  <pre><code class="abap">*&amp;---------------------------------------------------------------------*
+*&amp; 自寫 F4（POV）：選擇畫面上以內表提供可選值
+*&amp;   原廠提醒：先評估能否改用 Search Help（含 Exit），POV 無法自動重用
+*&amp;---------------------------------------------------------------------*
+PARAMETERS: p_carr TYPE s_carr_id,
+            p_conn TYPE s_conn_id.
+
+AT SELECTION-SCREEN ON VALUE-REQUEST FOR p_conn.
+  " 取得畫面上目前輸入的航空公司（尚未 PAI，要用 DYNP_VALUES_READ）
+  DATA lt_dynp TYPE STANDARD TABLE OF dynpread WITH EMPTY KEY.
+  lt_dynp = VALUE #( ( fieldname = 'P_CARR' ) ).
+  CALL FUNCTION 'DYNP_VALUES_READ'
+    EXPORTING dyname     = sy-repid
+              dynumb     = sy-dynnr
+    TABLES    dynpfields = lt_dynp
+    EXCEPTIONS OTHERS    = 1.
+  DATA(lv_carr) = CONV s_carr_id( VALUE #( lt_dynp[ 1 ]-fieldvalue OPTIONAL ) ).
+
+  SELECT FROM spfli
+    FIELDS connid, cityfrom, cityto, deptime
+    WHERE carrid = @lv_carr
+    ORDER BY connid
+    INTO TABLE @DATA(lt_values).
+
+  DATA lt_return TYPE STANDARD TABLE OF ddshretval WITH EMPTY KEY.
+  CALL FUNCTION 'F4IF_INT_TABLE_VALUE_REQUEST'
+    EXPORTING
+      retfield        = 'CONNID'
+      dynpprog        = sy-repid
+      dynpnr          = sy-dynnr
+      dynprofield     = 'P_CONN'
+      value_org       = 'S'            "S = 以結構欄位名對應
+    TABLES
+      value_tab       = lt_values
+      return_tab      = lt_return
+    EXCEPTIONS
+      parameter_error = 1
+      no_values_found = 2
+      OTHERS          = 3.
+  IF sy-subrc = 2.
+    MESSAGE |航空公司 { lv_carr } 沒有航線| TYPE 'S' DISPLAY LIKE 'W'.
+  ENDIF.</code></pre>
+  <div class="tip">若只是要「呼叫字典裡既有的 F4」（例如依某表欄位的標準 Search Help），用 <span class="kw">F4IF_FIELD_VALUE_REQUEST</span>（傳 TABNAME／FIELDNAME）即可，不必自己撈資料。選擇畫面的完整事件見 <a href="#ch03-1">3-1 章</a>。</div>
+
+  <h3 id="ch05-16-19">19. Collective Search Help、Append Search Help 與 Search Help Exit（Unit 9 Lesson 2）</h3>
+  <p><b>替代搜尋路徑</b>：關聯式模型用形式鍵（員工編號）識別實體，但現實中人們用屬性（姓名、住址）描述它，而且每個人、每個情境用的屬性不同——所以一個欄位需要多條搜尋路徑。</p>
+  <ul>
+    <li><b>Collective Search Help</b>：把多個 Elementary Search Help 組合起來，每個以<b>分頁</b>呈現；重複使用時自動停在<b>上次用的分頁</b>。它有 IMPORT／EXPORT 介面，可像 Elementary 一樣附加到欄位、表、Data Element；<b>沒有</b>選擇方法與對話行為，取而代之的是包含的 Search Help 清單與參數對應。一個 Search Help 可被多個 Collective 包含，Collective 也能包含 Collective。</li>
+    <li>要讓 Collective 支援 Type-ahead，至少一個被包含的 Elementary 要開啟 Proposal Search；有兩個以上開啟時，以<b>第一個</b>的設定為準（順序可在 SE11 或 Exit 中調整）。</li>
+    <li><b>Append Search Help</b>（4.6 起）：<b>免修改</b>增強標準 Collective Search Help。它本身是 Collective，指派給另一個 Collective（其 appending object），並使用對方的介面。放在客戶命名空間；包含的 Elementary 可以自建，也可以是 SAP 既有的。SAP 自己也用它做元件分離，客戶增強應<b>另建獨立的</b> Append Search Help。</li>
+    <li><b>隱藏不需要的分頁</b>：把那個 Elementary 放進你的 Append Search Help，勾 <b>Hidden</b>——不必修改標準。</li>
+  </ul>
+  <div class="tip">典型實務：物料 F4 的 Collective Search Help <b>MAT1</b>、客戶的 <b>DEBI</b>、供應商的 <b>KRED</b>。要加「依舊料號搜尋物料」，就建 Append Search Help 掛到 MAT1，裡面放你的 Elementary（選擇方法 MARA，參數 BISMT、MATNR…）。這正是「先標準再客製」中「用增強點而非修改」的範例。</div>
+
+  <p><b>Search Help Exit</b>：當欄位語意特殊、需要偏離標準時使用。</p>
+  <ul>
+    <li>是一個有<b>標準介面</b>的函數模組，範本 <b>F4IF_SHLP_EXIT_EXAMPLE</b>。</li>
+    <li>F4 處理的<b>每一個步驟之前</b>都會被呼叫，透過介面傳入 F4 處理器的管理資料（含「下一步」資訊）。Exit 可做該步驟的前置處理，或<b>自己完成該步驟</b>（例如無法用單純 SELECT 表或 View 取得資料）並修改下一步。</li>
+    <li>前綴 <b>F4UT_</b> 的函數可直接當 Exit，或用來在 Exit 中處理管理資料；例如 <b>F4UT_OPTIMIZE_COLWIDTH</b> 會依內容調整命中清單欄寬（適合姓名這種欄位定義很寬、實際值很短的情況）。</li>
+    <li>原廠警告：<b>只在例外情況使用</b>，它會導致非標準解法、讓 F4 更難維護。</li>
+  </ul>
+
+  <pre><code class="abap">FUNCTION z_bc430_shlp_exit_conn.
+*"----------------------------------------------------------------------
+*"*"Local Interface:（標準介面，照抄 F4IF_SHLP_EXIT_EXAMPLE，不可更改）
+*"  TABLES
+*"      SHLP_TAB TYPE  SHLP_DESCT
+*"      RECORD_TAB STRUCTURE  SEAHLPRES
+*"  CHANGING
+*"     VALUE(SHLP) TYPE  SHLP_DESCR
+*"     VALUE(CALLCONTROL) LIKE  DDSHF4CTRL STRUCTURE  DDSHF4CTRL
+*"----------------------------------------------------------------------
+* 需求：航線 F4 只列「未來 90 天內還有空位」的航線——
+*       單純的表/View SELECT 做不到「計算後過濾」，因此在 SELECT 步驟自己撈資料
+*"----------------------------------------------------------------------
+
+  CASE callcontrol-step.
+
+    WHEN 'SELONE' OR 'PRESEL1' OR 'PRESEL'.
+      " 選擇 Search Help 前／條件畫面前：此例不處理，交回標準流程
+      RETURN.
+
+    WHEN 'SELECT'.
+      " 讀取畫面帶入的航空公司條件（IMPORT 參數 CARRID）
+      DATA(lv_carrid) = CONV s_carr_id(
+        VALUE #( shlp-selopt[ shlpfield = 'CARRID' ]-low OPTIONAL ) ).
+
+      DATA(lv_today) = sy-datum.
+      DATA lt_r_carr TYPE RANGE OF s_carr_id.
+      IF lv_carrid IS NOT INITIAL.                 "列舉條件，而非 BT 區間
+        lt_r_carr = VALUE #( ( sign = 'I' option = 'EQ' low = lv_carrid ) ).
+      ENDIF.
+      DATA(lv_to)    = CONV d( lv_today + 90 ).
+
+      SELECT FROM sflight AS f
+        INNER JOIN spfli AS p ON  p~carrid = f~carrid
+                              AND p~connid = f~connid
+        FIELDS p~carrid, p~connid, p~cityfrom, p~cityto,
+               MIN( f~fldate ) AS fldate
+        WHERE f~fldate BETWEEN @lv_today AND @lv_to
+          AND f~seatsocc &lt; f~seatsmax
+          AND f~carrid IN @lt_r_carr
+        GROUP BY p~carrid, p~connid, p~cityfrom, p~cityto
+        ORDER BY p~carrid, p~connid
+        INTO TABLE @DATA(lt_result).
+
+      " 把自己的結果對應到 Search Help 參數（依欄位名），並套用使用者條件
+      CALL FUNCTION 'F4UT_RESULTS_MAP'
+        EXPORTING
+          apply_restrictions = abap_true
+        TABLES
+          shlp_tab           = shlp_tab
+          record_tab         = record_tab
+          source_tab         = lt_result
+        CHANGING
+          shlp               = shlp
+          callcontrol        = callcontrol
+        EXCEPTIONS
+          illegal_structure  = 1
+          OTHERS             = 2.
+      IF sy-subrc = 0.
+        callcontrol-step = 'DISP'.          "資料已備妥，直接跳到顯示步驟
+      ELSE.
+        callcontrol-step = 'EXIT'.                 "對應失敗：結束 F4
+      ENDIF.
+
+    WHEN 'DISP'.
+      " 顯示前：調整欄寬（等同把 F4UT_OPTIMIZE_COLWIDTH 當工具函數呼叫）
+      CALL FUNCTION 'F4UT_OPTIMIZE_COLWIDTH'
+        TABLES
+          shlp_tab    = shlp_tab
+          record_tab  = record_tab
+        CHANGING
+          shlp        = shlp
+          callcontrol = callcontrol.
+
+    WHEN OTHERS.
+      RETURN.
+  ENDCASE.
+
+ENDFUNCTION.</code></pre>
+  <div class="note">Search Help Exit 的介面是 SAP 規定的，必須保留 <span class="kw">TABLES</span> 參數與 <span class="kw">STRUCTURE</span> 寫法，這是「函數介面相容性」的例外，不是新寫法。步驟代碼：SELONE（選 Elementary 前）、PRESEL1、PRESEL（條件畫面前後）、SELECT（選資料）、DISP（顯示命中清單前）、RETURN（傳回值前）、EXIT、CREATE、APP。</div>
+
+  <h3 id="ch05-16-20">20. 航班資料模型、DDIC 系統表與 TCODE 速查（附錄）</h3>
+  <p><b>航班資料模型</b>：所有 ABAP 原廠課程與 ABAP 關鍵字文件的範例都用它，物件在套件 <b>SAPBC_DATAMODEL</b>（2007 版叫開發類）。實體：城市、機場、航空公司、航線、航班；關係：航班由機場起訖、由航空公司＋出發機場＋抵達機場＋時間唯一表示、每條航線每天可有多個航班、附近機場指派給城市。</p>
+  <table>
+    <thead><tr><th>表</th><th>內容</th><th>本章出現處</th></tr></thead>
+    <tbody>
+      <tr><td>SCARR</td><td>航空公司（全緩衝小表）</td><td>緩衝、View</td></tr>
+      <tr><td>SPFLI</td><td>航線／航班時刻表（AIRPFROM、AIRPTO 的兩層式 Domain 範例）</td><td>Domain、View</td></tr>
+      <tr><td>SFLIGHT</td><td>航班（日期、座位、價格）</td><td>View</td></tr>
+      <tr><td>SBOOK</td><td>訂位（COUNTER、AGENCYNUM、CLASS、CANCELLED）</td><td>外來鍵、索引</td></tr>
+      <tr><td>SCUSTOM</td><td>航班客戶</td><td>View</td></tr>
+      <tr><td>SCOUNTER</td><td>銷售櫃台（外來鍵的檢查表）</td><td>外來鍵</td></tr>
+      <tr><td>SBUSPART</td><td>航空公司業務夥伴（錯誤的系統建議）</td><td>Value Table</td></tr>
+      <tr><td>STRAVELAG</td><td>旅行社（正確的檢查表）</td><td>Value Table</td></tr>
+      <tr><td>SMEAL／SMEALT</td><td>機上餐點與其文字表</td><td>Text Table</td></tr>
+      <tr><td>SAIRPORT</td><td>機場</td><td>Value Table 自我參照</td></tr>
+    </tbody>
+  </table>
+  <div class="tip">航班模型的表在新系統是空的，可執行程式 <span class="kw">SAPBC_DATA_GENERATOR</span> 產生測試資料（在沙箱或 DEV 用）。</div>
+
+  <p><b>DDIC 系統表（用程式讀字典時的地圖）</b>：DD02L（表／結構目錄，TABCLASS＝TRANSP／INTTAB／CLUSTER／POOL／VIEW／APPEND）、DD02T（表描述）、DD03L（欄位）、DD04L／DD04T（Data Element 與標籤）、DD01L（Domain）、DD07L／DD07T（固定值）、DD08L（外來鍵）、DD09L（技術設定）、DD12L／DD17S（索引）、DD25L／DD26S／DD27S／DD28S（View）、DD30L（Search Help）、DD35L（Search Help 附加）、DBTABLOG（表格日誌）。更完整的 RTTI 讀法見 <a href="#ch01-2-14">1-2 章第 14 節</a>。</p>
+
+  <table>
+    <thead><tr><th>TCODE</th><th>用途</th><th>TCODE</th><th>用途</th></tr></thead>
+    <tbody>
+      <tr><td><span class="tcode">SE11</span></td><td>字典維護</td><td><span class="tcode">SE12</span></td><td>字典顯示</td></tr>
+      <tr><td><span class="tcode">SE13</span></td><td>技術設定</td><td><span class="tcode">SE14</span></td><td>Database Utility（轉換、中止恢復）</td></tr>
+      <tr><td><span class="tcode">SE15</span></td><td>Repository Info System：ABAP 字典</td><td><span class="tcode">SE84</span></td><td>Repository Info System</td></tr>
+      <tr><td><span class="tcode">SE16</span>／<span class="tcode">SE16N</span></td><td>資料瀏覽</td><td><span class="tcode">SE54</span></td><td>產生表格維護對話</td></tr>
+      <tr><td><span class="tcode">SM30</span></td><td>擴充表格維護</td><td><span class="tcode">SM34</span></td><td>View Cluster 維護</td></tr>
+      <tr><td><span class="tcode">SCU3</span></td><td>表格日誌（Table History）</td><td><span class="tcode">SE63</span></td><td>翻譯</td></tr>
+      <tr><td><span class="tcode">SPDD</span></td><td>升級時 DDIC 修改調整</td><td><span class="tcode">SDSH_CONFIG</span></td><td>增強 Search Help 全系統設定</td></tr>
+      <tr><td><span class="tcode">ST10</span>／<span class="tcode">ST02</span>／<span class="tcode">AL12</span></td><td>表格呼叫統計／緩衝調校／緩衝監控</td><td><span class="tcode">SM21</span>／<span class="tcode">ST22</span></td><td>系統日誌／短傾印（轉換中止分析）</td></tr>
+    </tbody>
+  </table>
+  <div class="warn"><b>BC430 在 S/4HANA 的總體現況</b>：Domain、Data Element、Structure、Table Type、透明表、技術設定、外來鍵、Append、Search Help、Lock Object、SM30 仍是日常工具，全部有效。已過時或需改觀念的：Pool／Cluster 表（已轉透明）、Type Group（改用類別常數）、SE11 Database View（改 CDS View／View Entity）、大量二級索引（HANA 欄式儲存下多半不需要）、Help View（改 CDS＋Search Help 或 CDS 值說明）。ABAP Cloud 中字典物件改在 ADT 以原始碼編輯，Search Help 由 CDS 的 <span class="kw">@Consumption.valueHelpDefinition</span> 取代。</div>
+
+  <h3 id="ch05-16-qa">練習與自我檢核</h3>
+  <ol>
+    <li><b>Domain 與 Data Element</b>：SPFLI 的 AIRPFROM 與 AIRPTO 為什麼用同一個 Domain、不同的 Data Element？程式能不能 <span class="kw">DATA x TYPE s_airpid.</span>（S_AIRPID 是 Domain）？<br><i>要點</i>：技術相同（機場代碼）→ 同 Domain；語意不同（出發／抵達）→ 不同 Data Element，各有標籤與 F1。程式<b>不能</b>直接參照 Domain，必須透過 Data Element 或表欄位。</li>
+    <li><b>Table Type</b>：下列哪些可當 Table Type 的行型別——資料庫表、Structure、Domain、Data Element、Type Group？<br><i>要點</i>：資料庫表、Structure、Data Element 可以；Domain 與 Type Group 不行。</li>
+    <li><b>技術設定</b>：你勾了某 Z 表的 Log Data Changes，但 SCU3 看不到任何紀錄，可能原因？這個設定對效能有什麼影響？<br><i>要點</i>：系統參數 rec/client 為 OFF 或未包含該用戶端；日誌寫在 DBTABLOG，每次異動多一次寫入、共用日誌表會造成鎖等待。</li>
+    <li><b>緩衝型態</b>：(a) 國家代碼表（約 250 筆）(b) 一張 5 百萬筆、但程式總是以完整主鍵 SELECT SINGLE 讀幾百筆的表 (c) 每秒都在更新的庫存表——各選哪種緩衝？<br><i>要點</i>：(a) 全緩衝（且依用戶端的話自動以 MANDT 為一般鍵）；(b) 單筆緩衝；(c) 不緩衝。</li>
+    <li><b>緩衝同步</b>：兩台應用伺服器，伺服器 1 刪了一筆全緩衝表資料，伺服器 2 在下次同步前讀這筆會發生什麼？間隔由哪個參數控制、建議值？<br><i>要點</i>：伺服器 2 仍從本地緩衝讀到已刪資料；rdisp/bufreftime，60～3600 秒，建議 60～240（Col18 印成 rdisp/buffertime 是錯字）。</li>
+    <li><b>索引</b>：SBOOK 有索引 (MANDT, CUSTOMID, FLDATE)，下列 WHERE 何者能充分利用？ (a) CUSTOMID = … AND FLDATE IN … (b) FLDATE IN … (c) CUSTOMID &lt;&gt; …<br><i>要點</i>：只有 (a)。(b) 跳過最左欄；(c) 否定條件通常無法走索引。另：在 S/4HANA 建索引前先用 ST05 證明需要。</li>
+    <li><b>外來鍵</b>：程式用 <span class="kw">INSERT sbook FROM @ls_book</span> 寫入一筆 COUNTER 不存在於 SCOUNTER 的資料，會被拒絕嗎？<br><i>要點</i>：<b>不會</b>。外來鍵只在畫面輸入與 F4 時檢查，程式寫入要自己驗證。</li>
+    <li><b>Value Table</b>：Domain 設了 Value Table，畫面欄位就有檢查與 F4 了嗎？SBOOK-AGENCYNUM 的系統建議為什麼是錯的？<br><i>要點</i>：沒有，Value Table 只用來提出外來鍵建議，必須另定義外來鍵；建議的 SBUSPART 包含所有業務夥伴，但此欄只能是旅行社，正確檢查表是 STRAVELAG。</li>
+    <li><b>Text Table</b>：SMEALT 與 SMEAL 的外來鍵方向與欄位型態？一張表能有幾張文字表？<br><i>要點</i>：從 SMEALT 指向 SMEAL，型態選 Key fields of a text table；最多一張。</li>
+    <li><b>表格轉換</b>：依序說出轉換七步驟中 QCMTAB 與 QCM8TAB 各在哪一步出現、何時消失；轉換在第 4 步中止時，SE14 能不能按 Unlock table？<br><i>要點</i>：步驟 2 原表改名 QCMTAB；步驟 3 建空的 QCM8TAB；步驟 4 以 MOVE-CORRESPONDING 搬資料（每 16 MB Commit）；步驟 5 刪 QCMTAB（有重複則保留）；步驟 6 QCM8TAB 改回原名、重建索引與 View；步驟 7 解鎖。第 3、4 步中止時資料只在暫存表，<b>絕不能</b>按 Unlock table，要修正原因後按 Continue adjustment。</li>
+    <li><b>縮短主鍵</b>：把 Z 表主鍵移除一個欄位前要做什麼？<br><i>要點</i>：用 GROUP BY 新鍵＋HAVING COUNT(*) &gt; 1 找出重複；有重複就先清理，否則每組只會留下不可預測的一筆。排在維護時段、QAS 先以正式資料量演練。</li>
+    <li><b>Append</b>：哪些表不能加 Append Structure？Append 欄位的命名規則？加 Append 需要表格轉換嗎？<br><i>要點</i>：Pool／Cluster 表、含 LCHR／LRAW 長欄位的表不行；欄位以 YY／ZZ 開頭；不需轉換，只 ALTER TABLE；升級不需 SPDD。</li>
+    <li><b>View</b>：Database View、Maintenance View、Help View 分別是 Inner 還是 Outer Join？哪一種可以直接輸入連接條件？哪一種可以當 Search Help 的選擇方法？<br><i>要點</i>：Database View＝Inner，可直接輸入連接條件；Maintenance View／Help View＝Outer，連接條件只能來自外來鍵；Database View、Help View 可當選擇方法，Maintenance View 不行。</li>
+    <li><b>View Cluster</b>：什麼時候需要 View Cluster 而不是 Maintenance View？最多幾個維護對話？用哪個 TCODE 維護？<br><i>要點</i>：N:M 或多層 Master–Detail、需要跨對話一致刪除／傳輸時；最多 14 個；SM34。</li>
+    <li><b>Search Help 附加</b>：列出附加到字典的三種方式，以及 F4 機制的優先順序前三名。<br><i>要點</i>：欄位直接附加、檢查表、Data Element；優先順序：POV → 畫面欄位 Search Help → 流程邏輯輸入檢查（再往下才是字典欄位、檢查表、固定值、Data Element、日曆）。</li>
+    <li><b>Search Help 參數</b>：搜尋欄位要設成 IMPORT 還是 EXPORT？<br><i>要點</i>：<b>必須 EXPORT</b>（傳回值），<b>也應該 IMPORT</b>（利用已輸入的搜尋樣式）。强晟筆記寫「輸入參數」不完整。</li>
+    <li><b>增強標準 F4</b>：要在物料 F4（MAT1）加一個「依舊料號」分頁、並隱藏一個用不到的分頁，而且不修改標準，怎麼做？<br><i>要點</i>：建 Z 開頭的 Append Search Help 掛到 MAT1，包含自建的 Elementary（選擇方法 MARA，參數含 BISMT、MATNR），並把要隱藏的 Elementary 也包含進來、勾 Hidden。</li>
+    <li><b>Search Help Exit</b>：Exit 在什麼時候被呼叫？在 SELECT 步驟自己取資料後要做哪兩件事？<br><i>要點</i>：F4 每個步驟之前；用 F4UT_RESULTS_MAP 把結果對應到 RECORD_TAB，並把 CALLCONTROL-STEP 設為 'DISP'。</li>
+    <li><b>S/4HANA 綜合題</b>：一支 R/3 時代的程式讀 BSEG、KONV，用 SE11 Database View 取資料、用 Type Group 定義常數。搬到 S/4HANA 時各該怎麼處理？<br><i>要點</i>：BSEG 已是透明表，財務明細優先讀 ACDOCA 或標準 CDS；KONV 改讀 PRCD_ELEMENTS；Database View 改 CDS View（1809 用 DDIC-based，7.55+ 用 View Entity）；Type Group 改類別常數；所有「取第一筆」補 ORDER BY。</li>
+  </ol>
+</section>
