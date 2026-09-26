@@ -10,7 +10,7 @@ description: 維護與擴充 Casper 的「ABAP 圖書館」單檔 HTML（ABAP圖
 把 `C:\Users\tocas\Dropbox\09_SAP_AB_ABAP編程` 底下的 SAP ABAP 學習資料，
 持續整併進 **一個單檔、離線可開、可全文搜尋的 HTML 圖書館**：`ABAP圖書館_S4HANA.html`。
 
-現況：77 章（ch00、ch01-1 ~ ch04-4、第五部原廠教材專區 ch05-0 ~ ch05-25、第六部實戰專題 ch06-1 ~ ch06-13、第七部程式範例庫 ch07-1 ~ ch07-7、第八部實戰源碼庫 ch08-1 ~ ch08-8、第九部模組二次開發案例 ch09-1 ~ ch09-5、ap-01）、1434 個小節、1342 段程式碼。第一～四部取材自 `00_SAP_DOC` 的十六本自編教材；第五部取材自 `L28_强晟_19本原廠教材筆記_含原廠教材` 與 `L29_原廠教材`；第六部取材自 `L35_SAP调试技术`、`15_實務案例` 與 `15_累計心得`；第七部取材自 `L36_ABAP_OOP_SAMPLE-master`；第八部取材自 `L31_ABAP36套源碼`（部署前必跑 src/secretscan.py）；第九部取材自 `09_ABAP二次開發_report_painter第八部取材自 `L31_ABAP36套源碼`（部署前必跑 src/secretscan.py）。9_x`。
+現況：77 章（ch00、ch01-1 ~ ch04-4、第五部原廠教材專區 ch05-0 ~ ch05-25、第六部實戰專題 ch06-1 ~ ch06-13、第七部程式範例庫 ch07-1 ~ ch07-7、第八部實戰源碼庫 ch08-1 ~ ch08-8、第九部模組二次開發案例 ch09-1 ~ ch09-5、ap-01）、1434 個小節、1342 段程式碼。第一～四部取材自 `00_SAP_DOC` 的十六本自編教材；第五部取材自 `L28_强晟_19本原廠教材筆記_含原廠教材` 與 `L29_原廠教材`；第六部取材自 `L35_SAP调试技术`、`15_實務案例` 與 `15_累計心得`；第七部取材自 `L36_ABAP_OOP_SAMPLE-master`；第八部取材自 `L31_ABAP36套源碼`（部署前必跑 src/secretscan.py）；第九部取材自 `09_ABAP二次開發_report_painter\09_x`。
 建置原始碼的唯一來源是公開 GitHub repo `tocasper-eng/abap`：推到 `main` 後，CI 會自動建置、掃描、測試，並部署到 https://tocasper-eng.github.io/abap/ 。
 `CLAUDE.md`（repo 根目錄和 Dropbox 根目錄各一份，內容相同）是完整的專案說明，**動手前先讀它**。
 
