@@ -35,6 +35,7 @@
 | 第五部 E | ch05-21 ~ ch05-24 | BC490 效能調校／IDoc 與 BIT750 AIF／NET310 Web Dynpro ABAP／SAPNW 平台概覽 |
 | 第六部 | ch06-1 ~ ch06-3 | 實戰專題・除錯的絕招：開發者除錯實戰／顧問的除錯術（定位錯誤、找增強點）／資料追蹤與效能調優實戰 |
 | 第六部 B | ch06-4 ~ ch06-8 | 實戰專題・專案實務案例：開發規範與系統移轉（命名規則、SE10/STMS、SE11 匯出、SCAL）／資料下載實戰（ZMMI0001、ZPPI0001、MARD→Excel）／缺料表與 MIGO 檢驗批／DBCO 與外部資料庫（ADBC、儲存程序）／介面輸出與財務程式（採購變更、VK11 FTP、ZFIP001） |
+| 第六部 C | ch06-9 ~ ch06-13 | 實戰專題・累計心得：日期與時間處理大全（29 個函數）／找表的功夫（由欄位與畫面找表、常用表清單）／開發者基本功（SYST、使用者資訊、BC400 劃記與自己的工具庫）／ACDOCA 與 HR 資料表／資料匯出與分析（TXT、Power BI 與 Indirect Access、z-score） |
 | 第七部 | ch07-1 ~ ch07-7 | 程式範例庫・ABAP OOP 原則．模式．實踐：例外與程序式基礎／類別與物件／封裝繼承多型／SOLID／設計模式／進階技術（RTTS、BAL、ALV、持久化、BAdI）／綜合實戰 |
 | 第八部 | ch08-1 ~ ch08-8 | 實戰源碼庫・36 套專案程式：增強實例／SD 報價訂單發票表單（PayPal）／月對帳單與外貿單據／採購領料憑證表單與退料／FI 報表／MM・SD 報表／主資料與 BOM 途程批導／外部介面整合 |
 | 附錄 | ap-01 | 舊語法 → S/4HANA 現代寫法速查 |
@@ -54,12 +55,14 @@
 
 第六部 B（2026-09-26 新增）取材自 `09_ABAP二次開發_report_painter\15_實務案例\`：17 份 docx（其中 5 份幾乎只有截圖，已看圖整理成操作步驟），`ABAP_06_A_ABAＰ的發佈.avi` 只做註記。素材中的客戶公司名、內網 IP、FTP 帳號、DB 名稱都已改成佔位符，相關字串已加入機密清單。原程式大量使用 DBCO＋`EXEC SQL` 寫外部 SQL Server，一律改寫成 ADBC（`CL_SQL_CONNECTION`）。
 
-規模：67 章、1259 個小節、1171 段程式碼、748 則注意事項、455 則實務技巧（v1 為 18 章／319 小節／398 段程式碼）。
+第六部 C（2026-09-26 新增）取材自 `09_ABAP二次開發_report_painter\15_累計心得\`：txt／sql／xlsx／docx／PDF 共 16 檔。兩份 BC400（2020, Course Version 18）PDF 文字相同，只取 Casper 版的 37 個劃記放進 ch06-11（BC400 本體見 ch05-1）。`09_zscore`、`10_clustering` 是學生真實資料，一律改用合成資料 S01～S12；`11_ 下載TXT到 POWERBI.docx` 是第三方文章，只寫摘要並附出處；PDF 內的 email 已加入機密清單。ch06-12 修正了 Casper ACDOCA 筆記的欄位說明（KTOSL、LINETYPE、TSL／WSL、MANDT→RCLNT、KDAUF）；ch06-9 修正了素材三處錯誤，並回頭修正 ch02-1 速查表中兩個函數的參數名。
+
+規模：72 章、1347 個小節、1259 段程式碼、787 則注意事項、476 則實務技巧（v1 為 18 章／319 小節／398 段程式碼）。
 
 ### 尚未納入（下次擴充的優先順序）
 
 1. ~~`09_ABAP二次開發_report_painter\15_實務案例\`~~（已完成，第六部 B ch06-4 ~ ch06-8）
-2. `09_ABAP二次開發_report_painter\15_累計心得\` — 常用日期函數（18KB）、HR_TABLE、ACDOCA 筆記、透過欄位查表名、下載資料表到 TXT
+2. ~~`09_ABAP二次開發_report_painter\15_累計心得\`~~（已完成，第六部 C ch06-9 ~ ch06-13）
 3. `09_ABAP二次開發_report_painter\09_1~09_9\` — SD / MM / PP / FI / CO / AA / HR / QM 各模組二次開發案例
 4. ~~`L36_ABAP_OOP_SAMPLE-master\`~~（已完成，第七部 ch07-1 ~ ch07-7）
 5. ~~`L31_ABAP36套源碼\`~~（已完成，第八部 ch08-1 ~ ch08-8）
@@ -211,4 +214,4 @@ class-based exception（`TRY … CATCH cx_…`）。
 
 ---
 
-_最後更新：2026-09-26 · v2.5（67 章，含 L29、L35、L36、L31、15_實務案例）· GitHub 為唯一來源，CI 自動部署 Pages_
+_最後更新：2026-09-26 · v2.6（72 章，含 L29、L35、L36、L31、15_實務案例、15_累計心得）· GitHub 為唯一來源，CI 自動部署 Pages_

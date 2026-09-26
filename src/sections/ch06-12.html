@@ -1,0 +1,800 @@
+<section class="chapter" id="ch06-12" data-title="ACDOCA 與 HR 資料表">
+  <h2>第 6-12 章 財務與人事資料表筆記：ACDOCA 與 HR</h2>
+  <p class="lede">寫財務報表與人事報表，第一步永遠是「知道資料在哪張表、哪個欄位」。本章整理兩份累計心得：一份是 S/4HANA 萬用日記帳 <b>ACDOCA</b> 的欄位中文對照（含三處說明的核對修正），一份是 HR 資料表清單（PA／HRP／PB／PCL 與 T5xx 設定表）。每份都附上可直接用在 S/4HANA 1809+ 的讀取範例，以及資料量、排序、權限與個資方面的注意事項。</p>
+  <div class="meta">
+    <div><b>核心 TCODE</b><span class="tcode">SE16N</span><span class="tcode">SE11</span><span class="tcode">FB03</span><span class="tcode">FAGLL03H</span><span class="tcode">FAGLB03</span><span class="tcode">KSB1</span><span class="tcode">ME23N</span><span class="tcode">PA20</span><span class="tcode">PA30</span><span class="tcode">PP01</span><span class="tcode">PPOSE</span><span class="tcode">PFCG</span><span class="tcode">SU53</span></div>
+    <div><b>關鍵物件</b>ACDOCA、BKPF、BSEG、BSIS／BSAS／GLT0（→ *_BCK）、I_JournalEntryItem、PA0000～PA9xxx、HRP1000、HRP1001、PB*、PCL*、T5xx、PNP／PNPCE、HR_READ_INFOTYPE、P_ORGIN</div>
+  </div>
+
+  <h3 id="ch06-12-01">1. 素材對照</h3>
+  <p>兩份素材都是純文字清單，沒有程式。ACDOCA 一份是 Casper 自己整理的欄位中文對照；HR 一份轉貼自網路上的 HR 資料表清單（原檔第一行註明出處為 henrikfrank.dk），本章依 SAP 標準重新整理並補上中文說明。</p>
+  <table>
+    <thead><tr><th>#</th><th>原始檔名</th><th>內容</th><th>本章小節</th></tr></thead>
+    <tbody>
+      <tr><td>1</td><td>15_累計心得\ACDOCA（txt）</td><td>ACDOCA 37 個欄位的中文名稱（MANDT～ERKRS）</td><td>2～9</td></tr>
+      <tr><td>2</td><td>15_累計心得\HR_TABLE（txt）</td><td>HR 資料表命名規則（PA／HRP／PB／PCL／PCERT／CATSDB／PTEX2000）、DD 系統表、T000／T001／T012 系列、約 200 張 T5xx／T7xx 設定表、T100 訊息表</td><td>10～17</td></tr>
+    </tbody>
+  </table>
+  <p>相關章節：資料字典見 <a href="#ch01-2">1-2 章</a>；ABAP SQL 與內表見 <a href="#ch02-2">2-2 章</a>；效能調校見 <a href="#ch05-21">5-21 章</a>。</p>
+
+  <h3 id="ch06-12-02">2. Universal Journal：ACDOCA 是什麼</h3>
+  <p>在 ECC，同一筆業務會寫到很多張表：FI 的 BKPF／BSEG 與索引表（BSIS、BSAS、BSID、BSAD、BSIK、BSAK）、總帳彙總表 GLT0／FAGLFLEXT、CO 的 COEP／COSP／COSS、資產的 ANEP、物料分類帳的 ML 表等。表之間要靠對帳程式維持一致。</p>
+  <p>S/4HANA 把這些「行項目」收進同一張表 <b>ACDOCA</b>（Universal Journal Entry Line Items）：FI、CO、AA、ML 同一行，科目與成本要素合一（成本要素就是總帳科目，CO 不再另開主檔），彙總值不再另外存，需要時在 HANA 上即時加總。</p>
+  <ul>
+    <li><b>主鍵</b>：用戶端 <b>RCLNT</b>、分類帳 <b>RLDNR</b>、公司代碼 <b>RBUKRS</b>、會計年度 <b>GJAHR</b>、憑證號碼 <b>BELNR</b>、行號 <b>DOCLN</b>（6 位）。</li>
+    <li><b>分類帳 RLDNR</b>：主分類帳預設是 <b>0L</b>（Leading Ledger）。若公司有平行會計（例如 IFRS 與當地準則），會有其他分類帳（常見命名如 2L、L1，依設定而定），同一筆業務在不同分類帳各有一組行項目。報表<b>一定要指定分類帳</b>，否則金額會重複。</li>
+    <li><b>與 BKPF／BSEG 的關係</b>：BKPF（表頭）與 BSEG（行項目）在 S/4HANA <b>仍然存在、仍會寫入</b>，FB03 顯示的「輸入檢視」就是 BSEG；但 BSEG 只有「總帳檢視」前的憑證行，沒有 CO 細節、也不分類帳。ACDOCA 則是「總帳檢視」，而且是報表的單一真相來源。ACDOCA-BELNR 與 BKPF-BELNR 對得起來，ACDOCA 另有欄位 BUZEI 對應 BSEG 行號。</li>
+    <li><b>原則</b>：寫報表讀 ACDOCA（或其上的 CDS view）；只有要還原「輸入時的樣子」或特定清帳資訊時才回頭讀 BSEG。</li>
+    <li><b>計畫資料</b>：ACDOCA 只放實際值；S/4HANA 的計畫值在另一張表 ACDOCP（版本門檻與使用方式請依系統確認）。</li>
+  </ul>
+  <div class="note">期間欄位 <b>POPER</b> 是 3 位數：001～012 為一般期間，013～016 是特別期間（年結調整），<b>000</b> 在 ACDOCA 用來放<b>餘額結轉</b>（Balance Carryforward）。算「年初至今」餘額要把 000 期一併加進來，算「本期發生額」則要排除。</div>
+
+  <h3 id="ch06-12-03">3. ACDOCA 欄位中文對照（素材全文＋核對）</h3>
+  <p>下表保留素材全部 37 個欄位；「核對說明」一欄是本章依 SAP 標準補充或修正的地方。</p>
+  <table>
+    <thead><tr><th>欄位</th><th>素材中文</th><th>核對後說明</th></tr></thead>
+    <tbody>
+      <tr><td>MANDT</td><td>集團代碼</td><td>ACDOCA 的用戶端欄位名稱其實是 <b>RCLNT</b>，不是 MANDT；ABAP SQL 會自動處理用戶端，程式裡不必寫。「集團代碼」是 Client 的舊式譯名，本書通稱「用戶端」</td></tr>
+      <tr><td>RLDNR</td><td>分類帳碼</td><td>分類帳，主分類帳 0L</td></tr>
+      <tr><td>GJAHR</td><td>傳票年度</td><td>會計年度（依會計年度變式 PERIV，不一定等於日曆年）</td></tr>
+      <tr><td>BELNR</td><td>傳票號碼</td><td>會計憑證號碼（與 BKPF-BELNR 相同）</td></tr>
+      <tr><td>RBUKRS</td><td>公司代碼</td><td>—</td></tr>
+      <tr><td>RCNTR</td><td>成本中心</td><td>—</td></tr>
+      <tr><td>PRCTR</td><td>利潤中心</td><td>—</td></tr>
+      <tr><td>RFAREA</td><td>功能範圍</td><td>Functional Area，銷售成本法損益表用</td></tr>
+      <tr><td>RACCT</td><td>會計科目</td><td>總帳科目；S/4HANA 的成本要素也是這個欄位</td></tr>
+      <tr><td>RBUSA</td><td>業務範圍</td><td>Business Area</td></tr>
+      <tr><td>KOKRS</td><td>控制範圍</td><td>Controlling Area</td></tr>
+      <tr><td>SEGMENT</td><td>財報段別</td><td>區段（Segment，IFRS 8 部門報導用），譯作「財報段別」可接受</td></tr>
+      <tr><td>TSL</td><td>財報幣別</td><td><b>需修正</b>：TSL 是「餘額交易幣別」金額（幣別鍵 RTCUR），見第 4 節</td></tr>
+      <tr><td>WSL</td><td>交易幣別</td><td>方向正確，精確說是「原始交易（憑證）幣別」金額（幣別鍵 RWCUR），見第 4 節</td></tr>
+      <tr><td>KSL</td><td>集團幣別</td><td>正確（幣別鍵 RKCUR）</td></tr>
+      <tr><td>POPER</td><td>過帳期間</td><td>3 位數，000 為餘額結轉、013～016 特別期間</td></tr>
+      <tr><td>BUDAT</td><td>過帳日期</td><td>—</td></tr>
+      <tr><td>BLDAT</td><td>憑証日期</td><td>憑證日期</td></tr>
+      <tr><td>BLART</td><td>文件類型</td><td>憑證類型（SA、KR、RE、WE …）</td></tr>
+      <tr><td>BSCHL</td><td>過帳代碼</td><td>記帳碼（Posting Key，40／50 …）</td></tr>
+      <tr><td>USNAM</td><td>輸入人員</td><td>—</td></tr>
+      <tr><td>KTOSL</td><td>交易代碼</td><td><b>需修正</b>：是「<b>交易鍵</b>」（Transaction Key，自動過帳用，例如 BSX 存貨、WRX GR/IR、GBB 對方科目、PRD 價差），不是 TCODE 那種交易代碼</td></tr>
+      <tr><td>LINETYPE</td><td>產品類別</td><td><b>需修正</b>：是「<b>項目類別</b>」（Line Item Type，描述這一行的業務性質），與產品無關。各值的意義請以 SE11 檢查表確認</td></tr>
+      <tr><td>KTOPL</td><td>科目表</td><td>Chart of Accounts</td></tr>
+      <tr><td>EBELN</td><td>採購編號</td><td>採購單號（行號 EBELP）</td></tr>
+      <tr><td>KDAUF</td><td>訂單編號</td><td>精確說是「<b>銷售訂單</b>」號碼（行號 KDPOS），不是採購單也不是生產工單（工單請看 AUFNR）</td></tr>
+      <tr><td>MATNR</td><td>物料號碼</td><td>—</td></tr>
+      <tr><td>WERKS</td><td>工廠代碼</td><td>—</td></tr>
+      <tr><td>KUNNR</td><td>客戶編號</td><td>供應商是 LIFNR</td></tr>
+      <tr><td>WWERT</td><td>轉換日期</td><td>外幣換算日期（Translation Date）</td></tr>
+      <tr><td>KOART</td><td>科目類別</td><td>Account Type：S 總帳、D 客戶、K 供應商、A 資產、M 物料</td></tr>
+      <tr><td>AFABE</td><td>折舊範圍</td><td>Depreciation Area</td></tr>
+      <tr><td>ANLN1</td><td>主資產碼</td><td>資產主號碼</td></tr>
+      <tr><td>ANLN2</td><td>次資產碼</td><td>資產子號碼</td></tr>
+      <tr><td>TAX_COUNTRY</td><td>進銷稅碼</td><td><b>存疑</b>：欄位名稱看起來是「稅務報告國家」，稅碼通常是 MWSKZ；此欄位只在較新版本出現，請以自家系統 SE11 的欄位說明為準</td></tr>
+      <tr><td>PRZNR</td><td>企業流程</td><td>Business Process（作業基礎成本法）</td></tr>
+      <tr><td>ERKRS</td><td>營運考量</td><td>Operating Concern（獲利能力分析 CO-PA）</td></tr>
+    </tbody>
+  </table>
+  <div class="tip">素材沒列、但寫報表幾乎一定會用到的欄位：<b>DOCLN</b>（行號）、<b>HSL</b>（公司代碼幣別金額，幣別鍵 RHCUR）、<b>DRCRK</b>（借貸 S／H）、<b>RHCUR／RKCUR／RTCUR／RWCUR</b>（各幣別鍵）、<b>LIFNR</b>、<b>AUFNR</b>、<b>AWTYP／AWREF</b>（來源憑證類型與號碼）、<b>EBELP</b>、<b>KDPOS</b>、<b>RRCTY</b>（記錄類型，0 = 實際）。</div>
+
+  <h3 id="ch06-12-04">4. 幣別欄位核對：TSL／WSL／HSL／KSL</h3>
+  <p>ACDOCA 每一行最多可以帶十種幣別金額，最常用的是下面四種。素材把 TSL 寫成「財報幣別」並不正確，財報通常看的是 HSL（公司代碼幣別）或 KSL（集團幣別）。</p>
+  <table>
+    <thead><tr><th>金額欄位</th><th>幣別鍵</th><th>SAP 名稱</th><th>中文</th><th>素材寫法</th></tr></thead>
+    <tbody>
+      <tr><td>WSL</td><td>RWCUR</td><td>Amount in Transaction Currency</td><td>原始交易（憑證）幣別金額，相當於 BSEG-WRBTR</td><td>交易幣別（方向正確）</td></tr>
+      <tr><td>TSL</td><td>RTCUR</td><td>Amount in Balance Transaction Currency</td><td>餘額交易幣別金額：總帳餘額以哪一種交易幣別累計。大多數情況與 WSL 相同，只有科目設定「只以某幣別管理餘額」時才會不同</td><td>財報幣別（<b>錯誤</b>）</td></tr>
+      <tr><td>HSL</td><td>RHCUR</td><td>Amount in Company Code Currency</td><td>公司代碼（本位）幣別金額，相當於 BSEG-DMBTR</td><td>（未列）</td></tr>
+      <tr><td>KSL</td><td>RKCUR</td><td>Amount in Global Currency</td><td>集團幣別金額</td><td>集團幣別（正確）</td></tr>
+    </tbody>
+  </table>
+  <div class="note">其他幣別欄位（OSL、VSL、BSL、CSL、DSL、ESL、FSL、CO 物件幣別 CO_OSL 等）依公司代碼與分類帳的幣別設定而定，本書不一一列出；要用時以 SE11 看 ACDOCA 的欄位說明，並到 <span class="tcode">FINSC_LEDGER</span> 等設定確認實際啟用哪些幣別（<span class="src">依 SAP 標準補充，不同版本設定路徑可能不同</span>）。</div>
+  <div class="warn">加總金額時<b>一定要連同幣別鍵一起 GROUP BY</b>（例如 SUM( hsl ) 搭配 rhcur）。WSL 尤其不能跨幣別直接相加：同一科目可能同時有 USD、JPY、TWD 的行項目。</div>
+
+  <h3 id="ch06-12-05">5. 相容性 view：BSIS、BSAS、GLT0 去哪了</h3>
+  <p>為了讓舊程式不必全部重寫，S/4HANA 把 ECC 的索引表與彙總表改成<b>相容性 view</b>（Compatibility View）：原來的表名保留，但 SE11 的「Replacement Object」指向一個 CDS view，資料實際從 ACDOCA／BSEG 即時算出。原本存在實體表裡的舊資料被搬到加了 <b>_BCK</b> 字尾的備份表。</p>
+  <table>
+    <thead><tr><th>ECC 表</th><th>用途</th><th>S/4HANA 狀態</th></tr></thead>
+    <tbody>
+      <tr><td>BSIS／BSAS</td><td>總帳未清／已清索引</td><td>相容性 view；舊資料在 BSIS_BCK／BSAS_BCK</td></tr>
+      <tr><td>BSID／BSAD</td><td>客戶未清／已清索引</td><td>同上（*_BCK）</td></tr>
+      <tr><td>BSIK／BSAK</td><td>供應商未清／已清索引</td><td>同上（*_BCK）</td></tr>
+      <tr><td>GLT0</td><td>舊總帳彙總</td><td>相容性 view；舊資料在 GLT0_BCK</td></tr>
+      <tr><td>FAGLFLEXT</td><td>新總帳彙總</td><td>相容性 view；舊資料在 FAGLFLEXT_BCK</td></tr>
+      <tr><td>COEP、COSP、COSS、ANEP 等</td><td>CO 行項目、CO 彙總、資產行項目</td><td>多數也改成相容性 view，實際名稱請以 SE11 的 Replacement Object 確認</td></tr>
+    </tbody>
+  </table>
+  <p>舊程式照樣 <span class="kw">SELECT … FROM bsis</span> 可以跑，但每次都是「從 ACDOCA 現算」，大範圍讀取會比直接讀 ACDOCA 慢。新程式請直接讀 ACDOCA 或 released CDS view。下面是把「讀 BSIS 取某科目未清項」改寫成讀 ACDOCA 的方式：</p>
+  <pre><code class="abap">" 舊程式：SELECT … FROM bsis WHERE bukrs = … AND hkont = …（相容性 view，可跑但慢）
+" 新寫法：直接讀 ACDOCA，明確帶分類帳與年度
+PARAMETERS: p_bukrs TYPE bukrs  OBLIGATORY,
+            p_gjahr TYPE gjahr  OBLIGATORY,
+            p_racct TYPE racct  OBLIGATORY.
+
+SELECT rbukrs, gjahr, belnr, docln, budat, hsl, rhcur, augbl, augdt
+  FROM acdoca
+  WHERE rldnr  = '0L'
+    AND rbukrs = @p_bukrs
+    AND gjahr  = @p_gjahr
+    AND racct  = @p_racct
+    AND augbl  = @space                 " 尚未清帳
+  ORDER BY budat, belnr, docln          " HANA 沒有預設排序，要自己排
+  INTO TABLE @DATA(lt_open).
+
+cl_demo_output=&gt;display( lt_open ).</code></pre>
+  <div class="note">是否有 AUGBL／AUGDT（清帳憑證／清帳日期）等欄位、以及科目是否為「未清項管理」，會影響這種寫法是否正確；未清項管理的科目，最保險的仍是用標準報表 <span class="tcode">FAGLL03H</span> 或其 CDS 來核對。</div>
+
+  <h3 id="ch06-12-06">6. 範例：依公司代碼、年度、期間彙總科目餘額</h3>
+  <p>在 HANA 上彙總應該「推到資料庫做」：用 ABAP SQL 的 <span class="kw">GROUP BY</span> 與 <span class="kw">SUM</span>，只把結果搬回應用伺服器。</p>
+  <pre><code class="abap">REPORT zfi_acdoca_balance.
+
+DATA: gv_poper TYPE poper,
+      gv_racct TYPE racct.
+
+PARAMETERS: p_rldnr TYPE acdoca-rldnr DEFAULT '0L' OBLIGATORY,
+            p_bukrs TYPE bukrs  OBLIGATORY,
+            p_gjahr TYPE gjahr  OBLIGATORY.
+SELECT-OPTIONS: s_poper FOR gv_poper DEFAULT '001' TO '012',
+                s_racct FOR gv_racct.
+
+START-OF-SELECTION.
+  " 依科目、期間彙總本位幣金額（幣別鍵一起分組）
+  SELECT racct,
+         poper,
+         rhcur,
+         SUM( hsl ) AS hsl_sum
+    FROM acdoca
+    WHERE rldnr  = @p_rldnr
+      AND rbukrs = @p_bukrs
+      AND gjahr  = @p_gjahr
+      AND poper IN @s_poper
+      AND racct IN @s_racct
+    GROUP BY racct, poper, rhcur
+    ORDER BY racct, poper
+    INTO TABLE @DATA(lt_bal).
+
+  TRY.
+      cl_salv_table=&gt;factory( IMPORTING r_salv_table = DATA(lo_alv)
+                              CHANGING  t_table      = lt_bal ).
+      lo_alv-&gt;get_functions( )-&gt;set_all( abap_true ).
+      lo_alv-&gt;display( ).
+    CATCH cx_salv_msg INTO DATA(lx).
+      MESSAGE lx TYPE 'I' DISPLAY LIKE 'E'.
+  ENDTRY.</code></pre>
+  <div class="note">參數型別直接參照 <span class="kw">acdoca-rldnr</span>，就不必記分類帳的資料元素名稱。期間預設 001～012 已排除 000 餘額結轉與 013～016 特別期間，要看年結調整時自行放寬。</div>
+  <p>若資料已經在內表（例如還要做其他計算），可以改用 <span class="kw">LOOP AT … GROUP BY</span> 在應用伺服器分組：</p>
+  <pre><code class="abap">TYPES: BEGIN OF ty_line,
+         racct TYPE racct,
+         poper TYPE poper,
+         rhcur TYPE waers,
+         hsl   TYPE acdoca-hsl,
+       END OF ty_line,
+       tt_line TYPE STANDARD TABLE OF ty_line WITH EMPTY KEY.
+
+SELECT racct, poper, rhcur, hsl
+  FROM acdoca
+  WHERE rldnr = '0L' AND rbukrs = @p_bukrs AND gjahr = @p_gjahr
+    AND poper IN @s_poper
+  INTO TABLE @DATA(lt_items).
+
+" 依科目＋幣別分組，算出所選期間的合計
+DATA(lt_sum) = VALUE tt_line(
+  FOR GROUPS grp OF ls IN lt_items
+      GROUP BY ( racct = ls-racct rhcur = ls-rhcur )
+      ( racct = grp-racct
+        rhcur = grp-rhcur
+        hsl   = REDUCE #( INIT s TYPE ty_line-hsl
+                          FOR m IN GROUP grp
+                          NEXT s = s + m-hsl ) ) ).
+
+SORT lt_sum BY racct rhcur.</code></pre>
+  <div class="note">金額型別直接用 <span class="kw">TYPE acdoca-hsl</span> 最穩。能在 SQL 彙總就不要在 ABAP 彙總——這個 LOOP GROUP BY 版本只適合資料已經在手上的情況。</div>
+
+  <h3 id="ch06-12-07">7. 範例：依成本中心取實際成本</h3>
+  <p>S/4HANA 的 CO 實際行項目也在 ACDOCA：成本中心放在 RCNTR，成本要素就是 RACCT。KSB1 的資料來源就是這裡。</p>
+  <pre><code class="abap">PARAMETERS: p_kokrs TYPE kokrs OBLIGATORY,
+            p_bukrs TYPE bukrs OBLIGATORY,
+            p_gjahr TYPE gjahr OBLIGATORY,
+            p_poper TYPE poper OBLIGATORY.
+DATA gv_kostl TYPE kostl.
+SELECT-OPTIONS s_kostl FOR gv_kostl OBLIGATORY.
+
+" 成本中心 × 成本要素（科目）的實際成本，以控制範圍幣別 KSL 或本位幣 HSL 呈現
+SELECT rcntr,
+       racct,
+       rhcur,
+       SUM( hsl ) AS actual_cost
+  FROM acdoca
+  WHERE rldnr  = '0L'
+    AND kokrs  = @p_kokrs
+    AND rbukrs = @p_bukrs
+    AND gjahr  = @p_gjahr
+    AND poper  = @p_poper
+    AND rcntr IN @s_kostl
+  GROUP BY rcntr, racct, rhcur
+  ORDER BY rcntr, racct
+  INTO TABLE @DATA(lt_cost).
+
+LOOP AT lt_cost ASSIGNING FIELD-SYMBOL(&lt;c&gt;).
+  WRITE: / &lt;c&gt;-rcntr, &lt;c&gt;-racct, &lt;c&gt;-actual_cost CURRENCY &lt;c&gt;-rhcur, &lt;c&gt;-rhcur.
+ENDLOOP.</code></pre>
+  <div class="warn">成本中心範圍請盡量用<b>列舉</b>（多筆 EQ）或成本中心群組展開後的清單，不要隨手打 BT 區間：成本中心號碼有前導零、號碼段常不連續，BT 比的是字典序，會多抓或漏抓（Casper 實務坑之二）。控制範圍幣別與公司代碼幣別不同時，要確認報表該用哪一個幣別欄位。</div>
+
+  <h3 id="ch06-12-08">8. 範例：依採購單追會計憑證</h3>
+  <p>一張採購單會產生收貨（GR）與發票驗證（IR）的會計憑證，兩者在 ACDOCA 都帶 EBELN／EBELP。用 <b>AWTYP</b>（來源類型）區分：收貨來自物料憑證（AWTYP = MKPF），發票來自 MIRO（AWTYP = RMRP）。</p>
+  <pre><code class="abap">PARAMETERS: p_ebeln TYPE ebeln OBLIGATORY,
+            p_bukrs TYPE bukrs OBLIGATORY.
+
+" 採購單號不是會計主鍵，所以一定要再加 RLDNR + RBUKRS 縮小範圍
+SELECT gjahr, belnr, docln, ebelp, awtyp, awref, budat, blart,
+       racct, ktosl, hsl, rhcur, matnr, werks
+  FROM acdoca
+  WHERE rldnr  = '0L'
+    AND rbukrs = @p_bukrs
+    AND ebeln  = @p_ebeln
+  ORDER BY ebelp, budat, belnr, docln
+  INTO TABLE @DATA(lt_doc).
+
+" 依來源區分收貨與發票
+DATA: lt_gr LIKE lt_doc,
+      lt_ir LIKE lt_doc.
+lt_gr = VALUE #( FOR d IN lt_doc WHERE ( awtyp = 'MKPF' ) ( d ) ).
+lt_ir = VALUE #( FOR d IN lt_doc WHERE ( awtyp = 'RMRP' ) ( d ) ).
+
+" GR/IR 對帳：交易鍵 WRX 的行項目加總，理想上收貨與發票互相沖銷
+DATA(lv_grir) = REDUCE acdoca-hsl( INIT s TYPE acdoca-hsl
+                                   FOR d IN lt_doc WHERE ( ktosl = 'WRX' )
+                                   NEXT s = s + d-hsl ).
+
+cl_demo_output=&gt;write( lt_gr ).
+cl_demo_output=&gt;write( lt_ir ).
+cl_demo_output=&gt;display( |GR/IR（WRX）餘額：{ lv_grir }| ).</code></pre>
+  <div class="note">這個例子沒有帶 GJAHR，因為採購單的收貨與發票可能跨年度；資料量大的系統請改為帶上年度清單（例如採購單建立年度起算的兩個年度），或先確認 EBELN 上有可用的次要索引。AWKEY 的組成（物料憑證號＋年度、發票號＋年度）可用來回推 MIGO／MIRO 的原始憑證。</div>
+
+  <h3 id="ch06-12-09">9. 範例：讀取 released CDS view I_JournalEntryItem</h3>
+  <p>SAP 在 ACDOCA 上提供 VDM（虛擬資料模型）的 CDS view，<b>I_JournalEntryItem</b> 就是日記帳行項目的基本 view。欄位名是英文駝峰式，語意清楚，而且是 SAP 承諾相容的公開介面。在 S/4HANA Cloud 與 ABAP Cloud 開發模式下它是 released（C1）物件；在 1809 on-premise 也可以讀，但是否標示 released 依版本而異，請在 ADT 的 API State 確認。</p>
+  <pre><code class="abap">PARAMETERS: p_bukrs TYPE bukrs OBLIGATORY,
+            p_gjahr TYPE gjahr OBLIGATORY.
+
+" 下面只用確定存在的欄位；其他欄位請在 ADT 開啟 I_JournalEntryItem 查看
+SELECT CompanyCode,
+       FiscalYear,
+       AccountingDocument,
+       Ledger,
+       GLAccount,
+       FiscalPeriod,
+       PostingDate,
+       AmountInCompanyCodeCurrency,
+       CompanyCodeCurrency
+  FROM i_journalentryitem
+  WHERE Ledger      = '0L'
+    AND CompanyCode = @p_bukrs
+    AND FiscalYear  = @p_gjahr
+  ORDER BY FiscalPeriod, AccountingDocument
+  INTO TABLE @DATA(lt_jei)
+  UP TO 1000 ROWS.
+
+cl_demo_output=&gt;display( lt_jei ).</code></pre>
+  <div class="note">CDS view 可能附帶 DCL 權限控制（access control）：同一段 SELECT，不同使用者可能看到不同筆數。這是正確行為，不是 bug。若要在 ABAP Cloud（7.5x 以上的 Steampunk／Embedded Steampunk）開發，只能讀 released view，不能直接讀 ACDOCA。</div>
+  <div class="warn"><b>ACDOCA 是全系統最大的表之一。</b>任何讀取都要帶齊 <b>RLDNR、RBUKRS、GJAHR、POPER</b>（至少前三個），並只列需要的欄位；不要 <span class="kw">SELECT *</span>，也不要在迴圈裡逐筆讀。<br>
+  <b>HANA 沒有預設排序。</b>沒寫 ORDER BY 時，每次執行的順序可能不同；任何「取第一筆」「READ TABLE INDEX 1」的邏輯都要先明確排序（Casper 實務坑之一：成本評價同時有 item category H 與 cost component E 兩種角度，沒排序就一下抓到 H、一下抓到 E）。</div>
+
+  <h3 id="ch06-12-10">10. HR 資料表的命名規則與資訊類型結構</h3>
+  <p>素材開頭的命名規則整理如下：</p>
+  <table>
+    <thead><tr><th>前綴</th><th>內容</th><th>範例</th></tr></thead>
+    <tbody>
+      <tr><td>PA＋資訊類型</td><td>人事管理（Personnel Administration）資訊類型表</td><td>PA0001 組織指派</td></tr>
+      <tr><td>HRP＋資訊類型</td><td>組織管理／人事發展（OM／PD）資訊類型表</td><td>HRP1000 物件、HRP1001 關係</td></tr>
+      <tr><td>PB＋資訊類型</td><td>招募（Recruitment）應徵者資訊類型表</td><td>PB0001、PB0002</td></tr>
+      <tr><td>PCL*</td><td>HR 叢集表（Cluster），存薪資結果、時間評估結果等</td><td>PCL1、PCL2</td></tr>
+      <tr><td>PCERT</td><td>薪資過帳執行記錄（Payroll posting runs）</td><td>—</td></tr>
+      <tr><td>CATSDB</td><td>CATS 跨應用時間表</td><td>—</td></tr>
+      <tr><td>PTEX2000</td><td>CATS 轉入資訊類型 2001／2002 的傳輸表</td><td>—</td></tr>
+    </tbody>
+  </table>
+  <p>素材也提到 <span class="tcode">SE16</span> 是查 HR 表的好工具。（實務上 PA 表通常有權限限制，SE16 看不到不代表沒資料。）</p>
+  <h4>資訊類型的共同結構</h4>
+  <ul>
+    <li><b>PERNR</b>：人員編號（8 位數）。</li>
+    <li><b>SUBTY</b>：子類型。例如 PA0006 地址的 1 = 戶籍地址；PA0105 通訊的 0001 = 系統使用者名稱、0010 = email。</li>
+    <li><b>OBJPS、SPRPS、SEQNR</b>：物件識別、鎖定指示、同一天多筆時的序號。</li>
+    <li><b>BEGDA／ENDDA</b>：有效起訖日。HR 的資料是<b>時間序列</b>：調職、調薪都不是改舊資料，而是切一筆新的有效期間。</li>
+    <li><b>時間限制（Time Constraint）</b>：1 = 任何時點必須恰好一筆（如 PA0001、PA0002）；2 = 最多一筆、可以有空檔；3 = 可以多筆重疊。設定在 T582A／T777Z。</li>
+    <li><b>AEDTM／UNAME</b>：最後變更日期與人員。</li>
+  </ul>
+  <p>常用 PA 資訊類型（<span class="src">依 SAP 標準補充，素材只列前綴規則</span>）：</p>
+  <table>
+    <thead><tr><th>表</th><th>資訊類型</th><th>常用欄位</th></tr></thead>
+    <tbody>
+      <tr><td>PA0000</td><td>人事異動（Actions）</td><td>MASSN 異動類型、MASSG 原因、STAT2 在職狀態（3 = 在職、0 = 離職）</td></tr>
+      <tr><td>PA0001</td><td>組織指派</td><td>BUKRS、WERKS 人事範圍、BTRTL 人事子範圍、PERSG、PERSK、KOSTL、ORGEH、PLANS、STELL、ABKRS、ENAME</td></tr>
+      <tr><td>PA0002</td><td>個人資料</td><td>VORNA、NACHN、GBDAT、GESCH、PERID（個資）</td></tr>
+      <tr><td>PA0006</td><td>地址</td><td>STRAS、ORT01、PSTLZ、TELNR（個資）</td></tr>
+      <tr><td>PA0007</td><td>計畫工時</td><td>SCHKZ 班表規則</td></tr>
+      <tr><td>PA0008</td><td>基本薪資</td><td>TRFAR、TRFGB、TRFGR、LGA01／BET01 …（極敏感）</td></tr>
+      <tr><td>PA0009</td><td>銀行資料</td><td>BANKL、BANKN（極敏感）</td></tr>
+      <tr><td>PA0014／PA0015</td><td>經常性／額外給付與扣除</td><td>LGART、BETRG</td></tr>
+      <tr><td>PA0041</td><td>日期規格</td><td>DAR01／DAT01 …（到職日等）</td></tr>
+      <tr><td>PA0105</td><td>通訊</td><td>USRID（子類型 0001 = SAP 帳號、0010 = email）</td></tr>
+      <tr><td>PA2001／PA2002</td><td>缺勤／出勤</td><td>AWART、ABWTG、STDAZ</td></tr>
+      <tr><td>PA2006</td><td>缺勤配額</td><td>KTART、ANZHL、KVERB</td></tr>
+      <tr><td>PA9xxx</td><td>客戶自訂資訊類型</td><td>用 <span class="tcode">PM01</span> 建立</td></tr>
+    </tbody>
+  </table>
+  <div class="warn">PA 表的 <b>ENDDA 常見 99991231</b>，代表「目前有效、沒有結束日」。讀「現在的資料」要用 <b>BEGDA ≤ 基準日 ≤ ENDDA</b>，不要寫 <span class="kw">ENDDA = '99991231'</span>：離職員工或已排定未來異動的員工，最新一筆的 ENDDA 不一定是 99991231，而未來生效的資料 ENDDA 也會是 99991231。</div>
+
+  <h3 id="ch06-12-11">11. HR 設定表清單（一）：系統、組織結構與薪資標準</h3>
+  <p>以下完整保留素材列出的資料表，按主題分組並加上中文說明。素材中 T549M～T549T 重複列了兩次，本章合併為一次。</p>
+  <h4>資料字典與系統表</h4>
+  <table>
+    <thead><tr><th>表</th><th>原文說明</th><th>中文</th></tr></thead>
+    <tbody>
+      <tr><td>DD01L</td><td>Domains</td><td>網域</td></tr>
+      <tr><td>DD02L</td><td>SAP tables</td><td>資料表清單</td></tr>
+      <tr><td>DD03L</td><td>Table Fields</td><td>資料表欄位</td></tr>
+      <tr><td>DD03T</td><td>DD: Texts for fields (language dependent)</td><td>欄位文字（依語言）</td></tr>
+      <tr><td>DD04L</td><td>Data elements</td><td>資料元素</td></tr>
+      <tr><td>DD04T</td><td>R/3 DD: Data element texts</td><td>資料元素文字</td></tr>
+      <tr><td>DD05S</td><td>Foreign key fields</td><td>外來鍵欄位</td></tr>
+      <tr><td>DD06L</td><td>Pool/cluster structures</td><td>Pool／Cluster 結構</td></tr>
+      <tr><td>DD20L</td><td>Matchcode Ids</td><td>Matchcode ID（已由搜尋說明取代）</td></tr>
+      <tr><td>DD24S</td><td>Fields of a matchcode ID</td><td>Matchcode ID 欄位</td></tr>
+      <tr><td>T000</td><td>Clients</td><td>用戶端</td></tr>
+      <tr><td>T001</td><td>Company Codes</td><td>公司代碼</td></tr>
+      <tr><td>T001E</td><td>Company code-dependent address data</td><td>公司代碼地址資料</td></tr>
+      <tr><td>T001P</td><td>Personnel Areas/Subareas</td><td>人事範圍／人事子範圍</td></tr>
+      <tr><td>T012</td><td>House banks</td><td>往來銀行</td></tr>
+      <tr><td>T012K</td><td>House bank accounts</td><td>往來銀行帳戶</td></tr>
+      <tr><td>T012T</td><td>House bank account names</td><td>往來銀行帳戶名稱</td></tr>
+    </tbody>
+  </table>
+  <h4>人事結構（T500～T508）</h4>
+  <table>
+    <thead><tr><th>表</th><th>原文說明</th><th>中文</th></tr></thead>
+    <tbody>
+      <tr><td>T500L</td><td>Personnel Country Grouping</td><td>人事國家分組</td></tr>
+      <tr><td>T500P</td><td>Personnel Areas</td><td>人事範圍</td></tr>
+      <tr><td>T500T</td><td>Personnel Country Groupings</td><td>人事國家分組文字</td></tr>
+      <tr><td>T501</td><td>Employee Group</td><td>員工群組</td></tr>
+      <tr><td>T501T</td><td>Employee Group Names</td><td>員工群組名稱</td></tr>
+      <tr><td>T502T</td><td>Marital Status Designators</td><td>婚姻狀況</td></tr>
+      <tr><td>T503</td><td>Employee Groups / Subgroups</td><td>員工群組／子群組</td></tr>
+      <tr><td>T503K</td><td>Employee subgroup</td><td>員工子群組</td></tr>
+      <tr><td>T503T</td><td>Employee Subgroup Names</td><td>員工子群組名稱</td></tr>
+      <tr><td>T504A</td><td>Benefits - Default Values (NA)</td><td>福利預設值（北美）</td></tr>
+      <tr><td>T504B</td><td>Benefit Option Texts (North America)</td><td>福利選項文字（北美）</td></tr>
+      <tr><td>T504C</td><td>Benefit Type (NA)</td><td>福利類型（北美）</td></tr>
+      <tr><td>T504D</td><td>Benefit Credit Group Amount</td><td>福利點數群組金額</td></tr>
+      <tr><td>T504E</td><td>Benefit Amount</td><td>福利金額</td></tr>
+      <tr><td>T504F</td><td>Benefit Costs</td><td>福利成本</td></tr>
+      <tr><td>T508A</td><td>Work Schedule Rules</td><td>班表規則</td></tr>
+      <tr><td>T508T</td><td>Texts for Employee Subgroup Groupings for Work Schedules</td><td>班表用員工子群組分組文字</td></tr>
+    </tbody>
+  </table>
+  <h4>薪資標準與工資類型（T510～T512）</h4>
+  <table>
+    <thead><tr><th>表</th><th>原文說明</th><th>中文</th></tr></thead>
+    <tbody>
+      <tr><td>T510</td><td>Pay Scale Groups</td><td>薪等</td></tr>
+      <tr><td>T510A</td><td>Pay Scale Types</td><td>薪資標準類型</td></tr>
+      <tr><td>T510F</td><td>Assign Pay Scale &gt; Time Unit, Currency</td><td>薪資標準指派時間單位與幣別</td></tr>
+      <tr><td>T510G</td><td>Pay Scale Areas</td><td>薪資標準區域</td></tr>
+      <tr><td>T510H</td><td>Payroll Constants with Regard to Time Unit</td><td>依時間單位的薪資常數</td></tr>
+      <tr><td>T510I</td><td>Standard Working Hours</td><td>標準工時</td></tr>
+      <tr><td>T510J</td><td>Constant Valuations</td><td>常數評價</td></tr>
+      <tr><td>T510L</td><td>Levels</td><td>薪級</td></tr>
+      <tr><td>T510M</td><td>Valuation of pay scale groups acc. to hiring date</td><td>依到職日的薪等評價</td></tr>
+      <tr><td>T510N</td><td>Pay Scales for Annual Salaries (NA)</td><td>年薪薪資標準（北美）</td></tr>
+      <tr><td>T510S</td><td>Time Wage Type Selection Rule</td><td>時間工資類型選擇規則</td></tr>
+      <tr><td>T510U</td><td>Pay Scale Groups</td><td>薪等（素材與 T510 同名，實際用途請以 SE11 說明為準）</td></tr>
+      <tr><td>T510Y</td><td>Special Rules for Wage Type Generation</td><td>工資類型產生特殊規則</td></tr>
+      <tr><td>T511</td><td>Wage Types</td><td>工資類型</td></tr>
+      <tr><td>T512R</td><td>Cumulation Wage Types in Forms</td><td>表單中的累計工資類型</td></tr>
+      <tr><td>T512S</td><td>Texts for Cumulation Wage Types in Forms</td><td>表單累計工資類型文字</td></tr>
+      <tr><td>T512T</td><td>Wage Type Texts</td><td>工資類型文字</td></tr>
+      <tr><td>T512W</td><td>Wage Type Valuation</td><td>工資類型評價</td></tr>
+      <tr><td>T512Z</td><td>Permissibility of Wage Types per Infotype</td><td>各資訊類型允許的工資類型</td></tr>
+    </tbody>
+  </table>
+
+  <h3 id="ch06-12-12">12. HR 設定表清單（二）：職務、事件、薪資與時間</h3>
+  <h4>職務、組織與人事事件（T513～T531）</h4>
+  <table>
+    <thead><tr><th>表</th><th>原文說明</th><th>中文</th></tr></thead>
+    <tbody>
+      <tr><td>T513</td><td>Jobs</td><td>職務</td></tr>
+      <tr><td>T514S</td><td>Table Name Texts</td><td>表名文字</td></tr>
+      <tr><td>T514T</td><td>Field Name Texts</td><td>欄位名文字</td></tr>
+      <tr><td>T51D2</td><td>Wage Type Classes</td><td>工資類型類別</td></tr>
+      <tr><td>T51D3</td><td>Reduction Rules</td><td>減額規則</td></tr>
+      <tr><td>T51D4</td><td>Cumulation Rules</td><td>累計規則</td></tr>
+      <tr><td>T527X</td><td>Organizational Units</td><td>組織單位</td></tr>
+      <tr><td>T528B</td><td>Positions - Work Centers</td><td>職位－工作中心</td></tr>
+      <tr><td>T528C</td><td>Wage Type Catalog</td><td>工資類型目錄</td></tr>
+      <tr><td>T528T</td><td>Position Texts</td><td>職位文字</td></tr>
+      <tr><td>T529A</td><td>Personnel Event</td><td>人事事件（異動類型）</td></tr>
+      <tr><td>T529F</td><td>Fast Data Entry for Events</td><td>事件快速輸入</td></tr>
+      <tr><td>T529T</td><td>Personnel Event Texts</td><td>人事事件文字</td></tr>
+      <tr><td>T52BT</td><td>Texts For HR Objects</td><td>HR 物件文字</td></tr>
+      <tr><td>T530</td><td>Reasons for Events</td><td>事件原因</td></tr>
+      <tr><td>T530E</td><td>Reasons for Changes</td><td>變更原因</td></tr>
+      <tr><td>T530F</td><td>Reasons for Changes</td><td>變更原因（文字）</td></tr>
+      <tr><td>T530L</td><td>Wage Types for Special Payments</td><td>特別給付工資類型</td></tr>
+      <tr><td>T530T</td><td>Event Reason Texts</td><td>事件原因文字</td></tr>
+      <tr><td>T531</td><td>Deadline Types</td><td>期限類型</td></tr>
+      <tr><td>T531S</td><td>Deadline Type Texts</td><td>期限類型文字</td></tr>
+    </tbody>
+  </table>
+  <h4>薪資計算架構（T52C～T52D）</h4>
+  <table>
+    <thead><tr><th>表</th><th>原文說明</th><th>中文</th></tr></thead>
+    <tbody>
+      <tr><td>T52C0</td><td>Payroll Schemas</td><td>薪資計算架構（Schema）</td></tr>
+      <tr><td>T52C1</td><td>Payroll Schemas</td><td>薪資計算架構（Schema）</td></tr>
+      <tr><td>T52C2</td><td>Texts for Personnel Calculation Schemas</td><td>人事計算架構文字</td></tr>
+      <tr><td>T52C3</td><td>Texts for Personnel Calculation Schemas</td><td>人事計算架構文字</td></tr>
+      <tr><td>T52C5</td><td>Personnel Calculation Rules</td><td>人事計算規則（PCR）</td></tr>
+      <tr><td>T52CC</td><td>Schema Directory</td><td>架構目錄</td></tr>
+      <tr><td>T52CD</td><td>Schema Directory</td><td>架構目錄</td></tr>
+      <tr><td>T52CE</td><td>Directory of Personnel Calculation Rules</td><td>計算規則目錄</td></tr>
+      <tr><td>T52CT</td><td>Text Elements</td><td>文字元素</td></tr>
+      <tr><td>T52CX</td><td>Cross References via Generated Schemas</td><td>產生架構的交叉參照</td></tr>
+      <tr><td>T52D1</td><td>Valid Processing Classes</td><td>有效處理類別</td></tr>
+      <tr><td>T52D2</td><td>Valid Values for Processing Classes</td><td>處理類別有效值</td></tr>
+      <tr><td>T52D3</td><td>Valid Evaluation Classes</td><td>有效評估類別</td></tr>
+      <tr><td>T52D4</td><td>Permitted Values for Evaluation Classes</td><td>評估類別允許值</td></tr>
+      <tr><td>T52D5</td><td>Wage Type Groups</td><td>工資類型群組</td></tr>
+      <tr><td>T52D6</td><td>Wage Type Group Texts</td><td>工資類型群組文字</td></tr>
+      <tr><td>T52D7</td><td>Assign Wage Types to Wage Type Groups</td><td>工資類型指派群組</td></tr>
+      <tr><td>T52D8</td><td>Valid Processing Classes - Texts</td><td>處理類別文字</td></tr>
+      <tr><td>T52D9</td><td>Valid Values for Processing Classes - Texts</td><td>處理類別有效值文字</td></tr>
+    </tbody>
+  </table>
+  <h4>請假、標準工資、日期與薪資期間（T533～T549）</h4>
+  <table>
+    <thead><tr><th>表</th><th>原文說明</th><th>中文</th></tr></thead>
+    <tbody>
+      <tr><td>T533</td><td>Leave Types</td><td>休假類型</td></tr>
+      <tr><td>T533T</td><td>Leave Type Texts</td><td>休假類型文字</td></tr>
+      <tr><td>T539A</td><td>Default Wage Types for Basic Pay</td><td>基本薪資預設工資類型</td></tr>
+      <tr><td>T539J</td><td>Base Wage Type Valuation</td><td>基礎工資類型評價</td></tr>
+      <tr><td>T539R</td><td>Events for Standard Wage Maintenance</td><td>標準工資維護事件</td></tr>
+      <tr><td>T539S</td><td>Wage Types for Standard Wage Maintenance</td><td>標準工資維護工資類型</td></tr>
+      <tr><td>T548</td><td>Date Types</td><td>日期類型</td></tr>
+      <tr><td>T548S</td><td>Date Conversion</td><td>日期換算</td></tr>
+      <tr><td>T548T</td><td>Date Types</td><td>日期類型（文字）</td></tr>
+      <tr><td>T548Y</td><td>Date Types</td><td>日期類型</td></tr>
+      <tr><td>T549A</td><td>Payroll Areas</td><td>薪資範圍</td></tr>
+      <tr><td>T549B</td><td>Company Features</td><td>公司特性（Feature）</td></tr>
+      <tr><td>T549C</td><td>Decision Trees for Features (Customers)</td><td>特性決策樹（客戶）</td></tr>
+      <tr><td>T549D</td><td>Feature Directory</td><td>特性目錄</td></tr>
+      <tr><td>T549L</td><td>Date modifiers</td><td>日期修飾碼</td></tr>
+      <tr><td>T549M</td><td>Monthly Assignment: Payroll Period</td><td>薪資期間的月份指派</td></tr>
+      <tr><td>T549N</td><td>Period Modifiers</td><td>期間修飾碼</td></tr>
+      <tr><td>T549O</td><td>Text for date modifier</td><td>日期修飾碼文字</td></tr>
+      <tr><td>T549P</td><td>Valid Time Units for Payroll Accounting</td><td>薪資計算有效時間單位</td></tr>
+      <tr><td>T549Q</td><td>Payroll Periods</td><td>薪資期間</td></tr>
+      <tr><td>T549R</td><td>Period Parameters</td><td>期間參數</td></tr>
+      <tr><td>T549S</td><td>Payroll date types</td><td>薪資日期類型</td></tr>
+      <tr><td>T549T</td><td>Payroll Areas</td><td>薪資範圍（文字）</td></tr>
+    </tbody>
+  </table>
+
+  <h3 id="ch06-12-13">13. HR 設定表清單（三）：時間管理、資訊類型設定與訊息表</h3>
+  <h4>缺勤出勤與時間管理（T554～T572）</h4>
+  <table>
+    <thead><tr><th>表</th><th>原文說明</th><th>中文</th></tr></thead>
+    <tbody>
+      <tr><td>T554S</td><td>Absence and Attendance Types</td><td>缺勤／出勤類型</td></tr>
+      <tr><td>T554T</td><td>Absence and Attendance Texts</td><td>缺勤／出勤文字</td></tr>
+      <tr><td>T554V</td><td>Defaults for Absence Types</td><td>缺勤類型預設值</td></tr>
+      <tr><td>T554Y</td><td>Time Constraints in HR TIME</td><td>時間管理的時間限制</td></tr>
+      <tr><td>T555A</td><td>Time Types</td><td>時間類型</td></tr>
+      <tr><td>T555B</td><td>Time Type Designations</td><td>時間類型名稱</td></tr>
+      <tr><td>T559A</td><td>Working Weeks</td><td>工作週</td></tr>
+      <tr><td>T559B</td><td>Name of Working Week</td><td>工作週名稱</td></tr>
+      <tr><td>T572F</td><td>Event Texts</td><td>事件文字</td></tr>
+      <tr><td>T572G</td><td>Allowed Values for Events</td><td>事件允許值</td></tr>
+      <tr><td>T572H</td><td>Event Value Texts</td><td>事件值文字</td></tr>
+    </tbody>
+  </table>
+  <h4>資訊類型與畫面設定（T582～T599）</h4>
+  <table>
+    <thead><tr><th>表</th><th>原文說明</th><th>中文</th></tr></thead>
+    <tbody>
+      <tr><td>T582A</td><td>Infotypes</td><td>資訊類型屬性（含時間限制）</td></tr>
+      <tr><td>T582B</td><td>Infotypes Which Are Created Automatically</td><td>自動建立的資訊類型</td></tr>
+      <tr><td>T582S</td><td>Infotype Texts</td><td>資訊類型文字</td></tr>
+      <tr><td>T582V</td><td>Assignment of Infotypes to Views</td><td>資訊類型指派到檢視</td></tr>
+      <tr><td>T582W</td><td>Assigns Infotype View to Primary Infotype</td><td>資訊類型檢視指派主資訊類型</td></tr>
+      <tr><td>T582Z</td><td>Control Table for PA Time Management</td><td>PA 時間管理控制表</td></tr>
+      <tr><td>T584A</td><td>Checking Procedures - Infotype Assignment</td><td>檢查程序－資訊類型指派</td></tr>
+      <tr><td>T588A</td><td>Transaction Codes</td><td>交易代碼</td></tr>
+      <tr><td>T588B</td><td>Infotype Menus</td><td>資訊類型選單</td></tr>
+      <tr><td>T588C</td><td>Infotype Menus/Info Groups</td><td>資訊類型選單／資訊群組</td></tr>
+      <tr><td>T588D</td><td>Infogroups for Events</td><td>事件的資訊群組</td></tr>
+      <tr><td>T588J</td><td>Screen Header Definition</td><td>畫面表頭定義</td></tr>
+      <tr><td>T588M</td><td>Infotype Screen Control</td><td>資訊類型畫面控制</td></tr>
+      <tr><td>T588N</td><td>Screen Modification for Account Assignment Block</td><td>科目指派區塊畫面修改</td></tr>
+      <tr><td>T588O</td><td>Screen Modification for Assignment Data</td><td>指派資料畫面修改</td></tr>
+      <tr><td>T588Q</td><td>Screen types for fast entry</td><td>快速輸入畫面類型</td></tr>
+      <tr><td>T588R</td><td>Selection Reports for Fast Data Entry</td><td>快速輸入的選擇報表</td></tr>
+      <tr><td>T588S</td><td>Screen Types for Fast Entry</td><td>快速輸入畫面類型</td></tr>
+      <tr><td>T588T</td><td>Menu and Infogroup Designations</td><td>選單與資訊群組名稱</td></tr>
+      <tr><td>T588V</td><td>Business object type</td><td>業務物件類型</td></tr>
+      <tr><td>T588W</td><td>Event types for infotype operations</td><td>資訊類型作業的事件類型</td></tr>
+      <tr><td>T588X</td><td>Cust. composite definition of event types for IT operations</td><td>客戶自訂資訊類型作業事件組合</td></tr>
+      <tr><td>T588Z</td><td>Dynamic Events</td><td>動態事件</td></tr>
+      <tr><td>T591A</td><td>Subtype Characteristics</td><td>子類型特性</td></tr>
+      <tr><td>T591B</td><td>Time Constraints for Wage Types</td><td>工資類型時間限制</td></tr>
+      <tr><td>T591S</td><td>Subtype Texts</td><td>子類型文字</td></tr>
+      <tr><td>T596F</td><td>HR Subroutines</td><td>HR 副程式</td></tr>
+      <tr><td>T596G</td><td>Cumulation wage types</td><td>累計工資類型</td></tr>
+      <tr><td>T596H</td><td>_Cumulation wage type texts</td><td>累計工資類型文字</td></tr>
+      <tr><td>T596I</td><td>Calculation rule for cumulation wage types</td><td>累計工資類型計算規則</td></tr>
+      <tr><td>T596U</td><td>Conversion Table</td><td>轉換表</td></tr>
+      <tr><td>T599B</td><td>Report Classes</td><td>報表類別</td></tr>
+      <tr><td>T599C</td><td>Report Classes</td><td>報表類別</td></tr>
+      <tr><td>T599D</td><td>Report Categories</td><td>報表分類</td></tr>
+      <tr><td>T599F</td><td>Report Classes - Select Options</td><td>報表類別選擇條件</td></tr>
+      <tr><td>T777A</td><td>Building Addresses</td><td>建築物地址</td></tr>
+      <tr><td>T777T</td><td>Infotypes</td><td>資訊類型（OM／PD 文字）</td></tr>
+      <tr><td>T777Z</td><td>Infotype Time Constraints</td><td>資訊類型時間限制（OM／PD）</td></tr>
+      <tr><td>T778T</td><td>Infotypes</td><td>資訊類型（文字）</td></tr>
+      <tr><td>T778U</td><td>Subtypes</td><td>子類型</td></tr>
+    </tbody>
+  </table>
+  <h4>錯誤訊息表（T100 系列）</h4>
+  <table>
+    <thead><tr><th>表</th><th>原文說明</th><th>中文</th></tr></thead>
+    <tbody>
+      <tr><td>T100</td><td>Messages</td><td>訊息文字</td></tr>
+      <tr><td>T100A</td><td>Message IDs for T100</td><td>訊息類別</td></tr>
+      <tr><td>T100C</td><td>Control of messages by the user</td><td>使用者訊息控制</td></tr>
+      <tr><td>T100O</td><td>Assignment of message to object</td><td>訊息指派物件</td></tr>
+      <tr><td>T100S</td><td>Configurable system messages</td><td>可設定的系統訊息</td></tr>
+      <tr><td>T100T</td><td>Table T100A text</td><td>訊息類別文字</td></tr>
+      <tr><td>T100V</td><td>Assignment of messages to tables/views</td><td>訊息指派資料表／view</td></tr>
+      <tr><td>T100W</td><td>Assign Messages to Workflow</td><td>訊息指派工作流程</td></tr>
+      <tr><td>T100X</td><td>Error Messages: Supplements</td><td>錯誤訊息補充</td></tr>
+    </tbody>
+  </table>
+  <p>設定表的文字表大多以 T 結尾並帶 SPRSL（語言）欄位。下面的例子一次把人事範圍、員工群組、子群組的文字讀成對照表，供報表顯示用：</p>
+  <pre><code class="abap">" 人事範圍、員工群組、員工子群組的中文文字（語言 = 登入語言）
+SELECT persa, name1 FROM t500p
+  INTO TABLE @DATA(lt_persa).
+
+SELECT persg, ptext FROM t501t
+  WHERE sprsl = @sy-langu
+  INTO TABLE @DATA(lt_persg).
+
+SELECT persk, ptext FROM t503t
+  WHERE sprsl = @sy-langu
+  INTO TABLE @DATA(lt_persk).
+
+" 查詢時用 VALUE #( … OPTIONAL ) 避免找不到時觸發例外
+DATA(lv_persg_text) = VALUE #( lt_persg[ persg = '1' ]-ptext OPTIONAL ).</code></pre>
+
+  <h3 id="ch06-12-14">14. 範例：讀取特定日期有效的員工資料</h3>
+  <p>HR 報表最基本的條件就是「基準日有效」：<b>BEGDA ≤ 基準日 ≤ ENDDA</b>。下面讀出基準日時的組織指派（PA0001）與在職狀態（PA0000）。</p>
+  <pre><code class="abap">REPORT zhr_active_employees.
+
+DATA gv_bukrs TYPE bukrs.
+PARAMETERS p_keydt TYPE datum DEFAULT sy-datum OBLIGATORY.
+SELECT-OPTIONS s_bukrs FOR gv_bukrs.
+
+START-OF-SELECTION.
+  " PA0000 與 PA0001 各自取基準日有效的那一筆，再以 PERNR 相接
+  SELECT p1~pernr, p1~bukrs, p1~werks, p1~btrtl, p1~persg, p1~persk,
+         p1~kostl, p1~orgeh, p1~plans, p1~ename, p0~stat2
+    FROM pa0001 AS p1
+    INNER JOIN pa0000 AS p0
+      ON p0~pernr = p1~pernr
+    WHERE p1~bukrs IN @s_bukrs
+      AND p1~begda &lt;= @p_keydt AND p1~endda &gt;= @p_keydt
+      AND p0~begda &lt;= @p_keydt AND p0~endda &gt;= @p_keydt
+      AND p0~stat2 = '3'                       " 3 = 在職
+      AND p1~sprps = @space AND p0~sprps = @space   " 排除鎖定中的紀錄
+    ORDER BY p1~pernr
+    INTO TABLE @DATA(lt_emp).
+
+  " 直接 SELECT 不會檢查 HR 權限：正式程式要逐筆做 P_ORGIN 檢查（見第 18 節）
+
+  WRITE: / |基準日 { p_keydt DATE = USER } 在職人數：{ lines( lt_emp ) }|.</code></pre>
+  <div class="note">要讀「某期間內有效過的資料」（例如某月所有調動）則是區間重疊條件：<b>BEGDA ≤ 期末 AND ENDDA ≥ 期初</b>。一位員工在期間內可能有多筆，要依 BEGDA 排序後再處理。</div>
+
+  <h3 id="ch06-12-15">15. HR_READ_INFOTYPE 的現代寫法</h3>
+  <p>直接 SELECT PA 表最快，但<b>不會檢查 HR 權限</b>。標準函數 <b>HR_READ_INFOTYPE</b> 會依 P_ORGIN 等權限物件過濾資料，並處理緩衝，適合讀少量員工的完整資訊類型。它的 TABLES 參數要傳對應的結構表（例如 P0002 型別）。</p>
+  <pre><code class="abap">DATA lt_p0002 TYPE STANDARD TABLE OF p0002 WITH EMPTY KEY.
+
+PARAMETERS: p_pernr TYPE pernr_d OBLIGATORY,
+            p_keydt TYPE datum   DEFAULT sy-datum.
+
+CALL FUNCTION 'HR_READ_INFOTYPE'
+  EXPORTING
+    pernr           = p_pernr
+    infty           = '0002'
+    begda           = p_keydt
+    endda           = p_keydt
+  TABLES
+    infty_tab       = lt_p0002
+  EXCEPTIONS
+    infty_not_found = 1
+    OTHERS          = 2.
+
+IF sy-subrc &lt;&gt; 0 OR lt_p0002 IS INITIAL.
+  MESSAGE |人員 { p_pernr ALPHA = OUT } 在 { p_keydt DATE = USER } 無資料或無權限| TYPE 'S' DISPLAY LIKE 'W'.
+  RETURN.
+ENDIF.
+
+" 取基準日有效的那一筆（先排序，不要依賴回傳順序）
+SORT lt_p0002 BY begda DESCENDING.
+DATA(ls_p0002) = lt_p0002[ 1 ].
+WRITE: / ls_p0002-pernr, ls_p0002-begda, ls_p0002-endda.</code></pre>
+  <div class="note">介面參數：TCLAS（預設 'A' = 員工，'B' = 應徵者）、PERNR、INFTY、BEGDA、ENDDA、BYPASS_BUFFER 等；回傳在 TABLES INFTY_TAB。其他參數與例外請以 <span class="tcode">SE37</span> 確認介面。沒有權限時，函數不一定丟例外，常見情況是回傳空表或 SUBRC 非 0，所以兩者都要檢查。另有物件導向的讀取類別（CL_HRPA_* 系列），介面依版本不同，使用前請以 SE24 確認。</div>
+
+  <h3 id="ch06-12-16">16. PNP／PNPCE 邏輯資料庫</h3>
+  <p>傳統 HR 報表用邏輯資料庫（LDB）：在程式屬性指定 <b>PNP</b>（舊）或 <b>PNPCE</b>（Concurrent Employment，建議新報表使用），就自動得到標準的 HR 選擇畫面（人員編號、期間、組織結構、人事範圍 …）與<b>自動權限檢查</b>。</p>
+  <pre><code class="abap">REPORT zhr_ldb_demo.
+" 程式屬性 → 邏輯資料庫：PNPCE（HR 報表類別依需求在屬性中設定）
+
+NODES peras.                 " PNPCE 的節點；PNP 則為 NODES pernr
+INFOTYPES: 0001, 0002.       " 自動產生內表 p0001、p0002
+
+DATA gt_out TYPE STANDARD TABLE OF p0001 WITH EMPTY KEY.
+
+START-OF-SELECTION.
+
+GET peras.
+  " 選擇畫面上的「資料選擇期間」為 pn-begda ～ pn-endda
+  rp_provide_from_last p0001 space pn-begda pn-endda.
+  IF pnp-sw-found = 1.
+    APPEND p0001 TO gt_out.
+  ENDIF.
+
+END-OF-SELECTION.
+  SORT gt_out BY pernr.
+  TRY.
+      cl_salv_table=&gt;factory( IMPORTING r_salv_table = DATA(lo_alv)
+                              CHANGING  t_table      = gt_out ).
+      lo_alv-&gt;display( ).
+    CATCH cx_salv_msg INTO DATA(lx).
+      MESSAGE lx TYPE 'I' DISPLAY LIKE 'E'.
+  ENDTRY.</code></pre>
+  <div class="warn">LDB 是 HR 報表的特殊情況：<span class="kw">INFOTYPES</span> 敘述會隱含產生<b>帶表頭行</b>的內表 p0001、p0002，<span class="kw">rp_provide_from_last</span> 是 HR 的巨集（放在表頭行並設定 PNP-SW-FOUND）。這些是 LDB 框架要求的寫法，不是本書推薦的一般語法；自己的邏輯請寫在類別或內嵌宣告裡，只把 LDB 當作「選擇畫面＋權限＋取人」的入口。不想用 LDB 時，改用第 14 節的 SELECT 加第 18 節的權限檢查，或第 15 節的 HR_READ_INFOTYPE。</div>
+
+  <h3 id="ch06-12-17">17. 讀 HRP1001 組織關係</h3>
+  <p>組織管理（OM）的物件在 <b>HRP1000</b>（物件主檔：PLVAR 計畫版本、OTYPE 物件類型、OBJID、BEGDA、ENDDA、LANGU、SHORT、STEXT），物件之間的關係在 <b>HRP1001</b>（OTYPE／OBJID → RSIGN、RELAT → SCLAS／SOBID）。</p>
+  <table>
+    <thead><tr><th>物件類型</th><th>意義</th><th>常用關係</th></tr></thead>
+    <tbody>
+      <tr><td>O</td><td>組織單位</td><td>O A002 O：上層組織；O B012 S：由某職位管理（主管職）</td></tr>
+      <tr><td>S</td><td>職位</td><td>S A003 O：隸屬組織；S A008 P：由某人擔任</td></tr>
+      <tr><td>P</td><td>人員</td><td>P B008 S：擔任某職位（方向相反）</td></tr>
+      <tr><td>C</td><td>職務</td><td>C A007 S：描述某職位</td></tr>
+      <tr><td>K</td><td>成本中心</td><td>O A011 K：成本中心指派</td></tr>
+    </tbody>
+  </table>
+  <p>關係有方向：<b>A</b> 是由下往上、<b>B</b> 是由上往下，同一組關係在 HRP1001 會存兩筆（A 與 B 各一筆）。下面找出某組織單位底下，基準日時的職位與人員：</p>
+  <pre><code class="abap">PARAMETERS: p_orgeh TYPE hrobjid OBLIGATORY,
+            p_keydt TYPE datum   DEFAULT sy-datum.
+
+CONSTANTS lc_plvar TYPE plvar VALUE '01'.   " 目前計畫版本（以 T778P 或設定確認）
+
+" 1) 組織 O → 職位 S（O B003 S：包含職位）
+SELECT sobid AS position
+  FROM hrp1001
+  WHERE plvar = @lc_plvar
+    AND otype = 'O'
+    AND objid = @p_orgeh
+    AND rsign = 'B'
+    AND relat = '003'
+    AND sclas = 'S'
+    AND istat = '1'                          " 1 = 啟用
+    AND begda &lt;= @p_keydt AND endda &gt;= @p_keydt
+  INTO TABLE @DATA(lt_pos).
+
+IF lt_pos IS INITIAL.
+  RETURN.
+ENDIF.
+
+" SOBID 是 45 碼通用欄位，先轉成 8 碼 OBJID 再做 FOR ALL ENTRIES
+TYPES: BEGIN OF ty_pos, objid TYPE hrobjid, END OF ty_pos.
+DATA lt_posid TYPE SORTED TABLE OF ty_pos WITH NON-UNIQUE KEY objid.
+lt_posid = VALUE #( FOR p IN lt_pos ( objid = CONV hrobjid( p-position ) ) ).
+
+" 2) 職位 S → 人員 P（S A008 P：由某人擔任）
+SELECT objid AS position, sobid AS pernr
+  FROM hrp1001
+  FOR ALL ENTRIES IN @lt_posid
+  WHERE plvar = @lc_plvar
+    AND otype = 'S'
+    AND objid = @lt_posid-objid
+    AND rsign = 'A'
+    AND relat = '008'
+    AND sclas = 'P'
+    AND istat = '1'
+    AND begda &lt;= @p_keydt AND endda &gt;= @p_keydt
+  INTO TABLE @DATA(lt_holder).
+
+" 3) 職位名稱（HRP1000）
+SELECT objid, stext
+  FROM hrp1000
+  FOR ALL ENTRIES IN @lt_posid
+  WHERE plvar = @lc_plvar
+    AND otype = 'S'
+    AND objid = @lt_posid-objid
+    AND langu = @sy-langu
+    AND begda &lt;= @p_keydt AND endda &gt;= @p_keydt
+  INTO TABLE @DATA(lt_postext).
+
+SORT lt_holder BY position pernr.</code></pre>
+  <div class="note">SOBID 是 45 碼的通用欄位，裝得下任何物件類型的 ID，所以接回 OBJID（8 碼）時要先用 CONV 轉型；FOR ALL ENTRIES 前一定要確認驅動表非空，否則會讀出全部資料。要遞迴展開整棵組織樹，用標準函數 <b>RH_STRUC_GET</b>（評估路徑，例如 O-S-P）比自己寫迴圈可靠，參數請以 SE37 確認；評估路徑定義在 <span class="tcode">OOAW</span>。</div>
+
+  <h3 id="ch06-12-18">18. 權限與個資遮罩</h3>
+  <p>HR 的讀取權限主要看 <b>P_ORGIN</b>（HR：主資料），欄位包括 INFTY（資訊類型）、SUBTY（子類型）、AUTHC（存取層級 R 讀、W 寫…）、PERSA（人事範圍）、PERSG（員工群組）、PERSK（員工子群組）、VDSK1（組織鍵）。另有 P_PERNR（自己的人員編號）、P_ORGINCON（依結構權限的擴充版本）與結構權限（OM 的 PLOG／結構設定檔），依公司設定而定。</p>
+  <pre><code class="abap">CLASS lcl_hr_guard DEFINITION FINAL.
+  PUBLIC SECTION.
+    CLASS-METHODS can_read
+      IMPORTING is_p0001      TYPE p0001
+                iv_infty      TYPE infty
+      RETURNING VALUE(rv_ok)  TYPE abap_bool.
+    CLASS-METHODS mask
+      IMPORTING iv_text        TYPE csequence
+                iv_keep        TYPE i DEFAULT 1
+      RETURNING VALUE(rv_mask) TYPE string.
+ENDCLASS.
+
+CLASS lcl_hr_guard IMPLEMENTATION.
+  METHOD can_read.
+    " 以員工在 PA0001 的組織屬性檢查 P_ORGIN 讀取權限
+    AUTHORITY-CHECK OBJECT 'P_ORGIN'
+      ID 'INFTY' FIELD iv_infty
+      ID 'SUBTY' DUMMY
+      ID 'AUTHC' FIELD 'R'
+      ID 'PERSA' FIELD is_p0001-werks
+      ID 'PERSG' FIELD is_p0001-persg
+      ID 'PERSK' FIELD is_p0001-persk
+      ID 'VDSK1' FIELD is_p0001-vdsk1.
+    rv_ok = xsdbool( sy-subrc = 0 ).
+  ENDMETHOD.
+
+  METHOD mask.
+    " 保留前 iv_keep 個字元，其餘以 * 取代，例如 A*******
+    DATA(lv_len) = strlen( iv_text ).
+    IF lv_len &lt;= iv_keep.
+      rv_mask = repeat( val = `*` occ = lv_len ).
+    ELSE.
+      rv_mask = substring( val = iv_text len = iv_keep )
+             &amp;&amp; repeat( val = `*` occ = lv_len - iv_keep ).
+    ENDIF.
+  ENDMETHOD.
+ENDCLASS.
+
+" 使用：沒權限的人員整筆排除；有權限也只顯示遮罩後的身分證號
+" （DELETE … WHERE 不能呼叫方法，所以用迴圈過濾）
+DATA lt_p0001 TYPE STANDARD TABLE OF p0001 WITH EMPTY KEY.   " 假設已依第 14 節讀入
+LOOP AT lt_p0001 ASSIGNING FIELD-SYMBOL(&lt;p&gt;).
+  IF lcl_hr_guard=&gt;can_read( is_p0001 = &lt;p&gt; iv_infty = '0002' ) = abap_false.
+    DELETE lt_p0001.
+  ENDIF.
+ENDLOOP.
+
+DATA(lv_id_masked) = lcl_hr_guard=&gt;mask( iv_text = 'X123456789' iv_keep = 2 ).  " X1********</code></pre>
+  <div class="warn"><b>HR 是個資。</b>直接 SELECT PA／PB／PCL 表會<b>繞過 HR 權限</b>，所以：（1）自己寫 SELECT 時一定要補 AUTHORITY-CHECK P_ORGIN，或改用 HR_READ_INFOTYPE／LDB；（2）姓名、生日、身分證號（PERID）、地址、銀行帳號（PA0009-BANKN）、薪資（PA0008）等欄位，除非需求明確，否則輸出一律遮罩或不輸出；（3）程式本身要有交易代碼與 S_TCODE 控管，不要讓一般使用者用 SE38 直接執行；（4）測試資料用合成資料，不要把正式機人員資料複製到測試機或寄出；（5）使用者回報「看不到資料」時先看 <span class="tcode">SU53</span>，不要直接放寬權限。</div>
+  <div class="note">S/4HANA 上的 HCM：on-premise 的 HR 模組在 S/4HANA 可用「相容模式」執行，SAP 另提供 SAP HCM for SAP S/4HANA 作為後續方案，雲端則是 SuccessFactors。PA／HRP 表結構在這些 on-premise 方案中大致相同，但支援期限與移轉方式請以 SAP 官方公告為準。</div>
+
+  <h3 id="ch06-12-qa">練習與自我檢核</h3>
+  <ol>
+    <li>ACDOCA 的主鍵有哪六個欄位？為什麼報表不帶 RLDNR 會得到重複金額？</li>
+    <li>素材把 KTOSL 寫成「交易代碼」、LINETYPE 寫成「產品類別」，正確的意義各是什麼？請舉三個 KTOSL 的值。</li>
+    <li>TSL、WSL、HSL、KSL 各是什麼幣別？財務報表通常該用哪兩個？加總時為什麼一定要連幣別鍵一起分組？</li>
+    <li>POPER = 000 在 ACDOCA 代表什麼？算「本期發生額」與「年初至今餘額」時各要怎麼處理？</li>
+    <li>S/4HANA 還能 SELECT BSIS 嗎？它的資料從哪裡來？舊資料在哪張表？</li>
+    <li>改寫第 6 節的程式：加上 KSL 與 RKCUR，並排除 POPER 000。</li>
+    <li>以第 8 節為基礎，把某張採購單的收貨金額與發票金額依採購單行號並排比較。</li>
+    <li>PA0001 的 ENDDA 為什麼常是 99991231？為什麼「讀目前資料」不能寫 ENDDA = '99991231'？</li>
+    <li>直接 SELECT PA0002 與呼叫 HR_READ_INFOTYPE 讀 0002，權限上有什麼差別？</li>
+    <li>HRP1001 中「S A008 P」與「P B008 S」是什麼關係？寫出從組織單位找到主管的評估路徑思路（提示：O B012 S → S A008 P）。</li>
+    <li>寫一支報表：輸入基準日與公司代碼，列出在職員工的人員編號、成本中心、姓名遮罩後的結果，並對每筆做 P_ORGIN 檢查。</li>
+  </ol>
+</section>

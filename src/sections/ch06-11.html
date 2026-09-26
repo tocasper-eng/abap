@@ -1,0 +1,810 @@
+<section class="chapter" id="ch06-11" data-title="開發者基本功">
+  <h2>第 6-11 章 開發者基本功：SYST、使用者資訊與自己的工具庫</h2>
+  <p class="lede">每支 ABAP 程式都在用 <span class="kw">sy-</span> 開頭的系統欄位，卻很少人把 SYST 結構從頭看過一遍：哪些能用、哪些是 SAP 明說「不可在程式中使用」、<span class="kw">sy-subrc</span> 什麼時候會被偷偷覆蓋。本章把 SYST 的 171 個欄位全部整理成表，接著處理「這個帳號是誰」這個天天會遇到的小需求（USR21／ADRP、SUSR_USER_ADDRESS_READ、BAPI_USER_GET_DETAIL、cl_abap_context_info），再用一題字串反轉作業練基本功。最後回到 Casper 在 BC400 第一課寫下的那句話：「開始成為程式師的第一天，就該開始建構自已的 lib」，示範怎麼把這些常用功能收進自己的全域工具類別。</p>
+  <div class="meta">
+    <div><b>核心 TCODE</b><span class="tcode">SE11</span><span class="tcode">SE24</span><span class="tcode">SE37</span><span class="tcode">SE21</span><span class="tcode">SE80</span><span class="tcode">SU01</span><span class="tcode">SU3</span><span class="tcode">SE91</span></div>
+    <div><b>關鍵物件</b>SYST（sy）、USR21、ADRP、USR02、ADDR3_VAL、SUSR_USER_ADDRESS_READ、BAPI_USER_GET_DETAIL、BAPIADDR3、BAPIRET2、CL_ABAP_CONTEXT_INFO、reverse( )、substring( )、strlen( )、CL_SALV_TABLE、CL_GUI_FRONTEND_SERVICES、CL_ABAP_UNIT_ASSERT、ZCL_CA_UTIL（自建）</div>
+  </div>
+
+  <h3 id="ch06-11-01">1. 素材對照</h3>
+  <p>本章取材自 <span class="kw">15_累計心得</span> 的五份素材。兩支使用者姓名程式與作業都是課堂作業，原程式名與變數名不引用。</p>
+  <table>
+    <thead><tr><th>#</th><th>原始檔</th><th>內容</th><th>本章處理方式</th><th>本章小節</th></tr></thead>
+    <tbody>
+      <tr><td>1</td><td>08_SYST_STRUCTURE（Excel，兩個工作表）</td><td>工作表 2：SE11 匯出的 SYST 結構，171 個欄位（Field、Component Type、Data Type、長度、Check table、Description、Conversion Routine）。工作表 1 是另一份數值計算練習的殘留，與 SYST 無關</td><td>171 個欄位全部保留：81 個可用欄位依用途分七組並補中文說明與用途；56 個 Obsolete、34 個 Internal Use 另列一表。工作表 1 不收錄</td><td>2～7</td></tr>
+      <tr><td>2</td><td>01_USR21_ADRP_找出帳號與員工姓名</td><td>USR21 LEFT JOIN ADRP 列出所有帳號與姓名，WRITE 輸出</td><td>原程式用 <span class="kw">TABLES</span>、<span class="kw">OCCURS 0</span> 表頭行內表、<span class="kw">LIKE</span>、<span class="kw">LOOP AT</span> 表頭行、<span class="kw">INTO CORRESPONDING FIELDS OF</span>；改寫為內嵌宣告＋CL_SALV_TABLE，並補 USR02 帳號狀態與 ADRP 國際版本條件</td><td>8</td></tr>
+      <tr><td>3</td><td>02_SUSR_USER_ADDRESS_READ_秀出登錄者的員工姓名</td><td>呼叫 SUSR_USER_ADDRESS_READ 取目前使用者的 NAME_TEXT</td><td>原程式用 <span class="kw">LIKE</span> 宣告、WRITE 輸出；改寫並補兩個替代方案 BAPI_USER_GET_DETAIL、cl_abap_context_info</td><td>9</td></tr>
+      <tr><td>4</td><td>07_作業（作業一）</td><td>不用 STRING_REVERSE 寫字串反轉，提示 strlen、DO n TIMES</td><td>傳統迴圈解、內建函數 reverse( ) 解、REDUCE 解；原題宣告的陷阱一併說明。作業二（民國年日期）放進第 12 節工具類別與練習題</td><td>10</td></tr>
+      <tr><td>5</td><td>19_BC400_CASPER_劃記</td><td>Casper 在 SAP 原廠 BC400（Course Version 18，2020）第一課的螢光筆、方框與手寫註解</td><td>整理成劃記重點表，連到 5-1 章；再延伸成「建構自己的工具庫」兩節</td><td>11～13</td></tr>
+    </tbody>
+  </table>
+  <p>相關章節：基本語法與系統欄位入門見 <a href="#ch02-1">2-1 章</a>；內表與新語法見 <a href="#ch02-2">2-2 章</a>；BC400 全課整理見 <a href="#ch05-1">5-1 章</a>；命名規則見 <a href="#ch06-4">6-4 章</a>。</p>
+
+  <h3 id="ch06-11-02">2. SYST 是什麼：sy 的五條規矩</h3>
+  <p>SYST 是 ABAP 字典中的一個結構（SE11 可看），執行時每個內部 session 都有一份，程式中以別名 <span class="kw">sy</span>（或 <span class="kw">syst</span>）存取。它的欄位由 ABAP 執行環境在執行敘述時自動填值。</p>
+  <ol>
+    <li><b>唯讀</b>：除了少數清單控制欄位（如 <span class="kw">sy-lsind</span>）SAP 允許在特定事件中改寫之外，一律只讀不寫。改寫 <span class="kw">sy-subrc</span> 來「騙」下游判斷，是最常見的壞味道。</li>
+    <li><b>會被覆蓋</b>：<span class="kw">sy-subrc</span>、<span class="kw">sy-tabix</span>、<span class="kw">sy-dbcnt</span>、<span class="kw">sy-fdpos</span> 等每執行一個相關敘述就更新，要用就「緊接著用，或立刻存到區域變數」。</li>
+    <li><b>型別請用字典型別</b>：宣告變數時用 <span class="kw">TYPE sy-uname</span> 或 <span class="kw">TYPE syst_uname</span>（工作表中的 Component Type 欄），不要自己寫 <span class="kw">c LENGTH 12</span>。</li>
+    <li><b>Obsolete／Internal Use 的欄位不要用</b>：SE11 說明寫著 <i>Obsolete</i> 或 <i>Internal Use</i> 的欄位，SAP 不保證有值，也可能在新版改變行為（第 4 節列出全部）。</li>
+    <li><b>sy-repid 不在 SYST 裡</b>：素材匯出的 SYST 沒有 REPID 這個欄位。<span class="kw">sy-repid</span> 是每個程式內建的常數（目前程式名），可以照常使用，但不能拿 <span class="kw">syst-repid</span> 當型別。</li>
+  </ol>
+  <pre><code class="abap">REPORT zca_syst_demo.
+
+" 一次看遍最常用的系統欄位（cl_demo_output 只用於練習，正式程式請用 ALV 或訊息）
+cl_demo_output=&gt;write( |使用者 { sy-uname }，用戶端 { sy-mandt }，語言 { sy-langu }| ).
+cl_demo_output=&gt;write( |系統 { sy-sysid }，版本 { sy-saprl }，主機 { sy-host }，DB { sy-dbsys }| ).
+cl_demo_output=&gt;write( |伺服器：{ sy-datum DATE = ISO } { sy-uzeit TIME = ISO }| ).
+cl_demo_output=&gt;write( |使用者當地：{ sy-datlo DATE = ISO } { sy-timlo TIME = ISO }，時區 { sy-zonlo }| ).
+cl_demo_output=&gt;write( |程式 { sy-repid }，TCODE { sy-tcode }，| &amp;&amp;
+                       |背景執行 { COND string( WHEN sy-batch = abap_true THEN `是` ELSE `否` ) }| ).
+cl_demo_output=&gt;display( ).
+
+" 宣告變數時用字典型別
+DATA lv_user TYPE syst_uname.        " = TYPE sy-uname
+DATA lv_date TYPE syst_datum.        " = TYPE sy-datum
+lv_user = sy-uname.
+lv_date = sy-datlo.</code></pre>
+  <div class="warn"><b>ABAP Cloud 注意</b>：在 ABAP Cloud（BTP ABAP Environment、S/4HANA Cloud 開發者擴充）的語言版本中，<span class="kw">sy-uname</span>、<span class="kw">sy-datum</span>、<span class="kw">sy-uzeit</span>、<span class="kw">sy-langu</span> 等使用者與時間相關欄位被限制或不建議使用，改用 <span class="kw">cl_abap_context_info</span> 的方法（第 9 節）。本章其餘程式以 S/4HANA 1809 on-premise 的 Standard ABAP 為準。</div>
+
+  <h3 id="ch06-11-03">3. SYST 欄位總表（一）：81 個可用欄位</h3>
+  <p>以下依用途分七組。「說明」保留 SE11 原文（去掉共同前綴 <i>ABAP System Field:</i>），「型別 長度」後的括號是轉換常式。Check table 欄在原匯出中只標 <span class="kw">*</span>（MANDT、TCODE、CPROG、LDBPG、MSGID 等），代表字典有外鍵檢查，本表省略。</p>
+  <h4>迴圈、內表、SQL 與字串（7 個）</h4>
+  <table>
+    <thead><tr><th>欄位</th><th>型別 長度</th><th>說明（SE11 原文）</th><th>中文說明</th><th>常見用途與注意</th></tr></thead>
+    <tbody>
+      <tr><td><span class="kw">sy-index</span></td><td>INT4 10</td><td>Loop Index</td><td>DO／WHILE 迴圈的目前圈數</td><td>只在 DO、WHILE 內有意義；巢狀時是最內層迴圈</td></tr>
+      <tr><td><span class="kw">sy-tabix</span></td><td>INT4 10</td><td>Row Index of Internal Tables</td><td>內表目前列的索引</td><td>LOOP AT、READ TABLE、APPEND、INSERT 後設定；雜湊表（HASHED）為 0</td></tr>
+      <tr><td><span class="kw">sy-tfill</span></td><td>INT4 10</td><td>Number of Rows in Internal Tables</td><td>內表列數</td><td>舊程式配 DESCRIBE TABLE 使用；新程式一律用 <span class="kw">lines( itab )</span></td></tr>
+      <tr><td><span class="kw">sy-dbcnt</span></td><td>INT4 10</td><td>Edited Database Table Rows</td><td>上一個 ABAP SQL 處理的資料列數</td><td>SELECT INTO TABLE 讀到幾筆、UPDATE／DELETE／MODIFY 異動幾筆</td></tr>
+      <tr><td><span class="kw">sy-fdpos</span></td><td>INT4 10</td><td>Occurrence in Byte or Character String</td><td>字串比較／搜尋命中的位置（從 0 起算）</td><td>CA、CO、CS、CN、NA、NS 比較與舊 SEARCH；新程式用 <span class="kw">find( )</span>、<span class="kw">FIND … MATCH OFFSET</span></td></tr>
+      <tr><td><span class="kw">sy-tleng</span></td><td>INT4 10</td><td>Row Length of Internal Table</td><td>內表列寬（位元組）</td><td>舊程式配 DESCRIBE TABLE；新程式幾乎用不到</td></tr>
+      <tr><td><span class="kw">sy-subrc</span></td><td>INT4 10</td><td>Return Code of ABAP Statements</td><td>上一個敘述的回傳碼</td><td>0＝成功；非 0 的意義依敘述而定（見第 5 節）。每個會設定它的敘述都會覆蓋它，要判斷就緊接著判斷</td></tr>
+    </tbody>
+  </table>
+  <h4>系統與使用者（10 個）</h4>
+  <table>
+    <thead><tr><th>欄位</th><th>型別 長度</th><th>說明（SE11 原文）</th><th>中文說明</th><th>常見用途與注意</th></tr></thead>
+    <tbody>
+      <tr><td><span class="kw">sy-langu</span></td><td>LANG 1（ISOLA）</td><td>Language Key of Text Environment</td><td>目前登入語言（1 碼內碼，轉換常式 ISOLA）</td><td>讀文字表（MAKT、T001W…）時的 SPRAS 條件</td></tr>
+      <tr><td><span class="kw">sy-modno</span></td><td>INT4 10</td><td>Index of External Mode</td><td>外部模式（Session）編號</td><td>同一使用者開多個視窗時區分 session</td></tr>
+      <tr><td><span class="kw">sy-mandt</span></td><td>CLNT 3</td><td>Client ID of Current User</td><td>目前登入的用戶端（Client）</td><td>ABAP SQL 會自動處理，除非用 USING CLIENT，不必自己加條件</td></tr>
+      <tr><td><span class="kw">sy-dbsys</span></td><td>CHAR 10</td><td>Central Database System</td><td>中央資料庫系統（如 HDB）</td><td>判斷是否為 HANA（通常不需要）</td></tr>
+      <tr><td><span class="kw">sy-sysid</span></td><td>CHAR 8</td><td>Name of SAP System</td><td>SAP 系統 ID（如 DEV／QAS／PRD 的 SID）</td><td>依系統切換外部介面端點、測試模式；別寫死 SID 判斷業務邏輯</td></tr>
+      <tr><td><span class="kw">sy-opsys</span></td><td>CHAR 10</td><td>Operating System of Application Server</td><td>應用伺服器作業系統</td><td>組應用伺服器檔案路徑時判斷分隔符號（建議改用邏輯檔名 FILE）</td></tr>
+      <tr><td><span class="kw">sy-saprl</span></td><td>CHAR 4</td><td>SAP System Release</td><td>SAP 系統版本（SAP_BASIS Release）</td><td>版本判斷、除錯記錄</td></tr>
+      <tr><td><span class="kw">sy-uname</span></td><td>CHAR 12</td><td>Name of Current User</td><td>目前使用者帳號</td><td>記錄建立者／變更者、權限以外的個人化判斷；取姓名見第 8、9 節</td></tr>
+      <tr><td><span class="kw">sy-abcde</span></td><td>CHAR 26</td><td>Latin Alphabet</td><td>拉丁字母 A～Z 常數</td><td>產生字母序號、檢查字元</td></tr>
+      <tr><td><span class="kw">sy-host</span></td><td>CHAR 32</td><td>Name of Current Application Server</td><td>目前應用伺服器主機名</td><td>除錯記錄、背景作業追蹤跑在哪台 AS</td></tr>
+    </tbody>
+  </table>
+  <h4>日期、時間與時區（8 個）</h4>
+  <table>
+    <thead><tr><th>欄位</th><th>型別 長度</th><th>說明（SE11 原文）</th><th>中文說明</th><th>常見用途與注意</th></tr></thead>
+    <tbody>
+      <tr><td><span class="kw">sy-tzone</span></td><td>INT4 10</td><td>Time Zone</td><td>系統時區與 UTC 的時差（秒）</td><td>舊程式手算時差；新程式改用時間戳記＋時區轉換</td></tr>
+      <tr><td><span class="kw">sy-dayst</span></td><td>CHAR 1</td><td>Daylight Saving Time</td><td>目前是否為夏令時間（X＝是）</td><td>同上，少用</td></tr>
+      <tr><td><span class="kw">sy-fdayw</span></td><td>INT1 3</td><td>Factory Calendar Weekday</td><td>工廠日曆星期（Factory Calendar Weekday）</td><td>取得今天是星期幾；編碼請以 F1 說明確認，跨日曆計算改用 SCAL 相關函數（<a href="#ch06-4-11">6-4 章第 11 節</a>）</td></tr>
+      <tr><td><span class="kw">sy-datum</span></td><td>DATS 8</td><td>Current Date of Application Server</td><td>應用伺服器的目前日期（系統時區）</td><td>過帳日預設、建立日；跨時區公司要想清楚用哪個</td></tr>
+      <tr><td><span class="kw">sy-uzeit</span></td><td>TIMS 6</td><td>Current Time of Application Server</td><td>應用伺服器的目前時間（系統時區）</td><td>建立時間、檔名時間戳</td></tr>
+      <tr><td><span class="kw">sy-datlo</span></td><td>DATS 8</td><td>Local Date of Current User</td><td>使用者當地日期（依 SU01 使用者時區）</td><td>畫面顯示給使用者看的「今天」</td></tr>
+      <tr><td><span class="kw">sy-timlo</span></td><td>TIMS 6</td><td>Local Time of Current User</td><td>使用者當地時間</td><td>同上</td></tr>
+      <tr><td><span class="kw">sy-zonlo</span></td><td>CHAR 6</td><td>Time Zone of Current User</td><td>使用者時區（如 UTC+8、JAPAN）</td><td>配合 CONVERT TIME STAMP 轉當地時間</td></tr>
+    </tbody>
+  </table>
+  <h4>程式與執行環境（8 個）</h4>
+  <table>
+    <thead><tr><th>欄位</th><th>型別 長度</th><th>說明（SE11 原文）</th><th>中文說明</th><th>常見用途與注意</th></tr></thead>
+    <tbody>
+      <tr><td><span class="kw">sy-batch</span></td><td>CHAR 1</td><td>Background Processing Active</td><td>是否在背景作業執行（X＝背景）</td><td>背景時不可呼叫前端服務（GUI_DOWNLOAD、彈窗），改寫應用伺服器檔案或 spool</td></tr>
+      <tr><td><span class="kw">sy-binpt</span></td><td>CHAR 1</td><td>Batch Input Processing Active</td><td>是否在 Batch Input（BDC）中執行</td><td>增強點中略過彈窗或額外檢查</td></tr>
+      <tr><td><span class="kw">sy-calld</span></td><td>CHAR 1</td><td>Call Mode of Current ABAP Program</td><td>呼叫模式（X＝被 CALL TRANSACTION／SUBMIT 等呼叫）</td><td>判斷是否由其他程式呼叫，決定結束時要 LEAVE PROGRAM 還是回上一層</td></tr>
+      <tr><td><span class="kw">sy-dbnam</span></td><td>CHAR 20</td><td>Logical Database of Current Program</td><td>程式連結的邏輯資料庫（LDB）名稱</td><td>只有舊 LDB 報表用；S/4HANA 新程式不用 LDB</td></tr>
+      <tr><td><span class="kw">sy-tcode</span></td><td>CHAR 20</td><td>Current Transaction Code</td><td>目前交易代碼</td><td>依 TCODE 切換行為（同一程式掛多個 TCODE 時）</td></tr>
+      <tr><td><span class="kw">sy-slset</span></td><td>CHAR 14</td><td>Selection Screen Variant Used</td><td>執行時使用的選擇畫面變式（Variant）</td><td>在輸出抬頭印出「使用變式」，背景作業追蹤</td></tr>
+      <tr><td><span class="kw">sy-cprog</span></td><td>CHAR 40</td><td>Calling Program</td><td>呼叫端程式（Calling Program）</td><td>在外部呼叫的函數／子程式中得知是誰呼叫；主程式本身時等於主程式名</td></tr>
+      <tr><td><span class="kw">sy-ldbpg</span></td><td>CHAR 40</td><td>Database Program of Logical Database</td><td>邏輯資料庫的資料庫程式名稱</td><td>同上</td></tr>
+    </tbody>
+  </table>
+  <h4>Dynpro 畫面（12 個）</h4>
+  <table>
+    <thead><tr><th>欄位</th><th>型別 長度</th><th>說明（SE11 原文）</th><th>中文說明</th><th>常見用途與注意</th></tr></thead>
+    <tbody>
+      <tr><td><span class="kw">sy-cucol</span></td><td>INT4 10</td><td>Horizontal Cursor Position in PAI</td><td>PAI 時游標的水平位置</td><td>配合 GET CURSOR 更精準</td></tr>
+      <tr><td><span class="kw">sy-curow</span></td><td>INT4 10</td><td>Vertical Cursor Position in PAI</td><td>PAI 時游標的垂直位置</td><td>同上</td></tr>
+      <tr><td><span class="kw">sy-stepl</span></td><td>INT4 10</td><td>Current Step Loop or Table Control Line</td><td>目前 Step Loop／Table Control 的列（在可見範圍內的相對列）</td><td>Table Control 的 LOOP 中計算內表索引：top_line ＋ sy-stepl − 1</td></tr>
+      <tr><td><span class="kw">sy-srows</span></td><td>INT4 10</td><td>Number of Screen Rows</td><td>畫面的列數</td><td>彈出視窗大小計算</td></tr>
+      <tr><td><span class="kw">sy-scols</span></td><td>INT4 10</td><td>Number of Columns on Screen</td><td>畫面的欄數</td><td>同上</td></tr>
+      <tr><td><span class="kw">sy-loopc</span></td><td>INT4 10</td><td>Visible Lines of Step Loop</td><td>Step Loop／Table Control 的可見列數</td><td>PBO 中設定捲動、翻頁</td></tr>
+      <tr><td><span class="kw">sy-dynnr</span></td><td>CHAR 4</td><td>Current Dynpro Number</td><td>目前畫面（Dynpro）編號</td><td>同一 PBO／PAI 模組服務多個畫面時判斷；選擇畫面為 1000</td></tr>
+      <tr><td><span class="kw">sy-dyngr</span></td><td>CHAR 4</td><td>Screen Group of Current Dynpro</td><td>目前畫面的畫面群組</td><td>畫面群組層級的共用邏輯</td></tr>
+      <tr><td><span class="kw">sy-pfkey</span></td><td>CHAR 20</td><td>Current GUI Status</td><td>目前 GUI Status 名稱</td><td>依狀態判斷按鈕來源</td></tr>
+      <tr><td><span class="kw">sy-ucomm</span></td><td>CHAR 70</td><td>PAI-Triggering Function Code</td><td>觸發 PAI 的功能碼</td><td>選擇畫面事件用 <span class="kw">sscrfields-ucomm</span>、Dynpro 用 OK_CODE 欄位；只在清單事件（AT USER-COMMAND）直接讀 sy-ucomm</td></tr>
+      <tr><td><span class="kw">sy-title</span></td><td>CHAR 70</td><td>Title Line Content of Current Dynpro</td><td>目前畫面的標題列內容</td><td>SET TITLEBAR 後的結果；少直接讀</td></tr>
+      <tr><td><span class="kw">sy-datar</span></td><td>CHAR 1</td><td>Highlighted Input in Dynpro Field</td><td>畫面上是否有欄位被輸入或變更（X＝有）</td><td>PAI 判斷使用者有沒有改資料，決定是否提示存檔</td></tr>
+    </tbody>
+  </table>
+  <h4>清單（List）（27 個）</h4>
+  <table>
+    <thead><tr><th>欄位</th><th>型別 長度</th><th>說明（SE11 原文）</th><th>中文說明</th><th>常見用途與注意</th></tr></thead>
+    <tbody>
+      <tr><td><span class="kw">sy-pagno</span></td><td>INT4 10</td><td>Current List Page</td><td>目前清單頁碼</td><td>TOP-OF-PAGE 印「第 n 頁」</td></tr>
+      <tr><td><span class="kw">sy-colno</span></td><td>INT4 10</td><td>Current Column in Current List</td><td>目前清單欄位置</td><td>WRITE AT 排版</td></tr>
+      <tr><td><span class="kw">sy-linct</span></td><td>INT4 10</td><td>Page Length of Current List</td><td>清單頁長（LINE-COUNT）</td><td>分頁控制</td></tr>
+      <tr><td><span class="kw">sy-linno</span></td><td>INT4 10</td><td>Current Line in Current List</td><td>目前清單列號</td><td>判斷是否接近頁尾</td></tr>
+      <tr><td><span class="kw">sy-linsz</span></td><td>INT4 10</td><td>Line Width of Current List</td><td>清單行寬（LINE-SIZE）</td><td>ULINE、置右計算</td></tr>
+      <tr><td><span class="kw">sy-macol</span></td><td>INT4 10</td><td>Columns on Left Margin of Print List</td><td>列印清單左邊界欄數</td><td>SET MARGIN 後的值</td></tr>
+      <tr><td><span class="kw">sy-marow</span></td><td>INT4 10</td><td>Columns at Top of Print List</td><td>列印清單上邊界列數</td><td>同上</td></tr>
+      <tr><td><span class="kw">sy-lilli</span></td><td>INT4 10</td><td>Selected List Line</td><td>被選取（點擊）的清單列號</td><td>AT LINE-SELECTION 中得知點了哪一列</td></tr>
+      <tr><td><span class="kw">sy-lsind</span></td><td>INT4 10</td><td>Current List Level</td><td>目前清單層級（0＝基本清單，最多 20 層）</td><td>互動清單下鑽層級控制</td></tr>
+      <tr><td><span class="kw">sy-listi</span></td><td>INT4 10</td><td>List Level of Displayed List</td><td>被點擊的清單所在層級</td><td>同上</td></tr>
+      <tr><td><span class="kw">sy-wtitl</span></td><td>CHAR 1</td><td>Standard Page Header Flag</td><td>是否輸出標準頁首（Standard Page Header Flag）</td><td>少用</td></tr>
+      <tr><td><span class="kw">sy-cpage</span></td><td>INT4 10</td><td>Current Page Number of List</td><td>清單目前顯示的頁碼</td><td>READ LINE、互動清單</td></tr>
+      <tr><td><span class="kw">sy-lisel</span></td><td>CHAR 255</td><td>Content of Selected List Line</td><td>被選取清單列的內容</td><td>舊互動清單取值；建議用 HIDE 或 ALV 事件</td></tr>
+      <tr><td><span class="kw">sy-uline</span></td><td>CHAR 255</td><td>Horizontal Line for List</td><td>水平線（255 個 -）</td><td>WRITE sy-uline</td></tr>
+      <tr><td><span class="kw">sy-tvar0</span></td><td>CHAR 20</td><td>Text for Placeholders in List Headers</td><td>清單標題佔位符 &amp;0 的替換文字</td><td>在清單標題（Text Elements）用 &amp;0～&amp;9 放動態值</td></tr>
+      <tr><td><span class="kw">sy-tvar1</span></td><td>CHAR 20</td><td>Text for Placeholders in List Headers</td><td>清單標題佔位符 &amp;1 的替換文字</td><td>同 TVAR0</td></tr>
+      <tr><td><span class="kw">sy-tvar2</span></td><td>CHAR 20</td><td>Text for Placeholders in List Headers</td><td>清單標題佔位符 &amp;2 的替換文字</td><td>同 TVAR0</td></tr>
+      <tr><td><span class="kw">sy-tvar3</span></td><td>CHAR 20</td><td>Text for Placeholders in List Headers</td><td>清單標題佔位符 &amp;3 的替換文字</td><td>同 TVAR0</td></tr>
+      <tr><td><span class="kw">sy-tvar4</span></td><td>CHAR 20</td><td>Text for Placeholders in List Headers</td><td>清單標題佔位符 &amp;4 的替換文字</td><td>同 TVAR0</td></tr>
+      <tr><td><span class="kw">sy-tvar5</span></td><td>CHAR 20</td><td>Text for Placeholders in List Headers</td><td>清單標題佔位符 &amp;5 的替換文字</td><td>同 TVAR0</td></tr>
+      <tr><td><span class="kw">sy-tvar6</span></td><td>CHAR 20</td><td>Text for Placeholders in List Headers</td><td>清單標題佔位符 &amp;6 的替換文字</td><td>同 TVAR0</td></tr>
+      <tr><td><span class="kw">sy-tvar7</span></td><td>CHAR 20</td><td>Text for Placeholders in List Headers</td><td>清單標題佔位符 &amp;7 的替換文字</td><td>同 TVAR0</td></tr>
+      <tr><td><span class="kw">sy-tvar8</span></td><td>CHAR 20</td><td>Text for Placeholders in List Headers</td><td>清單標題佔位符 &amp;8 的替換文字</td><td>同 TVAR0</td></tr>
+      <tr><td><span class="kw">sy-tvar9</span></td><td>CHAR 20</td><td>Text for Placeholders in List Headers</td><td>清單標題佔位符 &amp;9 的替換文字</td><td>同 TVAR0</td></tr>
+      <tr><td><span class="kw">sy-vline</span></td><td>CHAR 1</td><td>Vertical Line for List</td><td>垂直線 |</td><td>WRITE sy-vline 畫表格</td></tr>
+      <tr><td><span class="kw">sy-staco</span></td><td>INT4 10</td><td>First List Column Displayed</td><td>清單顯示中的第一欄</td><td>SCROLL LIST 相關</td></tr>
+      <tr><td><span class="kw">sy-staro</span></td><td>INT4 10</td><td>Top List Row Displayed</td><td>清單顯示中的最上一列</td><td>同上</td></tr>
+    </tbody>
+  </table>
+  <h4>列印與訊息（9 個）</h4>
+  <table>
+    <thead><tr><th>欄位</th><th>型別 長度</th><th>說明（SE11 原文）</th><th>中文說明</th><th>常見用途與注意</th></tr></thead>
+    <tbody>
+      <tr><td><span class="kw">sy-callr</span></td><td>CHAR 8</td><td>Start Context of Spool Action</td><td>列印動作的起始環境（如 NEW-PAGE、LIST）</td><td>列印相關判斷，少用</td></tr>
+      <tr><td><span class="kw">sy-spono</span></td><td>NUMC 10</td><td>Spool Number in Spool Output</td><td>清單輸出到 spool 時的 spool 編號</td><td>背景作業產生 spool 後，取得編號轉 PDF 或寄信</td></tr>
+      <tr><td><span class="kw">sy-msgid</span></td><td>CHAR 20</td><td>Message ID</td><td>訊息類別（Message Class）</td><td>CALL FUNCTION 捕捉 EXCEPTIONS 後、MESSAGE … INTO 後取得訊息，轉成 BAPIRET2</td></tr>
+      <tr><td><span class="kw">sy-msgty</span></td><td>CHAR 1</td><td>Message Type</td><td>訊息類型（E、W、I、S、A、X）</td><td>同上</td></tr>
+      <tr><td><span class="kw">sy-msgno</span></td><td>NUMC 3</td><td>Message Number</td><td>訊息編號</td><td>同上</td></tr>
+      <tr><td><span class="kw">sy-msgv1</span></td><td>CHAR 50</td><td>Message Variable</td><td>訊息變數 1～4</td><td>同上；組訊息文字用 <span class="kw">MESSAGE ID sy-msgid TYPE sy-msgty NUMBER sy-msgno WITH sy-msgv1 … INTO</span></td></tr>
+      <tr><td><span class="kw">sy-msgv2</span></td><td>CHAR 50</td><td>Message Variable</td><td>訊息變數 2</td><td>同 MSGV1</td></tr>
+      <tr><td><span class="kw">sy-msgv3</span></td><td>CHAR 50</td><td>Message Variable</td><td>訊息變數 3</td><td>同 MSGV1</td></tr>
+      <tr><td><span class="kw">sy-msgv4</span></td><td>CHAR 50</td><td>Message Variable</td><td>訊息變數 4</td><td>同 MSGV1</td></tr>
+    </tbody>
+  </table>
+  <div class="tip"><b>最常用的前 15 名</b>：subrc、tabix、index、dbcnt、fdpos、uname、datum、uzeit、datlo、langu、mandt、sysid、batch、tcode、msgid／msgty／msgno／msgv1～4。這幾個一定要背熟它「什麼時候被設定、什麼時候被覆蓋」。</div>
+
+  <h3 id="ch06-11-04">4. SYST 欄位總表（二）：90 個 Obsolete／Internal Use 欄位</h3>
+  <p>SE11 說明欄明寫 <i>Obsolete</i>（56 個）或 <i>Internal Use</i>（34 個）的欄位。依 ABAP 關鍵字文件，這些欄位<b>不可在應用程式中使用</b>：Obsolete 是舊版功能留下的空殼，SAP 不再填值；Internal Use 是執行環境自己用的，值的意義不公開、可能隨版本改變。「原用途」欄只為了讓你在舊程式看到時認得出來。</p>
+  <table>
+    <thead><tr><th>欄位</th><th>型別 長度</th><th>SE11 標示</th><th>原用途／性質</th></tr></thead>
+    <tbody>
+      <tr><td><span class="kw">sy-tlopc</span></td><td>INT4 10</td><td>Internal Use（內部）</td><td>內表迴圈內部控制</td></tr>
+      <tr><td><span class="kw">sy-tmaxl</span></td><td>INT4 10</td><td>Obsolete（廢止）</td><td>舊 OCCURS 內表的最大列數</td></tr>
+      <tr><td><span class="kw">sy-toccu</span></td><td>INT4 10</td><td>Obsolete（廢止）</td><td>舊內表的 OCCURS 值</td></tr>
+      <tr><td><span class="kw">sy-ttabc</span></td><td>INT4 10</td><td>Obsolete（廢止）</td><td>舊內表最後讀取列的索引</td></tr>
+      <tr><td><span class="kw">sy-tstis</span></td><td>INT4 10</td><td>Internal Use（內部）</td><td>內表內部控制</td></tr>
+      <tr><td><span class="kw">sy-ttabi</span></td><td>INT4 10</td><td>Obsolete（廢止）</td><td>舊內表的偏移量</td></tr>
+      <tr><td><span class="kw">sy-pagct</span></td><td>INT4 10</td><td>Obsolete（廢止）</td><td>舊清單頁數上限</td></tr>
+      <tr><td><span class="kw">sy-sfoff</span></td><td>INT4 10</td><td>Internal Use（內部）</td><td>內部使用</td></tr>
+      <tr><td><span class="kw">sy-willi</span></td><td>INT4 10</td><td>Obsolete（廢止）</td><td>舊視窗清單相關</td></tr>
+      <tr><td><span class="kw">sy-fleng</span></td><td>INT4 10</td><td>Internal Use（內部）</td><td>欄位長度（內部）</td></tr>
+      <tr><td><span class="kw">sy-tpagi</span></td><td>INT4 10</td><td>Obsolete（廢止）</td><td>舊內表是否分頁存放</td></tr>
+      <tr><td><span class="kw">sy-winx1</span></td><td>INT4 10</td><td>Obsolete（廢止）</td><td>舊視窗座標（左上 X）</td></tr>
+      <tr><td><span class="kw">sy-winy1</span></td><td>INT4 10</td><td>Obsolete（廢止）</td><td>舊視窗座標（左上 Y）</td></tr>
+      <tr><td><span class="kw">sy-winx2</span></td><td>INT4 10</td><td>Obsolete（廢止）</td><td>舊視窗座標（右下 X）</td></tr>
+      <tr><td><span class="kw">sy-winy2</span></td><td>INT4 10</td><td>Obsolete（廢止）</td><td>舊視窗座標（右下 Y）</td></tr>
+      <tr><td><span class="kw">sy-winco</span></td><td>INT4 10</td><td>Obsolete（廢止）</td><td>舊視窗游標欄</td></tr>
+      <tr><td><span class="kw">sy-winro</span></td><td>INT4 10</td><td>Obsolete（廢止）</td><td>舊視窗游標列</td></tr>
+      <tr><td><span class="kw">sy-windi</span></td><td>INT4 10</td><td>Obsolete（廢止）</td><td>舊視窗清單被選列索引</td></tr>
+      <tr><td><span class="kw">sy-folen</span></td><td>INT4 10</td><td>Internal Use（內部）</td><td>欄位輸出長度（內部）</td></tr>
+      <tr><td><span class="kw">sy-fodec</span></td><td>INT4 10</td><td>Internal Use（內部）</td><td>欄位小數位數（內部）</td></tr>
+      <tr><td><span class="kw">sy-ftype</span></td><td>CHAR 1</td><td>Internal Use（內部）</td><td>欄位型別（內部）</td></tr>
+      <tr><td><span class="kw">sy-appli</span></td><td>RAW 2</td><td>Obsolete（廢止）</td><td>舊應用程式代碼</td></tr>
+      <tr><td><span class="kw">sy-ccurs</span></td><td>DEC 9</td><td>Obsolete（廢止）</td><td>舊匯率欄位</td></tr>
+      <tr><td><span class="kw">sy-ccurt</span></td><td>DEC 9</td><td>Obsolete（廢止）</td><td>舊匯率欄位</td></tr>
+      <tr><td><span class="kw">sy-debug</span></td><td>CHAR 1</td><td>Internal Use（內部）</td><td>除錯模式旗標（內部）</td></tr>
+      <tr><td><span class="kw">sy-ctype</span></td><td>CHAR 1</td><td>Obsolete（廢止）</td><td>舊匯率類型</td></tr>
+      <tr><td><span class="kw">sy-input</span></td><td>CHAR 1</td><td>Internal Use（內部）</td><td>輸入旗標（內部）</td></tr>
+      <tr><td><span class="kw">sy-newpa</span></td><td>CHAR 1</td><td>Internal Use（內部）</td><td>換頁旗標（內部）</td></tr>
+      <tr><td><span class="kw">sy-pri40</span></td><td>CHAR 1</td><td>Internal Use（內部）</td><td>列印相關（內部）</td></tr>
+      <tr><td><span class="kw">sy-rstrt</span></td><td>CHAR 1</td><td>Internal Use（內部）</td><td>重新啟動旗標（內部）</td></tr>
+      <tr><td><span class="kw">sy-prefx</span></td><td>CHAR 3</td><td>Obsolete（廢止）</td><td>舊 TCODE 前綴</td></tr>
+      <tr><td><span class="kw">sy-fmkey</span></td><td>CHAR 3</td><td>Obsolete（廢止）</td><td>舊功能選單代碼</td></tr>
+      <tr><td><span class="kw">sy-pexpi</span></td><td>NUMC 1</td><td>Obsolete（廢止）</td><td>列印參數：spool 保留天數（舊）</td></tr>
+      <tr><td><span class="kw">sy-prini</span></td><td>NUMC 1</td><td>Internal Use（內部）</td><td>列印參數（內部）</td></tr>
+      <tr><td><span class="kw">sy-primm</span></td><td>CHAR 1</td><td>Obsolete（廢止）</td><td>列印參數：立即列印（舊）</td></tr>
+      <tr><td><span class="kw">sy-prrel</span></td><td>CHAR 1</td><td>Obsolete（廢止）</td><td>列印參數：印後刪除（舊）</td></tr>
+      <tr><td><span class="kw">sy-playo</span></td><td>CHAR 5</td><td>Internal Use（內部）</td><td>列印版面（內部）</td></tr>
+      <tr><td><span class="kw">sy-prbig</span></td><td>CHAR 1</td><td>Obsolete（廢止）</td><td>列印參數：選擇封面（舊）</td></tr>
+      <tr><td><span class="kw">sy-playp</span></td><td>CHAR 1</td><td>Internal Use（內部）</td><td>列印版面方向（內部）</td></tr>
+      <tr><td><span class="kw">sy-prnew</span></td><td>CHAR 1</td><td>Obsolete（廢止）</td><td>列印參數：新 spool 請求（舊）</td></tr>
+      <tr><td><span class="kw">sy-prlog</span></td><td>CHAR 1</td><td>Internal Use（內部）</td><td>列印記錄（內部）</td></tr>
+      <tr><td><span class="kw">sy-pdest</span></td><td>CHAR 4（SPDEV）</td><td>Obsolete（廢止）</td><td>列印參數：輸出裝置（舊，轉換常式 SPDEV）</td></tr>
+      <tr><td><span class="kw">sy-plist</span></td><td>CHAR 12</td><td>Obsolete（廢止）</td><td>列印參數：spool 請求名稱（舊）</td></tr>
+      <tr><td><span class="kw">sy-pauth</span></td><td>NUMC 2</td><td>Internal Use（內部）</td><td>列印權限（內部）</td></tr>
+      <tr><td><span class="kw">sy-prdsn</span></td><td>CHAR 6</td><td>Obsolete（廢止）</td><td>列印參數：spool 資料集名稱（舊）</td></tr>
+      <tr><td><span class="kw">sy-pnwpa</span></td><td>CHAR 1</td><td>Internal Use（內部）</td><td>列印相關（內部）</td></tr>
+      <tr><td><span class="kw">sy-repi2</span></td><td>CHAR 40</td><td>Internal Use（內部）</td><td>程式名（內部）</td></tr>
+      <tr><td><span class="kw">sy-rtitl</span></td><td>CHAR 70</td><td>Obsolete（廢止）</td><td>列印參數：報表標題（舊）</td></tr>
+      <tr><td><span class="kw">sy-prrec</span></td><td>CHAR 12</td><td>Obsolete（廢止）</td><td>列印參數：收件者（舊）</td></tr>
+      <tr><td><span class="kw">sy-prtxt</span></td><td>CHAR 68</td><td>Obsolete（廢止）</td><td>列印參數：封面文字（舊）</td></tr>
+      <tr><td><span class="kw">sy-prabt</span></td><td>CHAR 12</td><td>Obsolete（廢止）</td><td>列印參數：部門（舊）</td></tr>
+      <tr><td><span class="kw">sy-lpass</span></td><td>CHAR 4</td><td>Internal Use（內部）</td><td>內部使用</td></tr>
+      <tr><td><span class="kw">sy-nrpag</span></td><td>CHAR 1</td><td>Internal Use（內部）</td><td>內部使用</td></tr>
+      <tr><td><span class="kw">sy-paart</span></td><td>CHAR 16</td><td>Obsolete（廢止）</td><td>列印參數：列印格式（舊）</td></tr>
+      <tr><td><span class="kw">sy-prcop</span></td><td>NUMC 3</td><td>Obsolete（廢止）</td><td>列印參數：份數（舊）</td></tr>
+      <tr><td><span class="kw">sy-batzs</span></td><td>CHAR 1</td><td>Obsolete（廢止）</td><td>舊背景排程旗標</td></tr>
+      <tr><td><span class="kw">sy-bspld</span></td><td>CHAR 1</td><td>Obsolete（廢止）</td><td>舊背景 spool 旗標</td></tr>
+      <tr><td><span class="kw">sy-brep4</span></td><td>CHAR 4</td><td>Obsolete（廢止）</td><td>舊背景報表代碼</td></tr>
+      <tr><td><span class="kw">sy-batzo</span></td><td>CHAR 1</td><td>Obsolete（廢止）</td><td>舊背景排程旗標</td></tr>
+      <tr><td><span class="kw">sy-batzd</span></td><td>CHAR 1</td><td>Obsolete（廢止）</td><td>舊背景排程旗標</td></tr>
+      <tr><td><span class="kw">sy-batzw</span></td><td>CHAR 1</td><td>Obsolete（廢止）</td><td>舊背景排程旗標</td></tr>
+      <tr><td><span class="kw">sy-batzm</span></td><td>CHAR 1</td><td>Obsolete（廢止）</td><td>舊背景排程旗標</td></tr>
+      <tr><td><span class="kw">sy-ctabl</span></td><td>CHAR 4</td><td>Obsolete（廢止）</td><td>舊表格名稱</td></tr>
+      <tr><td><span class="kw">sy-dcsys</span></td><td>CHAR 4</td><td>Obsolete（廢止）</td><td>舊對話系統</td></tr>
+      <tr><td><span class="kw">sy-macdb</span></td><td>CHAR 4</td><td>Obsolete（廢止）</td><td>舊檔案名稱</td></tr>
+      <tr><td><span class="kw">sy-cfwae</span></td><td>CUKY 5</td><td>Internal Use（內部）</td><td>貨幣（內部）</td></tr>
+      <tr><td><span class="kw">sy-chwae</span></td><td>CUKY 5</td><td>Internal Use（內部）</td><td>貨幣（內部）</td></tr>
+      <tr><td><span class="kw">sy-sponr</span></td><td>NUMC 10</td><td>Obsolete（廢止）</td><td>舊 spool 編號（改用 SPONO）</td></tr>
+      <tr><td><span class="kw">sy-waers</span></td><td>CUKY 5</td><td>Obsolete（廢止）</td><td>舊貨幣欄位</td></tr>
+      <tr><td><span class="kw">sy-cdate</span></td><td>DATS 8</td><td>Obsolete（廢止）</td><td>舊匯率日期</td></tr>
+      <tr><td><span class="kw">sy-subty</span></td><td>RAW 1</td><td>Internal Use（內部）</td><td>呼叫類型（內部）</td></tr>
+      <tr><td><span class="kw">sy-subcs</span></td><td>CHAR 1</td><td>Internal Use（內部）</td><td>呼叫狀態（內部）</td></tr>
+      <tr><td><span class="kw">sy-group</span></td><td>CHAR 1</td><td>Internal Use（內部）</td><td>內部使用</td></tr>
+      <tr><td><span class="kw">sy-ffile</span></td><td>CHAR 8</td><td>Internal Use（內部）</td><td>內部使用</td></tr>
+      <tr><td><span class="kw">sy-dsnam</span></td><td>CHAR 8</td><td>Internal Use（內部）</td><td>內部使用</td></tr>
+      <tr><td><span class="kw">sy-tabid</span></td><td>CHAR 8</td><td>Internal Use（內部）</td><td>內部使用</td></tr>
+      <tr><td><span class="kw">sy-tfdsn</span></td><td>CHAR 8</td><td>Obsolete（廢止）</td><td>舊外部資料集名稱</td></tr>
+      <tr><td><span class="kw">sy-lstat</span></td><td>CHAR 16</td><td>Obsolete（廢止）</td><td>舊清單狀態</td></tr>
+      <tr><td><span class="kw">sy-marky</span></td><td>CHAR 1</td><td>Obsolete（廢止）</td><td>舊清單標記字元</td></tr>
+      <tr><td><span class="kw">sy-sfnam</span></td><td>CHAR 30</td><td>Obsolete（廢止）</td><td>舊欄位名稱</td></tr>
+      <tr><td><span class="kw">sy-tname</span></td><td>CHAR 30</td><td>Obsolete（廢止）</td><td>舊內表名稱</td></tr>
+      <tr><td><span class="kw">sy-msgli</span></td><td>CHAR 60</td><td>Obsolete（廢止）</td><td>舊訊息列內容</td></tr>
+      <tr><td><span class="kw">sy-entry</span></td><td>CHAR 72</td><td>Internal Use（內部）</td><td>內部使用</td></tr>
+      <tr><td><span class="kw">sy-xcode</span></td><td>CHAR 70</td><td>Internal Use（內部）</td><td>延伸功能碼（內部）</td></tr>
+      <tr><td><span class="kw">sy-xprog</span></td><td>CHAR 40</td><td>Internal Use（內部）</td><td>外部呼叫程式（內部）</td></tr>
+      <tr><td><span class="kw">sy-xform</span></td><td>CHAR 30</td><td>Internal Use（內部）</td><td>外部呼叫子程式（內部）</td></tr>
+      <tr><td><span class="kw">sy-oncom</span></td><td>CHAR 1</td><td>Internal Use（內部）</td><td>內部使用（COMMIT 相關）</td></tr>
+      <tr><td><span class="kw">sy-winsl</span></td><td>CHAR 79</td><td>Obsolete（廢止）</td><td>舊視窗選取列內容</td></tr>
+      <tr><td><span class="kw">sy-locdb</span></td><td>CHAR 1</td><td>Obsolete（廢止）</td><td>舊本機資料庫旗標</td></tr>
+      <tr><td><span class="kw">sy-locop</span></td><td>CHAR 1</td><td>Obsolete（廢止）</td><td>舊本機作業旗標</td></tr>
+    </tbody>
+  </table>
+  <div class="warn"><b>舊程式清理</b>：看到舊報表用 <span class="kw">sy-pdest</span>、<span class="kw">sy-prnew</span> 等列印欄位，改用 <span class="kw">NEW-PAGE PRINT ON PARAMETERS</span> 搭配 <span class="kw">GET_PRINT_PARAMETERS</span> 或 ALV 的列印設定；看到 <span class="kw">sy-tmaxl</span>、<span class="kw">sy-toccu</span>，代表那是 <span class="kw">OCCURS</span> 時代的內表，連同表頭行一起改寫（見 <a href="#ap-01">附錄 舊語法速查</a>）。<span class="kw">sy-waers</span>、<span class="kw">sy-cdate</span> 看名字像是可用的貨幣與日期，其實都是空殼。</div>
+
+  <h3 id="ch06-11-05">5. sy-subrc 與 sy-dbcnt 的判讀</h3>
+  <p><span class="kw">sy-subrc</span> 的值「由敘述決定」，不是全域統一的錯誤碼。0 一律代表成功，非 0 要查該敘述的 F1 說明。</p>
+  <table>
+    <thead><tr><th>敘述</th><th>sy-subrc</th><th>同時設定</th></tr></thead>
+    <tbody>
+      <tr><td>SELECT SINGLE／SELECT INTO TABLE</td><td>0＝有資料；4＝沒資料</td><td>sy-dbcnt＝讀到筆數</td></tr>
+      <tr><td>UPDATE／DELETE／MODIFY／INSERT（DB）</td><td>0＝至少一筆成功；4＝一筆都沒有（INSERT 重複鍵也是 4）</td><td>sy-dbcnt＝異動筆數</td></tr>
+      <tr><td>READ TABLE</td><td>0＝找到；2＝找到但 COMPARING 比較不同；4＝沒找到；8＝沒找到且位置在表尾（BINARY SEARCH、排序表）</td><td>sy-tabix＝找到（或應插入）的列號</td></tr>
+      <tr><td>LOOP AT … ENDLOOP</td><td>0＝至少跑了一圈；4＝一圈都沒跑</td><td>迴圈內 sy-tabix</td></tr>
+      <tr><td>CALL FUNCTION … EXCEPTIONS</td><td>0＝正常；n＝你在 EXCEPTIONS 指定的號碼</td><td>sy-msgid 等（若 FM 以 MESSAGE … RAISING 觸發）</td></tr>
+      <tr><td>AUTHORITY-CHECK</td><td>0＝有權限；4＝無權限；其餘值（如 12、24）代表物件或欄位設定問題，詳見 F1</td><td>—</td></tr>
+      <tr><td>FIND</td><td>0＝找到；4＝沒找到</td><td>MATCH OFFSET 另外取</td></tr>
+      <tr><td>字串比較 CA／CO／CS／CN／NA／NS</td><td>不設 sy-subrc，結果是邏輯值</td><td>sy-fdpos</td></tr>
+    </tbody>
+  </table>
+  <pre><code class="abap">PARAMETERS p_mtart TYPE mara-mtart OBLIGATORY DEFAULT 'FERT'.
+
+START-OF-SELECTION.
+  SELECT matnr, mtart, meins
+    FROM mara
+    WHERE mtart = @p_mtart
+    ORDER BY matnr                       " HANA 沒有預設排序，要取前 n 筆一定先排序
+    INTO TABLE @DATA(lt_mara)
+    UP TO 100 ROWS.
+  IF sy-subrc &lt;&gt; 0.                     " 緊接著判斷
+    MESSAGE |物料類型 { p_mtart } 查無資料| TYPE 'S' DISPLAY LIKE 'E'.
+    RETURN.
+  ENDIF.
+  DATA(lv_read) = sy-dbcnt.              " 立刻存起來；下一個 SQL 就會覆蓋
+
+  " 表示式不設定 sy-subrc：用 line_exists( ) 或 OPTIONAL，不要事後看 sy-subrc
+  IF line_exists( lt_mara[ matnr = 'TEST-001' ] ).
+    DATA(ls_one) = lt_mara[ matnr = 'TEST-001' ].
+  ENDIF.
+  DATA(ls_opt) = VALUE #( lt_mara[ matnr = 'TEST-002' ] OPTIONAL ).
+
+  " 傳統 READ TABLE 才設定 sy-subrc／sy-tabix
+  READ TABLE lt_mara INTO DATA(ls_mara) WITH KEY matnr = 'TEST-003' BINARY SEARCH.
+  CASE sy-subrc.
+    WHEN 0.     " 找到，sy-tabix = 列號
+    WHEN 4 OR 8. " 沒找到；sy-tabix = 應插入的位置（8 表示在表尾之後）
+  ENDCASE.
+
+  MESSAGE |共讀取 { lv_read } 筆| TYPE 'S'.</code></pre>
+  <div class="warn"><b>三個 sy-subrc 常見錯誤</b>：(1) 在 IF 之前插入了一行 <span class="kw">CONDENSE</span> 或 <span class="kw">READ TABLE</span>，原本要判斷的 SELECT 結果被覆蓋；(2) 以為 <span class="kw">itab[ … ]</span> 表示式找不到時 sy-subrc 會變 4──它不會設定 sy-subrc，而是丟出 <span class="kw">CX_SY_ITAB_LINE_NOT_FOUND</span>；(3) <span class="kw">CALL FUNCTION</span> 沒寫 <span class="kw">EXCEPTIONS</span>，FM 一 RAISE 就直接短傾印（ST22），根本輪不到判斷 sy-subrc。</div>
+
+  <h3 id="ch06-11-06">6. sy-tabix 與 sy-index、sy-fdpos</h3>
+  <p>這兩個常被搞混：<b>sy-tabix 屬於內表</b>（第幾列），<b>sy-index 屬於 DO／WHILE</b>（第幾圈）。在 LOOP AT 裡面跑 DO，兩個會同時有值；在 LOOP 裡又做 READ TABLE，sy-tabix 會被改掉，直到下一圈 LOOP 才恢復。</p>
+  <table>
+    <thead><tr><th>情境</th><th>sy-tabix</th><th>sy-index</th></tr></thead>
+    <tbody>
+      <tr><td>LOOP AT 標準表／排序表</td><td>目前列號</td><td>不變（外層 DO 的值或 0）</td></tr>
+      <tr><td>LOOP AT 雜湊表（HASHED）</td><td>0（雜湊表沒有索引）</td><td>不變</td></tr>
+      <tr><td>DO／WHILE</td><td>不變</td><td>目前圈數（1 起算）</td></tr>
+      <tr><td>READ TABLE、APPEND、INSERT</td><td>目標列號</td><td>不變</td></tr>
+      <tr><td>FOR 表示式、REDUCE</td><td>不設定；要列號請用 <span class="kw">INDEX INTO</span></td><td>不設定</td></tr>
+    </tbody>
+  </table>
+  <pre><code class="abap">DATA(lt_names) = VALUE string_table( ( `S01` ) ( `S02` ) ( `S03` ) ).
+
+LOOP AT lt_names INTO DATA(lv_name).
+  DATA(lv_row) = sy-tabix.                 " 先存起來
+  DO 2 TIMES.
+    " 這裡 sy-index = 1、2；sy-tabix 仍是外層 LOOP 的列號
+    cl_demo_output=&gt;write( |列 { lv_row }（{ lv_name }）第 { sy-index } 圈| ).
+  ENDDO.
+  READ TABLE lt_names INTO DATA(lv_first) INDEX 1.
+  " 這之後 sy-tabix = 1，不再是 lv_row！
+ENDLOOP.
+
+" FOR 表示式不設定 sy-tabix，用 INDEX INTO 取列號
+DATA(lt_label) = VALUE string_table(
+  FOR lv_n IN lt_names INDEX INTO lv_i ( |{ lv_i }. { lv_n }| ) ).
+cl_demo_output=&gt;display( lt_label ).</code></pre>
+  <p><span class="kw">sy-fdpos</span> 在字串比較運算子 CA／CO／CS／CN／NA／NS 之後設定，位置從 0 起算；比較結果為假時，多半是第一個運算元的長度。新程式用 <span class="kw">find( )</span>（找不到回傳 −1）和 <span class="kw">substring_*( )</span> 系列，不必依賴 sy-fdpos。</p>
+  <pre><code class="abap">DATA(lv_text) = `PO-4500001234/10`.
+
+" 舊式：比較後讀 sy-fdpos
+IF lv_text CA '/'.
+  DATA(lv_pos_old) = sy-fdpos.                          " 13
+ENDIF.
+
+" 新式：函數直接回傳，不依賴系統欄位
+DATA(lv_pos)  = find( val = lv_text sub = `/` ).        " 13；找不到回傳 -1
+DATA(lv_po)   = substring_before( val = substring_after( val = lv_text sub = `-` ) sub = `/` ).
+DATA(lv_item) = substring_after( val = lv_text sub = `/` ).   " `10`
+
+cl_demo_output=&gt;display( |位置 { lv_pos }，採購單 { lv_po }，項目 { lv_item }| ).</code></pre>
+
+  <h3 id="ch06-11-07">7. sy-ucomm 與 OK_CODE；sy-datum 與 sy-datlo／sy-timlo／sy-zonlo</h3>
+  <h4>sy-ucomm：PAI 的功能碼</h4>
+  <p><span class="kw">sy-ucomm</span> 是觸發 PAI 的功能碼，但在 Dynpro 中 SAP 建議<b>不要直接讀 sy-ucomm</b>，而是在畫面的 Element List 把 OK 欄位命名（例如 <span class="kw">GV_OK_CODE</span>），在 PAI 先複製再清空。原因：按 Enter 時某些情況 sy-ucomm 不會清空，會重複觸發上一個功能。選擇畫面事件則讀 <span class="kw">sscrfields-ucomm</span>（這是現代程式中唯一還需要 <span class="kw">TABLES sscrfields</span> 的例外，見 <a href="#ch03-1">3-1 章</a>）。清單事件 <span class="kw">AT USER-COMMAND</span> 可以直接讀 sy-ucomm。</p>
+  <pre><code class="abap">DATA gv_ok_code TYPE sy-ucomm.        " 畫面 0100 的 Element List：OK 欄位 = GV_OK_CODE
+
+MODULE user_command_0100 INPUT.
+  DATA(lv_code) = gv_ok_code.
+  CLEAR gv_ok_code.                   " 先清空，避免按 Enter 重複觸發上一個功能
+  CASE lv_code.
+    WHEN 'SAVE'.
+      " 存檔…
+    WHEN 'BACK' OR 'EXIT' OR 'CANC'.
+      LEAVE TO SCREEN 0.
+    WHEN OTHERS.
+      " Enter（空白功能碼）或其他
+  ENDCASE.
+ENDMODULE.</code></pre>
+  <h4>日期時間：伺服器、使用者、UTC</h4>
+  <table>
+    <thead><tr><th>欄位</th><th>時區基準</th><th>適合</th></tr></thead>
+    <tbody>
+      <tr><td>sy-datum／sy-uzeit</td><td>應用伺服器的系統時區</td><td>系統記錄、與其他系統資料一致的「系統日」</td></tr>
+      <tr><td>sy-datlo／sy-timlo</td><td>使用者時區 sy-zonlo（SU01／SU3 的預設值）</td><td>顯示給使用者看、使用者輸入的預設值</td></tr>
+      <tr><td>GET TIME STAMP</td><td>UTC</td><td>跨時區比較、存檔、介面傳輸（最安全）</td></tr>
+    </tbody>
+  </table>
+  <pre><code class="abap">" 以 UTC 時間戳記為準，再轉成需要的時區
+GET TIME STAMP FIELD DATA(lv_ts).                       " TIMESTAMP（UTC）
+
+CONVERT TIME STAMP lv_ts TIME ZONE sy-zonlo
+  INTO DATE DATA(lv_user_date) TIME DATA(lv_user_time).  " 等同 sy-datlo／sy-timlo
+CONVERT TIME STAMP lv_ts TIME ZONE 'UTC'
+  INTO DATE DATA(lv_utc_date) TIME DATA(lv_utc_time).
+
+IF lv_user_date &lt;&gt; sy-datum.
+  " 台灣使用者清晨登入美國時區的系統時，兩個「今天」會差一天
+  MESSAGE |伺服器日 { sy-datum DATE = USER } ≠ 使用者日 { lv_user_date DATE = USER }| TYPE 'I'.
+ENDIF.
+
+" 7.54 以上：utclong 型別（本行 1809 不可用）
+" DATA(lv_utc) = utclong_current( ).</code></pre>
+  <div class="note">跨國公司最常見的錯：程式用 <span class="kw">sy-datum</span> 當過帳日，但伺服器在 UTC，台灣早上 8 點以前執行就會落在前一天，月初第一天清晨的過帳就跑到上個月。要先確認需求是「系統日」還是「使用者的今天」。</div>
+
+  <h3 id="ch06-11-08">8. 找出帳號與員工姓名：USR21 JOIN ADRP</h3>
+  <p>SAP 使用者主檔（SU01）的姓名不存在 USR02，而是存在中央地址管理（Business Address Services）：<b>USR21</b> 以帳號 BNAME 對到個人號碼 PERSNUMBER（與地址號碼 ADDRNUMBER），<b>ADRP</b> 以 PERSNUMBER 存姓名（NAME_FIRST、NAME_LAST、NAME_TEXT 全名）。</p>
+  <table>
+    <thead><tr><th>原程式寫法</th><th>問題</th><th>改寫</th></tr></thead>
+    <tbody>
+      <tr><td>TABLES: USR21, ADRP.</td><td>宣告了表工作區卻沒用到；TABLES 已淘汰</td><td>刪除</td></tr>
+      <tr><td>DATA: BEGIN OF … OCCURS 0 … END OF，欄位用 LIKE</td><td>表頭行內表，工作區與內表同名，易混淆</td><td>SELECT … INTO TABLE @DATA( ) 內嵌宣告</td></tr>
+      <tr><td>INTO CORRESPONDING FIELDS OF TABLE</td><td>欄位名一致時多做一次名稱比對</td><td>直接 INTO TABLE 內嵌宣告</td></tr>
+      <tr><td>LEFT JOIN ADRP 只比 PERSNUMBER</td><td>ADRP 的主鍵是 PERSNUMBER＋DATE_FROM＋NATION；有國際版本（如另存英文名）時同一帳號會出現多筆</td><td>ON 條件加 <span class="kw">nation = @space</span>（標準版本）</td></tr>
+      <tr><td>LOOP AT 表頭行＋WRITE</td><td>表頭行寫法已淘汰；WRITE 清單無法排序、篩選、匯出</td><td>CL_SALV_TABLE</td></tr>
+      <tr><td>—</td><td>看不出帳號是否已鎖定、過期、是否為系統帳號</td><td>INNER JOIN USR02 帶出 USTYP、UFLAG、GLTGB</td></tr>
+    </tbody>
+  </table>
+  <pre><code class="abap">REPORT zca_user_name_list.
+
+DATA gv_bname TYPE usr21-bname.
+SELECT-OPTIONS s_bname FOR gv_bname.
+
+START-OF-SELECTION.
+  SELECT u~bname,
+         u~persnumber,
+         a~name_first,
+         a~name_last,
+         a~name_text,
+         s~ustyp,          " A 對話、B 系統、C 通訊、S 服務、L 參考
+         s~uflag,          " 0 = 未鎖定，非 0 = 已鎖定（原因碼）
+         s~gltgb           " 有效期限（空白 = 無期限）
+    FROM usr21 AS u
+    INNER JOIN usr02 AS s
+      ON s~bname = u~bname
+    LEFT OUTER JOIN adrp AS a
+      ON  a~persnumber = u~persnumber
+      AND a~nation     = @space        " 只取標準版本，避免國際版本造成重複列
+    WHERE u~bname IN @s_bname
+    ORDER BY u~bname
+    INTO TABLE @DATA(lt_user).
+
+  IF lt_user IS INITIAL.
+    MESSAGE '查無使用者' TYPE 'S' DISPLAY LIKE 'E'.
+    RETURN.
+  ENDIF.
+
+  TRY.
+      cl_salv_table=&gt;factory( IMPORTING r_salv_table = DATA(lo_alv)
+                              CHANGING  t_table      = lt_user ).
+      lo_alv-&gt;get_functions( )-&gt;set_all( abap_true ).
+      lo_alv-&gt;get_columns( )-&gt;set_optimize( abap_true ).
+      lo_alv-&gt;get_display_settings( )-&gt;set_list_header( |使用者與姓名（{ lines( lt_user ) } 筆）| ).
+      lo_alv-&gt;display( ).
+    CATCH cx_salv_msg INTO DATA(lx_salv).
+      MESSAGE lx_salv TYPE 'I' DISPLAY LIKE 'E'.
+  ENDTRY.</code></pre>
+  <div class="warn"><b>「員工姓名」不等於「帳號姓名」</b>：ADRP 存的是 SU01 維護的使用者姓名，由 Basis 或權限管理人員填寫，可能是英文名、可能沒填。若公司有導入 HR，正式的員工姓名要從資訊類型 0105（通訊，子類型 0001 系統使用者名稱）以帳號反查人事號碼，再讀 0002 個人資料（HR 資料表見本部相關章節）。這個報表也屬於個人資料，執行權限要控管。</div>
+  <div class="tip">SE11 另有標準檢視 <span class="kw">USER_ADDR</span>（帳號＋姓名＋部門等），做簡單查詢時可直接用；欄位清單請以 SE11 確認。<b>先找標準，再想客製</b>──寫 JOIN 之前先查有沒有現成的檢視或 CDS。</div>
+
+  <h3 id="ch06-11-09">9. 秀出登入者姓名：三種做法</h3>
+  <p>只要目前登入者一個人的姓名時，不必自己 JOIN。素材用的是 <span class="kw">SUSR_USER_ADDRESS_READ</span>，另有 BAPI 與 ABAP Cloud 的做法：</p>
+  <table>
+    <thead><tr><th>做法</th><th>性質</th><th>適用</th></tr></thead>
+    <tbody>
+      <tr><td>SUSR_USER_ADDRESS_READ</td><td>使用者管理的內部 FM，回傳結構 ADDR3_VAL（NAME_TEXT、NAME_FIRST、NAME_LAST、DEPARTMENT…）</td><td>on-premise 快速取值；非釋出 API</td></tr>
+      <tr><td>BAPI_USER_GET_DETAIL</td><td>標準 BAPI，回傳 ADDRESS（BAPIADDR3：FULLNAME、FIRSTNAME、LASTNAME、E_MAIL…）與 RETURN（BAPIRET2）</td><td>on-premise 正式程式、RFC 遠端讀取；讀別人的帳號需要使用者管理的顯示權限</td></tr>
+      <tr><td>cl_abap_context_info=&gt;get_user_formatted_name( )</td><td>ABAP Cloud 釋出的類別，取目前使用者的格式化姓名</td><td>ABAP Cloud 必用；on-premise 是否可用依 SAP_BASIS 版本</td></tr>
+    </tbody>
+  </table>
+  <h4>做法一：SUSR_USER_ADDRESS_READ（素材改寫）</h4>
+  <pre><code class="abap">REPORT zca_show_my_name.
+
+DATA ls_address TYPE addr3_val.       " 原程式用 LIKE addr3_val，改為 TYPE
+
+CALL FUNCTION 'SUSR_USER_ADDRESS_READ'
+  EXPORTING
+    user_name              = sy-uname
+  IMPORTING
+    user_address           = ls_address
+  EXCEPTIONS
+    user_address_not_found = 1
+    OTHERS                 = 2.
+
+IF sy-subrc = 0 AND ls_address-name_text IS NOT INITIAL.
+  MESSAGE |{ ls_address-name_text } 您好（帳號 { sy-uname }）| TYPE 'S'.
+ELSE.
+  MESSAGE |帳號 { sy-uname } 未維護姓名，請洽系統管理員（SU01）| TYPE 'S' DISPLAY LIKE 'W'.
+ENDIF.</code></pre>
+  <h4>做法二：BAPI_USER_GET_DETAIL</h4>
+  <pre><code class="abap">DATA ls_addr   TYPE bapiaddr3.
+DATA lt_return TYPE STANDARD TABLE OF bapiret2 WITH EMPTY KEY.
+
+CALL FUNCTION 'BAPI_USER_GET_DETAIL'
+  EXPORTING
+    username = sy-uname
+  IMPORTING
+    address  = ls_addr
+  TABLES
+    return   = lt_return.
+
+" BAPI 不丟例外，一律看 RETURN
+IF line_exists( lt_return[ type = 'E' ] ) OR line_exists( lt_return[ type = 'A' ] ).
+  DATA(ls_err) = VALUE #( lt_return[ type = 'E' ] OPTIONAL ).
+  MESSAGE ls_err-message TYPE 'S' DISPLAY LIKE 'E'.
+ELSE.
+  MESSAGE |{ ls_addr-fullname }（{ ls_addr-firstname } / { ls_addr-lastname }）| TYPE 'S'.
+ENDIF.</code></pre>
+  <h4>做法三：cl_abap_context_info（ABAP Cloud）</h4>
+  <pre><code class="abap">TRY.
+    DATA(lv_user) = cl_abap_context_info=&gt;get_user_technical_name( ).
+    DATA(lv_name) = cl_abap_context_info=&gt;get_user_formatted_name( ).
+    DATA(lv_date) = cl_abap_context_info=&gt;get_system_date( ).
+    DATA(lv_time) = cl_abap_context_info=&gt;get_system_time( ).
+  CATCH cx_abap_context_info_error INTO DATA(lx_ctx).
+    lv_name = lv_user.                 " 取不到姓名時退回帳號
+ENDTRY.</code></pre>
+  <div class="warn"><b>版本門檻</b>：<span class="kw">CL_ABAP_CONTEXT_INFO</span> 是為 ABAP Cloud 釋出的 API，在 BTP ABAP Environment 與 S/4HANA Cloud 一定有；在 on-premise 系統是否存在、有哪些方法，依 SAP_BASIS 版本而定（較新的 S/4HANA 版本才有）。<b>S/4HANA 1809 請先以 SE24 確認</b>該類別與 <span class="kw">GET_USER_FORMATTED_NAME</span> 方法是否存在、例外類別名稱是否相同，確認後再使用；沒有的話用做法一或二。</div>
+
+  <h3 id="ch06-11-10">10. 作業一：不用 STRING_REVERSE 的字串反轉</h3>
+  <p>原題示範標準 FM <span class="kw">STRING_REVERSE</span>（參數 STRING、LANG、RSTRING），要求在禁用它的前提下自己寫。提示是 <span class="kw">strlen</span> 與 <span class="kw">DO n TIMES</span>。</p>
+  <div class="note"><b>原題的兩個陷阱</b>：(1) 題目宣告 <span class="kw">l_input(10) TYPE c VALUE 'ABCDEFGHIJK'</span>，但值有 11 個字元，會被截成 <span class="kw">ABCDEFGHIJ</span>（語法檢查會警告）；(2) 用固定長度 c 欄位時，如果迴圈跑「欄位長度」而不是 <span class="kw">strlen</span>（有效長度，不含尾端空白），反轉後前面會多出一串空白。所以提示才要用 strlen。</div>
+  <h4>解法一：傳統迴圈（strlen＋DO＋substring）</h4>
+  <pre><code class="abap">REPORT zca_reverse_loop.
+
+PARAMETERS p_in TYPE c LENGTH 40 LOWER CASE DEFAULT 'ABCDEFGHIJK'.
+
+START-OF-SELECTION.
+  DATA(lv_in)  = CONV string( p_in ).     " c 轉 string 時自動去掉尾端空白
+  DATA(lv_len) = strlen( lv_in ).
+  DATA lv_out TYPE string.
+
+  " 從最後一個字元往前取，逐一接到結果後面
+  DO lv_len TIMES.
+    DATA(lv_off) = lv_len - sy-index.       " sy-index = 1 時取最後一個字元
+    lv_out = lv_out &amp;&amp; substring( val = lv_in off = lv_off len = 1 ).
+  ENDDO.
+
+  " 另一種寫法：從前往後取，每次接到結果「前面」
+  DATA lv_out2 TYPE string.
+  DO lv_len TIMES.
+    lv_out2 = substring( val = lv_in off = sy-index - 1 len = 1 ) &amp;&amp; lv_out2.
+  ENDDO.
+
+  cl_demo_output=&gt;write( |輸入：{ lv_in }| ).
+  cl_demo_output=&gt;write( |反轉：{ lv_out }| ).
+  cl_demo_output=&gt;write( |反轉（前插法）：{ lv_out2 }| ).
+  cl_demo_output=&gt;display( ).</code></pre>
+  <div class="warn"><b>為什麼用 substring( ) 而不是 <span class="kw">lv_in+lv_off(1)</span> 放進 c 欄位？</b>把單一字元先放進 <span class="kw">TYPE c LENGTH 1</span> 變數再用 <span class="kw">&amp;&amp;</span> 或字串範本串接時，<b>c 型別的尾端空白會被忽略</b>──輸入中間的空白就消失了（<span class="kw">'AB CD'</span> 會變成 <span class="kw">'DCBA'</span>）。<span class="kw">substring( )</span> 回傳 string，空白會保留。</div>
+  <h4>解法二：內建函數 reverse( ) 與 REDUCE</h4>
+  <pre><code class="abap">DATA(lv_in) = `ABCD EFG`.
+
+" 內建字串函數 reverse( )（7.02 起可用，回傳 string）：實務上就用這個
+DATA(lv_rev1) = reverse( lv_in ).                       " `GFE DCBA`
+
+" 函數式寫法：FOR 迭代 + REDUCE 累積（練習 7.40 新語法）
+DATA(lv_rev2) = REDUCE string( INIT r = ``
+                               FOR i = 0 UNTIL i &gt;= strlen( lv_in )
+                               NEXT r = substring( val = lv_in off = i len = 1 ) &amp;&amp; r ).
+
+" 中文同樣適用：Unicode 系統以「字元」為單位
+DATA(lv_rev3) = reverse( `物料主檔` ).                   " `檔主料物`
+
+ASSERT lv_rev1 = lv_rev2.
+cl_demo_output=&gt;display( |{ lv_rev1 } / { lv_rev2 } / { lv_rev3 }| ).</code></pre>
+  <div class="tip">這題的真正教訓是 Casper 的第三條實務原則：<b>先找標準，再想客製</b>。STRING_REVERSE 被禁用時，第一個該查的是「有沒有內建函數」（有，<span class="kw">reverse( )</span>），而不是馬上寫迴圈。ABAP 的字串函數清單值得從頭看一遍：<span class="kw">to_upper( )</span>、<span class="kw">condense( )</span>、<span class="kw">shift_left( )</span>、<span class="kw">repeat( )</span>、<span class="kw">translate( )</span>、<span class="kw">escape( )</span>、<span class="kw">segment( )</span>、<span class="kw">count( )</span>、<span class="kw">match( )</span>…</div>
+
+  <h3 id="ch06-11-11">11. Casper 在 BC400 劃的重點</h3>
+  <p>素材是 Casper 在 SAP 原廠 BC400《ABAP Workbench Foundations》（Course Version 18，©2020）第一課「ABAP 系統架構與程式執行」上留下的螢光筆、方框與一行手寫註解。BC400 全課整理見 <a href="#ch05-1">5-1 章</a>；這裡只看他特別劃出來的地方，以及劃這些地方的理由。</p>
+  <table>
+    <thead><tr><th>頁</th><th>劃記方式</th><th>劃的內容（摘要）</th><th>重點</th></tr></thead>
+    <tbody>
+      <tr><td>p1～p2</td><td>螢光筆</td><td>Course Version 18、© 2020</td><td>先確認教材版本：這是 S/4HANA 時代的 BC400，語法與 7.5x 對齊</td></tr>
+      <tr><td>p7</td><td>方框</td><td>目標對象：Developer、Development Consultant、IT Support、Project Manager（方框特別圈了 Project Manager）</td><td>連 PM 都在 BC400 的目標對象內──懂架構與程式執行流程不只是工程師的事</td></tr>
+      <tr><td>p10</td><td>螢光筆</td><td>本課說明一支簡單的對話程式如何被 AS ABAP 執行</td><td>本課主軸：程式從畫面到資料庫的整條路</td></tr>
+      <tr><td>p11</td><td>螢光筆＋方框</td><td>Database layer、Application Server layer、Presentation Server layer；使用者介面在展示層；Client/Server 架構中展示、應用邏輯、資料儲存可分派到不同系統</td><td><b>三層架構</b>：Presentation（SAP GUI／瀏覽器）→ Application（ABAP 程式在這裡跑）→ Database（HANA）</td></tr>
+      <tr><td>p12</td><td>螢光筆</td><td>ABAP 程式在應用伺服器上處理</td><td>程式不在你的電腦上跑；所以背景作業沒有前端（sy-batch、GUI_DOWNLOAD 的限制）</td></tr>
+      <tr><td>p13</td><td>螢光筆＋方框</td><td>開發者必須理解伺服器層之間的互動（interplay）與程式執行時的處理流程</td><td>使用者只要會用，開發者要懂「interplay」</td></tr>
+      <tr><td>p14</td><td>螢光筆＋方框＋<b>手寫註解</b></td><td>程式不是單一區塊而是由多個單元組成；模組化（modularization）；這些單元常被稱為 <b>reuse units</b>；好的程式應把資料庫存取封裝在 reuse unit 中，reuse unit 在（使用者介面與資料庫之間）形成分隔</td><td>手寫：<b>「開始成為程式師的第一天，就該開始建構自已的 lib」</b></td></tr>
+      <tr><td>p16</td><td>螢光筆＋方框</td><td>選擇畫面；使用者對話的畫面與 ABAP 處理區塊；執行環境從 Repository（資料庫中的特殊部分）取得程式資訊</td><td>程式本身也存在資料庫裡（Repository）</td></tr>
+      <tr><td>p17</td><td>螢光筆</td><td>使用者輸入的型別不對時，自動觸發錯誤訊息，使用者必須更正；之後 ABAP 執行環境取回控制權</td><td>選擇畫面的型別檢查是免費的，不必自己寫</td></tr>
+      <tr><td>p18</td><td>螢光筆</td><td>reuse unit 是個別程式中的特殊處理區塊；範例是<b>全域類別中的方法</b>；呼叫時，包含它的程式會被載入</td><td>BC400 自己就用「全域類別的方法」當 reuse unit 的代表──這正是第 12 節工具類別的形狀</td></tr>
+      <tr><td>p19～p20</td><td>螢光筆＋方框</td><td>要存取的資料庫表資訊；讀單筆時，資料物件通常是一個含所需資料庫欄位的結構</td><td>單筆＝結構、多筆＝內表；只放需要的欄位</td></tr>
+      <tr><td>p23</td><td>螢光筆</td><td>本課摘要：使用者介面、Presentation server、Modularity、程式由多個單元組成</td><td>複習時抓這四個詞</td></tr>
+    </tbody>
+  </table>
+  <p>把劃記串起來看，Casper 的邏輯很清楚：三層架構告訴你程式在哪裡跑、資料從哪裡來；模組化與 reuse unit 告訴你<b>程式該怎麼切</b>；而 p18 直接示範 reuse unit 的標準形狀就是「全域類別的方法」。所以那句手寫註解不是勵志語，而是課本內容的直接推論：既然好程式應該由可重用單元組成，就從第一天開始累積自己的可重用單元。</p>
+  <pre><code class="abap">" BC400 p14 的意思，用程式說一次：
+" 不好：報表本身直接寫 SQL、直接處理畫面、直接下載，全部擠在 START-OF-SELECTION
+" 好：資料存取封裝在 reuse unit（全域類別的方法），報表只負責「流程」
+
+START-OF-SELECTION.
+  DATA(lt_user) = zcl_ca_user=&gt;get_list( it_bname = s_bname[] ).   " 資料層：可重用
+  zcl_ca_alv=&gt;show( CHANGING ct_data = lt_user ).                  " 展示層：可重用
+  " 報表本身只剩三行流程，別的程式也能呼叫同一組方法</code></pre>
+  <div class="note">上例的 <span class="kw">ZCL_CA_USER</span>、<span class="kw">ZCL_CA_ALV</span> 是示意的類別名稱，說明「報表只剩流程」的樣子；第 12 節給出一個完整可用的 <span class="kw">ZCL_CA_UTIL</span>。</div>
+
+  <h3 id="ch06-11-12">12. 建構自己的工具庫：ZCL_CA_UTIL</h3>
+  <p>把本章與前幾章反覆出現的小功能──使用者姓名、民國年日期、月底日、字串反轉、下載──收進一個全域類別。<b>CA</b> 是 Cross-Application（跨模組）的慣用縮寫。原則：</p>
+  <ul>
+    <li><b>靜態方法、無狀態</b>：工具方法不存資料，用 <span class="kw">CLASS-METHODS</span>，呼叫端一行 <span class="kw">zcl_ca_util=&gt;xxx( )</span>。</li>
+    <li><b>RETURNING 優先</b>：能回傳單一值就用 RETURNING，呼叫端可以直接寫在表示式裡。</li>
+    <li><b>用例外不用 sy-subrc</b>：失敗時丟自己的例外類別 <span class="kw">ZCX_CA_UTIL</span>（SE24 建立，繼承 <span class="kw">CX_STATIC_CHECK</span>）。</li>
+    <li><b>ABAP Doc 寫說明</b>：方法上方用 <span class="kw">"!</span> 註解，SE80／ADT 會顯示成 F2 說明。</li>
+    <li><b>一定附單元測試</b>：工具庫被很多程式呼叫，改一次錯一片，沒有 ABAP Unit 不要改。</li>
+  </ul>
+  <pre><code class="abap">CLASS zcl_ca_util DEFINITION PUBLIC FINAL CREATE PRIVATE.
+  PUBLIC SECTION.
+    TYPES ty_roc_date TYPE c LENGTH 7.          " 民國年 YYYMMDD，例：1110315
+
+    "! 使用者全名（SU01 姓名）；未維護時回傳帳號本身
+    CLASS-METHODS get_user_fullname
+      IMPORTING iv_uname       TYPE syst_uname DEFAULT sy-uname
+      RETURNING VALUE(rv_name) TYPE string.
+
+    "! 西元日期轉民國年 7 碼（YYYMMDD）
+    CLASS-METHODS to_roc_date
+      IMPORTING iv_date       TYPE d DEFAULT sy-datlo
+      RETURNING VALUE(rv_roc) TYPE ty_roc_date.
+
+    "! 該月最後一天
+    CLASS-METHODS last_day_of_month
+      IMPORTING iv_date        TYPE d
+      RETURNING VALUE(rv_date) TYPE d.
+
+    "! 字串反轉（包一層，未來換實作不影響呼叫端）
+    CLASS-METHODS reverse_string
+      IMPORTING iv_text        TYPE csequence
+      RETURNING VALUE(rv_text) TYPE string.
+
+    "! 內表下載到前端（Tab 分隔、UTF-8 含 BOM，Excel 可直接開）
+    CLASS-METHODS download_tab
+      IMPORTING iv_filename TYPE string
+      CHANGING  ct_data     TYPE STANDARD TABLE
+      RAISING   zcx_ca_util.
+ENDCLASS.</code></pre>
+  <pre><code class="abap">CLASS zcl_ca_util IMPLEMENTATION.
+
+  METHOD get_user_fullname.
+    " ADRP 可能有多個生效日版本：先排序再取第一筆（HANA 沒有預設排序）
+    SELECT a~name_text, a~date_from
+      FROM usr21 AS u
+      INNER JOIN adrp AS a
+        ON  a~persnumber = u~persnumber
+        AND a~nation     = @space
+      WHERE u~bname = @iv_uname
+      ORDER BY a~date_from DESCENDING
+      INTO TABLE @DATA(lt_name)
+      UP TO 1 ROWS.
+    IF lt_name IS NOT INITIAL.
+      rv_name = lt_name[ 1 ]-name_text.
+    ENDIF.
+    IF rv_name IS INITIAL.
+      rv_name = iv_uname.
+    ENDIF.
+  ENDMETHOD.
+
+  METHOD to_roc_date.
+    DATA(lv_year) = CONV i( iv_date(4) ) - 1911.
+    rv_roc = |{ lv_year WIDTH = 3 ALIGN = RIGHT PAD = '0' }{ iv_date+4(4) }|.
+  ENDMETHOD.
+
+  METHOD last_day_of_month.
+    " 當月 1 日 + 31 天一定落在下個月；取下個月 1 日再減 1 天
+    DATA lv_next TYPE d.
+    lv_next = CONV d( |{ iv_date(6) }01| ) + 31.          " 算術結果轉回 d
+    rv_date = CONV d( |{ lv_next(6) }01| ) - 1.
+  ENDMETHOD.
+
+  METHOD reverse_string.
+    rv_text = reverse( iv_text ).
+  ENDMETHOD.
+
+  METHOD download_tab.
+    IF sy-batch = abap_true.
+      " 背景作業沒有 SAP GUI 前端，請改寫應用伺服器檔案（OPEN DATASET）
+      RAISE EXCEPTION TYPE zcx_ca_util.
+    ENDIF.
+    cl_gui_frontend_services=&gt;gui_download(
+      EXPORTING
+        filename              = iv_filename
+        filetype              = 'ASC'
+        write_field_separator = abap_true    " Tab 分隔
+        codepage              = '4110'       " UTF-8
+        write_bom             = abap_true    " Excel 才認得 UTF-8 中文
+      CHANGING
+        data_tab              = ct_data
+      EXCEPTIONS
+        OTHERS                = 1 ).
+    IF sy-subrc &lt;&gt; 0.
+      RAISE EXCEPTION TYPE zcx_ca_util.
+    ENDIF.
+  ENDMETHOD.
+
+ENDCLASS.</code></pre>
+  <p>在 SE24 的「Local Test Classes」（ADT 的 Test Classes 頁籤）加上單元測試，每次改工具庫前後都跑一次（<span class="kw">Ctrl+Shift+F10</span>）：</p>
+  <pre><code class="abap">CLASS ltc_util DEFINITION FINAL FOR TESTING
+  RISK LEVEL HARMLESS DURATION SHORT.
+  PRIVATE SECTION.
+    METHODS roc_date   FOR TESTING.
+    METHODS last_day   FOR TESTING.
+    METHODS reverse    FOR TESTING.
+ENDCLASS.
+
+CLASS ltc_util IMPLEMENTATION.
+  METHOD roc_date.
+    cl_abap_unit_assert=&gt;assert_equals(
+      act = zcl_ca_util=&gt;to_roc_date( CONV d( '20220315' ) )
+      exp = '1110315' ).
+    cl_abap_unit_assert=&gt;assert_equals(               " 民國 100 年以前要補 0
+      act = zcl_ca_util=&gt;to_roc_date( CONV d( '20100101' ) )
+      exp = '0990101' ).
+  ENDMETHOD.
+
+  METHOD last_day.
+    cl_abap_unit_assert=&gt;assert_equals(               " 閏年 2 月
+      act = zcl_ca_util=&gt;last_day_of_month( CONV d( '20240210' ) )
+      exp = CONV d( '20240229' ) ).
+    cl_abap_unit_assert=&gt;assert_equals(               " 年底
+      act = zcl_ca_util=&gt;last_day_of_month( CONV d( '20251231' ) )
+      exp = CONV d( '20251231' ) ).
+  ENDMETHOD.
+
+  METHOD reverse.
+    cl_abap_unit_assert=&gt;assert_equals(
+      act = zcl_ca_util=&gt;reverse_string( `AB CD` )
+      exp = `DC BA` ).
+  ENDMETHOD.
+ENDCLASS.</code></pre>
+  <p>呼叫端就變得很短，而且每支報表的行為一致：</p>
+  <pre><code class="abap">REPORT zca_util_demo.
+
+START-OF-SELECTION.
+  DATA(lv_name) = zcl_ca_util=&gt;get_user_fullname( ).
+  DATA(lv_roc)  = zcl_ca_util=&gt;to_roc_date( ).
+  DATA(lv_eom)  = zcl_ca_util=&gt;last_day_of_month( sy-datlo ).
+
+  MESSAGE |{ lv_name } 您好，今天是民國 { lv_roc }，本月最後一天 { lv_eom DATE = USER }| TYPE 'S'.
+
+  SELECT bname, ustyp, gltgb
+    FROM usr02
+    WHERE bname = @sy-uname
+    INTO TABLE @DATA(lt_me).
+  TRY.
+      zcl_ca_util=&gt;download_tab( EXPORTING iv_filename = `C:\temp\me.txt`
+                                 CHANGING  ct_data     = lt_me ).
+    CATCH zcx_ca_util.
+      MESSAGE '下載失敗（背景執行或前端拒絕）' TYPE 'S' DISPLAY LIKE 'E'.
+  ENDTRY.</code></pre>
+  <div class="tip"><b>工具庫收什麼、不收什麼</b>：收「與業務無關、三支以上程式會用到」的功能（日期、字串、使用者、檔案、ALV 包裝、訊息轉 BAPIRET2、應用日誌 BAL 包裝）。不收「某客戶某模組的業務規則」（例如成本抓 H 還是 E 的邏輯），那屬於該模組自己的類別。當 ZCL_CA_UTIL 超過二、三十個方法，就依領域拆成 ZCL_CA_DATE、ZCL_CA_USER、ZCL_CA_FILE。</div>
+  <div class="warn">靜態方法好用但難以替換（單元測試無法 mock 掉 SELECT）。純計算的方法（日期、字串）用靜態沒問題；會讀資料庫或呼叫外部的功能，長大後應改成「介面＋實例」（見 <a href="#ch07-4">7-4 章 SOLID</a> 的依賴反轉）。</div>
+
+  <h3 id="ch06-11-13">13. 套件（Package）規劃與命名</h3>
+  <p>工具庫要能跨專案、跨系統帶著走，靠的是套件規劃。命名要與公司命名規則一致（完整範本見 <a href="#ch06-4">6-4 章</a>）。建議結構：</p>
+  <table>
+    <thead><tr><th>套件</th><th>類型</th><th>放什麼</th><th>命名範例</th></tr></thead>
+    <tbody>
+      <tr><td>ZCA</td><td>主套件（Main／Structure package）</td><td>不放物件，只當容器，定義傳輸層</td><td>—</td></tr>
+      <tr><td>ZCA_UTIL</td><td>開發套件</td><td>通用工具類別、例外類別、訊息類別</td><td>ZCL_CA_UTIL、ZCX_CA_UTIL、訊息類別 ZCA</td></tr>
+      <tr><td>ZCA_FILE</td><td>開發套件</td><td>檔案、下載、Excel</td><td>ZCL_CA_FILE、ZIF_CA_FILE</td></tr>
+      <tr><td>ZCA_DDIC</td><td>開發套件</td><td>共用的資料元素、網域、結構、表型別</td><td>ZCA_S_…（結構）、ZCA_T_…（表型別）、ZCA_DE_…（資料元素）</td></tr>
+      <tr><td>ZCA_DEMO</td><td>開發套件</td><td>示範與自我測試程式，<b>不傳到 PRD</b>（或只留在開發系統）</td><td>ZCA_…_DEMO</td></tr>
+    </tbody>
+  </table>
+  <ol>
+    <li><b>先建套件再建物件</b>：<span class="tcode">SE21</span>（或 SE80、ADT）建 ZCA 主套件與子套件，指定軟體元件 HOME 與傳輸層；工具物件絕不要放 <span class="kw">$TMP</span>，否則傳不出去。</li>
+    <li><b>前綴統一</b>：類別 <span class="kw">ZCL_CA_</span>、介面 <span class="kw">ZIF_CA_</span>、例外 <span class="kw">ZCX_CA_</span>、函數群組 <span class="kw">ZCA_</span>，一眼就知道是共用庫，也方便用 SE84／ADT 搜尋。</li>
+    <li><b>套件介面</b>：規模大時在 ZCA 定義 package interface，只公開真正要給別人用的類別，其餘視為內部。</li>
+    <li><b>各模組套件依賴 ZCA，反之不行</b>：ZCA 內不可呼叫 ZSD、ZMM 的物件，否則共用庫被綁在某個模組上，搬到新專案就編譯不過。</li>
+    <li><b>版本與相容性</b>：公開方法的簽名只加不改（新增選用參數可以，改型別或刪參數不行）；要改就新增方法、舊方法標註淘汰。</li>
+    <li><b>帶著走</b>：個人的工具庫可以用 abapGit 匯出成 Git 儲存庫，新專案匯入後把前綴換成客戶的命名空間即可。</li>
+  </ol>
+  <pre><code class="abap">" 用 TADIR 檢查：共用庫的物件是否都在 ZCA 套件底下、沒有漏在 $TMP
+SELECT pgmid, object, obj_name, devclass
+  FROM tadir
+  WHERE pgmid    = 'R3TR'
+    AND ( obj_name LIKE 'ZCL\_CA\_%' ESCAPE '\'
+       OR obj_name LIKE 'ZCX\_CA\_%' ESCAPE '\'
+       OR obj_name LIKE 'ZIF\_CA\_%' ESCAPE '\' )
+  ORDER BY devclass, object, obj_name
+  INTO TABLE @DATA(lt_obj).
+
+DATA(lt_wrong) = VALUE string_table(
+  FOR ls IN lt_obj WHERE ( devclass NP 'ZCA*' )
+  ( |{ ls-object } { ls-obj_name } 在套件 { ls-devclass }，應移到 ZCA_*| ) ).
+
+IF lt_wrong IS INITIAL.
+  MESSAGE '共用庫物件都在 ZCA 套件下' TYPE 'S'.
+ELSE.
+  cl_demo_output=&gt;display( lt_wrong ).
+ENDIF.</code></pre>
+  <div class="tip"><b>三個實務坑在本章的對應</b>：HANA 沒有預設排序 → 第 5 節取前 100 筆先 ORDER BY、第 12 節 ADRP 多版本先依 DATE_FROM 排序再取第一筆；列舉優於區間 → 第 8 節的帳號條件請用多筆 EQ 列舉帳號，不要用 BT 區間（帳號是字串，字典序會把不相干的帳號一起抓進來）；先找標準再客製 → reverse( ) 取代自寫迴圈、BAPI_USER_GET_DETAIL 與 USER_ADDR 取代自寫 JOIN。</div>
+
+  <h3 id="ch06-11-qa">練習與自我檢核</h3>
+  <ol>
+    <li><span class="kw">sy-tabix</span> 與 <span class="kw">sy-index</span> 各由哪些敘述設定？在 LOOP AT 雜湊表時 sy-tabix 是多少？為什麼在 LOOP 中呼叫 READ TABLE 後不能再用 sy-tabix 當目前列號？</li>
+    <li>寫一段程式：SELECT 後先做一次 <span class="kw">READ TABLE</span> 再判斷 sy-subrc，說明結果為何可能錯誤，並改正。</li>
+    <li><span class="kw">itab[ … ]</span> 表示式找不到資料時會發生什麼？請分別用 <span class="kw">line_exists( )</span>、<span class="kw">OPTIONAL</span>、<span class="kw">TRY … CATCH cx_sy_itab_line_not_found</span> 三種方式處理。</li>
+    <li>從第 4 節的表中挑出三個「名字看起來可用、其實是 Obsolete」的欄位，說明應改用什麼。</li>
+    <li>伺服器時區為 UTC、使用者時區為 UTC+8，台灣時間 7 月 1 日早上 7 點執行，<span class="kw">sy-datum</span> 與 <span class="kw">sy-datlo</span> 各是幾號？若這是月結過帳程式，該用哪一個？</li>
+    <li>改寫第 8 節的報表：加上「只列出未鎖定、未過期的對話帳號」的選項，條件放在 SQL 裡而不是 LOOP 後刪除。</li>
+    <li>SUSR_USER_ADDRESS_READ、BAPI_USER_GET_DETAIL、cl_abap_context_info 三者各適合什麼情境？在 1809 系統上要如何確認 cl_abap_context_info 可用？</li>
+    <li>作業一：用傳統迴圈反轉 <span class="kw">'AB CD'</span>，若把字元先放進 <span class="kw">c LENGTH 1</span> 變數再串接，結果是什麼？為什麼？</li>
+    <li>作業二（原素材）：將今天的日期顯示成民國年 7 碼（例：1110315）。用 <span class="kw">ZCL_CA_UTIL=&gt;to_roc_date( )</span> 完成，並補一個單元測試案例驗證民國 99 年補 0。</li>
+    <li>依第 13 節規劃，在你的開發系統建立 ZCA 主套件與 ZCA_UTIL 子套件，把 ZCL_CA_UTIL 與 ZCX_CA_UTIL 放進去，並用 TADIR 查詢確認沒有遺留在 $TMP。</li>
+    <li>列出你自己過去三支程式中重複寫過的功能，決定哪些該收進工具庫、哪些屬於模組自己的類別。</li>
+  </ol>
+</section>

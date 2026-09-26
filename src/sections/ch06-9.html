@@ -1,0 +1,1328 @@
+<section class="chapter" id="ch06-9" data-title="日期與時間處理">
+  <h2>第 6-9 章 日期與時間處理大全</h2>
+  <p class="lede">報表的期間條件、交期推算、工作天、帳齡、介面時間戳記、民國年列印，幾乎每支客製程式都會碰到日期。本章把「常用日期函數」素材裡的 29 個函數模組逐一保留並改寫成 S/4HANA 1809+ 的呼叫方式。每一組主題都先講原生語法（型別 <span class="kw">d</span>／<span class="kw">t</span> 的算術、字串範本、時間戳記、<span class="kw">CL_ABAP_TSTMP</span>、7.54 的 <span class="kw">utclong</span>），再講函數，最後整理時區、使用者日期格式、背景作業與 <span class="kw">BT</span> 區間這四類最常出事的陷阱。</p>
+  <div class="meta">
+    <div><b>核心 TCODE</b><span class="tcode">SE37</span><span class="tcode">SE11</span><span class="tcode">SCAL</span><span class="tcode">SU01</span><span class="tcode">SU3</span><span class="tcode">STZAC</span><span class="tcode">STZBD</span><span class="tcode">OB29</span><span class="tcode">OB37</span><span class="tcode">SM36</span><span class="tcode">SM37</span><span class="tcode">STVARV</span></div>
+    <div><b>關鍵物件</b>SYST（DATUM、UZEIT、DATLO、TIMLO、ZONLO、FDAYW）、USR01-DATFM、TTZCU-TZONESYS、TFACD、TFACS、THOL、T001W-FABKL、T001-PERIV、T246、T247、TCURR-GDATU、CASDAYATTR、CL_ABAP_TSTMP、CL_ABAP_DATFM、utclong、TIMESTAMP／TIMESTAMPL</div>
+  </div>
+
+  <h3 id="ch06-9-01">1. 素材對照</h3>
+  <p>本章素材是兩份純文字檔。<b>06_常用日期函數.txt</b> 轉貼自網路上的函數整理文章（約 15K 字，內容是 29 個函數的呼叫範例與輸出結果，原文附的四張結果截圖沒有一起保存下來），所以本章依 SAP 標準重新整理，範例一律改寫成現代語法。<b>07_作業.txt</b> 有兩題，本章只收作業二「民國年」；作業一（字串反轉）屬於字串處理，放在其他章。</p>
+  <table>
+    <thead><tr><th>本章小節</th><th>原始檔</th><th>涵蓋的函數或題目</th></tr></thead>
+    <tbody>
+      <tr><td>2 原生基礎</td><td>（補充：ABAP 語言參考）</td><td>型別 d／t、sy-datum／sy-uzeit／sy-datlo／sy-timlo／sy-zonlo、日期算術</td></tr>
+      <tr><td>3 月初／月底</td><td>06_常用日期函數.txt</td><td>LAST_DAY_OF_MONTHS、RP_LAST_DAY_OF_MONTHS、BKK_GET_MONTH_LASTDAY</td></tr>
+      <tr><td>4 加減天數／月數／年數</td><td>06_常用日期函數.txt</td><td>FIMA_DATE_CREATE、RP_CALC_DATE_IN_INTERVAL、CCM_GO_BACK_MONTHS、MONTH_PLUS_DETERMINE</td></tr>
+      <tr><td>5 兩日期間隔與比較</td><td>06_常用日期函數.txt</td><td>HR_99S_INTERVAL_BETWEEN_DATES、FIMA_DAYS_AND_MONTHS_AND_YEARS、FIMA_DATE_COMPARE、SD_DATETIME_DIFFERENCE</td></tr>
+      <tr><td>6 星期幾、月份名稱與星期名稱</td><td>06_常用日期函數.txt</td><td>DAY_IN_WEEK、WEEKDAY_GET、MONTH_NAMES_GET</td></tr>
+      <tr><td>7 週次</td><td>06_常用日期函數.txt</td><td>DATE_GET_WEEK、WEEK_GET_FIRST_DAY、GET_WEEK_INFO_BASED_ON_DATE、HR_GBSSP_GET_WEEK_DATES</td></tr>
+      <tr><td>8 工廠日曆、假日與工作天</td><td>06_常用日期函數.txt</td><td>HOLIDAY_CHECK_AND_GET_INFO、DATE_CONVERT_TO_FACTORYDATE、DAY_ATTRIBUTES_GET（另補 FACTORYDATE_CONVERT_TO_DATE）</td></tr>
+      <tr><td>9 時間與 12／24 小時制</td><td>06_常用日期函數.txt</td><td>HRVE_CONVERT_TIME</td></tr>
+      <tr><td>10～11 時間戳記、時區、utclong</td><td>（補充：ABAP 語言參考）</td><td>GET TIME STAMP、CONVERT DATE／TIME STAMP、CL_ABAP_TSTMP、utclong</td></tr>
+      <tr><td>12 日期格式與使用者設定</td><td>06_常用日期函數.txt</td><td>CONVERT_DATE_TO_INTERNAL、CONVERT_DATE_TO_EXTERNAL（另補 CL_ABAP_DATFM）</td></tr>
+      <tr><td>13 民國年</td><td>07_作業.txt 作業二</td><td>把今天顯示成民國年，例如 1110315</td></tr>
+      <tr><td>14 會計年度與期間</td><td>06_常用日期函數.txt</td><td>GET_CURRENT_YEAR</td></tr>
+      <tr><td>15 選擇畫面的日期／時間 F4</td><td>06_常用日期函數.txt</td><td>F4_DATE、F4_CLOCK、POPUP_TO_SELECT_MONTH、POPUP_CALENDAR_SDB</td></tr>
+      <tr><td>16 資料庫端的日期運算</td><td>（補充：ABAP SQL 內建函數）</td><td>DATS_*、TSTMP_*、生效日期取最新一筆</td></tr>
+      <tr><td>17 陷阱總整理</td><td>（Casper 實務經驗）</td><td>時區、使用者格式、背景作業、BT 區間</td></tr>
+      <tr><td>18 函數速查表</td><td>全部</td><td>29 個函數 ＋ 本章補充的函數</td></tr>
+    </tbody>
+  </table>
+  <p>素材的舊寫法在本章全部改寫，改法對照如下（原程式碼不保留）：</p>
+  <table>
+    <thead><tr><th>素材寫法</th><th>本章改成</th><th>理由</th></tr></thead>
+    <tbody>
+      <tr><td><span class="kw">TYPE-POOLS: p99sg.</span>、<span class="kw">TYPE-POOLS trff.</span></td><td>刪除</td><td>7.02 起型別池會自動載入，不必宣告</td></tr>
+      <tr><td><span class="kw">DATA ... LIKE isellist-month</span></td><td><span class="kw">TYPE isellist-month</span></td><td>參照字典型別用 TYPE</td></tr>
+      <tr><td><span class="kw">CONCATENATE p_year sy-datum+4(2) INTO ...</span></td><td>字串範本 <span class="kw">|{ p_year }{ sy-datum+4(2) }|</span></td><td>現代寫法</td></tr>
+      <tr><td><span class="kw">DATA wotnr TYPE p.</span>、<span class="kw">datediff TYPE p</span></td><td>用函數介面的字典型別，例如 <span class="kw">TYPE p</span> 改參照 SE37 顯示的型別</td><td>未指定長度的 <span class="kw">TYPE p</span> 容易和介面不相容</td></tr>
+      <tr><td>字面值 <span class="kw">'20140101'</span> 直接傳給函數</td><td>先放進 <span class="kw">TYPE d</span> 變數</td><td>避免型別推斷錯誤，也方便換成 <span class="kw">sy-datlo</span></td></tr>
+      <tr><td><span class="kw">PARAMETERS p1(6) TYPE c.</span> 配 F4_DATE</td><td><span class="kw">PARAMETERS p_date TYPE d.</span></td><td>型別 d 的欄位本身就有日曆 F4，不需要自己呼叫</td></tr>
+    </tbody>
+  </table>
+  <p>基礎觀念另見 <a href="#ch02-1-08">2-1 章第 8 節「日期與時間運算」</a>與 <a href="#ch02-1-09">第 9 節「常用日期／時間函數速查表」</a>。本章是它的完整版；如果兩處的參數名稱不一致，以本章（依素材逐一列出）為準，並請以 <span class="tcode">SE37</span> 實際介面最後確認。</p>
+
+  <h3 id="ch06-9-02">2. 原生基礎：型別 d／t、系統欄位與日期算術</h3>
+  <p>ABAP 的日期型別 <span class="kw">d</span> 是 8 碼字元 <b>YYYYMMDD</b>，時間型別 <span class="kw">t</span> 是 6 碼 <b>HHMMSS</b>。它們看起來是字元，但放進算術運算時會自動換成數字：<b>d 換成「從 0001-01-01 起算的天數」，t 換成「從 00:00:00 起算的秒數」</b>。所以日期加減天數、兩日相減求天數，都不需要函數。</p>
+  <table>
+    <thead><tr><th>系統欄位</th><th>意義</th><th>什麼時候用</th></tr></thead>
+    <tbody>
+      <tr><td><span class="kw">sy-datum</span>／<span class="kw">sy-uzeit</span></td><td>系統日期與時間（系統時區，見 <span class="kw">TTZCU-TZONESYS</span>）</td><td>和系統時間戳記對齊的技術用途</td></tr>
+      <tr><td><span class="kw">sy-datlo</span>／<span class="kw">sy-timlo</span></td><td>使用者所在時區的當地日期與時間</td><td><b>畫面預設值、過帳日期、給人看的日期</b></td></tr>
+      <tr><td><span class="kw">sy-zonlo</span></td><td>使用者時區（<span class="tcode">SU01</span>／<span class="tcode">SU3</span> 預設值頁籤）</td><td>時間戳記轉當地時間</td></tr>
+      <tr><td><span class="kw">sy-fdayw</span></td><td>工廠日曆的星期幾</td><td>少用</td></tr>
+      <tr><td><span class="kw">sy-tzone</span>／<span class="kw">sy-dayst</span></td><td>和 UTC 的秒差、是否夏令時間</td><td>已過時，改用時間戳記與時區</td></tr>
+    </tbody>
+  </table>
+  <pre><code class="abap">REPORT z_date_basics.
+
+DATA(lv_today) = sy-datlo.                    " 型別 d，使用者當地日期
+DATA(lv_now)   = sy-timlo.                    " 型別 t
+
+DATA lv_d30 TYPE d.
+lv_d30 = lv_today + 30.                       " 30 天後（自動跨月、跨年、閏年）
+
+DATA lv_d7 TYPE d.
+lv_d7 = lv_today - 7.                         " 一週前
+
+DATA(lv_days) = lv_d30 - lv_today.            " 兩個 d 相減 → 整數天數 30
+
+DATA lv_t90 TYPE t.
+lv_t90 = lv_now + 90 * 60.                    " 90 分鐘後（超過午夜會自動折回 00:xx）
+
+" 拆欄位：offset / length
+DATA(lv_year)  = lv_today+0(4).
+DATA(lv_month) = lv_today+4(2).
+DATA(lv_day)   = lv_today+6(2).
+
+" 比較：YYYYMMDD 的字元順序剛好等於時間順序
+IF lv_d30 &gt; lv_today.
+  cl_demo_output=&gt;write( |{ lv_d30 DATE = USER } 在今天之後| ).
+ENDIF.
+
+cl_demo_output=&gt;write( |今天 { lv_today DATE = USER } { lv_now TIME = USER }，| &amp;&amp;
+                       |年 { lv_year } 月 { lv_month } 日 { lv_day }，時區 { sy-zonlo }| ).
+cl_demo_output=&gt;display( ).</code></pre>
+  <div class="warn"><b>內嵌宣告的型別陷阱</b>：<span class="kw">DATA(lv_x) = lv_today + 30.</span> 宣告出來的是 <b>整數</b>（算術運算的計算型別），不是日期。要日期就先 <span class="kw">DATA lv_x TYPE d.</span> 再賦值，或寫 <span class="kw">CONV d( lv_today + 30 )</span>。</div>
+  <div class="warn"><b>時間相加會折回</b>：<span class="kw">t</span> 型別加到超過 24 小時會取餘數，日期不會跟著進位。跨日的「日期＋時間」運算要用時間戳記（第 10 節）或 <span class="kw">cl_abap_tstmp=&gt;td_add</span>。</div>
+  <div class="note"><b>無效日期</b>：<span class="kw">d</span> 欄位可以放進 '20140230' 這種不存在的日期，語法不會擋。拿無效日期做運算的結果不可預期，外部來的日期（上傳檔、介面、Z 表的 CHAR 欄位）一定要先檢查，見第 12 節。</div>
+
+  <h3 id="ch06-9-03">3. 取月初、月底</h3>
+  <h4>原生寫法</h4>
+  <p>月初就是把日改成 01。月底的做法是：<b>月初加 31 天一定會落在下個月，再把日改成 01 得到下月初，減 1 天就是本月底</b>。這個方法自動處理大小月與閏年。</p>
+  <pre><code class="abap">CLASS lcl_date DEFINITION FINAL.
+  PUBLIC SECTION.
+    CLASS-METHODS first_day IMPORTING iv_date        TYPE d
+                            RETURNING VALUE(rv_date) TYPE d.
+    CLASS-METHODS last_day  IMPORTING iv_date        TYPE d
+                            RETURNING VALUE(rv_date) TYPE d.
+ENDCLASS.
+
+CLASS lcl_date IMPLEMENTATION.
+  METHOD first_day.
+    rv_date = iv_date.
+    rv_date+6(2) = '01'.
+  ENDMETHOD.
+
+  METHOD last_day.
+    DATA lv_next TYPE d.
+    lv_next = first_day( iv_date ) + 31.      " 一定落在下個月
+    lv_next+6(2) = '01'.                      " 下個月 1 號
+    rv_date = lv_next - 1.                    " 本月最後一天
+  ENDMETHOD.
+ENDCLASS.
+
+START-OF-SELECTION.
+  DATA(lv_date) = CONV d( '20240215' ).
+  cl_demo_output=&gt;write( |月初 { lcl_date=&gt;first_day( lv_date ) DATE = ISO }| ).   " 2024-02-01
+  cl_demo_output=&gt;write( |月底 { lcl_date=&gt;last_day( lv_date ) DATE = ISO }| ).    " 2024-02-29（閏年）
+  cl_demo_output=&gt;display( ).</code></pre>
+  <h4>函數：LAST_DAY_OF_MONTHS、RP_LAST_DAY_OF_MONTHS、BKK_GET_MONTH_LASTDAY</h4>
+  <p>三個函數功能相同：輸入任一日期，回傳該月最後一天。素材範例輸入 20140101，三者都回傳 20140131。前兩個介面相同（<span class="kw">day_in</span> → <span class="kw">last_day_of_month</span>，例外 <span class="kw">day_in_no_date</span>），第三個是銀行模組的版本（<span class="kw">i_date</span> → <span class="kw">e_date</span>，沒有例外）。</p>
+  <pre><code class="abap">DATA lv_in   TYPE d VALUE '20140101'.
+DATA lv_last TYPE d.
+
+" 1) LAST_DAY_OF_MONTHS
+CALL FUNCTION 'LAST_DAY_OF_MONTHS'
+  EXPORTING
+    day_in            = lv_in
+  IMPORTING
+    last_day_of_month = lv_last               " 20140131
+  EXCEPTIONS
+    day_in_no_date    = 1
+    OTHERS            = 2.
+IF sy-subrc &lt;&gt; 0.
+  MESSAGE |日期 { lv_in } 無效| TYPE 'E'.
+ENDIF.
+
+" 2) RP_LAST_DAY_OF_MONTHS（HR 版本，介面相同）
+CALL FUNCTION 'RP_LAST_DAY_OF_MONTHS'
+  EXPORTING
+    day_in            = lv_in
+  IMPORTING
+    last_day_of_month = lv_last               " 20140131
+  EXCEPTIONS
+    day_in_no_date    = 1
+    OTHERS            = 2.
+
+" 3) BKK_GET_MONTH_LASTDAY（銀行模組版本，沒有例外，無效日期要自己先檢查）
+CALL FUNCTION 'BKK_GET_MONTH_LASTDAY'
+  EXPORTING
+    i_date = lv_in
+  IMPORTING
+    e_date = lv_last.                         " 20140131</code></pre>
+  <div class="tip"><b>選哪一個？</b>新程式建議直接用上面的原生方法或 ABAP SQL 的函數（第 16 節）。一定要用函數時選 <span class="kw">RP_LAST_DAY_OF_MONTHS</span> 或 <span class="kw">LAST_DAY_OF_MONTHS</span>，因為它們有例外可以接住無效日期。三者都沒有「月初」版本；月初改日為 01 即可。</div>
+
+  <h3 id="ch06-9-04">4. 加減天數、月數、年數</h3>
+  <h4>原生寫法</h4>
+  <p>加減天數直接 <span class="kw">+</span>／<span class="kw">-</span>。加減月數比較麻煩：1 月 31 日加一個月不存在 2 月 31 日，業界慣例是<b>截到該月月底</b>（2 月 28 或 29 日）。下面的 <span class="kw">add_months</span> 就是這個規則，年數等於月數乘 12。</p>
+  <pre><code class="abap">CLASS lcl_date_calc DEFINITION FINAL.
+  PUBLIC SECTION.
+    CLASS-METHODS add_months IMPORTING iv_date        TYPE d
+                                       iv_months      TYPE i
+                             RETURNING VALUE(rv_date) TYPE d.
+    CLASS-METHODS add_years  IMPORTING iv_date        TYPE d
+                                       iv_years       TYPE i
+                             RETURNING VALUE(rv_date) TYPE d.
+ENDCLASS.
+
+CLASS lcl_date_calc IMPLEMENTATION.
+  METHOD add_months.
+    " 換成「從西元 0 年起算的第幾個月」，加減後再拆回年、月
+    DATA(lv_total) = CONV i( iv_date+0(4) ) * 12 + CONV i( iv_date+4(2) ) - 1 + iv_months.
+    DATA(lv_year)  = lv_total DIV 12.
+    DATA(lv_month) = lv_total MOD 12 + 1.
+
+    DATA lv_first TYPE d.
+    lv_first = |{ lv_year WIDTH = 4 ALIGN = RIGHT PAD = '0' }{ lv_month WIDTH = 2 ALIGN = RIGHT PAD = '0' }01|.
+
+    " 目標月的月底
+    DATA lv_last TYPE d.
+    lv_last = lv_first + 31.
+    lv_last+6(2) = '01'.
+    lv_last = lv_last - 1.
+
+    " 原日期的「日」超過目標月天數時，截到月底
+    DATA(lv_day) = nmin( val1 = CONV i( iv_date+6(2) )
+                         val2 = CONV i( lv_last+6(2) ) ).
+    rv_date = lv_first + lv_day - 1.
+  ENDMETHOD.
+
+  METHOD add_years.
+    rv_date = add_months( iv_date = iv_date iv_months = iv_years * 12 ).
+  ENDMETHOD.
+ENDCLASS.
+
+START-OF-SELECTION.
+  DATA(lv_base) = CONV d( '20240131' ).
+  cl_demo_output=&gt;write( |+1 月 { lcl_date_calc=&gt;add_months( iv_date = lv_base iv_months = 1 ) DATE = ISO }| ).  " 2024-02-29
+  cl_demo_output=&gt;write( |-3 月 { lcl_date_calc=&gt;add_months( iv_date = lv_base iv_months = -3 ) DATE = ISO }| ). " 2023-10-31
+  cl_demo_output=&gt;write( |+1 年 { lcl_date_calc=&gt;add_years( iv_date = lv_base iv_years = 1 ) DATE = ISO }| ).    " 2025-01-31
+  cl_demo_output=&gt;display( ).</code></pre>
+  <h4>函數：RP_CALC_DATE_IN_INTERVAL（最常用）</h4>
+  <p>輸入日期與天數、月數、年數，<span class="kw">signum</span> 用 '+' 表示往後、'-' 表示往前。素材範例：20140101 加 10 天回傳 20140111。</p>
+  <pre><code class="abap">DATA lv_from TYPE d VALUE '20140101'.
+DATA lv_calc TYPE p0001-begda.                " 介面參照 P0001-BEGDA（型別 d）
+
+CALL FUNCTION 'RP_CALC_DATE_IN_INTERVAL'
+  EXPORTING
+    date      = lv_from
+    days      = 10                            " 天數
+    months    = 0                             " 月數
+    signum    = '+'                           " '+' 往後，'-' 往前
+    years     = 0                             " 年數
+  IMPORTING
+    calc_date = lv_calc.                      " 20140111
+
+" 上個月同一天
+CALL FUNCTION 'RP_CALC_DATE_IN_INTERVAL'
+  EXPORTING
+    date      = sy-datlo
+    days      = 0
+    months    = 1
+    signum    = '-'
+    years     = 0
+  IMPORTING
+    calc_date = lv_calc.</code></pre>
+  <h4>函數：FIMA_DATE_CREATE（FI 版本，可同時加年月日並指定月底規則）</h4>
+  <p>一次加上年、月、日，數值可以是負數表示往前。<span class="kw">i_set_last_day_of_month = 'X'</span> 時回傳結果所在月份的最後一天。素材範例：20140101 加 2 年、1 個月、23 天，再加 10 個日曆天，並設定取月底，回傳 <b>e_date = 2016.03.31</b>、<b>e_flg_end_of_month = X</b>、<b>e_days_of_i_date = 24</b>。</p>
+  <pre><code class="abap">DATA lv_start TYPE vtbbewe-dvalut VALUE '20140101'.
+DATA lv_date  TYPE vtbbewe-dvalut.
+DATA lv_flag  TYPE trff_flg.
+DATA lv_days  TYPE trff_type_n_2.
+
+CALL FUNCTION 'FIMA_DATE_CREATE'
+  EXPORTING
+    i_date                  = lv_start
+    i_flg_end_of_month      = ' '
+    i_years                 = 2               " 加 2 年（負數表示往前）
+    i_months                = 1               " 加 1 個月
+    i_days                  = 23              " 加 23 天
+    i_calendar_days         = 10              " 再加 10 個日曆天
+    i_set_last_day_of_month = 'X'             " 結果取該月最後一天
+  IMPORTING
+    e_date                  = lv_date         " 2016.03.31
+    e_flg_end_of_month      = lv_flag         " 設了 i_set_last_day_of_month 就回傳 X
+    e_days_of_i_date        = lv_days.        " 素材輸出 24</code></pre>
+  <div class="note"><b>素材說明待確認</b>：素材說 <span class="kw">e_days_of_i_date</span> 是「i_calendar_days 與 i_days 之和」，但 23 ＋ 10 = 33，和它自己列的輸出 24 對不起來。這個參數的確切語意請以 <span class="tcode">SE37</span> 的參數說明與實測為準，不要依素材的描述寫邏輯。</div>
+  <h4>函數：CCM_GO_BACK_MONTHS、MONTH_PLUS_DETERMINE</h4>
+  <p>只處理月份的兩個函數：前者往前推 N 個月（20140101 往前 3 個月 → 20131001），後者往後推 N 個月（20140101 往後 3 個月 → 20140401；月數給負數也可以往前）。</p>
+  <pre><code class="abap">DATA lv_base TYPE d VALUE '20140101'.
+DATA lv_new  TYPE d.
+
+CALL FUNCTION 'CCM_GO_BACK_MONTHS'
+  EXPORTING
+    currdate   = lv_base
+    backmonths = 3                            " 往前幾個月
+  IMPORTING
+    newdate    = lv_new.                      " 20131001
+
+CALL FUNCTION 'MONTH_PLUS_DETERMINE'
+  EXPORTING
+    months  = 3                               " 往後幾個月（可為負）
+    olddate = lv_base
+  IMPORTING
+    newdate = lv_new.                         " 20140401</code></pre>
+  <div class="warn"><b>月底的邊界要實測</b>：每個函數對「1 月 31 日加一個月」的處理不一定相同，有的截到 2 月底，有的會溢到 3 月。報表條件如果依賴月底，請用 1/31、2/28、2/29、12/31 四個日期實測你選的函數，或直接用上面的 <span class="kw">add_months</span>，行為由自己掌控。</div>
+
+  <h3 id="ch06-9-05">5. 兩日期間隔與比較</h3>
+  <h4>原生寫法</h4>
+  <p>天數直接相減；月數用「年×12＋月」相減；日期大小直接用 <span class="kw">&lt;</span>、<span class="kw">=</span>、<span class="kw">&gt;</span> 比較。含時間的間隔用時間戳記相減（第 10 節）。</p>
+  <pre><code class="abap">DATA(lv_from) = CONV d( '20130101' ).
+DATA(lv_to)   = CONV d( '20141001' ).
+
+DATA(lv_days)   = lv_to - lv_from.                                     " 638 天
+DATA(lv_months) = ( CONV i( lv_to+0(4) ) * 12 + CONV i( lv_to+4(2) ) )
+                - ( CONV i( lv_from+0(4) ) * 12 + CONV i( lv_from+4(2) ) ).   " 21 個月（只看年月）
+DATA(lv_full_months) = COND i( WHEN lv_to+6(2) &lt; lv_from+6(2) THEN lv_months - 1
+                               ELSE lv_months ).                         " 滿月數
+
+DATA(lv_relation) = COND string( WHEN lv_from &lt; lv_to THEN 'LT'
+                                  WHEN lv_from = lv_to THEN 'EQ'
+                                  ELSE 'GT' ).
+
+" 帳齡分組：用 COND 把天數分桶
+DATA(lv_bucket) = COND string( WHEN lv_days &lt;= 30 THEN '0-30'
+                                WHEN lv_days &lt;= 60 THEN '31-60'
+                                WHEN lv_days &lt;= 90 THEN '61-90'
+                                ELSE '90+' ).
+
+cl_demo_output=&gt;write( |{ lv_days } 天、{ lv_months } 個月（滿 { lv_full_months } 個月）、{ lv_relation }、帳齡 { lv_bucket }| ).
+cl_demo_output=&gt;display( ).</code></pre>
+  <h4>函數：HR_99S_INTERVAL_BETWEEN_DATES</h4>
+  <p>一次回傳兩日期間的天數、週數、月數、年數，外加 <span class="kw">month_tab</span>：期間內每個月一列，含該月的開始日（月初）與截止日（月底），適合做「按月攤提」或「逐月展開」。</p>
+  <pre><code class="abap">DATA lv_days      TYPE i.
+DATA lv_weeks     TYPE i.
+DATA lv_months    TYPE i.
+DATA lv_years     TYPE i.
+DATA lt_month_tab TYPE STANDARD TABLE OF p99sg_month_tab_row WITH EMPTY KEY.
+DATA lv_begda     TYPE d VALUE '20130101'.
+DATA lv_endda     TYPE d VALUE '20140101'.
+
+CALL FUNCTION 'HR_99S_INTERVAL_BETWEEN_DATES'
+  EXPORTING
+    begda     = lv_begda                      " 開始日期
+    endda     = lv_endda                      " 截止日期
+  IMPORTING
+    days      = lv_days                       " 天數
+    c_weeks   = lv_weeks                      " 週數：52
+    c_months  = lv_months                     " 月數：12
+    c_years   = lv_years                      " 年數：1
+    month_tab = lt_month_tab.                 " 期間內各月的月初、月底
+
+cl_demo_output=&gt;write( |{ lv_days } 天 / { lv_weeks } 週 / { lv_months } 月 / { lv_years } 年| ).
+cl_demo_output=&gt;write( lt_month_tab ).        " 欄位名稱以 SE11 的 P99SG_MONTH_TAB_ROW 為準
+cl_demo_output=&gt;display( ).</code></pre>
+  <div class="warn"><b>素材錯誤</b>：素材註解寫 2013-01-01 到 2014-01-01「返回天數：266」。這兩天實際相差 365 天，若函數採「頭尾都算」則是 366 天，266 應是 366 的誤植。請實測確認這個函數是否含頭含尾，再決定報表要不要加減 1。</div>
+  <h4>函數：FIMA_DAYS_AND_MONTHS_AND_YEARS</h4>
+  <p>同一組日期有兩種算法，差別在 <span class="kw">i_flg_separate</span>：空白時三個輸出各自是「總天數、總月數、總年數」；'X' 時是「幾年又幾個月又幾天」的拆解。素材範例（20130101 到 20141001）：空白回傳 638 天、21 個月、2 年；'X' 回傳 0 天、9 個月、1 年，也就是 1 年 9 個月整。</p>
+  <pre><code class="abap">DATA lv_days   TYPE i.
+DATA lv_months TYPE i.
+DATA lv_years  TYPE i.
+DATA(lv_from) = CONV d( '20130101' ).
+DATA(lv_to)   = CONV d( '20141001' ).
+
+" 總量：638 天、21 個月、2 年（年數是無條件進位的概念，不是滿年數）
+CALL FUNCTION 'FIMA_DAYS_AND_MONTHS_AND_YEARS'
+  EXPORTING
+    i_date_from    = lv_from
+    i_date_to      = lv_to
+    i_flg_separate = ' '
+  IMPORTING
+    e_days         = lv_days
+    e_months       = lv_months
+    e_years        = lv_years.
+
+" 拆解：1 年 9 個月 0 天
+CALL FUNCTION 'FIMA_DAYS_AND_MONTHS_AND_YEARS'
+  EXPORTING
+    i_date_from    = lv_from
+    i_date_to      = lv_to
+    i_flg_separate = 'X'
+  IMPORTING
+    e_days         = lv_days
+    e_months       = lv_months
+    e_years        = lv_years.
+
+cl_demo_output=&gt;display( |年資 { lv_years } 年 { lv_months } 個月 { lv_days } 天| ).</code></pre>
+  <h4>函數：FIMA_DATE_COMPARE、SD_DATETIME_DIFFERENCE</h4>
+  <p><span class="kw">FIMA_DATE_COMPARE</span> 比較兩個「日期＋時間」，回傳關係運算子 <b>GT／EQ／LT</b>，另有期間起訖的包含／排除標記（<span class="kw">i_sincl</span>、<span class="kw">i_comp_sincl</span>）與月底標記（<span class="kw">i_sult</span>、<span class="kw">i_comp_sult</span>），是金融交易管理（TRM）計息用的。<span class="kw">SD_DATETIME_DIFFERENCE</span> 算兩個「日期＋時間」的差：<span class="kw">datediff</span> 天數、<span class="kw">timediff</span> 時數、<span class="kw">earliest</span> 表示哪一個比較早。</p>
+  <pre><code class="abap">DATA lv_log_op    TYPE trff_type_c_2.
+DATA lv_date      TYPE d VALUE '20140101'.
+DATA lv_comp_date TYPE d VALUE '20140201'.
+DATA lv_zero_time TYPE t VALUE '000000'.
+
+CALL FUNCTION 'FIMA_DATE_COMPARE'
+  EXPORTING
+    i_flg_intraday = ' '
+    i_date         = lv_date
+    i_time         = lv_zero_time
+    i_sincl        = '0'                      " 期間開始的排除標記
+    i_sult         = ' '                      " 期間開始的月底標記
+    i_comp_date    = lv_comp_date             " 比較日期
+    i_comp_time    = lv_zero_time             " 比較時間
+    i_comp_sincl   = '0'                      " 期間結束的包含標記
+    i_comp_sult    = ' '                      " 期間結束的月底標記
+  IMPORTING
+    e_log_op       = lv_log_op.               " LT
+
+" SD_DATETIME_DIFFERENCE：輸出參數型別請以 SE37 介面為準
+DATA lv_datediff TYPE p LENGTH 16 DECIMALS 0.
+DATA lv_timediff TYPE p LENGTH 16 DECIMALS 0.
+DATA lv_earliest TYPE c LENGTH 1.
+DATA lv_time1    TYPE t VALUE '235959'.
+DATA lv_time2    TYPE t VALUE '083000'.
+
+CALL FUNCTION 'SD_DATETIME_DIFFERENCE'
+  EXPORTING
+    date1            = lv_date
+    time1            = lv_time1
+    date2            = lv_date
+    time2            = lv_time2
+  IMPORTING
+    datediff         = lv_datediff            " 日期差
+    timediff         = lv_timediff            " 時間差（小時）
+    earliest         = lv_earliest            " 1：第一組較早；2：第二組較早；0：相等（依素材）
+  EXCEPTIONS
+    invalid_datetime = 1
+    OTHERS           = 2.</code></pre>
+  <div class="warn"><b>素材錯誤</b>：素材的 <span class="kw">time1 = '240000'</span> 不是合法的 <span class="kw">t</span> 值（最大 235959），能跑出結果是因為函數內部容忍，不能當範例照抄；上面已改成 235959。另外素材把 <span class="kw">datediff</span>、<span class="kw">timediff</span> 宣告成沒有長度的 <span class="kw">TYPE p</span>，本章改成明確長度，實際請依 SE37 介面型別宣告。</div>
+  <div class="tip">只要比較先後，用 <span class="kw">IF lv_d1 &lt; lv_d2</span> 就好，不必呼叫 <span class="kw">FIMA_DATE_COMPARE</span>；含時間的比較先把日期與時間組成時間戳記（第 10 節）再比，簡單又不會錯。</div>
+
+  <h3 id="ch06-9-06">6. 星期幾、月份名稱與星期名稱</h3>
+  <h4>原生寫法</h4>
+  <p>1900-01-01 是星期一，所以「和 1900-01-01 相差的天數 MOD 7 ＋ 1」就是 ISO 星期（1＝星期一 … 7＝星期日）。名稱不要寫死在程式裡，直接讀文字表：<b>T246</b>（星期名稱：SPRSL、WOTNR、KURZT、LANGT）與 <b>T247</b>（月份名稱：SPRAS、MNR、KTX、LTX）。</p>
+  <pre><code class="abap">DATA(lv_date) = CONV d( '20140101' ).
+
+" ISO 星期：1 = 星期一 … 7 = 星期日
+DATA(lv_wotnr) = ( lv_date - CONV d( '19000101' ) ) MOD 7 + 1.      " 3（星期三）
+DATA(lv_is_weekend) = xsdbool( lv_wotnr &gt;= 6 ).
+
+" 星期名稱（取代 WEEKDAY_GET）
+SELECT wotnr, kurzt, langt
+  FROM t246
+  WHERE sprsl = @sy-langu
+  ORDER BY wotnr
+  INTO TABLE @DATA(lt_weekdays).
+
+" 月份名稱（取代 MONTH_NAMES_GET）
+SELECT mnr, ktx, ltx
+  FROM t247
+  WHERE spras = @sy-langu
+  ORDER BY mnr
+  INTO TABLE @DATA(lt_months).
+
+DATA(lv_wd_name) = VALUE #( lt_weekdays[ wotnr = CONV #( lv_wotnr ) ]-langt OPTIONAL ).
+DATA(lv_mn_name) = VALUE #( lt_months[ mnr = lv_date+4(2) ]-ltx OPTIONAL ).
+
+cl_demo_output=&gt;display( |{ lv_date DATE = ISO } 是 { lv_wd_name }，{ lv_mn_name }，週末：{ lv_is_weekend }| ).</code></pre>
+  <h4>函數：DAY_IN_WEEK、WEEKDAY_GET、MONTH_NAMES_GET</h4>
+  <p><span class="kw">DAY_IN_WEEK</span> 回傳星期幾（素材：20140101 回傳 3，星期三）。<span class="kw">WEEKDAY_GET</span> 回傳指定語言的全部星期名稱（結構 T246），<span class="kw">MONTH_NAMES_GET</span> 回傳全部月份名稱（結構 T247），兩者都另有 <span class="kw">return_code</span> 回傳 sy-subrc。</p>
+  <pre><code class="abap">DATA lv_wotnr TYPE p LENGTH 1 DECIMALS 0.     " 素材宣告為 TYPE p，請依 SE37 介面型別
+DATA lv_datum TYPE d VALUE '20140101'.
+CALL FUNCTION 'DAY_IN_WEEK'
+  EXPORTING
+    datum = lv_datum
+  IMPORTING
+    wotnr = lv_wotnr.                         " 3 = 星期三
+
+DATA lv_rc       TYPE sy-subrc.
+DATA lt_weekday  TYPE STANDARD TABLE OF t246 WITH EMPTY KEY.
+CALL FUNCTION 'WEEKDAY_GET'
+  EXPORTING
+    language          = sy-langu
+  IMPORTING
+    return_code       = lv_rc
+  TABLES
+    weekday           = lt_weekday            " 7 列：WOTNR、KURZT、LANGT
+  EXCEPTIONS
+    weekday_not_found = 1
+    OTHERS            = 2.
+
+DATA lt_month_names TYPE STANDARD TABLE OF t247 WITH EMPTY KEY.
+CALL FUNCTION 'MONTH_NAMES_GET'
+  EXPORTING
+    language              = sy-langu
+  IMPORTING
+    return_code           = lv_rc
+  TABLES
+    month_names           = lt_month_names    " 12 列：MNR、KTX、LTX
+  EXCEPTIONS
+    month_names_not_found = 1
+    OTHERS                = 2.</code></pre>
+  <div class="note">素材附的 month_names、weekday 結果截圖沒有保存下來；兩個表的內容就是 T247、T246 在登入語言下的資料，用 <span class="tcode">SE16N</span> 看表即可。</div>
+
+  <h3 id="ch06-9-07">7. 週次：ISO 週與週起始日</h3>
+  <p>「第幾週」有兩套規則，報表要先跟使用者講好：</p>
+  <ul>
+    <li><b>ISO 8601（SAP 預設）</b>：週一開始；<b>包含該年第一個星期四的那一週是第 1 週</b>。所以 2014-01-01（星期三）屬於 2014 年第 1 週，而該週的週一是 2013-12-30；反過來，某些年的 12 月底會屬於下一年的第 1 週。週次格式是 <b>YYYYWW</b>（型別 SCAL-WEEK）。</li>
+    <li><b>週日起始（美式、部分 HR 報表）</b>：<span class="kw">HR_GBSSP_GET_WEEK_DATES</span> 就是這一套，同一天算出來的週次可能和 ISO 差一週。</li>
+  </ul>
+  <h4>原生寫法：ISO 週次演算法</h4>
+  <pre><code class="abap">DATA(lv_date) = CONV d( '20140101' ).
+
+DATA(lv_wotnr) = ( lv_date - CONV d( '19000101' ) ) MOD 7 + 1.   " 1 = 週一
+
+DATA lv_monday   TYPE d.
+DATA lv_sunday   TYPE d.
+DATA lv_thursday TYPE d.
+lv_monday   = lv_date - lv_wotnr + 1.         " 該週週一：2013-12-30
+lv_sunday   = lv_monday + 6.                  " 該週週日：2014-01-05
+lv_thursday = lv_monday + 3.                  " ISO：週四落在哪一年，這週就屬於哪一年
+
+DATA lv_jan1 TYPE d.
+lv_jan1 = |{ lv_thursday+0(4) }0101|.
+DATA(lv_week_no) = ( lv_thursday - lv_jan1 ) DIV 7 + 1.
+
+DATA(lv_week) = |{ lv_thursday+0(4) }{ lv_week_no WIDTH = 2 ALIGN = RIGHT PAD = '0' }|.   " 201401
+
+cl_demo_output=&gt;display( |週次 { lv_week }，{ lv_monday DATE = ISO } ～ { lv_sunday DATE = ISO }| ).</code></pre>
+  <h4>函數：DATE_GET_WEEK、WEEK_GET_FIRST_DAY、GET_WEEK_INFO_BASED_ON_DATE、HR_GBSSP_GET_WEEK_DATES</h4>
+  <pre><code class="abap">DATA lv_date TYPE d VALUE '20140101'.
+DATA lv_week TYPE scal-week.
+DATA lv_mon  TYPE d.
+DATA lv_sun  TYPE d.
+
+" 1) 日期 → ISO 週次 YYYYWW
+CALL FUNCTION 'DATE_GET_WEEK'
+  EXPORTING
+    date         = lv_date
+  IMPORTING
+    week         = lv_week                    " 201401
+  EXCEPTIONS
+    date_invalid = 1
+    OTHERS       = 2.
+
+" 2) 週次 → 該週第一天（週一）
+CALL FUNCTION 'WEEK_GET_FIRST_DAY'
+  EXPORTING
+    week         = lv_week
+  IMPORTING
+    date         = lv_mon                     " 20131230
+  EXCEPTIONS
+    week_invalid = 1
+    OTHERS       = 2.
+
+" 3) 一次拿週次、週一、週日（週一起始）
+CALL FUNCTION 'GET_WEEK_INFO_BASED_ON_DATE'
+  EXPORTING
+    date   = lv_date
+  IMPORTING
+    week   = lv_week                          " 201401
+    monday = lv_mon                           " 20131230
+    sunday = lv_sun.                          " 20140105
+
+" 4) 週日起始的版本
+DATA lv_week_sun    TYPE d.
+DATA lv_week_sat    TYPE d.
+DATA lv_day_in_week TYPE i.
+DATA lv_week_no     TYPE p08_weekno.
+
+CALL FUNCTION 'HR_GBSSP_GET_WEEK_DATES'
+  EXPORTING
+    p_pdate       = lv_date
+  IMPORTING
+    p_sunday      = lv_week_sun               " 20131229（本週開始：週日）
+    p_saturday    = lv_week_sat               " 20140104（本週結束：週六）
+    p_day_in_week = lv_day_in_week            " 4：週日算第 1 天，所以星期三是 4
+    p_week_no     = lv_week_no.               " 201352：以本週「開始日」所屬的週次表示</code></pre>
+  <div class="warn"><b>同一天、兩種週次</b>：2014-01-01 在 ISO 是 201401，在 <span class="kw">HR_GBSSP_GET_WEEK_DATES</span> 是 201352。週報、產能週排程若混用兩個函數，跨年那週一定對不起來。專案一開始就決定用哪一套，寫進規格書。</div>
+
+  <h3 id="ch06-9-08">8. 工廠日曆、假日與工作天</h3>
+  <p>「交期加 5 個工作天」「本月有幾個工作天」不能用日曆天算，要查<b>工廠日曆</b>（<span class="tcode">SCAL</span> 維護）。架構是：<b>假日日曆</b>（國定假日，表 THOL 等）指派給<b>工廠日曆</b>（定義哪幾個星期幾上班，表 TFACD），工廠日曆再指派給工廠（<b>T001W-FABKL</b>）。工廠日曆會編好每一個工作天的序號（工廠日期，factory date），序號相減就是工作天數。</p>
+  <div class="warn"><b>工廠日曆有有效年度範圍</b>：TFACD 定義了日曆的起訖年，超出範圍時函數會拋 <span class="kw">date_after_range</span>／<span class="kw">date_before_range</span>。每年年底都要有人去 <span class="tcode">SCAL</span> 把明年的假日補上並延長年度，否則一月初所有算交期的程式同時出錯，這是真實會發生的事故。S/4HANA 較新版本另提供 Fiori 的工廠日曆維護與新的日曆 API，1809 以 SCAL 為主，實際可用的工具請依系統版本確認。</div>
+  <h4>函數：DATE_CONVERT_TO_FACTORYDATE ＋ FACTORYDATE_CONVERT_TO_DATE（加減工作天）</h4>
+  <p>素材範例：日曆 'ZS'、日期 20140101（元旦）、<span class="kw">correct_option = '+'</span>。因為當天不是工作天，函數往後找到 20140102，<span class="kw">factorydate</span> 回傳工廠日期序號 1531，<span class="kw">workingday_indicator</span> 回傳 '+'。</p>
+  <ul>
+    <li><span class="kw">correct_option</span>：輸入日期不是工作天時往哪裡找，'+' 往後找下一個工作天，'-' 往前找上一個。</li>
+    <li><span class="kw">workingday_indicator</span>：空白表示輸入日本來就是工作天；'+' 或 '-' 表示輸入日不是工作天，已依 correct_option 修正。素材把 '+' 解釋成「工作日計算方式」並不精確。</li>
+  </ul>
+  <pre><code class="abap">CLASS lcl_workday DEFINITION FINAL.
+  PUBLIC SECTION.
+    "! 從 iv_date 起加減 iv_days 個工作天
+    CLASS-METHODS add_workdays IMPORTING iv_date        TYPE d
+                                         iv_days        TYPE i
+                                         iv_calendar    TYPE scal-fcalid
+                               RETURNING VALUE(rv_date) TYPE d.
+ENDCLASS.
+
+CLASS lcl_workday IMPLEMENTATION.
+  METHOD add_workdays.
+    DATA lv_corrected TYPE scal-date.
+    DATA lv_factdate  TYPE facdate.
+    DATA lv_indicator TYPE scal-indicator.
+
+    " 日期 → 工廠日期序號（非工作天往後找）
+    CALL FUNCTION 'DATE_CONVERT_TO_FACTORYDATE'
+      EXPORTING
+        correct_option               = '+'
+        date                         = iv_date
+        factory_calendar_id          = iv_calendar
+      IMPORTING
+        date                         = lv_corrected
+        factorydate                  = lv_factdate
+        workingday_indicator         = lv_indicator
+      EXCEPTIONS
+        calendar_buffer_not_loadable = 1
+        correct_option_invalid       = 2
+        date_after_range             = 3
+        date_before_range            = 4
+        date_invalid                 = 5
+        factory_calendar_not_found   = 6
+        OTHERS                       = 7.
+    IF sy-subrc &lt;&gt; 0.
+      MESSAGE |工廠日曆 { iv_calendar } 換算失敗（subrc { sy-subrc }），請檢查 SCAL 年度範圍| TYPE 'E'.
+    ENDIF.
+
+    " 序號加減後再換回日期
+    lv_factdate = lv_factdate + iv_days.
+
+    CALL FUNCTION 'FACTORYDATE_CONVERT_TO_DATE'
+      EXPORTING
+        factorydate                  = lv_factdate
+        factory_calendar_id          = iv_calendar
+      IMPORTING
+        date                         = rv_date
+      EXCEPTIONS
+        calendar_buffer_not_loadable = 1
+        factorydate_after_range      = 2
+        factorydate_before_range     = 3
+        factorydate_invalid          = 4
+        factory_calendar_id_missing  = 5
+        factory_calendar_not_found   = 6
+        OTHERS                       = 7.
+    IF sy-subrc &lt;&gt; 0.
+      MESSAGE |工廠日期 { lv_factdate } 超出日曆範圍| TYPE 'E'.
+    ENDIF.
+  ENDMETHOD.
+ENDCLASS.
+
+START-OF-SELECTION.
+  " 用工廠的日曆，不要把日曆 ID 寫死
+  SELECT SINGLE fabkl FROM t001w WHERE werks = '1000' INTO @DATA(lv_fabkl).
+  DATA(lv_due) = lcl_workday=&gt;add_workdays( iv_date     = sy-datlo
+                                            iv_days     = 5
+                                            iv_calendar = lv_fabkl ).
+  cl_demo_output=&gt;display( |5 個工作天後：{ lv_due DATE = USER }| ).</code></pre>
+  <div class="note"><span class="kw">FACTORYDATE_CONVERT_TO_DATE</span> 是本章補充（素材未列），例外清單請以 <span class="tcode">SE37</span> 為準；若例外名稱與上面不同，保留 <span class="kw">OTHERS</span> 即可編譯。兩個工作天之間的天數＝兩個工廠日期序號相減。</div>
+  <h4>函數：HOLIDAY_CHECK_AND_GET_INFO（是否為假日）</h4>
+  <p>查假日日曆（不是工廠日曆）判斷某天是否為國定假日。素材以 20140201（春節）配假日日曆 'ZS'，<span class="kw">holiday_found</span> 回傳 X；<span class="kw">with_holiday_attributes = 'X'</span> 時，<span class="kw">holiday_attributes</span> 會帶回假日屬性（結構 THOL）。</p>
+  <pre><code class="abap">DATA lv_holiday    TYPE c LENGTH 1.
+DATA lt_attributes TYPE SORTED TABLE OF thol WITH UNIQUE KEY ftgid.
+DATA lv_check_date TYPE d VALUE '20140201'.
+
+CALL FUNCTION 'HOLIDAY_CHECK_AND_GET_INFO'
+  EXPORTING
+    date                         = lv_check_date
+    holiday_calendar_id          = 'ZS'           " 假日日曆 ID（示範值）
+    with_holiday_attributes      = 'X'            " 要帶回假日屬性
+  IMPORTING
+    holiday_found                = lv_holiday     " X = 是假日
+  TABLES
+    holiday_attributes           = lt_attributes
+  EXCEPTIONS
+    calendar_buffer_not_loadable = 1
+    date_after_range             = 2
+    date_before_range            = 3
+    date_invalid                 = 4
+    holiday_calendar_id_missing  = 5
+    holiday_calendar_not_found   = 6
+    OTHERS                       = 7.
+IF sy-subrc = 0 AND lv_holiday = abap_true.
+  cl_demo_output=&gt;display( lt_attributes ).
+ENDIF.</code></pre>
+  <div class="note">素材宣告 <span class="kw">TYPE SORTED TABLE OF thol</span> 沒有寫鍵，在 7.40 以上會語法錯誤。上例補上 <span class="kw">WITH UNIQUE KEY ftgid</span>（THOL 的假日鍵，請以 SE11 確認）；若不確定鍵，改用 <span class="kw">STANDARD TABLE ... WITH EMPTY KEY</span> 最保險。</div>
+  <h4>函數：DAY_ATTRIBUTES_GET（一段期間每天的屬性）</h4>
+  <p>一次回傳期間內每一天的屬性（結構 CASDAYATTR）：星期幾、是否非工作天、是否假日、假日名稱等。要判斷公共假期必須傳入工廠日曆或假日日曆 ID。</p>
+  <pre><code class="abap">DATA lv_year_from TYPE scal-year.
+DATA lv_year_to   TYPE scal-year.
+DATA lv_rc        TYPE sy-subrc.
+DATA lt_day_attr  TYPE STANDARD TABLE OF casdayattr WITH EMPTY KEY.
+DATA lv_from      TYPE d VALUE '20140101'.
+DATA lv_to        TYPE d VALUE '20140110'.
+SELECT SINGLE fabkl FROM t001w WHERE werks = '1000' INTO @DATA(lv_fabkl).
+
+CALL FUNCTION 'DAY_ATTRIBUTES_GET'
+  EXPORTING
+    factory_calendar           = lv_fabkl         " 工廠日曆 ID（例如 T001W-FABKL）
+    holiday_calendar           = ' '              " 假日日曆 ID
+    date_from                  = lv_from
+    date_to                    = lv_to
+    language                   = sy-langu
+    non_iso                    = ' '
+  IMPORTING
+    year_of_valid_from         = lv_year_from     " 日曆有效起年
+    year_of_valid_to           = lv_year_to       " 日曆有效迄年
+    returncode                 = lv_rc
+  TABLES
+    day_attributes             = lt_day_attr      " 每天一列
+  EXCEPTIONS
+    factory_calendar_not_found = 1
+    holiday_calendar_not_found = 2
+    date_has_invalid_format    = 3
+    date_inconsistency         = 4
+    OTHERS                     = 5.
+
+" 本期間的工作天數：FREEDAY 空白的天（欄位名稱以 SE11 CASDAYATTR 為準）
+DATA(lv_workdays) = REDUCE i( INIT n = 0
+                              FOR ls_day IN lt_day_attr WHERE ( freeday IS INITIAL )
+                              NEXT n = n + 1 ).
+cl_demo_output=&gt;display( |工作天 { lv_workdays } 天；日曆有效年度 { lv_year_from }～{ lv_year_to }| ).</code></pre>
+  <div class="tip">回傳的 <span class="kw">year_of_valid_to</span> 很好用：排個每月檢查的背景程式，發現工廠日曆有效年度只剩今年就寄信提醒維護 SCAL，可以避免上面說的一月事故。</div>
+
+  <h3 id="ch06-9-09">9. 時間與 12／24 小時制</h3>
+  <p>時間型別 <span class="kw">t</span> 內部永遠是 24 小時制 HHMMSS。12 小時制只是「顯示格式」：字串範本的 <span class="kw">TIME = USER</span> 會依使用者設定（<span class="tcode">SU01</span> 的時間格式）顯示成 24 小時制或 AM／PM。</p>
+  <pre><code class="abap">DATA(lv_t) = CONV t( '190000' ).
+
+" 24 → 12 小時制（原生）
+DATA(lv_hour24) = CONV i( lv_t+0(2) ).
+DATA(lv_ampm)   = COND string( WHEN lv_hour24 &lt; 12 THEN 'AM' ELSE 'PM' ).
+DATA(lv_hour12) = COND i( WHEN lv_hour24 = 0  THEN 12
+                          WHEN lv_hour24 &gt; 12 THEN lv_hour24 - 12
+                          ELSE lv_hour24 ).
+DATA(lv_text12) = |{ lv_hour12 WIDTH = 2 ALIGN = RIGHT PAD = '0' }:{ lv_t+2(2) }:{ lv_t+4(2) } { lv_ampm }|.  " 07:00:00 PM
+
+" 12 → 24 小時制（原生）：輸入 06:00:00 PM
+DATA(lv_in)    = CONV t( '060000' ).
+DATA(lv_in_pm) = abap_true.
+DATA lv_out TYPE t.
+lv_out = COND #( WHEN lv_in_pm = abap_true  AND lv_in+0(2) &lt;&gt; '12' THEN lv_in + 12 * 3600
+                 WHEN lv_in_pm = abap_false AND lv_in+0(2) =  '12' THEN lv_in - 12 * 3600
+                 ELSE lv_in ).                                                     " 180000
+
+cl_demo_output=&gt;write( |{ lv_t TIME = ISO } = { lv_text12 }；06:00 PM = { lv_out TIME = ISO }；使用者格式 { lv_out TIME = USER }| ).
+cl_demo_output=&gt;display( ).</code></pre>
+  <h4>函數：HRVE_CONVERT_TIME</h4>
+  <p><span class="kw">type_time</span> 'A' 是 24 → 12 小時制，'B' 是 12 → 24 小時制。素材範例：060000 ＋ 'PM' 以 'B' 轉換得 180000。</p>
+  <pre><code class="abap">DATA lv_in_time  TYPE tims VALUE '060000'.
+DATA lv_out_time TYPE tims.
+DATA lv_am_pm    TYPE c LENGTH 2.
+
+CALL FUNCTION 'HRVE_CONVERT_TIME'
+  EXPORTING
+    type_time       = 'B'                     " A：24→12；B：12→24
+    input_time      = lv_in_time
+    input_am_pm     = 'PM'
+  IMPORTING
+    output_time     = lv_out_time             " 180000
+    output_am_pm    = lv_am_pm
+  EXCEPTIONS
+    parameter_error = 1
+    OTHERS          = 2.
+
+cl_demo_output=&gt;display( | Input Time - { lv_in_time TIME = ISO } / Output Time - { lv_out_time TIME = ISO }| ).</code></pre>
+  <div class="note">素材把 <span class="kw">lv_am_pm</span> 宣告為 1 碼 <span class="kw">TYPE c</span>，但 'AM'／'PM' 是兩碼，會被截成 'A'／'P'。上例改成 2 碼；實際長度請以 SE37 介面為準。</div>
+
+  <h3 id="ch06-9-10">10. 時間戳記與時區：GET TIME STAMP、CONVERT、CL_ABAP_TSTMP</h3>
+  <p>只要資料會跨時區（海外工廠、雲端系統、外部介面），就不要存「日期＋時間」兩個欄位，改存 <b>UTC 時間戳記</b>，要顯示時再轉成使用者時區。ABAP 有兩種傳統時間戳記：</p>
+  <table>
+    <thead><tr><th>型別</th><th>內容</th><th>範例</th></tr></thead>
+    <tbody>
+      <tr><td><span class="kw">TIMESTAMP</span>（p 長度 8）</td><td>YYYYMMDDhhmmss，UTC，精確到秒</td><td>20140101083000</td></tr>
+      <tr><td><span class="kw">TIMESTAMPL</span>（p 長度 11，7 位小數）</td><td>YYYYMMDDhhmmss.sssssss，UTC，精確到 100 奈秒</td><td>20140101083000.1234567</td></tr>
+      <tr><td><span class="kw">utclong</span>（7.54 起）</td><td>真正的時間戳記內建型別，見第 11 節</td><td>2014-01-01T08:30:00.1234567</td></tr>
+    </tbody>
+  </table>
+  <pre><code class="abap">" 1) 取目前 UTC 時間戳記
+DATA lv_ts  TYPE timestamp.
+DATA lv_tsl TYPE timestampl.
+GET TIME STAMP FIELD lv_ts.
+GET TIME STAMP FIELD lv_tsl.
+
+" 2) 時間戳記 → 使用者時區的日期與時間
+DATA lv_date TYPE d.
+DATA lv_time TYPE t.
+DATA lv_dst  TYPE abap_bool.
+CONVERT TIME STAMP lv_ts TIME ZONE sy-zonlo
+        INTO DATE lv_date TIME lv_time DAYLIGHT SAVING TIME lv_dst.
+
+" 3) 日期 ＋ 時間（某時區） → UTC 時間戳記
+DATA lv_ts_local TYPE timestamp.
+DATA lv_in_date  TYPE d VALUE '20140101'.
+DATA lv_in_time  TYPE t VALUE '083000'.
+CONVERT DATE lv_in_date TIME lv_in_time
+        INTO TIME STAMP lv_ts_local TIME ZONE 'UTC+8'.      " 台灣 08:30 = UTC 00:30
+IF sy-subrc &lt;&gt; 0.
+  MESSAGE '日期、時間或時區無效' TYPE 'E'.
+ENDIF.
+
+" 4) 字串範本直接格式化時間戳記，可指定顯示時區
+cl_demo_output=&gt;write( |UTC     { lv_ts TIMESTAMP = ISO }| ).                         " 例：2014-01-01T00:30:00
+cl_demo_output=&gt;write( |使用者  { lv_ts TIMESTAMP = USER TIMEZONE = sy-zonlo }| ).
+cl_demo_output=&gt;write( |空白分隔 { lv_ts TIMESTAMP = SPACE }| ).                     " 例：2014-01-01 00:30:00
+cl_demo_output=&gt;write( |台灣 08:30 的 UTC 時間戳記 { lv_ts_local }| ).               " 20140101003000
+cl_demo_output=&gt;display( ).</code></pre>
+  <div class="note"><b>傳給 CALL FUNCTION 與 CONVERT 的日期先放進變數</b>：本章所有函數呼叫都先宣告 <span class="kw">TYPE d</span>／<span class="kw">TYPE t</span> 變數再傳，不在參數位置寫 <span class="kw">CONV d( ... )</span> 之類的表示式（函數模組的實際參數對表示式的支援有限，方法呼叫才沒有這個限制）。時區代碼（'UTC+8'、'CHINA' 等）維護在表 TTZZ，系統時區在 <span class="kw">TTZCU-TZONESYS</span>，<span class="tcode">STZAC</span>／<span class="tcode">STZBD</span> 維護。</div>
+  <h4>CL_ABAP_TSTMP：時間戳記的加減與相減</h4>
+  <p>時間戳記是「看起來像日期的數字」，<b>不能直接加 3600 當作加一小時</b>（083000 加 3600 會變成 086600，不是合法時間）。一律用 <span class="kw">CL_ABAP_TSTMP</span>：</p>
+  <pre><code class="abap">DATA lv_start TYPE timestampl.
+GET TIME STAMP FIELD lv_start.
+
+TRY.
+    " 加減秒數（負數往前）
+    DATA(lv_plus_90min) = cl_abap_tstmp=&gt;add( tstmp = lv_start secs = 90 * 60 ).
+    DATA(lv_minus_1day) = cl_abap_tstmp=&gt;subtractsecs( tstmp = lv_start secs = 86400 ).
+
+    " 兩個時間戳記相差幾秒
+    DATA(lv_secs) = cl_abap_tstmp=&gt;subtract( tstmp1 = lv_plus_90min tstmp2 = lv_start ).   " 5400
+
+    " 日期＋時間直接加秒數（跨日自動進位，取代 t 型別的折回問題）
+    DATA lv_res_date TYPE d.
+    DATA lv_res_time TYPE t.
+    cl_abap_tstmp=&gt;td_add( EXPORTING date     = CONV d( '20141231' )
+                                     time     = CONV t( '230000' )
+                                     secs     = 2 * 3600
+                           IMPORTING res_date = lv_res_date          " 20150101
+                                     res_time = lv_res_time ).       " 010000
+
+    " 系統時區的日期時間 → UTC 時間戳記（舊 Z 表只存 sy-datum／sy-uzeit 時用）
+    DATA lv_utc TYPE timestamp.
+    cl_abap_tstmp=&gt;systemtstmp_syst2utc( EXPORTING syst_date = sy-datum
+                                                  syst_time = sy-uzeit
+                                        IMPORTING utc_tstmp = lv_utc ).
+
+    cl_demo_output=&gt;display( |差 { lv_secs } 秒；跨年結果 { lv_res_date DATE = ISO } { lv_res_time TIME = ISO }| ).
+  CATCH cx_parameter_invalid_range cx_parameter_invalid_type INTO DATA(lx_ts).
+    MESSAGE lx_ts-&gt;get_text( ) TYPE 'E'.
+ENDTRY.</code></pre>
+  <div class="tip"><b>效能量測不要用時間戳記</b>：量程式跑多久用 <span class="kw">GET RUN TIME FIELD</span>（微秒）；量「業務時間」（單據建立到過帳花了多久）才用時間戳記相減。</div>
+
+  <h3 id="ch06-9-11">11. utclong（7.54 起）與其他新 API</h3>
+  <p><b>版本門檻：ABAP 7.54（ABAP Platform 1909，S/4HANA 1909）以上。1809（7.53）不能用。</b><span class="kw">utclong</span> 是真正的時間戳記內建型別（不是 p 數字偽裝），有專屬的內建函數，無效值會被擋下，也是 ABAP Cloud 建議的時間戳記型別。</p>
+  <pre><code class="abap">" ※ 需要 ABAP 7.54（S/4HANA 1909）以上
+DATA(lv_now)   = utclong_current( ).                                   " 目前 UTC
+
+DATA(lv_later) = utclong_add( val     = lv_now
+                              days    = 1
+                              hours   = 2
+                              minutes = 30 ).                          " 加 1 天 2 小時 30 分
+
+DATA(lv_diff)  = utclong_diff( high = lv_later low = lv_now ).         " 相差秒數（decfloat34）：95400
+
+" utclong ↔ 使用者時區的日期時間
+DATA lv_date TYPE d.
+DATA lv_time TYPE t.
+CONVERT UTCLONG lv_now TIME ZONE sy-zonlo INTO DATE lv_date TIME lv_time.
+
+DATA lv_back TYPE utclong.
+CONVERT DATE lv_date TIME lv_time TIME ZONE sy-zonlo INTO UTCLONG lv_back.
+
+cl_demo_output=&gt;write( |{ lv_now TIMESTAMP = ISO }，1 天 2.5 小時後差 { lv_diff } 秒| ).
+cl_demo_output=&gt;display( ).</code></pre>
+  <table>
+    <thead><tr><th>API</th><th>版本門檻</th><th>說明</th></tr></thead>
+    <tbody>
+      <tr><td><span class="kw">utclong</span>、<span class="kw">utclong_current( )</span>、<span class="kw">utclong_add( )</span>、<span class="kw">utclong_diff( )</span>、<span class="kw">CONVERT UTCLONG</span></td><td><b>7.54</b>（1909）</td><td>新時間戳記型別與函數</td></tr>
+      <tr><td><span class="kw">cl_abap_tstmp=&gt;tstmp2utclong</span>／<span class="kw">utclong2tstmp</span></td><td>7.54</td><td>舊 TIMESTAMP 與 utclong 互轉（方法名請以 <span class="tcode">SE24</span> 確認）</td></tr>
+      <tr><td><span class="kw">CL_ABAP_CONTEXT_INFO</span>（<span class="kw">get_system_date( )</span>、<span class="kw">get_user_time_zone( )</span> 等）</td><td>ABAP Cloud 用；地端可用版本請以 <span class="tcode">SE24</span> 確認</td><td>ABAP Cloud 不能讀 sy-datum 等系統欄位，要改用這個類別</td></tr>
+      <tr><td><span class="kw">CL_ABAP_DATFM</span></td><td>7.02 起即有，<b>1809 可用</b></td><td>使用者日期格式的轉換與檢查，見第 12 節</td></tr>
+      <tr><td><span class="kw">+=</span>、<span class="kw">-=</span> 運算子</td><td>7.54</td><td><span class="kw">lv_date += 1.</span> 在 1809 不能寫，要寫 <span class="kw">lv_date = lv_date + 1.</span></td></tr>
+    </tbody>
+  </table>
+  <div class="warn">多版本並存的專案（例如 1809 開發系統要支援 2020 的程式），<b>先查 SAP_BASIS 版本再用新語法</b>：<span class="tcode">SE38</span> → 系統 → 狀態 → 元件資訊。1809 上寫 <span class="kw">utclong</span> 會直接語法錯誤。</div>
+
+  <h3 id="ch06-9-12">12. 日期格式與使用者設定：內部 ↔ 外部</h3>
+  <p>日期在資料庫與變數裡永遠是 <b>內部格式 YYYYMMDD</b>；畫面、Excel、列印看到的是 <b>外部格式</b>，由每個使用者自己的設定決定（<span class="tcode">SU01</span>／<span class="tcode">SU3</span> → 預設值 → 日期格式，存在 <b>USR01-DATFM</b>）。常見值：1＝DD.MM.YYYY、2＝MM/DD/YYYY、3＝MM-DD-YYYY、4＝YYYY.MM.DD、5＝YYYY/MM/DD、6＝YYYY-MM-DD，另有日本年號與伊斯蘭曆等格式。</p>
+  <h4>原生寫法：輸出用字串範本，輸入用 CL_ABAP_DATFM</h4>
+  <pre><code class="abap">DATA(lv_date) = CONV d( '20140101' ).
+
+" 內部 → 外部（輸出）
+cl_demo_output=&gt;write( |USER        { lv_date DATE = USER }| ).          " 依使用者設定，例如 2014/01/01
+cl_demo_output=&gt;write( |ISO         { lv_date DATE = ISO }| ).           " 2014-01-01（介面、檔案一律用這個）
+cl_demo_output=&gt;write( |RAW         { lv_date DATE = RAW }| ).           " 20140101
+cl_demo_output=&gt;write( |ENVIRONMENT { lv_date DATE = ENVIRONMENT }| ).   " 依 SET COUNTRY 的國家格式
+
+DATA lv_text TYPE c LENGTH 10.
+WRITE lv_date TO lv_text DD/MM/YYYY.                                     " 指定格式（仍會用使用者的分隔符）
+
+" 外部 → 內部（輸入）：CL_ABAP_DATFM（7.02 起，1809 可用）
+DATA lv_internal TYPE d.
+TRY.
+    cl_abap_datfm=&gt;conv_date_ext_to_int(
+      EXPORTING im_datext = '2014/01/31'          " 依使用者日期格式解析
+      IMPORTING ex_datint = lv_internal ).
+    cl_demo_output=&gt;write( |轉成內部 { lv_internal }| ).
+
+    DATA lv_external TYPE string.
+    cl_abap_datfm=&gt;conv_date_int_to_ext(
+      EXPORTING im_datint = lv_internal
+      IMPORTING ex_datext = lv_external ).
+    cl_demo_output=&gt;write( |轉回外部 { lv_external }| ).
+  CATCH cx_abap_datfm INTO DATA(lx_datfm).      " 無效日期、格式不明、格式有歧義
+    cl_demo_output=&gt;write( |無法轉換：{ lx_datfm-&gt;get_text( ) }| ).
+ENDTRY.
+cl_demo_output=&gt;display( ).</code></pre>
+  <h4>函數：CONVERT_DATE_TO_INTERNAL、CONVERT_DATE_TO_EXTERNAL</h4>
+  <p>兩者都依「目前使用者」的日期格式轉換。素材範例：使用者格式 YYYY.MM.DD 時，'2014.01.01' 轉內部得 20140101；20140101 轉外部得 '2014.01.01'。</p>
+  <pre><code class="abap">DATA lv_date TYPE d.
+CALL FUNCTION 'CONVERT_DATE_TO_INTERNAL'
+  EXPORTING
+    date_external            = '2014.01.01'   " 必須符合目前使用者的日期格式
+    accept_initial_date      = ' '
+  IMPORTING
+    date_internal            = lv_date        " 20140101
+  EXCEPTIONS
+    date_external_is_invalid = 1
+    OTHERS                   = 2.
+IF sy-subrc &lt;&gt; 0.
+  MESSAGE '日期格式不符合使用者設定' TYPE 'E'.
+ENDIF.
+
+DATA lv_ext TYPE c LENGTH 10.
+DATA lv_int TYPE d VALUE '20140101'.
+CALL FUNCTION 'CONVERT_DATE_TO_EXTERNAL'
+  EXPORTING
+    date_internal            = lv_int
+  IMPORTING
+    date_external            = lv_ext         " 依使用者格式，例如 2014.01.01
+  EXCEPTIONS
+    date_internal_is_invalid = 1
+    OTHERS                   = 2.</code></pre>
+  <div class="warn"><b>使用者日期格式造成的轉換錯誤</b>：同一支上傳程式，A 使用者（YYYY/MM/DD）跑得好好的，B 使用者（MM/DD/YYYY）一跑就說日期無效，或更糟：把 03/04 解成 4 月 3 日。原因就是 <span class="kw">CONVERT_DATE_TO_INTERNAL</span> 與 <span class="kw">conv_date_ext_to_int</span> 都依<b>執行者</b>的設定解析。處理外部檔案時：<b>和對方約定固定格式（建議 ISO YYYY-MM-DD 或 YYYYMMDD），程式自己用 offset 拆年月日</b>，不要依賴使用者設定；背景作業的使用者設定也可能和你不同。</div>
+  <div class="tip"><b>檢查日期是否有效</b>：用 <span class="kw">DATE_CHECK_PLAUSIBILITY</span>（例外 <span class="kw">plausibility_check_failed</span>；介面請以 SE37 確認），或 <span class="kw">cl_abap_datfm=&gt;conv_date_ext_to_int</span> 的例外，或在 ABAP SQL／CDS 用 <span class="kw">DATS_IS_VALID</span>（第 16 節）。</div>
+
+  <h3 id="ch06-9-13">13. 民國年（作業二解答）</h3>
+  <p><b>作業二</b>：將今天的日期顯示成民國年，例如「1110315」（民國 111 年 3 月 15 日＝2022-03-15）。規則：<b>民國年＝西元年－1911</b>，格式通常是 7 碼 <b>YYYMMDD</b>（民國 99 年以前補 0 成 3 碼，例如 0991231）。以本書寫作日 2026-09-26 為例，結果是 1150926。</p>
+  <h4>解法一：字串範本（推薦）</h4>
+  <pre><code class="abap">REPORT z00_roc_date.
+
+CLASS lcl_roc DEFINITION FINAL.
+  PUBLIC SECTION.
+    "! 西元 YYYYMMDD → 民國 YYYMMDD
+    CLASS-METHODS to_roc   IMPORTING iv_date       TYPE d
+                           RETURNING VALUE(rv_roc) TYPE string.
+    "! 民國 YYYMMDD（或 YYMMDD）→ 西元日期
+    CLASS-METHODS from_roc IMPORTING iv_roc         TYPE csequence
+                           RETURNING VALUE(rv_date) TYPE d.
+ENDCLASS.
+
+CLASS lcl_roc IMPLEMENTATION.
+  METHOD to_roc.
+    IF iv_date IS INITIAL.
+      RETURN.
+    ENDIF.
+    DATA(lv_roc_year) = CONV i( iv_date+0(4) ) - 1911.
+    rv_roc = |{ lv_roc_year WIDTH = 3 ALIGN = RIGHT PAD = '0' }{ iv_date+4(4) }|.
+  ENDMETHOD.
+
+  METHOD from_roc.
+    " 先補成 7 碼，相容 6 碼的舊資料（例如 991231）
+    DATA(lv_roc) = |{ condense( val = iv_roc ) WIDTH = 7 ALIGN = RIGHT PAD = '0' }|.
+    rv_date = |{ CONV i( lv_roc+0(3) ) + 1911 }{ lv_roc+3(4) }|.
+  ENDMETHOD.
+ENDCLASS.
+
+START-OF-SELECTION.
+  DATA(lv_today) = sy-datlo.                  " 用使用者當地日期，不用 sy-datum
+  DATA(lv_roc)   = lcl_roc=&gt;to_roc( lv_today ).
+
+  DATA(lv_back)  = lcl_roc=&gt;from_roc( '1110315' ).                   " 20220315
+  " 報表常見的「民國 115 年 09 月 26 日」
+  DATA(lv_long)  = |民國 { CONV i( lv_roc+0(3) ) } 年 { lv_today+4(2) } 月 { lv_today+6(2) } 日|.
+
+  WRITE: / '今天（西元）：', lv_today,
+         / '今天（民國）：', lv_roc,                                          " 例：1150926
+         / '民國 1110315 =', lv_back,
+         / lv_long.</code></pre>
+  <h4>解法二：CONVERSION_EXIT（轉換常式）</h4>
+  <p>SAP 標準<b>沒有</b>民國年的日期轉換常式（USR01-DATFM 也沒有民國年選項），所以做法是<b>自建轉換常式 ZROCD</b>：在函數群組裡建立兩個固定命名的函數 <span class="kw">CONVERSION_EXIT_ZROCD_OUTPUT</span>（內部 → 外部）與 <span class="kw">CONVERSION_EXIT_ZROCD_INPUT</span>（外部 → 內部），介面固定是 <span class="kw">IMPORTING VALUE(INPUT)</span>、<span class="kw">EXPORTING VALUE(OUTPUT)</span>。之後三種用法都會自動套用：</p>
+  <ol>
+    <li>直接 <span class="kw">CALL FUNCTION</span>。</li>
+    <li><span class="kw">WRITE ... USING EDIT MASK '==ZROCD'</span>（兩個等號＋常式名）。</li>
+    <li>在 <span class="tcode">SE11</span> 建一個網域（型別 DATS 長度 8），轉換常式欄填 ZROCD，資料元素參照它；凡是用這個資料元素的欄位，在選擇畫面、Dynpro、<span class="kw">WRITE TO</span> 都會自動顯示民國年。</li>
+  </ol>
+  <pre><code class="abap">FUNCTION conversion_exit_zrocd_output.
+*"----------------------------------------------------------------------
+*"  IMPORTING
+*"     VALUE(INPUT)
+*"  EXPORTING
+*"     VALUE(OUTPUT)
+*"----------------------------------------------------------------------
+  DATA lv_date TYPE d.
+  lv_date = input.
+  IF lv_date IS INITIAL.
+    CLEAR output.
+    RETURN.
+  ENDIF.
+  DATA(lv_roc_year) = CONV i( lv_date+0(4) ) - 1911.
+  output = |{ lv_roc_year WIDTH = 3 ALIGN = RIGHT PAD = '0' }{ lv_date+4(4) }|.
+ENDFUNCTION.
+
+FUNCTION conversion_exit_zrocd_input.
+*"----------------------------------------------------------------------
+*"  IMPORTING
+*"     VALUE(INPUT)
+*"  EXPORTING
+*"     VALUE(OUTPUT)
+*"----------------------------------------------------------------------
+  DATA(lv_roc) = |{ condense( val = CONV string( input ) ) WIDTH = 7 ALIGN = RIGHT PAD = '0' }|.
+  IF lv_roc CO '0'.
+    CLEAR output.
+    RETURN.
+  ENDIF.
+  DATA lv_date TYPE d.
+  lv_date = |{ CONV i( lv_roc+0(3) ) + 1911 }{ lv_roc+3(4) }|.
+  output = lv_date.
+ENDFUNCTION.</code></pre>
+  <pre><code class="abap">REPORT z00_roc_date_exit.
+
+DATA lv_roc TYPE c LENGTH 7.
+
+" 用法 1：直接呼叫轉換常式
+CALL FUNCTION 'CONVERSION_EXIT_ZROCD_OUTPUT'
+  EXPORTING
+    input  = sy-datlo
+  IMPORTING
+    output = lv_roc.
+WRITE: / '民國（CALL FUNCTION）：', lv_roc.
+
+" 用法 2：WRITE ... USING EDIT MASK 自動呼叫 CONVERSION_EXIT_ZROCD_OUTPUT
+DATA lv_text TYPE c LENGTH 10.
+WRITE sy-datlo TO lv_text USING EDIT MASK '==ZROCD'.
+WRITE: / '民國（EDIT MASK）：', lv_text.
+
+" 反向：民國 → 西元
+DATA lv_date TYPE d.
+CALL FUNCTION 'CONVERSION_EXIT_ZROCD_INPUT'
+  EXPORTING
+    input  = '1110315'
+  IMPORTING
+    output = lv_date.
+WRITE: / '1110315 =', lv_date.                " 20220315</code></pre>
+  <div class="note"><b>標準的日期轉換常式</b>：SAP 本身也有日期類的 CONVERSION_EXIT，例如 TCURR 匯率表的 GDATU 用的 <span class="kw">INVDT</span>（反向日期，見第 16 節）、以及以月份縮寫顯示日期的 <span class="kw">IDATE</span>、<span class="kw">SDATE</span> 等；它們的輸出格式請以 SE37 測試為準。字串範本只支援 <span class="kw">ALPHA</span> 這種內建格式，<b>不會</b>自動呼叫轉換常式，要套用轉換常式就用 <span class="kw">WRITE ... TO</span> 或直接 CALL FUNCTION。</div>
+  <div class="warn"><b>民國年的兩個坑</b>：(1) 民國 100 年前後，舊系統常把民國年存成 2 碼或 6 碼字串（991231），和 7 碼（1000101）混在一起時字串比較會出錯（'991231' 大於 '1000101'），請先統一補成 7 碼；(2) 民國日期存成 CHAR 欄位後就不能再用日期算術，<b>資料庫一律存西元 DATS，民國年只在輸出時轉換</b>。</div>
+
+  <h3 id="ch06-9-14">14. 會計年度與會計期間</h3>
+  <p>會計年度不一定等於日曆年。公司代碼的會計年度變式在 <b>T001-PERIV</b>（<span class="tcode">OB29</span> 定義、<span class="tcode">OB37</span> 指派），例如 V3 是 4 月到隔年 3 月。所以「今天是哪個會計年度、第幾期」一定要用公司代碼去算，不能直接拿 <span class="kw">sy-datum+0(4)</span>。</p>
+  <h4>函數：GET_CURRENT_YEAR（素材）</h4>
+  <pre><code class="abap">DATA lv_currm TYPE bkpf-monat.
+DATA lv_curry TYPE bkpf-gjahr.
+DATA lv_prevm TYPE bkpf-monat.
+DATA lv_prevy TYPE bkpf-gjahr.
+
+CALL FUNCTION 'GET_CURRENT_YEAR'
+  EXPORTING
+    bukrs = '1000'                            " 公司代碼（示範值）
+    date  = sy-datlo                          " 輸入日期
+  IMPORTING
+    currm = lv_currm                          " 當期會計期間
+    curry = lv_curry                          " 當期會計年度
+    prevm = lv_prevm                          " 上期會計期間
+    prevy = lv_prevy.                         " 上期會計年度
+
+cl_demo_output=&gt;display( |會計年度 { lv_curry } 第 { lv_currm } 期；上期 { lv_prevy }/{ lv_prevm }| ).</code></pre>
+  <h4>同類函數（本章補充）</h4>
+  <pre><code class="abap">" 依過帳日期與公司代碼決定會計年度與期間（FI 常用）；介面請以 SE37 確認
+DATA lv_gjahr TYPE gjahr.
+DATA lv_monat TYPE monat.
+CALL FUNCTION 'FI_PERIOD_DETERMINE'
+  EXPORTING
+    i_budat = sy-datlo
+    i_bukrs = '1000'
+  IMPORTING
+    e_gjahr = lv_gjahr
+    e_monat = lv_monat
+  EXCEPTIONS
+    OTHERS  = 1.
+
+" 只有會計年度變式時：先由公司代碼取 PERIV
+SELECT SINGLE periv FROM t001 WHERE bukrs = '1000' INTO @DATA(lv_periv).
+
+DATA lv_poper TYPE poper.
+DATA lv_year  TYPE gjahr.
+CALL FUNCTION 'DATE_TO_PERIOD_CONVERT'
+  EXPORTING
+    i_date  = sy-datlo
+    i_periv = lv_periv
+  IMPORTING
+    e_buper = lv_poper
+    e_gjahr = lv_year
+  EXCEPTIONS
+    OTHERS  = 1.</code></pre>
+  <div class="warn">「上個月的報表」在會計年度非曆年的公司，上期可能跨會計年度（第 1 期的上期是去年的第 12 期），也可能有特別期間 13～16。用 <span class="kw">GET_CURRENT_YEAR</span> 的 <span class="kw">prevm</span>／<span class="kw">prevy</span>，不要自己寫 <span class="kw">monat - 1</span>。</div>
+
+  <h3 id="ch06-9-15">15. 選擇畫面的日期與時間 F4</h3>
+  <p>先記住一件事：<b>欄位型別是 d（或參照 DATS 的資料元素）時，選擇畫面自動就有日曆 F4；型別是 t（TIMS）時自動有時間 F4</b>。素材的 <span class="kw">F4_DATE</span>／<span class="kw">F4_CLOCK</span> 範例把欄位宣告成 <span class="kw">p1(6) TYPE c</span>，才需要自己掛 F4。新程式應該優先把型別宣告對。</p>
+  <pre><code class="abap">REPORT z_date_f4.
+
+" 型別對了，F4 就自動有
+PARAMETERS: p_date TYPE d DEFAULT sy-datlo,
+            p_time TYPE t DEFAULT sy-timlo.
+SELECT-OPTIONS s_budat FOR p_date.
+
+" 以下示範「欄位不是日期型別」時才需要的函數
+PARAMETERS: p_cdate TYPE c LENGTH 8,          " 例如外部格式的字元欄位
+            p_ctime TYPE c LENGTH 6,
+            p_year  TYPE mard-lfgja DEFAULT sy-datlo(4),
+            p_month TYPE mard-lfmon.
+
+AT SELECTION-SCREEN ON VALUE-REQUEST FOR p_cdate.
+  DATA lv_sel_date TYPE d.
+  CALL FUNCTION 'F4_DATE'
+    EXPORTING
+      date_for_first_month         = sy-datlo
+    IMPORTING
+      select_date                  = lv_sel_date     " 使用者點選的日期
+    EXCEPTIONS
+      calendar_buffer_not_loadable = 1
+      date_after_range             = 2
+      date_before_range            = 3
+      date_invalid                 = 4
+      factory_calendar_not_found   = 5
+      holiday_calendar_not_found   = 6
+      parameter_conflict           = 7
+      OTHERS                       = 8.
+  IF sy-subrc = 0.
+    p_cdate = lv_sel_date.
+  ENDIF.
+
+AT SELECTION-SCREEN ON VALUE-REQUEST FOR p_ctime.
+  DATA lv_sel_time TYPE t.
+  CALL FUNCTION 'F4_CLOCK'
+    EXPORTING
+      start_time    = sy-timlo
+      display       = ' '
+    IMPORTING
+      selected_time = lv_sel_time.                  " 使用者點選的時間
+  p_ctime = lv_sel_time.
+
+AT SELECTION-SCREEN ON VALUE-REQUEST FOR p_month.
+  DATA lv_selected TYPE isellist-month.
+  DATA lv_rc       TYPE sy-subrc.
+  DATA(lv_actual) = CONV isellist-month( |{ p_year }{ sy-datlo+4(2) }| ).   " YYYYMM
+  CALL FUNCTION 'POPUP_TO_SELECT_MONTH'
+    EXPORTING
+      actual_month               = lv_actual
+      factory_calendar           = ' '
+      holiday_calendar           = ' '
+      language                   = sy-langu
+      start_column               = 8                " 彈出視窗位置
+      start_row                  = 5
+    IMPORTING
+      selected_month             = lv_selected      " YYYYMM
+      return_code                = lv_rc
+    EXCEPTIONS
+      factory_calendar_not_found = 1
+      holiday_calendar_not_found = 2
+      month_not_found            = 3
+      OTHERS                     = 4.
+  IF sy-subrc = 0 AND lv_rc = 0.
+    p_year  = lv_selected+0(4).
+    p_month = lv_selected+4(2).
+  ENDIF.</code></pre>
+  <h4>函數：POPUP_CALENDAR_SDB（可選日、週、月、區間的日曆）</h4>
+  <p>素材只列了程式、沒有說明文字。這個函數彈出一個可以選「一天、一週、一個月或一段區間」的日曆，回傳所選範圍的開始日與結束日（例如選一週就回傳該週第一天與最後一天），適合「週報」「月報」的期間輸入。</p>
+  <pre><code class="abap">DATA lv_begin TYPE d.
+DATA lv_end   TYPE d.
+
+CALL FUNCTION 'POPUP_CALENDAR_SDB'
+  EXPORTING
+    sel_day      = 'X'                        " 允許選日
+    sel_week     = 'X'                        " 允許選週
+    sel_month    = 'X'                        " 允許選月
+    sel_interval = 'X'                        " 允許選區間
+    focus_day    = sy-datlo                   " 預設聚焦日期
+  IMPORTING
+    begin_date   = lv_begin                   " 所選範圍第一天
+    end_date     = lv_end.                    " 所選範圍最後一天
+
+IF lv_begin IS NOT INITIAL.
+  cl_demo_output=&gt;display( |期間 { lv_begin DATE = USER } ～ { lv_end DATE = USER }| ).
+ENDIF.</code></pre>
+  <div class="note">素材附的四張 F4 畫面截圖（日期、時間、月份、週）沒有保存下來；這幾個函數都是彈出對話框，實際外觀在 SAP GUI 執行即可看到。<span class="kw">POPUP_*</span> 類函數只能在前景對話模式使用，背景作業呼叫會失敗。</div>
+
+  <h3 id="ch06-9-16">16. 資料庫端的日期運算與「取最新一筆」</h3>
+  <p>ABAP SQL 從 7.51 起有日期與時間戳記的內建函數（1809 可用），可以把「帳齡天數」「到期日」直接在 HANA 算完，不必把資料拉回 ABAP 再逐筆呼叫函數。CDS View 也有同名函數。</p>
+  <table>
+    <thead><tr><th>函數</th><th>用途</th></tr></thead>
+    <tbody>
+      <tr><td><span class="kw">DATS_IS_VALID( d )</span></td><td>日期是否有效（1／0）</td></tr>
+      <tr><td><span class="kw">DATS_DAYS_BETWEEN( d1, d2 )</span></td><td>兩日期相差天數</td></tr>
+      <tr><td><span class="kw">DATS_ADD_DAYS( d, n, on_error )</span></td><td>加減天數；on_error 為 'FAIL'、'NULL'、'INITIAL'、'UNCHANGED'</td></tr>
+      <tr><td><span class="kw">DATS_ADD_MONTHS( d, n, on_error )</span></td><td>加減月數</td></tr>
+      <tr><td><span class="kw">TSTMP_CURRENT_UTCTIMESTAMP( )</span>、<span class="kw">TSTMP_SECONDS_BETWEEN</span>、<span class="kw">TSTMP_ADD_SECONDS</span>、<span class="kw">TSTMP_TO_DATS</span>、<span class="kw">DATS_TIMS_TO_TSTMP</span></td><td>時間戳記函數（時區與錯誤處理參數請查 ABAP 關鍵字文件）</td></tr>
+    </tbody>
+  </table>
+  <pre><code class="abap">PARAMETERS p_from TYPE d DEFAULT '20140101'.
+
+" 帳齡與到期日在資料庫端算完
+SELECT vbeln,
+       erdat,
+       dats_days_between( erdat, @sy-datlo )      AS age_days,
+       dats_add_days( erdat, 30, 'INITIAL' )      AS due_date,
+       dats_add_months( erdat, 1, 'INITIAL' )     AS next_month
+  FROM vbak
+  WHERE erdat &gt;= @p_from
+  ORDER BY erdat DESCENDING, vbeln
+  INTO TABLE @DATA(lt_orders)
+  UP TO 100 ROWS.
+
+cl_demo_output=&gt;display( lt_orders ).</code></pre>
+  <h4>生效日期：取「某天有效的最新一筆」一定要排序</h4>
+  <p>價格條件、匯率、BOM、途程、HR 資訊類型……很多主資料是「生效日期」的設計。取某一天有效的那一筆時，<b>HANA 沒有預設排序</b>，不寫 <span class="kw">ORDER BY</span> 就取第一筆，今天拿到新的、明天可能拿到舊的。這和 Casper 在成本評價踩到的坑（item category H 與 cost component E 兩種角度混著抓）是同一件事：<b>任何「取第一筆」都必須先明確排序</b>。</p>
+  <pre><code class="abap">PARAMETERS p_date TYPE d DEFAULT sy-datlo.
+
+" 例：HR 組織指派（PA0001）取指定日期有效的那一筆，依開始日由新到舊
+SELECT pernr, begda, endda, orgeh, plans
+  FROM pa0001
+  WHERE pernr = '00000001'
+    AND begda &lt;= @p_date
+    AND endda &gt;= @p_date
+  ORDER BY begda DESCENDING
+  INTO TABLE @DATA(lt_org)
+  UP TO 1 ROWS.
+
+DATA(ls_org) = VALUE #( lt_org[ 1 ] OPTIONAL ).
+
+" 匯率請用標準函數（例如 READ_EXCHANGE_RATE、CONVERT_TO_LOCAL_CURRENCY），
+" 不要自己讀 TCURR：TCURR-GDATU 存的是「反向日期」（99999999 減日期，轉換常式 INVDT），
+" 直接拿日期去比會整個顛倒。</code></pre>
+  <div class="tip"><b>先找標準，再想客製</b>：工作天、會計期間、匯率生效日這些規則 SAP 都有標準函數或標準表，自己寫「跳過週末」的迴圈，遇到國定假日、補班日、特別期間一定出錯。</div>
+
+  <h3 id="ch06-9-17">17. 陷阱總整理：時區、使用者格式、背景作業、BT 區間</h3>
+  <h4>(1) 時區：sy-datum 不等於使用者的今天</h4>
+  <p><span class="kw">sy-datum</span> 是<b>系統時區</b>的日期，<span class="kw">sy-datlo</span> 才是<b>使用者時區</b>（<span class="kw">sy-zonlo</span>）的日期。雲端或海外主機的系統時區常是 UTC：台灣早上 7 點（UTC 前一天 23 點）用 <span class="kw">sy-datum</span> 當過帳日，會過到昨天；月初第一天早上跑月報，還會抓到上個月。</p>
+  <pre><code class="abap">" 系統時區
+SELECT SINGLE tzonesys FROM ttzcu INTO @DATA(lv_sys_tz).
+
+cl_demo_output=&gt;write( |系統時區 { lv_sys_tz }：{ sy-datum DATE = ISO } { sy-uzeit TIME = ISO }| ).
+cl_demo_output=&gt;write( |使用者時區 { sy-zonlo }：{ sy-datlo DATE = ISO } { sy-timlo TIME = ISO }| ).
+
+" 使用者沒維護時區時 sy-zonlo 是空白；CONVERT 的 TIME ZONE 為空白時會當成 UTC 處理
+DATA(lv_tz) = COND tznzone( WHEN sy-zonlo IS NOT INITIAL THEN sy-zonlo ELSE lv_sys_tz ).
+
+DATA lv_ts TYPE timestamp.
+GET TIME STAMP FIELD lv_ts.
+DATA lv_d TYPE d.
+DATA lv_t TYPE t.
+CONVERT TIME STAMP lv_ts TIME ZONE lv_tz INTO DATE lv_d TIME lv_t.
+cl_demo_output=&gt;write( |採用時區 { lv_tz }：{ lv_d DATE = ISO } { lv_t TIME = ISO }| ).
+cl_demo_output=&gt;display( ).</code></pre>
+  <div class="warn"><b>時區檢查清單</b>：(1) 給人看的日期、畫面預設值、過帳日期用 <span class="kw">sy-datlo</span>；(2) 存檔的建立時間用 UTC 時間戳記（<span class="kw">GET TIME STAMP</span>）；(3) <span class="kw">TIME ZONE</span> 參數給空白等於 UTC，不是「系統時區」；(4) <span class="tcode">SU01</span> 預設值頁籤要維護使用者時區，否則 <span class="kw">sy-zonlo</span> 為空；(5) 夏令時間地區的「凌晨 2:30」可能不存在或出現兩次，<span class="kw">CONVERT DATE</span> 要檢查 <span class="kw">sy-subrc</span>。</div>
+  <h4>(2) 使用者日期格式</h4>
+  <div class="warn">凡是「字串 → 日期」的地方（上傳 Excel／CSV、外部介面、Z 表的 CHAR 日期欄位）都不要依賴執行者的日期格式；見第 12 節。反過來，下載給外部系統的檔案也不要用 <span class="kw">DATE = USER</span>，否則換個人下載，格式就變了。<b>對外一律 ISO 或 YYYYMMDD</b>。</div>
+  <h4>(3) 背景作業的日期</h4>
+  <p>背景作業（<span class="tcode">SM36</span>／<span class="tcode">SM37</span>）裡的 <span class="kw">sy-datum</span>／<span class="kw">sy-datlo</span> 是<b>執行當下</b>的日期；<span class="kw">sy-zonlo</span> 是作業步驟使用者的時區。常見事故：</p>
+  <ul>
+    <li><b>變式存了固定日期</b>：<span class="kw">PARAMETERS p_date DEFAULT sy-datum</span> 在前景每次都是今天，但存成變式後，日期就固定成存檔那天，每天的排程都在跑同一天。解法：變式屬性裡把欄位設為「選擇變數」，類型 D（動態日期計算，例如「今天」「上個月的第一天到最後一天」），或類型 T（讀 <span class="tcode">STVARV</span> 維護的 TVARVC 變數）。</li>
+    <li><b>跨午夜</b>：23:50 開始的作業跑到隔天 00:10，程式中段再讀 <span class="kw">sy-datum</span> 會拿到不同日期。開頭取一次存進變數，全程用同一個值。</li>
+    <li><b>時區不同</b>：作業步驟使用者（常是系統帳號）若沒維護時區或時區和業務單位不同，<span class="kw">sy-datlo</span> 會和使用者預期不一樣。</li>
+  </ul>
+  <pre><code class="abap">REPORT z_daily_job.
+
+PARAMETERS p_date TYPE d.                     " 空白＝昨天；變式可設選擇變數
+
+START-OF-SELECTION.
+  " 開頭取一次「執行日」，整支程式都用這個值，避免跨午夜不一致
+  DATA(lv_run_date) = COND d( WHEN p_date IS NOT INITIAL THEN p_date
+                              ELSE sy-datlo - 1 ).
+
+  " 若變式用了 TVARVC 變數，也可以在程式裡讀（STVARV 維護）
+  SELECT SINGLE low FROM tvarvc
+    WHERE name = 'Z_DAILY_JOB_DATE'
+      AND type = 'P'
+      AND numb = '0000'
+    INTO @DATA(lv_tvarv_date).
+  IF sy-subrc = 0 AND lv_tvarv_date IS NOT INITIAL AND p_date IS INITIAL.
+    lv_run_date = lv_tvarv_date.
+  ENDIF.
+
+  MESSAGE |處理日期 { lv_run_date DATE = ISO }（背景：{ sy-batch }，時區 { sy-zonlo }）| TYPE 'S'.</code></pre>
+  <h4>(4) BT 區間的陷阱</h4>
+  <p>Casper 的原則：<b>條件用列舉（多筆 EQ）比用區間（BT）安全</b>，因為區間比的是字典序不是業務語意。內部格式的 DATS 欄位，字典序剛好等於時間順序，所以 <span class="kw">budat BETWEEN 月初 AND 月底</span> 是安全的；但下面這些情況會出事：</p>
+  <ul>
+    <li><b>時間戳記欄位配日期上限</b>：<span class="kw">ts BETWEEN 20140101000000 AND 20140131000000</span> 會漏掉 1 月 31 日整天。改用「半開區間」：<span class="kw">ts &gt;= 起日 00:00 AND ts &lt; 迄日隔天 00:00</span>，而且兩端都要先轉成 UTC。</li>
+    <li><b>CHAR 欄位存外部格式日期</b>（MM/DD/YYYY、DD.MM.YYYY）：字典序和時間順序無關，BT 一定抓錯。</li>
+    <li><b>民國年字串長度不一</b>：'991231' 在字典序上大於 '1000101'。</li>
+    <li><b>寫死月底 31 號</b>：<span class="kw">|{ lv_ym }31|</span> 在 2 月、4 月是無效日期，要用第 3 節的方法算月底。</li>
+    <li><b>會計期間不連續</b>：特別期間 13～16、會計年度跨曆年時，期間 BT 常常多抓或漏抓；要列舉的期間用 EQ 一筆一筆列。</li>
+  </ul>
+  <pre><code class="abap">PARAMETERS: p_from TYPE d DEFAULT '20140101',
+            p_to   TYPE d DEFAULT '20140131'.
+
+" 1) 時間戳記欄位：半開區間 [起日 00:00, 迄日隔天 00:00)，以使用者時區換成 UTC
+DATA lv_ts_from TYPE timestamp.
+DATA lv_ts_to   TYPE timestamp.
+DATA lv_next    TYPE d.
+lv_next = p_to + 1.
+CONVERT DATE p_from TIME '000000' INTO TIME STAMP lv_ts_from TIME ZONE sy-zonlo.
+CONVERT DATE lv_next TIME '000000' INTO TIME STAMP lv_ts_to TIME ZONE sy-zonlo.
+" ... WHERE changed_at &gt;= @lv_ts_from AND changed_at &lt; @lv_ts_to
+
+" 2) 會計期間：列舉（EQ）而不是區間（BT）
+TYPES ty_poper_range TYPE RANGE OF poper.
+DATA(lt_periods) = VALUE ty_poper_range( FOR p = 1 UNTIL p &gt; 12
+                                         ( sign = 'I' option = 'EQ' low = CONV poper( p ) ) ).
+
+" 3) 月份清單：把期間內每個月列舉出來（例如逐月查 MARDH、S 表等以年月為鍵的表）
+TYPES ty_month_range TYPE RANGE OF spmon.
+DATA lt_months TYPE ty_month_range.
+DATA lv_cursor TYPE d.
+lv_cursor = p_from.
+lv_cursor+6(2) = '01'.
+WHILE lv_cursor &lt;= p_to.
+  APPEND VALUE #( sign = 'I' option = 'EQ' low = lv_cursor+0(6) ) TO lt_months.
+  lv_cursor = lv_cursor + 31.
+  lv_cursor+6(2) = '01'.
+ENDWHILE.</code></pre>
+
+  <h3 id="ch06-9-18">18. 函數速查表</h3>
+  <p>素材的 29 個函數全部列出（依本章小節順序），另加本章補充的函數（標 ＊）。「現代替代寫法」欄是 S/4HANA 1809+ 新程式的建議做法；替代不了的（工廠日曆、會計期間）就繼續用標準函數，這正是「先找標準」。</p>
+  <table>
+    <thead><tr><th>函數</th><th>用途</th><th>主要參數</th><th>現代替代寫法</th></tr></thead>
+    <tbody>
+      <tr><td>LAST_DAY_OF_MONTHS</td><td>該月最後一天</td><td>day_in → last_day_of_month</td><td>月初＋31、日改 01、減 1（第 3 節）</td></tr>
+      <tr><td>RP_LAST_DAY_OF_MONTHS</td><td>該月最後一天（HR 版）</td><td>day_in → last_day_of_month</td><td>同上</td></tr>
+      <tr><td>BKK_GET_MONTH_LASTDAY</td><td>該月最後一天（銀行版，無例外）</td><td>i_date → e_date</td><td>同上</td></tr>
+      <tr><td>FIMA_DATE_CREATE</td><td>一次加減年月日，可取月底</td><td>i_date、i_years、i_months、i_days、i_calendar_days、i_set_last_day_of_month → e_date、e_flg_end_of_month、e_days_of_i_date</td><td>日期算術 ＋ <span class="kw">add_months</span>（第 4 節）</td></tr>
+      <tr><td>RP_CALC_DATE_IN_INTERVAL</td><td>加減年月日（最常用）</td><td>date、days、months、years、signum → calc_date</td><td><span class="kw">lv_d + n</span>、<span class="kw">add_months</span>；SQL 用 DATS_ADD_DAYS／DATS_ADD_MONTHS</td></tr>
+      <tr><td>CCM_GO_BACK_MONTHS</td><td>往前 N 個月</td><td>currdate、backmonths → newdate</td><td><span class="kw">add_months( iv_months = -n )</span></td></tr>
+      <tr><td>MONTH_PLUS_DETERMINE</td><td>往後（或往前）N 個月</td><td>months、olddate → newdate</td><td><span class="kw">add_months</span>；SQL 用 DATS_ADD_MONTHS</td></tr>
+      <tr><td>HR_99S_INTERVAL_BETWEEN_DATES</td><td>期間天／週／月／年數與各月起訖</td><td>begda、endda → days、c_weeks、c_months、c_years、month_tab</td><td>日期相減；逐月展開用 WHILE ＋ 月初（第 17 節）</td></tr>
+      <tr><td>FIMA_DAYS_AND_MONTHS_AND_YEARS</td><td>期間總天月年數，或拆成幾年幾月幾天</td><td>i_date_from、i_date_to、i_flg_separate → e_days、e_months、e_years</td><td>日期相減；年×12＋月相減（第 5 節）</td></tr>
+      <tr><td>FIMA_DATE_COMPARE</td><td>比較日期時間，回傳 GT／EQ／LT</td><td>i_date、i_time、i_comp_date、i_comp_time、i_sincl、i_sult… → e_log_op</td><td><span class="kw">IF lv_d1 &lt; lv_d2</span>；含時間用時間戳記比較</td></tr>
+      <tr><td>SD_DATETIME_DIFFERENCE</td><td>兩組日期時間相差天數與時數</td><td>date1、time1、date2、time2 → datediff、timediff、earliest</td><td><span class="kw">cl_abap_tstmp=&gt;subtract</span>；7.54 起 <span class="kw">utclong_diff</span></td></tr>
+      <tr><td>DAY_IN_WEEK</td><td>星期幾（1＝一 … 7＝日）</td><td>datum → wotnr</td><td><span class="kw">( d - '19000101' ) MOD 7 + 1</span></td></tr>
+      <tr><td>WEEKDAY_GET</td><td>全部星期名稱</td><td>language → return_code；TABLES weekday（T246）</td><td><span class="kw">SELECT ... FROM t246 WHERE sprsl = @sy-langu</span></td></tr>
+      <tr><td>MONTH_NAMES_GET</td><td>全部月份名稱</td><td>language → return_code；TABLES month_names（T247）</td><td><span class="kw">SELECT ... FROM t247 WHERE spras = @sy-langu</span></td></tr>
+      <tr><td>DATE_GET_WEEK</td><td>日期 → ISO 週次 YYYYWW</td><td>date → week</td><td>ISO 週次演算法（第 7 節）</td></tr>
+      <tr><td>WEEK_GET_FIRST_DAY</td><td>週次 → 該週週一</td><td>week → date</td><td>該年 1/4 所在週的週一 ＋ (週數－1)×7</td></tr>
+      <tr><td>GET_WEEK_INFO_BASED_ON_DATE</td><td>週次＋週一＋週日（週一起始）</td><td>date → week、monday、sunday</td><td>第 7 節演算法</td></tr>
+      <tr><td>HR_GBSSP_GET_WEEK_DATES</td><td>週日起始的週資訊與星期幾</td><td>p_pdate → p_sunday、p_saturday、p_day_in_week、p_week_no</td><td>（週日起始規則，確定需要才用）</td></tr>
+      <tr><td>HOLIDAY_CHECK_AND_GET_INFO</td><td>是否為假日＋假日屬性</td><td>date、holiday_calendar_id、with_holiday_attributes → holiday_found；TABLES holiday_attributes</td><td>繼續用標準函數</td></tr>
+      <tr><td>DATE_CONVERT_TO_FACTORYDATE</td><td>日期 → 工廠日期序號、是否工作天</td><td>correct_option、date、factory_calendar_id → date、factorydate、workingday_indicator</td><td>繼續用標準函數（搭配 ＊FACTORYDATE_CONVERT_TO_DATE 加減工作天）</td></tr>
+      <tr><td>DAY_ATTRIBUTES_GET</td><td>期間內每日屬性（星期、假日、非工作天）</td><td>factory_calendar、holiday_calendar、date_from、date_to、language、non_iso → year_of_valid_from／to、returncode；TABLES day_attributes（CASDAYATTR）</td><td>繼續用標準函數；計數用 REDUCE</td></tr>
+      <tr><td>HRVE_CONVERT_TIME</td><td>12／24 小時制轉換</td><td>type_time（A／B）、input_time、input_am_pm → output_time、output_am_pm</td><td>內部永遠 24 小時制，顯示用 <span class="kw">TIME = USER</span></td></tr>
+      <tr><td>CONVERT_DATE_TO_INTERNAL</td><td>使用者格式字串 → YYYYMMDD</td><td>date_external、accept_initial_date → date_internal</td><td><span class="kw">cl_abap_datfm=&gt;conv_date_ext_to_int</span>；對外檔案用固定格式自己拆</td></tr>
+      <tr><td>CONVERT_DATE_TO_EXTERNAL</td><td>YYYYMMDD → 使用者格式字串</td><td>date_internal → date_external</td><td><span class="kw">|{ d DATE = USER }|</span></td></tr>
+      <tr><td>GET_CURRENT_YEAR</td><td>當期與上期會計年度、期間</td><td>bukrs、date → currm、curry、prevm、prevy</td><td>繼續用；或 ＊FI_PERIOD_DETERMINE、＊DATE_TO_PERIOD_CONVERT</td></tr>
+      <tr><td>F4_DATE</td><td>彈出日曆選日期</td><td>date_for_first_month → select_date</td><td>欄位宣告成 TYPE d 就自動有 F4</td></tr>
+      <tr><td>F4_CLOCK</td><td>彈出時間選擇</td><td>start_time、display → selected_time</td><td>欄位宣告成 TYPE t 就自動有 F4</td></tr>
+      <tr><td>POPUP_TO_SELECT_MONTH</td><td>彈出年月選擇</td><td>actual_month、factory_calendar、holiday_calendar、language、start_column、start_row → selected_month、return_code</td><td>繼續用（選擇畫面沒有內建年月 F4）</td></tr>
+      <tr><td>POPUP_CALENDAR_SDB</td><td>彈出日曆選日／週／月／區間</td><td>sel_day、sel_week、sel_month、sel_interval、focus_day → begin_date、end_date</td><td>繼續用；或 SELECT-OPTIONS 讓使用者輸入區間</td></tr>
+      <tr><td>＊FACTORYDATE_CONVERT_TO_DATE</td><td>工廠日期序號 → 日期</td><td>factorydate、factory_calendar_id → date</td><td>與 DATE_CONVERT_TO_FACTORYDATE 成對使用</td></tr>
+      <tr><td>＊DATE_CHECK_PLAUSIBILITY</td><td>檢查日期是否有效</td><td>date（例外 plausibility_check_failed）</td><td><span class="kw">cl_abap_datfm</span> 的例外；SQL 用 DATS_IS_VALID</td></tr>
+      <tr><td>＊FI_PERIOD_DETERMINE</td><td>過帳日期 → 會計年度、期間</td><td>i_budat、i_bukrs → e_gjahr、e_monat</td><td>繼續用標準函數</td></tr>
+      <tr><td>＊DATE_TO_PERIOD_CONVERT</td><td>日期＋會計年度變式 → 期間</td><td>i_date、i_periv → e_buper、e_gjahr</td><td>繼續用標準函數</td></tr>
+      <tr><td>＊CONVERSION_EXIT_ZROCD_OUTPUT／_INPUT</td><td>自建民國年轉換常式</td><td>input → output</td><td>見第 13 節</td></tr>
+    </tbody>
+  </table>
+  <p>標 ＊ 的函數為本章補充，素材未列，介面與例外請以 <span class="tcode">SE37</span> 確認。原生語法與類別：日期算術、字串範本 <span class="kw">DATE／TIME／TIMESTAMP</span>、<span class="kw">GET TIME STAMP</span>、<span class="kw">CONVERT DATE／TIME STAMP</span>、<span class="kw">CL_ABAP_TSTMP</span>、<span class="kw">CL_ABAP_DATFM</span>（7.02 起）、<span class="kw">utclong</span> 系列（<b>7.54 起</b>）。</p>
+
+  <h3 id="ch06-9-qa">練習與自我檢核</h3>
+  <ol>
+    <li><b>作業二（本章第 13 節）</b>：把今天顯示成民國年 7 碼（例如 1110315）。用字串範本寫一次，再建立轉換常式 ZROCD，用 <span class="kw">WRITE ... USING EDIT MASK '==ZROCD'</span> 寫一次。加分：處理民國 99 年以前補 0。</li>
+    <li>不用任何函數，寫出「上個月的第一天」與「上個月的最後一天」。用 2024-03-15、2024-01-10 驗證（後者要跨年）。</li>
+    <li><span class="kw">DATA(lv_x) = sy-datlo + 30.</span> 的 <span class="kw">lv_x</span> 是什麼型別？如何改成日期？</li>
+    <li>2014-01-01 的 ISO 週次是多少？用 <span class="kw">HR_GBSSP_GET_WEEK_DATES</span> 算出來又是多少？為什麼不同？</li>
+    <li>用 <span class="kw">DATE_CONVERT_TO_FACTORYDATE</span> 與 <span class="kw">FACTORYDATE_CONVERT_TO_DATE</span> 寫「交期＝今天加 5 個工作天」，日曆 ID 從 T001W-FABKL 讀。<span class="kw">workingday_indicator</span> 回傳 '+' 代表什麼？</li>
+    <li>寫一個函數：輸入兩個「日期＋時間」，回傳相差幾小時幾分鐘，跨日也要正確（提示：<span class="kw">cl_abap_tstmp</span>）。</li>
+    <li>一支上傳程式在你的帳號可以跑，換同事就出現「日期無效」，最可能的原因是什麼？怎麼改？</li>
+    <li>排程每天 06:00 跑「昨天的出貨明細」，變式裡的日期要怎麼設？系統時區是 UTC、使用者在台灣時，程式應該用 <span class="kw">sy-datum</span> 還是 <span class="kw">sy-datlo</span>？</li>
+    <li>某 Z 表的 <span class="kw">changed_at</span> 是 TIMESTAMP，使用者查詢 1/1～1/31，為什麼 <span class="kw">BETWEEN 20140101000000 AND 20140131000000</span> 是錯的？寫出正確條件。</li>
+    <li>素材中 <span class="kw">HR_99S_INTERVAL_BETWEEN_DATES</span> 的「266 天」與 <span class="kw">SD_DATETIME_DIFFERENCE</span> 的「240000」各錯在哪裡？</li>
+    <li>取某員工在指定日期有效的組織指派時，為什麼一定要 <span class="kw">ORDER BY begda DESCENDING</span>？這和 HANA 有什麼關係？</li>
+    <li>在 1809 系統上寫 <span class="kw">DATA(lv_now) = utclong_current( ).</span> 會怎樣？要支援 1809 應該怎麼寫？</li>
+  </ol>
+</section>

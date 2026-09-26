@@ -1,0 +1,568 @@
+<section class="chapter" id="ch06-13" data-title="資料匯出與分析">
+  <h2>第 6-13 章 資料匯出與分析：TXT、Power BI 與 ABAP 統計</h2>
+  <p class="lede">「把表下載成 TXT／CSV 丟給 Excel 或 Power BI」是最常見的小需求，但它牽涉三件事：<b>技術</b>（前景或背景、分隔符號、編碼、表頭）、<b>授權</b>（第三方工具使用 SAP 資料會不會觸發 Indirect／Digital Access），以及<b>分析</b>（資料出去之前，能不能在 SAP 裡先算好）。本章用 SPFLI 示範現代寫法的檔案匯出，摘要 Indirect Access 的授權重點與 Power BI 的四種接法，最後用一題課堂作業「找出與你最速配的同學」示範 z-score 標準化與歐氏距離的 ABAP 實作。</p>
+  <div class="meta">
+    <div><b>核心 TCODE</b><span class="tcode">SE38</span><span class="tcode">SE11</span><span class="tcode">AL11</span><span class="tcode">CG3Y</span><span class="tcode">SM36</span><span class="tcode">SM37</span><span class="tcode">SEGW</span><span class="tcode">/IWFND/MAINT_SERVICE</span><span class="tcode">USMM</span></div>
+    <div><b>關鍵物件</b>SPFLI、CL_GUI_FRONTEND_SERVICES（GUI_DOWNLOAD、FILE_SAVE_DIALOG）、OPEN DATASET、CL_ABAP_CODEPAGE、CL_ABAP_CHAR_UTILITIES=&gt;BYTE_ORDER_MARK_UTF8、CL_BCS_CONVERT、CL_ABAP_STRUCTDESCR、CL_SALV_TABLE、@OData.publish、IF_AMDP_MARKER_HDB、STDDEV</div>
+  </div>
+
+  <h3 id="ch06-13-01">1. 素材對照</h3>
+  <p>四份素材都在「15_累計心得」。其中兩份是 Excel 課堂題目，原始資料是真實學生的名字與身高、年紀，本章<b>全部改成合成資料 S01～S12</b>，數值為編造。</p>
+  <table>
+    <thead><tr><th>#</th><th>原始檔</th><th>內容</th><th>本章小節</th></tr></thead>
+    <tbody>
+      <tr><td>1</td><td>11_下載資料表到TXT</td><td>SPFLI 取 10 筆，用 <span class="kw">SAP_CONVERT_TO_TEX_FORMAT</span> 轉逗號分隔，再以 <span class="kw">GUI_DOWNLOAD</span> 寫到 C:\temp\test.csv</td><td>2～7</td></tr>
+      <tr><td>2</td><td>11_ 下載TXT到 POWERBI</td><td>一篇 Rimini Street 談 SAP Indirect Access 的英文文章（前段）＋與素材 1 相同的程式＋ ACDOCA 欄位中文對照</td><td>8～10</td></tr>
+      <tr><td>3</td><td>09_zscore（Excel）</td><td>18 位學生身高的 z-score：<span class="kw">(C2-$C$20)/$C$21</span>，平均用 AVERAGE、標準差用 STDEV</td><td>11～12</td></tr>
+      <tr><td>4</td><td>10_clustering（Excel）</td><td>期中考題「在全班同學中找出與你最速配的人」：身高、興趣、年紀三個 z-score，算與自己的歐氏距離，自己標 ●、最近的人標 ✖，要求用 ABAP 的 WRITE 輸出</td><td>11～15</td></tr>
+    </tbody>
+  </table>
+  <p>素材 1 的舊寫法對照放在第 7 節。更大的下載實戰（外部 DB、Excel 範本、abap2xlsx）見 <a href="#ch06-5">第 6-5 章 資料下載實戰</a>；ACDOCA 欄位說明見本部其他章節。</p>
+
+  <h3 id="ch06-13-02">2. 下載之前先決定四件事</h3>
+  <table>
+    <thead><tr><th>決策</th><th>選項</th><th>建議</th></tr></thead>
+    <tbody>
+      <tr><td>寫到哪裡</td><td>使用者電腦（前景）／應用伺服器（背景）</td><td>互動報表用 <span class="kw">GUI_DOWNLOAD</span>；排程作業（<span class="tcode">SM36</span>）一定是 <span class="kw">OPEN DATASET</span>，背景沒有 SAP GUI 可以寫本機檔</td></tr>
+      <tr><td>分隔符號</td><td>逗號、Tab、分號、直線 |</td><td>給 Excel 雙擊開啟用逗號 CSV；資料裡常有逗號（地址、物料說明）時改 Tab 或 |，Power BI 都能指定分隔符號</td></tr>
+      <tr><td>編碼</td><td>UTF-8、UTF-8 含 BOM、Big5（cp 8300）</td><td>一律 UTF-8。<b>要給 Excel 直接開，就加 BOM</b>，否則中文會變亂碼；Power BI／Python 讀 UTF-8 無 BOM 也沒問題</td></tr>
+      <tr><td>表頭</td><td>技術名（CARRID）或欄位文字（航空公司）</td><td>給人看用欄位文字；給系統介面用技術名且固定順序，並在規格中寫明</td></tr>
+    </tbody>
+  </table>
+  <div class="tip">CSV 的數字與日期一律輸出「機器格式」：金額用小數點、不加千分位；日期用 <b>YYYY-MM-DD</b>。字串範本的 <span class="kw">DATE = ISO</span> 可直接做到。使用者設定（<span class="tcode">SU3</span> 的小數點格式）不同時，WRITE TO 的輸出會跟著變，Power BI 就會解析錯誤。</div>
+
+  <h3 id="ch06-13-03">3. 前景下載 CSV：GUI_DOWNLOAD ＋ UTF-8 BOM ＋ 表頭</h3>
+  <p>現代寫法不需要 <span class="kw">TYPE-POOLS truxs</span> 與轉換函數：用字串範本自己組每一行，放進 <span class="kw">string_table</span>，再交給 <span class="kw">cl_gui_frontend_services=&gt;gui_download</span>。<span class="kw">codepage = '4110'</span> 是 UTF-8，<span class="kw">write_bom = abap_true</span> 會在檔頭寫入 BOM（EF BB BF），Excel 才認得出是 UTF-8。</p>
+  <pre><code class="abap">REPORT zspfli_download_csv.
+
+PARAMETERS p_file TYPE string LOWER CASE DEFAULT 'C:\temp\spfli.csv'.
+
+AT SELECTION-SCREEN ON VALUE-REQUEST FOR p_file.
+  DATA lv_name TYPE string.
+  DATA lv_path TYPE string.
+  DATA lv_full TYPE string.
+  cl_gui_frontend_services=&gt;file_save_dialog(
+    EXPORTING default_extension = 'csv'
+              default_file_name = 'spfli.csv'
+              file_filter       = |CSV (*.csv)\|*.csv|
+    CHANGING  filename = lv_name
+              path     = lv_path
+              fullpath = lv_full
+    EXCEPTIONS OTHERS = 1 ).
+  IF sy-subrc = 0 AND lv_full IS NOT INITIAL.
+    p_file = lv_full.
+  ENDIF.
+
+START-OF-SELECTION.
+  SELECT carrid, connid, countryfr, cityfrom, airpfrom,
+         countryto, cityto, airpto, distance, distid
+    FROM spfli
+    ORDER BY carrid, connid            " HANA 沒有預設排序，匯出檔要可比對就明確排序
+    INTO TABLE @DATA(lt_spfli)
+    UP TO 10 ROWS.
+
+  CONSTANTS lc_sep TYPE c LENGTH 1 VALUE ','.
+
+  " 表頭列 + 資料列
+  DATA(lt_lines) = VALUE string_table(
+    ( |航空公司{ lc_sep }航班{ lc_sep }出發國{ lc_sep }出發城市{ lc_sep }出發機場| &amp;&amp;
+      |{ lc_sep }到達國{ lc_sep }到達城市{ lc_sep }到達機場{ lc_sep }距離{ lc_sep }單位| )
+    FOR ls IN lt_spfli
+    ( |{ ls-carrid }{ lc_sep }{ ls-connid }{ lc_sep }{ ls-countryfr }{ lc_sep }{ ls-cityfrom }| &amp;&amp;
+      |{ lc_sep }{ ls-airpfrom }{ lc_sep }{ ls-countryto }{ lc_sep }{ ls-cityto }| &amp;&amp;
+      |{ lc_sep }{ ls-airpto }{ lc_sep }{ ls-distance DECIMALS = 0 }{ lc_sep }{ ls-distid }| ) ).
+
+  cl_gui_frontend_services=&gt;gui_download(
+    EXPORTING filename  = p_file
+              filetype  = 'ASC'
+              codepage  = '4110'          " UTF-8
+              write_bom = abap_true       " 讓 Excel 正確顯示中文
+    CHANGING  data_tab  = lt_lines
+    EXCEPTIONS OTHERS   = 1 ).
+  IF sy-subrc &lt;&gt; 0.
+    MESSAGE |下載失敗：{ p_file }| TYPE 'S' DISPLAY LIKE 'E'.
+    RETURN.
+  ENDIF.
+  MESSAGE |已匯出 { lines( lt_spfli ) } 筆到 { p_file }| TYPE 'S'.</code></pre>
+  <div class="note"><span class="kw">GUI_DOWNLOAD</span> 另有 <span class="kw">write_field_separator = abap_true</span>，會把結構內表的欄位以 <b>Tab</b> 分隔輸出，適合「直接丟結構內表、不要表頭」的快速匯出。但它不處理引號跳脫，也不會幫你加表頭，正式交付的 CSV 建議照上面的方式自己組字串。參數清單請以 <span class="tcode">SE24</span> 開 CL_GUI_FRONTEND_SERVICES 確認你的版本。</div>
+
+  <h3 id="ch06-13-04">4. 泛用 CSV 轉換器：RTTS 取欄位文字當表頭、處理引號跳脫</h3>
+  <p>每支報表都手寫一次欄位清單很煩。下面的區域類別吃任何「結構內表」，用 RTTS 讀 DDIC 欄位文字當表頭，並依 RFC 4180 的規則：欄位內含分隔符號、雙引號或換行時，整欄用雙引號包起來，內部的 <b>"</b> 變成 <b>""</b>。</p>
+  <pre><code class="abap">CLASS lcl_csv DEFINITION FINAL.
+  PUBLIC SECTION.
+    CLASS-METHODS to_lines
+      IMPORTING it_data         TYPE ANY TABLE
+                iv_sep          TYPE c DEFAULT ','
+                iv_ddic_header  TYPE abap_bool DEFAULT abap_true
+      RETURNING VALUE(rt_lines) TYPE string_table.
+  PRIVATE SECTION.
+    CLASS-METHODS escape
+      IMPORTING iv_value      TYPE string
+                iv_sep        TYPE c
+      RETURNING VALUE(rv_out) TYPE string.
+ENDCLASS.
+
+CLASS lcl_csv IMPLEMENTATION.
+  METHOD to_lines.
+    DATA(lo_tab)    = CAST cl_abap_tabledescr( cl_abap_typedescr=&gt;describe_by_data( it_data ) ).
+    DATA(lo_struct) = CAST cl_abap_structdescr( lo_tab-&gt;get_table_line_type( ) ).
+
+    " 表頭：有 DDIC 參照就用中長度欄位文字（SCRTEXT_M），否則用技術名
+    DATA(lt_comp) = lo_struct-&gt;get_components( ).
+    DATA(lt_head) = VALUE string_table( FOR c IN lt_comp ( CONV string( c-name ) ) ).
+    IF iv_ddic_header = abap_true.
+      LOOP AT lt_comp INTO DATA(ls_comp).
+        DATA(lv_idx) = sy-tabix.
+        IF ls_comp-type-&gt;kind &lt;&gt; cl_abap_typedescr=&gt;kind_elem.
+          CONTINUE.
+        ENDIF.
+        DATA(lo_elem) = CAST cl_abap_elemdescr( ls_comp-type ).
+        IF lo_elem-&gt;is_ddic_type( ) = abap_true.
+          DATA(ls_field) = lo_elem-&gt;get_ddic_field( sy-langu ).
+          IF ls_field-scrtext_m IS NOT INITIAL.
+            lt_head[ lv_idx ] = ls_field-scrtext_m.
+          ENDIF.
+        ENDIF.
+      ENDLOOP.
+    ENDIF.
+    APPEND concat_lines_of( table = VALUE string_table( FOR h IN lt_head ( escape( iv_value = h iv_sep = iv_sep ) ) )
+                            sep   = iv_sep ) TO rt_lines.
+
+    " 資料列
+    LOOP AT it_data ASSIGNING FIELD-SYMBOL(&lt;ls_row&gt;).
+      DATA(lt_cells) = VALUE string_table( ).
+      DO lines( lt_comp ) TIMES.
+        ASSIGN COMPONENT sy-index OF STRUCTURE &lt;ls_row&gt; TO FIELD-SYMBOL(&lt;lv_cell&gt;).
+        DATA(lv_txt) = COND string(
+          WHEN cl_abap_typedescr=&gt;describe_by_data( &lt;lv_cell&gt; )-&gt;type_kind = cl_abap_typedescr=&gt;typekind_date
+          THEN |{ CONV d( &lt;lv_cell&gt; ) DATE = ISO }|
+          ELSE condense( val = |{ &lt;lv_cell&gt; }| ) ).
+        APPEND escape( iv_value = lv_txt iv_sep = iv_sep ) TO lt_cells.
+      ENDDO.
+      APPEND concat_lines_of( table = lt_cells sep = iv_sep ) TO rt_lines.
+    ENDLOOP.
+  ENDMETHOD.
+
+  METHOD escape.
+    rv_out = iv_value.
+    IF rv_out CA |{ iv_sep }"{ cl_abap_char_utilities=&gt;cr_lf }|.
+      rv_out = |"{ replace( val = rv_out sub = `"` with = `""` occ = 0 ) }"|.
+    ENDIF.
+  ENDMETHOD.
+ENDCLASS.
+
+" 使用：DATA(lt_lines) = lcl_csv=&gt;to_lines( it_data = lt_spfli iv_sep = ',' ).</code></pre>
+  <div class="warn">字串範本 <span class="kw">|{ &lt;lv_cell&gt; }|</span> 對數值欄位輸出的是「不帶千分位、小數點為 .」的格式，正是 CSV 需要的；但如果你改用 <span class="kw">WRITE … TO</span>，會套用使用者的數字格式設定，德式設定會輸出 <b>1.234,50</b>，匯進 Power BI 就變成錯的數字。欄位若有轉換常式（例如 MATNR 的 ALPHA、MEINS 的 CUNIT），要輸出外部格式請用 <span class="kw">|{ lv ALPHA = OUT }|</span> 或對應的 CONVERSION_EXIT 函數。</div>
+
+  <h3 id="ch06-13-05">5. 二進位下載：自己控制編碼與 BOM</h3>
+  <p>如果要在同一支程式裡同時產生「給 Excel 的有 BOM 版」與「給介面的無 BOM 版」，或要把同一份內容改寄 email 附檔，先把整份檔案轉成 <span class="kw">XSTRING</span> 最有彈性：</p>
+  <pre><code class="abap">DATA(lv_csv) = concat_lines_of( table = lt_lines
+                                sep   = cl_abap_char_utilities=&gt;cr_lf ).
+
+" 字串 → UTF-8 位元組，前面接 BOM
+DATA(lv_xbody) = cl_abap_codepage=&gt;convert_to( source   = lv_csv
+                                               codepage = `UTF-8` ).
+DATA(lv_xfile) = cl_abap_char_utilities=&gt;byte_order_mark_utf8.
+CONCATENATE lv_xfile lv_xbody INTO lv_xfile IN BYTE MODE.
+
+" XSTRING → SOLIX 表，以 BIN 模式下載
+DATA(lt_solix) = cl_bcs_convert=&gt;xstring_to_solix( lv_xfile ).
+cl_gui_frontend_services=&gt;gui_download(
+  EXPORTING bin_filesize = xstrlen( lv_xfile )
+            filename     = `C:\temp\spfli_bom.csv`
+            filetype     = 'BIN'
+  CHANGING  data_tab     = lt_solix
+  EXCEPTIONS OTHERS      = 1 ).
+IF sy-subrc &lt;&gt; 0.
+  MESSAGE '下載失敗' TYPE 'S' DISPLAY LIKE 'E'.
+ENDIF.
+" 同一個 lt_solix 也可以直接當 CL_BCS 的附件內容（見 4-4 章 MAIL）</code></pre>
+
+  <h3 id="ch06-13-06">6. 背景寫檔：OPEN DATASET 與前景／背景自動分流</h3>
+  <p>排程執行時 <span class="kw">GUI_DOWNLOAD</span> 會回傳例外（素材中 <span class="kw">no_batch</span>、<span class="kw">error_no_gui</span> 就是這個情況）。背景作業改寫應用伺服器檔案，再由 FTP／SFTP 或共用資料夾交給 Power BI Gateway 取檔。路徑請用 <span class="tcode">FILE</span> 設定的邏輯檔名，不要寫死。</p>
+  <pre><code class="abap">" 區域類別 lcl_export 的靜態方法：
+" CLASS-METHODS write_server_file IMPORTING iv_path TYPE string it_lines TYPE string_table.
+METHOD write_server_file.
+  " iv_path：伺服器路徑（例如由 FILE_GET_NAME 依邏輯檔名取得）
+  TRY.
+      OPEN DATASET iv_path FOR OUTPUT IN TEXT MODE
+           ENCODING UTF-8 WITH BYTE-ORDER MARK.
+      LOOP AT it_lines INTO DATA(lv_line).
+        TRANSFER lv_line TO iv_path.
+      ENDLOOP.
+      CLOSE DATASET iv_path.
+    CATCH cx_sy_file_authority INTO DATA(lx_auth).
+      MESSAGE |無權限寫入 { iv_path }：{ lx_auth-&gt;get_text( ) }| TYPE 'E'.
+    CATCH cx_sy_file_access_error INTO DATA(lx_file).
+      CLOSE DATASET iv_path.
+      MESSAGE |寫檔失敗 { iv_path }：{ lx_file-&gt;get_text( ) }| TYPE 'E'.
+  ENDTRY.
+ENDMETHOD.</code></pre>
+  <pre><code class="abap">START-OF-SELECTION.
+  DATA(lt_lines) = lcl_csv=&gt;to_lines( it_data = lt_spfli iv_sep = ',' ).
+
+  IF sy-batch = abap_true.
+    " 背景：寫應用伺服器（AL11 可看，CG3Y 可下載到本機檢查）
+    lcl_export=&gt;write_server_file(
+      iv_path  = |/usr/sap/trans/data/spfli_{ sy-datum }.csv|
+      it_lines = lt_lines ).
+  ELSE.
+    " 前景：寫使用者電腦
+    cl_gui_frontend_services=&gt;gui_download(
+      EXPORTING filename  = p_file
+                filetype  = 'ASC'
+                codepage  = '4110'
+                write_bom = abap_true
+      CHANGING  data_tab  = lt_lines
+      EXCEPTIONS OTHERS   = 1 ).
+  ENDIF.</code></pre>
+  <div class="tip">伺服器路徑中的 <b>/usr/sap/trans/data/</b> 只是示意；實務上請向 Basis 要一個專用目錄，並在 <span class="tcode">SM30</span> 的 <b>SPTH</b> 設定路徑白名單。OPEN DATASET 還會檢查授權物件 <b>S_DATASET</b>，背景作業使用者要有對應權限，否則會掉進 <span class="kw">cx_sy_file_authority</span>。</div>
+
+  <h3 id="ch06-13-07">7. 原程式的舊寫法與問題對照</h3>
+  <table>
+    <thead><tr><th>原程式</th><th>問題</th><th>本章寫法</th></tr></thead>
+    <tbody>
+      <tr><td>TYPE-POOLS truxs，用 truxs_t_text_data 當輸出表</td><td>7.02 起類型群組會自動載入，不必宣告；而且 truxs_t_text_data 每行長度固定，欄位多時可能被截斷</td><td>直接用 <span class="kw">string_table</span></td></tr>
+      <tr><td>註解寫「轉成逗號分隔 CSV」，實際呼叫 SAP_CONVERT_TO_TEX_FORMAT</td><td>名實不符。TEX 版本依指定分隔符號輸出、不處理引號；另有 SAP_CONVERT_TO_CSV_FORMAT。參數名 <b>i_field_seperator</b> 的錯字是 SAP 原本的拼法，不是素材打錯</td><td>字串範本自己組行，第 4 節的 escape 處理引號</td></tr>
+      <tr><td>SELECT … UP TO 10 ROWS 沒有 ORDER BY</td><td>HANA 沒有預設排序，每次抓到的 10 筆可能不同，匯出檔無法比對</td><td>加 <span class="kw">ORDER BY carrid, connid</span></td></tr>
+      <tr><td>SELECT 欄位用空白分隔、INTO TABLE 無 @</td><td>舊語法</td><td>逗號分隔 ＋ <span class="kw">@DATA( )</span></td></tr>
+      <tr><td>CALL METHOD … 並列出 24 個例外</td><td>冗長；而且沒指定 codepage，檔案編碼跟著 GUI 預設，中文在 Excel 常是亂碼</td><td>函數式呼叫 ＋ <span class="kw">EXCEPTIONS OTHERS = 1</span>，明確指定 <span class="kw">codepage = '4110'</span>、<span class="kw">write_bom</span></td></tr>
+      <tr><td>沒有表頭列</td><td>收檔的人不知道每欄是什麼</td><td>第一行放欄位文字或技術名</td></tr>
+      <tr><td>路徑寫死 c:\temp\test.csv</td><td>使用者沒有這個資料夾就失敗</td><td>參數 ＋ <span class="kw">FILE_SAVE_DIALOG</span></td></tr>
+    </tbody>
+  </table>
+
+  <h3 id="ch06-13-08">8. SAP Indirect Access：資料被第三方系統用到時的授權問題</h3>
+  <p>素材 2 的標題是「下載 TXT 到 Power BI」，但內容其實是一篇提醒授權風險的文章。以下是重點摘要（用本書的話重新整理，非翻譯），出處：Rimini Street，<a href="https://www.riministreet.com/articles/indirect-access-sap-licensing-compliance/">Don't Get Tripped Up by SAP's Indirect Access License</a>。</p>
+  <ul>
+    <li><b>定義</b>：依 SAP 的說法，只要人、裝置或系統<b>沒有直接登入</b> SAP，卻透過非 SAP 的前端、客製方案或第三方應用程式「使用到」ERP／S/4HANA 核心的處理能力，或由機器人、RPA、IoT 裝置等非人員自動存取核心，都屬於 Indirect Access（間接存取）。</li>
+    <li><b>為什麼容易踩雷</b>：企業導入 AI、IoT、行動 App 時，資料在系統之間流動，IT 部門未必意識到這些流動在授權上被怎麼認定，往往要到稽核才發現。</li>
+    <li><b>Diageo 案例</b>：英國酒商 Diageo 原本由客服中心人員在 SAP ERP 下單，這些人員是有授權的使用者。2011 年起改用 Salesforce 的平台讓客戶自行下單、並開發拜訪管理 App，這些系統透過 SAP PI 與 ERP 互動。SAP 稽核後主張這些外部使用者也需要授權，在英國法院求償超過 5,000 萬歐元的授權費用，法院判 SAP 勝訴（和解金額未公開）。</li>
+    <li><b>教訓</b>：「中間隔了一層介面（PI、RFC、API）」<b>不等於</b>沒有使用 SAP；授權判斷看的是誰從核心得到處理結果，而不是誰按下登入鍵。</li>
+  </ul>
+  <div class="warn">本節是技術人員的背景知識，不是法律意見。<b>授權條件請以貴公司與 SAP 的合約為準</b>；專案要新增第三方系統讀寫 SAP 資料之前，請先會同採購或 SAP 客戶經理確認授權模式。</div>
+
+  <h3 id="ch06-13-09">9. Digital Access：2018 年起的「以文件計價」模式與 Power BI 的考量</h3>
+  <p>Diageo 等案之後，SAP 在 2018 年提出 <b>Digital Access</b> 授權模式：間接存取不再依「使用者人數」計算，而是依第三方系統在 SAP 裡<b>產生的文件數</b>計價。SAP 公告的文件類型包括銷售單、發票、採購單、服務與維護文件、生產文件、品質管理文件、時間管理文件、物料文件、財務文件等九類（詳細定義與計數規則請以 SAP 官方文件與合約附件為準）。之後 SAP 也推出轉換方案，讓既有客戶把舊授權折抵成 Digital Access。</p>
+  <table>
+    <thead><tr><th>情境</th><th>授權上的一般理解</th><th>技術人員該做的事</th></tr></thead>
+    <tbody>
+      <tr><td>有授權的使用者在 SAP 裡執行報表，自己下載 CSV 後用 Power BI 分析</td><td>通常被視為直接使用；風險最低</td><td>留下誰、何時、下載了什麼的紀錄</td></tr>
+      <tr><td>排程作業每天把資料寫成檔案，Power BI 自動取檔</td><td>屬於資料匯出（讀取），依 Digital Access 的文件定義，單純讀取一般不計文件數；但各家合約用語不同</td><td>在規格書寫明「只讀、不回寫」，列出匯出的表與欄位</td></tr>
+      <tr><td>Power BI／第三方工具即時連 SAP 讀資料（OData、RFC、DB 直連）</td><td>是否構成 Indirect／Digital Access、是否違反資料庫授權，依合約與連線方式而定</td><td>事前確認授權；DB 直連另有 HANA 授權限制（見第 10 節）</td></tr>
+      <tr><td>第三方系統回寫 SAP，建立訂單、發票、物料文件</td><td>這正是 Digital Access 計數的核心情境</td><td>估算每年文件量，交給採購評估成本</td></tr>
+    </tbody>
+  </table>
+  <div class="note"><span class="tcode">USMM</span>（系統量測）與 SAP 提供的 Digital Access 評估工具可以估算系統內由介面建立的文件數。實際的工具名稱、SAP Note 與計數方式隨時間更新，請以 SAP Support Portal 最新資訊為準。</div>
+
+  <h3 id="ch06-13-10">10. 把 SAP 資料給 Power BI 的四條路</h3>
+  <table>
+    <thead><tr><th>做法</th><th>怎麼做</th><th>優點</th><th>缺點／注意</th></tr></thead>
+    <tbody>
+      <tr><td>① 檔案匯出</td><td>本章第 3～6 節：CSV（UTF-8）放共用資料夾或 SharePoint，Power BI 透過 Gateway 排程重新整理</td><td>最簡單、授權風險最低、SAP 權限可控（程式自己檢查 AUTHORITY-CHECK）</td><td>非即時；檔案管理、增量與失敗重送要自己做</td></tr>
+      <tr><td>② OData（CDS 或 SEGW）</td><td>CDS View 加 <span class="kw">@OData.publish: true</span> 或以 <span class="tcode">SEGW</span> 建 Gateway 服務，在 <span class="tcode">/IWFND/MAINT_SERVICE</span> 註冊；Power BI 用 OData 摘要連接器讀取</td><td>即時、沿用 SAP 授權（DCL 存取控制）、欄位語意清楚</td><td>大量資料時分頁與效能要設計；屬於第三方即時讀取，授權要確認</td></tr>
+      <tr><td>③ SAP HANA 直連</td><td>Power BI 的 SAP HANA 連接器直接查 HANA 的 View</td><td>效能最好、可 DirectQuery</td><td>多數 S/4HANA 客戶是 <b>HANA Runtime 授權</b>，一般不允許第三方工具直接存取資料庫，必須是 Full Use 授權才考慮；繞過應用層也就繞過 SAP 的權限檢查</td></tr>
+      <tr><td>④ SAP Datasphere</td><td>把 S/4HANA 資料複製／聯邦到 Datasphere，建模後由 Power BI 透過其開放的 SQL 介面讀取</td><td>SAP 官方支援的資料整合路線，有建模、權限、資料血緣</td><td>額外訂閱費用；需要建置與維運團隊</td></tr>
+    </tbody>
+  </table>
+  <p>做法 ② 的最小範例：一個加上 <span class="kw">@OData.publish</span> 的 CDS View（ABAP 7.50 起可用；在 ABAP Cloud／RAP 已改用 Service Definition ＋ Service Binding，ABAP 7.55 起的 <span class="kw">DEFINE VIEW ENTITY</span> 不支援這個註解）。</p>
+  <pre><code class="abap">@AbapCatalog.sqlViewName: 'ZVSPFLIBI'
+@AccessControl.authorizationCheck: #CHECK
+@EndUserText.label: '航班路線（給 Power BI）'
+@OData.publish: true
+define view ZI_SpfliForBI
+  as select from spfli
+{
+  key carrid    as Airline,
+  key connid    as Connection,
+      countryfr as CountryFrom,
+      cityfrom  as CityFrom,
+      countryto as CountryTo,
+      cityto    as CityTo,
+      @Semantics.quantity.unitOfMeasure: 'DistanceUnit'
+      distance  as Distance,
+      distid    as DistanceUnit
+}</code></pre>
+  <div class="tip">啟用後系統會產生服務 <b>ZI_SPFLIFORBI_CDS</b>，到 <span class="tcode">/IWFND/MAINT_SERVICE</span> 加入服務即可用 <b>…/sap/opu/odata/sap/ZI_SPFLIFORBI_CDS/</b> 讀取。搭配 DCL（<span class="kw">define role</span>）限制使用者只看得到自己有權限的資料，這是檔案匯出做不到的。另外，SAP 已公告不允許第三方工具使用 ODP 的 RFC 介面抽資料（請查 SAP Note 3255746），用 ETL 工具抽 SAP 資料前務必先確認。</div>
+
+  <h3 id="ch06-13-11">11. 課堂題目：找出與你最速配的同學——z-score 與歐氏距離</h3>
+  <p>題目：每位同學有身高、興趣（1～9 的代碼）、年紀三個屬性，找出「整體最相近」的人。三個屬性單位不同（公分、代碼、歲），直接相減的話身高差 10 公分會完全蓋過年紀差 3 歲，所以要先<b>標準化</b>：</p>
+  <ul>
+    <li><b>z-score</b>：z = (x − 平均) ÷ 標準差。標準化後每個屬性平均為 0、標準差為 1，三者等權。</li>
+    <li><b>歐氏距離</b>：d(A,B) = √[(zh(A)−zh(B))² + (zi(A)−zi(B))² + (za(A)−za(B))²]，zh、zi、za 分別是身高、興趣、年紀的 z-score。距離最小（且不是自己）的人就是「最速配」。</li>
+  </ul>
+  <p>合成資料（12 人，數值為編造）：</p>
+  <table>
+    <thead><tr><th>ID</th><th>身高</th><th>興趣</th><th>年紀</th><th>ID</th><th>身高</th><th>興趣</th><th>年紀</th></tr></thead>
+    <tbody>
+      <tr><td>S01</td><td>165</td><td>2</td><td>22</td><td>S07</td><td>161</td><td>6</td><td>25</td></tr>
+      <tr><td>S02</td><td>158</td><td>7</td><td>24</td><td>S08</td><td>174</td><td>2</td><td>22</td></tr>
+      <tr><td>S03</td><td>172</td><td>3</td><td>21</td><td>S09</td><td>183</td><td>9</td><td>28</td></tr>
+      <tr><td>S04</td><td>180</td><td>8</td><td>27</td><td>S10</td><td>167</td><td>4</td><td>26</td></tr>
+      <tr><td>S05</td><td>169</td><td>1</td><td>23</td><td>S11</td><td>171</td><td>3</td><td>24</td></tr>
+      <tr><td>S06</td><td>176</td><td>5</td><td>30</td><td>S12</td><td>178</td><td>7</td><td>29</td></tr>
+    </tbody>
+  </table>
+  <h4>母體標準差還是樣本標準差？</h4>
+  <table>
+    <thead><tr><th></th><th>公式</th><th>Excel</th><th>本例身高</th></tr></thead>
+    <tbody>
+      <tr><td>母體（population）</td><td>σ = √[Σ(x−μ)² ÷ n]</td><td>STDEV.P</td><td>7.2667</td></tr>
+      <tr><td>樣本（sample）</td><td>s = √[Σ(x−x̄)² ÷ (n−1)]</td><td><b>STDEV</b>（＝ STDEV.S）</td><td>7.5899</td></tr>
+    </tbody>
+  </table>
+  <p>原題 Excel 用的是 <b>STDEV</b>，也就是<b>樣本</b>標準差（除以 n−1）。全班就是要分析的全部對象，理論上用母體標準差比較合理；不過兩者只差一個常數倍數 √(n/(n−1))，所有 z-score 與距離同比例縮放，<b>誰是最近鄰完全不變</b>，只有距離的數值不同。程式要與 Excel 對得起來，就用樣本標準差，並把選擇做成參數。</p>
+  <div class="note">「興趣」是代碼（1＝運動、2＝音樂……之類），不是真正的數值，代碼 2 和 3 不代表興趣比較接近。教學題為了簡單把它當數值；實務上類別型屬性應改用 one-hot 編碼或「相同＝0、不同＝1」的距離。</div>
+
+  <h3 id="ch06-13-12">12. ABAP 實作一：資料、平均與標準差（REDUCE）</h3>
+  <pre><code class="abap">REPORT zbest_match.
+
+PARAMETERS p_samp AS CHECKBOX DEFAULT 'X'.   " X＝樣本標準差（同 Excel STDEV）
+
+TYPES: BEGIN OF ty_student,
+         id       TYPE c LENGTH 3,
+         height   TYPE p LENGTH 5 DECIMALS 1,
+         interest TYPE i,
+         age      TYPE i,
+       END OF ty_student,
+       tt_student TYPE STANDARD TABLE OF ty_student WITH KEY id.
+
+TYPES: BEGIN OF ty_stat,
+         mean TYPE f,
+         sd   TYPE f,
+       END OF ty_stat.
+
+CLASS lcl_stat DEFINITION FINAL.
+  PUBLIC SECTION.
+    TYPES tt_f TYPE STANDARD TABLE OF f WITH EMPTY KEY.
+    CLASS-METHODS calc
+      IMPORTING it_x         TYPE tt_f
+                iv_sample    TYPE abap_bool
+      RETURNING VALUE(rs_st) TYPE ty_stat.
+ENDCLASS.
+
+CLASS lcl_stat IMPLEMENTATION.
+  METHOD calc.
+    DATA(lv_n) = lines( it_x ).
+    IF lv_n &lt; 2.
+      RETURN.                                        " 少於 2 筆無法算樣本標準差
+    ENDIF.
+    rs_st-mean = REDUCE f( INIT s = CONV f( 0 ) FOR x IN it_x NEXT s = s + x ) / lv_n.
+    DATA(lv_ss) = REDUCE f( INIT s = CONV f( 0 )
+                            FOR x IN it_x
+                            NEXT s = s + ( x - rs_st-mean ) * ( x - rs_st-mean ) ).
+    rs_st-sd = sqrt( lv_ss / COND f( WHEN iv_sample = abap_true THEN lv_n - 1 ELSE lv_n ) ).
+  ENDMETHOD.
+ENDCLASS.
+
+START-OF-SELECTION.
+  " 合成資料（實務上改成 SELECT 自訂表）
+  DATA(lt_stu) = VALUE tt_student(
+    ( id = 'S01' height = 165 interest = 2 age = 22 )
+    ( id = 'S02' height = 158 interest = 7 age = 24 )
+    ( id = 'S03' height = 172 interest = 3 age = 21 )
+    ( id = 'S04' height = 180 interest = 8 age = 27 )
+    ( id = 'S05' height = 169 interest = 1 age = 23 )
+    ( id = 'S06' height = 176 interest = 5 age = 30 )
+    ( id = 'S07' height = 161 interest = 6 age = 25 )
+    ( id = 'S08' height = 174 interest = 2 age = 22 )
+    ( id = 'S09' height = 183 interest = 9 age = 28 )
+    ( id = 'S10' height = 167 interest = 4 age = 26 )
+    ( id = 'S11' height = 171 interest = 3 age = 24 )
+    ( id = 'S12' height = 178 interest = 7 age = 29 ) ).
+
+  DATA(ls_h) = lcl_stat=&gt;calc( it_x = VALUE #( FOR s IN lt_stu ( CONV f( s-height ) ) )   iv_sample = p_samp ).
+  DATA(ls_i) = lcl_stat=&gt;calc( it_x = VALUE #( FOR s IN lt_stu ( CONV f( s-interest ) ) ) iv_sample = p_samp ).
+  DATA(ls_a) = lcl_stat=&gt;calc( it_x = VALUE #( FOR s IN lt_stu ( CONV f( s-age ) ) )      iv_sample = p_samp ).</code></pre>
+  <p>以樣本標準差計算，結果應為：身高平均 171.1667、標準差 7.5899；興趣平均 4.75、標準差 2.6328；年紀平均 25.0833、標準差 2.9375。可以貼進 Excel 用 AVERAGE／STDEV 對帳。</p>
+  <div class="warn">統計運算請用 <b>TYPE f</b> 或 <b>decfloat34</b>，不要用 <b>TYPE i</b>：<span class="kw">lv_ss / lv_n</span> 兩邊都是整數時，ABAP 會以整數型別計算並<b>四捨五入</b>（不是截斷），平均與標準差都會失真。另外標準差為 0（例如全班同年）時 z-score 會除以零，要先判斷 <span class="kw">sd = 0</span> 就把該屬性的 z 全設為 0。</div>
+
+  <h3 id="ch06-13-13">13. ABAP 實作二：z-score、兩兩距離與最近鄰，用 CL_SALV_TABLE 輸出</h3>
+  <pre><code class="abap">  TYPES: BEGIN OF ty_out,
+           id        TYPE c LENGTH 3,
+           height    TYPE p LENGTH 5 DECIMALS 1,
+           interest  TYPE i,
+           age       TYPE i,
+           z_height  TYPE p LENGTH 8 DECIMALS 4,
+           z_interest TYPE p LENGTH 8 DECIMALS 4,
+           z_age     TYPE p LENGTH 8 DECIMALS 4,
+           best_id   TYPE c LENGTH 3,
+           best_dist TYPE p LENGTH 8 DECIMALS 4,
+         END OF ty_out.
+  DATA lt_out TYPE STANDARD TABLE OF ty_out WITH EMPTY KEY.
+
+  " lcl_z 的定義（見下一段）要放在 START-OF-SELECTION 之前；標準差為 0 時 z 一律為 0
+  DATA(lo_z) = NEW lcl_z( ).
+  lt_out = VALUE #( FOR s IN lt_stu
+                    ( id         = s-id
+                      height     = s-height
+                      interest   = s-interest
+                      age        = s-age
+                      z_height   = lo_z-&gt;z( iv_x = CONV f( s-height )   is_st = ls_h )
+                      z_interest = lo_z-&gt;z( iv_x = CONV f( s-interest ) is_st = ls_i )
+                      z_age      = lo_z-&gt;z( iv_x = CONV f( s-age )      is_st = ls_a ) ) ).
+
+  " 兩兩距離：n 很小，O(n²) 沒問題；距離相同時取 ID 較小者，結果才穩定
+  LOOP AT lt_out ASSIGNING FIELD-SYMBOL(&lt;me&gt;).
+    DATA(lv_best) = CONV f( -1 ).
+    LOOP AT lt_out INTO DATA(ls_other) WHERE id &lt;&gt; &lt;me&gt;-id.
+      DATA(lv_d) = sqrt( ( &lt;me&gt;-z_height   - ls_other-z_height )   ** 2
+                       + ( &lt;me&gt;-z_interest - ls_other-z_interest ) ** 2
+                       + ( &lt;me&gt;-z_age      - ls_other-z_age )      ** 2 ).
+      IF lv_best &lt; 0 OR lv_d &lt; lv_best.       " 嚴格小於：同分保留先出現（ID 小）的人
+        lv_best       = lv_d.
+        &lt;me&gt;-best_id  = ls_other-id.
+      ENDIF.
+    ENDLOOP.
+    &lt;me&gt;-best_dist = lv_best.
+  ENDLOOP.
+
+  TRY.
+      cl_salv_table=&gt;factory( IMPORTING r_salv_table = DATA(lo_alv)
+                              CHANGING  t_table      = lt_out ).
+      lo_alv-&gt;get_functions( )-&gt;set_all( abap_true ).
+      lo_alv-&gt;get_columns( )-&gt;set_optimize( abap_true ).
+      DATA(lo_cols) = lo_alv-&gt;get_columns( ).
+      CAST cl_salv_column_table( lo_cols-&gt;get_column( 'ID' ) )-&gt;set_key( abap_true ).
+      lo_cols-&gt;get_column( 'Z_HEIGHT' )-&gt;set_long_text( '身高 z' ).
+      lo_cols-&gt;get_column( 'Z_INTEREST' )-&gt;set_long_text( '興趣 z' ).
+      lo_cols-&gt;get_column( 'Z_AGE' )-&gt;set_long_text( '年紀 z' ).
+      lo_cols-&gt;get_column( 'BEST_ID' )-&gt;set_long_text( '最速配' ).
+      lo_cols-&gt;get_column( 'BEST_DIST' )-&gt;set_long_text( '距離' ).
+      lo_alv-&gt;display( ).
+    CATCH cx_salv_msg cx_salv_not_found INTO DATA(lx_salv).
+      MESSAGE lx_salv-&gt;get_text( ) TYPE 'E'.
+  ENDTRY.</code></pre>
+  <pre><code class="abap">CLASS lcl_z DEFINITION FINAL.
+  PUBLIC SECTION.
+    METHODS z
+      IMPORTING iv_x        TYPE f
+                is_st       TYPE ty_stat
+      RETURNING VALUE(rv_z) TYPE f.
+ENDCLASS.
+
+CLASS lcl_z IMPLEMENTATION.
+  METHOD z.
+    rv_z = COND #( WHEN is_st-sd = 0 THEN 0
+                   ELSE ( iv_x - is_st-mean ) / is_st-sd ).
+  ENDMETHOD.
+ENDCLASS.</code></pre>
+  <p>預期結果（樣本標準差）：</p>
+  <table>
+    <thead><tr><th>ID</th><th>最速配</th><th>距離</th><th>ID</th><th>最速配</th><th>距離</th></tr></thead>
+    <tbody>
+      <tr><td>S01</td><td>S05</td><td>0.7334</td><td>S07</td><td>S02</td><td>0.6453</td></tr>
+      <tr><td>S02</td><td>S07</td><td>0.6453</td><td>S08</td><td>S03</td><td>0.5741</td></tr>
+      <tr><td>S03</td><td>S08</td><td>0.5741</td><td>S09</td><td>S04</td><td>0.6453</td></tr>
+      <tr><td>S04</td><td>S09</td><td>0.6453</td><td>S10</td><td>S11</td><td>0.9411</td></tr>
+      <tr><td>S05</td><td>S01</td><td>0.7334</td><td>S11</td><td>S05</td><td>0.8731</td></tr>
+      <tr><td>S06</td><td>S12</td><td>0.8731</td><td>S12</td><td>S04</td><td>0.8230</td></tr>
+    </tbody>
+  </table>
+  <p>改用母體標準差時，最速配的人完全相同，每個距離都乘上 √(12/11) ≈ 1.0445（例如 S01 變成 0.7660）。注意「最速配」不一定互相：S10 最近的是 S11，但 S11 最近的是 S05。</p>
+  <div class="warn">「取第一個最小值」就是「取第一筆」的邏輯。這裡資料來自 VALUE 建構、依 ID 排列，所以同分時結果固定；若資料改成從資料庫 SELECT，<b>HANA 不保證順序</b>，一定要 <span class="kw">ORDER BY id</span> 或在比較時加上「距離相同取 ID 較小」的條件，否則同一份資料跑兩次可能配到不同的人。</div>
+
+  <h3 id="ch06-13-14">14. 依原題要求：用 WRITE 輸出自己（●）與最速配（✖）</h3>
+  <p>原題要求指定一位同學，列出所有人與他的距離，自己標 ●、最近的人標 ✖。WRITE 清單在新開發中已少用，但對考試與快速驗算仍很直觀：</p>
+  <pre><code class="abap">" 程式開頭（與 p_samp 放在一起）加上：
+" PARAMETERS p_me TYPE c LENGTH 3 DEFAULT 'S06'.
+
+  " 延續第 13 節的 lt_out
+  ASSIGN lt_out[ id = p_me ] TO FIELD-SYMBOL(&lt;ls_me&gt;).
+  IF sy-subrc &lt;&gt; 0.
+    MESSAGE |找不到 { p_me }| TYPE 'S' DISPLAY LIKE 'E'.
+    RETURN.
+  ENDIF.
+
+  WRITE: / 'ID', 6 '身高', 14 '興趣', 20 '年紀', 27 '身高z', 38 '興趣z', 49 '年紀z', 60 '距離', 71 '標記'.
+  ULINE.
+  LOOP AT lt_out INTO DATA(ls_row).
+    DATA(lv_dist) = sqrt( ( &lt;ls_me&gt;-z_height   - ls_row-z_height )   ** 2
+                        + ( &lt;ls_me&gt;-z_interest - ls_row-z_interest ) ** 2
+                        + ( &lt;ls_me&gt;-z_age      - ls_row-z_age )      ** 2 ).
+    DATA(lv_mark) = COND string( WHEN ls_row-id = p_me             THEN `●`
+                                 WHEN ls_row-id = &lt;ls_me&gt;-best_id THEN `✖`
+                                 ELSE `` ).
+    WRITE: / ls_row-id,
+           6  |{ ls_row-height DECIMALS = 1 }|,
+           14 |{ ls_row-interest }|,
+           20 |{ ls_row-age }|,
+           27 |{ ls_row-z_height DECIMALS = 4 }|,
+           38 |{ ls_row-z_interest DECIMALS = 4 }|,
+           49 |{ ls_row-z_age DECIMALS = 4 }|,
+           60 |{ lv_dist DECIMALS = 4 }|,
+           71 lv_mark.
+  ENDLOOP.</code></pre>
+  <div class="tip">要把結果交給 Power BI 做散佈圖，直接把 <span class="kw">lt_out</span> 丟給第 4 節的 <span class="kw">lcl_csv=&gt;to_lines( )</span> 再下載即可——這就是本章三個主題串起來的樣子：<b>SAP 裡先算好、只把結果匯出</b>，檔案小、授權單純、公式也只維護一份。</div>
+
+  <h3 id="ch06-13-15">15. 資料量大時：在 HANA 端算（AMDP 與 STDDEV）</h3>
+  <p>12 個人在 ABAP 裡算毫無壓力；但若是「每個物料過去 24 個月的出貨量平均與標準差」（安全庫存、異常偵測），把數百萬筆拉到應用伺服器再 REDUCE 就不划算了，應該把聚合推到資料庫（Code Pushdown）。</p>
+  <ul>
+    <li><b>ABAP SQL</b>：聚合函數有 AVG、SUM、MIN、MAX、COUNT，<b>沒有標準差</b>（以 7.5x 為準；新版本是否增加請以 ABAP Keyword Documentation 的 aggregate functions 頁確認）。可以用 SUM(x)、SUM(x*x)、COUNT(*) 在 ABAP 端推算變異數，但要注意浮點誤差。</li>
+    <li><b>AMDP（SQLScript）</b>：HANA SQL 提供 <span class="kw">STDDEV</span>（樣本）以及 <span class="kw">STDDEV_POP</span>、<span class="kw">STDDEV_SAMP</span>、<span class="kw">VAR</span> 等聚合函數。</li>
+  </ul>
+  <pre><code class="abap">CLASS zcl_stat_amdp DEFINITION PUBLIC FINAL CREATE PUBLIC.
+  PUBLIC SECTION.
+    INTERFACES if_amdp_marker_hdb.
+    TYPES: BEGIN OF ty_matstat,
+             matnr   TYPE matnr,
+             cnt     TYPE i,
+             avg_qty TYPE f,
+             sd_samp TYPE f,
+           END OF ty_matstat,
+           tt_matstat TYPE STANDARD TABLE OF ty_matstat WITH EMPTY KEY.
+    CLASS-METHODS issue_stat
+      IMPORTING VALUE(iv_client) TYPE mandt
+                VALUE(iv_from)   TYPE budat
+                VALUE(iv_to)     TYPE budat
+      EXPORTING VALUE(et_stat)   TYPE tt_matstat.
+ENDCLASS.
+
+CLASS zcl_stat_amdp IMPLEMENTATION.
+  METHOD issue_stat BY DATABASE PROCEDURE FOR HDB LANGUAGE SQLSCRIPT
+                    OPTIONS READ-ONLY USING matdoc.
+    -- 每月出貨量（移動類型 601）→ 各物料月出貨量的平均與樣本標準差
+    lt_month = SELECT matnr,
+                      LEFT( budat, 6 ) AS yyyymm,
+                      SUM( stock_qty ) AS qty
+                 FROM matdoc
+                WHERE mandt = :iv_client
+                  AND bwart = '601'
+                  AND budat BETWEEN :iv_from AND :iv_to
+                GROUP BY matnr, LEFT( budat, 6 );
+
+    et_stat = SELECT matnr,
+                     COUNT( * )                        AS cnt,
+                     TO_DOUBLE( AVG( ABS( qty ) ) )    AS avg_qty,
+                     TO_DOUBLE( STDDEV( ABS( qty ) ) ) AS sd_samp
+                FROM :lt_month
+               GROUP BY matnr
+              HAVING COUNT( * ) &gt;= 2
+               ORDER BY matnr;
+  ENDMETHOD.
+ENDCLASS.</code></pre>
+  <div class="warn">
+    <b>請確認後再用：</b>
+    <ul>
+      <li><span class="kw">STDDEV</span>、<span class="kw">STDDEV_POP</span>、<span class="kw">STDDEV_SAMP</span> 是 HANA SQLScript 的函數名，不是 ABAP SQL；各 HANA 版本的支援請以 <i>SAP HANA SQL Reference Guide</i> 的 Aggregate Functions 章節確認。本書沒有把握的部分：HANA 的 <span class="kw">STDDEV</span> 在只有 1 筆時回傳 NULL 或 0，範例用 <span class="kw">HAVING COUNT(*) &gt;= 2</span> 避開。</li>
+      <li>MATDOC 的 <b>STOCK_QTY</b> 有正負號，欄位名與 601 的方向請依系統實際資料確認。這裡只是示意寫法，<b>條件用列舉（多筆 EQ）比用區間安全</b>，若要納入多個移動類型請傳入清單，不要寫 BETWEEN。</li>
+      <li>AMDP 的 <b>client</b> 要自己處理（範例以 iv_client 傳入 <span class="kw">sy-mandt</span>）；新版可改用 <span class="kw">AMDP OPTIONS CDS SESSION CLIENT</span> 或讀 CDS View（版本門檻請查 ABAP Keyword Documentation）。</li>
+      <li>樣本或母體的選擇與第 11 節相同：要跟 Excel 的 STDEV 對帳就用樣本（STDDEV／STDDEV_SAMP）。</li>
+    </ul>
+  </div>
+
+  <h3 id="ch06-13-qa">練習與自我檢核</h3>
+  <ol>
+    <li>用第 3 節的程式匯出 SPFLI，分別以 <span class="kw">write_bom = abap_true</span> 與 <span class="kw">abap_false</span> 下載，雙擊用 Excel 開啟，觀察中文欄位文字的差異；再用記事本的「另存新檔」看編碼欄位顯示什麼。</li>
+    <li>把 SPFLI 的 CITYFROM 改成含逗號的測試值（例如在測試用內表中手動改），驗證第 4 節的 escape 會輸出 <b>"NEW YORK, NY"</b>，並在 Excel 中仍是一欄。</li>
+    <li>把第 6 節的程式用 <span class="tcode">SM36</span> 排成背景作業，從 <span class="tcode">AL11</span> 找到檔案，再用 <span class="tcode">CG3Y</span> 下載到 C:\temp\ 檢查是否含 BOM。</li>
+    <li>原程式的註解說「轉成 CSV」，實際呼叫的是哪個函數？它與你的寫法相比少了哪兩件事（提示：引號跳脫、編碼）？</li>
+    <li>用自己的話說明：為什麼 Diageo 的客服人員有授權，改由客戶在 Salesforce 自行下單後卻被要求補授權？Digital Access 模式改用什麼來計價？</li>
+    <li>你的公司要讓 Power BI 每 15 分鐘更新一次銷售儀表板，請比較第 10 節四種做法，寫下你會選哪一種、要先向誰確認哪些授權條件。</li>
+    <li>把第 12 節的 <span class="kw">p_samp</span> 取消勾選重跑，確認最速配的人不變、每個距離都變為原來的 √(12/11) 倍，並說明原因。</li>
+    <li>把 S11 的年紀改為 26，重新計算 S10 與 S11 的最速配，並用 Excel 的 AVERAGE、STDEV 對帳。</li>
+    <li>「興趣」改用「相同＝0、不同＝1」計算距離，修改第 13 節的距離公式，比較結果差異。</li>
+    <li>如果學生資料改從自訂表 SELECT，第 13 節的「同分取第一個」會出什麼問題？要怎麼改？（提示：HANA 沒有預設排序）</li>
+    <li>ABAP SQL 能不能直接算標準差？若要在資料庫端算，第 15 節用了哪個機制與哪個函數？哪些細節需要查官方文件確認？</li>
+  </ol>
+</section>

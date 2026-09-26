@@ -1,0 +1,777 @@
+<section class="chapter" id="ch06-10" data-title="找表的功夫">
+  <h2>第 6-10 章 找表的功夫：由欄位與畫面找資料表</h2>
+  <p class="lede">使用者指著交易畫面說「我要這個欄位出現在報表上」，顧問的第一個動作永遠是「這個值存在哪張表、哪個欄位」。本章把三份累計心得整理成一套可操作的方法：畫面欄位反查資料表的 19 種技巧（從 F1 技術資訊到 SQL 追蹤、變更文件、資料內容比對），用 DD03L／DD02L 字典表寫程式找表，再補上 S/4HANA 的現代工具（ST05 Display Table、SE16H、CDS <span class="kw">I_*</span> view、ADT Where-used），最後附一份依模組整理的常用資料表清單，並逐表標註 S/4HANA 的狀態。</p>
+  <div class="meta">
+    <div><b>核心 TCODE</b><span class="tcode">SE11</span><span class="tcode">SE16</span><span class="tcode">SE16N</span><span class="tcode">SE16H</span><span class="tcode">SE84</span><span class="tcode">SE81</span><span class="tcode">SE36</span><span class="tcode">ST05</span><span class="tcode">SAT</span><span class="tcode">SCDO</span><span class="tcode">SE37</span><span class="tcode">SQVI</span></div>
+    <div><b>關鍵物件</b>DD02L、DD02T、DD03L、DD04T、DD26S、DD25L、DDFTX、DDIF_FIELDINFO_GET、CL_ABAP_STRUCTDESCR、STXH、STXL、READ_TEXT、CDHDR、CDPOS、TCDOB、TCDOBT、AGR_DEFINE、AGR_TCODES、ACDOCA、MATDOC、PRCD_ELEMENTS、BUT000、I_SalesOrder</div>
+  </div>
+
+  <h3 id="ch06-10-01">1. 素材對照</h3>
+  <p>三份素材都在 <span class="kw">15_累計心得</span> 資料夾。兩份是網路轉貼的文章，本章依 SAP 標準重新整理，不照抄原文；原文中的作者、譯者聯絡方式一律不引用。</p>
+  <table>
+    <thead><tr><th>原始檔</th><th>內容</th><th>本章小節</th></tr></thead>
+    <tbody>
+      <tr><td>03_透過欄位查表名.txt</td><td>網路文章〈查找透明表的實用方法〉：以 SE16 查 DD03L → DD02L 篩透明表；相關表 DD02T、DD04T、DDFTX；小程式 ZTABLEFIND；附記 AGR_DEFINE、AGR_TCODES 兩張「用 ST05 追到的」角色表。出處：<a href="https://www.i4k.xyz/article/baiboyd/5629478">i4k.xyz 轉載文章</a></td><td>10、11、13</td></tr>
+      <tr><td>18_种根据屏幕字段找数据表的方法Rev1.1.pdf（27 頁）</td><td>SAP Professional Journal 英文文章〈18 Techniques for Locating the Underlying Data of a Screen Field〉（作者為 SAP America 應用顧問）與 2007 年簡中譯本 rev 1.1（譯者加入第 19 種方法），中英對照；含流程圖（圖五）、Z_DATA_ELEMENT 視圖定義（圖十）、服務訂單到計量文件的資料路徑（圖十二）。原文以 R/3 3.1I～4.6B 畫面為準</td><td>2～10</td></tr>
+      <tr><td>17_SapTablesECC_SampleList.pdf（29 頁）</td><td>《SAP Table Relations v1.0.0》：以圖形呈現 FI/CO、MM、PS、SD 各表的主鍵與連結欄位（一對一、一對多），由一位顧問彙編、多位顧問貢獻</td><td>14～18</td></tr>
+    </tbody>
+  </table>
+  <p>相關章節：資料字典基本物件見 <a href="#ch01-2">第 1-2 章</a>（用程式讀字典見 <a href="#ch01-2-14">1-2 章第 14 節</a>）；用 ST05 反查交易寫了哪些表見 <a href="#ch06-3-09">6-3 章第 9 節</a>；找到表之後要找增強點，見 <a href="#ch06-2">第 6-2 章</a>（特別是 <a href="#ch06-2-09">BAdI 與 BTE</a>）。</p>
+
+  <h3 id="ch06-10-02">2. 找表的地圖：表、視圖、結構與建議順序</h3>
+  <p>畫面欄位背後一定掛著一個字典物件，但只有「表」真正存資料：</p>
+  <table>
+    <thead><tr><th>物件</th><th>是否存資料</th><th>找到後怎麼辦</th></tr></thead>
+    <tbody>
+      <tr><td>透明表（TRANSP）</td><td>是</td><td>終點。技術資訊上的表名＋欄位名就是報表要用的</td></tr>
+      <tr><td>視圖（VIEW）</td><td>否，是多張表的連結</td><td>在 SE11 視圖的欄位清單找到同名「View field」，旁邊的 Table／Field 就是答案（再點一下就到終點）</td></tr>
+      <tr><td>結構（INTTAB）</td><td>否，只是變數定義，像一張空表</td><td>要繼續挖：技巧 2～19</td></tr>
+    </tbody>
+  </table>
+  <p>原文圖五是一張決策流程圖，整理如下 <span class="src">（依講義步驟整理）</span>：</p>
+  <ol>
+    <li><b>起點</b>：游標放在畫面欄位 → F1 → F9（技術資訊）→ 判斷物件類型。表 → 完成；視圖 → 下鑽到表 → 完成；結構 → 往下。</li>
+    <li><b>技巧 2～13（大多在這裡解決）</b>：文字欄位？INCLUDE 表？既有報表／Query／資訊結構？Debug 觀察點？值表？資料元素 Where-used？Z_DATA_ELEMENT？視圖？邏輯資料庫？同畫面其他欄位？應用階層？圖形？任何一步答「是」就跳到終點。</li>
+    <li><b>技巧 14～18（最後手段）</b>：變更紀錄、變更文件、SQL 追蹤、執行時間分析、資料內容比對。</li>
+    <li><b>技巧 19</b>（譯者 rev 1.1 追加）：自己寫程式查字典表（DD03L／DD02L）。</li>
+  </ol>
+  <div class="tip">原作者說「前四種技巧通常就夠了」；另有一位 ABAP 書籍作者的經驗是：技術資訊沒給出表，就直接跳技巧 5（Debug 觀察點）。以 2020 年代的實務來看，<b>F1 技術資訊 → ST05 SQL 追蹤</b> 這兩步就能解決九成以上的案例，其他方法是特殊欄位的備胎。</div>
+
+  <h3 id="ch06-10-03">3. 技巧 1：F1 → 技術資訊（F9）→ SE11 判斷物件類型</h3>
+  <p><span class="src">（依講義步驟整理）</span></p>
+  <ol>
+    <li>在交易畫面把游標放在目標欄位，按 <b>F1</b>（或 ? 按鈕）開說明視窗。</li>
+    <li>在說明視窗按 <b>F9</b> 或「技術資訊（Technical Information）」按鈕。</li>
+    <li>看「Field data」區塊：<b>Table name</b>、<b>Field name</b>、<b>Data element</b>；「Screen data」區塊：<b>Program name</b>、<b>Screen number</b>（技巧 5 要用）。</li>
+    <li>雙擊 Table name 進 SE11，畫面標題會寫明是 Transparent table、View 或 Structure。</li>
+  </ol>
+  <p>原文範例：銷售訂單（VA01）初始畫面的「售達方」，技術資訊是 <b>KUAGV-KUNNR</b>（也可能看到 RV45S-KUNNR，版本不同結構名不同）。4.0B 以前的技術資訊一律把物件叫「表」，4.5B 以後會標示 KUAGV 是結構；原圖三對照了表 VBAK、視圖 VIVEDA、結構 KUAGV 三種 SE11 畫面。</p>
+  <div class="note">看到結構名別灰心：像 RV45A、KUAGV、KOMV、MSEGO2 這類結構是「畫面工作區」，程式在 PBO／PAI 把真正的表欄位搬進搬出。字首也有線索：<b>R*</b>（如 RV45A、RM07M）多半是交易畫面專用結構；<b>*K／*P</b> 成對（VBAK／VBAP、EKKO／EKPO、LIKP／LIPS）是表頭／項目（德文 Kopf＝表頭、Position＝項目）。</div>
+  <div class="warn">S/4HANA 的 Fiori 畫面沒有 F1 技術資訊。Fiori app 請改看 app 的 OData 服務與背後的 CDS view（瀏覽器 F12 看 <span class="kw">$metadata</span>，或到 Fiori Apps Reference Library 查 app 的技術資料），再從 CDS 往下找表（第 13 節）。</div>
+
+  <h3 id="ch06-10-04">4. 技巧 2～4：文字欄位、INCLUDE 表、既有報表／Query</h3>
+  <h4>技巧 2：文字欄位</h4>
+  <p>畫面標籤是「Short text」、欄位名 <b>STTXT</b>、資料元素 <b>CO_STTXT</b>，或欄位尾巴有一個「紙＋筆」的「維護長文本」圖示時，資料多半不在一般表裡，而是 SAPscript 文字：表頭 <b>STXH</b>、文字行 <b>STXL</b>（原文說 raw 格式、非 ASCII，所以不能直接 SELECT，要用 <b>READ_TEXT</b>）。<span class="src">（依講義步驟整理）</span></p>
+  <ol>
+    <li>點欄位後的「維護長文本」圖示進長文本畫面。</li>
+    <li>選單 <b>Goto → Header</b>，記下 <b>Text name</b>、<b>Language</b>、<b>Text ID</b>、<b>Text object</b> 四個參數。</li>
+    <li>把四個參數交給 READ_TEXT。</li>
+  </ol>
+  <pre><code class="abap">" 讀銷售訂單表頭文字（Text object VBBK、Text ID 0001 為常見設定，依系統實際 Goto → Header 為準）
+PARAMETERS p_vbeln TYPE vbak-vbeln OBLIGATORY.
+
+START-OF-SELECTION.
+  DATA lt_lines TYPE STANDARD TABLE OF tline WITH EMPTY KEY.
+
+  CALL FUNCTION 'READ_TEXT'
+    EXPORTING
+      id                      = '0001'
+      language                = sy-langu
+      name                    = CONV tdobname( p_vbeln )
+      object                  = 'VBBK'
+    TABLES
+      lines                   = lt_lines
+    EXCEPTIONS
+      id                      = 1
+      language                = 2
+      name                    = 3
+      not_found               = 4
+      object                  = 5
+      reference_check         = 6
+      wrong_access_to_archive = 7
+      OTHERS                  = 8.
+  IF sy-subrc &lt;&gt; 0.
+    MESSAGE |訂單 { p_vbeln ALPHA = OUT } 沒有表頭文字（subrc = { sy-subrc }）| TYPE 'S' DISPLAY LIKE 'W'.
+    RETURN.
+  ENDIF.
+
+  " 文字行合併成一個字串
+  DATA(lv_text) = REDUCE string( INIT s = ``
+                                 FOR ls_line IN lt_lines
+                                 NEXT s = |{ s }{ ls_line-tdline } | ).
+  WRITE / lv_text.</code></pre>
+  <div class="tip">要知道某筆單據「有哪些文字」，可以先 <span class="kw">SELECT tdobject, tdname, tdid, tdspras FROM stxh WHERE tdname = @lv_name</span> 列出清單——STXH 的表頭欄位可以直接查，只有 STXL 的內文要用 READ_TEXT。</div>
+  <h4>技巧 3：INCLUDE 表</h4>
+  <p>結構可能 <b>.INCLUDE</b> 其他結構或<b>表</b>。如果被 include 的正好是含該欄位的透明表，就找到了。原文範例：銷售訂單項目概覽的「條件類型」是 <b>KOMV-KSCHL</b>，KOMV 是結構，但它 include 了表 <b>KONV</b>，所以資料在 KONV-KSCHL。在 SE11 裡 .INCLUDE 列的「Component type」就是被包含的物件名，被包含的欄位以藍字顯示，雙擊即可進入。</p>
+  <div class="warn">S/4HANA 修正：定價條件已從 KONV 搬到 <b>PRCD_ELEMENTS</b>（KONV 在 S/4 不再寫入）。所以在 S/4 用技巧 3 看到 KOMV → KONV 時，實際要查的是 PRCD_ELEMENTS（以 KNUMV 串 VBAK／VBRK）。</div>
+  <h4>技巧 4：既有報表、Query、資訊結構</h4>
+  <p>在「找現成報表」階段看過、但不完全符合需求的報表或 ABAP Query（<span class="tcode">SQ01</span>／<span class="tcode">SQVI</span>）、LIS 資訊結構，如果剛好也顯示這個欄位，打開它的程式碼或 InfoSet，看它從哪張表取值，搜尋就結束了。這也是 Casper「先找標準」原則的延伸：標準報表已經幫你把表找好了。</p>
+
+  <h3 id="ch06-10-05">5. 技巧 5：Debugger 觀察點（以及 IMPORT、SELECT 中斷點）</h3>
+  <p><span class="src">（依講義步驟整理，並換成新版 Debugger 的操作）</span></p>
+  <ol>
+    <li>從技術資訊記下 <b>Program name</b> 與畫面欄位名（例如 SAPMV45A、RV45A-KWMENG）。</li>
+    <li>進交易，在要輸入的前一刻於命令欄輸入 <b>/h</b> 開啟除錯（原文走 ABAP Editor → Debugging，現在不必）。</li>
+    <li>在 Debugger 的 <b>Breakpoints／Watchpoints</b> 頁籤建立 <b>Watchpoint</b>：變數填畫面結構欄位（全域變數可寫成 <span class="kw">(SAPMV45A)RV45A-KWMENG</span>）。</li>
+    <li>按 <b>F8</b> 讓程式自己跑——變數值一改變就停在「改值那一行的下一行」。譯者一開始以為要按 F5 一步一步追，三個月後才發現直接 F8 即可。</li>
+    <li>往上讀幾行程式碼，通常就能看到 <span class="kw">rv45a-kwmeng = vbap-kwmeng</span> 這類搬值敘述，右邊就是字典物件（仍可能是表、視圖或結構，但已經非常接近）。</li>
+  </ol>
+  <p>觀察點不觸發的唯一常見例外是值由 <b>IMPORT</b> 從記憶體帶進來：此時改用 <b>Breakpoint at Statement IMPORT</b>，原文說最多三步就能找到。新版 Debugger 還可以設 <b>Breakpoint at Statement SELECT</b>（或 OPEN SQL 相關敘述），每次讀資料庫就停一次，對「值是從 DB 讀進來」的欄位特別有效。</p>
+  <div class="note">原文限制：3.1I 以前的 Debugger 沒有觀察點功能，技巧 5 不能用。Debugger 的其他實戰技巧（Breakpoint at Message、Watchpoint SY-MSGNO）見 <a href="#ch06-2">第 6-2 章</a>。</div>
+
+  <h3 id="ch06-10-06">6. 技巧 6～8：值表、資料元素 Where-used、Z_DATA_ELEMENT</h3>
+  <h4>技巧 6：值表（Value Table）</h4>
+  <p>從技術資訊雙擊 Data element → 再進它的 Domain → <b>Value Range</b> 頁籤最下方的 <b>Value Table</b>。主數據欄位（如 KUNNR）通常有值表（KNA1），直接就是答案；交易數據（如訂單數量 KWMENG）沒有值表，要繼續找。</p>
+  <div class="warn">譯本修正：譯者在 ECC5 找不到 Value Table，猜測「可能就是檢查表或搜尋說明」。正確說法是——<b>值表定義在 Domain 上</b>（Value Range 頁籤），<b>檢查表定義在表欄位上</b>（Entry help/check 頁籤，透過外來鍵）。建立外來鍵時，系統會把 Domain 的值表當成建議的檢查表。兩者相關但不是同一個東西，搜尋說明（Search Help）又是另一回事。</div>
+  <h4>技巧 7：資料元素的 Where-used</h4>
+  <p>SAP 在表之間搬資料時，目標欄位常常（不是總是）用同一個資料元素。<span class="src">（依講義步驟整理）</span>：技術資訊雙擊 Data element → <b>Utilities → Where-used List</b> → 勾 <b>Table fields</b> → Enter。清單會列出所有用這個資料元素的表、視圖、結構；常用欄位清單會很長（原文：4.0B 的 KUNNR 出現在 743 個物件、KUNAG 在 276 個表），不常用的欄位則很快就能看出來。譯者的經驗：在「在哪些物件中找」的選項裡<b>不勾結構</b>，剩下的就都是表。</p>
+  <h4>技巧 8：自建視圖 Z_DATA_ELEMENT</h4>
+  <p>原文建議在 SE11 建一個資料庫視圖 <b>Z_DATA_ELEMENT</b>，只列出「真的存資料的表」。原圖十的定義如下：</p>
+  <table>
+    <thead><tr><th>項目</th><th>內容</th></tr></thead>
+    <tbody>
+      <tr><td>Base tables</td><td>DD03L、DD02L、DD02T、DD04T</td></tr>
+      <tr><td>Joins</td><td>DD03L-TABNAME = DD02L-TABNAME；DD03L-TABNAME = DD02T-TABNAME；DD03L-ROLLNAME = DD04T-ROLLNAME</td></tr>
+      <tr><td>View fields</td><td>TABNAME、FIELDNAME、TABCLASS、FLD_POSNR（DD03L-POSITION）、KEYFLAG、MANDATORY、DATA_ELEM（DD03L-ROLLNAME）、CHECKTABLE、NOTNULL、TBL_DESCR（DD02T-DDTEXT）、D_E_DESCR（DD04T-DDTEXT）</td></tr>
+      <tr><td>Selection conditions</td><td>DD04T-DDLANGUAGE = 'E' AND DD02T-DDLANGUAGE = 'E' AND DD03L-AS4LOCAL = 'A' AND DD02L-AS4LOCAL = 'A' AND ( DD02L-TABCLASS = 'TRANSP' OR 'CLUSTER' OR 'POOL' )</td></tr>
+    </tbody>
+  </table>
+  <p>使用方式：SE11 顯示該視圖 → Utilities → Table contents → DATA_ELEM = 要找的資料元素 → F8。今天不必真的建一個 Z 視圖（還要進傳輸），用一段 ABAP SQL 就能得到同樣結果，語言也能改成登入語言：</p>
+  <pre><code class="abap">" Z_DATA_ELEMENT 的程式版：列出使用某資料元素、且真的存資料的表
+PARAMETERS p_roll TYPE rollname OBLIGATORY DEFAULT 'KUNNR'.
+
+START-OF-SELECTION.
+  SELECT l~tabname,
+         l~fieldname,
+         t~tabclass,
+         l~position   AS fld_posnr,
+         l~keyflag,
+         l~mandatory,
+         l~rollname   AS data_elem,
+         l~checktable,
+         l~notnull,
+         x~ddtext     AS tbl_descr,
+         e~ddtext     AS d_e_descr
+    FROM dd03l AS l
+    INNER JOIN dd02l AS t
+      ON  t~tabname  = l~tabname
+      AND t~as4local = l~as4local
+      AND t~as4vers  = l~as4vers
+    LEFT OUTER JOIN dd02t AS x
+      ON  x~tabname    = l~tabname
+      AND x~ddlanguage = @sy-langu
+      AND x~as4local   = l~as4local
+      AND x~as4vers    = l~as4vers
+    LEFT OUTER JOIN dd04t AS e
+      ON  e~rollname   = l~rollname
+      AND e~ddlanguage = @sy-langu
+      AND e~as4local   = 'A'
+    WHERE l~rollname = @p_roll
+      AND l~as4local = 'A'
+      AND t~tabclass IN ( 'TRANSP', 'CLUSTER', 'POOL' )
+    ORDER BY l~tabname, l~position              " HANA 沒有預設排序，一定要排
+    INTO TABLE @DATA(lt_hit).
+
+  TRY.
+      cl_salv_table=&gt;factory( IMPORTING r_salv_table = DATA(lo_alv)
+                              CHANGING  t_table      = lt_hit ).
+      lo_alv-&gt;get_functions( )-&gt;set_all( ).
+      lo_alv-&gt;get_columns( )-&gt;set_optimize( ).
+      lo_alv-&gt;display( ).
+    CATCH cx_salv_msg INTO DATA(lx_salv).
+      MESSAGE lx_salv TYPE 'I' DISPLAY LIKE 'E'.
+  ENDTRY.</code></pre>
+  <div class="note">S/4HANA 上 pool／cluster 表幾乎都已轉成透明表（BSEG、KONV、CDPOS、A0xx 條件表等），所以條件寫 <span class="kw">tabclass = 'TRANSP'</span> 就夠；在 ECC 上才需要把 CLUSTER、POOL 一起納入。</div>
+
+  <h3 id="ch06-10-07">7. 技巧 9～13：視圖、邏輯資料庫、同畫面其他欄位、應用階層、圖形</h3>
+  <p>原文說這五招「命中率差不多，順序隨你」。</p>
+  <h4>技巧 9：視圖</h4>
+  <p>交易資料通常存在幾張分層連結的表，SAP 常替它們定義視圖。原文範例：「銷售訂單：單行概覽」的訂單數量顯示為 <b>RV45A-KWMENG</b>（結構）；已知訂單號是 VBAK-VBELN，就去看 VBAK 的 Where-used 裡的視圖——<b>VIVEDA</b> 連結了 VBAK、VBUK、VBAP，於是在 VBAP 找到 KWMENG。（譯注：ECC5 的 VIVEDA 只剩 VBAK、VBAP；S/4 已無 VBUK，見第 17 節。）用程式列出「含某張表的所有字典視圖」：</p>
+  <pre><code class="abap">" 列出所有以某張表為基底表的 DDIC 視圖（DD26S＝視圖基底表，DD25L＝視圖表頭）
+PARAMETERS p_tab TYPE tabname OBLIGATORY DEFAULT 'VBAK'.
+
+START-OF-SELECTION.
+  SELECT s~viewname,
+         h~viewclass,          " D=資料庫視圖 C=投影視圖 M=維護視圖 H=說明視圖
+         s~tabpos,
+         x~ddtext
+    FROM dd26s AS s
+    INNER JOIN dd25l AS h
+      ON  h~viewname = s~viewname
+      AND h~as4local = s~as4local
+      AND h~as4vers  = s~as4vers
+    LEFT OUTER JOIN dd25t AS x
+      ON  x~viewname   = s~viewname
+      AND x~ddlanguage = @sy-langu
+      AND x~as4local   = s~as4local
+      AND x~as4vers    = s~as4vers
+    WHERE s~tabname  = @p_tab
+      AND s~as4local = 'A'
+    ORDER BY s~viewname, s~tabpos
+    INTO TABLE @DATA(lt_views).
+
+  " 同一視圖的其他基底表，就是「跟 p_tab 有關的表家族」
+  LOOP AT lt_views INTO DATA(ls_view) GROUP BY ls_view-viewname INTO DATA(lv_view).
+    SELECT tabname FROM dd26s
+      WHERE viewname = @lv_view AND as4local = 'A'
+      ORDER BY tabpos
+      INTO TABLE @DATA(lt_base).
+    DATA(lv_line) = |{ lv_view } → { concat_lines_of(
+                        table = VALUE string_table( FOR b IN lt_base ( CONV string( b-tabname ) ) )
+                        sep   = `, ` ) }|.
+    WRITE / lv_line.
+  ENDLOOP.</code></pre>
+  <div class="warn">CDS view 的基底表不在 DD26S。S/4 上要找「哪些 CDS view 讀了 VBAK」，請用 ADT 對表按 <b>Get Where-used List</b>，或 ADT 的 <b>Dependency Analyzer</b>（第 13 節）。</div>
+  <h4>技巧 10：邏輯資料庫</h4>
+  <p>業務相關的表常被串在同一個邏輯資料庫（<span class="tcode">SE36</span>）。原文：VBAK 的 Where-used 選「邏輯資料庫」，會看到一個銷售單據相關的 LDB（原文寫作 AAV），它的結構樹直接顯示 VBAK → VBAP 的連結。譯者補注：這其實是「從已知表找另一張表」，跟欄位本身關係不大。LDB 在 S/4 已不建議新開發使用，但拿來當「表關係圖」看仍然有用（例如 BRF、PNP、DDF 等）。</p>
+  <h4>技巧 11：同畫面其他欄位</h4>
+  <p>同一交易的其他欄位可能直接連到資料庫表，而表頭表往往就含你要的欄位。原文範例：銷售訂單初始畫面的售達方是 RV45S-KUNNR（結構，資料元素 KUNAG 在 4.0B 被 276 張表使用，很難從 Where-used 找），但同畫面的「訂單」欄位是 <b>VBAK-VBELN</b>，打開 VBAK 就看到它也有 KUNNR。譯注：甚至不限目前畫面，同程式的其他畫面也可以找。</p>
+  <h4>技巧 12：應用階層</h4>
+  <p>原文路徑：Data Browser（SE16）→ 表名欄位按 F4 → SAP Applications → Application Hierarchy，沿選單樹找到你的應用，底下的表可能就有你的欄位。現在直接用 <span class="tcode">SE81</span>（應用階層）或在 <span class="tcode">SE84</span> 以「應用元件（Application Component）」過濾。</p>
+  <h4>技巧 13：圖形</h4>
+  <p>SE11 顯示一張你認為相關的表 → <b>Utilities → Graphic</b>（舊版在 Extras 下），會畫出該表與其他表的外來鍵關係，可以看到整個業務物件的表家族。譯注：圖常常過大，而且連結多半是指向主數據，實用性一般。</p>
+  <div class="note">3.1I 以前沒有應用階層與圖形功能，技巧 12、13 不能用。</div>
+
+  <h3 id="ch06-10-08">8. 技巧 14～15：變更紀錄與 CDHDR／CDPOS</h3>
+  <h4>技巧 14：交易內的變更紀錄</h4>
+  <p>很多單據開了變更文件記錄，變更資訊裡就含「受影響的表名與欄位名」。做法：在測試機把目標欄位改一下存檔，再看變更紀錄。原文列出的選單路徑 <span class="src">（依講義步驟整理，選單名稱依版本略有差異）</span>：</p>
+  <table>
+    <thead><tr><th>模組／物件</th><th>選單路徑</th></tr></thead>
+    <tbody>
+      <tr><td>PM／客服技術物件</td><td>Extras → [Display Changes 或 Environment] → Display Changes</td></tr>
+      <tr><td>PM／客服工單</td><td>Extras → Order documents → [Changes 或 Extras] → Display Changes</td></tr>
+      <tr><td>通知單</td><td>Extras → Notification documents → Changes</td></tr>
+      <tr><td>合約與計畫</td><td>Environment → Changes</td></tr>
+      <tr><td>SD 銷售訂單</td><td>Environment → Changes</td></tr>
+      <tr><td>SD 交貨單</td><td>Environment → Changes</td></tr>
+    </tbody>
+  </table>
+  <p>有多筆變更時點進你關心的那一筆（通常是最新的）。<b>TCDOB</b>、<b>TCDOBT</b> 列出所有變更文件物件類別（Object class）及其表，可以先查你的應用有沒有支援變更文件；現在用 <span class="tcode">SCDO</span> 看更方便。</p>
+  <h4>技巧 15：直接查 CDHDR／CDPOS</h4>
+  <p>交易裡找不到變更紀錄時，直接查變更文件表：<b>CDHDR</b>（Change Document Header）與 <b>CDPOS</b>（Change Document Position，原文笑稱英德混搭命名）。原做法是改完存檔後 SE11 → CDHDR → Table contents，用今天日期、時間範圍、自己的帳號找出那一筆，複製 <b>CHANGENR</b> 再去 CDPOS 查——CDPOS 那一筆就有表名、欄位名、新值與舊值。譯者問「有沒有 TCODE 可查？」——一段 SQL 就一次到位：</p>
+  <pre><code class="abap">" 我今天改了什麼？→ 直接看到表名 TABNAME、欄位名 FNAME、新舊值
+SELECT h~objectclas,
+       h~objectid,
+       h~changenr,
+       h~udate,
+       h~utime,
+       h~tcode,
+       p~tabname,
+       p~fname,
+       p~chngind,          " U=修改 I=新增 D=刪除
+       p~value_old,
+       p~value_new
+  FROM cdhdr AS h
+  INNER JOIN cdpos AS p
+    ON  p~objectclas = h~objectclas
+    AND p~objectid   = h~objectid
+    AND p~changenr   = h~changenr
+  WHERE h~username = @sy-uname
+    AND h~udate    = @sy-datum
+  ORDER BY h~utime DESCENDING, p~tabname, p~fname
+  INTO TABLE @DATA(lt_chg)
+  UP TO 200 ROWS.
+
+LOOP AT lt_chg INTO DATA(ls_chg).
+  WRITE: / ls_chg-utime, ls_chg-tcode, ls_chg-tabname, ls_chg-fname,
+           ls_chg-value_old, '→', ls_chg-value_new.
+ENDLOOP.</code></pre>
+  <div class="warn">ECC 上 CDPOS 是 cluster 表，不能 JOIN，只能先查 CDHDR 再以 FOR ALL ENTRIES 讀 CDPOS；S/4HANA 已轉成透明表，上面的 JOIN 可直接用。CDHDR 在正式機是大表，WHERE 一定要帶 UDATE／USERNAME 或 OBJECTCLAS＋OBJECTID。</div>
+
+  <h3 id="ch06-10-09">9. 技巧 16～18：SQL 追蹤、執行時間分析、資料內容比對</h3>
+  <h4>技巧 16：SQL 追蹤（ST05）</h4>
+  <p>原文稱為「嚴肅的考古」，譯者則說這是他最常用的方法——而且實務上確實如此。<span class="src">（依講義步驟整理，改寫成現行 ST05 畫面）</span></p>
+  <ol>
+    <li>開兩個視窗：視窗 A 進交易但先不執行；視窗 B 進 <span class="tcode">ST05</span>。</li>
+    <li>視窗 B 勾 <b>SQL Trace</b> → <b>Activate Trace</b>（建議用 <b>Activate Trace with Filter</b>，限定自己的帳號，避免錄到別人）。</li>
+    <li>切回視窗 A 執行交易（要找「寫入」就存檔；要找「讀取」就把畫面開到該欄位出現為止）。</li>
+    <li>視窗 B → <b>Deactivate Trace</b> → <b>Display Trace</b>。</li>
+    <li>在清單裡搜尋欄位名；看 SELECT 的 WHERE 與 INSERT／UPDATE 的表。選取一列可按 <b>Display Table</b>（顯示該表的字典定義；依版本按鈕名稱可能是「DDIC Information」），或按 <b>Explain</b> 看執行計畫。</li>
+    <li>原文要 System → List → Save → Local file 存成 doc 再用 Word 搜尋；現在清單是 ALV，直接 <b>Export → Spreadsheet</b>，存到 <span class="kw">C:\temp\</span> 用 Excel 篩選即可。</li>
+  </ol>
+  <p>譯注的關鍵心法：<b>修改一個值再看追蹤裡的資料庫更新（UPDATE／INSERT）</b>，總能找到目標欄位——讀取可能讀很多表，但寫入只會寫真正存資料的那幾張。03 號素材的 <b>AGR_DEFINE</b>（角色定義，含複合／衍生角色關係）與 <b>AGR_TCODES</b>（角色與 TCODE 的對應，可查「某角色含哪些 TCODE」或「某 TCODE 被哪些角色使用」）就是作者用 ST05 追到的。ST05 追蹤清單每一欄的意義見 <a href="#ch06-3-08">6-3 章第 8 節</a>。</p>
+  <h4>技巧 17：執行時間分析（SE30 → SAT）</h4>
+  <p>原文路徑是 System → Utilities → Runtime Analysis（SE30），現在改用 <span class="tcode">SAT</span>：輸入交易碼或程式名 → 執行並完成交易 → 回到 SAT 評估。看 <b>資料庫表（DB Tables）</b> 的命中清單，就是交易過程中存取過的透明表與 pool 表；<b>Hit List</b> 列出所有呼叫過的程式。原文還提到：對結構做 Where-used 並勾「Programs」，有時會列出把該欄位跟資料庫連起來的程式，拿來跟 Hit List 的程式交叉比對，可以縮小範圍。</p>
+  <h4>技巧 18：資料內容比對</h4>
+  <p>最後一招：從交易相關的一組表抽出資料存成文字檔，<b>用值（不是欄位名）</b>去搜尋資料流——來源與目的欄位可能名稱、資料元素都不同，SAP 又常用你想不到的內部編號（Object ID、Object Type）串連記錄，但這些值很獨特，搜值就追得到。原文範例（圖十二）：從服務訂單找到相關的計量文件，路徑是：</p>
+  <table>
+    <thead><tr><th>表</th><th>連結欄位</th><th>條件</th></tr></thead>
+    <tbody>
+      <tr><td>AUFK 或 AFIH</td><td>AUFNR</td><td></td></tr>
+      <tr><td>AFKO</td><td>AUFNR → AUFPL</td><td></td></tr>
+      <tr><td>AFFH</td><td>AUFPL → OBJID</td><td>OBJTY = 'FH'</td></tr>
+      <tr><td>CRVE_A</td><td>OBJID → EQUNR</td><td></td></tr>
+      <tr><td>EQUI</td><td>EQUNR → OBJNR</td><td></td></tr>
+      <tr><td>IMPTT</td><td>MPOBJ → POINT</td><td></td></tr>
+      <tr><td>IMRG</td><td>POINT</td><td></td></tr>
+    </tbody>
+  </table>
+  <p>他們建立一張服務訂單和幾張計量文件，從服務訂單號開始沿各個連結抽資料（SE11 → Utilities → Table contents），用 System → List → Save → Local file 全部匯出合併成一份 Word，再用「尋找」照值追下去；OBJID、OBJNR、MPOBJ 對交易毫無業務意義，卻是串起記錄的關鍵。譯注：這方法看了頭暈，實務上用 SQL 追蹤就夠了。</p>
+
+  <h3 id="ch06-10-10">10. 技巧 19：ZTABLEFIND——用欄位名找表（現代改寫）</h3>
+  <p>03 號素材與 PDF 的技巧 19 是同一支小程式 ZTABLEFIND（由一位顧問提供）。它的意圖是：輸入<b>一個或多個欄位名</b>，找出<b>同時含有這些欄位</b>的表，並可依表類別（TABCLASS）篩選。原程式的寫法與問題：</p>
+  <table>
+    <thead><tr><th>原寫法</th><th>問題</th><th>現代寫法</th></tr></thead>
+    <tbody>
+      <tr><td>TABLES: dd02t, dd03l, dd02l</td><td>全域工作區，禁用</td><td>DATA 宣告型別＋內嵌宣告</td></tr>
+      <tr><td>BEGIN OF … OCCURS 0 ＋ INCLUDE STRUCTURE dd03l</td><td>帶表頭行的內表；把整個 DD03L 結構（數十欄）搬進記憶體</td><td>只 SELECT 需要的欄位</td></tr>
+      <tr><td>SELECT * FROM dd03l … 不帶 AS4LOCAL</td><td>會把非啟用版本也算進來</td><td>WHERE as4local = 'A'</td></tr>
+      <tr><td>LOOP AT ified 取 sy-tabix 當「欄位數」</td><td>只在選擇條件全是單值 EQ 時才對；輸入 CP 萬用字元或區間就算錯</td><td>COUNT( DISTINCT fieldname ) ＋ HAVING</td></tr>
+      <tr><td>AT END OF tabname ＋ COLLECT</td><td>在 ABAP 端分組計數，資料量大時很慢</td><td>SQL 端 GROUP BY（HANA 下推）</td></tr>
+      <tr><td>LOOP 內兩個 SELECT SINGLE（DD02T、DD02L）</td><td>典型 N+1 查詢</td><td>一次 JOIN</td></tr>
+      <tr><td>WRITE 清單</td><td>不能排序、篩選、匯出</td><td>CL_SALV_TABLE</td></tr>
+    </tbody>
+  </table>
+  <p>原文另提到先用 SE16 查 DD03L、再到 DD02L 篩「透明表」，並建議做成 Query 方便重用；相關表有 <b>DD02T</b>（表說明）、<b>DD04T</b>（資料元素說明）、<b>DDFTX</b>（原文說「也有部分對應關係，但不清楚用在哪」——它是欄位說明的文字表，一般不必用）。</p>
+  <pre><code class="abap">REPORT ztablefind.
+" 用欄位名找表：輸入多個欄位名，找出「同時含有」這些欄位的表
+DATA gv_field TYPE dd03l-fieldname.
+DATA gv_class TYPE dd02l-tabclass.
+
+SELECT-OPTIONS: s_field FOR gv_field NO INTERVALS OBLIGATORY,   " 列舉比區間安全
+                s_class FOR gv_class NO INTERVALS DEFAULT 'TRANSP'.
+PARAMETERS p_all AS CHECKBOX DEFAULT abap_true.                 " 勾：所有欄位都要有
+
+START-OF-SELECTION.
+  " 需要命中的欄位數：勾選「全部」時＝輸入的欄位數，否則任一個即可
+  DATA(lv_need) = COND i( WHEN p_all = abap_true THEN lines( s_field ) ELSE 1 ).
+
+  SELECT l~tabname,
+         t~tabclass,
+         x~ddtext,
+         COUNT( DISTINCT l~fieldname ) AS hits
+    FROM dd03l AS l
+    INNER JOIN dd02l AS t
+      ON  t~tabname  = l~tabname
+      AND t~as4local = l~as4local
+      AND t~as4vers  = l~as4vers
+    LEFT OUTER JOIN dd02t AS x
+      ON  x~tabname    = l~tabname
+      AND x~ddlanguage = @sy-langu
+      AND x~as4local   = l~as4local
+      AND x~as4vers    = l~as4vers
+    WHERE l~fieldname IN @s_field
+      AND l~as4local  = 'A'
+      AND t~tabclass  IN @s_class
+    GROUP BY l~tabname, t~tabclass, x~ddtext
+    HAVING COUNT( DISTINCT l~fieldname ) &gt;= @lv_need
+    ORDER BY l~tabname
+    INTO TABLE @DATA(lt_tab).
+
+  IF lt_tab IS INITIAL.
+    MESSAGE '找不到同時含有這些欄位的表' TYPE 'S' DISPLAY LIKE 'W'.
+    RETURN.
+  ENDIF.
+
+  TRY.
+      cl_salv_table=&gt;factory( IMPORTING r_salv_table = DATA(lo_alv)
+                              CHANGING  t_table      = lt_tab ).
+      lo_alv-&gt;get_functions( )-&gt;set_all( ).
+      lo_alv-&gt;get_columns( )-&gt;set_optimize( ).
+      lo_alv-&gt;get_display_settings( )-&gt;set_list_header( |含 { lines( s_field ) } 個欄位的表：{ lines( lt_tab ) } 張| ).
+      lo_alv-&gt;display( ).
+    CATCH cx_salv_msg INTO DATA(lx_salv).
+      MESSAGE lx_salv TYPE 'I' DISPLAY LIKE 'E'.
+  ENDTRY.</code></pre>
+  <div class="tip">實用組合：同時輸入 <b>VBELN、POSNR、MATNR</b> 並勾「全部」，就能快速列出「以銷售單據項目為主鍵又帶物料」的表（VBAP、LIPS、VBRP、VAPMA……），是找「項目層」表最快的方法。s_field 用 <span class="kw">NO INTERVALS</span> 只允許列舉單值——欄位名比大小（BT）沒有業務意義，正是 Casper「列舉比區間安全」的原則。</div>
+
+  <h3 id="ch06-10-11">11. 用資料元素或網域找表，以及 SE84</h3>
+  <p>欄位名在不同表可能不同（售達方在 VBAK 叫 KUNNR、在 VBRK 叫 KUNAG、在 VAKPA 叫 KUNDE），但<b>資料元素</b>或<b>網域</b>往往相同。技巧 7 的 Where-used 是互動版，下面是程式版，可切換「依資料元素」或「依網域」：</p>
+  <pre><code class="abap">REPORT zfind_table_by_type.
+PARAMETERS: p_name TYPE ddobjname OBLIGATORY DEFAULT 'KUNNR',
+            p_dom  AS CHECKBOX.                      " 勾＝依網域 DOMNAME 找
+
+START-OF-SELECTION.
+  DATA lv_text TYPE as4text.
+  DATA lr_roll TYPE RANGE OF dd03l-rollname.     " 空的 RANGE＝不限制
+  DATA lr_dom  TYPE RANGE OF dd03l-domname.
+
+  " 先顯示資料元素（或網域）的說明，確認沒打錯；同時決定用哪個條件
+  IF p_dom = abap_false.
+    SELECT SINGLE ddtext FROM dd04t
+      WHERE rollname = @p_name AND ddlanguage = @sy-langu AND as4local = 'A'
+      INTO @lv_text.
+    lr_roll = VALUE #( ( sign = 'I' option = 'EQ' low = p_name ) ).
+  ELSE.
+    SELECT SINGLE ddtext FROM dd01t
+      WHERE domname = @p_name AND ddlanguage = @sy-langu AND as4local = 'A'
+      INTO @lv_text.
+    lr_dom = VALUE #( ( sign = 'I' option = 'EQ' low = p_name ) ).
+  ENDIF.
+  DATA(lv_head) = |{ COND string( WHEN p_dom = abap_true THEN `網域` ELSE `資料元素` ) } { p_name }：{ lv_text }|.
+  WRITE / lv_head.
+  ULINE.
+
+  SELECT l~tabname, l~fieldname, l~rollname, l~domname, l~keyflag, x~ddtext
+    FROM dd03l AS l
+    INNER JOIN dd02l AS t
+      ON  t~tabname  = l~tabname
+      AND t~as4local = l~as4local
+      AND t~as4vers  = l~as4vers
+    LEFT OUTER JOIN dd02t AS x
+      ON  x~tabname    = l~tabname
+      AND x~ddlanguage = @sy-langu
+      AND x~as4local   = l~as4local
+      AND x~as4vers    = l~as4vers
+    WHERE l~rollname IN @lr_roll
+      AND l~domname  IN @lr_dom
+      AND l~as4local = 'A'
+      AND t~tabclass = 'TRANSP'
+      AND t~tabname NOT LIKE '/%'                  " 排除命名空間表，清單短一點
+    ORDER BY l~tabname, l~position
+    INTO TABLE @DATA(lt_hit).
+
+  LOOP AT lt_hit INTO DATA(ls_hit).
+    DATA(lv_key) = COND string( WHEN ls_hit-keyflag = abap_true THEN `主鍵` ELSE `` ).
+    WRITE: / ls_hit-tabname, ls_hit-fieldname, ls_hit-rollname, lv_key, ls_hit-ddtext.
+  ENDLOOP.</code></pre>
+  <div class="note">用「空的 RANGE 等於不限制」這個特性，一段 SELECT 就能切換兩種查法，不必寫兩個幾乎一樣的 SELECT。</div>
+  <p><b>不寫程式的做法：SE84</b>。<span class="tcode">SE84</span>（Repository Information System）→ ABAP Dictionary → Fields → <b>Table Fields</b>，可以用欄位名、資料元素、網域任一條件查，還能限制「只看透明表」與套件、應用元件。這是技巧 7 與技巧 19 的標準 GUI 版本，給顧問用最方便。</p>
+
+  <h3 id="ch06-10-12">12. 找到表之後：列出表的欄位（DDIF_FIELDINFO_GET 與 RTTS）</h3>
+  <p>找到表後，下一步是「這張表有哪些欄位、主鍵是什麼、檢查表是誰」。SE11 當然看得到；要在程式裡動態取得有兩種標準做法。</p>
+  <h4>做法一：DDIF_FIELDINFO_GET</h4>
+  <pre><code class="abap">PARAMETERS p_tab TYPE ddobjname OBLIGATORY DEFAULT 'VBAP'.
+
+START-OF-SELECTION.
+  DATA lt_dfies TYPE ddfields.          " DFIES 的表型別
+
+  CALL FUNCTION 'DDIF_FIELDINFO_GET'
+    EXPORTING
+      tabname        = p_tab
+      langu          = sy-langu
+    TABLES
+      dfies_tab      = lt_dfies
+    EXCEPTIONS
+      not_found      = 1
+      internal_error = 2
+      OTHERS         = 3.
+  IF sy-subrc &lt;&gt; 0.
+    MESSAGE |{ p_tab } 不是字典表或結構| TYPE 'S' DISPLAY LIKE 'E'.
+    RETURN.
+  ENDIF.
+
+  " 主鍵排前面（DDIF_FIELDINFO_GET 已把 .INCLUDE 展開成實際欄位）
+  DATA(lt_out) = lt_dfies.
+  SORT lt_out BY keyflag DESCENDING position.
+
+  LOOP AT lt_out INTO DATA(ls_f).
+    WRITE: / ls_f-position, ls_f-fieldname, ls_f-keyflag, ls_f-rollname,
+             ls_f-datatype, ls_f-leng, ls_f-checktable, ls_f-fieldtext.
+  ENDLOOP.</code></pre>
+  <h4>做法二：RTTS（CL_ABAP_STRUCTDESCR）</h4>
+  <pre><code class="abap">PARAMETERS p_tab TYPE tabname OBLIGATORY DEFAULT 'VBAP'.
+
+START-OF-SELECTION.
+  cl_abap_typedescr=&gt;describe_by_name(
+    EXPORTING  p_name         = p_tab
+    RECEIVING  p_descr_ref    = DATA(lo_type)
+    EXCEPTIONS type_not_found = 1
+               OTHERS         = 2 ).
+  IF sy-subrc &lt;&gt; 0 OR lo_type-&gt;kind &lt;&gt; cl_abap_typedescr=&gt;kind_struct.
+    MESSAGE |{ p_tab } 不是結構型別| TYPE 'S' DISPLAY LIKE 'E'.
+    RETURN.
+  ENDIF.
+
+  DATA(lo_struct) = CAST cl_abap_structdescr( lo_type ).
+
+  " 有 DDIC 來源時可取到含說明、主鍵旗標的 DFIES 清單
+  lo_struct-&gt;get_ddic_field_list(
+    EXPORTING  p_langu      = sy-langu
+    RECEIVING  p_field_list = DATA(lt_fields)
+    EXCEPTIONS not_found    = 1
+               no_ddic_type = 2
+               OTHERS       = 3 ).
+  IF sy-subrc = 0.
+    DATA(lv_keys) = REDUCE string( INIT k = ``
+                                   FOR f IN lt_fields WHERE ( keyflag = abap_true )
+                                   NEXT k = |{ k } { f-fieldname }| ).
+    DATA(lv_msg) = |{ p_tab } 主鍵：{ lv_keys }|.
+    WRITE / lv_msg.
+  ENDIF.
+
+  " 沒有 DDIC 來源（程式內自訂型別）時，用 components 也能拿到欄位名與型別
+  LOOP AT lo_struct-&gt;components INTO DATA(ls_comp).
+    WRITE: / ls_comp-name, ls_comp-type_kind, ls_comp-length.
+  ENDLOOP.</code></pre>
+  <div class="tip">兩者差異：DDIF_FIELDINFO_GET 只吃字典物件，但可以一次拿到說明文字、檢查表；RTTS 對任何型別都能用（包含程式內 TYPES、動態建立的型別），是寫「通用下載／通用 ALV」工具的首選。更多 DD* 表與 RTTI 範例見 <a href="#ch01-2-14">1-2 章第 14 節</a>。</div>
+
+  <h3 id="ch06-10-13">13. S/4HANA 的現代工具：ST05 Display Table、SE16N、SE16H、CDS、ADT</h3>
+  <table>
+    <thead><tr><th>工具</th><th>用途</th><th>要點</th></tr></thead>
+    <tbody>
+      <tr><td><span class="tcode">ST05</span> → Display Trace → 選一列 → Display Table</td><td>從追蹤直接跳到表的字典定義</td><td>比原文「存成 Word 再搜尋」快得多；搭配「Summarize by table／Structure-identical statements」一眼看出交易碰了哪幾張表</td></tr>
+      <tr><td><span class="tcode">SE16N</span></td><td>增強版資料瀏覽器</td><td>可多值選擇、隱藏欄位、顯示技術名稱、存變式；欄位輸入框可直接輸入多值清單</td></tr>
+      <tr><td><span class="tcode">SE16H</span></td><td>SE16N 加上彙總</td><td>可對欄位 Group By、加總、計數，還能做簡單的外部連結（Outer Join）另一張表——用來驗證「這張表是不是我要的」很快，不必寫程式</td></tr>
+      <tr><td>CDS <span class="kw">I_*</span> released view</td><td>S/4HANA 的官方讀取介面</td><td>找到底層表後，<b>先找有沒有對應的 released CDS view</b>（例如銷售訂單 <span class="kw">I_SalesOrder</span>／<span class="kw">I_SalesOrderItem</span>、物料 <span class="kw">I_Product</span>、會計 <span class="kw">I_JournalEntryItem</span>），版本升級時比直接讀表穩定；可用 Fiori app「View Browser」或 ADT 查詢（依版本與啟用狀況）</td></tr>
+      <tr><td>ADT <b>Get Where-used List</b></td><td>找表、CDS、類別被誰使用</td><td>對表按 Ctrl+Shift+G，可看到讀它的 CDS view、類別、程式；DD26S 查不到的 CDS 依賴關係要用這個或 ADT Dependency Analyzer</td></tr>
+      <tr><td><span class="tcode">SE84</span></td><td>欄位／資料元素／網域反查表</td><td>見第 11 節</td></tr>
+    </tbody>
+  </table>
+  <p>用 released CDS view 取代直接讀表的寫法：</p>
+  <pre><code class="abap">" 以 I_SalesOrder（released CDS view）取代直接 SELECT VBAK
+" 欄位名採 CamelCase 語意名稱；欄位清單請在 ADT 以 F2 確認你版本的定義
+DATA gv_kunnr TYPE kunnr.
+SELECT-OPTIONS s_kunnr FOR gv_kunnr.
+PARAMETERS p_from TYPE d DEFAULT sy-datum.
+
+START-OF-SELECTION.
+  SELECT SalesOrder,
+         SalesOrderType,
+         SalesOrganization,
+         SoldToParty,
+         CreationDate,
+         TotalNetAmount,
+         TransactionCurrency
+    FROM I_SalesOrder
+    WHERE SoldToParty  IN @s_kunnr
+      AND CreationDate &gt;= @p_from
+    ORDER BY SalesOrder
+    INTO TABLE @DATA(lt_so).
+
+  TRY.
+      cl_salv_table=&gt;factory( IMPORTING r_salv_table = DATA(lo_alv)
+                              CHANGING  t_table      = lt_so ).
+      lo_alv-&gt;get_columns( )-&gt;set_optimize( ).
+      lo_alv-&gt;display( ).
+    CATCH cx_salv_msg INTO DATA(lx_salv).
+      MESSAGE lx_salv TYPE 'I' DISPLAY LIKE 'E'.
+  ENDTRY.</code></pre>
+  <div class="warn">SE16N 的 <span class="kw">&amp;SAP_EDIT</span>、Debugger 改值等「直接改表」技巧屬於危險操作，正式機絕對不要用，詳見 <a href="#ch06-2">6-2 章</a>第 14 節。找表是為了<b>讀</b>；要寫資料請走 BAPI 或 RAP，不要直接 UPDATE 標準表。</div>
+
+  <h3 id="ch06-10-14">14. 常用資料表清單（一）：組織、主數據與 FI</h3>
+  <p>第 14～17 節整理自《SAP Table Relations v1.0.0》，主鍵依原圖列出（省略 MANDT），原文的筆誤直接修正並註明。「S/4HANA 狀態」欄是本書補充：<b>保留</b>＝表結構與用法不變；<b>相容性 view</b>＝名稱還能 SELECT，但資料其實來自新表，新程式請改讀新表或 CDS。</p>
+  <table>
+    <thead><tr><th>表名</th><th>說明</th><th>主鍵</th><th>S/4HANA 狀態</th></tr></thead>
+    <tbody>
+      <tr><td>T001</td><td>公司代碼</td><td>BUKRS</td><td>保留</td></tr>
+      <tr><td>T001W</td><td>工廠／分支</td><td>WERKS</td><td>保留</td></tr>
+      <tr><td>BKPF</td><td>會計文件表頭</td><td>BUKRS、BELNR、GJAHR</td><td>保留（仍寫入表頭）</td></tr>
+      <tr><td>BSEG</td><td>會計文件明細（段）</td><td>BUKRS、BELNR、GJAHR、BUZEI</td><td>保留；ECC 為 cluster RFBLG 的一部分，S/4 已是透明表。但完整明細（含所有分類帳、CO 欄位）以 <b>ACDOCA</b> 為準</td></tr>
+      <tr><td>BSEC</td><td>一次性客戶／供應商資料</td><td>BUKRS、BELNR、GJAHR、BUZEI</td><td>保留</td></tr>
+      <tr><td>BSED</td><td>文件段（票據欄位）</td><td>BUKRS、BELNR、GJAHR、BUZEI</td><td>保留</td></tr>
+      <tr><td>BSET</td><td>稅務資料文件段</td><td>BUKRS、BELNR、GJAHR、BUZEI</td><td>保留</td></tr>
+      <tr><td>BSES</td><td>文件段（原圖未附說明，請以 SE11 確認）</td><td>BUKRS、BELNR、GJAHR、BUZEI</td><td>保留</td></tr>
+      <tr><td>BSIS</td><td>總帳科目次級索引（未清項）</td><td>BUKRS、HKONT、AUGDT、AUGBL、ZUONR、GJAHR、BELNR、BUZEI</td><td>相容性 view → ACDOCA（原表保留為 *_BCK 備份）</td></tr>
+      <tr><td>BSAS</td><td>總帳科目次級索引（已清項）</td><td>同 BSIS</td><td>相容性 view → ACDOCA</td></tr>
+      <tr><td>BSID</td><td>客戶次級索引（未清項）</td><td>BUKRS、KUNNR、UMSKS、UMSKZ、AUGDT、AUGBL、ZUONR、GJAHR、BELNR、BUZEI</td><td>相容性 view → ACDOCA／BSEG</td></tr>
+      <tr><td>BSAD</td><td>客戶次級索引（已清項）</td><td>同 BSID</td><td>相容性 view → ACDOCA／BSEG</td></tr>
+      <tr><td>BSIK</td><td>供應商次級索引（未清項）</td><td>BUKRS、LIFNR、UMSKS、UMSKZ、AUGDT、AUGBL、ZUONR、GJAHR、BELNR、BUZEI</td><td>相容性 view → ACDOCA／BSEG</td></tr>
+      <tr><td>BSAK</td><td>供應商次級索引（已清項）</td><td>同 BSIK</td><td>相容性 view → ACDOCA／BSEG</td></tr>
+      <tr><td>BSIP</td><td>供應商重複發票檢查索引</td><td>BUKRS、LIFNR、WAERS、BLDAT、XBLNR、WRBTR、BELNR、GJAHR、BUZEI（原圖把「參考文件」誤標成 WRBTR，應為 <b>XBLNR</b>）</td><td>保留</td></tr>
+      <tr><td>BVOR</td><td>跨公司過帳程序</td><td>BVORG、BUKRS、GJAHR、BELNR</td><td>保留</td></tr>
+      <tr><td>PAYR</td><td>付款媒體檔（支票登記）</td><td>ZBUKR、HBKID、HKTID、RZAWE、CHECT（原圖寫 ZLSCH／CHECKT，實際欄位名是付款方式 <b>RZAWE</b>、支票號 <b>CHECT</b>）</td><td>保留</td></tr>
+      <tr><td>LFC1</td><td>供應商主檔（交易數字）</td><td>LIFNR、BUKRS、GJAHR</td><td>相容性 view → ACDOCA</td></tr>
+      <tr><td>KNC1</td><td>客戶主檔（交易數字）</td><td>KUNNR、BUKRS、GJAHR</td><td>相容性 view → ACDOCA</td></tr>
+      <tr><td>GLT0（原清單未列，補充）</td><td>總帳科目餘額</td><td>RLDNR、RRCTY、RVERS、BUKRS、RYEAR、RACCT、RBUSA、RTCUR、DRCRK、RPMAX</td><td>相容性 view → ACDOCA（FAGLFLEXT 等新總帳總計表亦同）</td></tr>
+      <tr><td>SKA1</td><td>總帳科目主檔（科目表層）</td><td>KTOPL、SAKNR</td><td>保留（S/4 成本要素亦在此維護）</td></tr>
+      <tr><td>SKB1</td><td>總帳科目主檔（公司代碼層）</td><td>BUKRS、SAKNR</td><td>保留</td></tr>
+      <tr><td>SKAT</td><td>總帳科目說明</td><td>SPRAS、KTOPL、SAKNR</td><td>保留</td></tr>
+      <tr><td>LFA1</td><td>供應商主檔（一般資料）</td><td>LIFNR</td><td>保留為 CVI 同步表；主檔改由業務夥伴 <b>BP</b>（<b>BUT000</b>）維護，XK01／FK01 停用改用 BP</td></tr>
+      <tr><td>LFB1</td><td>供應商主檔（公司代碼）</td><td>LIFNR、BUKRS</td><td>保留，經 BP 維護</td></tr>
+      <tr><td>LFBK</td><td>供應商主檔（銀行資料）</td><td>LIFNR、BANKS、BANKL、BANKN</td><td>保留，經 BP 維護（BP 端為 BUT0BK）</td></tr>
+      <tr><td>LFB5</td><td>供應商主檔（催款資料）</td><td>LIFNR、BUKRS、MABER</td><td>保留，經 BP 維護</td></tr>
+      <tr><td>LFM1</td><td>供應商主檔（採購組織）</td><td>LIFNR、EKORG</td><td>保留，經 BP 維護</td></tr>
+      <tr><td>LFM2</td><td>供應商主檔（採購資料：子範圍／工廠）</td><td>LIFNR、EKORG、LTSNR、WERKS</td><td>保留，經 BP 維護</td></tr>
+      <tr><td>KNA1</td><td>客戶主檔（一般資料）</td><td>KUNNR</td><td>保留為 CVI 同步表；主檔改由 BP（BUT000）維護，XD01／VD01 停用改用 BP</td></tr>
+      <tr><td>KNB1</td><td>客戶主檔（公司代碼）</td><td>KUNNR、BUKRS</td><td>保留，經 BP 維護</td></tr>
+      <tr><td>KNB5</td><td>客戶主檔（催款資料）</td><td>KUNNR、BUKRS、MABER</td><td>保留，經 BP 維護</td></tr>
+      <tr><td>KNVV</td><td>客戶主檔（銷售範圍資料）</td><td>KUNNR、VKORG、VTWEG、SPART</td><td>保留，經 BP 維護</td></tr>
+      <tr><td>KNVP</td><td>客戶主檔（夥伴功能）</td><td>KUNNR、VKORG、VTWEG、SPART、PARVW、PARZA</td><td>保留，經 BP 維護</td></tr>
+      <tr><td>KNVD</td><td>客戶主檔（銷售單據輸出）</td><td>KUNNR、VKORG、VTWEG、SPART、NA_KSCHL（輸出類型）、SPRAS</td><td>保留</td></tr>
+    </tbody>
+  </table>
+  <div class="warn">S/4HANA 的 BP 與客戶／供應商是兩層：<b>BUT000</b> 以 PARTNER 為鍵，KNA1／LFA1 以 KUNNR／LIFNR 為鍵，兩者對應在 <b>CVI_CUST_LINK</b>／<b>CVI_VEND_LINK</b>（以 BP 的 GUID 串接）。報表讀客戶名稱仍可讀 KNA1，但新增、修改一律走 BP。</div>
+
+  <h3 id="ch06-10-15">15. 常用資料表清單（二）：CO 與利潤中心</h3>
+  <table>
+    <thead><tr><th>表名</th><th>說明</th><th>主鍵</th><th>S/4HANA 狀態</th></tr></thead>
+    <tbody>
+      <tr><td>CEPC</td><td>利潤中心主檔</td><td>PRCTR、DATBI、KOKRS</td><td>保留</td></tr>
+      <tr><td>CEPCT</td><td>利潤中心說明</td><td>SPRAS、PRCTR、DATBI、KOKRS</td><td>保留</td></tr>
+      <tr><td>CSKS</td><td>成本中心主檔</td><td>KOKRS、KOSTL、DATBI</td><td>保留</td></tr>
+      <tr><td>CSKT</td><td>成本中心說明</td><td>SPRAS、KOKRS、KOSTL、DATBI</td><td>保留</td></tr>
+      <tr><td>CSKA</td><td>成本要素（科目表層）</td><td>KTOPL、KSTAR</td><td>成本要素已併入總帳科目（FS00 設「成本要素類別」，KA01／KA06 停用）；舊表僅供相容讀取</td></tr>
+      <tr><td>CSKB</td><td>成本要素（控制範圍層）</td><td>KOKRS、KSTAR、DATBI</td><td>同上，改以 SKA1／SKB1 為準</td></tr>
+      <tr><td>CSKU</td><td>成本要素說明</td><td>SPRAS、KTOPL、KSTAR</td><td>同上，說明改看 SKAT</td></tr>
+      <tr><td>COBK</td><td>CO 文件表頭</td><td>KOKRS、BELNR</td><td>保留</td></tr>
+      <tr><td>COEP</td><td>CO 期間明細</td><td>KOKRS、BELNR、BUZEI</td><td>實際成本（WRTTP=04）改寫 <b>ACDOCA</b>；讀舊程式請用相容性 view（V_COEP 等），計畫等其他值類型仍在 COEP</td></tr>
+      <tr><td>COSP</td><td>CO 物件成本總計（外部過帳）</td><td>LEDNR、OBJNR、GJAHR、WRTTP、VERSN、KSTAR、HRKFT、VRGNG、VBUND、PARGB、BEKNZ、TWAER、PERBL（原圖寫 J_OBJNR，欄位名實為 OBJNR）</td><td>相容性 view → ACDOCA（原表保留為 COSP_BAK）</td></tr>
+      <tr><td>GLPCA</td><td>EC-PCA 實際明細</td><td>GL_SIRID（記錄號）</td><td>傳統利潤中心會計；S/4 利潤中心已在 ACDOCA，除非仍啟用傳統 PCA，否則不再寫入</td></tr>
+      <tr><td>GLPCT</td><td>EC-PCA 總計表</td><td>RLDNR、RRCTY、RVERS、GJAHR、ROBJNR、COBJNR、SOBJNR、RTCUR、RUNIT、DRCRK、RPMAX</td><td>同上</td></tr>
+      <tr><td>GLPCO</td><td>EC-PCA 科目指派物件表</td><td>OBJNR</td><td>同上</td></tr>
+      <tr><td>GLPCC</td><td>EC-PCA 交易屬性</td><td>OBJNR</td><td>同上</td></tr>
+      <tr><td>COFIT</td><td>調節分類帳總計</td><td>RLDNR、RRCTY、RVERS、GJAHR、ROBJNR、COBJNR、SOBJNR、RTCUR、RUNIT、DRCRK、RPMAX</td><td>淘汰：S/4 的 CO 與 FI 在 ACDOCA 即時整合，不再需要調節分類帳</td></tr>
+      <tr><td>COFIO1</td><td>調節分類帳物件表</td><td>OBJNR</td><td>淘汰</td></tr>
+      <tr><td>COFIO2</td><td>調節分類帳交易相依欄位</td><td>OBJNR</td><td>淘汰</td></tr>
+    </tbody>
+  </table>
+  <p>原圖還以 <b>ZZGLT</b>（總計）／<b>ZZGLO</b>（物件）示範「自訂特殊分類帳（Special Purpose Ledger）」的結構，鍵與 GLPCT 同型。這兩張是客製範例，不是標準表；S/4 上新的特殊需求優先考慮 ACDOCA 的擴充欄位或擴充分類帳。原圖的借貸欄位寫成 DRCRX，標準欄位名為 <b>DRCRK</b>。</p>
+
+  <h3 id="ch06-10-16">16. 常用資料表清單（三）：MM 與專案（PS）</h3>
+  <table>
+    <thead><tr><th>表名</th><th>說明</th><th>主鍵</th><th>S/4HANA 狀態</th></tr></thead>
+    <tbody>
+      <tr><td>MARA</td><td>物料主檔一般資料</td><td>MATNR</td><td>保留；<b>MATNR 在 S/4 擴為 40 碼</b>，自訂結構與介面要留意</td></tr>
+      <tr><td>MAKT</td><td>物料說明</td><td>MATNR、SPRAS</td><td>保留（與 KNMT 連結時加 MAKT-SPRAS = sy-langu）</td></tr>
+      <tr><td>MARC</td><td>物料工廠資料（C 段）</td><td>MATNR、WERKS</td><td>保留；庫存數量欄位改由 MATDOC 計算（相容性 view）</td></tr>
+      <tr><td>MARM</td><td>計量單位換算</td><td>MATNR、MEINH</td><td>保留</td></tr>
+      <tr><td>MLAN</td><td>物料稅務分類</td><td>MATNR、ALAND</td><td>保留</td></tr>
+      <tr><td>MVKE</td><td>物料銷售資料</td><td>MATNR、VKORG、VTWEG</td><td>保留（PRODH 產品階層，說明查 T179）</td></tr>
+      <tr><td>MBEW</td><td>物料評價</td><td>MATNR、BWKEY、BWTAR</td><td>表仍在，但數量／金額由相容性 view（MBV_MBEW）自 MATDOC 與物料分類帳（CKMLCR 等）計算；報表建議改用 CDS（如 I_MaterialStock 系列）</td></tr>
+      <tr><td>MVER</td><td>物料耗用</td><td>MATNR、WERKS、GJAHR、PERKZ、ZAHLR</td><td>保留</td></tr>
+      <tr><td>MKPF</td><td>物料文件表頭</td><td>MBLNR、MJAHR</td><td>併入 <b>MATDOC</b>；MKPF 名稱為相容性 view（NSDM_E_MKPF）</td></tr>
+      <tr><td>MSEG</td><td>物料文件明細</td><td>MBLNR、MJAHR、ZEILE</td><td>併入 <b>MATDOC</b>；相容性 view（NSDM_E_MSEG）</td></tr>
+      <tr><td>EBAN</td><td>請購單</td><td>BANFN、BNFPO</td><td>保留</td></tr>
+      <tr><td>EBKN</td><td>請購單科目指派</td><td>BANFN、BNFPO、ZEBKN</td><td>保留</td></tr>
+      <tr><td>EKKO</td><td>採購文件表頭</td><td>EBELN</td><td>保留</td></tr>
+      <tr><td>EKPO</td><td>採購文件項目</td><td>EBELN、EBELP</td><td>保留</td></tr>
+      <tr><td>EKET</td><td>交貨排程</td><td>EBELN、EBELP、ETENR</td><td>保留</td></tr>
+      <tr><td>EKKN</td><td>採購文件科目指派</td><td>EBELN、EBELP、ZEKKN</td><td>保留</td></tr>
+      <tr><td>EKBE</td><td>採購文件歷史</td><td>EBELN、EBELP、ZEKKN、VGABE、GJAHR、BELNR、BUZEI（原圖以 MJAHR／MBLNR／ZEILE 標示「物料文件年度／號碼／項次」，EKBE 的實際欄位名是 GJAHR／BELNR／BUZEI）</td><td>保留</td></tr>
+      <tr><td>EINA</td><td>採購資訊記錄（一般）</td><td>INFNR</td><td>保留</td></tr>
+      <tr><td>EINE</td><td>採購資訊記錄（採購組織）</td><td>INFNR、EKORG、ESOKZ、WERKS（原圖誤植為 WEKS）</td><td>保留</td></tr>
+      <tr><td>EORD</td><td>貨源清單</td><td>MATNR、WERKS、ZEORD</td><td>保留</td></tr>
+      <tr><td>A017</td><td>條件表：物料資訊記錄（工廠別）</td><td>KAPPL、KSCHL、LIFNR、MATNR、EKORG、WERKS、ESOKZ、DATBI</td><td>保留（ECC 為 pool 表，S/4 已轉透明表）</td></tr>
+      <tr><td>KONH</td><td>條件表頭</td><td>KNUMH</td><td>保留</td></tr>
+      <tr><td>KONP</td><td>條件項目</td><td>KNUMH、KOPOS</td><td>保留</td></tr>
+      <tr><td>KNMT</td><td>客戶物料資訊記錄</td><td>VKORG、VTWEG、KUNNR、MATNR</td><td>保留</td></tr>
+      <tr><td>MDKP</td><td>MRP 清單表頭</td><td>DTNUM</td><td>保留（MDKP-DTNUM = MDTB-DTNUM）</td></tr>
+      <tr><td>MDTB</td><td>MRP 清單明細</td><td>DTNUM、DELNR…</td><td>保留；S/4 的 MRP Live 為即時計算，分析建議看 MD04 或 CDS</td></tr>
+      <tr><td>S011</td><td>PURCHIS：採購群組統計</td><td>SSOUR、VRSIO、SPMON、SPTAG、SPWOC、SPBUP、EKORG、EKGRP、LIFNR</td><td>LIS 資訊結構；S/4 不建議新用，改用內嵌分析（CDS）</td></tr>
+      <tr><td>S012</td><td>PURCHIS：採購統計</td><td>同 S011 ＋ MATNR、WERKS、ESOKZ、MATKL、INFNR、LAND1</td><td>同上</td></tr>
+      <tr><td>S013</td><td>PURCHIS：供應商評估統計</td><td>同 S011 ＋ MATNR、WERKS、ESOKZ、INFNR</td><td>同上</td></tr>
+      <tr><td>S031</td><td>庫存異動統計</td><td>SSOUR、VRSIO、SPMON、SPTAG、SPWOC、SPBUP、WERKS、MATNR、LGORT</td><td>同上</td></tr>
+      <tr><td>STXH</td><td>SAPscript 文字表頭</td><td>TDOBJECT、TDNAME、TDID、TDSPRAS</td><td>保留（讀文字用 READ_TEXT，見第 4 節）</td></tr>
+      <tr><td>STXL</td><td>SAPscript 文字行</td><td>RELID、TDOBJECT、TDNAME、TDID、TDSPRAS、SRTF2</td><td>保留</td></tr>
+      <tr><td>T179</td><td>產品階層</td><td>PRODH</td><td>保留（取各階層說明）</td></tr>
+      <tr><td>PROJ</td><td>專案定義</td><td>PSPNR（外碼 PSPID）</td><td>保留</td></tr>
+      <tr><td>PRPS</td><td>WBS 元素主檔</td><td>PSPNR（所屬專案 PSPHI，外碼 POSID）</td><td>保留</td></tr>
+      <tr><td>PRHIS</td><td>WBS 階層指標</td><td>POSNR、PSPHI</td><td>保留</td></tr>
+      <tr><td>PRTE</td><td>WBS 排程資料</td><td>POSNR、PSPHI</td><td>保留</td></tr>
+      <tr><td>PRTX</td><td>PS 文字（WBS）</td><td>PRPSPNR、PRTXTKY</td><td>保留</td></tr>
+      <tr><td>PSTX</td><td>PS 文字表頭</td><td>PRTXTKY（說明 PSTXTTI）</td><td>保留</td></tr>
+      <tr><td>PSTT</td><td>PS 文字說明</td><td>PRTXTKY（內容 PTKTEXT）</td><td>保留</td></tr>
+    </tbody>
+  </table>
+  <div class="note">原清單把 PS 放在「SAP PP - Project Planning」下，實際是 PS（專案系統）模組。專案與 WBS 號碼的網域帶轉換常式：資料庫存 8 位數 NUMC 內碼，畫面顯示 24 碼外碼——SELECT 時用內碼 PSPNR 連結，給使用者看的用 PSPID／POSID。</div>
+
+  <h3 id="ch06-10-17">17. 常用資料表清單（四）：SD 銷售、出貨、請款</h3>
+  <table>
+    <thead><tr><th>表名</th><th>說明</th><th>主鍵</th><th>S/4HANA 狀態</th></tr></thead>
+    <tbody>
+      <tr><td>VBAK</td><td>銷售單據表頭</td><td>VBELN</td><td>保留；原 VBUK 的表頭狀態欄位（GBSTK、LFSTK、FKSTK…）已併入</td></tr>
+      <tr><td>VBAP</td><td>銷售單據項目</td><td>VBELN、POSNR</td><td>保留；原 VBUP 的項目狀態欄位已併入</td></tr>
+      <tr><td>VBEP</td><td>銷售單據排程行</td><td>VBELN、POSNR、ETENR</td><td>保留</td></tr>
+      <tr><td>VBEH</td><td>排程行歷史</td><td>VBELN、POSNR、ETENR</td><td>保留</td></tr>
+      <tr><td>VBKD</td><td>銷售單據商業資料</td><td>VBELN、POSNR（表頭層 POSNR = 000000）</td><td>保留</td></tr>
+      <tr><td>VBPA</td><td>銷售單據夥伴</td><td>VBELN、POSNR、PARVW</td><td>保留</td></tr>
+      <tr><td>VBUK</td><td>表頭狀態</td><td>VBELN</td><td><b>欄位併入 VBAK／LIKP／VBRK</b>；VBUK 名稱為相容性 view，新程式直接讀單據表頭</td></tr>
+      <tr><td>VBUP</td><td>項目狀態</td><td>VBELN、POSNR</td><td><b>欄位併入 VBAP／LIPS</b>；相容性 view</td></tr>
+      <tr><td>VBFA</td><td>銷售單據流程</td><td>VBELV、POSNV、VBELN、POSNN、VBTYP_N</td><td>保留（結構有簡化，勿依賴舊版多層紀錄）</td></tr>
+      <tr><td>VBBE</td><td>銷售需求</td><td>VBELN…（VBBE-VBELN = VBAK-VBELN）</td><td>保留</td></tr>
+      <tr><td>VBLB</td><td>下達訂單資料</td><td>VBELN…（VBLB-VBELN = VBAK-VBELN）</td><td>保留</td></tr>
+      <tr><td>KONV</td><td>單據定價條件</td><td>KNUMV、KPOSN、STUNR、ZAEHK</td><td><b>改為 PRCD_ELEMENTS</b>；KONV 不再寫入，請改讀 PRCD_ELEMENTS 或 CDS</td></tr>
+      <tr><td>VAPMA</td><td>SD 索引：依物料的訂單項目</td><td>MATNR、VKORG、TRVOG、AUDAT、VTWEG、SPART、AUART、KUNNR、VKBUR、VKGRP、BSTNK、ERNAM、VBELN、POSNR</td><td>SD 索引表在 S/4 已淘汰，改直接查單據表（有 HANA 不需索引表）</td></tr>
+      <tr><td>VAKPA</td><td>SD 索引：依夥伴功能的訂單</td><td>KUNDE、PARVW、VKORG、TRVOG、AUDAT、VKBUR、VKGRP、VTWEG、SPART、AUART、BSTNK、KUNNR、ERNAM、VBELN</td><td>同上</td></tr>
+      <tr><td>VKDFS</td><td>SD 索引：請款啟動</td><td>FKTYP、VKORG、FKDAT、KUNNR、FKART、LLAND、VBELN</td><td>保留（請款到期清單 VF04 使用）</td></tr>
+      <tr><td>VBSK</td><td>集中處理表頭</td><td>SAMMG</td><td>保留</td></tr>
+      <tr><td>VBSS</td><td>集中處理：銷售單據</td><td>SAMMG、VBELN</td><td>保留</td></tr>
+      <tr><td>NAST</td><td>訊息（輸出）狀態（原圖在請款頁誤標為「Billing: Header Data」）</td><td>KAPPL、OBJKY、KSCHL、SPRAS、PARNR、PARVW、ERDAT、ERUHR</td><td>保留；若啟用 S/4 新輸出管理，輸出紀錄改在 APOC_* 表</td></tr>
+      <tr><td>LIKP</td><td>交貨單表頭</td><td>VBELN</td><td>保留；含原 VBUK 的交貨狀態欄位</td></tr>
+      <tr><td>LIPS</td><td>交貨單項目</td><td>VBELN、POSNR</td><td>保留；含原 VBUP 的狀態欄位</td></tr>
+      <tr><td>VBLK</td><td>SD 交貨通知表頭</td><td>VBELN</td><td>保留</td></tr>
+      <tr><td>VEKP</td><td>處理單位（HU）表頭</td><td>VENUM</td><td>保留</td></tr>
+      <tr><td>VEPO</td><td>處理單位項目</td><td>VENUM、VEPOS（另帶 VBELN、POSNR 連交貨單）</td><td>保留</td></tr>
+      <tr><td>VTTK</td><td>運送單表頭</td><td>TKNUM</td><td>保留</td></tr>
+      <tr><td>VTTP</td><td>運送單項目</td><td>TKNUM、TPNUM（VBELN 連交貨單）</td><td>保留</td></tr>
+      <tr><td>VTFA</td><td>運送單文件流程</td><td>TKNUM、VBELV…</td><td>保留</td></tr>
+      <tr><td>VBRK</td><td>請款單表頭</td><td>VBELN</td><td>保留；含原 VBUK 的請款狀態</td></tr>
+      <tr><td>VBRP</td><td>請款單項目</td><td>VBELN、POSNR</td><td>保留</td></tr>
+      <tr><td>VRPMA</td><td>SD 索引：依物料的請款項目</td><td>MATNR、VKORG、FKDAT、VTWEG、FKART、KUNRG、KUNAG、VBTYP、ERNAM、VBELN、POSNR</td><td>淘汰（同 VAPMA）</td></tr>
+      <tr><td>VRKPA</td><td>SD 索引：依夥伴功能的請款單</td><td>KUNDE、PARVW、VKORG、FKDAT、VTWEG、FKART、KUNRG、KUNAG、VBTYP、ERNAM、VBELN</td><td>淘汰（同 VAPMA）</td></tr>
+    </tbody>
+  </table>
+  <div class="note">原圖在 VRPMA／VRKPA 把「付款人」與「售達方」都標成 KUNNR；請款索引上兩者實際欄位是 <b>KUNRG</b>（付款人）與 <b>KUNAG</b>（售達方）。</div>
+
+  <h3 id="ch06-10-18">18. 表間連結速查與示範 JOIN</h3>
+  <table>
+    <thead><tr><th>從</th><th>到</th><th>連結條件</th></tr></thead>
+    <tbody>
+      <tr><td>VBAK</td><td>VBAP</td><td>VBAP-VBELN = VBAK-VBELN</td></tr>
+      <tr><td>VBAP</td><td>VBEP</td><td>VBEP-VBELN = VBAP-VBELN AND VBEP-POSNR = VBAP-POSNR</td></tr>
+      <tr><td>VBAP</td><td>VBKD</td><td>VBKD-VBELN = VBAP-VBELN AND VBKD-POSNR = VBAP-POSNR（項目無資料時取 POSNR = 000000 的表頭層）</td></tr>
+      <tr><td>VBAK／VBAP</td><td>VBPA</td><td>VBPA-VBELN = VBAK-VBELN（項目夥伴再加 VBPA-POSNR = VBAP-POSNR）</td></tr>
+      <tr><td>VBAP</td><td>LIPS（訂單 → 出貨）</td><td>LIPS-VGBEL = VBAP-VBELN AND LIPS-VGPOS = VBAP-POSNR</td></tr>
+      <tr><td>LIKP</td><td>LIPS</td><td>LIPS-VBELN = LIKP-VBELN</td></tr>
+      <tr><td>LIPS</td><td>VBRP（出貨 → 請款）</td><td>VBRP-VGBEL = LIPS-VBELN AND VBRP-VGPOS = LIPS-POSNR</td></tr>
+      <tr><td>VBRK</td><td>VBRP</td><td>VBRP-VBELN = VBRK-VBELN</td></tr>
+      <tr><td>VBRK（或 VBAK）</td><td>KONV → S/4：PRCD_ELEMENTS</td><td>KNUMV = VBRK-KNUMV</td></tr>
+      <tr><td>LIKP</td><td>VTTP → VTTK</td><td>VTTP-VBELN = LIKP-VBELN；VTTK-TKNUM = VTTP-TKNUM</td></tr>
+      <tr><td>LIPS</td><td>VEPO → VEKP</td><td>VEPO-VBELN = LIPS-VBELN AND VEPO-POSNR = LIPS-POSNR；VEKP-VENUM = VEPO-VENUM</td></tr>
+      <tr><td>任一 SD 單據</td><td>VBFA</td><td>VBELV／POSNV＝前手單據，VBELN／POSNN＝後手單據，VBTYP_N＝後手類別</td></tr>
+      <tr><td>EKKO</td><td>EKPO</td><td>EKPO-EBELN = EKKO-EBELN</td></tr>
+      <tr><td>MAKT</td><td>KNMT</td><td>MAKT-MATNR = KNMT-MATNR AND MAKT-SPRAS = sy-langu</td></tr>
+      <tr><td>MDKP</td><td>MDTB</td><td>MDTB-DTNUM = MDKP-DTNUM</td></tr>
+      <tr><td>PROJ</td><td>PRPS</td><td>PRPS-PSPHI = PROJ-PSPNR</td></tr>
+      <tr><td>PRPS</td><td>PRTE／PRHIS</td><td>PRTE-POSNR = PRPS-PSPNR AND PRTE-PSPHI = PRPS-PSPHI（PRHIS 同）</td></tr>
+      <tr><td>PRTE</td><td>PRTX → PSTX → PSTT</td><td>PRTX-PRPSPNR = PRTE-POSNR；PSTX-PRTXTKY = PRTX-PRTXTKY；PSTT-PRTXTKY = PSTX-PRTXTKY</td></tr>
+    </tbody>
+  </table>
+  <p>把「訂單 → 出貨 → 請款」一次串起來，並示範 S/4 直接讀 VBAK 的狀態欄位（不再 JOIN VBUK）：</p>
+  <pre><code class="abap">DATA gv_vbeln TYPE vbak-vbeln.
+SELECT-OPTIONS s_vbeln FOR gv_vbeln NO INTERVALS OBLIGATORY.   " 列舉訂單號，不用區間
+
+START-OF-SELECTION.
+  " 訂單 → 出貨（LIPS-VGBEL/VGPOS）→ 請款（VBRP-VGBEL/VGPOS）
+  SELECT a~vbeln  AS order_no,
+         a~posnr  AS order_item,
+         a~matnr,
+         a~kwmeng,
+         k~gbstk,                              " S/4：整體狀態在 VBAK（ECC 在 VBUK）
+         l~vbeln  AS delivery,
+         l~posnr  AS delivery_item,
+         l~lfimg,
+         r~vbeln  AS billing,
+         r~posnr  AS billing_item,
+         r~fkimg,
+         r~netwr
+    FROM vbak AS k
+    INNER JOIN vbap AS a
+      ON a~vbeln = k~vbeln
+    LEFT OUTER JOIN lips AS l
+      ON  l~vgbel = a~vbeln
+      AND l~vgpos = a~posnr
+    LEFT OUTER JOIN vbrp AS r
+      ON  r~vgbel = l~vbeln
+      AND r~vgpos = l~posnr
+    WHERE k~vbeln IN @s_vbeln
+    ORDER BY a~vbeln, a~posnr, l~vbeln, l~posnr, r~vbeln, r~posnr
+    INTO TABLE @DATA(lt_flow).
+
+  " 還沒請款的出貨項目（VALUE # 要從左邊推型別，所以先宣告目標）
+  DATA lt_open LIKE lt_flow.
+  lt_open = VALUE #( FOR f IN lt_flow WHERE ( delivery IS NOT INITIAL AND billing IS INITIAL ) ( f ) ).
+
+  TRY.
+      cl_salv_table=&gt;factory( IMPORTING r_salv_table = DATA(lo_alv)
+                              CHANGING  t_table      = lt_flow ).
+      lo_alv-&gt;get_columns( )-&gt;set_optimize( ).
+      lo_alv-&gt;get_display_settings( )-&gt;set_list_header( |未請款出貨項目：{ lines( lt_open ) } 筆| ).
+      lo_alv-&gt;display( ).
+    CATCH cx_salv_msg INTO DATA(lx_salv).
+      MESSAGE lx_salv TYPE 'I' DISPLAY LIKE 'E'.
+  ENDTRY.</code></pre>
+  <div class="note"><span class="kw">VALUE #( FOR … )</span> 的 <span class="kw">#</span> 會從左邊推型別，左邊若是內嵌宣告 <span class="kw">DATA( )</span> 就無從推導、編譯失敗，所以上例先 <span class="kw">DATA lt_open LIKE lt_flow.</span> 再賦值。</div>
+  <div class="warn">訂單相關請款（不經出貨，例如服務、預付款）時 VBRP-VGBEL 直接指向訂單，上面的 JOIN 會漏掉；要涵蓋所有情境請改以 <b>VBFA</b> 追前後手，或用 CDS（如 <span class="kw">I_SalesDocumentItem</span>、<span class="kw">I_BillingDocumentItem</span> 的關聯）。</div>
+
+  <h3 id="ch06-10-19">19. 實務心法：找對表之後的三件事</h3>
+  <ol>
+    <li><b>先找標準，再想客製。</b>找到表只是起點。確認需求是否已有標準報表（技巧 4）、released CDS view 或 BAPI 可用；要在交易上加欄位或加檢查，接著照 <a href="#ch06-2">第 6-2 章</a> 找 BAdI／Enhancement Spot，而不是直接改標準程式。每往「修改標準」多走一步，升級成本就高一個量級。</li>
+    <li><b>HANA 沒有預設排序。</b>本章每一段 SELECT 都寫了 ORDER BY：DD03L 不排序時欄位順序會亂；訂單流程不排序時「第一筆出貨」每次不同。Casper 在成本評價案遇過同一個坑——item category H 與 cost component E 兩種角度同時存在，沒排序就一下抓到 H、一下抓到 E，結果不穩定，最後固定抓 H（見 <a href="#ch06-3-16">6-3 章第 16 節</a>）。</li>
+    <li><b>條件用列舉，不用區間。</b>找表程式的欄位名、訂單號都用 <span class="kw">NO INTERVALS</span>。欄位名、單據號做 BT 比的是字典序，不是業務意義；遇到號碼段不連續、ALPHA 前導零（訂單號內碼是 10 碼補零）就會漏抓或多抓。</li>
+  </ol>
+  <div class="tip">找表口訣：<b>F1 看技術資訊 → 結構就開 ST05 → 改一個值看 UPDATE → 找到表再找 CDS</b>。另外要記住 S/4 的「四大搬家」：MKPF／MSEG → MATDOC；BSEG 等索引與總計 → ACDOCA；KONV → PRCD_ELEMENTS；VBUK／VBUP → 單據表頭／項目；客戶／供應商主檔 → BP（BUT000）。</div>
+
+  <h3 id="ch06-10-qa">練習與自我檢核</h3>
+  <ol>
+    <li>在 VA03 的項目畫面對「訂單數量」按 F1 → F9，技術資訊顯示的是表、視圖還是結構？用技巧 5（觀察點）或技巧 16（ST05）找出真正存資料的表與欄位。</li>
+    <li>說明值表（Value Table）與檢查表（Check Table）的差別，各在 SE11 的哪個頁籤定義。</li>
+    <li>用第 10 節的 ZTABLEFIND 同時輸入 EBELN、EBELP、MATNR，列出含這三個欄位的透明表，挑三張說明用途。</li>
+    <li>用第 8 節的 CDHDR／CDPOS 程式：在測試機修改一張採購單的交貨日期後執行，找出被變更的表與欄位名。</li>
+    <li>比較 DDIF_FIELDINFO_GET 與 CL_ABAP_STRUCTDESCR 各自適用的場景；RTTS 在什麼情況下拿不到 DDIC 欄位清單？</li>
+    <li>一支 ECC 報表讀了 MSEG、BSIS、KONV、VBUK、KNA1，搬到 S/4HANA 1809 時各自該怎麼處理？哪些還能跑但應該改寫，哪些改為讀新表？</li>
+    <li>第 18 節的 JOIN 在什麼業務情境下會漏資料？改用 VBFA 或 CDS 各有什麼優缺點？</li>
+    <li>為什麼找表程式的欄位名選擇條件要用 NO INTERVALS？請以 ALPHA 前導零或字典序舉一個「BT 會多抓或漏抓」的例子。</li>
+  </ol>
+</section>

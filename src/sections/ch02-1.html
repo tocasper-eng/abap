@@ -667,7 +667,7 @@ START-OF-SELECTION.
       <tr><td>WEEK_GET_FIRST_DAY</td><td>取某週的第一天</td><td>week → date</td></tr>
       <tr><td>DAY_IN_WEEK</td><td>該天是星期幾（1=一 … 7=日）</td><td>datum → wotnr</td></tr>
       <tr><td>GET_WEEK_INFO_BASED_ON_DATE</td><td>該年週數＋該週週一／週日日期（週起始＝週一）</td><td>date → week, monday, sunday</td></tr>
-      <tr><td>HR_GBSSP_GET_WEEK_DATES</td><td>同上但週起始＝週日，另回傳星期幾</td><td>iv_date → ev_week, ev_start_date, ev_end_date</td></tr>
+      <tr><td>HR_GBSSP_GET_WEEK_DATES</td><td>同上但週起始＝週日，另回傳星期幾</td><td>p_pdate → p_sunday, p_saturday, p_day_in_week, p_week_no（詳見 <a href="#ch06-9">6-9 章</a>）</td></tr>
       <tr><td>HOLIDAY_CHECK_AND_GET_INFO</td><td>判斷某天是否假日</td><td>date, holiday_calendar_id → holiday_found</td></tr>
       <tr><td>DAY_ATTRIBUTES_GET</td><td>日期屬性批次查（星期幾、第幾天、是否公共假期）</td><td>date_from, date_to, factory_calendar, holiday_calendar → TABLES day_attributes</td></tr>
       <tr><td>DATE_CONVERT_TO_FACTORYDATE</td><td>日期 → 工廠日曆序號（算工作天）</td><td>date, factory_calendar_id → factorydate, workingday_indicator</td></tr>
@@ -676,7 +676,7 @@ START-OF-SELECTION.
       <tr><td>CONVERT_DATE_TO_EXTERNAL</td><td>內部 YYYYMMDD → 使用者格式字串</td><td>date_internal → date_external</td></tr>
       <tr><td>HR_99S_INTERVAL_BETWEEN_DATES</td><td>兩日期間的天／週／月／年數，含各月起訖日</td><td>begda, endda → 多個輸出</td></tr>
       <tr><td>FIMA_DAYS_AND_MONTHS_AND_YEARS</td><td>兩日期間的天數／月數／年數</td><td>i_date_from, i_date_to → e_days, e_months, e_years</td></tr>
-      <tr><td>FIMA_DATE_COMPARE</td><td>比較兩日期，回傳 GT / EQ / LT</td><td>i_date_1, i_date_2 → e_result</td></tr>
+      <tr><td>FIMA_DATE_COMPARE</td><td>比較兩日期，回傳 GT / EQ / LT</td><td>i_date, i_time, i_comp_date, i_comp_time 等 → e_log_op（詳見 <a href="#ch06-9">6-9 章</a>）</td></tr>
       <tr><td>SD_DATETIME_DIFFERENCE</td><td>兩個「日期＋時間」相減</td><td>date1,time1,date2,time2 → datediff, timediff</td></tr>
       <tr><td>HRVE_CONVERT_TIME</td><td>12 小時制 ↔ 24 小時制</td><td>type, input_time → output_time</td></tr>
       <tr><td>MONTH_NAMES_GET</td><td>取所有月份名稱（依語言）</td><td>language → TABLES month_names</td></tr>
