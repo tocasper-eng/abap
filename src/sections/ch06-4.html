@@ -1,0 +1,1007 @@
+<section class="chapter" id="ch06-4" data-title="開發規範與系統移轉">
+  <h2>第 6-4 章 開發規範與系統移轉</h2>
+  <p class="lede">程式寫得出來只是一半，另一半是「讓別人找得到、看得懂、搬得上線」。本章把某製造業客戶專案實際使用的<b>客戶命名規則範本</b>完整保留（Module ID、Spec ID、程式／TCODE／字典物件／函數群組／Package／變數／Message class 及附錄代碼表），再依截圖整理 <span class="tcode">SE10</span> 釋放與 <span class="tcode">STMS</span> 匯入的實際操作、用 <span class="tcode">SE11</span> 字典資訊匯出欄位規格書的工具程式，以及 <span class="tcode">SCAL</span> 工廠日曆的查詢與程式讀取方式。基礎觀念（Z／Y 命名空間、Package、Request 結構）在 <a href="#ch01-1">1-1 章</a>，本章只補實務。</p>
+  <div class="meta">
+    <div><b>核心 TCODE</b><span class="tcode">SE10</span><span class="tcode">SE09</span><span class="tcode">SE01</span><span class="tcode">SE03</span><span class="tcode">STMS</span><span class="tcode">SE11</span><span class="tcode">SE37</span><span class="tcode">SE80</span><span class="tcode">SE93</span><span class="tcode">SE91</span><span class="tcode">SE21</span><span class="tcode">SCAL</span><span class="tcode">OX10</span></div>
+    <div><b>關鍵物件</b>TADIR、E070、E071、E07T、DD03L、DD03T、DD04T、DFIES、DDIF_FIELDINFO_GET、CL_ABAP_STRUCTDESCR、CL_GUI_FRONTEND_SERVICES、T001W-FABKL、TFACD、TFACS、THOC、THOL、DATE_CONVERT_TO_FACTORYDATE、FACTORYDATE_CONVERT_TO_DATE</div>
+  </div>
+
+  <h3 id="ch06-4-01">1. 素材對照</h3>
+  <p>本章取材自 <span class="tcode">09_ABAP二次開發_report_painter\15_實務案例\</span> 的五份 docx 與一支錄影檔。素材來自真實客戶，公司名、系統主機、IP、傳輸請求擁有者帳號一律不引用；原檔名中含客戶名稱者以〈客戶〉表示。</p>
+  <table>
+    <thead><tr><th>本章小節</th><th>原始文件</th><th>素材性質</th><th>處理方式</th></tr></thead>
+    <tbody>
+      <tr><td>2～6 命名規則</td><td>ABAP_06_1_〈客戶〉_NamingRule.docx</td><td>英文規範文件，約 10 KB 文字＋2 張工具列圖表（Application／Standard Toolbar）</td><td>所有表格完整保留並翻成中文說明；規範本身的矛盾處加註修正；變數範例改寫為現代 ABAP</td></tr>
+      <tr><td>7～8 SE10 釋放、STMS 匯入</td><td>ABAP_06_A_ABAP_發佈_SE10_STMS.docx</td><td>9 張截圖，無文字</td><td>逐張看圖整理成操作步驟 <span class="src">（依講義步驟整理）</span></td></tr>
+      <tr><td>7～8（同上）</td><td>ABAP_06_A_SE10.docx</td><td>9 張截圖，與上一份<b>逐張完全相同</b>（檔案雜湊一致）</td><td>併入上一份</td></tr>
+      <tr><td>7～8（同上）</td><td>ABAP_06_A_ABAＰ的發佈.avi</td><td>操作錄影</td><td>無法轉錄，僅註記「另有錄影檔」</td></tr>
+      <tr><td>9 用程式查傳輸</td><td>（無原講義，依 SAP 標準補寫）</td><td>—</td><td>E070／E071／E07T／TADIR 查詢範例</td></tr>
+      <tr><td>10 SE11 匯出資料字典</td><td>ABAP_06_8_SE11_導出ZTPP0001資料字典.docx</td><td>ZTPP0001 欄位清單、舊式工具程式原始碼、2 張執行截圖</td><td>欄位清單保留；程式改寫為三種現代寫法</td></tr>
+      <tr><td>11 SCAL 工廠日曆</td><td>ABAP_06_D_SCAL設定廠曆.docx</td><td>3 行文字＋5 張截圖（講義自承「如何設定，忘了，操作沒有錄影」）</td><td>依截圖整理查詢步驟；設定步驟依 SAP 標準補寫；加上程式讀取範例</td></tr>
+    </tbody>
+  </table>
+  <div class="note">和既有章節的分工：Z／Y 命名空間與程式四步驟見 <a href="#ch01-1-03">1-1 章第 3 節</a>；Package 與 SE21 見 <a href="#ch01-1-14">1-1 章第 14 節</a>；Request／Task 結構、傳輸三大鐵律與「查物件在哪個請求」的基本 SQL 見 <a href="#ch01-1-15">1-1 章第 15 節</a>；DD* 表與 RTTI 原理見 <a href="#ch01-2-14">1-2 章第 14 節</a>；工作天計算基本寫法見 <a href="#ch02-1-08">2-1 章第 8 節</a>。</div>
+
+  <h3 id="ch06-4-02">2. 客戶命名規則範本（一）：Module ID 與 Spec ID</h3>
+  <p>命名規則的價值不在「好看」，而在三件事：<b>看名字就知道模組與用途</b>、<b>規格書與程式一對一可追溯</b>、<b>用 TADIR 一個 LIKE 就能撈出某模組全部物件</b>。範本開宗明義註明：本規範<b>不含進出口／保稅（Import / Export / Bonded）與 GUI 系統</b>。整份規範的基礎是 Module ID：</p>
+  <h4>2.1 Module ID</h4>
+  <table>
+    <thead><tr><th>Module (sub-module)</th><th>Description</th></tr></thead>
+    <tbody>
+      <tr><td>CA</td><td>Cross Application（跨模組共用）</td></tr>
+      <tr><td>CO</td><td>Controlling</td></tr>
+      <tr><td>MM</td><td>Material Management</td></tr>
+      <tr><td>PP</td><td>Production Plan</td></tr>
+      <tr><td>SD</td><td>Sales and Distribution</td></tr>
+      <tr><td>FI</td><td>Finance Accounting</td></tr>
+    </tbody>
+  </table>
+  <h4>2.2 Spec ID（規格編號）</h4>
+  <p>範例：<b>COR9001</b></p>
+  <table>
+    <thead><tr><th>位置</th><th>規則</th><th>範例值</th></tr></thead>
+    <tbody>
+      <tr><td>1-2</td><td>Module ID（參照 2.1）</td><td>CO</td></tr>
+      <tr><td>3</td><td>Program category（參照附錄 A.i）</td><td>R</td></tr>
+      <tr><td>4-7</td><td>流水號 0001-9999</td><td>9001</td></tr>
+    </tbody>
+  </table>
+  <h4>2.3 Functional Spec ID（功能規格書）</h4>
+  <table>
+    <thead><tr><th>位置</th><th>規則</th></tr></thead>
+    <tbody>
+      <tr><td>1-2</td><td>常數，必須是『FN』</td></tr>
+      <tr><td>3-10</td><td>接 Spec ID（參照 2.2），例：FNCOR9001</td></tr>
+    </tbody>
+  </table>
+  <h4>2.4 Technical Spec ID（技術規格書）</h4>
+  <p>範例：<b>TECOR90001</b>（原文示意格）</p>
+  <table>
+    <thead><tr><th>位置</th><th>規則</th></tr></thead>
+    <tbody>
+      <tr><td>1-2</td><td>常數，必須是『TE』</td></tr>
+      <tr><td>3-10</td><td>接 Spec ID（參照 2.2），例：TECOR9001</td></tr>
+    </tbody>
+  </table>
+  <div class="warn"><b>規範本身的矛盾：</b>Spec ID 只有 7 碼，但 FN／TE 規則寫「3-10 碼接 Spec ID」（8 碼）；原文 Technical Spec 示意格填成 <b>TECOR90001</b>（流水號多一個 0），Functional Spec 示意格畫了 13 格。實務上以「FN／TE ＋ 7 碼 Spec ID ＝ 9 碼」為準，例如 FNCOR9001、TECOR9001。自己制定規範時，<b>範例一定要用規則實際產生一次再貼上</b>，不要手畫格子。</div>
+
+  <h3 id="ch06-4-03">3. 客戶命名規則範本（二）：程式與交易代碼</h3>
+  <h4>3.1 Module pool program（對話程式主程式）</h4>
+  <p>範例：<b>SAPMZFI9001</b></p>
+  <table>
+    <thead><tr><th>位置</th><th>規則</th></tr></thead>
+    <tbody>
+      <tr><td>1-5</td><td>常數，必須是『SAPMZ』</td></tr>
+      <tr><td>6-7</td><td>Module ID（參照 2.1）</td></tr>
+      <tr><td>8-11</td><td>流水號 0001-9999</td></tr>
+    </tbody>
+  </table>
+  <h4>3.2 Report／Layout／Interface／Batch input／Smartforms／Data conversion</h4>
+  <p>範例：<b>ZCOR9001</b></p>
+  <table>
+    <thead><tr><th>位置</th><th>規則</th></tr></thead>
+    <tbody>
+      <tr><td>1</td><td>常數，必須是『Z』</td></tr>
+      <tr><td>2-3</td><td>Module ID（參照 2.1）</td></tr>
+      <tr><td>4</td><td>Program type（參照附錄 A.ii）</td></tr>
+      <tr><td>5-8</td><td>流水號 0001-9999</td></tr>
+    </tbody>
+  </table>
+  <h4>3.3 Module pool 的 Include 程式</h4>
+  <p>範例：<b>MZFI9001TOP</b></p>
+  <table>
+    <thead><tr><th>位置</th><th>規則</th></tr></thead>
+    <tbody>
+      <tr><td>1-2</td><td>常數，必須是『MZ』</td></tr>
+      <tr><td>3-4</td><td>Module ID（參照 2.1）</td></tr>
+      <tr><td>5-8</td><td>流水號 0001-9999（與主程式相同）</td></tr>
+      <tr><td>9-11</td><td>Program type（Standard type，參照附錄 A.iii：TOP／F01／O01／I01）</td></tr>
+    </tbody>
+  </table>
+  <h4>3.4 其他程式的 Include</h4>
+  <p>範例：<b>ZFI9…</b>，總長最多 20 碼。</p>
+  <table>
+    <thead><tr><th>位置</th><th>規則</th></tr></thead>
+    <tbody>
+      <tr><td>1</td><td>常數，必須是『Z』</td></tr>
+      <tr><td>2-3</td><td>Module ID（參照 2.1）</td></tr>
+      <tr><td>4</td><td>Program type（參照附錄 A.ii）</td></tr>
+      <tr><td>5-8</td><td>流水號 0001-9999</td></tr>
+      <tr><td>9-11</td><td>Program type（Standard type，參照附錄 A.iii）</td></tr>
+    </tbody>
+  </table>
+  <p>例如報表 ZMMB0001 的 Include 就是 ZMMB0001TOP、ZMMB0001F01（第 7 節截圖裡的傳輸請求內容正是這三支）。</p>
+  <h4>3.5 Smartform／Layout（SAPscript 表單名）</h4>
+  <p>總長最多 28 碼。</p>
+  <table>
+    <thead><tr><th>位置</th><th>規則</th></tr></thead>
+    <tbody>
+      <tr><td>1</td><td>常數，必須是『Z』</td></tr>
+      <tr><td>2-3</td><td>Module ID（參照 2.1）</td></tr>
+      <tr><td>4</td><td>Form type：『L』Layout set、『S』Smartforms、『T』Style</td></tr>
+      <tr><td>5-6</td><td>Transaction type（參照附錄 A.v，例 SO、DN、BI、PO）</td></tr>
+      <tr><td>7-9</td><td>流水號（原文寫 0001-9999）</td></tr>
+    </tbody>
+  </table>
+  <p>例：ZSDSBI001 ＝ SD 模組、Smartforms、發票（Billing）第 1 張。</p>
+  <h4>3.6 複製並修改 SAP 標準程式、Layout Set、Smartforms</h4>
+  <table>
+    <thead><tr><th>位置</th><th>規則</th></tr></thead>
+    <tbody>
+      <tr><td>1</td><td>常數，必須是『Z』</td></tr>
+      <tr><td>其餘</td><td>沿用 SAP 標準名稱（例：RM07MLBS → ZRM07MLBS）</td></tr>
+    </tbody>
+  </table>
+  <h4>3.7 User exit</h4>
+  <table>
+    <thead><tr><th>位置</th><th>規則</th></tr></thead>
+    <tbody>
+      <tr><td>1</td><td>常數，必須是『Z』</td></tr>
+      <tr><td>2-3</td><td>Module ID（參照 2.1）</td></tr>
+      <tr><td>4</td><td>常數，必須是『E』</td></tr>
+      <tr><td>5-8</td><td>流水號 0001-9999</td></tr>
+    </tbody>
+  </table>
+  <h4>3.8 交易代碼 Transaction Code</h4>
+  <p>範例：<b>ZFI9001</b></p>
+  <table>
+    <thead><tr><th>位置</th><th>規則</th></tr></thead>
+    <tbody>
+      <tr><td>1</td><td>常數，必須是『Z』</td></tr>
+      <tr><td>2-3</td><td>Module ID（參照 2.1）</td></tr>
+      <tr><td>4-6</td><td>Add-on 程式流水號 001-PZZ；Query 流水號 Q01-QZZ</td></tr>
+      <tr><td>7</td><td>同一支程式的分組字元，例如 I：Insert、M：Modify、D：Display</td></tr>
+    </tbody>
+  </table>
+  <div class="warn"><b>位數不一致要自己校正：</b>Smartform 的第 7-9 碼只有 3 位卻寫「0001-9999」，實際應為 001-999；TCODE 範例 ZFI9001 若第 4-6 碼是流水號、第 7 碼是分組字元，則 <b>9001</b> 的最後一個「1」會被誤讀成分組字元。建議改為 ZFI001D（顯示）、ZFI001M（修改）這種寫法。另外 TCODE 的流水號與程式流水號<b>不必相同</b>，一支程式可以掛多個 TCODE（見 <span class="tcode">SE93</span> 的參數交易），用第 7 碼區分就是這個目的。</div>
+
+  <h3 id="ch06-4-04">4. 客戶命名規則範本（三）：資料字典物件</h3>
+  <h4>4.1 範圍 Domain／4.2 資料元素 Data Element</h4>
+  <p>兩者規則相同，總長最多 10 碼。</p>
+  <table>
+    <thead><tr><th>情境</th><th>位置</th><th>規則</th></tr></thead>
+    <tbody>
+      <tr><td rowspan="2">(1) 複製並修改 SAP 標準</td><td>1</td><td>常數，必須是『Z』</td></tr>
+      <tr><td>其餘</td><td>沿用 SAP 標準名稱</td></tr>
+      <tr><td rowspan="4">(2) 其他自建</td><td>1</td><td>常數，必須是『Z』</td></tr>
+      <tr><td>2</td><td>Type：『C』Character、『I』Integer、『N』Number</td></tr>
+      <tr><td>3-4</td><td>長度</td></tr>
+      <tr><td>5-8</td><td>流水號 0001-9999</td></tr>
+    </tbody>
+  </table>
+  <p>例：ZC200001 ＝ 長度 20 的字元型第 1 號。</p>
+  <div class="tip">這種「用型別與長度命名」的做法讓 Domain 很好重用，但 Data Element 應該帶<b>業務語意</b>（欄位標籤、F1 說明都掛在 Data Element 上）。實務建議：Domain 照此規則，Data Element 改用「Z＋模組＋意義」（如 ZPP_SHORT_QTY），否則整張表的 F1 說明都會是「Character 20」。</div>
+  <h4>4.3 資料庫表格 Table</h4>
+  <p>總長最多 16 碼。原文示意格：<b>ZSDT9001</b>。</p>
+  <table>
+    <thead><tr><th>情境</th><th>位置</th><th>規則</th></tr></thead>
+    <tbody>
+      <tr><td rowspan="2">(1) 複製並修改 SAP 標準</td><td>1</td><td>常數，必須是『Z』</td></tr>
+      <tr><td>其餘</td><td>沿用 SAP 標準名稱</td></tr>
+      <tr><td rowspan="5">(2) 其他自建</td><td>1</td><td>常數，必須是『Z』</td></tr>
+      <tr><td>2-3</td><td>Module ID（參照 2.1）</td></tr>
+      <tr><td>4-7</td><td>主要意義：英文縮寫（最多 4 個字母）</td></tr>
+      <tr><td>8-9</td><td>Type（參照附錄 A.iv：HD／DE／MP／MA／NR）</td></tr>
+      <tr><td>10-13</td><td>流水號 0001-9999</td></tr>
+    </tbody>
+  </table>
+  <p>依規則正確的例子：ZSDQUOTHD0001（SD 報價表頭）、ZMMSTKMA0001（MM 庫存主資料）。</p>
+  <div class="warn"><b>規範與系統的落差：</b>原文示意格 ZSDT9001 本身並不符合「4-7 意義、8-9 Type、10-13 流水號」；而本章第 10 節匯出的實際客製表叫 <b>ZTPP0001</b>（Z＋T＋模組＋流水號），也不是依此規則命名。規範訂了卻沒人照做是常態，第 6 節的檢查程式就是為此而寫：<b>規範要能被程式檢查，才會被遵守</b>。</div>
+  <h4>4.4 欄位名稱 Table Field</h4>
+  <table>
+    <thead><tr><th>情境</th><th>規則</th></tr></thead>
+    <tbody>
+      <tr><td>(1) 複製並修改 SAP 標準</td><td>沿用 SAP 標準欄位名（最多 10 碼）</td></tr>
+      <tr><td>(2) 其他自建</td><td>1-4 碼：主要意義的英文縮寫（最多 4 個字母），總長最多 10 碼</td></tr>
+    </tbody>
+  </table>
+  <div class="note">欄位名長度：傳統透明表為 16 碼（原規範寫 10 碼是更早期的限制，且與 ZTPP0001 的 MNG01_STOCK_TTL 這種 15 碼欄位也不一致）。能用 SAP 標準欄位名就用（MATNR、WERKS、LGORT），JOIN 與 CORRESPONDING 都會省很多事。</div>
+  <h4>4.5 結構 Structure</h4>
+  <p>總長最多 16 碼，規則與 Table 相同。</p>
+  <table>
+    <thead><tr><th>情境</th><th>位置</th><th>規則</th></tr></thead>
+    <tbody>
+      <tr><td rowspan="2">(1) 複製並修改 SAP 標準</td><td>1</td><td>常數，必須是『Z』</td></tr>
+      <tr><td>其餘</td><td>沿用 SAP 標準名稱</td></tr>
+      <tr><td rowspan="5">(2) 其他自建</td><td>1</td><td>常數，必須是『Z』</td></tr>
+      <tr><td>2-3</td><td>Module ID（參照 2.1）</td></tr>
+      <tr><td>4-7</td><td>主要意義：英文縮寫（最多 4 個字母）</td></tr>
+      <tr><td>8-9</td><td>Type（參照附錄 A.iv）</td></tr>
+      <tr><td>10-13</td><td>流水號 0001-9999</td></tr>
+    </tbody>
+  </table>
+  <h4>4.6 檢視 View</h4>
+  <p>總長最多 16 碼，最後一碼固定『V』。</p>
+  <table>
+    <thead><tr><th>情境</th><th>位置</th><th>規則</th></tr></thead>
+    <tbody>
+      <tr><td rowspan="2">(1) 複製並修改 SAP 標準</td><td>1</td><td>常數，必須是『Z』</td></tr>
+      <tr><td>其餘</td><td>沿用 SAP 標準名稱</td></tr>
+      <tr><td rowspan="6">(2) 其他自建</td><td>1</td><td>常數，必須是『Z』</td></tr>
+      <tr><td>2-3</td><td>Module ID（參照 2.1）</td></tr>
+      <tr><td>4-7</td><td>主要意義：英文縮寫（最多 4 個字母）</td></tr>
+      <tr><td>8-9</td><td>Type（參照附錄 A.iv）</td></tr>
+      <tr><td>10-13</td><td>流水號 0001-9999</td></tr>
+      <tr><td>14</td><td>常數，必須是『V』</td></tr>
+    </tbody>
+  </table>
+  <div class="note">S/4HANA 新開發多半用 CDS View（<span class="kw">DEFINE VIEW ENTITY</span> 需 7.55／S/4HANA 2020 以上；1809 用 <span class="kw">DEFINE VIEW</span> 並另有 16 碼的 SQL View 名）。沿用本規則時，建議 CDS 名稱用 ZI_／ZC_ 前綴（SAP VDM 慣例），SQL View 名再套這條 14 碼＋V 的規則。</div>
+  <h4>4.7 加鎖物件 Lock Object</h4>
+  <table>
+    <thead><tr><th>位置</th><th>規則</th></tr></thead>
+    <tbody>
+      <tr><td>1-2</td><td>『EZ』（系統強制：客戶鎖物件必須以 EZ 或 EY 開頭）</td></tr>
+      <tr><td>3</td><td>必須是「_」（底線）</td></tr>
+      <tr><td>4-19</td><td>主表名稱</td></tr>
+    </tbody>
+  </table>
+  <p>例：EZ_ZTPP0001，啟用後系統自動產生 ENQUEUE_EZ_ZTPP0001／DEQUEUE_EZ_ZTPP0001 兩支函數（鎖的原理見 <a href="#ch05-11">5-11 章 BC414</a>）。</p>
+
+  <h3 id="ch06-4-05">5. 客戶命名規則範本（四）：Function key、Function Group、FM、Package</h3>
+  <h4>5.1 Function key（GUI Status 功能碼）</h4>
+  <p>原規範以兩張圖表統一 GUI Status 的圖示、文字與功能碼，讓所有客製畫面的按鈕行為一致。兩張表完整轉錄如下（Function Type 空白表示一般功能）：</p>
+  <table>
+    <thead><tr><th colspan="5">APPLICATION TOOLBAR（應用工具列）</th></tr>
+    <tr><th>Icon name</th><th>Icon text</th><th>Function Code</th><th>Function Type</th><th>Function Text</th></tr></thead>
+    <tbody>
+      <tr><td>ICON_DELETE</td><td>DELETE</td><td>DELE</td><td></td><td>DELETE</td></tr>
+      <tr><td>ICON_SELECT_ALL</td><td>SELECT ALL</td><td>SELA</td><td></td><td>SELECT ALL</td></tr>
+      <tr><td>ICON_DESELECT_ALL</td><td>DESELECT ALL</td><td>DSEL</td><td></td><td>DESELECT ALL</td></tr>
+      <tr><td>ICON_INSERT_MULTIPLE_LINES</td><td>INSERT</td><td>INS</td><td></td><td>INSERT</td></tr>
+      <tr><td>ICON_SORT_UP</td><td>SORT ASCENDING</td><td>ASDN</td><td></td><td>SORT ASCENDING</td></tr>
+      <tr><td>ICON_SORT_DOWN</td><td>SORT DESCENDING</td><td>DSCN</td><td></td><td>SORT DESCENDING</td></tr>
+      <tr><td>ICON_EXECUTE_OBJECT</td><td>Excute（原文拼字）</td><td>EXEC</td><td></td><td>Excute</td></tr>
+      <tr><td>ICON_SELECT_DETAIL</td><td>Double click</td><td>PICK</td><td></td><td>Double click</td></tr>
+      <tr><td>ICON_SYSTEM_COPY</td><td>Copy</td><td>COPY</td><td></td><td>Copy</td></tr>
+      <tr><td>ICON_EXPORT</td><td>Download File</td><td>DOWN</td><td></td><td>Download File</td></tr>
+    </tbody>
+  </table>
+  <table>
+    <thead><tr><th colspan="5">STANDARD TOOLBAR（標準工具列）</th></tr>
+    <tr><th>Icon name</th><th>Icon text</th><th>Function Code</th><th>Function Type</th><th>Function Text</th></tr></thead>
+    <tbody>
+      <tr><td>ICON_OKAY</td><td>ENTER</td><td>OKAY</td><td></td><td>ENTER</td></tr>
+      <tr><td>ICON_SYSTEM_SAVE</td><td>Save</td><td>SAVE</td><td></td><td>SAVE</td></tr>
+      <tr><td>（綠色返回箭頭，無圖示名）</td><td>BACK</td><td>BACK</td><td></td><td>BACK</td></tr>
+      <tr><td>（黃色離開圖示，無圖示名）</td><td>EXIT</td><td>EXIT</td><td>E</td><td>EXIT</td></tr>
+      <tr><td>ICON_CANCEL</td><td>CANL</td><td>CANL</td><td></td><td>CANL</td></tr>
+      <tr><td>ICON_SEARCH</td><td>Find</td><td>%SC</td><td></td><td>Find</td></tr>
+      <tr><td>ICON_FIRST_PAGE</td><td>First page</td><td>P--</td><td></td><td>First page</td></tr>
+      <tr><td>ICON_PREVIOUS_PAGE</td><td>Previous page</td><td>P-</td><td></td><td>Previous page</td></tr>
+      <tr><td>ICON_NEXT_PAGE</td><td>Next page</td><td>P+</td><td></td><td>Next page</td></tr>
+      <tr><td>ICON_LAST_PAGE</td><td>Last page</td><td>P++</td><td></td><td>Last page</td></tr>
+    </tbody>
+  </table>
+  <div class="tip">EXIT 的 Function Type「E」代表 <b>Exit Command</b>：按下時不做欄位檢查，直接進 <span class="kw">MODULE … AT EXIT-COMMAND</span>。規範只把 EXIT 設成 E，但實務上 CANL（取消）通常也要設成 E，否則必填欄位沒填時使用者連「取消」都按不掉。%SC、P--／P-／P+／P++ 是系統保留功能碼，對清單與 Table Control 有內建行為，不要挪作他用。Dynpro 與 GUI Status 詳見 <a href="#ch05-9">5-9 章 BC410</a>。</div>
+  <h4>5.2 Function Group</h4>
+  <p>範例：<b>ZSD…</b>（7 碼）</p>
+  <table>
+    <thead><tr><th>位置</th><th>規則</th></tr></thead>
+    <tbody>
+      <tr><td>1</td><td>常數，必須是『Z』</td></tr>
+      <tr><td>2-3</td><td>Module ID（參照 2.1）</td></tr>
+      <tr><td>4</td><td>Function type：『T』SM30 表格維護、『F』一般 Function、『M』Module pool</td></tr>
+      <tr><td>5-6</td><td>流水號（原文寫 001-999）</td></tr>
+    </tbody>
+  </table>
+  <p>例：ZSDT01 ＝ SD 的 SM30 維護檢視函數群組。原文示意格有 7 格，但 5-6 碼只容得下 01-99，若要 001-999 應定義為 5-7 碼。</p>
+  <h4>5.3 功能模組 Function Module</h4>
+  <p>總長最多 28 碼（系統實際上限 30）。</p>
+  <table>
+    <thead><tr><th>情境</th><th>位置</th><th>規則</th></tr></thead>
+    <tbody>
+      <tr><td rowspan="2">(1) 複製並修改 SAP 標準</td><td>1</td><td>常數，必須是『Z』</td></tr>
+      <tr><td>其餘</td><td>沿用 SAP 標準名稱</td></tr>
+      <tr><td rowspan="4">(2) 其他自建</td><td>1</td><td>常數，必須是『Z』</td></tr>
+      <tr><td>2-3</td><td>Module ID（參照 2.1）</td></tr>
+      <tr><td>4-5</td><td>Type（參照附錄 A.iv）</td></tr>
+      <tr><td>6-8</td><td>流水號（原文寫 0001-9999，3 碼實際為 001-999）</td></tr>
+    </tbody>
+  </table>
+  <p>例：ZCOMA001 ＝ CO 主資料類第 1 支 FM。</p>
+  <h4>5.4 開發類別 Development Class（Package）</h4>
+  <table>
+    <thead><tr><th>Development Class</th><th>Module</th></tr></thead>
+    <tbody>
+      <tr><td>ZCA01</td><td>Cross Application</td></tr>
+      <tr><td>ZCO01</td><td>Controlling</td></tr>
+      <tr><td>ZMM01</td><td>Material Management</td></tr>
+      <tr><td>ZPP01</td><td>Production Plan</td></tr>
+      <tr><td>ZSD01</td><td>Sales and Distribution</td></tr>
+      <tr><td>ZFI01</td><td>Finance Accounting</td></tr>
+    </tbody>
+  </table>
+  <div class="tip">一模組一 Package 最簡單，TADIR 以 DEVCLASS 一撈就是該模組全部物件。Package 決定傳輸層（Transport Layer）與傳輸路徑，<b>放錯 Package 等於走錯路</b>；放在 <span class="kw">$TMP</span> 的物件則根本傳不出去（見第 9 節檢查程式）。</div>
+
+  <h3 id="ch06-4-06">6. 客戶命名規則範本（五）：內表、變數、Message class、Search help、Area menu 與附錄</h3>
+  <h4>6.1 Internal Table</h4>
+  <table>
+    <thead><tr><th>位置</th><th>規則</th></tr></thead>
+    <tbody>
+      <tr><td>1</td><td>Global『I』、Local『L』</td></tr>
+      <tr><td>2</td><td>常數，必須是『T』</td></tr>
+      <tr><td>3</td><td>必須是「_」（底線）</td></tr>
+      <tr><td>4-10</td><td>自由定義</td></tr>
+    </tbody>
+  </table>
+  <p>例：IT_MARD（全域內表）、LT_MARD（區域內表）。</p>
+  <h4>6.2 程式變數 Program variable name</h4>
+  <table>
+    <thead><tr><th>第 1 碼</th><th>意義</th></tr></thead>
+    <tbody>
+      <tr><td>G</td><td>Global work field（全域工作欄位）</td></tr>
+      <tr><td>L</td><td>Local variable（區域變數）</td></tr>
+      <tr><td>S</td><td>Select-option</td></tr>
+      <tr><td>P</td><td>Parameter、Radiobutton、Checkbox、介面傳遞參數（Interface transit；原文拼成 Prarmeter）</td></tr>
+      <tr><td>R</td><td>Ranges</td></tr>
+      <tr><td>C</td><td>Constant field（常數）</td></tr>
+      <tr><td>W</td><td>Working area（工作區）</td></tr>
+      <tr><td>F</td><td>Flag（旗標）</td></tr>
+      <tr><td>I</td><td>Import（匯入參數）</td></tr>
+      <tr><td>E</td><td>Export（匯出參數）</td></tr>
+    </tbody>
+  </table>
+  <p>第 2 碼固定「_」，第 3-10 碼自由定義。下面用現代 ABAP 示範整套前綴（原規範沒有程式範例，本段依規則補寫）：</p>
+  <pre><code class="abap">REPORT zmmr0001.
+" 依客戶命名規則範本的變數前綴，語法為 S/4HANA 1809+（7.53）
+
+TYPES: BEGIN OF ty_stock,
+         matnr TYPE mard-matnr,
+         werks TYPE mard-werks,
+         lgort TYPE mard-lgort,
+         labst TYPE mard-labst,
+       END OF ty_stock,
+       tt_stock TYPE STANDARD TABLE OF ty_stock WITH EMPTY KEY.
+
+CONSTANTS c_max_rows TYPE i VALUE 5000.            " C_ 常數
+
+DATA it_stock TYPE tt_stock.                       " IT_ 全域內表
+DATA g_matnr  TYPE mard-matnr.                     " G_ 全域工作欄位（供 SELECT-OPTIONS 參照）
+DATA g_total  TYPE mard-labst.
+DATA r_lgort  TYPE RANGE OF mard-lgort.            " R_ Ranges
+DATA f_empty  TYPE abap_bool.                      " F_ 旗標
+
+PARAMETERS     p_werks TYPE mard-werks OBLIGATORY. " P_ 參數
+SELECT-OPTIONS s_matnr FOR g_matnr.                " S_ Select-option
+PARAMETERS     p_alv   AS CHECKBOX DEFAULT 'X'.    " P_ 也用於 Checkbox／Radiobutton
+
+CLASS lcl_calc DEFINITION FINAL.
+  PUBLIC SECTION.
+    CLASS-METHODS sum_stock
+      IMPORTING i_stock TYPE tt_stock                " I_ 匯入參數
+      EXPORTING e_total TYPE mard-labst.             " E_ 匯出參數
+ENDCLASS.
+
+CLASS lcl_calc IMPLEMENTATION.
+  METHOD sum_stock.
+    DATA lt_positive TYPE tt_stock.                  " LT_ 區域內表
+    lt_positive = VALUE #( FOR w_stock IN i_stock    " W_ 工作區
+                           WHERE ( labst &gt; 0 ) ( w_stock ) ).
+    e_total = REDUCE #( INIT l_sum = CONV mard-labst( 0 )   " L_ 區域變數
+                        FOR w_line IN lt_positive
+                        NEXT l_sum = l_sum + w_line-labst ).
+  ENDMETHOD.
+ENDCLASS.
+
+START-OF-SELECTION.
+  " Casper 經驗：條件用列舉（EQ）比區間（BT）安全
+  r_lgort = VALUE #( sign = 'I' option = 'EQ' ( low = '0001' ) ( low = '0002' ) ).
+
+  SELECT matnr, werks, lgort, labst
+    FROM mard
+    WHERE werks = @p_werks
+      AND matnr IN @s_matnr
+      AND lgort IN @r_lgort
+    ORDER BY matnr, lgort                            " HANA 沒有預設排序
+    INTO TABLE @it_stock
+    UP TO @c_max_rows ROWS.
+
+  f_empty = xsdbool( it_stock IS INITIAL ).
+  IF f_empty = abap_true.
+    MESSAGE |工廠 { p_werks } 查無庫存| TYPE 'S' DISPLAY LIKE 'W'.
+    RETURN.
+  ENDIF.
+
+  lcl_calc=&gt;sum_stock( EXPORTING i_stock = it_stock IMPORTING e_total = g_total ).
+  WRITE: / |工廠 { p_werks } 非限制庫存合計：{ g_total NUMBER = USER }|.</code></pre>
+  <div class="note">SAP 官方的 Clean ABAP 指引其實<b>不建議</b>匈牙利式前綴（型別由 IDE 顯示即可）。但在既有客戶系統中，「和現有程式一致」比「理論上更好」重要：接手維護時照該客戶規範寫，新專案則在啟動時就和客戶討論要不要沿用。無論選哪種，全案一致才是重點。</div>
+  <h4>6.3 Message class</h4>
+  <table>
+    <thead><tr><th>項目</th><th>位置</th><th>規則</th></tr></thead>
+    <tbody>
+      <tr><td rowspan="3">Message Id（範例 ZSD901）</td><td>1</td><td>『Z』（R/3 要求客戶命名空間）</td></tr>
+      <tr><td>2-3</td><td>Module ID（參照 2.1）</td></tr>
+      <tr><td>4-5</td><td>流水號（原文寫 001-999，範例 ZSD901 實際用了 4-6 三碼）</td></tr>
+      <tr><td>Message Number</td><td>1-3</td><td>自由定義，號碼區間 001 到 999</td></tr>
+    </tbody>
+  </table>
+  <h4>6.4 搜尋輔助說明 Search help／6.5 區域功能表 Area menu</h4>
+  <table>
+    <thead><tr><th>物件</th><th>位置</th><th>規則</th></tr></thead>
+    <tbody>
+      <tr><td rowspan="2">Search help</td><td>1</td><td>常數，必須是『Z』</td></tr>
+      <tr><td>2-</td><td>自由定義</td></tr>
+      <tr><td rowspan="2">Area menu</td><td>1</td><td>常數，必須是『Z』</td></tr>
+      <tr><td>2-10</td><td>自由定義</td></tr>
+    </tbody>
+  </table>
+  <h4>6.6 附錄 A：各 Type 代碼表</h4>
+  <table>
+    <thead><tr><th>A.i Program Category</th><th>A.ii Program Type</th><th>A.iii Program Type (Standard Type)</th><th>A.iv Data Dictionary Type</th><th>A.v Transaction Type</th></tr></thead>
+    <tbody>
+      <tr><td>『R』Report</td><td>『R』Report</td><td>『TOP』Declare variable（宣告）</td><td>『HD』Transaction header data（交易表頭）</td><td>『SO』Sales Order</td></tr>
+      <tr><td>『L』Layout set</td><td>『L』Layout set</td><td>『F01』Subroutine（副程式）</td><td>『DE』Transaction detail data（交易明細）</td><td>『DN』Delivery Note</td></tr>
+      <tr><td>『I』Interface</td><td>『I』Interface</td><td>『O01』PBO</td><td>『MP』Mapping data（對照）</td><td>『BI』Billing (Invoice)</td></tr>
+      <tr><td>『B』Batch Input</td><td>『B』Batch Input</td><td>『I01』PAI</td><td>『MA』Master data（主資料）</td><td>『PO』Purchase Order</td></tr>
+      <tr><td>『S』Smartforms</td><td>『S』Smartforms</td><td></td><td>『NR』Number range（號碼範圍）</td><td></td></tr>
+      <tr><td>『D』Data conversion</td><td>『D』Data conversion</td><td></td><td></td><td></td></tr>
+      <tr><td>『M』Module pool</td><td>『E』User exit (Enhancement)</td><td></td><td></td><td></td></tr>
+      <tr><td>『F』Function</td><td></td><td></td><td></td><td></td></tr>
+      <tr><td>『E』User exit (Enhancement)</td><td></td><td></td><td></td><td></td></tr>
+    </tbody>
+  </table>
+  <div class="note">A.i（規格書用）比 A.ii（程式名用）多了 M、F 兩類，因為 Module pool 與 Function 的程式名另有規則（SAPMZ…、SAPLZ…）。A.iii 的 F01 是副程式 Include；在現代 ABAP 中新程式不寫 FORM，這個 Include 改放本地類別（常見命名 …CLS 或 …C01）。</div>
+  <p>規範要能被機器檢查才會被遵守。以下程式讀 TADIR，把某 Package 下不符規則的物件列出來（regex 用 POSIX，1809 可用；7.55 以上可改 <span class="kw">pcre =</span>）：</p>
+  <pre><code class="abap">REPORT zcar0001.
+" 命名規則檢查：列出不符客戶命名規則範本的 Z 物件
+PARAMETERS p_devcl TYPE tadir-devclass DEFAULT 'ZMM01' OBLIGATORY.
+
+TYPES: BEGIN OF ty_rule,
+         object TYPE tadir-object,
+         regex  TYPE string,
+       END OF ty_rule,
+       BEGIN OF ty_bad,
+         object   TYPE tadir-object,
+         obj_name TYPE tadir-obj_name,
+         rule     TYPE string,
+       END OF ty_bad.
+
+START-OF-SELECTION.
+  " 用反引號字串 ＋ &amp;&amp; 串接，regex 的 { } | 都不必跳脫
+  CONSTANTS c_mod TYPE string VALUE `(CA|CO|MM|PP|SD|FI)`.
+
+  DATA(lt_rule) = VALUE HASHED TABLE OF ty_rule WITH UNIQUE KEY object (
+    ( object = 'PROG' regex = `^(SAPMZ` &amp;&amp; c_mod &amp;&amp; `[0-9]{4}|MZ` &amp;&amp; c_mod &amp;&amp;
+                              `[0-9]{4}(TOP|[FOI][0-9]{2})|Z` &amp;&amp; c_mod &amp;&amp; `[RLIBSDE][0-9]{4}.*)$` )
+    ( object = 'TRAN' regex = `^Z` &amp;&amp; c_mod &amp;&amp; `[0-9A-Z]{3}[A-Z]?$` )
+    ( object = 'DOMA' regex = `^Z[CIN][0-9]{6}$` )
+    ( object = 'DTEL' regex = `^Z[CIN][0-9]{6}$` )
+    ( object = 'VIEW' regex = `^Z` &amp;&amp; c_mod &amp;&amp; `[A-Z0-9]{1,4}(HD|DE|MP|MA|NR)[0-9]{4}V$` )
+    ( object = 'ENQU' regex = `^EZ_.+$` )
+    ( object = 'FUGR' regex = `^Z` &amp;&amp; c_mod &amp;&amp; `[TFM][0-9]{2,3}$` )
+    ( object = 'MSAG' regex = `^Z` &amp;&amp; c_mod &amp;&amp; `[0-9]{2,3}$` )
+    ( object = 'SHLP' regex = `^Z.+$` ) ).
+
+  SELECT object, obj_name
+    FROM tadir
+    WHERE pgmid    = 'R3TR'
+      AND devclass = @p_devcl
+    ORDER BY object, obj_name
+    INTO TABLE @DATA(lt_obj).
+
+  DATA lt_bad TYPE STANDARD TABLE OF ty_bad WITH EMPTY KEY.
+  LOOP AT lt_obj INTO DATA(ls_obj).
+    ASSIGN lt_rule[ object = ls_obj-object ] TO FIELD-SYMBOL(&lt;ls_rule&gt;).
+    IF sy-subrc &lt;&gt; 0.
+      CONTINUE.                                   " 此類物件不在規範內
+    ENDIF.
+    IF NOT matches( val = CONV string( ls_obj-obj_name ) regex = &lt;ls_rule&gt;-regex ).
+      APPEND VALUE #( object = ls_obj-object obj_name = ls_obj-obj_name
+                      rule = &lt;ls_rule&gt;-regex ) TO lt_bad.
+    ENDIF.
+  ENDLOOP.
+
+  TRY.
+      cl_salv_table=&gt;factory( IMPORTING r_salv_table = DATA(lo_alv)
+                              CHANGING  t_table      = lt_bad ).
+      lo_alv-&gt;get_functions( )-&gt;set_all( abap_true ).
+      lo_alv-&gt;display( ).
+    CATCH cx_salv_msg INTO DATA(lx_salv).
+      MESSAGE lx_salv TYPE 'S' DISPLAY LIKE 'E'.
+  ENDTRY.</code></pre>
+  <div class="warn">TADIR 的 TABL 同時包含透明表與結構，要分辨須再讀 DD02L-TABCLASS（TRANSP／INTTAB）；上例為了簡潔沒有檢查 TABL。「複製並修改 SAP 標準」的物件（Z＋標準名）不符這些 regex，會被列出，屬正常，請人工確認。Regex 若寫在字串範本 <span class="kw">| |</span> 裡，<span class="kw">{ }</span> 與 <span class="kw">|</span> 都要用反斜線跳脫，這是最常見的寫錯點；上例改用反引號字串串接就沒有這個問題。</div>
+
+  <h3 id="ch06-4-07">7. SE10 釋放：先 Task、後 Request（DEV 110）</h3>
+  <p>以下依講義截圖整理，情境是把一支 MM 報表 ZMMB0001（含 Include ZMMB0001TOP、ZMMB0001F01，功能為把 MARD 庫存匯出到 SQL Server）從開發機 DEV client 110 發佈到測試機 QAS client 200。講義另有一支操作錄影檔（ABAP_06_A_ABAＰ的發佈.avi），內容與截圖同一流程。<span class="src">（依講義步驟整理）</span></p>
+  <table>
+    <thead><tr><th>截圖</th><th>畫面</th><th>看到什麼</th></tr></thead>
+    <tbody>
+      <tr><td>1</td><td>DEV 110 <span class="tcode">SE10</span> → Transport Organizer: Requests</td><td>樹狀結構：110 ABAP development client → Workbench（Workbench request）→ -&gt; QAS（System QAS，目標系統）→ Modifiable → 請求 DEVK9xxxx80 → 任務 DEVK9xxxx81 → Program → ZMMB0001、ZMMB0001F01、ZMMB0001TOP</td></tr>
+      <tr><td>1</td><td>選 Task，按卡車圖示（Release Directly）</td><td>彈出 Information：「Task DEVK9xxxx81 has been released to request DEVK9xxxx80」，Task 旁出現 ✔</td></tr>
+      <tr><td>2</td><td>選主 Request，再按一次卡車</td><td>請求說明寫法範例：「MM 20220512 MARD(MB52) EXPORT TO SQL SERVER」（模組＋日期＋內容）</td></tr>
+      <tr><td>3</td><td>Overview of All Transport Logs</td><td>DEV（System DEV）底下三步：Checks at Operating System Level（0）Completed、Pre-Export Methods（0）Completed、Export「In process: Requires update」</td></tr>
+    </tbody>
+  </table>
+  <p>操作步驟：</p>
+  <ol>
+    <li>在 DEV（client 110）執行 <span class="tcode">SE10</span>，勾選 Workbench Requests 與 Modifiable，按 Display。</li>
+    <li>展開到自己的請求，確認 Task 底下列出的物件<b>正是這次要上的全部物件</b>（主程式與所有 Include、相關 Table、Data Element 都在）。</li>
+    <li>點選 <b>Task</b>（子項），按工具列的卡車圖示「Release Directly」。系統彈出「Task … has been released to request …」，Task 狀態變成已釋放（✔）。</li>
+    <li>點選 <b>Request</b>（主項），再按一次卡車。這一步系統會做物件檢查並把物件匯出成傳輸檔（cofiles／data files）。</li>
+    <li>雙擊請求或選「Transport Logs」看日誌：Checks at Operating System Level、Pre-Export Methods 都是（0）Completed；Export 顯示「In process: Requires update」表示匯出還在進行，稍候按重新整理，變成（0）或（4）Completed 才算完成。</li>
+  </ol>
+  <div class="tip">請求說明是日後唯一的線索。講義的「模組＋日期＋內容」寫法很值得學；再加上需求單號或 Spec ID（如 TEMMB0001）更好，例如「MM TEMMB0001 20220512 MARD(MB52) EXPORT TO SQL SERVER」。說明中<b>不要放個人姓名</b>，擁有者欄位本來就記錄了。</div>
+  <div class="warn">Return Code 解讀：<b>0</b> 成功、<b>4</b> 警告（多半可接受，但要看一下是什麼）、<b>8</b> 錯誤（部分物件沒成功，例如語法錯或啟用失敗）、<b>12 以上</b> 嚴重錯誤（通常是傳輸工具或檔案系統問題，找 Basis）。釋放前先在 SE80 對整個 Package 做一次「Check → Extended Program Check」與啟用檢查，比在 QAS 看到 RC=8 再回頭改省事得多。</div>
+
+  <h3 id="ch06-4-08">8. STMS 匯入：從 Import Queue 匯到 QAS 200</h3>
+  <p>接續上一節，改登入 QAS（client 200）操作。<span class="src">（依講義步驟整理）</span></p>
+  <table>
+    <thead><tr><th>截圖</th><th>畫面</th><th>看到什麼</th></tr></thead>
+    <tbody>
+      <tr><td>4</td><td>QAS 200 <span class="tcode">STMS</span> → Transport Management System</td><td>System：QAS；Transp. Domain：DOMAIN_DEV（Transport domain DEV）；游標停在第一個圖示「Import Overview (F5)」</td></tr>
+      <tr><td>5</td><td>Import Overview: Domain DOMAIN_DEV</td><td>Number of import queues: 3 —— DEV、PR1、QAS 三個佇列；雙擊 QAS</td></tr>
+      <tr><td>6</td><td>Import Queue: System QAS</td><td>「Requests for QAS: 251 / 2705」；清單欄位 Number、Request、RC、Owner、Project、Short Text、St；前面是 SAP 語言包（SAPKLZFCA1809S4HOPF0～F9，S/4HANA 1809 ZF 語言）與 Client Export 請求，最後一筆 2705 就是剛釋放的請求；選取後按「Import Request (Ctrl+F11)」</td></tr>
+      <tr><td>7</td><td>Import Transport Request 對話框</td><td>Transport Request、Target System QAS、<b>Target Client 200</b>（紅框，提示 Targ.Client=Source Client 需改）；Date 頁籤 Start Date 選 Immediate（另有 At Start Time、After Event）；另有 Execution、Options 頁籤</td></tr>
+      <tr><td>8</td><td>匯入後的 Import Queue</td><td>該請求 RC 欄為綠色、St 欄出現橘色三角（已匯入、保留在佇列中）</td></tr>
+      <tr><td>9</td><td>QAS <span class="tcode">SE38</span> 顯示 ZMMB0001</td><td>REPORT ZMMB0001、INCLUDE ZMMB0001TOP、INCLUDE ZMMB0001F01，狀態 Active —— 「程式由 DEV 進來 QAS 了」</td></tr>
+    </tbody>
+  </table>
+  <p>操作步驟：</p>
+  <ol>
+    <li>登入 QAS client 200，執行 <span class="tcode">STMS</span>，按 <b>Import Overview（F5）</b>。</li>
+    <li>在佇列清單雙擊 <b>QAS</b>。若看不到剛釋放的請求，按重新整理（Refresh）；還是沒有，檢查請求的目標系統是否真的是 QAS（第 7 節截圖 1 的「-&gt; QAS」）。</li>
+    <li>選取該請求，按 <b>Import Request（Ctrl+F11）</b>。</li>
+    <li><b>Target Client 一定要確認</b>：填 200。Workbench 物件跨 Client 無差，但請求若含 Client 相關內容（例如 SM30 維護的資料、客製設定），填錯 Client 就是匯到錯的地方。</li>
+    <li>Date 頁籤選 Immediate；Options 頁籤一般不勾「Overwrite Originals」「Ignore Invalid Component Version」等選項，除非 Basis 指示。</li>
+    <li>確認後回到佇列，按重新整理，看 RC 欄：綠色（0）或黃色（4）為成功；紅色（8、12）要點進去看日誌。</li>
+    <li>最後到 QAS 的 <span class="tcode">SE38</span> 開啟程式，確認版本與狀態 Active，再通知使用者測試。</li>
+  </ol>
+  <div class="warn"><b>不要按「Import All」除非你知道佇列裡有什麼。</b>截圖的佇列有 251 筆待處理請求，其中混著別人尚未測好的請求與語言包。Import All 會把全部依序匯入。反過來說，單筆匯入時也要注意<b>順序與相依</b>：如果前一個請求改了 Table 欄位、這個請求的程式用到新欄位，前一個沒匯，這支程式在 QAS 就會語法錯誤（見 <a href="#ch01-1-15">1-1 章第 15 節</a>的三大鐵律）。正式機（PRD）匯入時更要照 QAS 的匯入順序做一次。</div>
+
+  <h3 id="ch06-4-09">9. 用程式盯傳輸：E070／E071／E07T／TADIR</h3>
+  <p>1-1 章已示範「查某物件在哪些請求裡」。實務上更常用的是另外三種檢查：<b>我還有哪些請求沒放</b>、<b>同一物件是否同時卡在多個未釋放請求</b>、<b>有沒有東西誤放在 $TMP</b>。相關表格：</p>
+  <table>
+    <thead><tr><th>表</th><th>內容</th><th>重要欄位</th></tr></thead>
+    <tbody>
+      <tr><td>E070</td><td>請求／任務表頭</td><td>TRKORR、TRFUNCTION（K Workbench、W Customizing、S 開發／修正任務、R 修復、Q 客製任務、T 複本傳輸）、TRSTATUS（D 可修改、L 可修改受保護、O 釋放中、R 已釋放、N 已釋放含匯入保護）、TARSYSTEM、AS4USER、AS4DATE、STRKORR（上層請求，任務才有值）</td></tr>
+      <tr><td>E07T</td><td>請求說明</td><td>TRKORR、LANGU、AS4TEXT</td></tr>
+      <tr><td>E071</td><td>請求內物件</td><td>TRKORR、AS4POS、PGMID（R3TR／LIMU）、OBJECT、OBJ_NAME</td></tr>
+      <tr><td>TADIR</td><td>物件目錄</td><td>PGMID、OBJECT、OBJ_NAME、DEVCLASS、AUTHOR、CREATED_ON</td></tr>
+    </tbody>
+  </table>
+  <p>(1) 列出某人尚未釋放的請求與其任務：</p>
+  <pre><code class="abap">REPORT zcar0002.
+PARAMETERS p_user TYPE e070-as4user DEFAULT sy-uname.
+
+START-OF-SELECTION.
+  SELECT r~trkorr,
+         r~trfunction,
+         r~trstatus,
+         r~tarsystem,
+         r~as4date,
+         t~as4text,
+         k~trkorr   AS task,
+         k~trstatus AS task_status,
+         k~as4user  AS task_owner
+    FROM e070 AS r
+    LEFT OUTER JOIN e07t AS t ON  t~trkorr = r~trkorr
+                              AND t~langu  = @sy-langu
+    LEFT OUTER JOIN e070 AS k ON  k~strkorr = r~trkorr
+    WHERE r~strkorr    = @space               " 只取主請求
+      AND r~trfunction IN ( 'K', 'W' )        " Workbench／Customizing
+      AND r~trstatus   IN ( 'D', 'L' )        " 尚未釋放
+      AND ( r~as4user = @p_user OR k~as4user = @p_user )
+    ORDER BY r~as4date DESCENDING, r~trkorr, task
+    INTO TABLE @DATA(lt_open).
+
+  TRY.
+      cl_salv_table=&gt;factory( IMPORTING r_salv_table = DATA(lo_alv)
+                              CHANGING  t_table      = lt_open ).
+      lo_alv-&gt;get_columns( )-&gt;set_optimize( abap_true ).
+      lo_alv-&gt;display( ).
+    CATCH cx_salv_msg INTO DATA(lx_salv).
+      MESSAGE lx_salv TYPE 'S' DISPLAY LIKE 'E'.
+  ENDTRY.</code></pre>
+  <p>(2) 同一物件出現在兩個以上未釋放請求（上線順序風險）：</p>
+  <pre><code class="abap">REPORT zcar0003.
+DATA g_objname TYPE e071-obj_name.
+SELECT-OPTIONS s_obj FOR g_objname DEFAULT 'Z*' OPTION CP.
+
+TYPES: BEGIN OF ty_conflict,
+         object   TYPE e071-object,
+         obj_name TYPE e071-obj_name,
+         requests TYPE string,
+         cnt      TYPE i,
+       END OF ty_conflict.
+DATA it_conflict TYPE STANDARD TABLE OF ty_conflict WITH EMPTY KEY.
+
+START-OF-SELECTION.
+  " 任務上的物件 → 透過 STRKORR 換算回主請求
+  SELECT o~object, o~obj_name,
+         CASE WHEN h~strkorr = ' ' THEN h~trkorr ELSE h~strkorr END AS request
+    FROM e071 AS o
+    INNER JOIN e070 AS h ON h~trkorr = o~trkorr
+    WHERE o~obj_name IN @s_obj
+      AND o~pgmid    IN ( 'R3TR', 'LIMU' )
+      AND h~trstatus IN ( 'D', 'L' )
+    ORDER BY o~object, o~obj_name
+    INTO TABLE @DATA(lt_hit).
+
+  SORT lt_hit BY object obj_name request.
+  DELETE ADJACENT DUPLICATES FROM lt_hit COMPARING object obj_name request.
+
+  LOOP AT lt_hit INTO DATA(ls_hit)
+       GROUP BY ( object = ls_hit-object obj_name = ls_hit-obj_name
+                  size = GROUP SIZE )
+       INTO DATA(ls_grp).
+    CHECK ls_grp-size &gt; 1.
+    APPEND VALUE #( object   = ls_grp-object
+                    obj_name = ls_grp-obj_name
+                    cnt      = ls_grp-size
+                    requests = concat_lines_of(
+                                 table = VALUE string_table(
+                                   FOR m IN GROUP ls_grp ( CONV string( m-request ) ) )
+                                 sep = `, ` ) ) TO it_conflict.
+  ENDLOOP.
+
+  cl_demo_output=&gt;display( it_conflict ).</code></pre>
+  <p>(3) 誤留在 $TMP、永遠傳不出去的 Z 物件：</p>
+  <pre><code class="abap">REPORT zcar0004.
+START-OF-SELECTION.
+  SELECT object, obj_name, author, created_on
+    FROM tadir
+    WHERE pgmid    = 'R3TR'
+      AND devclass = '$TMP'
+      AND ( obj_name LIKE 'Z%' OR obj_name LIKE 'Y%' )
+    ORDER BY created_on DESCENDING, object, obj_name
+    INTO TABLE @DATA(lt_local).
+
+  cl_demo_output=&gt;write( |$TMP 中的客製物件：{ lines( lt_local ) } 筆| ).
+  cl_demo_output=&gt;display( lt_local ).
+  " 要上線的物件：SE03 → Change Object Directory Entries 改到正式 Package，
+  " 或 SE80 物件右鍵 → More Functions → Change Package Assignment</code></pre>
+  <div class="tip">查請求時別用區間。請求號看似連號（DEVK900100～DEVK900199），但中間夾著別人的請求與任務號；用 <span class="kw">BT</span> 會把不相干的都撈進來。要查一批請求就把號碼<b>列舉</b>成 EQ 清單（Casper 的第 2 條經驗在這裡一樣適用），或用說明文字、擁有者、日期當條件。</div>
+
+  <h3 id="ch06-4-10">10. SE11 匯出資料字典：把表結構變成欄位規格書</h3>
+  <p>寫技術規格書、交接文件或把資料丟到外部系統（SQL Server、Excel）時，經常需要「某張表的欄位、Key、Data Element、型態、長度、說明」清單。SE11 畫面沒有匯出鍵，講義的做法是寫一支小工具：輸入表名與存檔路徑，呼叫 <span class="kw">DDIF_FIELDINFO_GET</span> 取欄位資訊並下載。截圖為執行畫面（TABLE＝ZTPP0001、FIELD 空白、P_DNFILE＝C:/TMP/）與輸出（欄位／主鍵／資料元素／資料型態／長度／小數位／短文本）。</p>
+  <h4>10.1 範例輸出：ZTPP0001（缺料分析結果表）</h4>
+  <p>這張表是缺料表程式（ZPPB0002）的結果存檔，以下為講義匯出的完整欄位清單（第 2 欄為 Key；原檔有幾列在第 2 欄重複填了欄位名，屬匯出時的欄位錯位，此處已更正為空白）：</p>
+  <table>
+    <thead><tr><th>欄位</th><th>Key</th><th>Data Element</th><th>型態</th><th>長度</th><th>小數</th><th>短文本</th></tr></thead>
+    <tbody>
+      <tr><td>MANDT</td><td>X</td><td>MANDT</td><td>CLNT</td><td>3</td><td>0</td><td>Client</td></tr>
+      <tr><td>WERKS</td><td>X</td><td>WERKS_D</td><td>CHAR</td><td>4</td><td>0</td><td>Plant</td></tr>
+      <tr><td>USNAM</td><td>X</td><td>USNAM</td><td>CHAR</td><td>12</td><td>0</td><td>User Name</td></tr>
+      <tr><td>MATNR</td><td>X</td><td>MATNR</td><td>CHAR</td><td>40</td><td>0</td><td>Material Number</td></tr>
+      <tr><td>PLAAB</td><td>X</td><td>PLAAB</td><td>NUMC</td><td>2</td><td>0</td><td>Material requirements planning segment</td></tr>
+      <tr><td>PLANR</td><td>X</td><td>PLANR</td><td>CHAR</td><td>20</td><td>0</td><td>Planning segment number</td></tr>
+      <tr><td>CNT</td><td>X</td><td>NUM08</td><td>NUMC</td><td>8</td><td>0</td><td>Numeric field length 8</td></tr>
+      <tr><td>DEL12</td><td></td><td>DEL12</td><td>CHAR</td><td>12</td><td>0</td><td>MRP element number</td></tr>
+      <tr><td>DEL13</td><td></td><td>DEL12</td><td>CHAR</td><td>12</td><td>0</td><td>MRP element number</td></tr>
+      <tr><td>DELPS</td><td></td><td>DELPS</td><td>NUMC</td><td>6</td><td>0</td><td>MRP element item</td></tr>
+      <tr><td>EKGRP</td><td></td><td>EKGRP</td><td>CHAR</td><td>3</td><td>0</td><td>Purchasing Group</td></tr>
+      <tr><td>LIFNR</td><td></td><td>LIFNR</td><td>CHAR</td><td>10</td><td>0</td><td>Account Number of Vendor or Creditor</td></tr>
+      <tr><td>MD4LI</td><td></td><td>MD4LI</td><td>CHAR</td><td>35</td><td>0</td><td>Vendor Name</td></tr>
+      <tr><td>BAUGR</td><td></td><td>BAUGR</td><td>CHAR</td><td>40</td><td>0</td><td>Higher-Level Assembly Material</td></tr>
+      <tr><td>MNG01_GR</td><td></td><td>MNG01</td><td>QUAN</td><td>13</td><td>3</td><td>Quantity received or quantity required</td></tr>
+      <tr><td>SHORT</td><td></td><td>FLAG</td><td>CHAR</td><td>1</td><td>0</td><td>General Flag</td></tr>
+      <tr><td>MNG02_SHORT</td><td></td><td>MNG03</td><td>QUAN</td><td>13</td><td>3</td><td>Shortage Quantity</td></tr>
+      <tr><td>MNG01_GI</td><td></td><td>MNG01</td><td>QUAN</td><td>13</td><td>3</td><td>Quantity received or quantity required</td></tr>
+      <tr><td>MNG03</td><td></td><td>VRFMG</td><td>QUAN</td><td>13</td><td>3</td><td>Available quantity</td></tr>
+      <tr><td>MNG01_STOCK_TTL</td><td></td><td>MNG01</td><td>QUAN</td><td>13</td><td>3</td><td>Quantity received or quantity required</td></tr>
+      <tr><td>MNG02_SHORT_TTL</td><td></td><td>MNG03</td><td>QUAN</td><td>13</td><td>3</td><td>Shortage Quantity</td></tr>
+      <tr><td>MNG01_AVG_TTL</td><td></td><td>MNG01</td><td>QUAN</td><td>13</td><td>3</td><td>Quantity received or quantity required</td></tr>
+      <tr><td>LBLAB</td><td></td><td>LABST</td><td>QUAN</td><td>13</td><td>3</td><td>Valuated Unrestricted-Use Stock</td></tr>
+      <tr><td>KULAB</td><td></td><td>LABST</td><td>QUAN</td><td>13</td><td>3</td><td>Valuated Unrestricted-Use Stock</td></tr>
+      <tr><td>DAT00</td><td></td><td>DAT00</td><td>DATS</td><td>8</td><td>0</td><td>Receipt/Requirements date</td></tr>
+      <tr><td>DAT01</td><td></td><td>DAT01</td><td>DATS</td><td>8</td><td>0</td><td>Delivery/order finish date</td></tr>
+      <tr><td>DAT02</td><td></td><td>DAT01</td><td>DATS</td><td>8</td><td>0</td><td>Delivery/order finish date</td></tr>
+      <tr><td>UMDAT</td><td></td><td>UMDAT</td><td>DATS</td><td>8</td><td>0</td><td>Rescheduling date</td></tr>
+      <tr><td>MNG01_WB</td><td></td><td>MNG01</td><td>QUAN</td><td>13</td><td>3</td><td>Quantity received or quantity required</td></tr>
+      <tr><td>DELET</td><td></td><td>DELET</td><td>NUMC</td><td>4</td><td>0</td><td>Schedule Line Number MRP Element</td></tr>
+      <tr><td>DELKZ</td><td></td><td>DELKZ</td><td>CHAR</td><td>2</td><td>0</td><td>MRP element</td></tr>
+      <tr><td>DELB0</td><td></td><td>DELB0</td><td>CHAR</td><td>6</td><td>0</td><td>Abbreviation for MRP element</td></tr>
+      <tr><td>RSNUM</td><td></td><td>RSNUM</td><td>NUMC</td><td>10</td><td>0</td><td>Number of reservation/dependent requirements</td></tr>
+      <tr><td>RSPOS</td><td></td><td>RSPOS</td><td>NUMC</td><td>4</td><td>0</td><td>Item Number of Reservation / Dependent Requirements</td></tr>
+      <tr><td>SOBKZ</td><td></td><td>SOBKZ</td><td>CHAR</td><td>1</td><td>0</td><td>Special Stock Indicator</td></tr>
+      <tr><td>KDAUF</td><td></td><td>KDAUF</td><td>CHAR</td><td>10</td><td>0</td><td>Sales Order Number</td></tr>
+      <tr><td>KDPOS</td><td></td><td>KDPOS</td><td>NUMC</td><td>6</td><td>0</td><td>Item number in Sales Order</td></tr>
+      <tr><td>AUSSL</td><td></td><td>AUSSL</td><td>CHAR</td><td>2</td><td>0</td><td>Exception message key</td></tr>
+      <tr><td>AUSKT</td><td></td><td>AUSKT</td><td>CHAR</td><td>2</td><td>0</td><td>Exception message number</td></tr>
+      <tr><td>ABEKZ</td><td></td><td>ABEKZ</td><td>CHAR</td><td>1</td><td>0</td><td>Exception indicator</td></tr>
+      <tr><td>LGORT</td><td></td><td>LGORT_D</td><td>CHAR</td><td>4</td><td>0</td><td>Storage location</td></tr>
+      <tr><td>KUNNR</td><td></td><td>KUNNR</td><td>CHAR</td><td>10</td><td>0</td><td>Customer Number</td></tr>
+      <tr><td>MD4KD</td><td></td><td>MD4KD</td><td>CHAR</td><td>35</td><td>0</td><td>Customer name</td></tr>
+      <tr><td>VRFKZ</td><td></td><td>VRFKZ</td><td>CHAR</td><td>1</td><td>0</td><td>Availability indicator</td></tr>
+      <tr><td>DELVR</td><td></td><td>DELKZ</td><td>CHAR</td><td>2</td><td>0</td><td>MRP element</td></tr>
+    </tbody>
+  </table>
+  <div class="warn"><b>從這張表看出的設計問題：</b>(1) Key 含 USNAM 與流水號 CNT，代表每位使用者執行缺料分析都寫一份自己的結果，表會無限長大，必須有清理機制（或改成只存在記憶體、用 ALV 呈現）。(2) 13 個 QUAN 欄位但表中<b>沒有單位欄位（MEINS）</b>，SE11 啟用時的參照欄位要指到哪裡？QUAN 欄位必須有 Reference Field，否則數量顯示與轉換都可能出錯。(3) MATNR 長度 40 是 S/4HANA 的延長物料號，若匯出給 SQL Server，對方欄位也要 40 碼，不要沿用 ECC 時代的 18。</div>
+  <h4>10.2 原程式的問題</h4>
+  <p>講義的工具程式（原名為客戶前綴＋流水號，程式開頭註解寫明「外部程式師常用的共用程式，只放在 QAS 且存成 Local Object，沒有指定 Package」）用了全套舊語法：<span class="kw">TABLES</span>、<span class="kw">OCCURS 0</span> 帶表頭行的內表、<span class="kw">FORM/PERFORM</span>、已廢止的 <span class="kw">WS_DOWNLOAD</span>、用 <span class="kw">'DAT'</span> 格式把 Tab 分隔文字存成 <span class="kw">.xls</span>（Excel 開啟會警告副檔名與格式不符），以及把中文標題列硬塞進內表第一列。</p>
+  <div class="note">「工具程式只放 QAS、存 $TMP」是外部顧問的常見做法：不進 DEV、不進 PRD，就不會出現在客戶的傳輸與稽核範圍。缺點是 QAS 被系統複製（從 PRD 刷新）時就消失了。比較好的做法是把這類工具集中在一個<b>非傳輸的專用 Package</b>（如 Z_TOOLS，傳輸層設為本地），或乾脆放在自己的 ADT 專案／abapGit 儲存庫，需要時再貼上。</div>
+  <h4>10.3 現代改寫 A：DDIF_FIELDINFO_GET ＋ GUI_DOWNLOAD</h4>
+  <pre><code class="abap">REPORT zcar0005.
+" 匯出 SE11 表／結構的欄位規格（UTF-8 Tab 分隔，Excel 可直接開）
+PARAMETERS: p_tab  TYPE ddobjname DEFAULT 'ZTPP0001' OBLIGATORY,
+            p_fld  TYPE dfies-fieldname,
+            p_dir  TYPE localfile LOWER CASE DEFAULT 'C:\TMP\'.
+
+AT SELECTION-SCREEN ON VALUE-REQUEST FOR p_dir.
+  DATA lv_folder TYPE string.
+  cl_gui_frontend_services=&gt;directory_browse( CHANGING  selected_folder = lv_folder
+                                               EXCEPTIONS OTHERS         = 1 ).
+  IF sy-subrc = 0 AND lv_folder IS NOT INITIAL.
+    p_dir = |{ lv_folder }\\|.
+  ENDIF.
+
+START-OF-SELECTION.
+  DATA lt_dfies TYPE STANDARD TABLE OF dfies WITH EMPTY KEY.
+
+  CALL FUNCTION 'DDIF_FIELDINFO_GET'
+    EXPORTING
+      tabname        = p_tab
+      fieldname      = p_fld
+      langu          = sy-langu          " 短文本語言，可改 'E'
+    TABLES
+      dfies_tab      = lt_dfies
+    EXCEPTIONS
+      not_found      = 1
+      internal_error = 2
+      OTHERS         = 3.
+  IF sy-subrc &lt;&gt; 0.
+    MESSAGE |{ p_tab } 不存在或讀取失敗（sy-subrc = { sy-subrc }）| TYPE 'S' DISPLAY LIKE 'E'.
+    RETURN.
+  ENDIF.
+
+  " 標題列＋明細列，全部組成字串（不再把標題硬塞進資料內表）
+  DATA(lt_out) = VALUE string_table(
+    ( |欄位\t主鍵\t資料元素\t資料型態\t長度\t小數位\t短文本| )
+    ( LINES OF VALUE string_table(
+        FOR ls_f IN lt_dfies
+        ( |{ ls_f-fieldname }\t{ ls_f-keyflag }\t{ ls_f-rollname }\t{ ls_f-datatype }\t| &amp;&amp;
+          |{ ls_f-leng ALPHA = OUT }\t{ ls_f-decimals ALPHA = OUT }\t{ ls_f-fieldtext }| ) ) ) ).
+
+  DATA(lv_file) = |{ p_dir }{ p_tab }.txt|.
+  cl_gui_frontend_services=&gt;gui_download(
+    EXPORTING
+      filename  = lv_file
+      codepage  = '4110'                  " UTF-8
+      write_bom = abap_true               " 讓 Excel 正確辨識中文
+    CHANGING
+      data_tab  = lt_out
+    EXCEPTIONS
+      OTHERS    = 1 ).
+  IF sy-subrc &lt;&gt; 0.
+    MESSAGE |下載失敗：{ lv_file }| TYPE 'S' DISPLAY LIKE 'E'.
+    RETURN.
+  ENDIF.
+
+  " 同時在畫面顯示
+  TRY.
+      cl_salv_table=&gt;factory( IMPORTING r_salv_table = DATA(lo_alv)
+                              CHANGING  t_table      = lt_dfies ).
+      lo_alv-&gt;display( ).
+    CATCH cx_salv_msg INTO DATA(lx_salv).
+      MESSAGE lx_salv TYPE 'S' DISPLAY LIKE 'E'.
+  ENDTRY.</code></pre>
+  <h4>10.4 現代改寫 B：一次匯出多張表（DD03L ＋ DD04T）</h4>
+  <p>寫介面規格常要一次列十幾張表。DDIF_FIELDINFO_GET 一次只能一張，直接讀字典表比較快：</p>
+  <pre><code class="abap">REPORT zcar0006.
+DATA g_tabname TYPE dd03l-tabname.
+SELECT-OPTIONS s_tab FOR g_tabname NO INTERVALS OBLIGATORY.  " 只允許列舉，不給區間
+
+START-OF-SELECTION.
+  SELECT f~tabname,
+         f~position,
+         f~fieldname,
+         f~keyflag,
+         f~rollname,
+         f~datatype,
+         f~leng,
+         f~decimals,
+         f~reftable,
+         f~reffield,
+         t~ddtext
+    FROM dd03l AS f
+    LEFT OUTER JOIN dd04t AS t ON  t~rollname   = f~rollname
+                               AND t~ddlanguage = @sy-langu
+                               AND t~as4local   = 'A'
+                               AND t~as4vers    = '0000'
+    WHERE f~tabname  IN @s_tab
+      AND f~as4local = 'A'                  " 已啟用版本
+      AND f~as4vers  = '0000'
+      AND f~fieldname NOT LIKE '.%'         " 排除 .INCLUDE／.APPEND 列
+    ORDER BY f~tabname, f~position          " HANA 沒有預設排序，位置順序要自己排
+    INTO TABLE @DATA(lt_field).
+
+  cl_demo_output=&gt;display( lt_field ).</code></pre>
+  <div class="note">DD03L 版本多出 REFTABLE／REFFIELD 兩欄，正好用來檢查 10.1 提到的「QUAN 欄位的參照單位在哪裡」。沒有 Data Element、直接用內建型態的欄位，說明要從 DD03T 取。DDIF_FIELDINFO_GET 會自動展開 Include 並處理這些情況，DD03L 版本則要自己處理；兩者各有用途。</div>
+  <h4>10.5 現代改寫 C：RTTS（不需要知道字典表結構）</h4>
+  <pre><code class="abap">REPORT zcar0007.
+PARAMETERS p_tab TYPE ddobjname DEFAULT 'ZTPP0001' OBLIGATORY.
+
+START-OF-SELECTION.
+  DATA lo_type TYPE REF TO cl_abap_typedescr.
+  cl_abap_typedescr=&gt;describe_by_name( EXPORTING  p_name         = p_tab
+                                       RECEIVING  p_descr_ref    = lo_type
+                                       EXCEPTIONS type_not_found = 1 ).
+  IF sy-subrc &lt;&gt; 0 OR lo_type-&gt;kind &lt;&gt; cl_abap_typedescr=&gt;kind_struct.
+    MESSAGE |{ p_tab } 不是字典中的表或結構| TYPE 'S' DISPLAY LIKE 'E'.
+    RETURN.
+  ENDIF.
+
+  DATA(lo_struct) = CAST cl_abap_structdescr( lo_type ).
+  DATA(lt_ddic)   = lo_struct-&gt;get_ddic_field_list( p_langu = sy-langu ).  " 回傳 DFIES 表
+
+  DATA(lv_keys) = REDUCE i( INIT n = 0
+                            FOR ls_k IN lt_ddic WHERE ( keyflag = abap_true )
+                            NEXT n = n + 1 ).
+  cl_demo_output=&gt;write( |{ p_tab }：{ lines( lt_ddic ) } 個欄位，其中 Key { lv_keys } 個| ).
+  cl_demo_output=&gt;display( lt_ddic ).</code></pre>
+
+  <h3 id="ch06-4-11">11. SCAL 工廠日曆：查詢、設定順序與程式讀取</h3>
+  <p>講義原文只有三行：「先把假日設成 Public，然後在 Holiday Calendar 拉進來。如何設定，忘了，因為操作都沒有錄影。以下示範如何查詢 Factory。」以下先依截圖整理<b>查詢</b>步驟，再依 SAP 標準補寫<b>設定</b>順序。</p>
+  <h4>11.1 查詢工廠日曆 <span class="src">（依講義步驟整理）</span></h4>
+  <table>
+    <thead><tr><th>截圖</th><th>畫面</th><th>看到什麼</th></tr></thead>
+    <tbody>
+      <tr><td>1</td><td><span class="tcode">SCAL</span> → SAP Calendar: Main Menu</td><td>提示「The calendar is not client-specific／Each change takes effect directly in all clients」；Subobjects 有三個選項：Public holidays、Holiday calendar、Factory calendar；按鈕 Display、Change</td></tr>
+      <tr><td>2</td><td>選 Factory calendar → Display</td><td>—</td></tr>
+      <tr><td>3</td><td>工廠日曆清單</td><td>欄位 ID、Calendar ID（說明）、Valid from、Valid to；例：TW Taiwan 2000～2050、US USA、W6／W7 德國 6／7 天工作制、W8 全年皆工作日、ZR 10-day payment、ZZ ZZ1（2012～2017，已過期的自建日曆）</td></tr>
+      <tr><td>4</td><td>雙擊 TW → 年度一覽</td><td>欄位 Year、Day、Number of Workdays、Number of Free Days；2022 年：Day 6575、工作日 249、休息日 116；2021 年 250／115、2023 年 255／110</td></tr>
+      <tr><td>5</td><td>雙擊 2022 → Yearly Overview</td><td>左側 Calendar Overview（月曆，綠色為休息日，如 2022/10/10 國慶日），右側 Public Holidays 清單：2022/01/01 New Year's Day、01/31 Spring Festival Eve、02/01～02/05 Spring holiday 1～5、02/28 Peace Memorial Day、04/04 Children and Women's Day、04/05 Tomb Sweeping Day (TW)、05/01 May Day、05/02 May Day, moved、06/03 Dragon Boat Festival …</td></tr>
+    </tbody>
+  </table>
+  <div class="tip"><b>「Day」欄就是工廠日期序號。</b>2022 年列的 Day＝6575、2023 年＝6824，相減 249 恰好是 2022 年的工作日數。也就是說，工廠日曆把每個工作日編成連續整數，<span class="kw">DATE_CONVERT_TO_FACTORYDATE</span> 回傳的正是這個號碼；「兩日期間幾個工作天」＝兩個序號相減，「N 個工作天後是哪天」＝序號加 N 再轉回日期。這就是 11.3 程式的原理。</div>
+  <h4>11.2 設定順序 <span class="src">（依講義步驟整理）</span></h4>
+  <ol>
+    <li><b>Public holidays</b>：SCAL 選 Public holidays → Change，逐一建立假日：固定日期（如 01/01）、固定日期＋星期規則、與復活節的距離、特定年度一次性日期（如補假「May Day, moved」）。每個假日可設宗教代號與優先順序。</li>
+    <li><b>Holiday calendar</b>：建立或修改假日日曆（如 TW），按「Assign public holiday」把上一步的假日<b>拉進來</b>，並設定有效年度。這就是講義說的「在 Holiday Calendar 拉進來」。</li>
+    <li><b>Factory calendar</b>：建立或修改工廠日曆，指定引用的 Holiday calendar、有效年度，並勾選每週哪幾天是工作日（週六是否上班）；需要時用「Special rules」設定個別日期的例外（如補班日）。</li>
+    <li><b>指派給工廠</b>：<span class="tcode">OX10</span>（工廠定義）的 Factory Calendar 欄位，即 T001W-FABKL。MRP、排程、交期計算都讀這個欄位。</li>
+    <li><b>傳輸</b>：SCAL 的變更不是自動記錄請求的，要在 SCAL 主畫面用「Transport」功能手動把日曆放進請求；在 QAS／PRD 另外手改會造成各系統日曆不一致。</li>
+  </ol>
+  <div class="warn">(1) 日曆<b>不分 Client</b>，在任何一個 Client 改，所有 Client 立即生效（截圖 1 的系統提示）——在 QAS 練習改日曆，同一台機器的所有測試 Client 都會受影響。(2) 截圖 3 的 Valid to 多為 2050，<b>過了有效年度，所有工作日計算都會丟例外（date_after_range）</b>；自建日曆（像截圖中只到 2017 年的 ZZ）要記得每年延長。(3) 台灣每年行政院公布的補班補假都不同，每年年底要在 Public holidays 補登隔年的特殊日期並傳輸。(4) 新版 S/4HANA 的 SCAL 已改為截圖所見的新介面，部分版本另提供 Fiori 應用程式維護日曆，操作入口依系統版本而異，但資料模型與讀取函數不變。</div>
+  <h4>11.3 程式讀取：工廠 → 日曆 → 工作日</h4>
+  <p>相關表格：T001W-FABKL（工廠的工廠日曆）、TFACD（工廠日曆定義）、TFACS（工廠日曆各年度工作日位元）、THOC（假日日曆）、THOL（假日定義）。<b>不要自己解析 TFACS 的位元字串</b>，一律走標準函數（Casper 的第 3 條經驗：先找標準）。2-1 章已示範單一日曆的工作天數；這裡示範實務最常見的寫法：<b>依工廠</b>取日曆，計算「N 個工作天後的日期」。</p>
+  <pre><code class="abap">REPORT zppr0001.
+" 依工廠的工廠日曆，計算「起始日 + N 個工作天」的日期
+PARAMETERS: p_werks TYPE t001w-werks OBLIGATORY,
+            p_date  TYPE sy-datum DEFAULT sy-datum,
+            p_days  TYPE i DEFAULT 5.
+
+CLASS lcl_factory_cal DEFINITION FINAL.
+  PUBLIC SECTION.
+    CLASS-METHODS get_calendar
+      IMPORTING i_werks        TYPE t001w-werks
+      RETURNING VALUE(r_fabkl) TYPE t001w-fabkl
+      RAISING   cx_sy_itab_line_not_found.
+    CLASS-METHODS add_workdays
+      IMPORTING i_fabkl       TYPE t001w-fabkl
+                i_date        TYPE sy-datum
+                i_days        TYPE i
+      RETURNING VALUE(r_date) TYPE sy-datum.
+  PRIVATE SECTION.
+    TYPES: BEGIN OF ty_buf,
+             werks TYPE t001w-werks,
+             fabkl TYPE t001w-fabkl,
+           END OF ty_buf.
+    CLASS-DATA gt_buf TYPE HASHED TABLE OF ty_buf WITH UNIQUE KEY werks.
+ENDCLASS.
+
+CLASS lcl_factory_cal IMPLEMENTATION.
+  METHOD get_calendar.
+    " 工廠 → 日曆 做成緩衝，大量資料逐筆呼叫時不重複讀 T001W
+    IF NOT line_exists( gt_buf[ werks = i_werks ] ).
+      SELECT SINGLE werks, fabkl
+        FROM t001w
+        WHERE werks = @i_werks
+        INTO @DATA(ls_t001w).
+      INSERT VALUE #( werks = i_werks fabkl = ls_t001w-fabkl ) INTO TABLE gt_buf.
+    ENDIF.
+    r_fabkl = gt_buf[ werks = i_werks ]-fabkl.
+    IF r_fabkl IS INITIAL.
+      RAISE EXCEPTION TYPE cx_sy_itab_line_not_found.  " 工廠沒掛日曆
+    ENDIF.
+  ENDMETHOD.
+
+  METHOD add_workdays.
+    DATA lv_facdate TYPE scal-facdate.
+
+    " 起始日若是假日，往後找第一個工作日（correct_option = '+'）
+    CALL FUNCTION 'DATE_CONVERT_TO_FACTORYDATE'
+      EXPORTING
+        correct_option       = '+'
+        date                 = i_date
+        factory_calendar_id  = i_fabkl
+      IMPORTING
+        factorydate          = lv_facdate
+      EXCEPTIONS
+        date_after_range     = 1
+        date_before_range    = 2
+        OTHERS               = 3.
+    IF sy-subrc &lt;&gt; 0.
+      RETURN.                                   " r_date 保持空白，由呼叫端判斷
+    ENDIF.
+
+    lv_facdate = lv_facdate + i_days.
+
+    CALL FUNCTION 'FACTORYDATE_CONVERT_TO_DATE'
+      EXPORTING
+        factorydate         = lv_facdate
+        factory_calendar_id = i_fabkl
+      IMPORTING
+        date                = r_date
+      EXCEPTIONS
+        OTHERS              = 1.
+    IF sy-subrc &lt;&gt; 0.
+      CLEAR r_date.                             " 超過日曆有效年度
+    ENDIF.
+  ENDMETHOD.
+ENDCLASS.
+
+START-OF-SELECTION.
+  TRY.
+      DATA(lv_fabkl) = lcl_factory_cal=&gt;get_calendar( p_werks ).
+    CATCH cx_sy_itab_line_not_found.
+      MESSAGE |工廠 { p_werks } 不存在或未指派工廠日曆（OX10）| TYPE 'S' DISPLAY LIKE 'E'.
+      RETURN.
+  ENDTRY.
+
+  DATA(lv_due) = lcl_factory_cal=&gt;add_workdays( i_fabkl = lv_fabkl
+                                                i_date  = p_date
+                                                i_days  = p_days ).
+  WRITE: / |工廠 { p_werks }（日曆 { lv_fabkl }）：{ p_date DATE = USER } 起算 { p_days } 個工作天|,
+         / COND string( WHEN lv_due IS INITIAL
+                        THEN `超出工廠日曆有效範圍，請延長 SCAL 有效年度`
+                        ELSE |到期日：{ lv_due DATE = USER }| ).</code></pre>
+  <p>判斷某一天是不是工作日（例如背景作業只在工作日執行）：</p>
+  <pre><code class="abap">" 放在背景作業程式開頭：非工作日直接結束
+DATA lv_facdate   TYPE scal-facdate.
+DATA lv_indicator TYPE scal-indicator.
+
+SELECT SINGLE fabkl FROM t001w WHERE werks = '1000' INTO @DATA(lv_cal).
+
+CALL FUNCTION 'DATE_CONVERT_TO_FACTORYDATE'
+  EXPORTING
+    correct_option       = '+'
+    date                 = sy-datum
+    factory_calendar_id  = lv_cal
+  IMPORTING
+    factorydate          = lv_facdate
+    workingday_indicator = lv_indicator   " 空白＝工作日；非空白＝休息日
+  EXCEPTIONS
+    OTHERS               = 1.
+
+IF sy-subrc &lt;&gt; 0.
+  MESSAGE |工廠日曆 { lv_cal } 讀取失敗，請檢查有效年度| TYPE 'E'.
+ELSEIF lv_indicator IS NOT INITIAL.
+  MESSAGE |{ sy-datum DATE = USER } 為非工作日，本次不執行| TYPE 'S'.
+  RETURN.
+ENDIF.</code></pre>
+  <div class="note">背景作業其實不必寫這段：<span class="tcode">SM36</span> 排程的「Start condition → Date/Time → Restrictions」可以直接指定「只在工作日執行」並選工廠日曆，這是更左邊的標準解法。程式判斷適用於同一支程式在不同工廠有不同日曆的情況。</div>
+
+  <h3 id="ch06-4-12">12. 上線前檢核清單：把本章串起來</h3>
+  <table>
+    <thead><tr><th>階段</th><th>檢查項目</th><th>工具</th></tr></thead>
+    <tbody>
+      <tr><td rowspan="3">開發中</td><td>物件名稱符合客戶規範；Package 不是 $TMP</td><td>第 6 節檢查程式、第 9 節 (3)</td></tr>
+      <tr><td>SELECT 取「第一筆」前有 ORDER BY；篩選條件優先用列舉</td><td>程式碼審查</td></tr>
+      <tr><td>工作日、假日一律讀工廠日曆，不自建假日表</td><td>SCAL、T001W-FABKL</td></tr>
+      <tr><td rowspan="3">釋放前</td><td>請求說明含模組、日期、需求單號；Task 內物件完整</td><td><span class="tcode">SE10</span></td></tr>
+      <tr><td>同一物件未卡在其他未釋放請求</td><td>第 9 節 (2)</td></tr>
+      <tr><td>整個 Package 做 Extended Program Check、Code Inspector</td><td><span class="tcode">SLIN</span>、<span class="tcode">SCI</span>／<span class="tcode">ATC</span></td></tr>
+      <tr><td rowspan="3">匯入時</td><td>Target Client 正確；不任意 Import All</td><td><span class="tcode">STMS</span></td></tr>
+      <tr><td>相依請求照順序匯入；RC ≤ 4</td><td>STMS 日誌</td></tr>
+      <tr><td>SCAL 日曆變更有另外放進請求一起傳</td><td>SCAL → Transport</td></tr>
+      <tr><td>匯入後</td><td>目標系統 SE38／SE11 確認 Active；通知使用者測試並留紀錄</td><td><span class="tcode">SE38</span>、<span class="tcode">SE11</span></td></tr>
+    </tbody>
+  </table>
+  <div class="tip">對應 Casper 的三條經驗：<b>HANA 沒有預設排序</b>——本章所有 SELECT 都帶 ORDER BY，匯出欄位清單更要依 POSITION 排序，否則每次匯出的欄位順序可能不同；<b>列舉比區間安全</b>——請求號、表名、儲位都用 EQ 清單；<b>先找標準再客製</b>——工作日走 SCAL 與標準函數、背景作業的工作日限制用 SM36 內建選項，都比自己寫假日表便宜一個量級。</div>
+
+  <h3 id="ch06-4-qa">練習與自我檢核</h3>
+  <ol>
+    <li>依客戶命名規則範本，為下列物件命名：(a) MM 模組第 12 支報表；(b) 它的宣告 Include；(c) SD 出貨單（Delivery Note）第 1 張 Smartforms；(d) PP 生產工單表頭的自建透明表；(e) 該表的鎖物件；(f) FI 模組給 SM30 用的函數群組。</li>
+    <li>規範中至少有四處位數與範例不一致（Spec ID 的 FN／TE、Smartform 流水號、Function Group 流水號、Table 範例 ZSDT9001）。逐一指出並提出修正版規則。</li>
+    <li>GUI Status 中 EXIT 的 Function Type 為什麼是「E」？如果 CANL 沒有設成 E，會發生什麼使用者抱怨？</li>
+    <li>說明 SE10 為什麼要「先放 Task、再放 Request」；Transport Log 顯示「Export: In process: Requires update」代表什麼？</li>
+    <li>STMS 匯入對話框的 Target Client 填錯，對 Workbench 請求與 Customizing 請求分別有什麼影響？</li>
+    <li>改寫第 9 節 (1) 的程式：加上「超過 30 天仍未釋放」的條件，並以 ALV 標示天數。</li>
+    <li>ZTPP0001 有 13 個 QUAN 欄位卻沒有單位欄位。用第 10.4 節的程式查出它們的 REFTABLE／REFFIELD，並說明若參照欄位錯誤會影響什麼。</li>
+    <li>第 10.3 節的程式如果要改成輸出真正的 .xlsx，可以用哪個標準類別？（提示：<span class="kw">CL_SALV_TABLE</span> 的 <span class="kw">to_xml( )</span> 搭配 <span class="kw">if_salv_bs_xml=&gt;c_type_xlsx</span>）</li>
+    <li>SCAL 年度一覽中 2022 年 Day＝6575、2023 年 Day＝6824。說明這兩個數字的意義，以及如何用它們算出 2022 年的工作日數。</li>
+    <li>客戶反映「年底 MRP 排程跑出來全部報錯」，第一個要檢查的 SCAL 設定是什麼？如果只在 QAS 修改日曆會有什麼後果？</li>
+    <li>把第 11.3 節的 <span class="kw">add_workdays</span> 改寫成「回傳兩日期間的工作日數」的方法，並處理起訖日本身是假日的情況（提示：起日用 correct_option '+'、迄日用 '-'）。</li>
+  </ol>
+</section>

@@ -1,0 +1,641 @@
+<section class="chapter" id="ch06-6" data-title="缺料表與 MIGO 檢驗批">
+  <h2>第 6-6 章 生產與庫存實務：缺料表與 MIGO 檢驗批</h2>
+  <p class="lede">本章拆解兩個工廠端最常被催的客製需求：一是生管每天要看的<b>缺料表 ZPPB0002</b>（把 MD04 的供需清單批次落地成客製表，再累計出每一筆需求「會不會缺、缺多少」）；二是品管最怕的<b>檢驗批判定做錯要回頭</b>——MIGO 收貨自動產生檢驗批、QA11 做使用決策（UD）並把品檢庫存轉出之後，如何把 UD 的庫存過帳迴轉（ZBQM003）、再把 UD 本身重設（ZBQM004）。兩個案例串起 MRP 元素、移動類型、庫存類型、檢驗類型與 S/4HANA 的 MATDOC，是 PP／MM／QM 顧問與 ABAP 開發者都該熟的一條線。</p>
+  <div class="meta">
+    <div><b>核心 TCODE</b><span class="tcode">MD04</span><span class="tcode">MD07</span><span class="tcode">CO24</span><span class="tcode">COOIS</span><span class="tcode">MIGO</span><span class="tcode">MB52</span><span class="tcode">MMBE</span><span class="tcode">QA32</span><span class="tcode">QA11</span><span class="tcode">QA12</span><span class="tcode">QA03</span><span class="tcode">OMJJ</span><span class="tcode">SE11</span><span class="tcode">SE16N</span></div>
+    <div><b>關鍵物件</b>MD_STOCK_REQUIREMENTS_LIST_API、MDPS、MDEZ、MDSU、MDKP、ZTPP0001、ZMDPS、ZMDEZ、EKPO、EKET、AFPO、CAUFV、MSLB、MSKU、MSEG／MATDOC、T458A／T458B、QALS、QAVE、QAMB、T156、BAPI_GOODSMVT_CREATE、BAPI_GOODSMVT_CANCEL、BAPI_TRANSACTION_COMMIT、BAPI_MATERIAL_AVAILABILITY</div>
+  </div>
+
+  <h3 id="ch06-6-01">1. 素材對照</h3>
+  <p>本章取材自 <span class="kw">15_實務案例</span> 的兩份素材。素材為真實專案程式，公司名、人員帳號、使用者版本代號、實際料號與工廠代碼一律不引用；範例以工廠 <span class="kw">'1000'</span>、物料 <span class="kw">'MAT-001'</span> 等佔位符表示。</p>
+  <table>
+    <thead><tr><th>素材</th><th>內容</th><th>截圖</th><th>本章小節</th></tr></thead>
+    <tbody>
+      <tr><td>ABAP_06_5_ZPPB0002_缺料表</td><td>① 批次程式 <b>ZPPB0002</b>（約 700 行）：逐料呼叫 <span class="kw">MD_STOCK_REQUIREMENTS_LIST_API</span>，把 MRP 清單寫進 ZMDPS／ZMDEZ，再加工成缺料表 ZTPP0001；② 顯示程式 <b>ZPPR0003</b> 的選擇畫面與主流程（兩組物料條件、顯示缺料／例外／需求、例外訊息 AUSSL、ALV 版面）</td><td>6 張：ZTPP0001 欄位（45 欄）與資料、ZMDPS 欄位（176 欄，INCLUDE MDPS）與資料、ZMDEZ 欄位（69 欄，INCLUDE MDEZ）與資料</td><td>2～7</td></tr>
+      <tr><td>ABAP_06_E_MIGO_mvt_inspection_lot</td><td>① 需求說明：MIGO 自動產生檢驗批；QC 判定後若要改，可把物料憑證迴轉，判定結果也要跟著取消；QALS／QAVE → QAMB → 物料憑證、T156、MKPF→MSEG；② <b>ZBQM003</b>「檢驗批 UD 庫存移轉迴轉作業」（約 600 行）；③ <b>ZBQM004</b>「檢驗批 UD 判定迴轉作業」（約 180 行）；④ 清單中另有 ZBQM005「檢驗計劃物料指派／規格設定上傳」（本素材無原始碼）</td><td>10 張：MIGO → Settings → Default Values、預設值表（動作／參考文件／移動類型／庫存類型）、SSCRFIELDS、QALS、QAVE、T156、ZBQM003～005 清單、ZBQM003 與 ZBQM004 選擇畫面、Screen Painter</td><td>8～14</td></tr>
+    </tbody>
+  </table>
+  <p>移動類型、BAPI 的基礎請先讀 <a href="#ch04-1">4-1 章</a>（RFC 與 BAPI）與 <a href="#ch05-11">5-11 章</a>（LUW 與鎖）；資料庫更新的 COMMIT 規則在第 5 節與第 12 節會再提。</p>
+
+  <h3 id="ch06-6-02">2. 缺料表的業務情境：為什麼不直接看 MD04</h3>
+  <p>MD04（庫存／需求清單）一次只能看一顆料。生管要的是「整個工廠、某些 MRP 控制員、某些採購類型的料，未來哪一天、哪一張工單會缺料，缺多少，找哪個採購、哪個供應商」。ZPPB0002 的做法是：</p>
+  <ol>
+    <li>從 MARC＋MARA 依選擇條件挑出物料，排除物料狀態 <span class="kw">MMSTA = '01' / '05'</span>（停用類狀態；以列舉排除，而不是用區間）。</li>
+    <li>逐料呼叫 <span class="kw">MD_STOCK_REQUIREMENTS_LIST_API</span>——這就是 MD04 背後的資料：<span class="kw">MDPSX</span>（MRP 元素項目，結構 MDPS）、<span class="kw">MDEZX</span>（MD04 畫面上每一列，結構 MDEZ）、<span class="kw">MDSUX</span>（期間彙總，結構 MDSU），以及表頭 <span class="kw">E_MDKP</span>（含採購群組 EKGRP）。</li>
+    <li>原樣落地到客製表 <b>ZMDPS</b>（WERKS、USNAM、CNT、MATNR、MATCNT ＋ INCLUDE MDPS）與 <b>ZMDEZ</b>（同鍵 ＋ INCLUDE MDEZ），供追查用（由參數 P_UPDT 決定是否寫入）。</li>
+    <li>把兩者合併、加工成缺料表 <b>ZTPP0001</b>（鍵：MANDT、WERKS、USNAM、MATNR、PLAAB、PLANR、CNT，共 45 欄），補上來源單據、父階料號、廠商交期、工單完工日、6 個月平均耗用、寄售／外包庫存等欄位。</li>
+    <li>顯示程式 ZPPR0003 再從 ZTPP0001 讀出、依條件篩選後用 ALV 呈現。</li>
+  </ol>
+  <p><b>「版本」</b>的概念：ZTPP0001／ZMDPS／ZMDEZ 的鍵含 <span class="kw">USNAM</span>。選擇畫面有兩個單選鈕——「工廠版」（USNAM 留空，大家共用一份）與「使用者版」（USNAM 預設 SY-UNAME），讓生管可以各自跑一份自己的物料範圍而不互相覆蓋。每次執行先 DELETE 該工廠＋版本的舊資料，再 MODIFY 新資料。</p>
+  <div class="tip">這種「批次預算好、落地成表、報表只讀表」的設計在 ECC 時代很合理：MD_STOCK_REQUIREMENTS_LIST_API 逐料呼叫很慢（每料都要讀 RESB、EKET、PLAF、AFPO、VBBE…），不可能讓使用者即時等。缺點是資料有時間差——報表上看到的是「上次批次跑的時點」，一定要把執行時間顯示在報表表頭。</div>
+
+  <h3 id="ch06-6-03">3. 選擇畫面與輸出欄位</h3>
+  <table>
+    <thead><tr><th>程式</th><th>選擇條件</th><th>用途</th></tr></thead>
+    <tbody>
+      <tr><td rowspan="5">ZPPB0002（批次）</td><td>S_MATNR、S_MTART、S_MATKL、S_DISPO、S_BESKZ</td><td>物料、物料類型、物料群組、MRP 控制員、採購類型（E 自製／F 外購）</td></tr>
+      <tr><td>P_WERKS（必填，原程式有寫死預設工廠）</td><td>工廠</td></tr>
+      <tr><td>P_EXC_BA、P_EXC_PA（預設勾選）</td><td>排除請購單 BA、計劃訂單 PA：勾選時把這兩類元素的「可用性指標」VRFKZ 清掉，不計入可用量——也就是「只算已下單的採購單與已轉的工單」</td></tr>
+      <tr><td>P_UPDT</td><td>是否同時寫入 ZMDPS／ZMDEZ（追查用）</td></tr>
+      <tr><td>R_PLANT／R_USER ＋ P_USNAM</td><td>工廠版／使用者版；使用者版時 P_USNAM 必填，工廠版時必須空白</td></tr>
+      <tr><td rowspan="4">ZPPR0003（顯示）</td><td>區塊 1：S_MATNR1、S_MTART1、S_MATKL1、S_DISPO1、S_BESKZ1、S_MMSTA1、S_EKGRP、S_LIFNR</td><td>第一組物料條件＋採購群組、供應商</td></tr>
+      <tr><td>區塊 2：S_MATNR2…S_MMSTA2、S_MATNR3、單選 P_SINGLE／P_MULTI</td><td>第二組物料條件（原程式註解寫著「業務還沒想清楚，先放上去」——需求未定就上線的欄位，日後常成為維護負擔）</td></tr>
+      <tr><td>區塊 3：P_USNAM、P_SHOWSH（缺料）、P_SHOWEX（例外）、P_SHOWDM（需求）、P_WERKS、p_tildat（截止日）、S_AUSSL（例外訊息）、P_SHOWBA／P_SHOWPA／P_SHOWVJ</td><td>版本、顯示範圍、截止日期、MRP 例外訊息；例外訊息的 F4 由 T458A＋T458B（依登入語言）組成</td></tr>
+      <tr><td>區塊 4：P_LAYOUT</td><td>ALV 版面變式（DISVARIANT-VARIANT）</td></tr>
+    </tbody>
+  </table>
+  <p>ZTPP0001 的主要輸出欄位（依截圖與程式整理）：</p>
+  <table>
+    <thead><tr><th>欄位</th><th>意義</th><th>來源</th></tr></thead>
+    <tbody>
+      <tr><td>DELKZ／DELB0</td><td>MRP 元素類型與縮寫（WB 庫存、BE 採購單、LA 出貨通知、AR 工單預留、PP 計劃獨立需求…）</td><td>MDEZ</td></tr>
+      <tr><td>DEL12／DEL13、DELPS、DELET</td><td>單據號碼、項次、排程行（DEL12 放供給單據、DEL13 放需求來源單據）</td><td>MDPS 依 DELKZ 分派</td></tr>
+      <tr><td>RSNUM／RSPOS</td><td>預留號碼／項次</td><td>MDPS-DELNR／DELPS</td></tr>
+      <tr><td>MNG01_WB／MNG01_GR／MNG01_GI</td><td>期初庫存／收（+）／發（−）數量</td><td>MDEZ-MNG01 依 PLUMI（B / + / −）拆欄</td></tr>
+      <tr><td>MNG03</td><td>可用量（ATP）</td><td>MDEZ-MNG02</td></tr>
+      <tr><td>SHORT、MNG02_SHORT</td><td>此列是否缺料、缺料量</td><td>第 4 節累計計算</td></tr>
+      <tr><td>MNG02_SHORT_TTL、MNG01_STOCK_TTL、MNG01_AVG_TTL、KULAB</td><td>整段累計缺料、庫存合計、近 6 個月月均耗用、客戶寄售庫存</td><td>第 4、5 節</td></tr>
+      <tr><td>LBLAB</td><td>供應商處外包庫存（SOBKZ = 'O'）</td><td>MSLB</td></tr>
+      <tr><td>DAT00／DAT01／DAT02、UMDAT</td><td>需求日期／收貨日期／交期或工單基本完工日、重排日期</td><td>MDEZ、EKET-EINDT、AFPO-DGLTP</td></tr>
+      <tr><td>BAUGR、EKGRP、LIFNR／MD4LI、KUNNR／MD4KD、KDAUF／KDPOS、AUSSL／AUSKT、LGORT、SOBKZ</td><td>上階料號、採購群組、供應商、客戶、銷售訂單、例外訊息、儲存地點、特殊庫存</td><td>MDPS、MDEZ、EKPO、CAUFV</td></tr>
+    </tbody>
+  </table>
+
+  <h3 id="ch06-6-04">4. 程式架構與缺料計算邏輯</h3>
+  <p>ZPPB0002 的處理順序（原程式以 FORM 串接，下面用現代寫法說明）：</p>
+  <ol>
+    <li><b>PREPARE_DATA</b>：MARC JOIN MARA 取料，排除 MMSTA 01／05。</li>
+    <li><b>GET_DATA</b>：逐料呼叫 API；<b>FIX_GT_MDPSX</b> 補列——對 PLAAB = '20' 的計劃段，若段首不是庫存列（DELKZ ≠ 'KB'）就補一列 KB（PLUMI = 'B'、VRFKZ = 'X'），讓每個計劃段都有「期初」列，再依 PLAAB、PLANR、DAT00、TAG00、SORT1、SORT2 重排。</li>
+    <li><b>CRT_GT_ZTPP0001</b>：以流水號 CNT 把 ZMDEZ 與 ZMDPS 對上，依 DELKZ 把單據號碼分派到 DEL12／DEL13／RSNUM 等欄位（見第 5 節表格），依 PLUMI 拆成收／發／期初三欄。</li>
+    <li><b>UPD_GT_ZTPP0001_CACULATE_TTL</b>：依 WERKS、MATNR、PLAAB、PLANR 分段累計，算缺料。</li>
+    <li><b>UPD_MSLB</b>、<b>UPD_DAT02</b>、<b>UPD_SO</b>：補外包庫存、交期／完工日、工單對應銷售訂單。</li>
+    <li><b>UPDDATE_DB_DATA</b>：刪舊寫新。</li>
+  </ol>
+  <p>核心的缺料演算法其實很短：<b>在同一個計劃段內，依 MD04 的時間順序逐列累加「期初庫存 + 收 − 發」，只累計可用性指標 VRFKZ = 'X' 的列；累計值一旦小於 0，該列就是缺料列，缺料量 = −累計值。</b></p>
+  <pre><code class="abap">TYPES: BEGIN OF ty_short,
+         werks       TYPE werks_d,
+         matnr       TYPE matnr,
+         plaab       TYPE plaab,
+         planr       TYPE planr,
+         cnt         TYPE num08,
+         vrfkz       TYPE vrfkz,
+         mng01_wb    TYPE mng01,
+         mng01_gr    TYPE mng01,
+         mng01_gi    TYPE mng01,
+         short       TYPE abap_bool,
+         mng02_short TYPE mng01,
+       END OF ty_short,
+       tt_short TYPE STANDARD TABLE OF ty_short WITH EMPTY KEY.
+
+METHOD calc_shortage.   " CHANGING ct_rows TYPE tt_short
+  " 累計的正確性完全取決於列的順序：CNT 是依 MD04 順序給的流水號
+  SORT ct_rows BY werks matnr plaab planr cnt.
+
+  LOOP AT ct_rows ASSIGNING FIELD-SYMBOL(&lt;grp&gt;)
+       GROUP BY ( werks = &lt;grp&gt;-werks matnr = &lt;grp&gt;-matnr
+                  plaab = &lt;grp&gt;-plaab planr = &lt;grp&gt;-planr )
+       ASSIGNING FIELD-SYMBOL(&lt;seg&gt;).
+    DATA(lv_balance) = CONV mng01( 0 ).
+    LOOP AT GROUP &lt;seg&gt; ASSIGNING FIELD-SYMBOL(&lt;row&gt;).
+      CHECK &lt;row&gt;-vrfkz = abap_true.            " 只算可用元素
+      lv_balance = lv_balance + &lt;row&gt;-mng01_wb + &lt;row&gt;-mng01_gr - &lt;row&gt;-mng01_gi.
+      IF lv_balance &lt; 0.
+        &lt;row&gt;-short       = abap_true.
+        &lt;row&gt;-mng02_short = - lv_balance.
+      ENDIF.
+    ENDLOOP.
+  ENDLOOP.
+ENDMETHOD.</code></pre>
+  <div class="warn"><b>HANA 沒有預設排序——缺料累計尤其致命。</b>這個演算法是「逐列滾動餘額」，順序一亂，缺料列就會跳到別的日期、別的工單。原批次程式在記憶體裡有 SORT，所以批次當下是對的；但顯示程式 ZPPR0003 從 ZTPP0001 讀回來時，<b>若 SELECT 沒寫 <span class="kw">ORDER BY werks, matnr, plaab, planr, cnt</span></b>，在 HANA 上每次拿到的順序可能不同，任何「在報表端重新累計」或「取第一筆缺料日」的邏輯都會不穩定。同理，READ TABLE … BINARY SEARCH 前一定要有對應鍵的 SORT（原程式在 UPD_MSLB 裡先 SORT BY MATNR DELKZ 再二分搜尋，之後又 SORT 回原鍵，這種「借用排序」很容易在後人修改時被打斷）。</div>
+
+  <h3 id="ch06-6-05">5. MRP 元素（DELKZ）與需求／供給來源對照</h3>
+  <p>ZTPP0001 的「單據號碼」欄位是依 MRP 元素類型分派的。這張表同時也是讀 MD04 的鑰匙——每一種 DELKZ 背後對應哪張資料表：</p>
+  <table>
+    <thead><tr><th>DELKZ</th><th>MD04 縮寫</th><th>意義</th><th>原程式放到</th><th>底層資料表</th></tr></thead>
+    <tbody>
+      <tr><td>WB</td><td>Stock</td><td>工廠庫存（期初列，PLUMI = B）</td><td>MNG01_WB</td><td>MARD（S/4 由 MATDOC 彙總）</td></tr>
+      <tr><td>KB</td><td>—</td><td>計劃段庫存（原程式對 PLAAB 20 補列）</td><td>MNG01_WB</td><td>—</td></tr>
+      <tr><td>BE</td><td>PO item</td><td>採購單項目（供給）</td><td>DEL12／DELPS／DELET</td><td>EKPO、EKET</td></tr>
+      <tr><td>BA</td><td>PurRqs</td><td>請購單（供給，可排除）</td><td>DEL12／DELPS／DELET</td><td>EBAN</td></tr>
+      <tr><td>LA</td><td>ShipNt</td><td>出貨通知（供給）；另以 EKPO 取上階料號</td><td>DEL12／DELPS／DELET、BAUGR</td><td>EKES、EKPO</td></tr>
+      <tr><td>PA</td><td>PldOrd</td><td>計劃訂單（供給，可排除）</td><td>DEL12</td><td>PLAF</td></tr>
+      <tr><td>FE</td><td>PrdOrd</td><td>生產工單（供給：成品收貨）</td><td>DEL12／DELPS</td><td>AFKO、AFPO</td></tr>
+      <tr><td>QM</td><td>QM lot</td><td>檢驗批（品檢庫存，供給）</td><td>DEL12</td><td>QALS</td></tr>
+      <tr><td>AR</td><td>OrdRes</td><td>工單元件需求（需求）；DAT02 取工單基本完工日、補銷售訂單</td><td>DEL13（工單）／RSNUM／RSPOS</td><td>RESB、AFPO-DGLTP、CAUFV-KDAUF／KDPOS</td></tr>
+      <tr><td>SB</td><td>DepReq</td><td>計劃訂單的相依需求</td><td>DEL13（AUFVR）／RSNUM／RSPOS</td><td>RESB（計劃訂單元件）</td></tr>
+      <tr><td>BB</td><td>SubReq</td><td>外包提供料需求；DAT02 取採購排程行交期</td><td>DEL13（採購單）／DELPS／DELET／RSNUM</td><td>RESB、EKET-EINDT、MSLB</td></tr>
+      <tr><td>VC／VJ／VI</td><td>Order／Deliv.／…</td><td>銷售訂單、交貨單等需求；VJ 時把客戶帶入 LIFNR 欄</td><td>DEL13／DELPS／DELET</td><td>VBBE、VBAP、LIPS</td></tr>
+      <tr><td>MR／UR</td><td>Reserv／…</td><td>手動預留／調撥預留</td><td>RSNUM／RSPOS</td><td>RESB</td></tr>
+      <tr><td>PP</td><td>IndReq</td><td>計劃獨立需求</td><td>DEL13</td><td>PBIM、PBED</td></tr>
+    </tbody>
+  </table>
+  <p>補充查詢（原程式用多次 FOR ALL ENTRIES＋MODIFY … WHERE 回填）可以合併成少數幾個 SELECT，並一律明列欄位：</p>
+  <pre><code class="abap">" AR（工單預留）：工單基本完工日 + 對應銷售訂單，一次 JOIN 取得
+TYPES tt_aufnr TYPE STANDARD TABLE OF aufnr WITH EMPTY KEY.
+DATA(lt_orders) = VALUE tt_aufnr( FOR &lt;r&gt; IN gt_short WHERE ( delkz = 'AR' ) ( &lt;r&gt;-del13 ) ).
+SORT lt_orders. DELETE ADJACENT DUPLICATES FROM lt_orders.
+
+IF lt_orders IS NOT INITIAL.
+  SELECT FROM afpo AS p
+    FIELDS p~aufnr, p~dgltp, p~kdauf, p~kdpos
+    FOR ALL ENTRIES IN @lt_orders
+    WHERE p~aufnr = @lt_orders-table_line
+      AND p~posnr = '0001'
+    INTO TABLE @DATA(lt_ord_info).
+  SORT lt_ord_info BY aufnr.
+ENDIF.
+
+" BB（外包提供料）：採購排程行交期
+SELECT FROM eket
+  FIELDS ebeln, ebelp, etenr, eindt
+  FOR ALL ENTRIES IN @gt_short
+  WHERE ebeln = @gt_short-del13
+    AND ebelp = @gt_short-delps
+    AND etenr = @gt_short-delet
+  INTO TABLE @DATA(lt_eket).
+SORT lt_eket BY ebeln ebelp etenr.
+
+LOOP AT gt_short ASSIGNING FIELD-SYMBOL(&lt;s&gt;).
+  CASE &lt;s&gt;-delkz.
+    WHEN 'AR'.
+      &lt;s&gt;-dat02 = VALUE #( lt_ord_info[ aufnr = &lt;s&gt;-del13 ]-dgltp OPTIONAL ).
+      &lt;s&gt;-kdauf = VALUE #( lt_ord_info[ aufnr = &lt;s&gt;-del13 ]-kdauf OPTIONAL ).
+      &lt;s&gt;-kdpos = VALUE #( lt_ord_info[ aufnr = &lt;s&gt;-del13 ]-kdpos OPTIONAL ).
+    WHEN 'BB'.
+      &lt;s&gt;-dat02 = VALUE #( lt_eket[ ebeln = &lt;s&gt;-del13 ebelp = &lt;s&gt;-delps
+                                    etenr = &lt;s&gt;-delet ]-eindt OPTIONAL ).
+  ENDCASE.
+ENDLOOP.</code></pre>
+  <div class="note">FOR ALL ENTRIES 的驅動表若是空的，WHERE 條件會整個失效、變成全表讀取——上面 EKET 那段在正式程式中要先檢查 <span class="kw">gt_short</span> 有 BB 列（或先抽出 BB 子集合）。原程式的 UPD_SO 就少了這個檢查：沒有 AR 列時會把整張 CAUFV 讀進來。</div>
+
+  <h3 id="ch06-6-06">6. 關鍵段落現代改寫：取 MRP 清單、歷史耗用、特殊庫存</h3>
+  <p><b>(1) 逐料呼叫 MD04 API。</b>原程式用 WITH HEADER LINE 的內表、MOVE-CORRESPONDING 與手工計數；改寫後以內嵌宣告與 VALUE 建構：</p>
+  <pre><code class="abap">SELECT FROM marc AS c
+       INNER JOIN mara AS a ON a~matnr = c~matnr
+  FIELDS c~matnr, c~werks
+  WHERE c~werks  = @p_werks
+    AND c~matnr IN @s_matnr
+    AND c~dispo IN @s_dispo
+    AND c~beskz IN @s_beskz
+    AND a~mtart IN @s_mtart
+    AND a~matkl IN @s_matkl
+    AND c~mmsta NOT IN ( '01', '05' )      " 以列舉排除停用狀態
+  ORDER BY c~matnr
+  INTO TABLE @DATA(lt_marc).
+
+DATA lv_cnt TYPE num08.
+
+LOOP AT lt_marc INTO DATA(ls_marc).
+  DATA: lt_mdps TYPE STANDARD TABLE OF mdps WITH EMPTY KEY,
+        lt_mdez TYPE STANDARD TABLE OF mdez WITH EMPTY KEY,
+        lt_mdsu TYPE STANDARD TABLE OF mdsu WITH EMPTY KEY,
+        ls_mdkp TYPE mdkp.
+  CLEAR: lt_mdps, lt_mdez, lt_mdsu, ls_mdkp.
+
+  CALL FUNCTION 'MD_STOCK_REQUIREMENTS_LIST_API'
+    EXPORTING
+      matnr                    = ls_marc-matnr
+      werks                    = ls_marc-werks
+    IMPORTING
+      e_mdkp                   = ls_mdkp
+    TABLES
+      mdpsx                    = lt_mdps
+      mdezx                    = lt_mdez
+      mdsux                    = lt_mdsu
+    EXCEPTIONS
+      material_plant_not_found = 1
+      plant_not_found          = 2
+      OTHERS                   = 3.
+  IF sy-subrc &lt;&gt; 0.
+    APPEND VALUE #( matnr = ls_marc-matnr msg = |MRP 清單讀取失敗 { sy-subrc }| ) TO gt_log.
+    CONTINUE.
+  ENDIF.
+
+  LOOP AT lt_mdez INTO DATA(ls_mdez).
+    lv_cnt += 1.                                    " += 需 7.54；1809 請寫 lv_cnt = lv_cnt + 1
+    APPEND VALUE #( BASE CORRESPONDING #( ls_mdez )
+                    werks = ls_marc-werks
+                    usnam = p_usnam
+                    matnr = ls_marc-matnr
+                    cnt   = lv_cnt
+                    ekgrp = ls_mdkp-ekgrp ) TO gt_short_src.
+  ENDLOOP.
+ENDLOOP.</code></pre>
+  <div class="warn">原程式讓 ZMDPS 與 ZMDEZ 用「同一個流水號 CNT」對應，隱含假設 <b>MDPSX 與 MDEZX 逐列一一對齊</b>。但 FIX_GT_MDPSX 只對 MDPSX 補了 KB 列並重排，MDEZX 沒有補——PLAAB 20 的計劃段一旦觸發補列，後面每一列的 CNT 就錯位，READ TABLE gt_zmdps WITH KEY cnt = … 抓到的是「隔壁那一列」的單據號碼。改寫時應以 MDEZ 為主，用 MDEZ 本身帶的 DELNR／DELPS／DELET 對應，或以 PLAAB＋PLANR＋DELKZ＋DELNR＋DELPS 為鍵對應 MDPS，不要依賴列號。</div>
+
+  <p><b>(2) 近 6 個月平均耗用。</b>原程式在「每個計劃段」的迴圈裡對 MSEG 做 <span class="kw">SELECT *</span>，而且<b>沒有加工廠條件</b>。改寫成一次 SELECT、以 MATDOC 取代 MSEG、移動類型用列舉：</p>
+  <pre><code class="abap">" 期間：6 個月前的月初 ~ 上個月月底
+DATA(lv_to)   = CONV d( CONV d( |{ sy-datum(6) }01| ) - 1 ).
+DATA lv_from TYPE d.
+CALL FUNCTION 'CALCULATE_DATE'
+  EXPORTING months      = '-6'
+            start_date  = sy-datum
+  IMPORTING result_date = lv_from.
+lv_from+6(2) = '01'.
+
+" 耗用類移動類型：列舉，不用區間（201~914 用 BT 會把 311、501、561 全抓進來）
+DATA(lr_bwart) = VALUE rsis_t_range(
+  FOR bw IN VALUE string_table( ( `201` ) ( `202` ) ( `261` ) ( `262` ) ( `543` ) ( `544` )
+                                ( `601` ) ( `602` ) ( `901` ) ( `902` ) ( `903` ) ( `904` )
+                                ( `911` ) ( `912` ) ( `913` ) ( `914` ) )
+  ( sign = 'I' option = 'EQ' low = bw ) ).
+
+SELECT FROM matdoc
+  FIELDS matnr,
+         SUM( CASE shkzg WHEN 'H' THEN stock_qty ELSE - stock_qty END ) AS used_qty
+  WHERE werks  = @p_werks
+    AND bwart IN @lr_bwart
+    AND budat BETWEEN @lv_from AND @lv_to
+    AND record_type = 'MDOC'
+  GROUP BY matnr
+  INTO TABLE @DATA(lt_usage).
+
+" 月平均：保留小數，不要塞進 TYPE I
+LOOP AT lt_usage ASSIGNING FIELD-SYMBOL(&lt;u&gt;).
+  DATA(lv_avg) = CONV mng01( &lt;u&gt;-used_qty / 6 ).
+ENDLOOP.</code></pre>
+  <div class="note">用借貸別 SHKZG 決定正負（H＝貸方／出庫記正、S＝借方／迴轉記負），就不必像原程式那樣手寫「201 加、202 減」兩張清單。MATDOC 的數量欄位與 RECORD_TYPE 的值請在 SE11 依系統版本確認（S/4HANA 1809 起 MATDOC 已是實體表，<span class="kw">RECORD_TYPE = 'MDOC'</span> 為一般物料憑證列）；若公司規定只能讀已發佈介面，可改用 CDS <span class="kw">I_MaterialDocumentItem_2</span>（較新版本才有，1809 請確認是否存在）。</div>
+  <div class="warn"><b>條件用列舉（多筆 EQ）比用區間（BT）安全。</b>耗用類移動類型散落在 2xx、5xx、6xx、9xx，用 BT 一定會把轉庫、盤點、期初入帳等「非耗用」的移動一起算進去。原程式用 OR 串列舉是對的方向，但 SELECT 清單和計算清單不一致（見第 7 節），改成單一 range 表同時給 SELECT 與計算使用，才不會兩邊各改各的。</div>
+
+  <p><b>(3) 外包與寄售庫存。</b>BB／LA 列補上供應商處的外包庫存 MSLB（SOBKZ = 'O'），庫存列（WB）補上全部供應商合計；另以 MSKU 加總客戶寄售庫存 KULAB：</p>
+  <pre><code class="abap">SELECT FROM mslb
+  FIELDS matnr, lifnr, SUM( lblab ) AS lblab
+  WHERE werks = @p_werks
+    AND sobkz = 'O'
+    AND charg = @space
+  GROUP BY matnr, lifnr
+  INTO TABLE @DATA(lt_mslb).
+
+SELECT FROM msku
+  FIELDS matnr, SUM( kulab ) AS kulab
+  WHERE werks = @p_werks
+  GROUP BY matnr
+  INTO TABLE @DATA(lt_msku).
+
+LOOP AT gt_short ASSIGNING FIELD-SYMBOL(&lt;s&gt;).
+  CASE &lt;s&gt;-delkz.
+    WHEN 'BB' OR 'LA'.
+      &lt;s&gt;-lblab = VALUE #( lt_mslb[ matnr = &lt;s&gt;-matnr lifnr = &lt;s&gt;-lifnr ]-lblab OPTIONAL ).
+    WHEN 'WB'.
+      &lt;s&gt;-lblab = REDUCE #( INIT t = CONV lblab( 0 )
+                            FOR m IN lt_mslb WHERE ( matnr = &lt;s&gt;-matnr )
+                            NEXT t = t + m-lblab ).
+  ENDCASE.
+  &lt;s&gt;-kulab = VALUE #( lt_msku[ matnr = &lt;s&gt;-matnr ]-kulab OPTIONAL ).
+ENDLOOP.</code></pre>
+  <div class="warn">S/4HANA 中 MSLB、MSKU、MARD 等庫存表的數量欄位已改由 MATDOC 即時彙總（透過相容性 view 重導），讀取可以照舊、效能也不差，但<b>不能再寫入</b>；原程式只讀，沒有問題。原程式 <span class="kw">CHARG = ''</span> 只取「無批次」的外包庫存，批次管理的料會被漏算——這是業務規則還是疏忽，上線前要跟生管確認。</div>
+
+  <h3 id="ch06-6-07">7. 原程式問題與上線注意（缺料表）</h3>
+  <table>
+    <thead><tr><th>#</th><th>問題</th><th>影響</th><th>建議</th></tr></thead>
+    <tbody>
+      <tr><td>1</td><td>GET_HISTORY_USE 的 SELECT 清單沒有 202，但 CALCULATE_HISTORY_USE 卻有「202 要扣回」的分支</td><td>201 的迴轉（202）永遠不會被扣，成本中心領料的平均耗用偏高</td><td>SELECT 與計算共用同一個 range 表；或改用 SHKZG 決定正負</td></tr>
+      <tr><td>2</td><td>讀 MSEG 沒有 WERKS 條件，且在每個計劃段的迴圈內 SELECT *</td><td>多工廠時把別廠耗用算進來；N＋1 查詢，資料量大時批次跑數小時</td><td>一次 GROUP BY 取回；加工廠條件；改讀 MATDOC</td></tr>
+      <tr><td>3</td><td>平均耗用放在 <span class="kw">TYPE I</span>，還做整數除法</td><td>小數被捨去，低耗用料（月均 0.5）變 0</td><td>用數量型別（MENGE_D／MNG01）</td></tr>
+      <tr><td>4</td><td>ZMDPS／ZMDEZ 以列號 CNT 對齊，但只對 MDPSX 補列</td><td>計劃段 20 的料單據號碼錯位</td><td>以單據鍵對應（見第 6 節）</td></tr>
+      <tr><td>5</td><td>CASE GT_ZMDPS-DELKZ 中 <span class="kw">WHEN 'UR'</span> 寫了兩次</td><td>第二個分支永遠不會執行（無害但表示邏輯沒整理過）</td><td>整理 DELKZ 對照表（第 5 節）後重寫</td></tr>
+      <tr><td>6</td><td>先 DELETE 舊資料並 COMMIT，再 MODIFY 新資料再 COMMIT</td><td>中間失敗時報表整個是空的；使用者在批次執行中查詢會看到半套資料</td><td>刪除與寫入放同一個 LUW，一次 COMMIT；或用「版本時戳」寫新、切換後再刪舊</td></tr>
+      <tr><td>7</td><td>FOR ALL ENTRIES 前未檢查驅動表（UPD_SO）</td><td>無 AR 列時全表讀 CAUFV</td><td>先 IF … IS NOT INITIAL</td></tr>
+      <tr><td>8</td><td>工廠預設值寫死在程式（PARAMETERS DEFAULT 與 INITIALIZATION 各寫一次）</td><td>多廠導入時要改程式</td><td>改用 MEMORY ID WRK 或參數設定表</td></tr>
+      <tr><td>9</td><td>MNG01_GI 以 <span class="kw">0 - MNG01</span> 取正值，但累計時又減一次</td><td>符號約定不清，後人容易改錯</td><td>在結構上註明「GI 以正數儲存」</td></tr>
+    </tbody>
+  </table>
+  <p><b>上線注意：</b></p>
+  <ul>
+    <li>批次排程：MRP 跑完之後再跑缺料表（例如 MRP 夜間背景作業完成後以事件觸發），否則看到的是「舊 MRP 結果」。背景作業見 <a href="#ch04-4">4-4 章</a>。</li>
+    <li>S/4HANA 的 MRP Live（MD01N）不會像 MD01 一樣在固定時點產生 MRP 清單；MD_STOCK_REQUIREMENTS_LIST_API 讀的是即時的庫存／需求清單，結果跟 MD04 一致，這點反而比 ECC 單純。</li>
+    <li>ZTPP0001 一個版本動輒數萬筆（截圖中已有 20,000 筆以上），刪舊寫新要注意表空間與 DELETE 的鎖；報表端 SELECT 一定要帶 WERKS＋USNAM（主鍵前段）。</li>
+    <li>MATNR 在 S/4 是 40 碼，客製表欄位要參照資料元素 MATNR，不要自己宣告 CHAR18。</li>
+  </ul>
+
+  <h3 id="ch06-6-08">8. 先找標準：CO24、MD04、MD07 與 BAPI_MATERIAL_AVAILABILITY</h3>
+  <p>Casper 的第 3 條經驗：<b>標準設定 → BAdI／Enhancement Spot → Enhancement Point → 修改標準，每往右一步升級成本高一個量級。</b>缺料表這類需求，在寫程式之前先把標準工具走一遍：</p>
+  <table>
+    <thead><tr><th>標準工具</th><th>能做到</th><th>做不到（才需要客製）</th></tr></thead>
+    <tbody>
+      <tr><td><span class="tcode">CO24</span> 缺料資訊系統</td><td>依工廠／MRP 控制員列出工單元件的缺料（需搭配可用性檢查設定）</td><td>只看工單元件；無法同時看採購交期、外包庫存、平均耗用</td></tr>
+      <tr><td><span class="tcode">MD04</span>／<span class="tcode">MD07</span></td><td>單料／多料的庫存需求清單，MD07 可依例外訊息、MRP 控制員彙總並上色</td><td>無法匯出成一張「逐需求累計缺料」的明細表</td></tr>
+      <tr><td><span class="tcode">COOIS</span>（元件清單）</td><td>工單元件需求量、已領量、缺料指示</td><td>沒有供給面</td></tr>
+      <tr><td>Fiori「Monitor Material Coverage」「Manage Material Coverage」</td><td>S/4HANA 的缺料監控 App，依天數涵蓋率顯示短缺</td><td>需 Fiori 環境與授權</td></tr>
+      <tr><td><span class="kw">BAPI_MATERIAL_AVAILABILITY</span></td><td>用 ATP 規則算可用量，可在客製程式中呼叫</td><td>回傳的是 ATP 期間表，不是 MD04 明細</td></tr>
+    </tbody>
+  </table>
+  <pre><code class="abap">DATA: lt_wmdvsx TYPE STANDARD TABLE OF bapiwmdvs WITH EMPTY KEY,
+      lt_wmdvex TYPE STANDARD TABLE OF bapiwmdve WITH EMPTY KEY,
+      ls_return TYPE bapireturn,
+      lv_av_qty TYPE bapicm61v-wkbst.
+
+CALL FUNCTION 'BAPI_MATERIAL_AVAILABILITY'
+  EXPORTING
+    plant         = '1000'
+    material_long = 'MAT-001'        " S/4 40 碼料號用 MATERIAL_LONG
+    unit          = 'PC'
+    check_rule    = 'PP'             " 檢查規則，依 OVZ9／OPJJ 設定
+  IMPORTING
+    av_qty_plt    = lv_av_qty
+    return        = ls_return
+  TABLES
+    wmdvsx        = lt_wmdvsx        " 需求日期／數量（可傳入）
+    wmdvex        = lt_wmdvex.       " 回傳各日期的可承諾量
+
+IF ls_return-type CA 'EA'.
+  MESSAGE ls_return-message TYPE 'I'.
+ELSE.
+  cl_demo_output=&gt;display( lt_wmdvex ).
+ENDIF.</code></pre>
+  <div class="tip">評估順序建議：先讓生管用 MD07＋CO24 跑兩週，列出「標準看不到、但每天一定要看」的欄位（通常是採購交期、供應商、外包庫存、上階料號），再決定客製範圍。很多時候客製只需要「MD_STOCK_REQUIREMENTS_LIST_API ＋ 幾個補欄位」的即時 ALV，根本不需要落地表與批次。</div>
+
+  <h3 id="ch06-6-09">9. MIGO 與移動類型：從預設值開始</h3>
+  <p>素材的第二部分從 MIGO 談起。MIGO 畫面上的「動作（A01 收貨、A07 發貨…）＋參考文件（R01 採購單、R08 工單、R09 預留、R10 其他）」組合，決定了預設帶出的移動類型與庫存類型。使用者可以在 <b>MIGO → More → Settings → Default Values</b> 自行調整（素材截圖）：</p>
+  <table>
+    <thead><tr><th>動作</th><th>參考文件</th><th>預設移動類型</th><th>庫存類型</th><th>移動類型說明</th></tr></thead>
+    <tbody>
+      <tr><td>A01 Goods Receipt</td><td>R08 Order</td><td>101</td><td>Unrestricted-Use</td><td>GR goods receipt（工單收貨）</td></tr>
+      <tr><td>A01 Goods Receipt</td><td>R09 Reservation</td><td>501</td><td>Unrestricted-Use</td><td>Receipt w/o PO</td></tr>
+      <tr><td>A01 Goods Receipt</td><td>R10 Other</td><td>561</td><td>Unrestricted-Use</td><td>Init. entry of stBal.（期初入帳）</td></tr>
+      <tr><td>A02 Return Delivery</td><td>R09 Reservation</td><td>（空白）</td><td>Unrestricted-Use</td><td>—</td></tr>
+      <tr><td>A07 Goods Issue</td><td>R01 Purchase Order</td><td>351</td><td>Unrestricted-Use</td><td>TF to stck in trans.（調撥在途）</td></tr>
+      <tr><td>A07 Goods Issue</td><td>R08 Order</td><td>261</td><td>Unrestricted-Use</td><td>GI for order</td></tr>
+      <tr><td>A07 Goods Issue</td><td>R09 Reservation</td><td>201</td><td>Unrestricted-Use</td><td>GI for cost center</td></tr>
+    </tbody>
+  </table>
+  <div class="note">預設值是<b>使用者層級</b>的設定，不是系統組態。常見狀況：某位倉管把 A01／R08 的庫存類型改成「Quality Inspection」，之後他收的工單成品全進了品檢庫存，別人收的卻是非限制——查問題時別忘了看這裡。移動類型本身的定義在 T156（SE11 截圖），組態在 <span class="tcode">OMJJ</span>。</div>
+
+  <h3 id="ch06-6-10">10. 常用移動類型總表</h3>
+  <p>下表整理 MM／PP／QM 實務最常用的移動類型。標 ★ 者出現在本章素材（MIGO 預設值、ZPPB0002 耗用清單、ZBQM003 排除清單）；其餘依 SAP 標準定義補齊。慣例：<b>奇數為正向、下一個偶數為其迴轉</b>（101/102、261/262、321/322…）。</p>
+  <table>
+    <thead><tr><th>移動類型</th><th>說明</th><th>庫存變化</th><th>典型交易</th></tr></thead>
+    <tbody>
+      <tr><td>101 ★ ／ 102</td><td>採購單或工單收貨／迴轉</td><td>＋非限制（或品檢、凍結，依庫存類型與 QM 設定）</td><td>MIGO A01、CO11N 最後一站自動收貨</td></tr>
+      <tr><td>103 ／ 104</td><td>採購單收貨至「收貨凍結庫存」（不計入評價庫存）／迴轉</td><td>＋GR blocked</td><td>MIGO A01 + 移動類型 103</td></tr>
+      <tr><td>105 ／ 106</td><td>收貨凍結庫存放行入庫／迴轉</td><td>GR blocked → 非限制或品檢</td><td>MIGO A05 Release GR blocked stock</td></tr>
+      <tr><td>122</td><td>退貨給供應商（參照原收貨憑證）</td><td>−</td><td>MIGO A02</td></tr>
+      <tr><td>161</td><td>退貨採購單項目收貨（Returns PO）</td><td>−</td><td>MIGO A01 參照退貨 PO</td></tr>
+      <tr><td>201 ★ ／ 202 ★</td><td>成本中心領料／迴轉</td><td>−非限制</td><td>MIGO A07／R09</td></tr>
+      <tr><td>261 ★ ／ 262 ★</td><td>工單發料／退料</td><td>−非限制</td><td>MIGO A07／R08、倒沖</td></tr>
+      <tr><td>301</td><td>工廠間轉移（一步）</td><td>A 廠 − ／ B 廠 ＋</td><td>MIGO A08 Transfer posting</td></tr>
+      <tr><td>309</td><td>料號轉料號</td><td>A 料 − ／ B 料 ＋</td><td>MIGO A08</td></tr>
+      <tr><td>311</td><td>同廠儲位間轉移（一步）</td><td>儲位 A − ／ 儲位 B ＋</td><td>MIGO A08</td></tr>
+      <tr><td>321 ／ 322</td><td>品檢 → 非限制／非限制 → 品檢</td><td>庫存類型轉換</td><td>QA11 UD 過帳自動產生；無檢驗批時可用 MIGO</td></tr>
+      <tr><td>341 ★ ／ 342 ★</td><td>批次狀態變更（受限 ↔ 非限制）</td><td>批次狀態轉換</td><td>批次狀態管理；ZBQM003 迴轉時排除</td></tr>
+      <tr><td>343 ／ 344</td><td>凍結 → 非限制／非限制 → 凍結</td><td>庫存類型轉換</td><td>MIGO A08</td></tr>
+      <tr><td>349 ／ 350</td><td>凍結 → 品檢／品檢 → 凍結</td><td>庫存類型轉換</td><td>QA11 判不合格轉凍結時為 350</td></tr>
+      <tr><td>351 ★</td><td>調撥單發貨至在途庫存</td><td>− 供應廠 ／ ＋在途</td><td>MIGO A07／R01、VL02N</td></tr>
+      <tr><td>501 ★</td><td>無採購單收貨</td><td>＋非限制</td><td>MIGO A01／R10</td></tr>
+      <tr><td>543 ★ ／ 544 ★</td><td>外包加工：外包庫存消耗／迴轉</td><td>− 供應商處外包庫存</td><td>外包採購單收貨時自動產生</td></tr>
+      <tr><td>551</td><td>非限制庫存報廢（553 品檢、555 凍結報廢）</td><td>−</td><td>MIGO A07</td></tr>
+      <tr><td>561 ★</td><td>期初庫存入帳</td><td>＋非限制（563 品檢、565 凍結）</td><td>上線資料轉換</td></tr>
+      <tr><td>601 ★ ／ 602 ★</td><td>交貨單發貨／迴轉</td><td>−非限制</td><td>VL02N 過帳發貨、VL09</td></tr>
+      <tr><td>653</td><td>客戶退貨入非限制（651 入凍結、655 入品檢）</td><td>＋</td><td>退貨交貨單過帳</td></tr>
+      <tr><td>901～914 ★</td><td>客製移動類型（素材用作其他耗用）</td><td>依 OMJJ 複製來源而定</td><td>9xx 為客戶保留區間，意義只能從該系統 T156 與組態確認</td></tr>
+    </tbody>
+  </table>
+  <div class="warn">「101 收到哪一種庫存」不是由移動類型單獨決定：MIGO 畫面的庫存類型欄位、物料主檔 QM 檢視的「過帳至品檢庫存」、檢驗設定（檢驗類型 01／04 是否啟用）三者共同決定。程式裡若要判斷「這筆收貨進了什麼庫存」，請讀憑證行上的庫存類型欄位（MSEG-INSMK；S/4 MATDOC 另有 stock type 相關欄位），不要只看 BWART。</div>
+
+  <h3 id="ch06-6-11">11. 檢驗批、使用決策與庫存類型</h3>
+  <p>素材的業務描述是：「MIGO 時就會自動產生 INSPECTION LOT（由後台設定發動）；QC 判定之後若還要改，可將物料憑證直接迴轉，則判定結果亦會取消。」背後的物件關係：</p>
+  <pre><code class="abap">*  MIGO 101 收貨（MATDOC／舊 MKPF+MSEG）
+*        │  物料主檔 QM view：檢驗類型 01 啟用、過帳至品檢庫存
+*        ▼
+*  QALS  檢驗批（PRUEFLOS；MBLNR/MJAHR/ZEILE 指回收貨憑證；LMENGEZUB 待過帳量）
+*        │  QA32 工作清單 → QA11 使用決策（UD）
+*        ▼
+*  QAVE  使用決策（VCODE 判定碼、VBEWERTUNG 接受/拒絕）
+*        │  UD 同時做「庫存過帳」：321 品檢→非限制、350 品檢→凍結、553 報廢…
+*        ▼
+*  QAMB  檢驗批 ↔ 物料憑證連結表
+*        TYP = '1'：產生檢驗批的收貨憑證
+*        TYP = '3'：UD 庫存過帳的憑證
+*        TYP = '7'：UD 過帳已沖銷（ZBQM003 寫入）</code></pre>
+  <table>
+    <thead><tr><th>檢驗類型</th><th>觸發時點</th><th>典型移動類型</th></tr></thead>
+    <tbody>
+      <tr><td>01</td><td>採購單收貨檢驗</td><td>101（參照 PO）</td></tr>
+      <tr><td>04</td><td>生產收貨檢驗</td><td>101（參照工單）</td></tr>
+      <tr><td>05</td><td>其他收貨檢驗</td><td>501、561 等</td></tr>
+      <tr><td>08</td><td>庫存轉移檢驗</td><td>301、311 等</td></tr>
+      <tr><td>89</td><td>其他（手動建立檢驗批）</td><td>QA01 手動建立</td></tr>
+    </tbody>
+  </table>
+  <table>
+    <thead><tr><th>庫存類型</th><th>MARD 欄位（S/4 由 MATDOC 彙總）</th><th>可否發料</th><th>MRP 是否視為可用</th></tr></thead>
+    <tbody>
+      <tr><td>非限制（Unrestricted-Use）</td><td>LABST</td><td>可以</td><td>是</td></tr>
+      <tr><td>品檢（Quality Inspection）</td><td>INSME</td><td>不可（只能 UD 或轉移）</td><td>預設是（MRP 群組可設定）；在缺料表中以 DELKZ = 'QM' 出現</td></tr>
+      <tr><td>凍結（Blocked）</td><td>SPEME</td><td>不可</td><td>否</td></tr>
+      <tr><td>收貨凍結（GR Blocked，103）</td><td>不在 MARD，在採購歷史</td><td>不可</td><td>否，且不入評價</td></tr>
+    </tbody>
+  </table>
+  <p>物料主檔 QM 檢視的重點欄位：<b>QM 採購啟用</b>（MARC-QMATV）、<b>檢驗設定</b>按鈕（各檢驗類型是否啟用、是否過帳至品檢庫存，存於 QMAT）。相關交易：<span class="tcode">QA32</span>（檢驗批工作清單）、<span class="tcode">QA11</span>（記錄使用決策）、<span class="tcode">QA12</span>（變更 UD——只能改判定碼，已過帳的庫存不會自動迴轉）、<span class="tcode">QA03</span>（顯示檢驗批）。</p>
+  <p>查檢驗批目前的量與 UD 狀態：</p>
+  <pre><code class="abap">PARAMETERS p_lot TYPE qals-prueflos OBLIGATORY MEMORY ID qls.
+
+SELECT SINGLE FROM qals
+  FIELDS prueflos, art, matnr, werk, charg, objnr,
+         mblnr, mjahr, zeile,                   " 產生檢驗批的收貨憑證
+         losmenge, lmengezub,                   " 批量、尚待過帳量
+         lmenge01, lmenge02, lmenge04, lmenge07 " 已轉非限制／報廢／凍結／樣品…
+  WHERE prueflos = @p_lot
+  INTO @DATA(ls_lot).
+IF sy-subrc &lt;&gt; 0.
+  MESSAGE e102(qa) WITH p_lot.
+ENDIF.
+
+SELECT SINGLE FROM qave
+  FIELDS prueflos, vcode, vcodegrp, vbewertung, vdatum, vname
+  WHERE prueflos = @p_lot
+  INTO @DATA(ls_ud).
+
+" 狀態：I0218 = 已做使用決策（依原程式註解）
+CALL FUNCTION 'STATUS_CHECK'
+  EXPORTING
+    objnr             = ls_lot-objnr
+    status            = 'I0218'
+  EXCEPTIONS
+    status_not_active = 1
+    OTHERS            = 2.
+DATA(lv_ud_done) = xsdbool( sy-subrc = 0 ).
+
+cl_demo_output=&gt;write( ls_lot ).
+cl_demo_output=&gt;write( |UD 已完成：{ lv_ud_done }  判定碼：{ ls_ud-vcode }| ).
+cl_demo_output=&gt;display( ).</code></pre>
+
+  <h3 id="ch06-6-12">12. ZBQM003／ZBQM004：UD 迴轉的程式架構</h3>
+  <p>ZBQM003「檢驗批 UD 庫存移轉迴轉作業」（選擇畫面：檢驗批必填、迴轉日期）與 ZBQM004「檢驗批 UD 判定迴轉作業」（選擇畫面：檢驗批＋ Select／Show 兩個按鈕，按鈕透過 <span class="kw">SSCRFIELDS-UCOMM</span> 判斷）必須<b>依序</b>執行：先把 UD 做的庫存過帳沖掉，再把 UD 本身重設成「未判定」。</p>
+  <table>
+    <thead><tr><th>步驟</th><th>ZBQM003（沖銷 UD 庫存過帳）</th></tr></thead>
+    <tbody>
+      <tr><td>1</td><td>檢查迴轉日期：空白時自動帶入原 UD 過帳憑證的過帳日（QAMB TYP 3 JOIN MKPF）；有輸入時必須等於原過帳日</td></tr>
+      <tr><td>2</td><td>鎖檢驗批 <span class="kw">ENQUEUE_EQQALS1</span>；以 <span class="kw">QPSE_LOT_READ</span> 讀 QALS</td></tr>
+      <tr><td>3</td><td>CHECK_LOT：有收貨憑證參照（QALS-ZEILE）、非序號料（SERNP）、狀態檢查（I0203、BTEI I0219／BEND I0220、LSTO I0224／LSTV I0232 取消、ARSP／ARCH／REO1～3 封存、SPER I0043 凍結、I0443 HU 管理），每種不符回傳不同訊息</td></tr>
+      <tr><td>4</td><td>讀 QAMB（TYP = '3'）取得 UD 過帳憑證；鎖 <span class="kw">ENQUEUE_EMMKPF</span>、讀表頭 <span class="kw">MB_READ_MATERIAL_HEADER</span>；若該憑證同時是產生檢驗批的憑證（QAMB TYP = '1'）則中止</td></tr>
+      <tr><td>5</td><td>讀憑證行 <span class="kw">MB_READ_MATERIAL_POSITION</span>，刪除自動產生行（XAUTO）與 341／342；再查 MSEG-SMBLN 排除已被沖銷的行</td></tr>
+      <tr><td>6</td><td>組 IMSEG：帶入 SMBLN／SJAHR／SMBLP（被沖銷憑證）、XSTOB = 'X'、QPLOS = 檢驗批；依 T156-XSTBW 決定工廠／儲位填在發出方或接收方</td></tr>
+      <tr><td>7</td><td>暫停 QM（<span class="kw">QAAT_QM_ACTIVE_INACTIVE</span>），以 <span class="kw">MB_CREATE_GOODS_MOVEMENT</span>（CTCOD = 'QA11'）建立沖銷憑證、<span class="kw">MB_POST_GOODS_MOVEMENT</span> 過帳，再恢復 QM</td></tr>
+      <tr><td>8</td><td>QAMB 以 TYP = '7' 記錄新憑證；QALS 清空 LMENGE01～09、把量加回 LMENGEZUB；狀態 BTEI／BEND 設為非作用；<span class="kw">QPL1_UPDATE_MEMORY</span>、<span class="kw">QPL1_INSPECTION_LOTS_POSTING</span>、<span class="kw">STATUS_UPDATE_ON_COMMIT</span>、<span class="kw">QEVA_QAMB_CANCEL</span>（IN UPDATE TASK）；COMMIT WORK AND WAIT</td></tr>
+    </tbody>
+  </table>
+  <table>
+    <thead><tr><th>步驟</th><th>ZBQM004（重設 UD）</th></tr></thead>
+    <tbody>
+      <tr><td>1</td><td>Select 按鈕呼叫 <span class="kw">QELA_START_SELECTION_OF_LOTS</span> 挑檢驗批；Show 按鈕呼叫 <span class="kw">QSS1_LOT_SHOW</span></td></tr>
+      <tr><td>2</td><td>鎖檢驗批、讀 QALS；<b>LMENGE01～09 任一大於 0 就擋下</b>（訊息 QA 082）——表示庫存過帳還沒被 ZBQM003 沖掉</td></tr>
+      <tr><td>3</td><td><span class="kw">QAST_STATUS_CHECK</span> 確認 I0218（已做 UD）；<span class="kw">QEVA_UD_READ</span> 讀 QAVE</td></tr>
+      <tr><td>4</td><td>狀態：I0002（REL 已下達）設為作用，I0216、I0217、I0218 設為非作用；清 QALS-STAT14／STAT35 與 QAVE 的判定欄位（VCODE、VCODEGRP、VBEWERTUNG、VFOLGEAKTI、QKENNZAHL…）</td></tr>
+      <tr><td>5</td><td><span class="kw">QEVA_UD_UPDATE</span> IN UPDATE TASK，COMMIT WORK</td></tr>
+    </tbody>
+  </table>
+  <div class="warn">兩支程式都大量呼叫<b>未發佈（not released）的內部函數</b>：MB_CREATE_GOODS_MOVEMENT、QPL1_*、QEVA_UD_UPDATE、STATUS_CHANGE_INTERN，還直接改 QAMB 與狀態。這等同於「修改標準」等級的風險——升級或套 Support Package 後介面可能改變，且 SAP 不支援因此產生的資料不一致。Casper 的第 3 條經驗在這裡最適用：<b>先查 SAP Note 與新版本是否已有標準的 UD 取消方式</b>，確定沒有、且業務頻率真的高，才考慮保留這種客製，並把它限定給極少數 QM 關鍵使用者。</div>
+
+  <h3 id="ch06-6-13">13. 現代改寫：用 BAPI 做移動、用 MATDOC 追憑證</h3>
+  <p>一般的收發轉（不涉及檢驗批內部狀態）一律用 <span class="kw">BAPI_GOODSMVT_CREATE</span>，成功後 <span class="kw">BAPI_TRANSACTION_COMMIT</span>、失敗 <span class="kw">BAPI_TRANSACTION_ROLLBACK</span>。GM_CODE：01 採購單收貨、02 工單收貨、03 發貨、04 轉移過帳、05 其他收貨、06 迴轉（舊 MB11）、07 外包。BAPI 通則見 <a href="#ch04-1">4-1 章</a>。</p>
+  <pre><code class="abap">" 範例一：工單發料 261（GM_CODE 03）
+DATA(ls_head) = VALUE bapi2017_gm_head_01(
+                  pstng_date = sy-datum
+                  doc_date   = sy-datum
+                  header_txt = |工單發料 { p_aufnr ALPHA = OUT }| ).
+
+DATA(lt_item) = VALUE tab_bapi_goodsmvt_item(
+  ( material_long = 'MAT-001'
+    plant         = '1000'
+    stge_loc      = '0001'
+    move_type     = '261'
+    entry_qnt     = '10'
+    entry_uom     = 'PC'
+    orderid       = p_aufnr ) ).
+
+DATA: ls_ret_head TYPE bapi2017_gm_head_ret,
+      lt_return   TYPE bapiret2_t.
+
+CALL FUNCTION 'BAPI_GOODSMVT_CREATE'
+  EXPORTING
+    goodsmvt_header  = ls_head
+    goodsmvt_code    = VALUE bapi2017_gm_code( gm_code = '03' )
+  IMPORTING
+    goodsmvt_headret = ls_ret_head
+  TABLES
+    goodsmvt_item    = lt_item
+    return           = lt_return.
+
+IF line_exists( lt_return[ type = 'E' ] ) OR line_exists( lt_return[ type = 'A' ] ).
+  CALL FUNCTION 'BAPI_TRANSACTION_ROLLBACK'.
+  LOOP AT lt_return INTO DATA(ls_msg) WHERE type CA 'EA'.
+    WRITE / ls_msg-message.
+  ENDLOOP.
+ELSE.
+  CALL FUNCTION 'BAPI_TRANSACTION_COMMIT'
+    EXPORTING wait = abap_true.
+  WRITE / |物料憑證 { ls_ret_head-mat_doc }/{ ls_ret_head-doc_year } 已過帳|.
+ENDIF.</code></pre>
+  <pre><code class="abap">" 範例二：品檢 → 非限制 321（GM_CODE 04），以及沖銷憑證
+" 注意：品檢庫存若由檢驗批管理，應走 QA11 的 UD 過帳，直接 321 會被系統擋下
+DATA(lt_tp) = VALUE tab_bapi_goodsmvt_item(
+  ( material_long = 'MAT-001'  plant = '1000'  stge_loc = '0001'
+    batch         = 'B0001'
+    move_type     = '321'      entry_qnt = '5'  entry_uom = 'PC' ) ).
+
+DATA: ls_ret2 TYPE bapi2017_gm_head_ret,
+      lt_ret2 TYPE bapiret2_t.
+
+CALL FUNCTION 'BAPI_GOODSMVT_CREATE'
+  EXPORTING
+    goodsmvt_header  = VALUE bapi2017_gm_head_01( pstng_date = sy-datum doc_date = sy-datum )
+    goodsmvt_code    = VALUE bapi2017_gm_code( gm_code = '04' )
+  IMPORTING
+    goodsmvt_headret = ls_ret2
+  TABLES
+    goodsmvt_item    = lt_tp
+    return           = lt_ret2.
+
+" 沖銷整張憑證（等同 MIGO A03 Cancellation / 舊 MBST）
+DATA: ls_cancel_head TYPE bapi2017_gm_head_ret,
+      lt_cancel_ret  TYPE bapiret2_t.
+
+CALL FUNCTION 'BAPI_GOODSMVT_CANCEL'
+  EXPORTING
+    materialdocument    = p_mblnr
+    matdocumentyear     = p_mjahr
+    goodsmvt_pstng_date = sy-datum
+  IMPORTING
+    goodsmvt_headret    = ls_cancel_head
+  TABLES
+    return              = lt_cancel_ret.
+
+IF NOT line_exists( lt_cancel_ret[ type = 'E' ] ).
+  CALL FUNCTION 'BAPI_TRANSACTION_COMMIT' EXPORTING wait = abap_true.
+ELSE.
+  CALL FUNCTION 'BAPI_TRANSACTION_ROLLBACK'.
+ENDIF.</code></pre>
+  <p>追查「某檢驗批的收貨憑證與 UD 過帳憑證、哪些已被沖銷」，在 S/4HANA 直接 JOIN QAMB 與 MATDOC，取代原程式的 MB_READ_MATERIAL_HEADER／POSITION 與額外的 SMBLN 查詢：</p>
+  <pre><code class="abap">SELECT FROM qamb AS q
+       INNER JOIN matdoc AS m
+               ON m~mblnr = q~mblnr
+              AND m~mjahr = q~mjahr
+              AND m~zeile = q~zeile
+  FIELDS q~prueflos, q~typ,
+         m~mblnr, m~mjahr, m~zeile, m~bwart, m~matnr, m~werks, m~lgort,
+         m~charg, m~menge, m~meins, m~shkzg, m~budat,
+         m~smbln, m~sjahr, m~smblp                 " 若此行本身是沖銷行，指向原憑證
+  WHERE q~prueflos = @p_lot
+    AND m~record_type = 'MDOC'
+    AND m~xauto = @space                          " 排除自動產生的對方行
+  ORDER BY q~typ, m~mblnr, m~zeile                " HANA 無預設排序，明確排序
+  INTO TABLE @DATA(lt_lot_docs).
+
+" 哪些 UD 過帳行已經被沖銷？找「以它為 SMBLN 的行」
+IF lt_lot_docs IS NOT INITIAL.
+  SELECT FROM matdoc
+    FIELDS mblnr, mjahr, zeile, smbln, sjahr, smblp
+    FOR ALL ENTRIES IN @lt_lot_docs
+    WHERE smbln = @lt_lot_docs-mblnr
+      AND sjahr = @lt_lot_docs-mjahr
+      AND smblp = @lt_lot_docs-zeile
+      AND record_type = 'MDOC'
+    INTO TABLE @DATA(lt_reversals).
+ENDIF.
+
+LOOP AT lt_lot_docs INTO DATA(ls_doc).
+  DATA(lv_reversed) = xsdbool( line_exists( lt_reversals[ smbln = ls_doc-mblnr
+                                                          sjahr = ls_doc-mjahr
+                                                          smblp = ls_doc-zeile ] ) ).
+  WRITE: / ls_doc-typ, ls_doc-mblnr, ls_doc-zeile, ls_doc-bwart,
+           ls_doc-menge, ls_doc-meins, COND string( WHEN lv_reversed = abap_true THEN '已沖銷' ).
+ENDLOOP.</code></pre>
+  <div class="warn"><b>S/4HANA：MKPF／MSEG 已由 MATDOC 取代。</b>1511 起物料憑證的表頭與行項目都寫進單一實體表 MATDOC，MKPF、MSEG 變成相容性 view（NSDM_V_MKPF、NSDM_V_MSEG），MARD、MCHB、MSLB、MSKU 等庫存表的數量也改為從 MATDOC 即時彙總。影響：① 舊程式 SELECT MKPF／MSEG 仍可執行，但每次都在做 view 運算，大量讀取請直接讀 MATDOC 或 CDS；② <b>任何 INSERT／UPDATE／MODIFY MKPF、MSEG、MARD 都不再允許</b>；③ MSEG 上的 BUDAT_MKPF 等冗餘欄位在 MATDOC 對應為 BUDAT；④ 讀 MATDOC 記得限定 RECORD_TYPE，並排除 XAUTO 自動行，否則轉移過帳會被算兩次。</div>
+
+  <h3 id="ch06-6-14">14. 原程式問題與上線注意（檢驗批迴轉）</h3>
+  <table>
+    <thead><tr><th>#</th><th>問題</th><th>影響與建議</th></tr></thead>
+    <tbody>
+      <tr><td>1</td><td>CHECK_PARAMETERS：使用者有輸入迴轉日期時，G_BUDAT 從未被讀取（初始值），接著 <span class="kw">IF G_BUDAT NE P_BUDAT</span> 必然成立</td><td>只要手動輸入日期就一定報「迴轉日期和過帳日期不符」，實際上只能留空讓程式自動帶。應改為無論是否輸入都先讀原過帳日再比較</td></tr>
+      <tr><td>2</td><td>迴轉日期強制等於原 UD 過帳日</td><td>跨月後原期間已關帳就無法迴轉。業務上應允許「當期日期沖銷」，並提醒財務成本差異</td></tr>
+      <tr><td>3</td><td>WE 凍結判斷條件寫成 <span class="kw">L_IMSEG-UMLGO EQ L_IMSEG-UMLGO</span></td><td>自己比自己，恆為真；本意應是 LGORT EQ UMLGO（同儲位）。行順序交換邏輯可能在跨儲位時誤判</td></tr>
+      <tr><td>4</td><td>錯誤處理用 <span class="kw">SUBMIT (SY-REPID) VIA SELECTION-SCREEN</span> 重新叫起自己</td><td>已經暫停 QM、已經呼叫過 MB_CREATE 的情況下直接跳走，記憶體中的過帳資料與 QM 開關狀態不確定。應先 ROLLBACK WORK、恢復 QM 再顯示訊息</td></tr>
+      <tr><td>5</td><td>ZBQM004 的 ENQUEUE_EQQALS1 沒有接例外</td><td>別人正在 QA11 處理同一檢驗批時仍會往下跑。依 <a href="#ch05-11">5-11 章</a>鎖物件規則處理 FOREIGN_LOCK</td></tr>
+      <tr><td>6</td><td>兩支程式都依賴未發佈函數與直接改狀態</td><td>升級風險；見第 12 節 warn。至少要在 SE38 程式說明中寫清楚依賴的函數清單，升級時列入回歸測試</td></tr>
+      <tr><td>7</td><td>多處使用 TABLES、OCCURS、WITH HEADER LINE、MOVE、ADD／SUBTRACT、FORM</td><td>語法全屬禁用清單；本章範例已改寫。若保留原程式，至少不要再在其上擴充</td></tr>
+    </tbody>
+  </table>
+  <p><b>上線注意：</b></p>
+  <ul>
+    <li>權限：ZBQM003／ZBQM004 必須用獨立 TCODE ＋ 權限物件限制，只給 QM 主管；並記錄執行者與原判定（原程式清空 QAVE 後，原判定碼就不見了——建議迴轉前先把 QAVE 寫一份到客製日誌表）。</li>
+    <li>迴轉後檢驗批回到「REL 已下達」、庫存回到品檢；使用者重新在 QA11 判定即可，缺料表中該量會重新以 DELKZ = 'QM' 出現。</li>
+    <li>批次管理料：UD 可能同時改了批次狀態（341／342），ZBQM003 刻意排除這兩種移動，批次狀態要另外在 MSC2N 檢查。</li>
+    <li>測試案例至少涵蓋：全數合格、部分合格部分凍結、含樣品量、跨月、批次料、HU 管理料（程式會擋）、已被他人沖銷的憑證。</li>
+  </ul>
+
+  <h3 id="ch06-6-qa">練習與自我檢核</h3>
+  <ol>
+    <li>缺料累計演算法為什麼只累計 VRFKZ = 'X' 的列？勾選「排除請購單／計劃訂單」時，程式是用什麼方式讓它們不計入？</li>
+    <li>顯示程式從 ZTPP0001 讀資料後要在 ALV 顯示「每顆料第一個缺料日」，SELECT 必須加上什麼？如果沒加，在 HANA 上會發生什麼事？</li>
+    <li>原程式 GET_HISTORY_USE 與 CALCULATE_HISTORY_USE 各列了一份移動類型清單，兩份不一致造成什麼錯誤？請寫出以單一 range 表（全部 EQ 列舉）修正的程式。</li>
+    <li>為什麼耗用類移動類型不能用 <span class="kw">BWART BETWEEN '201' AND '914'</span>？舉出三個會被誤抓的移動類型。</li>
+    <li>MIGO 預設值表中 A07／R08 帶出 261、A01／R10 帶出 561，這些設定屬於系統組態還是使用者設定？會造成什麼查帳困擾？</li>
+    <li>說明 QALS、QAVE、QAMB 三張表的角色，以及 QAMB-TYP 1／3／7 的意義。</li>
+    <li>品檢庫存由檢驗批管理時，能不能用 BAPI_GOODSMVT_CREATE 做 321？正確的做法是什麼？</li>
+    <li>用 BAPI_GOODSMVT_CREATE 寫一支「成本中心領料 201」的程式，並在失敗時 ROLLBACK、成功時 COMMIT（wait = abap_true）。</li>
+    <li>在 S/4HANA 1809 讀取「某料某月所有 261／262 憑證行」，應該讀 MKPF＋MSEG 還是 MATDOC？寫出 SQL，並說明為什麼要排除 XAUTO。</li>
+    <li>ZBQM003 的 CHECK_PARAMETERS 有什麼邏輯錯誤？使用者實際上會遇到什麼現象？</li>
+    <li>依 Casper 的「先找標準」原則，說明缺料表需求應先評估哪些標準交易或 App，以及在什麼情況下才值得落地成 ZTPP0001 這種客製表。</li>
+  </ol>
+</section>

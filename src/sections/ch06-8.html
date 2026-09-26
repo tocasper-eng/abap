@@ -1,0 +1,740 @@
+<section class="chapter" id="ch06-8" data-title="介面輸出與財務程式">
+  <h2>第 6-8 章 介面輸出與財務程式</h2>
+  <p class="lede">這一章拆解三組實戰程式：<b>採購單變更紀錄報表 ZMMR0002</b> 和它的批次版 <b>ZMMB0009</b>（把結果同步到外部資料庫）、把 <b>VK11 條件價格</b>輸出成 CSV 再丟到 FTP 的介面 <b>ZSDI0006</b>，以及財務用來維護「員工 BP 付款資訊」的 <b>ZFIP001</b>。三支程式的共同點是：資料會離開 SAP，或者會影響付款。所以除了現代語法，本章更在意<b>選對資料、別漏抓，以及別外洩</b>。</p>
+  <div class="meta">
+    <div><b>核心 TCODE</b><span class="tcode">ME23N</span><span class="tcode">ME22N</span><span class="tcode">SCDO</span><span class="tcode">VK11</span><span class="tcode">VK12</span><span class="tcode">VK13</span><span class="tcode">V/07</span><span class="tcode">V/03</span><span class="tcode">SM59</span><span class="tcode">SM69</span><span class="tcode">AL11</span><span class="tcode">SM30</span><span class="tcode">SE11</span><span class="tcode">BP</span><span class="tcode">SU24</span></div>
+    <div><b>關鍵物件</b>CDHDR、CDPOS、EINKBELEG、COND_A、DD03M、EKKO／EKPO／EKET、APOC_D_OR_ITEM、A005、KONH、KONP、ZSDPR0001、FTP_CONNECT、FTP_R3_TO_SERVER、FTP_DISCONNECT、HTTP_SCRAMBLE、SAPFTPA、SXPG_COMMAND_EXECUTE、ZFIBPDTHD0001、BUT000、BUT0BK、BKPF／BSEG／ACDOCA、CL_SALV_TABLE</div>
+  </div>
+
+  <h3 id="ch06-8-01">1. 素材對照</h3>
+  <p>四份素材都是某醫療器材公司實際上線的程式（txt 原始碼加上截圖）。素材中的公司名、主機 IP、FTP 帳號與密碼、員工姓名、身分證號和銀行帳號，本章一律<b>不引用</b>。外部資料庫的表名改用 <span class="kw">ZEXT_POCHANGE</span>，FTP 主機改用 <span class="kw">192.0.2.10</span>，帳號改用 <span class="kw">FTP_USER</span>，公司代碼改用 <span class="kw">'1000'</span>。</p>
+  <table>
+    <thead><tr><th>#</th><th>素材（原檔，已去識別）</th><th>程式</th><th>模組</th><th>內容／規模</th><th>截圖</th><th>本章小節</th></tr></thead>
+    <tbody>
+      <tr><td>1</td><td>ABAP_06_G_ZMMR0002_採購變更</td><td>ZMMR0002（交易碼同名）</td><td>MM</td><td>報表，約 480 行：變更紀錄（CDHDR／CDPOS）＋輸出紀錄（APOC_D_OR_ITEM），用 CL_SALV_TABLE 顯示，雙擊開 ME23N</td><td>2 張：Repository Browser、選擇畫面「PO change and Output Log」</td><td>2～6</td></tr>
+      <tr><td>2</td><td>ABAP_06_G_ZMMB0009_採購變更下載到外部 DB（表名已改為 ZEXT_POCHANGE）</td><td>ZMMB0009（TOP／FRM include）</td><td>MM</td><td>ZMMR0002 的去畫面版，約 200 行；老師批註「您可能想得太複雜了」「加一個下載 IT_DATA 到 SQL Server 就好了」</td><td>無</td><td>7</td></tr>
+      <tr><td>3</td><td>ABAP_06_7_VK11_FTP_ZSDI0006</td><td>ZSDI0006（ZSDI0006TOP／F01）</td><td>SD</td><td>約 300 行：A005＋KONH＋KONP 寫入暫存表 ZSDPR0001，轉成分號分隔的 CSV，再用 FTP 上傳 <span class="kw">/Export Data/VK11.csv</span></td><td>7 張：選擇畫面「Download VK11」、Screen 1000、Includes、Dictionary Structures（A005／KONH／KONP／ZSDPR0001）、Events、Subroutines、R3_FTP</td><td>8～12</td></tr>
+      <tr><td>4</td><td>ABAP_06_C_ZFIP001_ZFIBPDTHD0001</td><td>ZFIP001（ZFIP001TOP／F01）＋ SM30 維護檢視</td><td>FI（員工 BP 付款資訊）</td><td>約 350 行：顯示／修改／新增三種模式，可從 Excel 上傳，AUTH 欄位控制鎖定，用 REUSE_ALV 編輯</td><td>5 張：選擇畫面「FI HR BP Information」、ALV 清單、SE80 結構、Screen 1000、SM30 維護畫面</td><td>13～15</td></tr>
+    </tbody>
+  </table>
+  <div class="note">素材的第 3 份結尾誤貼了一段 SQL Server 的 BOM 展開查詢（<span class="kw">FUN_BOMTree</span>），跟 VK11 無關。本章不收錄，只在這裡記一筆。</div>
+
+  <h3 id="ch06-8-02">2. 採購單變更文件：CDHDR／CDPOS 與物件類別 EINKBELEG</h3>
+  <p>ME22N 每次存檔，只要有欄位的資料元素勾了「Change document」，系統就會寫一筆變更文件：</p>
+  <table>
+    <thead><tr><th>表</th><th>角色</th><th>重要欄位</th></tr></thead>
+    <tbody>
+      <tr><td>CDHDR</td><td>變更檔頭：一次存檔一筆</td><td>OBJECTCLAS（採購單固定 <span class="kw">'EINKBELEG'</span>）、OBJECTID（採購單號 EBELN，CHAR90 靠左）、CHANGENR、USERNAME、UDATE、UTIME、TCODE、CHANGE_IND（I 新增／U 修改）</td></tr>
+      <tr><td>CDPOS</td><td>變更明細：一個欄位一筆</td><td>TABNAME（EKKO／EKPO／EKET…）、TABKEY、FNAME（<span class="kw">'KEY'</span> 表示整筆新增）、CHNGIND、VALUE_OLD／VALUE_NEW、UNIT_OLD／UNIT_NEW、CUKY_OLD／CUKY_NEW</td></tr>
+      <tr><td>DD03M</td><td>欄位＋資料元素文字的檢視</td><td>TABNAME、FIELDNAME、DDLANGUAGE、SCRTEXT_L（原程式拿來把 FNAME 翻成欄位說明）</td></tr>
+    </tbody>
+  </table>
+  <p><b>TABKEY 的組法</b>是「該表完整主鍵」直接串接：MANDT(3)＋EBELN(10)，EKPO 再接 EBELP(5)，EKET 再接 ETENR(4)。原程式對 EKET 取 <span class="kw">TABKEY+18(5)</span>，但 ETENR 只有 4 碼。因為搬進 NUMC 欄位時會自動去空白，結果碰巧是對的，但長度寫錯了，改寫時要修正成 <span class="kw">+18(4)</span>。</p>
+  <p><b>CHNGIND 有五種值</b>：U（修改）、I（新增）、D（刪除）、E（刪除單一欄位的文件）、J（新增單一欄位的文件）。原程式只判斷 <span class="kw">'I'</span>，其他全顯示成 <span class="kw">'Modification'</span>，所以<b>刪除項目也會被當成「修改」</b>。這是業務最在意的一種變更，一定要分開顯示。</p>
+  <div class="tip">先找標準（Casper 經驗第 3 條）：ME23N →「環境 → 表頭變更」可以看單張採購單的變更。跨單查詢可以用標準報表 <span class="kw">RM06EAEN</span>（採購單變更清單），或是函數 <span class="kw">CHANGEDOCUMENT_READ</span>（第 5 節）。確定標準做不到「多條件、多單、同時看輸出紀錄」，才值得寫 ZMMR0002。物件類別的定義可以在 <span class="tcode">SCDO</span> 查。</div>
+
+  <h3 id="ch06-8-03">3. ZMMR0002 的業務情境、選擇畫面與輸出</h3>
+  <p><b>業務情境</b>：採購主管要稽核「誰在什麼時候改了哪張採購單的哪個欄位」，例如改單價、改交期、刪項目。另外還要看改完之後<b>採購單有沒有重新輸出給供應商</b>（S/4HANA 的 Output Management）。</p>
+  <p><b>選擇畫面</b>（截圖標題「PO change and Output Log」）：</p>
+  <ul>
+    <li>第一區（MODIF ID <span class="kw">SC1</span>）：採購文件類型 BSART、採購組織 EKORG、供應商 LIFNR、採購單號 EBELN、物料 MATNR、變更日期 UDATE、變更時間 UTIME</li>
+    <li>第二區（MODIF ID <span class="kw">SC2</span>）：Application Object ID、Output Request Item Status、Output Channel</li>
+    <li>模式選項：<b>Data Change Log</b>（預設）或 <b>Output Log</b>。<span class="kw">AT SELECTION-SCREEN OUTPUT</span> 會依選到的模式把另一區設成不可輸入</li>
+    <li>變更類型：只看新增、只看修改、兩者都看（預設）；表範圍：EKKO／EKPO／EKET 三個勾選框</li>
+  </ul>
+  <p><b>輸出</b>：用 CL_SALV_TABLE 顯示。變更模式的欄位有採購單號、項目、計畫行、表名與說明、欄位名與說明、變更類型、舊值新值（含單位與幣別）、交易碼、使用者、日期、時間。<b>雙擊一列就用 <span class="kw">SET PARAMETER ID 'BES'</span> 開 ME23N</b>。輸出模式則把時間戳轉成本地日期時間，依最後變更時間倒排。</p>
+  <p><b>程式架構</b>：PREPARE_DATA（依勾選框組表名 range、讀 DD03M）→ GET_DATA（CDHDR，再用 FOR ALL ENTRIES 讀 CDPOS）→ CRT_CHANGELOG（用 <span class="kw">AT NEW CHANGENR</span> 組輸出列）→ FILTER_IT_DATA（事後用 EKKO JOIN EKPO 套用 BSART／EKORG／LIFNR／MATNR）→ DISPLAY_ALV。輸出模式則走 GET_DATA_OUTPUT。以下用 local class 改寫，取代 FORM。</p>
+  <pre><code class="abap">REPORT zmmr0002.
+
+DATA: gv_bsart TYPE ekko-bsart,
+      gv_ekorg TYPE ekko-ekorg,
+      gv_lifnr TYPE ekko-lifnr,
+      gv_ebeln TYPE ekko-ebeln,
+      gv_matnr TYPE ekpo-matnr,
+      gv_udate TYPE cdhdr-udate,
+      gv_appl  TYPE apoc_appl_object_id.   " 取代 TABLES:，只當 SELECT-OPTIONS 的參照
+
+SELECTION-SCREEN BEGIN OF BLOCK b1 WITH FRAME TITLE TEXT-001.
+  SELECT-OPTIONS: s_bsart FOR gv_bsart MODIF ID sc1,
+                  s_ekorg FOR gv_ekorg MODIF ID sc1,
+                  s_lifnr FOR gv_lifnr MODIF ID sc1,
+                  s_ebeln FOR gv_ebeln MODIF ID sc1,
+                  s_matnr FOR gv_matnr MODIF ID sc1,
+                  s_udate FOR gv_udate MODIF ID sc1 OBLIGATORY.   " 強制給日期，避免掃整張 CDHDR
+  SELECT-OPTIONS: s_appl  FOR gv_appl  MODIF ID sc2.
+  PARAMETERS:     p_status TYPE apoc_or_output_status MODIF ID sc2,
+                  p_chnl   TYPE apoc_channel          MODIF ID sc2.
+SELECTION-SCREEN END OF BLOCK b1.
+
+PARAMETERS: r_polog  RADIOBUTTON GROUP s2 DEFAULT 'X' USER-COMMAND mode,
+            r_outlog RADIOBUTTON GROUP s2.
+PARAMETERS: r_crt  RADIOBUTTON GROUP s1 MODIF ID sc1,
+            r_upd  RADIOBUTTON GROUP s1 MODIF ID sc1,
+            r_both RADIOBUTTON GROUP s1 MODIF ID sc1 DEFAULT 'X'.
+PARAMETERS: p_ekko AS CHECKBOX DEFAULT 'X' MODIF ID sc1,
+            p_ekpo AS CHECKBOX DEFAULT 'X' MODIF ID sc1,
+            p_eket AS CHECKBOX DEFAULT 'X' MODIF ID sc1.
+
+AT SELECTION-SCREEN OUTPUT.
+  LOOP AT SCREEN INTO DATA(ls_screen).
+    ls_screen-input = SWITCH #( ls_screen-group1
+                        WHEN 'SC1' THEN COND #( WHEN r_polog  = abap_true THEN '1' ELSE '0' )
+                        WHEN 'SC2' THEN COND #( WHEN r_outlog = abap_true THEN '1' ELSE '0' )
+                        ELSE ls_screen-input ).
+    MODIFY SCREEN FROM ls_screen.
+  ENDLOOP.
+
+START-OF-SELECTION.
+  NEW lcl_po_change_report( )-&gt;run( ).</code></pre>
+  <div class="note">原程式另外有一個 <span class="kw">S_UTIME</span>（變更時間）區間，而且跟日期<b>分開</b>比較。輸入「6/1 18:00 到 6/2 08:00」時，實際抓的是「每一天」的 18:00 到 08:00，而且 LOW 大於 HIGH，結果是空的。要做跨日的時間窗，應該把 UDATE＋UTIME 合成時間戳後在程式內過濾，或是乾脆只給日期。改寫版拿掉了 S_UTIME。</div>
+
+  <h3 id="ch06-8-04">4. 關鍵段落改寫（一）：一次 JOIN 讀 CDHDR＋CDPOS，條件在資料庫端就套用</h3>
+  <p>ECC 時代的 CDPOS 是 cluster table（實體存在 CDCLS），不能 JOIN，只能先讀 CDHDR 再用 FOR ALL ENTRIES 讀 CDPOS。所以原程式才會寫成兩段，而且表名條件是讀回來之後才用 <span class="kw">DELETE … WHERE NOT ( TABNAME IN R_TABLE )</span> 過濾。<b>S/4HANA 的 CDPOS 已經是透明表</b>，可以直接 JOIN，表名、變更類型都在 WHERE 裡處理。</p>
+  <p>另一個問題是採購組織、供應商、物料這些條件。原程式是讀完變更文件才用 EKKO 回頭過濾，等於「先把所有採購單的變更抓回來，再丟掉九成」。改寫版反過來做：先用 EKKO／EKPO 算出符合條件的採購單號，再拿這批單號去讀變更文件。</p>
+  <pre><code class="abap">CLASS lcl_po_change_report DEFINITION FINAL.
+  PUBLIC SECTION.
+    TYPES: BEGIN OF ty_out,
+             ebeln     TYPE ekpo-ebeln,
+             ebelp     TYPE ekpo-ebelp,
+             etenr     TYPE eket-etenr,
+             tabname   TYPE cdpos-tabname,
+             fname     TYPE cdpos-fname,
+             ftext     TYPE as4text,
+             chngind   TYPE cdpos-chngind,
+             chang_txt TYPE char20,
+             value_old TYPE cdpos-value_old,
+             value_new TYPE cdpos-value_new,
+             unit_old  TYPE cdpos-unit_old,
+             unit_new  TYPE cdpos-unit_new,
+             cuky_old  TYPE cdpos-cuky_old,
+             cuky_new  TYPE cdpos-cuky_new,
+             tcode     TYPE cdhdr-tcode,
+             username  TYPE cdhdr-username,
+             udate     TYPE cdhdr-udate,
+             utime     TYPE cdhdr-utime,
+           END OF ty_out,
+           tt_out TYPE STANDARD TABLE OF ty_out WITH EMPTY KEY.
+    METHODS run.
+  PRIVATE SECTION.
+    DATA mt_out TYPE tt_out.
+    METHODS get_changes  RETURNING VALUE(rt_out) TYPE tt_out.
+    METHODS on_double_click FOR EVENT double_click OF cl_salv_events_table
+      IMPORTING row.
+ENDCLASS.
+
+CLASS lcl_po_change_report IMPLEMENTATION.
+  METHOD get_changes.
+    " 1) 表範圍：勾選框 → 列舉 EQ（不是區間）
+    DATA(lt_tab) = VALUE rsdsselopt_t(
+      ( LINES OF COND #( WHEN p_ekko = abap_true THEN VALUE #( ( sign = 'I' option = 'EQ' low = 'EKKO' ) ) ) )
+      ( LINES OF COND #( WHEN p_ekpo = abap_true THEN VALUE #( ( sign = 'I' option = 'EQ' low = 'EKPO' ) ) ) )
+      ( LINES OF COND #( WHEN p_eket = abap_true THEN VALUE #( ( sign = 'I' option = 'EQ' low = 'EKET' ) ) ) ) ).
+    CHECK lt_tab IS NOT INITIAL.
+
+    " 2) 先用採購單條件算出單號（變更文件的 OBJECTID 就是 EBELN）
+    SELECT DISTINCT k~ebeln
+      FROM ekko AS k
+      INNER JOIN ekpo AS p ON p~ebeln = k~ebeln
+      WHERE k~ebeln IN @s_ebeln
+        AND k~bsart IN @s_bsart
+        AND k~ekorg IN @s_ekorg
+        AND k~lifnr IN @s_lifnr
+        AND p~matnr IN @s_matnr
+      INTO TABLE @DATA(lt_po).
+    CHECK lt_po IS NOT INITIAL.     " FOR ALL ENTRIES 的驅動表空白＝全表，務必擋掉
+
+    DATA(lt_key) = VALUE string_table( FOR po IN lt_po ( CONV #( po-ebeln ) ) ).
+
+    " 3) CDHDR JOIN CDPOS（S/4HANA 的 CDPOS 是透明表）
+    SELECT h~objectid, h~changenr, h~username, h~tcode, h~udate, h~utime, h~change_ind,
+           p~tabname, p~tabkey, p~fname, p~chngind,
+           p~value_old, p~value_new, p~unit_old, p~unit_new, p~cuky_old, p~cuky_new
+      FROM cdhdr AS h
+      INNER JOIN cdpos AS p
+         ON p~objectclas = h~objectclas
+        AND p~objectid   = h~objectid
+        AND p~changenr   = h~changenr
+      FOR ALL ENTRIES IN @lt_key
+      WHERE h~objectclas = 'EINKBELEG'
+        AND h~objectid   = @lt_key-table_line
+        AND h~udate      IN @s_udate
+        AND p~tabname    IN @lt_tab
+      INTO TABLE @DATA(lt_raw).
+
+    " FOR ALL ENTRIES 不能加 ORDER BY，HANA 又沒有預設排序 → 讀回來一定要自己排
+    SORT lt_raw BY objectid changenr tabname tabkey fname.
+
+    IF r_crt = abap_true.
+      DELETE lt_raw WHERE change_ind &lt;&gt; 'I'.
+    ELSEIF r_upd = abap_true.
+      DELETE lt_raw WHERE change_ind &lt;&gt; 'U'.
+    ENDIF.
+    " … 第 5 節：把 lt_raw 轉成 rt_out
+  ENDMETHOD.
+  METHOD run.
+  ENDMETHOD.
+  METHOD on_double_click.
+  ENDMETHOD.
+ENDCLASS.</code></pre>
+  <div class="warn"><b>條件選取的兩個坑（Casper 經驗第 1、2 條）</b>
+    <ul>
+      <li><b>列舉比區間安全。</b>採購單號、文件類型、採購組織最好用多筆 EQ 列舉。區間比的是字典序，不是業務語意：單號段不連續、編碼規則改過（例如 45 開頭改成 46 開頭）、內外部編號混用時，<span class="kw">BT</span> 會多抓或漏抓。上面的表範圍也刻意用 EQ 列舉。</li>
+      <li><b>HANA 沒有預設排序。</b>原程式在讀取後有 SORT，這點是對的。但同一個 CHANGENR 底下欄位的順序、同一秒內兩次存檔的先後，都必須靠 CHANGENR（遞增號碼）排序，<b>不能靠「讀出來的順序」</b>。任何「取最後一次變更值」的邏輯，都要先依 <span class="kw">udate utime changenr</span> 明確排序，再讀最後一筆。</li>
+    </ul>
+  </div>
+
+  <h3 id="ch06-8-05">5. 關鍵段落改寫（二）：TABKEY 拆解、欄位文字、變更類型，以及標準函數 CHANGEDOCUMENT_READ</h3>
+  <p>原程式用 <span class="kw">AT NEW CHANGENR</span> 搭配 header line，把檔頭欄位「殘留」到後續各列。邏輯雖然成立，但很難讀。改寫版每一列都直接帶入檔頭欄位，欄位文字改用 hashed table 查詢：</p>
+  <pre><code class="abap">    " 欄位文字：DD03M 一次讀進 hashed table
+    SELECT tabname, fieldname, scrtext_l
+      FROM dd03m
+      WHERE tabname    IN @lt_tab
+        AND ddlanguage = @sy-langu
+      INTO TABLE @DATA(lt_dd).
+    TYPES: BEGIN OF lty_text,
+             tabname   TYPE dd03m-tabname,
+             fieldname TYPE dd03m-fieldname,
+             text      TYPE dd03m-scrtext_l,
+           END OF lty_text,
+           lty_text_tab TYPE HASHED TABLE OF lty_text WITH UNIQUE KEY tabname fieldname.
+    DATA(lt_ftext) = VALUE lty_text_tab( FOR d IN lt_dd ( tabname = d-tabname fieldname = d-fieldname text = d-scrtext_l ) ).
+
+    rt_out = VALUE #( FOR r IN lt_raw
+      ( ebeln     = r-tabkey+3(10)
+        ebelp     = COND #( WHEN r-tabname = 'EKPO' OR r-tabname = 'EKET' THEN r-tabkey+13(5) )
+        etenr     = COND #( WHEN r-tabname = 'EKET' THEN r-tabkey+18(4) )     " ETENR 是 4 碼，原程式寫 5 碼
+        tabname   = r-tabname
+        fname     = r-fname
+        ftext     = COND #( WHEN r-fname = 'KEY' THEN 'New Entry'
+                            ELSE VALUE #( lt_ftext[ tabname = r-tabname fieldname = r-fname ]-text OPTIONAL ) )
+        chngind   = r-chngind
+        chang_txt = SWITCH #( r-chngind
+                      WHEN 'I' OR 'J' THEN 'Creation'
+                      WHEN 'D' OR 'E' THEN 'Deletion'          " 原程式把刪除算成 Modification
+                      ELSE 'Modification' )
+        value_old = r-value_old  value_new = r-value_new
+        unit_old  = r-unit_old   unit_new  = r-unit_new
+        cuky_old  = r-cuky_old   cuky_new  = r-cuky_new
+        tcode     = r-tcode      username  = r-username
+        udate     = r-udate      utime     = r-utime ) ).</code></pre>
+  <p>如果只要看「少量指定採購單」的變更，可以不必自己拆 TABKEY，直接呼叫標準函數。它回傳的 <span class="kw">CDRED</span> 結構已經帶好欄位文字和格式化後的舊值新值：</p>
+  <pre><code class="abap">DATA lt_editpos TYPE STANDARD TABLE OF cdred WITH EMPTY KEY.
+
+LOOP AT lt_po INTO DATA(ls_po).
+  CLEAR lt_editpos.
+  CALL FUNCTION 'CHANGEDOCUMENT_READ'
+    EXPORTING
+      objectclass       = 'EINKBELEG'
+      objectid          = CONV cdhdr-objectid( ls_po-ebeln )
+      date_of_change    = s_udate[ 1 ]-low
+      date_until        = s_udate[ 1 ]-high
+    TABLES
+      editpos           = lt_editpos
+    EXCEPTIONS
+      no_position_found = 1
+      OTHERS            = 2.
+  IF sy-subrc = 0.
+    " lt_editpos：TABNAME / FNAME / FTEXT / F_OLD / F_NEW / CHNGIND / UDATE / UTIME / USERNAME …
+  ENDIF.
+ENDLOOP.</code></pre>
+  <div class="tip">CHANGEDOCUMENT_READ 是逐張呼叫，張數一多就很慢。<b>跨上千張單的稽核報表</b>用第 4 節的 JOIN 比較合適；<b>單張或少量</b>則用標準函數，因為金額、日期、單位都已經幫你格式化好了。</div>
+
+  <h3 id="ch06-8-06">6. 關鍵段落改寫（三）：SALV 雙擊開 ME23N、輸出紀錄 APOC_D_OR_ITEM</h3>
+  <p>原程式的事件類別只負責轉呼叫 <span class="kw">PERFORM SHOW_PO_DETAIL</span>，而且透過 header line 讀資料。改寫版把 handler 直接放在報表類別裡：</p>
+  <pre><code class="abap">  METHOD run.
+    IF r_polog = abap_true.
+      mt_out = get_changes( ).
+      IF mt_out IS INITIAL.
+        MESSAGE 'No data found' TYPE 'S' DISPLAY LIKE 'W'.
+        RETURN.
+      ENDIF.
+    ENDIF.
+    TRY.
+        cl_salv_table=&gt;factory( IMPORTING r_salv_table = DATA(lo_alv)
+                                CHANGING  t_table      = mt_out ).
+        lo_alv-&gt;get_functions( )-&gt;set_all( abap_true ).
+        lo_alv-&gt;get_columns( )-&gt;set_optimize( abap_true ).
+        lo_alv-&gt;get_layout( )-&gt;set_key( VALUE #( report = sy-repid ) ).
+        lo_alv-&gt;get_layout( )-&gt;set_save_restriction( if_salv_c_layout=&gt;restrict_none ).
+        TRY.
+            lo_alv-&gt;get_columns( )-&gt;get_column( 'FTEXT' )-&gt;set_short_text( 'Field Text' ).
+          CATCH cx_salv_not_found ##NO_HANDLER.
+        ENDTRY.
+        SET HANDLER on_double_click FOR lo_alv-&gt;get_event( ).
+        lo_alv-&gt;display( ).
+      CATCH cx_salv_msg INTO DATA(lx).
+        MESSAGE lx TYPE 'E'.
+    ENDTRY.
+  ENDMETHOD.
+
+  METHOD on_double_click.
+    DATA(ls_row) = VALUE #( mt_out[ row ] OPTIONAL ).
+    CHECK ls_row-ebeln IS NOT INITIAL.
+    SET PARAMETER ID 'BES' FIELD ls_row-ebeln.
+    CALL TRANSACTION 'ME23N' WITH AUTHORITY-CHECK AND SKIP FIRST SCREEN.
+  ENDMETHOD.</code></pre>
+  <p><b>輸出紀錄</b>：S/4HANA 的採購單輸出改走新的 Output Management（BRF+ 決定輸出類型），紀錄存在 <span class="kw">APOC_D_OR_ITEM</span>，<b>不再是 NAST</b>。原程式用 <span class="kw">APPL_OBJECT_TYPE = 'PURCHASE_ORDER'</span> 讀取，時間戳用 <span class="kw">CONVERT TIME STAMP … TIME ZONE sy-zonlo</span> 轉成本地時間。改寫版把狀態與通道條件也放進 WHERE，並明確排序：</p>
+  <pre><code class="abap">SELECT appl_object_id, item_id, status, output_type, channel,
+       crea_date_time, lchg_date_time
+  FROM apoc_d_or_item
+  WHERE appl_object_type = 'PURCHASE_ORDER'
+    AND appl_object_id  IN @s_appl
+    AND ( @p_status IS INITIAL OR status  = @p_status )
+    AND ( @p_chnl   IS INITIAL OR channel = @p_chnl )
+  ORDER BY lchg_date_time DESCENDING, appl_object_id, item_id
+  INTO TABLE @DATA(lt_output).
+
+LOOP AT lt_output ASSIGNING FIELD-SYMBOL(&lt;o&gt;).
+  CONVERT TIME STAMP &lt;o&gt;-lchg_date_time TIME ZONE sy-zonlo
+          INTO DATE DATA(lv_date) TIME DATA(lv_time).
+  " … 放進輸出結構的 datvr / uhrvr
+ENDLOOP.</code></pre>
+  <div class="note"><span class="kw">@p_status IS INITIAL</span> 這種寫在 WHERE 裡的主機變數判斷，需要 ABAP 7.50 以上（1809 可用）。原程式是讀回來之後才用 DELETE 過濾，資料量大時就是浪費。</div>
+
+  <h3 id="ch06-8-07">7. ZMMB0009：把變更紀錄同步到外部資料庫 ZEXT_POCHANGE（摘要）</h3>
+  <p><b>業務情境</b>：公司的 BI 或採購入口網站要在 SQL Server 上查採購單變更，所以每天排背景作業，把變更紀錄寫到外部表 <span class="kw">ZEXT_POCHANGE</span>。</p>
+  <p><b>原程式的樣子</b>：把 ZMMR0002 的 TOP／FORM 整段複製成 ZMMB0009_TOP、ZMMB0009_FRM，拿掉選擇畫面，表範圍寫死成 EKKO／EKPO／EKET，最後留下一個 <span class="kw">BREAK-POINT</span> 和一行批註「加一個下載 IT_DATA 到 SQL Server 就好了」。老師的另一句批註是<b>「您可能想得太複雜了」</b>，意思是讀取邏輯不必重寫，重用就好。</p>
+  <p><b>正確的重用方式不是複製 include</b>，而是把第 4、5 節的 <span class="kw">get_changes</span> 抽成全域類別（例如 <span class="kw">ZCL_MM_PO_CHANGE_LOG</span>），報表和批次程式都呼叫它。寫入外部資料庫的細節（DBCO 連線、ADBC、交易控制）請見 <a href="#ch06-7">6-7 章</a>。這裡只列骨架：</p>
+  <pre><code class="abap">" ZMMB0009：背景作業，增量同步
+DATA(lv_from) = zcl_ext_sync_state=&gt;get_last_run( 'ZMMB0009' ).        " 上次成功的日期時間
+DATA(lt_rows) = NEW zcl_mm_po_change_log( )-&gt;read_since( lv_from ).   " 共用讀取邏輯
+
+TRY.
+    DATA(lo_con) = cl_sql_connection=&gt;get_connection( 'ZEXT_DB' ).     " DBCO 設定的連線名
+    DATA(lo_stmt) = lo_con-&gt;create_statement( ).
+    " INSERT INTO ZEXT_POCHANGE ( … ) VALUES ( ?, ?, … ) —— 用 set_param 綁定，逐批寫入，詳見 6-7 章
+    lo_con-&gt;commit( ).
+    zcl_ext_sync_state=&gt;set_last_run( iv_prog = 'ZMMB0009' iv_ts = lv_from ).
+  CATCH cx_sql_exception INTO DATA(lx_sql).
+    lo_con-&gt;rollback( ).
+    MESSAGE lx_sql-&gt;get_text( ) TYPE 'E'.
+ENDTRY.</code></pre>
+  <div class="warn">原 ZMMB0009 讀 CDHDR 只有 <span class="kw">OBJECTCLAS = 'EINKBELEG'</span> 一個條件（日期條件 <span class="kw">UDATE &gt;= '20210101'</span> 被註解掉），<b>每次都把全公司所有年度的採購變更全部讀出來</b>。上線第一年還跑得動，第三年就會逾時。批次同步一定要做<b>增量</b>：記住上次成功的時間戳，只讀之後的變更；外部表用 OBJECTID＋CHANGENR＋TABNAME＋TABKEY＋FNAME 當主鍵，重跑才不會重複寫入。</div>
+
+  <h3 id="ch06-8-08">8. VK11 條件價格的資料模型：條件表 A###、KONH、KONP 與存取順序</h3>
+  <p>銷售價格用的是<b>條件技術</b>。定價程序裡的條件類型（例如 PR00）掛著一個<b>存取順序</b>（<span class="tcode">V/07</span>），存取順序依序列出多張<b>條件表</b>（<span class="tcode">V/03</span> 建立，實體表名是 <span class="kw">A</span>＋三碼表號），系統依序找到第一筆有效的條件記錄就停。VK11 維護的就是這些條件記錄：</p>
+  <table>
+    <thead><tr><th>表</th><th>內容</th><th>本案用到的欄位</th></tr></thead>
+    <tbody>
+      <tr><td>A005</td><td>條件表「銷售組織／配銷通路／客戶／物料」，是一張 key 表</td><td>KAPPL（V＝銷售）、KSCHL、VKORG、VTWEG、KUNNR、MATNR、DATAB、DATBI、KNUMH</td></tr>
+      <tr><td>KONH</td><td>條件記錄檔頭（一個 KNUMH 一筆）</td><td>KNUMH、ERDAT、ERNAM、KOTABNR、KSCHL</td></tr>
+      <tr><td>KONP</td><td>條件記錄項目（金額）</td><td>KNUMH、KOPOS、KBETR、KONWA、KPEIN、KMEIN、LOEVM_KO（刪除標記）</td></tr>
+      <tr><td>KONM／KONW</td><td>數量／金額級距</td><td>本案未處理，如有級距價要另外讀</td></tr>
+      <tr><td>CDHDR</td><td>條件記錄的變更文件</td><td>OBJECTCLAS <span class="kw">'COND_A'</span>、OBJECTID＝KNUMH</td></tr>
+    </tbody>
+  </table>
+  <div class="note">S/4HANA 的<b>單據</b>定價結果從 KONV 改存到 <span class="kw">PRCD_ELEMENTS</span>，但<b>主檔</b>條件記錄仍然是 A###／KONH／KONP，所以本案的讀法在 S/4HANA 依然成立。另外要注意，一張 A005 只是存取順序中的一層。如果客戶實際的價格來自另一張條件表（例如「價格表類型／物料」），只讀 A005 就會漏掉。要輸出「客戶實際成交價」，應該用定價模擬，而不是讀單一條件表。</div>
+
+  <h3 id="ch06-8-09">9. ZSDI0006 的業務情境、選擇畫面與程式架構</h3>
+  <p><b>業務情境</b>：外部的經銷商系統或電商平台每天要同步「客戶專屬價格」。SAP 把 VK11 的條件記錄整理成 CSV，放到 FTP 主機的 <span class="kw">/Export Data/VK11.csv</span>，對方再來取。</p>
+  <p><b>選擇畫面</b>（截圖標題「Download VK11」）：Customer（S_KUNNR）、Created on（P_ERDAT）、勾選框「整批下載」（P_CB）。</p>
+  <p><b>程式架構</b>（Events 截圖可以看到 INITIALIZATION、AT SELECTION-SCREEN OUTPUT、ON BLOCK B1 都是空的，只有 START-OF-SELECTION 在做事）：</p>
+  <ol>
+    <li><b>沒勾整批</b>→ COLLECT_VK11_TO_ADDON：先用 GET_CHANGE_LOG 從 CDHDR（<span class="kw">COND_A</span>、UDATE = P_ERDAT）收集當天有變更的 KNUMH，組成 RANGES；再讀 A005＋KONP＋KONH，條件是「KONH-ERDAT = P_ERDAT（當天新建）或 KNUMH 在變更清單內」。</li>
+    <li><b>有勾整批</b>→ COLLECT_ALL_VK11：讀 A005＋KONP，條件是 P_ERDAT 落在有效期間內。</li>
+    <li>兩條路都呼叫 APPEND_VK11_TO_ADDON，把結果 MODIFY 進暫存表 <span class="kw">ZSDPR0001</span>（ERDAT／ERTIM 蓋成當下時間），然後 <span class="kw">COMMIT WORK AND WAIT</span>。</li>
+    <li>GET_VK11_DATA：再從 ZSDPR0001 以 <span class="kw">ERDAT = P_ERDAT</span> 讀回來，用 <span class="kw">CONVERSION_EXIT_CUNIT_OUTPUT</span> 把單位轉成外部格式。</li>
+    <li>CONVERT_TO_CSV：用 <span class="kw">SAP_CONVERT_TO_TEX_FORMAT</span>，以分號分隔。</li>
+    <li>SERVER_CONN → FTP_CONNECT；R3_FTP → FTP_R3_TO_SERVER。</li>
+  </ol>
+
+  <h3 id="ch06-8-10">10. 關鍵段落改寫（四）：價格擷取，修正有效期間與暫存表日期的錯誤</h3>
+  <p>原程式在擷取邏輯上有三個會讓價格「靜悄悄漏掉」的錯誤，改寫前先列出來：</p>
+  <table>
+    <thead><tr><th>原寫法</th><th>問題</th><th>修正</th></tr></thead>
+    <tbody>
+      <tr><td><span class="kw">a~datbi GT @p_erdat AND a~datab LT @p_erdat</span></td><td>用嚴格大於和小於，<b>生效日或到期日剛好是當天的價格會被排除</b></td><td><span class="kw">datab &lt;= @p_erdat AND datbi &gt;= @p_erdat</span></td></tr>
+      <tr><td>寫進 ZSDPR0001 時 ERDAT 蓋 <span class="kw">sy-datum</span>，讀回時卻用 <span class="kw">ERDAT = P_ERDAT</span></td><td>補跑前幾天的資料時（P_ERDAT ≠ 今天），剛寫進去的資料讀不回來，反而可能讀到當天別次執行的殘留資料</td><td>不要「寫進去再讀出來」，直接用記憶體中的結果輸出；暫存表只當作傳送紀錄</td></tr>
+      <tr><td>A005 沒有限制 KAPPL／KSCHL，KONP 沒有排除 LOEVM_KO</td><td>PR00 以外的條件類型（折扣、運費）和已刪除的記錄一起被輸出</td><td>KSCHL 用列舉 EQ、排除刪除標記</td></tr>
+    </tbody>
+  </table>
+  <pre><code class="abap">CLASS lcl_vk11_export DEFINITION FINAL.
+  PUBLIC SECTION.
+    TYPES: BEGIN OF ty_price,
+             kschl TYPE a005-kschl,
+             vkorg TYPE a005-vkorg,
+             vtweg TYPE a005-vtweg,
+             kunnr TYPE a005-kunnr,
+             matnr TYPE a005-matnr,
+             datab TYPE a005-datab,
+             datbi TYPE a005-datbi,
+             knumh TYPE a005-knumh,
+             kopos TYPE konp-kopos,
+             kbetr TYPE konp-kbetr,
+             konwa TYPE konp-konwa,
+             kpein TYPE konp-kpein,
+             kmein TYPE konp-kmein,
+           END OF ty_price,
+           tt_price TYPE STANDARD TABLE OF ty_price WITH EMPTY KEY.
+    METHODS read_prices IMPORTING iv_date        TYPE d
+                                  iv_full        TYPE abap_bool
+                        RETURNING VALUE(rt_price) TYPE tt_price.
+ENDCLASS.
+
+CLASS lcl_vk11_export IMPLEMENTATION.
+  METHOD read_prices.
+    " 條件類型用列舉（EQ），不要用 BT：條件類型代碼沒有業務上的「區間」意義
+    DATA(lt_kschl) = VALUE rsdsselopt_t( ( sign = 'I' option = 'EQ' low = 'PR00' ) ).
+
+    IF iv_full = abap_true.
+      SELECT a~kschl, a~vkorg, a~vtweg, a~kunnr, a~matnr, a~datab, a~datbi, a~knumh,
+             p~kopos, p~kbetr, p~konwa, p~kpein, p~kmein
+        FROM a005 AS a
+        INNER JOIN konp AS p ON p~knumh = a~knumh
+        WHERE a~kappl    = 'V'
+          AND a~kschl   IN @lt_kschl
+          AND a~kunnr   IN @s_kunnr
+          AND a~datab   &lt;= @iv_date          " 含當天生效
+          AND a~datbi   &gt;= @iv_date          " 含當天到期
+          AND p~loevm_ko = @abap_false
+        ORDER BY a~kunnr, a~matnr, a~datab, p~kopos   " HANA 沒有預設排序：CSV 列序要穩定
+        INTO TABLE @rt_price.
+    ELSE.
+      " 增量：當天新建，或當天有變更文件（COND_A）的條件記錄——用子查詢取代 RANGES
+      SELECT a~kschl, a~vkorg, a~vtweg, a~kunnr, a~matnr, a~datab, a~datbi, a~knumh,
+             p~kopos, p~kbetr, p~konwa, p~kpein, p~kmein
+        FROM a005 AS a
+        INNER JOIN konp AS p ON p~knumh = a~knumh
+        INNER JOIN konh AS h ON h~knumh = a~knumh
+        WHERE a~kappl  = 'V'
+          AND a~kschl IN @lt_kschl
+          AND a~kunnr IN @s_kunnr
+          AND ( h~erdat = @iv_date
+             OR a~knumh IN ( SELECT objectid FROM cdhdr
+                               WHERE objectclas = 'COND_A'
+                                 AND udate      = @iv_date ) )
+        ORDER BY a~kunnr, a~matnr, a~datab, p~kopos
+        INTO TABLE @rt_price.
+    ENDIF.
+  ENDMETHOD.
+ENDCLASS.</code></pre>
+  <div class="warn"><b>RANGES 的隱藏上限。</b>原程式把當天的變更 KNUMH 一筆一筆 APPEND 進 <span class="kw">ir_knumh</span>，再拿去 <span class="kw">IN @ir_knumh</span>。某天大量調價（例如年度調價一次改幾萬筆）時，SQL 敘述會超過資料庫的長度上限而 dump（DBSQL_STMNT_TOO_LARGE 或類似錯誤）。改用子查詢或 JOIN 就沒有這個問題。另外，增量模式<b>抓不到「今天被刪除」的條件記錄</b>，對方系統會留著舊價。這要靠變更文件 CHNGIND = 'D'，或定期做一次全量比對來補。</div>
+
+  <h3 id="ch06-8-11">11. 關鍵段落改寫（五）：組 CSV，金額與單位要轉成外部格式</h3>
+  <p><span class="kw">SAP_CONVERT_TO_TEX_FORMAT</span> 會把欄位原樣輸出。金額是內部格式：對 JPY 這類<b>零小數位幣別</b>，SAP 內部存的值是「÷100」後的數字，直接輸出會差 100 倍。每單位 KPEIN 也常被對方系統忽略。改寫版逐欄組字串，先把金額轉成外部金額：</p>
+  <pre><code class="abap">METHOD to_csv.   " IMPORTING it_price TYPE tt_price RETURNING VALUE(rt_csv) TYPE string_table
+  rt_csv = VALUE #( ( `KSCHL;VKORG;VTWEG;KUNNR;MATNR;DATAB;DATBI;KBETR;KONWA;KPEIN;KMEIN` ) ).
+
+  LOOP AT it_price INTO DATA(ls).
+    DATA lv_ext TYPE bapicurr-bapicurr.
+    CALL FUNCTION 'BAPI_CURRENCY_CONV_TO_EXTERNAL'
+      EXPORTING
+        currency        = ls-konwa
+        amount_internal = ls-kbetr
+      IMPORTING
+        amount_external = lv_ext.
+
+    DATA lv_unit TYPE meins.
+    CALL FUNCTION 'CONVERSION_EXIT_CUNIT_OUTPUT'
+      EXPORTING
+        input  = ls-kmein
+      IMPORTING
+        output = lv_unit
+      EXCEPTIONS
+        unit_not_found = 1
+        OTHERS         = 2.
+    IF sy-subrc &lt;&gt; 0.
+      lv_unit = ls-kmein.
+    ENDIF.
+
+    APPEND |{ ls-kschl };{ ls-vkorg };{ ls-vtweg };{ ls-kunnr ALPHA = OUT };{ ls-matnr ALPHA = OUT };| &amp;&amp;
+           |{ ls-datab DATE = ISO };{ ls-datbi DATE = ISO };{ lv_ext NUMBER = RAW };| &amp;&amp;
+           |{ ls-konwa };{ ls-kpein };{ lv_unit }| TO rt_csv.
+  ENDLOOP.
+ENDMETHOD.</code></pre>
+  <div class="tip">輸出格式要跟對方<b>寫成規格書</b>：分隔符號、有沒有標題列、日期格式（ISO 的 <span class="kw">YYYY-MM-DD</span> 最不會出錯）、小數點、前導零（客戶與物料號碼要不要 ALPHA OUT）、編碼（UTF-8 有沒有 BOM）。原程式用 <span class="kw">DATS</span> 的內部格式 <span class="kw">YYYYMMDD</span>、保留前導零，這些都是對方隱性依賴的格式。改寫時如果改動，必須跟對方同步，否則對方的匯入程式會出錯。</div>
+
+  <h3 id="ch06-8-12">12. 關鍵段落改寫（六）：FTP 上傳封裝成類別，並說明明文風險與替代方案</h3>
+  <p>SAP 的 FTP 函數群（SFTP 函數群，名稱雖然有 SFTP，但<b>協定是明文 FTP</b>）標準流程是：<b>HTTP_SCRAMBLE</b> 加擾密碼 → <b>FTP_CONNECT</b>（經由 RFC destination <span class="kw">SAPFTPA</span>，也就是在應用伺服器上執行的 FTP 用戶端；<span class="kw">SAPFTP</span> 則是在前端 GUI 執行）→ <b>FTP_R3_TO_SERVER</b>（內表上傳成檔案）→ <b>FTP_DISCONNECT</b> → <b>RFC_CONNECTION_CLOSE</b>。完整說明見 <a href="#ch04-4">4-4 章</a>第 12 節。</p>
+  <pre><code class="abap">CLASS lcl_ftp_client DEFINITION FINAL.
+  PUBLIC SECTION.
+    CONSTANTS c_dest TYPE rfcdest VALUE 'SAPFTPA'.
+    METHODS constructor IMPORTING iv_host TYPE csequence
+                                  iv_user TYPE csequence
+                                  iv_pwd  TYPE csequence
+                        RAISING   cx_t100_msg.
+    METHODS put_text    IMPORTING iv_file TYPE csequence
+                                  it_text TYPE string_table
+                        RAISING   cx_t100_msg.
+    METHODS close.
+  PRIVATE SECTION.
+    CONSTANTS c_key TYPE i VALUE 26101957.      " SAP 範例報表 RSFTP002 用的固定 key，只是加擾不是加密
+    DATA mv_handle TYPE i.
+ENDCLASS.
+
+CLASS lcl_ftp_client IMPLEMENTATION.
+  METHOD constructor.
+    DATA lv_pwd TYPE c LENGTH 64.
+    lv_pwd = iv_pwd.
+    DATA(lv_len) = strlen( lv_pwd ).
+    CALL FUNCTION 'HTTP_SCRAMBLE'
+      EXPORTING
+        source      = lv_pwd
+        sourcelen   = lv_len
+        key         = c_key
+      IMPORTING
+        destination = lv_pwd.
+
+    CALL FUNCTION 'FTP_CONNECT'
+      EXPORTING
+        user            = CONV char64( iv_user )
+        password        = lv_pwd
+        host            = CONV char64( iv_host )
+        rfc_destination = c_dest
+      IMPORTING
+        handle          = mv_handle
+      EXCEPTIONS
+        not_connected   = 1
+        OTHERS          = 2.
+    IF sy-subrc &lt;&gt; 0.
+      RAISE EXCEPTION TYPE cx_t100_msg EXPORTING t100_msgid = sy-msgid t100_msgno = sy-msgno
+        t100_msgv1 = sy-msgv1 t100_msgv2 = sy-msgv2 t100_msgv3 = sy-msgv3 t100_msgv4 = sy-msgv4.
+    ENDIF.
+  ENDMETHOD.
+
+  METHOD put_text.
+    TYPES ty_line TYPE c LENGTH 1024.
+    DATA lt_data TYPE STANDARD TABLE OF ty_line WITH EMPTY KEY.
+    lt_data = VALUE #( FOR s IN it_text ( CONV #( s ) ) ).
+    CALL FUNCTION 'FTP_R3_TO_SERVER'
+      EXPORTING
+        handle         = mv_handle
+        fname          = CONV char255( iv_file )
+        character_mode = abap_true
+      TABLES
+        text           = lt_data
+      EXCEPTIONS
+        tcpip_error    = 1
+        command_error  = 2
+        data_error     = 3
+        OTHERS         = 4.
+    IF sy-subrc &lt;&gt; 0.
+      RAISE EXCEPTION TYPE cx_t100_msg EXPORTING t100_msgid = sy-msgid t100_msgno = sy-msgno
+        t100_msgv1 = sy-msgv1 t100_msgv2 = sy-msgv2 t100_msgv3 = sy-msgv3 t100_msgv4 = sy-msgv4.
+    ENDIF.
+  ENDMETHOD.
+
+  METHOD close.
+    CALL FUNCTION 'FTP_DISCONNECT' EXPORTING handle = mv_handle.
+    CALL FUNCTION 'RFC_CONNECTION_CLOSE'
+      EXPORTING  destination = c_dest
+      EXCEPTIONS OTHERS      = 1.
+  ENDMETHOD.
+ENDCLASS.
+
+" 使用端：帳密不寫死在程式，改從受權限保護的設定讀取
+START-OF-SELECTION.
+  DATA(ls_cfg) = zcl_if_config=&gt;get( 'ZSDI0006' ).   " host = 192.0.2.10、user = FTP_USER …
+  TRY.
+      DATA(lo_ftp) = NEW lcl_ftp_client( iv_host = ls_cfg-host
+                                         iv_user = ls_cfg-user
+                                         iv_pwd  = ls_cfg-pwd ).
+      lo_ftp-&gt;put_text( iv_file = |/Export Data/VK11_{ sy-datum }.csv|
+                        it_text = lo_export-&gt;to_csv( lt_price ) ).
+      lo_ftp-&gt;close( ).
+    CATCH cx_t100_msg INTO DATA(lx).
+      IF lo_ftp IS BOUND.
+        lo_ftp-&gt;close( ).
+      ENDIF.
+      MESSAGE lx TYPE 'E'.        " 背景作業會進 job log，讓排程監控看得到
+  ENDTRY.</code></pre>
+  <p><b>原程式在 FTP 這一段的問題</b>：</p>
+  <ul>
+    <li><b>帳號密碼寫死在原始碼</b>：任何有 SE38 顯示權限的人都看得到，而且會隨傳輸請求進到每個系統。HTTP_SCRAMBLE 只是讓密碼<b>不在網路上以原文出現在 SAPFTPA 的呼叫參數裡</b>，key 是公開的固定值，完全不算保護。</li>
+    <li><b>沒有 FTP_DISCONNECT</b>：連線留在 SAPFTPA，背景作業一多就會把 gateway 連線用光。</li>
+    <li><b>錯誤被吃掉</b>：<span class="kw">MESSAGE … INTO l_err</span> 只把訊息寫進變數，沒有顯示、也沒有寫進 log。上傳失敗時 job 還是顯示成功，對方收不到新價格也沒人知道。</li>
+    <li>固定檔名 <span class="kw">VK11.csv</span> 每天覆蓋，對方還在讀取時被覆寫就會讀到半個檔。建議加上日期，或先上傳成 <span class="kw">.tmp</span> 再改名。</li>
+  </ul>
+  <div class="warn"><b>FTP 是明文協定。</b>帳號、密碼和檔案內容（本案是<b>客戶專屬價格</b>，屬於商業機密）在網路上都以原文傳送，同網段的任何人都能側錄。建議的替代方案依優先順序如下：
+    <ol>
+      <li><b>SAP Integration Suite（CPI）或 SAP PI/PO</b>：ABAP 端只負責送出（Proxy、IDoc 或 OData），由中介層的 <b>SFTP adapter</b> 處理加密傳輸、重送、監控和金鑰管理。這是正式的企業級做法。</li>
+      <li><b>SFTP 透過 SM69 外部作業系統指令</b>：ABAP 先用 <span class="kw">OPEN DATASET</span> 把檔案寫到應用伺服器（<span class="tcode">AL11</span> 可查），再用 <span class="kw">SXPG_COMMAND_EXECUTE</span> 呼叫在 <span class="tcode">SM69</span> 定義好的指令（例如 <span class="kw">sftp -b</span> 批次腳本）。認證改用 <b>SSH 金鑰</b>，ABAP 程式裡完全不需要密碼（見下方程式碼）。</li>
+      <li>在過渡期真的只能用 FTP：至少限制在內網專線、帳號權限只開單一目錄的寫入，帳密放在受 <span class="kw">S_TABU_NAM</span> 權限保護的設定表中，而且不要傳送個資。</li>
+    </ol>
+    ABAP 本身沒有標準的 SFTP 用戶端函數，網路上的「ABAP SFTP 函數」大多是外部指令的包裝，或是協力廠商的套件。</div>
+  <pre><code class="abap">" 方案 2：先寫到應用伺服器，再用 SM69 定義的外部指令 ZSFTP_PUT（內容：/usr/local/bin/sftp_put.sh）上傳
+DATA(lv_file) = |/interface/out/VK11_{ sy-datum }.csv|.
+TRY.
+    OPEN DATASET lv_file FOR OUTPUT IN TEXT MODE ENCODING UTF-8.
+    LOOP AT lt_csv INTO DATA(lv_line).
+      TRANSFER lv_line TO lv_file.
+    ENDLOOP.
+    CLOSE DATASET lv_file.
+  CATCH cx_sy_file_open_mode cx_sy_file_access_error INTO DATA(lx_file).
+    MESSAGE lx_file-&gt;get_text( ) TYPE 'E'.
+ENDTRY.
+
+DATA: lv_status   TYPE extcmdexex-status,
+      lv_exitcode TYPE extcmdexex-exitcode,
+      lt_protocol TYPE STANDARD TABLE OF btcxpm WITH EMPTY KEY.
+
+CALL FUNCTION 'SXPG_COMMAND_EXECUTE'
+  EXPORTING
+    commandname           = 'ZSFTP_PUT'
+    additional_parameters = CONV sxpgcolist-parameters( lv_file )
+  IMPORTING
+    status                = lv_status
+    exitcode              = lv_exitcode
+  TABLES
+    exec_protocol         = lt_protocol
+  EXCEPTIONS
+    no_permission         = 1
+    command_not_found     = 2
+    parameters_too_long   = 3
+    security_risk         = 4
+    program_start_error   = 5
+    OTHERS                = 6.
+IF sy-subrc &lt;&gt; 0 OR lv_exitcode &lt;&gt; 0.
+  MESSAGE |SFTP upload failed, rc={ sy-subrc } exit={ lv_exitcode }| TYPE 'E'.
+ENDIF.</code></pre>
+  <div class="note">SM69 的指令要設定「允許額外參數」，而且腳本內部要檢查參數只能是 <span class="kw">/interface/out/</span> 底下的檔名，避免被注入任意 shell 指令。執行權限由權限物件 <span class="kw">S_LOG_COM</span> 控制，只開給介面用的背景帳號。</div>
+
+  <h3 id="ch06-8-13">13. ZFIP001 的業務情境、選擇畫面與程式架構</h3>
+  <p><b>業務情境</b>：財務付款給員工（費用報銷、代墊款）時，需要員工的公司代碼、身分證號、銀行代碼（Bank Key）和銀行帳號。公司把員工建成 BP（號碼段 8000 開頭），另外建了一張自訂表 <span class="kw">ZFIBPDTHD0001</span> 存這些付款資訊，供 FI 的付款和報表使用。這張表有兩個維護入口：<span class="tcode">SM30</span> 維護檢視（截圖「Change View "FI HR BP Info."」），以及報表 ZFIP001。</p>
+  <p><b>ZFIBPDTHD0001 欄位</b>（依素材）：MANDT、PARTNER、NAME_FIRST、NICKNAME（Known As）、NAME_LAST2（Name at Birth，實際被拿來放電子郵件）、L_COMCODE、L_IDNO、L_BANKKEY、L_BANK、AUTH（鎖定旗標）。</p>
+  <p><b>選擇畫面</b>（截圖「FI HR BP Information」）：DISPLAY／MODIFY／CREATE 三選一；下方九個 PARAMETERS 對應表格欄位（單筆新增用）；最後是 Excel 檔案路徑 S_FILE（<span class="kw">F4_FILENAME</span>）。</p>
+  <p><b>程式架構</b>：</p>
+  <ul>
+    <li>DISPLAY：ALLOW_CONFIRM → GETALVDATA（讀整張表）→ DISPLAY_ALV（<span class="kw">REUSE_ALV_FIELDCATALOG_MERGE</span> ＋ <span class="kw">REUSE_ALV_GRID_DISPLAY</span>，GUI status ZSTANDARD，按鈕 Mark／Call Up Report）</li>
+    <li>MODIFY：使用者名稱含「IT」的人一律可以改；其他人要 AUTH 旗標是解鎖狀態才能改。可編輯欄位：公司代碼、Bank Key、帳號、ID、NICKNAME、NAME_LAST2。存檔 <span class="kw">&amp;DATA_SAVE</span> → <span class="kw">MODIFY ZFIBPDTHD0001 FROM TABLE</span>；按鈕 <span class="kw">&amp;EXE2</span> 切換全表的 AUTH 旗標</li>
+    <li>CREATE：有給 Excel 路徑就走 <span class="kw">TEXT_CONVERT_XLS_TO_SAP</span> 上傳，並比對 BUT000 確認 BP 存在；沒給路徑就用畫面欄位新增單筆</li>
+    <li>未被呼叫的 FORM：GETDATA（從 BUT000 重建整張表）、SET_VAR／CALL_VIEW_MAINTENANCE（<span class="kw">VIEW_RANGETAB_TO_SELLIST</span>＋<span class="kw">VIEW_MAINTENANCE_CALL</span> 帶條件開 SM30）</li>
+  </ul>
+
+  <h3 id="ch06-8-14">14. ZFIP001 的原程式問題與現代改寫</h3>
+  <table>
+    <thead><tr><th>原寫法</th><th>問題</th><th>改寫方向</th></tr></thead>
+    <tbody>
+      <tr><td><span class="kw">IF SY-UNAME CS 'IT'</span></td><td>用「帳號名稱包含 IT」判斷權限。任何帳號含 IT 字樣的人（例如 <span class="kw">KITTY</span>、<span class="kw">SMITH</span>）都拿得到修改權</td><td><span class="kw">AUTHORITY-CHECK</span>，用自訂權限物件或 <span class="kw">S_TABU_NAM</span></td></tr>
+      <tr><td>ALLOW_CONFIRM：<span class="kw">SELECT SINGLE auth … WHERE partner &lt;&gt; ''</span></td><td>用任意一筆的 AUTH 代表「全表鎖定狀態」。<b>HANA 沒有預設排序</b>，SELECT SINGLE 沒有完整 key 時抓到哪一筆是不確定的；只要各筆 AUTH 不一致，今天能改、明天不能改</td><td>鎖定狀態獨立存成一筆設定（例如 TVARVC 或一張單筆設定表），不要藏在資料列裡</td></tr>
+      <tr><td>AUTH 的語意</td><td>程式碼中 <span class="kw">'0'</span> 是解鎖、<span class="kw">'1'</span> 是鎖定（按 &amp;EXE2 時從 0 設成 1 會顯示「lock」）；但截圖上的說明卻寫「1 表示可更改」。<b>文件和程式互相矛盾</b></td><td>改用有語意的欄位（例如 <span class="kw">LOCKED TYPE abap_bool</span>），並在資料元素說明中寫清楚</td></tr>
+      <tr><td>Excel 比對：兩層 LOOP ＋ <span class="kw">'00' &amp;&amp; col1 = partner</span></td><td>O(n×m) 效能；假設 BP 號碼永遠是 8 碼、前面補 2 個零就等於 10 碼，號碼長度一改就全部比對失敗</td><td><span class="kw">|{ col1 ALPHA = IN }|</span> ＋ hashed table</td></tr>
+      <tr><td>GETDATA：<span class="kw">DELETE FROM zfibpdthd0001</span>（沒有 WHERE）＋ <span class="kw">PARTNER CS '8000'</span></td><td>刪掉整張表；而且 CS 是「包含」不是「開頭」，會誤抓到 <span class="kw">00018000</span> 這類號碼。這個 FORM 目前沒被呼叫，但任何人加一行 PERFORM 就會清光付款資料</td><td>直接移除；真的需要時用 <span class="kw">LIKE '8000%'</span> 或列舉號碼段</td></tr>
+      <tr><td>MODIFY FROM TABLE 前沒有鎖</td><td>SM30 和 ZFIP001 同時維護時，後存的人會蓋掉先存的人</td><td>存檔前 <span class="kw">ENQUEUE_E_TABLE</span>（或自訂鎖物件）</td></tr>
+      <tr><td>REUSE_ALV_GRID_DISPLAY 編輯模式</td><td>本專案禁用；而且回呼存檔時沒有呼叫 <span class="kw">CHECK_CHANGED_DATA</span>，最後一格剛改的值可能沒被寫回</td><td>CL_GUI_ALV_GRID（需要編輯才用它）或 SM30 維護檢視</td></tr>
+    </tbody>
+  </table>
+  <pre><code class="abap">" 權限與鎖：取代 SY-UNAME CS 'IT' 與 SELECT SINGLE 取「任一筆」
+METHOD check_can_modify.
+  AUTHORITY-CHECK OBJECT 'S_TABU_NAM'
+    ID 'ACTVT'   FIELD '02'
+    ID 'TABLE'   FIELD 'ZFIBPDTHD0001'.
+  IF sy-subrc &lt;&gt; 0.
+    RAISE EXCEPTION TYPE zcx_fi_no_auth.
+  ENDIF.
+
+  " 鎖定狀態存在單獨的設定（TVARVC），不是藏在資料列的 AUTH 欄位
+  SELECT SINGLE low FROM tvarvc
+    WHERE name = 'ZFIP001_LOCKED' AND type = 'P' AND numb = '0000'
+    INTO @DATA(lv_locked).
+  IF lv_locked = abap_true.
+    RAISE EXCEPTION TYPE zcx_fi_maint_locked.
+  ENDIF.
+
+  CALL FUNCTION 'ENQUEUE_E_TABLE'
+    EXPORTING
+      tabname        = 'ZFIBPDTHD0001'
+    EXCEPTIONS
+      foreign_lock   = 1
+      system_failure = 2
+      OTHERS         = 3.
+  IF sy-subrc &lt;&gt; 0.
+    RAISE EXCEPTION TYPE zcx_fi_maint_locked.
+  ENDIF.
+ENDMETHOD.
+
+" Excel 上傳比對：ALPHA 轉換 ＋ hashed table，取代兩層 LOOP 與 '00' &amp;&amp; …
+METHOD merge_upload.   " IMPORTING it_excel  RETURNING VALUE(rt_db) TYPE tt_db
+  DATA lt_partner TYPE RANGE OF but000-partner.
+  lt_partner = VALUE #( FOR x IN it_excel ( sign = 'I' option = 'EQ' low = |{ x-partner ALPHA = IN }| ) ).
+  CHECK lt_partner IS NOT INITIAL.
+
+  SELECT partner FROM but000
+    WHERE partner IN @lt_partner
+    INTO TABLE @DATA(lt_bp).
+  DATA(lt_bp_set) = CORRESPONDING tt_partner_hash( lt_bp ).   " HASHED … UNIQUE KEY partner
+
+  rt_db = VALUE #( FOR x IN it_excel
+                   LET p = CONV bu_partner( |{ x-partner ALPHA = IN }| ) IN
+                   ( LINES OF COND tt_db( WHEN line_exists( lt_bp_set[ partner = p ] )
+                       THEN VALUE #( ( partner   = p
+                                       l_comcode = x-l_comcode
+                                       l_idno    = x-l_idno
+                                       l_bankkey = x-l_bankkey
+                                       l_bank    = x-l_bank ) ) ) ) ).
+  " 不存在的 BP 要另外列出錯誤清單回報使用者，不能默默略過
+ENDMETHOD.</code></pre>
+  <div class="warn"><b>先找標準，而且這張表存的是個資。</b>員工的銀行帳號，標準做法是存在 BP 的銀行明細 <span class="kw">BUT0BK</span>（<span class="tcode">BP</span> 交易 → Payment Transactions），供應商角色的付款程式（<span class="tcode">F110</span>）會直接讀取；如果有導入 HCM，則以資訊類型 0009（Bank Details）為主，再同步到 BP。自建 Z 表存<b>身分證號＋銀行帳號</b>有三個問題：
+    <ul>
+      <li>沒有變更文件：誰改了誰的帳號查不到，這是付款詐騙最常見的手法。</li>
+      <li>SE16 就能看到全表明文。</li>
+      <li>不會納入 SAP 的個資封鎖與刪除機制（ILM）。</li>
+    </ul>
+    如果業務上一定要保留 Z 表，至少要：資料元素勾 Change document，並建立變更文件物件；用 <span class="kw">S_TABU_NAM</span> 限制 SE16 與 SM30；ALV 預設遮蔽身分證號和帳號；匯出前經過主管核准。</div>
+
+  <h3 id="ch06-8-15">15. 與 FI 資料表的關係：BKPF／BSEG 與 S/4HANA 的 ACDOCA</h3>
+  <p>ZFIP001 維護的是<b>付款主資料</b>，真正的應付與付款會記錄在會計文件裡。寫這類 FI 周邊程式時，一定會碰到的資料表關係如下<span class="src">（依 SAP 標準補寫）</span>：</p>
+  <table>
+    <thead><tr><th>表</th><th>S/4HANA 的角色</th><th>讀取建議</th></tr></thead>
+    <tbody>
+      <tr><td>BKPF</td><td>會計文件檔頭（公司代碼＋文件號碼＋會計年度）</td><td>照舊使用</td></tr>
+      <tr><td>BSEG</td><td>總帳觀點的<b>原始行項目</b>，仍然存在，但只保存「入帳時」的行，不含 CO 分攤、外幣評價等後續產生的明細</td><td>要看文件原貌、付款條件、稅碼時才讀</td></tr>
+      <tr><td>ACDOCA</td><td>Universal Journal：FI、CO、AA、ML 合一的<b>唯一真相</b>，含分類帳 RLDNR、所有幣別、利潤中心、成本中心、段落</td><td>報表、餘額、分析一律以 ACDOCA 為主；<b>要加 RLDNR 條件</b>（通常是主分類帳 <span class="kw">'0L'</span>），否則多分類帳會重複計算</td></tr>
+      <tr><td>BSIK／BSAK、BSID／BSAD、BSIS／BSAS</td><td>ECC 的索引表，在 S/4HANA 變成相容性 CDS view（讀取時即時從 BSEG／ACDOCA 計算）</td><td>舊程式仍能讀，但效能不如直接查 ACDOCA；新程式請改用 ACDOCA 或 released CDS（例如 <span class="kw">I_OperationalAcctgDocItem</span>）</td></tr>
+      <tr><td>BUT000／BUT0BK</td><td>BP 一般資料／BP 銀行明細</td><td>取代 LFA1／LFBK 的主資料來源（LFA1 仍存在，由 CVI 同步）</td></tr>
+    </tbody>
+  </table>
+  <pre><code class="abap">" 查員工 BP（供應商角色）在某公司代碼的未清應付：S/4HANA 以 ACDOCA 為主
+SELECT rbukrs, gjahr, belnr, docln, lifnr, budat, hsl, rhcur, augbl
+  FROM acdoca
+  WHERE rldnr   = '0L'                       " 主分類帳：少了這行，多分類帳會重複計算
+    AND rbukrs  = @p_bukrs                   " 例：'1000'
+    AND lifnr  IN @lt_lifnr                  " 列舉 EQ，不要 BT '8000000000'～'8999999999'
+    AND koart   = 'K'
+    AND augbl   = @space                     " 未清
+  ORDER BY rbukrs, lifnr, budat, gjahr, belnr, docln   " HANA 沒有預設排序
+  INTO TABLE @DATA(lt_open_items).
+
+" 要看文件原貌（付款條件、原始行文字）時才回頭讀 BSEG
+IF lt_open_items IS NOT INITIAL.
+  SELECT bukrs, belnr, gjahr, buzei, zterm, zfbdt, sgtxt
+    FROM bseg
+    FOR ALL ENTRIES IN @lt_open_items
+    WHERE bukrs = @lt_open_items-rbukrs
+      AND belnr = @lt_open_items-belnr
+      AND gjahr = @lt_open_items-gjahr
+    INTO TABLE @DATA(lt_bseg).
+ENDIF.</code></pre>
+  <div class="warn">ACDOCA 的 <span class="kw">DOCLN</span>（6 碼）和 BSEG 的 <span class="kw">BUZEI</span>（3 碼）<b>不是一對一對應</b>，因為 ACDOCA 可能比 BSEG 多出 CO 或評價產生的行。要把兩邊連起來，請用文件號碼加上 ACDOCA 的 <span class="kw">BUZEI</span> 欄位，不要用行號位置去對。員工 BP 的號碼段也要用<b>列舉</b>，不要用區間：員工離職後號碼可能被重用，或者號碼段曾經調整過，用 <span class="kw">BT</span> 會把非員工的供應商一起抓進來。</div>
+
+  <h3 id="ch06-8-16">16. 上線注意總表</h3>
+  <table>
+    <thead><tr><th>程式</th><th>上線前</th><th>上線後監控</th></tr></thead>
+    <tbody>
+      <tr><td>ZMMR0002</td><td>變更日期設成必填；確認採購相關欄位的資料元素都有勾 Change document（自訂欄位 CI_EKPODB 也要）；用 SE30／SAT 量測一個月資料量的執行時間</td><td>使用者如果習慣「不給日期」，要教育改用 variant</td></tr>
+      <tr><td>ZMMB0009</td><td>增量同步機制；外部表主鍵；第一次全量搬遷另外寫一支一次性程式分批執行；DBCO 連線帳號只給 INSERT／UPDATE 權限</td><td>SM37 job log、同步筆數與外部表筆數每日對帳</td></tr>
+      <tr><td>ZSDI0006</td><td>有效期間改成含邊界；KSCHL 列舉；跟對方確認 CSV 規格；帳密移出程式；優先改走 SFTP 或 CPI</td><td>上傳失敗時 job 要顯示紅燈；每週全量比對一次，補抓被刪除的條件記錄</td></tr>
+      <tr><td>ZFIP001</td><td>刪除 GETDATA；權限物件取代 CS 'IT'；釐清 AUTH 語意；加鎖；評估搬回 BUT0BK</td><td>變更文件或 SM30 的表格紀錄（SCU3，需開啟表格 logging）定期稽核</td></tr>
+    </tbody>
+  </table>
+  <div class="tip">傳輸請求（SE10／STMS）夾帶介面程式時要檢查：程式裡不能出現任何主機 IP、帳號或密碼；設定值要放在「每個系統各自維護」的設定表或 SM59 destination，並列在上線清單中「目標系統手動設定」那一欄。</div>
+
+  <h3 id="ch06-8-qa">練習與自我檢核</h3>
+  <ol>
+    <li>採購單變更文件的 OBJECTCLAS 是什麼？一張採購單的計畫行交期被改了，CDPOS 的 TABNAME、TABKEY、FNAME 各是什麼？TABKEY 要怎麼拆出 EBELN、EBELP、ETENR？</li>
+    <li>CDPOS 的 CHNGIND 有哪五種值？原 ZMMR0002 把哪一種重要變更顯示錯了？</li>
+    <li>為什麼 ECC 時代讀 CDPOS 要用 FOR ALL ENTRIES，S/4HANA 卻可以直接 JOIN？用 FOR ALL ENTRIES 時為什麼一定要自己 SORT？</li>
+    <li>原程式先讀全部變更再用 EKKO 過濾，跟「先用 EKKO 算出單號再讀變更」相比，差在哪裡？</li>
+    <li>S/4HANA 的採購單輸出紀錄存在哪張表？為什麼不再讀 NAST？</li>
+    <li>ZMMB0009 每天讀取整張 CDHDR 的 EINKBELEG。請設計增量同步機制，並說明外部表的主鍵要怎麼設計才能安全重跑。</li>
+    <li>條件類型、存取順序、條件表、條件記錄是什麼關係？只讀 A005 為什麼可能漏掉客戶的實際價格？</li>
+    <li>原 ZSDI0006 的有效期間條件 <span class="kw">datbi GT p_erdat AND datab LT p_erdat</span> 會漏掉哪些價格？請寫出正確條件。</li>
+    <li>ZSDI0006 的暫存表 ERDAT 寫入 sy-datum、讀回時用 p_erdat，會在什麼情境出錯？</li>
+    <li>把當天變更的 KNUMH 組成 RANGES 再用 IN 查詢，資料量大時會發生什麼事？改寫版怎麼避免？</li>
+    <li>SAPFTPA 和 SAPFTP 差在哪？HTTP_SCRAMBLE 能不能保護密碼？原程式少呼叫了哪個函數？</li>
+    <li>請說出兩種取代明文 FTP 的方案，並說明 SM69 外部指令要注意哪些安全設定。</li>
+    <li>ZFIP001 用 <span class="kw">SY-UNAME CS 'IT'</span> 判斷權限，並用 SELECT SINGLE 讀「任一筆」的 AUTH 決定全表鎖定狀態。請各舉出一個會出錯的具體情境。</li>
+    <li>員工的付款銀行資料在 SAP 標準中應該存在哪裡？自建 Z 表存身分證號與帳號，有哪些稽核與個資風險？</li>
+    <li>S/4HANA 中 ACDOCA 和 BSEG 的關係是什麼？查 ACDOCA 時為什麼一定要加 RLDNR？BSIK 在 S/4HANA 變成了什麼？</li>
+  </ol>
+</section>

@@ -1,0 +1,668 @@
+<section class="chapter" id="ch06-7" data-title="DBCO 與外部資料庫整合">
+  <h2>第 6-7 章 DBCO 與外部資料庫整合</h2>
+  <p class="lede">SAP 不是孤島：MES、BPM、報表平台、舊系統常常各自有一顆 SQL Server。本章從 <span class="tcode">DBCO</span> 的連線設定講起，說明 SAP 如何用 ADBC 讀寫外部資料庫、把資料「下載」到 SQL Server、呼叫對方的儲存程序；再拆解一支真實上線的原料工單收發料程式 ZPPR0002／ZPPR0005，看它的資料流、踩過的坑，以及把收發料紀錄交給外部系統時該怎麼設計。最後一節反過來看：外部的網頁平台怎麼把 SQL Server 的儲存程序當資料來源，這時 SAP 端只要「給資料」就好。</p>
+  <div class="meta">
+    <div><b>核心 TCODE</b><span class="tcode">DBCO</span><span class="tcode">DBACOCKPIT</span><span class="tcode">ST04_MSS</span><span class="tcode">DB02</span><span class="tcode">DB02_MSS</span><span class="tcode">DB12_MSS</span><span class="tcode">SQLSTMT_MSS</span><span class="tcode">EXPL_MSS</span><span class="tcode">SE24</span><span class="tcode">SM37</span><span class="tcode">CO02</span><span class="tcode">MIGO</span></div>
+    <div><b>關鍵物件</b>DBCON、CL_SQL_CONNECTION、CL_SQL_STATEMENT、CL_SQL_RESULT_SET、CX_SQL_EXCEPTION、CAUFV、AUFK、AFPO、RESB、JEST、MARD、MSKA、MATDOC、BUT000、BAPI_GOODSMVT_CREATE、BAPI_GOODSMVT_CANCEL、ENQUEUE_ESORDER、ZPPROWHD0001、ZPPROWDE0002、ZPPROWDE0003、ZPPROWMP0002</div>
+  </div>
+
+  <h3 id="ch06-7-01">1. 素材對照</h3>
+  <p>本章取材自 <b>15_實務案例</b> 中與外部資料庫有關的四份筆記。素材來自真實客戶，主機位址、資料庫名稱、帳號、公司名、人名與第三方平台名稱一律以佔位符取代（<span class="kw">&lt;DB_HOST&gt;</span>、<span class="kw">&lt;DBNAME&gt;</span>、<span class="kw">&lt;DB_USER&gt;</span>、<span class="kw">192.0.2.x</span>、「某雲端 ERP 平台」）。</p>
+  <table>
+    <thead><tr><th>#</th><th>素材（原檔）</th><th>內容與規模</th><th>原本寫法／狀況</th><th>本章小節</th></tr></thead>
+    <tbody>
+      <tr><td>1</td><td>ABAP_06_9_DBCO_連線 SQL SERVER</td><td>1 行連線字串＋1 張 DBCO 明細畫面截圖</td><td>DBCO 連線名、DBMS=MSS、使用者、Conn. info 為 <span class="kw">MSSQL_SERVER=&lt;DB_HOST&gt; MSSQL_DBNAME=&lt;DBNAME&gt;</span>、Permanent 打勾、Connection Limit／Optimum Conns 皆 0</td><td>2、3</td></tr>
+      <tr><td>2</td><td>ABAP_06_6_下載至 SQLSERVER</td><td>只有 5 張截圖，無程式碼</td><td>ST04_MSS 交易的技術資料（套件 STUN_MSS、程式 SAPLSMSSCCMS）、STUN_MSS 相關 TCODE 清單、DBCO 變更畫面（Permanent 取消勾選）、ST04_MSS 的 Database Connections 清單、DBA Cockpit 在 HANA 系統上「中央的無法設定」錯誤訊息</td><td>3、5、6</td></tr>
+      <tr><td>3</td><td>ABAP_06_B_DBCO_ZPPR0002_ZPPR0005</td><td>約 4,800 行：資料表清單 20 個、異動類型說明、ZPPR0002 主程式與 TOP／F01／O01／I01 四個 include；1 張選擇畫面截圖</td><td>大量 <span class="kw">TABLES</span>、<span class="kw">OCCURS 0 WITH HEADER LINE</span>、<span class="kw">FORM/PERFORM</span>、<span class="kw">REUSE_ALV_GRID_DISPLAY</span>、<span class="kw">EXPORT/IMPORT MEMORY</span>＋<span class="kw">SUBMIT</span>。素材標題雖有 DBCO，<b>附的原始碼中沒有 <span class="kw">EXEC SQL</span> 或 ADBC 段落</b>；ZPPR0005 只看得到被 SUBMIT 的介面，沒有原始碼</td><td>8～12</td></tr>
+      <tr><td>4</td><td>ABAP_06_F_用後端儲存程序當資料來源（平台名略）</td><td>只有 6 張截圖</td><td>某雲端 ERP／低代碼平台的查詢頁（用量結構）、下鑽頁（BOM 展開）、Drilldown 元件設定、Server 元件 CommandType=StoreProcedure、JavaScript 以字串拼接 <span class="kw">exec &lt;DBNAME&gt;.dbo.up_FUN_BOMTree</span></td><td>7、13</td></tr>
+    </tbody>
+  </table>
+  <div class="note"><b>關於 <span class="kw">EXEC SQL</span>：</b>這類整合的舊程式最常見的寫法是 <span class="kw">EXEC SQL. CONNECT TO 'ZEXTDB' AS 'C1' ENDEXEC.</span>、<span class="kw">EXEC SQL. SET CONNECTION 'C1' ENDEXEC.</span>、再用 <span class="kw">EXEC SQL. INSERT INTO … VALUES ( :lv_a, :lv_b ) ENDEXEC.</span> 一筆一筆寫，最後 <span class="kw">EXEC SQL. COMMIT ENDEXEC.</span> 與 <span class="kw">DISCONNECT</span>。Native SQL 沒有語法檢查、例外只能用 <span class="kw">TRY … CATCH cx_sy_native_sql_error</span> 接、游標要自己 <span class="kw">OPEN/FETCH/CLOSE</span>，本圖書館一律改寫成 ADBC（第 4～7 節），原寫法只在此以文字說明。</div>
+
+  <h3 id="ch06-7-02">2. 三種整合方向：先想清楚誰主動、誰負責</h3>
+  <p>「SAP 跟 SQL Server 串」其實有三種完全不同的做法，選錯方向，後面所有程式都會很痛：</p>
+  <table>
+    <thead><tr><th>方向</th><th>做法</th><th>適用</th><th>風險</th></tr></thead>
+    <tbody>
+      <tr><td>A. SAP 主動讀外部</td><td>DBCO ＋ ADBC <span class="kw">execute_query</span></td><td>SAP 報表要顯示 MES／BPM 的即時資料（簽核狀態、機台產量）</td><td>對方 DB 慢或斷線時，SAP 報表跟著卡；要設逾時與錯誤處理</td></tr>
+      <tr><td>B. SAP 主動寫外部（「下載至 SQL Server」）</td><td>DBCO ＋ ADBC <span class="kw">execute_update</span>，背景作業排程</td><td>把 BOM、物料主檔、工單、收發料紀錄同步給外部報表平台</td><td>SAP 已 COMMIT、外部寫失敗 → 兩邊不一致，需要重送機制</td></tr>
+      <tr><td>C. 外部主動讀 SAP 同步出去的資料</td><td>方向 B 同步到中介資料庫，由外部平台用<b>儲存程序</b>組報表（第 13 節）</td><td>網頁平台、Power BI、低代碼平台的查詢與下鑽</td><td>最乾淨；SAP 只負責「給資料」，邏輯留在對方</td></tr>
+    </tbody>
+  </table>
+  <div class="warn"><b>絕對不要做的第四種：</b>讓外部系統直接連 SAP 的底層資料庫（HANA schema 或舊版 MSSQL 的 SAP schema）讀寫標準表。這繞過 SAP 的授權、鎖、更新工作與緩衝，升級時表結構一變就壞（例如 S/4HANA 的 MSEG 變成 MATDOC 上的相容視圖、VBUK／VBUP 已併入 VBAK／VBAP），而且多數授權合約也不允許。外部要讀 SAP 資料，走 RFC／BAPI、OData、CDS 或 SAP 自己推出去的中介表。</div>
+  <p>Casper 的第 3 條經驗在這裡一樣適用：<b>先找標準</b>——需要的是傳輸業務文件就先看 IDoc（<a href="#ch05-22">5-22 章</a>）、要即時查詢就先看 RFC／BAPI（<a href="#ch04-1">4-1 章</a>）；DBCO 直連是「對方只給你一顆資料庫」時的務實解法。</p>
+
+  <h3 id="ch06-7-03">3. DBCO 設定：DBCON 表每個欄位的意義</h3>
+  <p><span class="tcode">DBCO</span> 維護的是資料表 <b>DBCON</b>（跨 client）。每一列就是一條「次要資料庫連線」（secondary database connection），ABAP 程式用<b>連線名稱</b>引用它。素材截圖中的欄位如下：</p>
+  <table>
+    <thead><tr><th>畫面欄位</th><th>DBCON 欄位</th><th>說明與建議</th></tr></thead>
+    <tbody>
+      <tr><td>DB Connection</td><td>CON_NAME</td><td>連線名稱，程式裡用的就是它。建議用 Z 開頭且看得出對象，例如 <span class="kw">ZEXTDB</span>、<span class="kw">ZMES_PRD</span>；各系統（DEV／QAS／PRD）名稱相同、內容不同，程式就不必改</td></tr>
+      <tr><td>DBMS</td><td>DBMS</td><td>對方資料庫類型：SQL Server 填 <span class="kw">MSS</span>；Oracle 是 ORA、HANA 是 HDB、DB2 是 DB6 等</td></tr>
+      <tr><td>User Name</td><td>USER_NAME</td><td>對方資料庫的登入帳號 <span class="kw">&lt;DB_USER&gt;</span>。要是 SQL Server 驗證帳號，權限只給需要的表／儲存程序</td></tr>
+      <tr><td>DB password</td><td>PASSWORD</td><td>輸入兩次，以加密形式存放，畫面上只顯示星號</td></tr>
+      <tr><td>Conn. info</td><td>CON_ENV</td><td>連線字串。SQL Server 格式：<span class="kw">MSSQL_SERVER=&lt;DB_HOST&gt; MSSQL_DBNAME=&lt;DBNAME&gt;</span>；具名執行個體寫 <span class="kw">MSSQL_SERVER=&lt;DB_HOST&gt;\&lt;INSTANCE&gt;</span>，非預設埠可寫 <span class="kw">&lt;DB_HOST&gt;,&lt;PORT&gt;</span>。兩組參數之間用<b>空白</b>分隔</td></tr>
+      <tr><td>Permanent</td><td>DB_RECO</td><td>勾選代表此連線是「必要連線」：工作程序會把它當成永久連線，連不上時會反覆重試並影響工作程序。外部、非關鍵的資料庫<b>建議不要勾</b>（素材第二張截圖就是把它取消勾選）</td></tr>
+      <tr><td>Connection Limit</td><td>MAX_CONN</td><td>此連線同時開啟的上限，0 表示不限制</td></tr>
+      <tr><td>Optimum Conns</td><td>OPT_CONN</td><td>保持開啟的理想連線數，0 表示不保留</td></tr>
+    </tbody>
+  </table>
+  <p><b>前置條件：</b>SAP 應用伺服器要能「說」SQL Server 的語言。這需要兩樣東西：</p>
+  <ol>
+    <li><b>SQL Server 的 DBSL</b>：SAP kernel 目錄下的 <span class="kw">dbmssslib</span>（Windows 是 dbmssslib.dll、Linux 是 dbmssslib.so），版本要與 kernel 相符；S/4HANA 主資料庫是 HANA，預設 kernel 裡不一定有 MSS 的 DBSL，要由 Basis 另外放進去。</li>
+    <li><b>Microsoft SQL Server 的用戶端</b>（ODBC Driver for SQL Server）：安裝在<b>每一台</b>應用伺服器上。只裝在中央執行個體，程式剛好分配到別台 AS 時就會連不上。</li>
+  </ol>
+  <p>網路面則要確認 AS 到 <span class="kw">&lt;DB_HOST&gt;</span> 的 SQL Server 埠（預設 1433）有開。</p>
+  <div class="tip"><b>測試連線：</b>在 <span class="tcode">DBACOCKPIT</span>（或素材中的 <span class="tcode">ST04_MSS</span>）左側選 <b>System Landscape → Database Connections</b>，選中連線按 <b>Test</b>，就能看到能否連上與錯誤訊息；清單中也會列出 DB Name、DB Host、User Name、Permanent 等欄位，比進 DBCO 一筆一筆看方便。</div>
+  <div class="warn"><b>素材中的坑：</b>在 S/4HANA（主資料庫為 HANA）的 DBA Cockpit 點 <b>System Configuration</b> 想「集中設定」外部 SQL Server 時，會出現 <i>For &lt;undefined&gt;, no systems are enabled or configured that support the required action</i> 與 <i>Check the system registration</i>——筆記寫著「中央的無法設定」。這不是權限問題，而是 System Configuration 管的是「要被監控的系統」；只是要讓 ABAP 連線，走 <span class="tcode">DBCO</span> 或 Database Connections 節點即可。</div>
+
+  <h3 id="ch06-7-04">4. ADBC 基礎：從外部資料庫讀資料</h3>
+  <p>ADBC（ABAP Database Connectivity）是 Native SQL 的物件導向介面，四個類別就夠用：</p>
+  <ul>
+    <li><b>CL_SQL_CONNECTION</b>：<span class="kw">get_connection( 'ZEXTDB' )</span> 依 DBCO 名稱開連線；<span class="kw">commit( )</span>、<span class="kw">rollback( )</span>、<span class="kw">close( )</span>。</li>
+    <li><b>CL_SQL_STATEMENT</b>：<span class="kw">set_param( )</span> 綁定 <span class="kw">?</span> 參數；<span class="kw">execute_query( )</span> 查詢、<span class="kw">execute_update( )</span> 增刪改、<span class="kw">execute_ddl( )</span> 建表、<span class="kw">execute_procedure( )</span> 呼叫儲存程序。</li>
+    <li><b>CL_SQL_RESULT_SET</b>：<span class="kw">set_param_table( )</span> 指定接收內表，<span class="kw">next_package( )</span> 分批取回，<span class="kw">close( )</span> 釋放游標。</li>
+    <li><b>CX_SQL_EXCEPTION</b>：所有錯誤都丟這個例外，屬性 <span class="kw">sql_code</span>、<span class="kw">sql_message</span>、<span class="kw">db_error</span> 可以直接顯示給使用者或寫 log。</li>
+  </ul>
+  <pre><code class="abap">REPORT zext_read_demo.
+
+" 外部 DB 表 ZEXT_POCHANGE：外部簽核系統的採購單變更紀錄
+TYPES: BEGIN OF ty_pochg,
+         ebeln    TYPE ebeln,
+         ebelp    TYPE ebelp,
+         status   TYPE c LENGTH 1,
+         chg_date TYPE d,
+         remark   TYPE c LENGTH 100,
+       END OF ty_pochg,
+       tt_pochg TYPE STANDARD TABLE OF ty_pochg WITH EMPTY KEY.
+
+PARAMETERS p_from TYPE d DEFAULT sy-datum OBLIGATORY.
+
+START-OF-SELECTION.
+  DATA lt_pochg TYPE tt_pochg.
+  DATA(lv_from) = |{ p_from DATE = RAW }|.            "yyyymmdd 字串，交給對方轉型
+
+  TRY.
+      DATA(lo_con) = cl_sql_connection=&gt;get_connection( 'ZEXTDB' ).
+      DATA(lo_stmt) = lo_con-&gt;create_statement( ).
+
+      " 參數一律用 ?，不要把使用者輸入拼進 SQL 字串
+      lo_stmt-&gt;set_param( REF #( lv_from ) ).
+
+      " 注意：Native SQL 沒有預設排序，要穩定結果就自己寫 ORDER BY
+      DATA(lo_res) = lo_stmt-&gt;execute_query(
+        |SELECT ebeln, ebelp, status, | &amp;&amp;
+        |       CONVERT(char(8), chg_date, 112) AS chg_date, remark | &amp;&amp;
+        |  FROM dbo.ZEXT_POCHANGE | &amp;&amp;
+        | WHERE chg_date &gt;= CONVERT(date, ?, 112) | &amp;&amp;
+        | ORDER BY ebeln, ebelp| ).
+
+      lo_res-&gt;set_param_table( REF #( lt_pochg ) ).
+      lo_res-&gt;next_package( ).                          "不給 upto 就一次全取
+      lo_res-&gt;close( ).
+      lo_con-&gt;close( ).
+
+    CATCH cx_sql_exception INTO DATA(lx_sql).
+      MESSAGE |外部資料庫錯誤 { lx_sql-&gt;sql_code }：{ lx_sql-&gt;sql_message }|
+        TYPE 'I' DISPLAY LIKE 'E'.
+      RETURN.
+  ENDTRY.
+
+  cl_salv_table=&gt;factory( IMPORTING r_salv_table = DATA(lo_alv)
+                          CHANGING  t_table      = lt_pochg ).
+  lo_alv-&gt;display( ).</code></pre>
+  <div class="note"><b>欄位怎麼對應：</b><span class="kw">set_param_table</span> 預設依<b>位置</b>把結果欄位填進內表欄位，所以 SELECT 的欄位順序要與結構一致；也可以傳第二個參數 <span class="kw">corresponding_fields</span> 指定欄位名清單。日期、數量這類型別差異最好在 SQL 端先轉好（上例用 <span class="kw">CONVERT(char(8), …, 112)</span> 轉成 yyyymmdd 給 ABAP 的 <span class="kw">d</span> 型別）。</div>
+
+  <h3 id="ch06-7-05">5. 把連線包成一個類別：錯誤處理與關閉集中管理</h3>
+  <p>每支程式都自己 <span class="kw">get_connection</span>／<span class="kw">close</span>，遲早有人忘了關、忘了 rollback。實務上建議包一個小類別，連線名稱集中在一處，例外轉成自己的訊息：</p>
+  <pre><code class="abap">CLASS zcl_ext_db DEFINITION PUBLIC FINAL CREATE PUBLIC.
+  PUBLIC SECTION.
+    CONSTANTS gc_con TYPE dbcon_name VALUE 'ZEXTDB'.   "DBCO 連線名稱只寫在這裡
+
+    METHODS constructor
+      RAISING cx_sql_exception.
+    METHODS stmt
+      RETURNING VALUE(ro_stmt) TYPE REF TO cl_sql_statement.
+    METHODS commit
+      RAISING cx_sql_exception.
+    METHODS rollback.
+    METHODS close.
+  PRIVATE SECTION.
+    DATA mo_con TYPE REF TO cl_sql_connection.
+ENDCLASS.
+
+CLASS zcl_ext_db IMPLEMENTATION.
+  METHOD constructor.
+    mo_con = cl_sql_connection=&gt;get_connection( gc_con ).
+  ENDMETHOD.
+
+  METHOD stmt.
+    ro_stmt = mo_con-&gt;create_statement( ).
+  ENDMETHOD.
+
+  METHOD commit.
+    mo_con-&gt;commit( ).
+  ENDMETHOD.
+
+  METHOD rollback.
+    TRY.
+        mo_con-&gt;rollback( ).
+      CATCH cx_sql_exception ##NO_HANDLER.
+        " 連線已斷時 rollback 也會失敗，這裡吞掉即可
+    ENDTRY.
+  ENDMETHOD.
+
+  METHOD close.
+    TRY.
+        mo_con-&gt;close( ).
+      CATCH cx_sql_exception ##NO_HANDLER.
+    ENDTRY.
+  ENDMETHOD.
+ENDCLASS.</code></pre>
+  <div class="warn"><b>次要連線的交易是獨立的：</b>對 <span class="kw">ZEXTDB</span> 的 <span class="kw">commit( )</span> 只提交外部 DB 的交易，與 SAP 主資料庫的 <span class="kw">COMMIT WORK</span> 各自獨立，沒有兩階段提交。反過來說，主程式的 <span class="kw">COMMIT WORK</span> 也不會替你提交外部連線上的變更——結束前沒 commit 就關連線，資料會被回滾。所以「先寫 SAP、再寫外部」或反之，都要設計失敗時的補救（第 11 節）。</div>
+
+  <h3 id="ch06-7-06">6. 下載至 SQL Server：參數化寫入與批次提交</h3>
+  <p><b>業務情境：</b>外部報表平台要看 SAP 的 BOM 用量結構，Basis 開好 DBCO 後，由背景作業每天把資料「下載」到外部 DB 的 <span class="kw">ZEXT_BOM_ITEM</span>。素材只有截圖，<span class="src">（依講義步驟整理）</span>寫法如下：先刪除本次範圍，再逐筆以參數化 INSERT 寫入，每 N 筆提交一次。</p>
+  <pre><code class="abap">REPORT zext_bom_download.
+
+PARAMETERS: p_werks TYPE werks_d OBLIGATORY,
+            p_pack  TYPE i DEFAULT 1000.
+
+START-OF-SELECTION.
+  " 1. 從 SAP 取資料（S/4HANA 可改用 CDS；這裡示範 BOM 表頭＋項目）
+  SELECT mast~matnr, mast~werks, mast~stlan, stpo~posnr,
+         stpo~idnrk, stpo~menge, stpo~meins
+    FROM mast
+    INNER JOIN stpo ON stpo~stlnr = mast~stlnr
+                   AND stpo~stlty = 'M'
+    WHERE mast~werks = @p_werks
+    ORDER BY mast~matnr, mast~stlan, stpo~posnr          "HANA 沒有預設排序
+    INTO TABLE @DATA(lt_bom).
+
+  " 2. 寫到外部 DB
+  DATA: lv_matnr TYPE matnr,
+        lv_werks TYPE werks_d,
+        lv_stlan TYPE stlan,
+        lv_posnr TYPE sposn,
+        lv_idnrk TYPE idnrk,
+        lv_menge TYPE kmpmg,
+        lv_meins TYPE meins,
+        lv_count TYPE i.
+
+  TRY.
+      DATA(lo_db) = NEW zcl_ext_db( ).
+
+      DATA(lo_del) = lo_db-&gt;stmt( ).
+      lo_del-&gt;set_param( REF #( p_werks ) ).
+      DATA(lv_deleted) = lo_del-&gt;execute_update(
+        `DELETE FROM dbo.ZEXT_BOM_ITEM WHERE werks = ?` ).
+
+      " 同一個 statement 物件重複執行：參數以參考綁定，改變數值再執行即可
+      DATA(lo_ins) = lo_db-&gt;stmt( ).
+      lo_ins-&gt;set_param( REF #( lv_matnr ) ).
+      lo_ins-&gt;set_param( REF #( lv_werks ) ).
+      lo_ins-&gt;set_param( REF #( lv_stlan ) ).
+      lo_ins-&gt;set_param( REF #( lv_posnr ) ).
+      lo_ins-&gt;set_param( REF #( lv_idnrk ) ).
+      lo_ins-&gt;set_param( REF #( lv_menge ) ).
+      lo_ins-&gt;set_param( REF #( lv_meins ) ).
+
+      LOOP AT lt_bom INTO DATA(ls_bom).
+        lv_matnr = ls_bom-matnr.
+        lv_werks = ls_bom-werks.
+        lv_stlan = ls_bom-stlan.
+        lv_posnr = ls_bom-posnr.
+        lv_idnrk = ls_bom-idnrk.
+        lv_menge = ls_bom-menge.
+        lv_meins = ls_bom-meins.
+        lo_ins-&gt;execute_update(
+          `INSERT INTO dbo.ZEXT_BOM_ITEM ` &amp;&amp;
+          `(matnr, werks, stlan, posnr, idnrk, menge, meins, sync_ts) ` &amp;&amp;
+          `VALUES (?, ?, ?, ?, ?, ?, ?, SYSUTCDATETIME())` ).
+        lv_count = lv_count + 1.
+        IF lv_count MOD p_pack = 0.
+          lo_db-&gt;commit( ).                                "批次提交，避免外部交易記錄檔爆掉
+        ENDIF.
+      ENDLOOP.
+
+      lo_db-&gt;commit( ).
+      lo_db-&gt;close( ).
+      MESSAGE |刪除 { lv_deleted } 筆，寫入 { lv_count } 筆| TYPE 'S'.
+
+    CATCH cx_sql_exception INTO DATA(lx_sql).
+      IF lo_db IS BOUND.
+        lo_db-&gt;rollback( ).
+        lo_db-&gt;close( ).
+      ENDIF.
+      MESSAGE |寫入外部 DB 失敗：{ lx_sql-&gt;sql_message }| TYPE 'E'.
+  ENDTRY.</code></pre>
+  <div class="warn"><b>批次提交的代價：</b>每 1000 筆 commit 一次，失敗時前面已提交的資料會留在外部 DB，而 DELETE 也已經提交——外部報表會看到「半套」資料。要避免有兩種做法：(1) 寫進暫存表 <span class="kw">ZEXT_BOM_ITEM_STG</span>，全部成功後由對方儲存程序在單一交易內切換；(2) 以同步批號 <span class="kw">sync_id</span> 標記，外部只讀「最後一個完整批號」。</div>
+  <p><b>陣列寫入：</b>資料量上萬筆時，逐筆 <span class="kw">execute_update</span> 的網路往返會成為瓶頸。ADBC 的 <span class="kw">CL_SQL_STATEMENT</span> 另有 <span class="kw">set_param_table</span>，可以一次綁定整個內表做陣列 DML（請先在 <span class="tcode">SE24</span> 確認你系統的 CL_SQL_STATEMENT 有此方法及其參數）：</p>
+  <pre><code class="abap">TYPES: BEGIN OF ty_row,
+         matnr TYPE matnr,
+         werks TYPE werks_d,
+         stlan TYPE stlan,
+         posnr TYPE sposn,
+         idnrk TYPE idnrk,
+         menge TYPE kmpmg,
+         meins TYPE meins,
+       END OF ty_row.
+
+" 欄位順序要與 INSERT 的 ? 順序一致
+DATA(lt_rows) = VALUE STANDARD TABLE OF ty_row WITH EMPTY KEY(
+  FOR ls IN lt_bom ( CORRESPONDING #( ls ) ) ).
+
+TRY.
+    DATA(lo_db) = NEW zcl_ext_db( ).
+    DATA(lo_stmt) = lo_db-&gt;stmt( ).
+    lo_stmt-&gt;set_param_table( REF #( lt_rows ) ).
+    DATA(lv_rows) = lo_stmt-&gt;execute_update(
+      `INSERT INTO dbo.ZEXT_BOM_ITEM_STG ` &amp;&amp;
+      `(matnr, werks, stlan, posnr, idnrk, menge, meins) ` &amp;&amp;
+      `VALUES (?, ?, ?, ?, ?, ?, ?)` ).
+    lo_db-&gt;commit( ).
+    lo_db-&gt;close( ).
+  CATCH cx_sql_exception INTO DATA(lx_sql).
+    IF lo_db IS BOUND.
+      lo_db-&gt;rollback( ).
+      lo_db-&gt;close( ).
+    ENDIF.
+    MESSAGE lx_sql-&gt;get_text( ) TYPE 'E'.
+ENDTRY.</code></pre>
+
+  <h3 id="ch06-7-07">7. 呼叫外部的儲存程序：邏輯留在對方，SAP 只呼叫</h3>
+  <p>素材第四份的關鍵字是「<b>用後端儲存程序當資料來源</b>」：外部 DB 提供 <span class="kw">dbo.up_FUN_BOMTree</span>，傳入物料與用途就回傳整棵展開後的 BOM。這個分工值得推廣到 SAP 端——SAP 需要外部的計算結果時，<b>不要把一段長長的 T-SQL 寫在 ABAP 字串裡</b>，而是請對方包成儲存程序，SAP 只 <span class="kw">EXEC</span>。</p>
+  <table>
+    <thead><tr><th>比較</th><th>SQL 寫在 ABAP 字串裡</th><th>對方提供儲存程序</th></tr></thead>
+    <tbody>
+      <tr><td>對方改表結構</td><td>SAP 要改程式、走傳輸</td><td>對方改儲存程序即可，介面（參數與回傳欄位）不變</td></tr>
+      <tr><td>權限</td><td>DB 帳號要有各表 SELECT／INSERT 權限</td><td>帳號只給 <span class="kw">EXECUTE</span> 權限，看不到表</td></tr>
+      <tr><td>SQL injection</td><td>一不小心就拼字串</td><td>參數型別由程序定義</td></tr>
+      <tr><td>效能與執行計畫</td><td>每次動態解析</td><td>對方 DBA 可以調整、看執行計畫</td></tr>
+      <tr><td>責任歸屬</td><td>資料錯了雙方互推</td><td>「呼叫參數對 → 回傳錯」就是對方的事，界線清楚</td></tr>
+    </tbody>
+  </table>
+  <p>對方 DBA 提供的儲存程序大致長這樣<span class="src">（依講義步驟整理，示意）</span>：</p>
+  <pre><code>CREATE PROCEDURE dbo.up_FUN_BOMTree
+    @matnr NVARCHAR(40),
+    @usage CHAR(1)
+AS
+BEGIN
+    SET NOCOUNT ON;   -- 不回傳「n rows affected」，避免被當成第一個結果集
+    WITH bom AS (
+        SELECT h.matnr AS root, 0 AS lvl, h.matnr AS parent, h.matnr AS comp,
+               CAST(1 AS DECIMAL(13,3)) AS qty, CAST('' AS NVARCHAR(3)) AS unit
+          FROM dbo.ZEXT_BOM_ITEM h
+         WHERE h.matnr = @matnr AND h.stlan = @usage
+        UNION ALL
+        SELECT b.root, b.lvl + 1, i.matnr, i.idnrk, i.menge, i.meins
+          FROM bom b
+          JOIN dbo.ZEXT_BOM_ITEM i ON i.matnr = b.comp AND i.stlan = @usage
+    )
+    SELECT DISTINCT root, lvl, parent, comp, qty, unit
+      FROM bom
+     ORDER BY lvl, parent, comp;   -- 明確排序
+END</code></pre>
+  <p>SAP 端用 ADBC 呼叫，並接回結果集：</p>
+  <pre><code class="abap">TYPES: BEGIN OF ty_tree,
+         root   TYPE matnr,
+         lvl    TYPE i,
+         parent TYPE matnr,
+         comp   TYPE matnr,
+         qty    TYPE p LENGTH 13 DECIMALS 3,
+         unit   TYPE c LENGTH 3,
+       END OF ty_tree.
+DATA lt_tree TYPE STANDARD TABLE OF ty_tree WITH EMPTY KEY.
+
+PARAMETERS: p_matnr TYPE matnr OBLIGATORY,
+            p_stlan TYPE stlan DEFAULT '1'.
+
+START-OF-SELECTION.
+  TRY.
+      DATA(lo_db) = NEW zcl_ext_db( ).
+      DATA(lo_stmt) = lo_db-&gt;stmt( ).
+      lo_stmt-&gt;set_param( REF #( p_matnr ) ).
+      lo_stmt-&gt;set_param( REF #( p_stlan ) ).
+
+      " 以 EXEC 呼叫，參數仍用 ?；程序名稱寫死、不接受使用者輸入
+      DATA(lo_res) = lo_stmt-&gt;execute_query( `EXEC dbo.up_FUN_BOMTree ?, ?` ).
+      lo_res-&gt;set_param_table( REF #( lt_tree ) ).
+      lo_res-&gt;next_package( ).
+      lo_res-&gt;close( ).
+      lo_db-&gt;close( ).
+    CATCH cx_sql_exception INTO DATA(lx_sql).
+      MESSAGE |BOM 展開失敗：{ lx_sql-&gt;sql_message }| TYPE 'I' DISPLAY LIKE 'E'.
+      RETURN.
+  ENDTRY.
+
+  cl_salv_table=&gt;factory( IMPORTING r_salv_table = DATA(lo_alv)
+                          CHANGING  t_table      = lt_tree ).
+  lo_alv-&gt;display( ).</code></pre>
+  <p>若儲存程序是「做事」而不是「回傳結果集」（例如 <span class="kw">dbo.up_ImportDone @sync_id, @rc OUTPUT</span>），改用 <span class="kw">execute_procedure</span>，輸出參數以 <span class="kw">set_param</span> 的 <span class="kw">inout</span> 指定：</p>
+  <pre><code class="abap">DATA: lv_sync_id TYPE c LENGTH 32,
+      lv_rc      TYPE i.
+
+lv_sync_id = cl_system_uuid=&gt;create_uuid_c32_static( ).
+
+TRY.
+    DATA(lo_db) = NEW zcl_ext_db( ).
+    DATA(lo_stmt) = lo_db-&gt;stmt( ).
+    lo_stmt-&gt;set_param( data_ref = REF #( lv_sync_id )
+                        inout    = cl_sql_statement=&gt;c_param_in ).
+    lo_stmt-&gt;set_param( data_ref = REF #( lv_rc )
+                        inout    = cl_sql_statement=&gt;c_param_out ).
+    lo_stmt-&gt;execute_procedure( 'dbo.up_ImportDone' ).
+    lo_db-&gt;commit( ).
+    lo_db-&gt;close( ).
+    IF lv_rc &lt;&gt; 0.
+      MESSAGE |外部匯入程序回傳錯誤碼 { lv_rc }| TYPE 'W'.
+    ENDIF.
+  CATCH cx_sql_exception INTO DATA(lx_sql).
+    MESSAGE lx_sql-&gt;get_text( ) TYPE 'E'.
+ENDTRY.</code></pre>
+  <div class="note">CREATE_UUID_C32_STATIC 會丟出 <span class="kw">cx_uuid_error</span>，正式程式要一併接住。<span class="kw">execute_procedure</span> 對結果集的支援依 DBSL 而異；需要結果集時，用上面的 <span class="kw">execute_query( `EXEC …` )</span> 最單純，上線前在 QAS 實測一次。</div>
+
+  <h3 id="ch06-7-08">8. ABAP SQL 的 CONNECTION 子句：只限「對方也是 SAP 結構」</h3>
+  <p>如果次要資料庫裡的表，在本系統 ABAP 字典中<b>也有相同名稱、相同結構的定義</b>（典型是另一套 SAP 系統的資料庫、或 SAP 提供的附屬資料庫），可以直接用 ABAP SQL 加 <span class="kw">CONNECTION</span>，享受語法檢查與型別安全：</p>
+  <pre><code class="abap">" 次要連線 ZSAP_ARCH 指向一顆「舊 SAP 系統」的資料庫
+DATA(lv_con) = CONV dbcon_name( 'ZSAP_ARCH' ).
+
+SELECT vbeln, erdat, kunnr, netwr, waerk
+  FROM vbak CONNECTION (lv_con)            "動態連線名稱，用括號
+  WHERE erdat BETWEEN @p_from AND @p_to
+  ORDER BY vbeln
+  INTO TABLE @DATA(lt_old_orders).
+
+" 靜態寫法：FROM vbak CONNECTION zsap_arch</code></pre>
+  <div class="warn"><b>限制：</b>CONNECTION 子句會用本系統字典中的表定義去組 SQL，所以對方必須是 SAP 的 schema（含 MANDT 欄與相同欄位名）。像 <span class="kw">dbo.ZEXT_POCHANGE</span> 這種外部系統自己的表，本系統字典沒有，就只能用 ADBC。也不要為了用 CONNECTION 而在本系統建一個「假的」同名透明表——它會在本系統主資料庫也建出一張空表，還會誤導後人。</div>
+
+  <h3 id="ch06-7-09">9. 案例 ZPPR0002：原料工單收發料——業務情境與資料表</h3>
+  <p><b>業務情境：</b>生產工單下達後，原料要經過「倉庫發料 → 產線點收 → 品管判定」三關，每一關由不同的人在同一支程式裡作業，最後產生正確的物料憑證。選擇畫面（素材截圖）如下：</p>
+  <ul>
+    <li>範圍：Order Type（AUART）、Order Category（AUTYP）、Order Number、Material（成品，對應 CAUFV-STLBEZ）、元件（RESB-MATNR）、Plant、<b>Created on（必填）</b>、Storage location。</li>
+    <li><b>員編（必填）</b>＋員工姓名（唯讀）：輸入員編後以 <span class="kw">BUT000-NICKNAME</span> 找到業務夥伴，帶出 <span class="kw">MC_NAME2</span> 當姓名；找不到就報錯。</li>
+    <li>四個作業別 radio：<b>倉庫、產線、QA、倉庫判定 QA</b>；另一個區塊的核取方塊「略過已完成項目」（預設打勾）。</li>
+  </ul>
+  <table>
+    <thead><tr><th>作業別</th><th>權限物件</th><th>寫入的收發料欄位</th><th>產生的異動類型</th></tr></thead>
+    <tbody>
+      <tr><td>倉庫（p_r1）／倉庫判定 QA（p_r4）</td><td>ZAOWH，ACTVT 01</td><td>WHQTY 本次發料 → 累計 WHQTYB、未發 WHQTYS；WHQAQTYR 倉庫收回 QA 退料、WHPLQTYR 倉庫收回產線退料</td><td>343（凍結 → 非限制）＋ 311（轉到 QA 儲位 QALGORT，項目文字帶退料原因）</td></tr>
+      <tr><td>產線（p_r2）</td><td>ZAOPD，ACTVT 01</td><td>PLQTY_GOOD 良品點收、PLQTY_BAD 不良、PLQTYR 退料＋原因、PLBAD</td><td>261（對工單發料，帶預留號 RSNUM/RSPOS）＋ 344（非限制 → 凍結，不良品）</td></tr>
+      <tr><td>QA（p_r3）</td><td>ZAOQA，ACTVT 01</td><td>QAQTY 判定量、QAQTYR 判退、QALGORT、QAQTYRESON</td><td>343（凍結 → 非限制）＋ 261（判定合格後發料給工單）</td></tr>
+    </tbody>
+  </table>
+  <p>素材附的資料表清單（原檔依序編號 1～20）：</p>
+  <table>
+    <thead><tr><th>類別</th><th>資料表</th><th>用途</th></tr></thead>
+    <tbody>
+      <tr><td>工單</td><td>AUFK、CAUFV、AFPO、JEST</td><td>工單主檔、PP/CO 工單表頭視圖、工單項目（取成品入庫儲位 LGORT）、狀態（I0002 = REL 已下達）</td></tr>
+      <tr><td>元件</td><td>RESB、MARC、MARA</td><td>預留（POSTP = 'L' 庫存項目、XLOEK 未刪除）；物料群組 MATKL</td></tr>
+      <tr><td>庫存</td><td>MARD、MSKA、MKPF／MSEG</td><td>儲位庫存 LABST（另外固定抓儲位 B800 的量）、銷售訂單庫存 KALAB（特殊庫存 E）、物料憑證</td></tr>
+      <tr><td>主資料</td><td>BUT000、T001</td><td>員編 → 姓名、公司幣別</td></tr>
+      <tr><td>介面</td><td>BAPIRET2</td><td>BAPI 回傳訊息</td></tr>
+      <tr><td>自建</td><td>ZPPROWHD0001</td><td>收發料紀錄表頭（工單＋成品；倉庫／產線／QA 最後作業人員 ID 與姓名）</td></tr>
+      <tr><td>自建</td><td>ZPPROWDE0001～0003</td><td>收發料紀錄明細（每個工單元件一列，存累計量）；程式實際讀寫的是 <b>ZPPROWDE0003</b>，內表卻還叫 T_ZPPROWDE0001——歷次改版換表沒改名</td></tr>
+      <tr><td>自建</td><td>ZPPROWDE0002</td><td>物料憑證紀錄（工單、憑證號、年度、異動類型、作業別旗標 WH／PL／QA、建立者與時間）</td></tr>
+      <tr><td>自建</td><td>ZPPROWMP0002</td><td>「料號發料不控管」設定檔：列在這裡的工廠＋物料可以超發、可以發超過庫存</td></tr>
+    </tbody>
+  </table>
+  <div class="note"><b>和 DBCO 的關係：</b>素材把這支程式放在 DBCO 主題下，但附的原始碼裡並沒有外部連線段落。從資料表設計看，<span class="kw">ZPPROWHD0001／ZPPROWDE0002／ZPPROWDE0003</span> 正是要交給外部報表或 MES 的「收發料事實表」——這正好示範第 2 節的方向 B／C：SAP 完成過帳後，把紀錄推到外部 DB（第 12 節）。</div>
+
+  <h3 id="ch06-7-10">10. ZPPR0002 程式架構與關鍵段落現代改寫</h3>
+  <p><b>原程式流程：</b></p>
+  <ol>
+    <li><span class="kw">AT SELECTION-SCREEN</span>：以員編查 BUT000 帶姓名。</li>
+    <li><span class="kw">START-OF-SELECTION</span>：<span class="kw">authority_rtn</span>（依作業別檢查 ZAOWH／ZAOPD／ZAOQA）→ 讀 CAUFV 與 ZPPROWMP0002 → 決定兩個異動類型 → 對每張工單：檢查已下達、讀 RESB、讀自建表頭與明細、逐元件補 AFPO／MARD／MSKA／銷售訂單已發量／物料群組 → 依「略過已完成」刪列並預填本次數量 → <span class="kw">REUSE_ALV_GRID_DISPLAY</span>。</li>
+    <li>ALV 工具列 <b>RUN</b>：收集勾選列，<span class="kw">EXPORT … TO MEMORY</span> 後 <span class="kw">SUBMIT zppr0005 … AND RETURN</span>，由 ZPPR0005 進可輸入的 Table Control 畫面 100 做實際作業。</li>
+    <li>畫面 100 <b>APPROVE</b>：逐列檢查（庫存、需求量、超發、點收量、QA 量）→ 確認視窗 → 依作業別組 <span class="kw">BAPI_GOODSMVT_CREATE</span>（GM_CODE 03，每張工單一張憑證）→ 更新累計量 → 刪除再寫入 ZPPROWHD0001／ZPPROWDE0003 → 寫 ZPPROWDE0002。</li>
+  </ol>
+  <p><b>改寫（一）取資料：</b>原程式在 LOOP 裡對每張工單各查一次 JEST、RESB、MARD（兩次）、AFPO、MSKA、MSEG、MARA，典型的 N+1。改成一次 JOIN，已下達判斷放進 SQL：</p>
+  <pre><code class="abap">SELECT c~aufnr, c~auart, c~stlbez AS matnr, c~gamng, c~gmein, c~werks,
+       r~rsnum, r~rspos, r~posnr, r~matnr AS idnrk, r~bdmng, r~meins,
+       r~lgort AS lgort_ik, r~shkzg, r~sobkz, r~kdauf, r~kdpos,
+       r~schgt, r~kzear, r~dumps, r~ablad, r~sortf,
+       d~labst, m~matkl
+  FROM caufv AS c
+  INNER JOIN jest AS j ON j~objnr = c~objnr
+                      AND j~stat  = 'I0002'              "REL 已下達
+                      AND j~inact = @abap_false
+  INNER JOIN resb AS r ON r~rsnum = c~rsnum
+                      AND r~aufnr = c~aufnr
+  LEFT OUTER JOIN mard AS d ON d~matnr = r~matnr
+                           AND d~werks = r~werks
+                           AND d~lgort = r~lgort
+  LEFT OUTER JOIN mara AS m ON m~matnr = r~matnr
+  WHERE c~aufnr  IN @s_aufnr
+    AND c~auart  IN @s_auart
+    AND c~autyp  IN @s_autyp
+    AND c~stlbez IN @s_matnr
+    AND c~werks  IN @s_werks
+    AND c~erdat  IN @s_erdat
+    AND r~postp  = 'L'
+    AND r~xloek  = @abap_false
+    AND r~matnr  IN @s_idnrk
+    AND r~lgort  IN @s_lgort
+  ORDER BY c~aufnr, r~posnr, r~rspos                    "HANA 沒有預設排序
+  INTO TABLE @DATA(lt_comp).
+
+" 反沖項目（SHKZG = 'S'）需求量轉負數；特殊庫存 E 在畫面顯示為 1（沿用原規則）
+LOOP AT lt_comp ASSIGNING FIELD-SYMBOL(&lt;c&gt;).
+  IF &lt;c&gt;-shkzg = 'S'.
+    &lt;c&gt;-bdmng = - &lt;c&gt;-bdmng.
+  ENDIF.
+ENDLOOP.
+
+" 「不控管」料號一次讀進 sorted table，之後用 line_exists 判斷
+TYPES: BEGIN OF ty_nocheck,
+         werks TYPE werks_d,
+         matnr TYPE matnr,
+       END OF ty_nocheck.
+DATA lt_nocheck TYPE SORTED TABLE OF ty_nocheck WITH UNIQUE KEY werks matnr.
+SELECT werks, matnr FROM zpprowmp0002
+  INTO CORRESPONDING FIELDS OF TABLE @lt_nocheck.
+
+" 用法：可超發的料號就跳過「超過需求量／超過庫存」檢查
+DATA(lv_no_check) = xsdbool( line_exists( lt_nocheck[ werks = ls_comp-werks
+                                                     matnr = ls_comp-idnrk ] ) ).</code></pre>
+  <div class="note">原程式對 ZPPROWMP0002 做 <span class="kw">SELECT *</span> 且每列都 <span class="kw">READ TABLE … WITH KEY</span>（標準表線性搜尋），資料一多就慢。</div>
+  <p><b>改寫（二）過帳：</b>每張工單一張物料憑證，BAPI 回傳錯誤就 rollback 並記下訊息，不要在迴圈中跳彈窗讓使用者決定要不要離開：</p>
+  <pre><code class="abap">METHOD post_261_for_order.
+  " is_order：工單表頭；it_items：本次良品點收的元件
+  DATA lt_return   TYPE STANDARD TABLE OF bapiret2 WITH EMPTY KEY.
+  DATA lt_gm_items TYPE STANDARD TABLE OF bapi2017_gm_item_create WITH EMPTY KEY.
+
+  DATA(ls_head) = VALUE bapi2017_gm_head_01(
+    pstng_date = sy-datlo
+    doc_date   = sy-datlo
+    header_txt = build_header_txt( is_order ) ).   "倉庫:姓名/產線:姓名/QA:姓名
+
+  lt_gm_items = VALUE #(
+    FOR i IN it_items WHERE ( plqty_good &gt; 0 )
+    ( material  = i-idnrk
+      plant     = i-werks
+      stge_loc  = i-lgort_ik
+      move_type = '261'
+      entry_qnt = i-plqty_good
+      entry_uom = i-meins
+      orderid   = i-aufnr
+      reserv_no = i-rsnum                            "帶預留號，RESB 已發量才會更新
+      res_item  = i-rspos
+      unload_pt = i-ablad ) ).
+
+  CHECK lt_gm_items IS NOT INITIAL.
+
+  CALL FUNCTION 'BAPI_GOODSMVT_CREATE'
+    EXPORTING
+      goodsmvt_header  = ls_head
+      goodsmvt_code    = VALUE bapi2017_gm_code( gm_code = '03' )
+    IMPORTING
+      goodsmvt_headret = rs_result-headret
+    TABLES
+      goodsmvt_item    = lt_gm_items
+      return           = lt_return.
+
+  IF line_exists( lt_return[ type = 'E' ] ) OR line_exists( lt_return[ type = 'A' ] ).
+    CALL FUNCTION 'BAPI_TRANSACTION_ROLLBACK'.
+    rs_result-type    = 'E'.
+    rs_result-message = VALUE #( lt_return[ type = 'E' ]-message OPTIONAL ).
+  ELSE.
+    CALL FUNCTION 'BAPI_TRANSACTION_COMMIT'
+      EXPORTING wait = abap_true.
+    rs_result-type = 'S'.
+  ENDIF.
+ENDMETHOD.</code></pre>
+
+  <h3 id="ch06-7-11">11. ZPPR0002／ZPPR0005 的原程式問題</h3>
+  <table>
+    <thead><tr><th>#</th><th>原程式</th><th>問題</th><th>改法</th></tr></thead>
+    <tbody>
+      <tr><td>1</td><td><span class="kw">delete_db_rtn</span> 先刪 ZPPROWHD0001／ZPPROWDE0003 並 <span class="kw">COMMIT WORK</span>，<span class="kw">insert_db_rtn</span> 再逐筆 <span class="kw">MODIFY</span> 並再 COMMIT</td><td>兩次 commit 之間若 dump 或斷線，累計收發量就<b>整筆消失</b>；而物料憑證早已過帳，無從回推</td><td>不需要先刪：直接 <span class="kw">MODIFY ztab FROM TABLE @lt_dtl</span>，表頭與明細在同一個 LUW、只 commit 一次；確實要刪的列用 <span class="kw">DELETE ztab FROM TABLE</span> 同 LUW 處理</td></tr>
+      <tr><td>2</td><td>BAPI 每張工單各自 COMMIT，之後才更新 Z 表</td><td>憑證成功、Z 表失敗 → 累計量與實際憑證不符，下次作業會重複發料</td><td>Z 表以憑證為準：每張工單 BAPI 成功後立即把該工單的 Z 表變更一起寫入（同一次 <span class="kw">BAPI_TRANSACTION_COMMIT</span> 之前以 <span class="kw">MODIFY</span> 寫入，讓它與憑證同 LUW）；或累計量不存，改由 MATDOC 即時彙總</td></tr>
+      <tr><td>3</td><td><span class="kw">preare_migo_261qa_item</span> 的第一個 LOOP 用 <span class="kw">t_261_h-aufnr</span>（應為 t_261qa_h）判斷換單，後面又對 T_RESB_261 再 LOOP 一次追加相同項目</td><td>QA 判定發料的項目可能<b>被加兩次</b> → 261 重複扣帳</td><td>只保留一段組項目邏輯，鍵值用當前表頭；過帳前以 <span class="kw">REDUCE</span> 驗證項目數量合計等於畫面輸入</td></tr>
+      <tr><td>4</td><td><span class="kw">t_scr100_dtl_so_qty</span> 查沖銷：<span class="kw">WHERE sjahr = lt_mseg-mblnr AND smbln = lt_mseg-mjahr</span></td><td>憑證號與年度<b>對調</b>，永遠查不到沖銷 → 已沖銷的量也被算進銷售訂單已發量</td><td><span class="kw">smbln = mblnr AND sjahr = mjahr AND smblp = zeile</span>；S/4HANA 改讀 MATDOC 並直接排除已沖銷（見下方程式）</td></tr>
+      <tr><td>5</td><td><span class="kw">run_rtn</span> 回寫 ALV：<span class="kw">READ TABLE t_scr100_dtl WITH KEY aufnr = t_scr100_dtl-aufnr</span></td><td>用自己的欄位當鍵（剛 CLEAR 過），永遠讀到第一筆或讀不到，ZPPR0005 作業完回來的狀態沒更新到 ALV</td><td>鍵值改用 <span class="kw">t_out</span> 的 aufnr／idnrk（＋posnr）；或乾脆取消 SUBMIT，直接在同一支程式裡處理</td></tr>
+      <tr><td>6</td><td>ZPPR0002 → ZPPR0005 用 <span class="kw">EXPORT t_sel TO MEMORY ID 'ZPPR0002'</span>＋<span class="kw">SUBMIT … AND RETURN</span>＋<span class="kw">IMPORT … FROM MEMORY ID 'ZPPR0002_DTL'</span></td><td>兩支程式的內表結構必須一模一樣且無型別檢查；另一支改欄位就靜默失敗</td><td>合併成一支（ALV 選取 → 可編輯 <span class="kw">CL_GUI_ALV_GRID</span>），或把 ZPPR0005 的邏輯封裝成類別方法，以參數傳遞</td></tr>
+      <tr><td>7</td><td><span class="kw">authority_rtn</span> 開頭 <span class="kw">CHECK sy-mandt &lt;&gt; '130'.</span></td><td>某個 client 直接跳過權限檢查，測試便利變成正式漏洞（client 被複製時更危險）</td><td>刪除；測試帳號給角色即可</td></tr>
+      <tr><td>8</td><td>工單鎖 <span class="kw">ENQUEUE_ESORDER</span> 的呼叫在 START-OF-SELECTION 被註解掉</td><td>兩個人同時對同一張工單作業，會各自依舊累計量過帳 → 超發</td><td>進入可編輯模式前鎖工單（或鎖自建表的鎖物件），鎖不到就唯讀</td></tr>
+      <tr><td>9</td><td>員編以 <span class="kw">SELECT SINGLE * FROM but000 WHERE nickname = …</span> 驗證，姓名存進 Z 表、寫進憑證表頭文字</td><td>員編是自由輸入、任何人都能打別人的員編，稽核上不可信；NICKNAME 也沒有唯一性</td><td>作業人員以 <span class="kw">sy-uname</span> 為準（ERNAM／AENAM 原本就有），員編只當顯示；或以使用者 → 員工對照表查</td></tr>
+      <tr><td>10</td><td>成品入庫以外、固定抓 <span class="kw">lgort = 'B800'</span> 的庫存</td><td>寫死儲位，組織調整就失效</td><td>放到參數表（工廠 → 參考儲位）</td></tr>
+      <tr><td>11</td><td>「略過已完成」條件：<span class="kw">A AND B AND C AND D AND E OR F OR G</span></td><td>AND 優先於 OR，語意正確但難讀；後人加條件極易改錯</td><td>拆成具名的布林方法 <span class="kw">is_completed( )</span>，每個條件一行、加括號</td></tr>
+      <tr><td>12</td><td><span class="kw">TABLES</span>、<span class="kw">OCCURS 0 WITH HEADER LINE</span>、<span class="kw">LIKE</span>、巨集 <span class="kw">DEFINE m_message</span>（內含 EXIT）、<span class="kw">REUSE_ALV_*</span></td><td>巨集裡的 EXIT 會跳出呼叫它的 FORM，除錯時看不出來</td><td>全面改寫為類別＋內嵌宣告；ALV 顯示用 CL_SALV_TABLE、需要輸入的畫面用 CL_GUI_ALV_GRID</td></tr>
+    </tbody>
+  </table>
+  <p>第 4 點在 S/4HANA 的寫法：MSEG 已是 MATDOC 上的相容視圖，直接讀 MATDOC 並以「未被沖銷、本身也不是沖銷憑證」過濾：</p>
+  <pre><code class="abap">" 銷售訂單庫存（特殊庫存 E）對某工單元件已發出、且未被沖銷的數量
+SELECT m~shkzg, SUM( m~menge ) AS menge
+  FROM matdoc AS m
+  WHERE m~werks = @ls_comp-werks
+    AND m~matnr = @ls_comp-idnrk
+    AND m~lgort = @ls_comp-lgort_ik
+    AND m~mat_kdauf = @ls_comp-kdauf
+    AND m~mat_kdpos = @ls_comp-kdpos
+    AND m~record_type = 'MDOC'                         "只算憑證列，不算彙總列
+    AND m~cancelled   = @abap_false                    "沒有被沖銷
+    AND m~smbln       = @space                         "本身不是沖銷憑證
+  GROUP BY m~shkzg
+  INTO TABLE @DATA(lt_sum).
+
+" 貸方 H（發出）為正、借方 S（退回）為負
+DATA(lv_so_issued) = REDUCE menge_d( INIT s = 0
+                                     FOR r IN lt_sum
+                                     NEXT s = s + COND menge_d( WHEN r-shkzg = 'H' THEN r-menge
+                                                                ELSE 0 - r-menge ) ).</code></pre>
+  <div class="note">MATDOC 的特殊庫存銷售訂單欄位名（MAT_KDAUF／MAT_KDPOS）與 CANCELLED、RECORD_TYPE 的用法，請以你系統 <span class="tcode">SE11</span> 的 MATDOC 定義為準；若不確定，改讀 MSEG 相容視圖，但把沖銷條件的欄位對應改正（<span class="kw">smbln = mblnr AND sjahr = mjahr AND smblp = zeile</span>）。</div>
+
+  <h3 id="ch06-7-12">12. 把收發料紀錄推到外部資料庫：時機與重送</h3>
+  <p>若外部 MES／報表平台要即時看到收發料，最常見的錯誤是在 APPROVE 的過帳迴圈裡「順便」用 DBCO 寫外部 DB：外部一慢，使用者就卡在畫面上；外部寫失敗，SAP 已過帳也收不回來。正確的切法是 <b>SAP 先完成自己的 LUW，再非同步推送</b>：</p>
+  <ol>
+    <li>過帳成功時，在同一個 LUW 寫一列到出口佇列表 <span class="kw">ZPP_EXT_QUEUE</span>（憑證號、年度、狀態 = 'N'）。</li>
+    <li>背景作業（<span class="tcode">SM37</span> 每 5 分鐘）讀 'N' 的列，以 ADBC 寫到外部 <span class="kw">dbo.ZEXT_WO_ISSUE</span>，外部 commit 成功後把佇列列改成 'S'；失敗改 'E' 並記錄 <span class="kw">sql_message</span>。</li>
+    <li>外部表以（憑證號＋年度＋項次）為主鍵，用 <span class="kw">MERGE</span> 或「存在就略過」，重送不會重複。</li>
+  </ol>
+  <pre><code class="abap">METHOD push_queue.
+  SELECT q~mblnr, q~mjahr, q~zeile, q~aufnr, q~matnr, q~werks,
+         q~lgort, q~bwart, q~menge, q~meins, q~budat, q~ernam
+    FROM zpp_ext_queue AS q
+    WHERE q~status = 'N'
+    ORDER BY q~mjahr, q~mblnr, q~zeile
+    INTO TABLE @DATA(lt_queue)
+    UP TO 5000 ROWS.
+  CHECK lt_queue IS NOT INITIAL.
+
+  DATA ls_row LIKE LINE OF lt_queue.
+  TRY.
+      DATA(lo_db) = NEW zcl_ext_db( ).
+      DATA(lo_stmt) = lo_db-&gt;stmt( ).
+      lo_stmt-&gt;set_param( REF #( ls_row-mblnr ) ).
+      lo_stmt-&gt;set_param( REF #( ls_row-mjahr ) ).
+      lo_stmt-&gt;set_param( REF #( ls_row-zeile ) ).
+      lo_stmt-&gt;set_param( REF #( ls_row-aufnr ) ).
+      lo_stmt-&gt;set_param( REF #( ls_row-matnr ) ).
+      lo_stmt-&gt;set_param( REF #( ls_row-werks ) ).
+      lo_stmt-&gt;set_param( REF #( ls_row-lgort ) ).
+      lo_stmt-&gt;set_param( REF #( ls_row-bwart ) ).
+      lo_stmt-&gt;set_param( REF #( ls_row-menge ) ).
+      lo_stmt-&gt;set_param( REF #( ls_row-meins ) ).
+      lo_stmt-&gt;set_param( REF #( ls_row-budat ) ).
+      lo_stmt-&gt;set_param( REF #( ls_row-ernam ) ).
+
+      LOOP AT lt_queue INTO ls_row.
+        " 由對方提供的儲存程序做「存在就更新、不存在就新增」，SAP 不寫 MERGE
+        lo_stmt-&gt;execute_update(
+          `EXEC dbo.up_Upsert_WoIssue ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?` ).
+      ENDLOOP.
+      lo_db-&gt;commit( ).
+      lo_db-&gt;close( ).
+
+      " 外部已提交，再以主鍵逐筆更新 SAP 端佇列狀態（不用憑證號區間）
+      DATA lv_ts TYPE timestampl.
+      GET TIME STAMP FIELD lv_ts.                          "UTC
+      LOOP AT lt_queue INTO DATA(ls_done).
+        UPDATE zpp_ext_queue SET status = 'S', sent_ts = @lv_ts
+          WHERE mblnr = @ls_done-mblnr
+            AND mjahr = @ls_done-mjahr
+            AND zeile = @ls_done-zeile.
+      ENDLOOP.
+      COMMIT WORK.
+
+    CATCH cx_sql_exception INTO DATA(lx_sql).
+      IF lo_db IS BOUND.
+        lo_db-&gt;rollback( ).
+        lo_db-&gt;close( ).
+      ENDIF.
+      MESSAGE |推送失敗，下次重送：{ lx_sql-&gt;sql_message }| TYPE 'S' DISPLAY LIKE 'E'.
+  ENDTRY.
+ENDMETHOD.</code></pre>
+  <div class="warn"><b>寫法注意：</b>狀態回寫以<b>主鍵逐筆（列舉）</b>更新，而不是「本批最小憑證號 BT 最大憑證號」——憑證號段不連續、跨年度重號時，區間比的是字典序，會把還沒推送的列也標成已送、或漏標（Casper 的第 2 條經驗）。時間戳用 <span class="kw">GET TIME STAMP FIELD</span> 取 UTC 的 <span class="kw">timestampl</span>，1809 即可用；7.54 以上也可改用 <span class="kw">UTCLONG</span> 與 <span class="kw">utclong_current( )</span>。</div>
+
+  <h3 id="ch06-7-13">13. 反方向：外部平台用儲存程序當資料來源</h3>
+  <p>素材第四份是另一個角度：某雲端 ERP／低代碼網頁平台要做「用量結構」查詢（物料編號、工廠、建立日期區間 → 列出 BOM 表頭：SEQ、WERKS、STLAN、AENNR、DATUV、VALID_TO、REVLV、BMENG、BMEIN、建立日期、ERTIM、AEDAT、AETIM、UNAME），點物料編號下鑽到「R_61X」頁，顯示展開後的元件：主件、用途、level、主件名、群組編號、子階主件、I_POSNR、子階類別（L）、子階件號、子階件名、子階數量、子階單位。</p>
+  <p>平台上的設定步驟<span class="src">（依講義步驟整理）</span>：</p>
+  <ol>
+    <li>在查詢頁的資料元件旁放一個 <b>Drilldown</b> 元件：BindingObject 指向主表格、Mode = tab、TargetRemoteName 指向伺服器端元件（<span class="kw">s_61x.s_61x</span>）、Page = R_61X。</li>
+    <li>Drilldown 的 Columns 設定欄位對應：<span class="kw">MATNR = 主件</span>、<span class="kw">STLAN</span> 同理——把點選列的值當參數帶到下一頁。</li>
+    <li>伺服器端元件的 <b>CommandType 設為 StoreProcedure</b>，不寫 SQL 文字。</li>
+    <li>在元件原始碼的 <span class="kw">setData</span> 中呼叫儲存程序 <span class="kw">dbo.up_FUN_BOMTree</span>，把兩個參數傳進去，結果直接回給畫面。</li>
+  </ol>
+  <div class="warn"><b>素材中的 SQL injection：</b>原平台腳本是 <span class="kw">"exec &lt;DBNAME&gt;.dbo.up_FUN_BOMTree '" + param.para1 + "','" + param.para2 + "'"</span>——把網頁傳來的參數直接拼進 SQL 字串。只要有人在物料欄輸入 <span class="kw">x'; DROP TABLE …; --</span> 就能執行任意指令。即使「CommandType 是 StoreProcedure」，只要呼叫字串是拼出來的，就一樣有漏洞。正確做法是使用平台的參數化查詢 API（以 <span class="kw">@matnr</span>、<span class="kw">@usage</span> 具名參數傳值），同時讓平台用的 DB 帳號只有 <span class="kw">EXECUTE</span> 權限。ABAP 端同理：<b>永遠 <span class="kw">set_param</span>，不要 <span class="kw">&amp;&amp;</span> 使用者輸入</b>。</div>
+  <p>這個案例的價值在於分工：SAP 每天把 BOM 同步到外部 DB（第 6 節），BOM 展開的遞迴邏輯寫在對方的儲存程序裡，網頁平台只負責畫面與下鑽。SAP 不用為了一個網頁報表開 RFC、寫 OData，也不用讓外部平台碰 SAP 資料庫。要注意的只有一點：外部看到的是「上次同步」的資料，畫面上要顯示同步時間（第 6 節的 <span class="kw">sync_ts</span>）。</p>
+
+  <h3 id="ch06-7-14">14. 安全、效能與資料正確性檢核</h3>
+  <div class="warn"><b>帳密存放：</b>外部 DB 的帳密只存在 DBCON（加密），不要寫在程式常數、選擇畫面預設值、TVARVC 或文件裡；DBCO 的維護權限（S_TABU_DIS／S_TABU_NAM 對 DBCON）只給 Basis。各系統的 DBCON 分別維護，不要把正式機的連線資訊傳輸到開發機。外部帳號採最小權限：只讀的整合只給 SELECT 或 EXECUTE。</div>
+  <div class="warn"><b>SQL injection：</b>ADBC 的 SQL 是字串，編譯器不會幫你擋。所有值一律 <span class="kw">?</span> ＋ <span class="kw">set_param</span>；表名、欄位名、排序欄這種不能參數化的部分，只能從程式內的白名單常數挑，絕不接受使用者輸入。</div>
+  <div class="warn"><b>批次與交易：</b>大量寫入要分批 commit（第 6 節），但分批就代表可能「寫一半」，要搭配暫存表切換或批號機制；讀取大量資料用 <span class="kw">next_package( upto )</span> 分包，別一次載入百萬筆到記憶體。長時間作業一律丟背景，並設定外部 DB 的查詢逾時。</div>
+  <div class="warn"><b>字元集與 NVARCHAR：</b>SAP 是 Unicode，外部欄位若是 <span class="kw">VARCHAR</span>（依 DB 定序的單位元組字碼頁），中文會變問號或亂碼。外部表的文字欄一律用 <span class="kw">NVARCHAR</span>，長度以「字元」計；ABAP 的 <span class="kw">c LENGTH 40</span> 對 <span class="kw">NVARCHAR(40)</span>。物料號碼的前導零（ALPHA 轉換）要事先約定兩邊存哪一種格式。</div>
+  <div class="warn"><b>時區：</b>SAP 的 <span class="kw">sy-datum／sy-uzeit</span> 是系統時區、<span class="kw">sy-datlo／sy-timlo</span> 是使用者時區，SQL Server 的 <span class="kw">GETDATE()</span> 是 DB 主機時區。建議兩邊交換的時間戳一律 UTC（SAP 端 <span class="kw">GET TIME STAMP</span>、SQL 端 <span class="kw">SYSUTCDATETIME()</span>），顯示時再轉換。</div>
+  <div class="warn"><b>HANA／SQL Server 都沒有預設排序：</b>不論 ABAP SQL 讀 SAP、還是 ADBC 讀外部，只要邏輯是「取第一筆」或依順序比對，就要明寫 ORDER BY。Casper 在成本評價上踩過的坑（同時有 item category H 與 cost component E，沒排序時一下抓到 H、一下抓到 E，最後固定抓 H）在跨系統整合裡一樣會發生，而且更難查——因為兩邊的執行計畫都會變。</div>
+  <div class="tip"><b>效能觀察工具：</b>SQL Server 端的慢查詢可以用 <span class="tcode">DBACOCKPIT</span>／<span class="tcode">ST04_MSS</span> 看；素材列出的 STUN_MSS 套件相關交易還有 <span class="tcode">SQLSTMT_MSS</span>（在新視窗顯示 ABAP 的 SQL）、<span class="tcode">EXPL_MSS</span>（執行計畫）、<span class="tcode">DB02_MSS</span>、<span class="tcode">DB12_MSS</span>（多連線）。這些是針對「SAP 自己跑在 SQL Server 上」設計的；主資料庫是 HANA 時，部分功能只對已登錄的系統可用（見第 3 節的錯誤訊息）。</div>
+
+  <h3 id="ch06-7-15">15. 上線注意與檢查清單</h3>
+  <table>
+    <thead><tr><th>階段</th><th>檢查項目</th></tr></thead>
+    <tbody>
+      <tr><td>環境</td><td>每台應用伺服器都有 MSS DBSL（dbmssslib）與 SQL Server ODBC Driver；防火牆開放 AS → <span class="kw">&lt;DB_HOST&gt;</span>:1433；DEV／QAS／PRD 的 DBCO 連線名稱相同、指向各自的外部環境</td></tr>
+      <tr><td>DBCO</td><td>DBMS = MSS；Conn. info 格式正確（兩組參數以空白分隔）；外部非關鍵連線不勾 Permanent；在 DBACOCKPIT → Database Connections 按 Test 通過</td></tr>
+      <tr><td>程式</td><td>沒有 <span class="kw">EXEC SQL</span>；所有值用 <span class="kw">set_param</span>；每個 TRY 都有 rollback 與 close；讀取都有 ORDER BY；連線名稱只定義在一個類別常數</td></tr>
+      <tr><td>交易一致性</td><td>SAP 過帳與外部寫入分開；有佇列表與重送；外部表有主鍵、重送不重複；Z 表累計量與物料憑證在同一 LUW</td></tr>
+      <tr><td>資料</td><td>文字欄 NVARCHAR；ALPHA 前導零規則雙方一致；時間戳 UTC；數量與單位一起傳</td></tr>
+      <tr><td>ZPPR0002 類程式</td><td>移除特定 client 跳過權限檢查；恢復工單鎖；修正沖銷查詢欄位對調與 QA 261 重複項目；取消 EXPORT/IMPORT MEMORY 交棒</td></tr>
+      <tr><td>監控</td><td>背景作業失敗要有通知；佇列表 'E' 狀態每日檢查；外部帳號密碼到期前更新 DBCON</td></tr>
+    </tbody>
+  </table>
+
+  <h3 id="ch06-7-qa">練習與自我檢核</h3>
+  <ol>
+    <li>DBCO 中 Conn. info 欄位對 SQL Server 的格式是什麼？若對方是具名執行個體要怎麼寫？這個欄位存在 DBCON 的哪一欄？</li>
+    <li>SAP 主資料庫是 HANA，要連 SQL Server 需要在應用伺服器上準備哪兩樣東西？為什麼「每一台」AS 都要裝？</li>
+    <li>把一段 <span class="kw">EXEC SQL. CONNECT TO … ENDEXEC.</span>＋逐筆 <span class="kw">INSERT</span>＋<span class="kw">COMMIT</span> 的舊程式改寫成 ADBC，寫出會用到的類別與方法。</li>
+    <li>對次要連線呼叫 <span class="kw">commit( )</span> 會不會提交 SAP 主資料庫的變更？主程式的 <span class="kw">COMMIT WORK</span> 會不會提交外部連線？這對「先過帳再寫外部」的設計有什麼影響？</li>
+    <li>什麼情況下可以用 ABAP SQL 的 <span class="kw">CONNECTION</span> 子句取代 ADBC？為什麼不建議在本系統建同名假表來湊？</li>
+    <li>列出「由對方 DB 提供儲存程序、SAP 只呼叫」相對於「SQL 寫在 ABAP 字串裡」的四個好處。</li>
+    <li>素材中平台腳本 <span class="kw">"exec … '" + para1 + "'"</span> 的問題是什麼？CommandType 設成 StoreProcedure 能不能解決？ABAP 端要怎麼避免同樣的錯誤？</li>
+    <li>ZPPR0002 的 <span class="kw">delete_db_rtn</span> 與 <span class="kw">insert_db_rtn</span> 各自 COMMIT，會造成什麼後果？請寫出改寫後的寫法。</li>
+    <li>找出 <span class="kw">WHERE sjahr = lt_mseg-mblnr AND smbln = lt_mseg-mjahr</span> 的錯誤，並說明在 S/4HANA 應該讀哪張表、怎麼排除已沖銷的憑證。</li>
+    <li>佇列推送程式回寫狀態時，為什麼以主鍵逐筆（列舉）更新，而不是用本批憑證號的區間（BT）？</li>
+    <li>SAP 與外部 DB 交換時間資料時，<span class="kw">sy-datum</span>、<span class="kw">sy-datlo</span>、<span class="kw">GETDATE()</span>、<span class="kw">SYSUTCDATETIME()</span> 各代表什麼時區？你會建議用哪一種？</li>
+    <li>外部報表平台讀的是 SAP 同步過去的資料，使用者抱怨「剛過帳的單子查不到」。從本章的架構說明原因，並提出兩種改善方式。</li>
+  </ol>
+</section>

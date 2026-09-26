@@ -1,0 +1,655 @@
+<section class="chapter" id="ch06-5" data-title="資料下載實戰">
+  <h2>第 6-5 章 資料下載實戰：檔案、生產數據與 Excel</h2>
+  <p class="lede">「把 SAP 的資料弄出去」是顧問最常接到、也最容易被低估的需求。本章拆解某製造業客戶三份實戰素材：<b>ZMMI0001</b> 物料主檔下傳 MES／ECN 外部資料庫、<b>ZPPI0001</b> 生產工單（表頭、作業、元件）下傳，以及「把 <b>MARD</b> 庫存下載成 Excel」的需求與三個網路範例。前兩支名為「下載」，實際上是<b>透過 DBCO 連線用 Native SQL 寫進外部資料庫</b>；第三個才是真正的檔案輸出。讀完你會知道：什麼時候該寫檔、什麼時候該寫 DB、什麼時候根本不該寫程式，以及 Excel 在 S/4HANA 上有哪些標準做法。</p>
+  <div class="meta">
+    <div><b>核心 TCODE</b><span class="tcode">SE38</span><span class="tcode">SE11</span><span class="tcode">DBCO</span><span class="tcode">DBACOCKPIT</span><span class="tcode">SM36</span><span class="tcode">SM37</span><span class="tcode">AL11</span><span class="tcode">CG3Y</span><span class="tcode">FILE</span><span class="tcode">SMW0</span><span class="tcode">MM03</span><span class="tcode">CO03</span><span class="tcode">COOIS</span><span class="tcode">MIGO</span><span class="tcode">MB52</span><span class="tcode">MMBE</span><span class="tcode">BD52</span><span class="tcode">WE20</span></div>
+    <div><b>關鍵物件</b>MARA、MAKT、MARC、MVKE、MBEW、MARM、T001K、T001、TSPAT、T023T、T141T、TNTPB、TVEGRT、T142T、T025T、T460T、STXH／READ_TEXT、DD_DOMVALUE_TEXT_GET、CONVERSION_EXIT_CUNIT_OUTPUT、MSEG／MATDOC、AUFK、AFKO、AFVC、AFVV、CRHD、RESB、JEST、S022、BAPI_PRODORD_GET_DETAIL、MARD、NSDM_E_MARD、CL_SQL_CONNECTION、CL_GUI_FRONTEND_SERVICES、OPEN DATASET、CL_SALV_TABLE、CL_SALV_BS_LEX、XCO_CP_XLSX、abap2xlsx（ZCL_EXCEL）</div>
+  </div>
+
+  <h3 id="ch06-5-01">1. 素材對照</h3>
+  <p>三份素材都是 txt，程式以 INCLUDE 拆成 TOP（宣告與選擇畫面）與 F01（FORM）。素材中的客戶名、料號、DBCO 連線名與人名一律不引用；本章以「某製造業客戶」、連線名 <span class="kw">ETL_DB</span>、檔案路徑 <span class="kw">C:\temp\</span> 代稱。</p>
+  <table>
+    <thead><tr><th>#</th><th>案例</th><th>程式名</th><th>原始文件</th><th>內容</th><th>本章小節</th></tr></thead>
+    <tbody>
+      <tr><td>1</td><td>物料主檔下傳 MES／ECN（講義稱「檔案下載」）</td><td>ZMMI0001（ZMMI0001TOP、ZMMI0001F01）</td><td>ABAP_06_2_檔案下載_ZMMI0001.txt（約 1,900 行）＋ 2 張截圖（選擇畫面、結果 ALV）</td><td>MARA／MARC／MVKE 組成三張中繼表 ZMMFILEHD0001／ZMMFILEDE0001／ZMMFILEDE0002，再以 EXEC SQL 寫入外部 DB 的 MATERIALMASTER／MATERIALPLANT／MATERIALSALES</td><td>3～7</td></tr>
+      <tr><td>2</td><td>生產數據下傳</td><td>ZPPI0001（ZPPI0001TOP、ZPPI0001F01）</td><td>ABAP_06_3_生產數據下載_ZPPI0001.txt（約 900 行，另列 COXT_BAPI_GET_DETAIL、COXT_BAPI_ORDER_EXIST_CHECK 兩個函數名）</td><td>依入庫（101）回寫中繼表 ZPPPRORHD0001 的完工數與狀態，再把工單表頭／作業／元件寫入外部 DB 的 POHEADER／POOPERATIONS／POCOMPONENT</td><td>8～10</td></tr>
+      <tr><td>3</td><td>MARD 庫存下載到 Excel</td><td>（需求說明，無正式程式名）</td><td>ABAP_06_4_MARD_檔案下載至EXCEL.txt（需求＋三個網路案例）</td><td>欄位 MATNR、WERKS、LGORT、LABST、INSME、SPEME；案例一 SMW0 範本＋DOWNLOAD_WEB_OBJECT、案例二 SAP_CONVERT_TO_XLS_FORMAT、案例三 abap2xlsx</td><td>11～14</td></tr>
+    </tbody>
+  </table>
+  <p>相關基礎：前景／應用伺服器檔案見 <a href="#ch04-4-10">4-4 章第 10 節</a>與<a href="#ch04-4-11">第 11 節</a>；ALV 匯出見 <a href="#ch02-3-14">2-3 章第 14 節</a>；介面增量水位線、日誌與冪等性見 <a href="#ch08-8-07">8-8 章第 7 節</a>、<a href="#ch08-8-15">第 15 節</a>、<a href="#ch08-8-16">第 16 節</a>。</p>
+
+  <h3 id="ch06-5-02">2. 共同骨架：中繼表 ＋ DBCO 外部 DB ＋ 狀態回寫</h3>
+  <p>ZMMI0001 與 ZPPI0001 是同一位開發者的同一套模式，看懂一支就看懂另一支：</p>
+  <ol>
+    <li><b>選資料</b>：依日期（物料的建立／變更日；工單的建立／變更日）取出要傳的主鍵。</li>
+    <li><b>寫 SAP 中繼表</b>：把要送的欄位（含文字、單位換算、評價資料）整理進 Z 表，保留一份「最後送出的樣子」。</li>
+    <li><b>連外部 DB</b>：<span class="tcode">DBCO</span> 定義的次要資料庫連線（原程式註解為「Connect ETL System」），<span class="kw">EXEC SQL CONNECT TO</span> → <span class="kw">SET CONNECTION</span>。</li>
+    <li><b>先刪後插</b>：外部表以主鍵 DELETE 再 INSERT（全量覆蓋單一物料／工單）。</li>
+    <li><b>狀態回寫</b>：成功把中繼表表頭 <b>UPSTS = 'S'</b>、錯誤訊息清空；失敗 <b>UPSTS = 'E'</b>，<b>DB_ERRO_MESS</b> 存 Native SQL 例外文字。</li>
+    <li><b>結果 ALV</b>：流水號 SEQ、主鍵、STATUS（TEXT-S21 成功／TEXT-S22 失敗）、錯誤訊息。</li>
+  </ol>
+  <table>
+    <thead><tr><th>層級</th><th>SAP 中繼表（ZMMI0001）</th><th>外部表</th><th>SAP 中繼表（ZPPI0001）</th><th>外部表</th></tr></thead>
+    <tbody>
+      <tr><td>表頭</td><td>ZMMFILEHD0001（含 UPSTS、DB_ERRO_MESS）</td><td>MATERIALMASTER</td><td>ZPPPRORHD0001（含 UPSTS、DB_ERRO_MESS）</td><td>POHEADER</td></tr>
+      <tr><td>明細 1</td><td>ZMMFILEDE0001（工廠層）</td><td>MATERIALPLANT</td><td>ZPPPRORDE0001（作業）</td><td>POOPERATIONS</td></tr>
+      <tr><td>明細 2</td><td>ZMMFILEDE0002（銷售層）</td><td>MATERIALSALES</td><td>ZPPPRORDE0002（元件）</td><td>POCOMPONENT</td></tr>
+    </tbody>
+  </table>
+  <div class="note">所有中繼表都有 <b>ERDAT／ERTIM／AEDAT／AETIM</b> 四個時間欄，外部表也同步寫入，讓下游 MES 能判斷新增或變更。外部表同時帶 <b>MANDT</b>，下游若接多個 client 才分得開。</div>
+  <div class="tip"><b>中繼表的價值</b>：出問題時先比對「SAP 中繼表」與「外部表」，就能立刻分辨是 SAP 取數錯、還是寫入外部失敗——這是本案例最值得保留的設計。缺點是它讓資料多了一份，必須有重送（UPSTS = 'E' 再跑一次）的機制，ZPPI0001 就是用 <span class="kw">UPSTS IN ('', 'E')</span> 挑出待送資料。</div>
+
+  <h3 id="ch06-5-03">3. ZMMI0001 業務情境與選擇畫面</h3>
+  <p><b>業務情境</b>：程式標題為「SAP 物料主檔下傳 MES／ECN 介面程式」。工程變更（ECN）與製造執行系統（MES）需要 SAP 的料號、說明、單位、重量體積、物料群組、狀態、評價類別與標準價、採購類型、銷售文字等資料；每天排背景作業，把當天新建或變更的物料推到外部資料庫。</p>
+  <table>
+    <thead><tr><th>欄位</th><th>定義</th><th>說明</th></tr></thead>
+    <tbody>
+      <tr><td>S_MATNR</td><td>SELECT-OPTIONS FOR MARA-MATNR</td><td>Material Number，選填</td></tr>
+      <tr><td>P_LAEDA</td><td>PARAMETERS LIKE MARA-LAEDA DEFAULT SY-DATLO OBLIGATORY</td><td>Created On／Date of Last Change：<b>MARA-LAEDA = P_LAEDA 或 MARA-ERSDA = P_LAEDA</b></td></tr>
+    </tbody>
+  </table>
+  <p><b>輸出</b>：結果 ALV 四欄——流水號碼（SEQ）、物料號碼（MATNR）、狀態（STATUS）、訊息（ERROR_MESSG）。截圖中成功時狀態欄顯示「更新外部 DB 成功」。</p>
+  <pre><code class="abap">REPORT zmmi0001.
+
+DATA gv_matnr TYPE mara-matnr.            " 只供 SELECT-OPTIONS 參照，取代 TABLES mara
+
+SELECTION-SCREEN BEGIN OF BLOCK b1 WITH FRAME TITLE TEXT-s01.
+  SELECT-OPTIONS s_matnr FOR gv_matnr.
+  PARAMETERS p_laeda TYPE mara-laeda DEFAULT sy-datlo OBLIGATORY.
+SELECTION-SCREEN END OF BLOCK b1.
+
+START-OF-SELECTION.
+  TRY.
+      NEW lcl_material_export( iv_date = p_laeda
+                               it_matnr = s_matnr[] )-&gt;run( ).
+    CATCH cx_sql_exception INTO DATA(lx_sql).
+      MESSAGE lx_sql-&gt;get_text( ) TYPE 'S' DISPLAY LIKE 'E'.
+  ENDTRY.</code></pre>
+  <div class="warn"><b>日期觸發的漏洞</b>：只比對「某一天」的 LAEDA／ERSDA，只要背景作業某天沒跑（系統停機、作業被取消），那天的變更就永遠不會被送出；而且 LAEDA 只記<b>最後一次</b>變更日，也抓不到「只改了工廠或銷售視圖」卻沒動 MARA 的情況（MARC／MVKE 的變更不一定更新 MARA-LAEDA）。建議改用<b>水位線</b>（記錄上次成功時間，下次抓「大於水位線」）或 <b>變更指標</b>（<span class="tcode">BD52</span> 啟用 MATMAS 的欄位、<span class="kw">CHANGE_POINTERS_READ</span>），見 <a href="#ch08-8-07">8-8 章第 7 節</a>。</div>
+
+  <h3 id="ch06-5-04">4. ZMMI0001 程式架構與欄位對照</h3>
+  <p>主流程：<span class="kw">SELECT_MARA_RTN</span> → <span class="kw">PROCESS_T_MARA_RTN</span>（逐筆物料）→ <span class="kw">OUTPUT_ALV_RTN</span>。逐筆物料時：</p>
+  <ol>
+    <li><span class="kw">SELECT_SINGLE_ZMMFILEHD0001</span>：中繼表已有此料號 → W_EXIST_FG = 'Y'。</li>
+    <li>已存在：<span class="kw">DELETE_MODE_SAP</span>（刪三張中繼表並 COMMIT）→ <span class="kw">DELETE_MODE_DB</span>（刪三張外部表）→ 重新 INSERT；不存在：直接 INSERT。</li>
+    <li><span class="kw">INSERT_MODE_SAP</span>：組表頭（HD0001）、工廠（DE0001）、銷售（DE0002），無錯才 COMMIT。</li>
+    <li><span class="kw">INSERT_MODE_DB</span>：連線 → 三段 INSERT → 斷線；有錯則刪外部資料並回寫 UPSTS = 'E'，否則 UPSTS = 'S'。</li>
+  </ol>
+  <p><b>欄位來源與業務規則</b>（全部保留）：</p>
+  <table>
+    <thead><tr><th>目標欄位</th><th>來源</th><th>規則</th></tr></thead>
+    <tbody>
+      <tr><td>MATNR、MBRSH、MTART、MEINS、BISMT、SPART、MATKL、MSTAE、BRGEW、GEWEI、NTGEW、LAENG、BREIT、HOEHE、PRDHA、MEABM、VOLUM、VOLEH、GROES、EAN11、NUMTP、MAGRV、RMATP、RAUBE</td><td>MARA</td><td>MOVE-CORRESPONDING</td></tr>
+      <tr><td>MAKTX</td><td>MAKT</td><td>語言 E → M → 任一語言</td></tr>
+      <tr><td>MAKTX1</td><td>MAKT</td><td>固定取語言 M（ZF 繁體中文的內部代碼）；SPRAS 欄固定填 'M'</td></tr>
+      <tr><td>VTEXT</td><td>TSPAT（產品群）</td><td>E → M → 任一</td></tr>
+      <tr><td>WGBEZ</td><td>T023T（物料群組）</td><td>E → M → 空白語言</td></tr>
+      <tr><td>MTSTB</td><td>T141T（跨工廠物料狀態 MSTAE）</td><td>E → M → 任一</td></tr>
+      <tr><td>NTBEZ</td><td>TNTPB（EAN 類別 NUMTP）</td><td>E → M → 任一</td></tr>
+      <tr><td>BEZEI</td><td>TVEGRT（物料運輸群組 MAGRV）</td><td>E → M → 任一</td></tr>
+      <tr><td>RBTXT</td><td>T142T（儲存條件 RAUBE）</td><td>E → M → 任一</td></tr>
+      <tr><td>UMREN、MEINH、UMREZ</td><td>MARM</td><td>MEINH = MARA-MEINS 那一筆</td></tr>
+      <tr><td>BLTEXT1、BLTEXT2</td><td>READ_TEXT</td><td>OBJECT = MATERIAL，ID = <b>GRUN</b>（基本資料文字）／<b>IVER</b>（內部備註），NAME = MATNR，語言 EN</td></tr>
+      <tr><td>工廠層 EKGRP、MMSTA、BESKZ、SOBSL、PLIFZ</td><td>MARC</td><td>一料多工廠逐筆</td></tr>
+      <tr><td>BKLAS、STPRS、PEINH、VPRSV</td><td>MBEW</td><td>BWKEY = WERKS、BWTAR = 空白；STPRS 以 <span class="kw">WRITE … CURRENCY T001-WAERS NO-GROUPING</span> 轉成文字（公司代碼經 T001K → T001 取幣別）</td></tr>
+      <tr><td>BKBEZ</td><td>T025T（評價類別）</td><td>E → M → 任一</td></tr>
+      <tr><td>MTSTB（工廠）</td><td>T141T（MARC-MMSTA）</td><td>E → M → 任一</td></tr>
+      <tr><td>DDTEXTV、DDTEXTB</td><td>DD_DOMVALUE_TEXT_GET</td><td>網域 VPRSV（價格控制）、BESKZ（採購類型）的固定值文字</td></tr>
+      <tr><td>LTEXT</td><td>T460T（特殊採購類型，鍵 WERKS＋SOBSL）</td><td>E → M → 任一</td></tr>
+      <tr><td>銷售層 VKORG、VTWEG、SLTEXT</td><td>MVKE ＋ READ_TEXT</td><td>OBJECT = MVKE，ID = 0001（銷售文字），NAME = MATNR(40)＋VKORG＋VTWEG</td></tr>
+      <tr><td>MEINS、GEWEI、MEABM、VOLEH、MEINH（外部表）</td><td>CONVERSION_EXIT_CUNIT_OUTPUT</td><td>內部單位碼轉外部顯示碼後才寫外部 DB</td></tr>
+    </tbody>
+  </table>
+
+  <h3 id="ch06-5-05">5. ZMMI0001 關鍵段落現代改寫（一）：一次取數與語言 fallback</h3>
+  <p>原程式在 LOOP 裡對每筆物料、每個工廠做十幾次 <span class="kw">SELECT SINGLE *</span>（MAKT、TSPAT、T023T、T001K、T001、MBEW、T025T…），1,000 筆物料 × 5 個工廠就是數萬次資料庫往返。改寫原則：<b>先一次取回，再在記憶體查</b>。</p>
+  <pre><code class="abap">METHOD select_data.
+  SELECT matnr, ersda, laeda, mtart, mbrsh, matkl, meins, bismt, spart, mstae,
+         brgew, gewei, ntgew, laeng, breit, hoehe, meabm, volum, voleh,
+         groes, ean11, numtp, magrv, rmatp, raube, prdha
+    FROM mara
+    WHERE matnr IN @mt_matnr
+      AND ( laeda = @mv_date OR ersda = @mv_date )
+    ORDER BY matnr
+    INTO TABLE @mt_mara.
+  IF mt_mara IS INITIAL.
+    RETURN.
+  ENDIF.
+
+  " 工廠層：MARC + 評價範圍 → 公司代碼 → 幣別，一次 JOIN
+  SELECT c~matnr, c~werks, c~ekgrp, c~mmsta, c~beskz, c~sobsl, c~plifz,
+         b~bklas, b~stprs, b~peinh, b~vprsv, t~waers
+    FROM marc AS c
+    INNER JOIN t001k AS k ON k~bwkey = c~werks
+    INNER JOIN t001  AS t ON t~bukrs = k~bukrs
+    LEFT OUTER JOIN mbew AS b ON b~matnr = c~matnr
+                             AND b~bwkey = c~werks
+                             AND b~bwtar = @space
+    FOR ALL ENTRIES IN @mt_mara
+    WHERE c~matnr = @mt_mara-matnr
+    INTO TABLE @mt_plant.
+  SORT mt_plant BY matnr werks.          " FOR ALL ENTRIES 不保證順序，明確排序
+
+  SELECT matnr, vkorg, vtweg
+    FROM mvke
+    FOR ALL ENTRIES IN @mt_mara
+    WHERE matnr = @mt_mara-matnr
+    INTO TABLE @mt_sales.
+  SORT mt_sales BY matnr vkorg vtweg.
+
+  SELECT matnr, spras, maktx
+    FROM makt
+    FOR ALL ENTRIES IN @mt_mara
+    WHERE matnr = @mt_mara-matnr
+    INTO TABLE @mt_makt.
+  SORT mt_makt BY matnr spras.          " 讓「任一語言」變成「代碼最小的語言」，結果可重現
+ENDMETHOD.</code></pre>
+  <div class="warn"><b>評價層級假設</b>：T001K 以 BWKEY = WERKS 串接，前提是評價層級設在工廠（絕大多數客戶如此）。若評價層級是公司代碼，BWKEY 會是公司代碼，此 JOIN 會整批落空——上線前在 <span class="tcode">SE16N</span> 看一眼 T001K 即可確認。</div>
+  <p>語言 fallback 是這支程式最大的隱性風險。原程式第三層寫的是「<span class="kw">SELECT SINGLE * FROM makt WHERE matnr = …</span>」（不指定語言），<b>HANA 沒有預設排序</b>，同一支程式今天拿到德文、明天拿到日文都有可能——這正是 Casper 在成本評價 H／E 案例踩過的坑。改寫時把「優先序」寫成資料，而不是寫成 IF 巢狀：</p>
+  <pre><code class="abap">CONSTANTS: c_lang_en TYPE spras VALUE 'E',
+           c_lang_zf TYPE spras VALUE 'M'.     " ZF 繁體中文的內部代碼
+
+METHOD get_maktx.
+  " 優先序：英文 → 繁中 → 其他語言中代碼最小者（mt_makt 已依 matnr spras 排序）
+  rv_maktx = COND #(
+    WHEN line_exists( mt_makt[ matnr = iv_matnr spras = c_lang_en ] )
+      THEN mt_makt[ matnr = iv_matnr spras = c_lang_en ]-maktx
+    WHEN line_exists( mt_makt[ matnr = iv_matnr spras = c_lang_zf ] )
+      THEN mt_makt[ matnr = iv_matnr spras = c_lang_zf ]-maktx
+    ELSE VALUE #( mt_makt[ matnr = iv_matnr ]-maktx OPTIONAL ) ).
+ENDMETHOD.
+
+METHOD get_domain_text.
+  " 取代 FORM call_dd_domvalue_text_get：VPRSV（價格控制）、BESKZ（採購類型）
+  DATA ls_dd07v TYPE dd07v.
+  CALL FUNCTION 'DD_DOMVALUE_TEXT_GET'
+    EXPORTING
+      domname  = iv_domname
+      value    = CONV domvalue_l( iv_value )
+      langu    = c_lang_en
+    IMPORTING
+      dd07v_wa = ls_dd07v.
+  rv_text = ls_dd07v-ddtext.
+ENDMETHOD.</code></pre>
+  <div class="tip">TSPAT、T023T、T141T、TNTPB、TVEGRT、T142T、T025T、T460T 都是同一模式：<b>一次把需要的鍵全部讀回、依鍵＋語言排序、再用同一個優先序方法取值</b>。原程式 T023T 的第三層寫 <span class="kw">spras = ''</span>（空白語言），其他表則是不指定語言，兩者行為不同，改寫時統一成「其他語言中代碼最小者」並在規格書寫明。</div>
+
+  <h3 id="ch06-5-06">6. ZMMI0001 關鍵段落現代改寫（二）：長文字與寫入外部 DB</h3>
+  <p>原程式用 <span class="kw">thead-tdspras = 'EN'</span> 呼叫 READ_TEXT。TDSPRAS 是 1 碼的內部語言代碼，'EN' 被截成 'E' 才「剛好能用」；另外 <span class="kw">CONCATENATE … INTO</span> 不加 <span class="kw">RESPECTING BLANKS</span>，每行 TDLINE 尾端的空白被吃掉，英文字會黏在一起。</p>
+  <pre><code class="abap">METHOD read_long_text.
+  " iv_object / iv_id：MATERIAL/GRUN、MATERIAL/IVER、MVKE/0001
+  DATA lt_lines TYPE STANDARD TABLE OF tline WITH EMPTY KEY.
+
+  CALL FUNCTION 'READ_TEXT'
+    EXPORTING
+      id        = iv_id
+      language  = c_lang_en                 " 1 碼內部代碼，不是 'EN'
+      name      = iv_name
+      object    = iv_object
+    TABLES
+      lines     = lt_lines
+    EXCEPTIONS
+      not_found = 1
+      OTHERS    = 2.
+  IF sy-subrc &lt;&gt; 0.
+    RETURN.                                  " 沒有文字是正常情況，不當錯誤
+  ENDIF.
+
+  " 行與行之間補一個空白，避免英文單字黏在一起
+  rv_text = concat_lines_of( table = VALUE string_table( FOR l IN lt_lines ( CONV string( l-tdline ) ) )
+                             sep   = ` ` ).
+ENDMETHOD.
+
+METHOD sales_text_name.
+  " MVKE 銷售文字的 TDNAME = 料號(40 碼補空白) + 銷售組織 + 配銷通路
+  rv_name = |{ iv_matnr WIDTH = 40 }{ iv_vkorg }{ iv_vtweg }|.
+ENDMETHOD.</code></pre>
+  <div class="note">原程式寫 <span class="kw">thead-tdname+40(4) = vkorg</span>，偏移 40 是 S/4HANA 的 40 碼料號；在 ECC（18 碼料號）同樣的文字鍵偏移是 18。這支程式若要回頭在 ECC 用就會讀不到銷售文字——在 S/4 上則是正確的。</div>
+  <p>寫外部 DB 改用 <b>ADBC</b>（<span class="kw">CL_SQL_CONNECTION</span>），取代禁用的 <span class="kw">EXEC SQL</span>。重點是把「刪舊＋插新」放在<b>外部 DB 的同一個交易</b>裡，任一句失敗就 ROLLBACK，外部資料維持原樣：</p>
+  <pre><code class="abap">CONSTANTS c_dbcon TYPE dbcon-con_name VALUE 'ETL_DB'.   " DBCO 連線名（佔位符）
+
+METHOD push_material.
+  " 回傳 rv_error：空白 = 成功
+  DATA(lo_con) = cl_sql_connection=&gt;get_connection( c_dbcon ).
+  TRY.
+      DATA(lv_mandt) = sy-mandt.
+      DATA(lv_matnr) = is_head-matnr.
+
+      " 1) 刪舊：三張表同一交易
+      LOOP AT VALUE string_table( ( `MATERIALMASTER` ) ( `MATERIALPLANT` ) ( `MATERIALSALES` ) )
+           INTO DATA(lv_table).
+        DATA(lo_del) = lo_con-&gt;prepare_statement(
+          |DELETE FROM { lv_table } WHERE MANDT = ? AND MATNR = ?| ).
+        lo_del-&gt;set_param( REF #( lv_mandt ) ).
+        lo_del-&gt;set_param( REF #( lv_matnr ) ).
+        lo_del-&gt;execute_update( ).
+        lo_del-&gt;close( ).
+      ENDLOOP.
+
+      " 2) 表頭（欄位清單同原程式 MATERIALMASTER，此處節錄）
+      DATA(ls_head) = is_head.
+      DATA(lo_ins) = lo_con-&gt;prepare_statement(
+        `INSERT INTO MATERIALMASTER (MANDT, MATNR, MAKTX, MTART, MEINS, MATKL, WGBEZ, ` &amp;&amp;
+        `ERDAT, ERTIM, AEDAT, AETIM) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)` ).
+      lo_ins-&gt;set_param( REF #( ls_head-mandt ) ).
+      lo_ins-&gt;set_param( REF #( ls_head-matnr ) ).
+      lo_ins-&gt;set_param( REF #( ls_head-maktx ) ).
+      lo_ins-&gt;set_param( REF #( ls_head-mtart ) ).
+      lo_ins-&gt;set_param( REF #( ls_head-meins ) ).
+      lo_ins-&gt;set_param( REF #( ls_head-matkl ) ).
+      lo_ins-&gt;set_param( REF #( ls_head-wgbez ) ).
+      lo_ins-&gt;set_param( REF #( ls_head-erdat ) ).
+      lo_ins-&gt;set_param( REF #( ls_head-ertim ) ).
+      lo_ins-&gt;set_param( REF #( ls_head-aedat ) ).
+      lo_ins-&gt;set_param( REF #( ls_head-aetim ) ).
+      lo_ins-&gt;execute_update( ).
+      lo_ins-&gt;close( ).
+
+      " 3) 工廠層：參數綁在工作區上，迴圈只換值、重複執行
+      DATA ls_plant TYPE zmmfilede0001.
+      DATA(lo_plant) = lo_con-&gt;prepare_statement(
+        `INSERT INTO MATERIALPLANT (MANDT, MATNR, WERKS, BKLAS, STPRS, VPRSV) ` &amp;&amp;
+        `VALUES (?, ?, ?, ?, ?, ?)` ).
+      lo_plant-&gt;set_param( REF #( ls_plant-mandt ) ).
+      lo_plant-&gt;set_param( REF #( ls_plant-matnr ) ).
+      lo_plant-&gt;set_param( REF #( ls_plant-werks ) ).
+      lo_plant-&gt;set_param( REF #( ls_plant-bklas ) ).
+      lo_plant-&gt;set_param( REF #( ls_plant-stprs ) ).
+      lo_plant-&gt;set_param( REF #( ls_plant-vprsv ) ).
+      LOOP AT it_plant INTO ls_plant.
+        lo_plant-&gt;execute_update( ).
+      ENDLOOP.
+      lo_plant-&gt;close( ).
+
+      " MATERIALSALES 同上，略
+
+      lo_con-&gt;commit( ).
+    CATCH cx_sql_exception INTO DATA(lx_sql).
+      lo_con-&gt;rollback( ).                   " 外部資料保持上一版，不會被清空
+      rv_error = lx_sql-&gt;get_text( ).
+  ENDTRY.
+  lo_con-&gt;close( ).
+ENDMETHOD.</code></pre>
+  <div class="warn">ADBC 的參數是<b>以參照綁定</b>：<span class="kw">set_param( REF #( ls_plant-werks ) )</span> 綁的是變數位址，所以迴圈裡 <span class="kw">LOOP AT … INTO ls_plant</span> 換值再 <span class="kw">execute_update( )</span> 即可；若改成 <span class="kw">ASSIGNING</span> 欄位符號，綁定的 ls_plant 不會變，會把同一筆插很多次。</div>
+
+  <h3 id="ch06-5-07">7. ZMMI0001 原程式問題與上線注意</h3>
+  <table>
+    <thead><tr><th>#</th><th>原程式寫法</th><th>問題</th><th>改法</th></tr></thead>
+    <tbody>
+      <tr><td>1</td><td><span class="kw">TABLES:</span>、<span class="kw">OCCURS 0 WITH HEADER LINE</span>、<span class="kw">MOVE-CORRESPONDING</span>、全 FORM</td><td>禁用語法；全域 header line 讓每個 FORM 都偷偷依賴「目前這一筆」</td><td>區域類別＋方法，參數明確傳遞</td></tr>
+      <tr><td>2</td><td><span class="kw">EXEC SQL</span> Native SQL</td><td>禁用；錯誤只在 TRY 裡記文字，CONNECT 失敗的 error_text 被丟掉，後面照樣 INSERT</td><td>ADBC（第 6 節），連線失敗直接中止該筆</td></tr>
+      <tr><td>3</td><td>DELETE_MODE_SAP 先刪中繼表並 <span class="kw">COMMIT WORK</span>，再 INSERT</td><td>若後續組資料失敗，中繼表這筆物料已被永久刪除，也沒有 UPSTS 可重送</td><td>中繼表用 <span class="kw">MODIFY … FROM TABLE</span> 覆蓋，並刪除「已不存在的明細」；全部成功才 COMMIT</td></tr>
+      <tr><td>4</td><td>外部 DB 先 DELETE、INSERT 失敗再 DELETE</td><td>失敗時外部資料被清空（MES 查不到料號），比「舊資料」更糟</td><td>同一交易＋ROLLBACK（第 6 節）</td></tr>
+      <tr><td>5</td><td>SAP 端失敗（W_ERROR_FG = 'X'）時 <span class="kw">CHECK</span> 跳過 INSERT_MODE_DB</td><td>UPSTS 沒被更新，ALV 顯示失敗但訊息空白，使用者不知道為什麼</td><td>每一種失敗都要寫入訊息</td></tr>
+      <tr><td>6</td><td>不指定語言的 SELECT SINGLE、<span class="kw">SELECT SINGLE * FROM marm WHERE matnr = …</span>（停用的 SELECT_MEINH_RTN）</td><td>HANA 無預設排序，取到哪一筆不固定</td><td>明確鍵或明確 ORDER BY（第 5 節）</td></tr>
+      <tr><td>7</td><td><span class="kw">WRITE mbew-stprs TO l_stprs CURRENCY … NO-GROUPING</span></td><td>WRITE 依<b>執行者</b>的小數點格式（SU01 設定）：背景作業使用者若設 1.234,56 格式，送出去的是逗號小數</td><td>外部欄位用數值型別；必須是文字時用 <span class="kw">|{ stprs NUMBER = RAW }|</span>，幣別小數位另行處理（如 JPY、TWD）</td></tr>
+      <tr><td>8</td><td>CONVERSION_EXIT_CUNIT_OUTPUT 傳 <span class="kw">language = sy-langu</span></td><td>單位外部碼依登入語言不同（例如 PC／ST），前景與背景跑出來的單位碼可能不一樣</td><td>固定語言（如 'E'）並寫進介面規格</td></tr>
+      <tr><td>9</td><td>程式開頭把 AEDAT = ERSDA、ERDAT = LAEDA（看起來寫反），隨後又被 IF W_EXIST_FG 覆蓋</td><td>死碼造成誤讀；ERTIM 用 MARA-LAST_CHANGED_TIME 當建立時間也不精確</td><td>刪除死碼；建立時間取 SAP 實際寫入中繼表的時間戳記</td></tr>
+      <tr><td>10</td><td><span class="kw">REUSE_ALV_GRID_DISPLAY</span></td><td>禁用</td><td><span class="kw">CL_SALV_TABLE</span>（見 <a href="#ch02-3-02">2-3 章第 2 節</a>）</td></tr>
+    </tbody>
+  </table>
+  <div class="warn"><b>上線注意</b>：(1) <span class="tcode">DBCO</span> 連線的帳號密碼存在 SAP，不要寫在程式或變式；連線名用常數或客製設定表。(2) 背景作業使用者的語言、小數格式、日期格式要與規格一致。(3) S_MATNR 若要指定一批料號，請用<b>多筆 EQ</b>，不要用 BT 區間：區間比的是字典序，料號混用英數（如 A-100 與 A-99）或有 ALPHA 前導零時，就會多抓或漏抓（Casper 的第 2 條經驗）。(4) 外部 DB 端的欄位長度要按 S/4HANA 40 碼料號開。</div>
+  <div class="tip"><b>先找標準</b>：物料主檔下傳本來就有標準做法——ALE／IDoc <b>MATMAS</b> 訊息類型＋變更指標（<span class="tcode">BD52</span>、<span class="tcode">BD21</span>、<span class="tcode">WE20</span>），或 S/4HANA 的 released CDS／OData（如 API_PRODUCT_SRV）讓 MES 主動來讀。自寫 DB 直連是最右端的選項，採用前要說得出為什麼標準不行（Casper 的第 3 條經驗）。</div>
+
+  <h3 id="ch06-5-08">8. ZPPI0001 業務情境、選擇畫面與程式架構</h3>
+  <p><b>業務情境</b>：MES 需要 SAP 生產工單的表頭（計畫數量、完工數量、日期、狀態、銷售訂單）、作業（工作中心、確認號碼、標準值）與元件（需求數量、儲存地點）。工單建立或變更時，中繼表 ZPPPRORHD0001 由其他程式（例如工單存檔出口，本素材未附）寫入並清空 UPSTS；本程式負責<b>補上完工資訊並推到外部 DB</b>。</p>
+  <table>
+    <thead><tr><th>欄位</th><th>定義</th><th>說明</th></tr></thead>
+    <tbody>
+      <tr><td>S_AUFNR</td><td>FOR AUFK-AUFNR</td><td>工單</td></tr>
+      <tr><td>S_AUART</td><td>FOR AUFK-AUART</td><td>訂單類型</td></tr>
+      <tr><td>S_WERKS</td><td>FOR AUFK-WERKS</td><td>工廠</td></tr>
+      <tr><td>S_ERDAT</td><td>FOR AUFK-ERDAT DEFAULT SY-DATLO</td><td>日期（CHECK_DATE 強制必填，否則訊息「日期必填」並 STOP）</td></tr>
+    </tbody>
+  </table>
+  <p><b>程式架構</b>：</p>
+  <ol>
+    <li><span class="kw">CHECK_DATE</span>：S_ERDAT 空白就停止。</li>
+    <li><span class="kw">SELECT_AFPO_RTN</span>（名稱是 AFPO，實際讀 MSEG）：S_ERDAT 期間內 <b>CPUDT_MKPF</b> 輸入的物料憑證，條件 <b>AUFNR 非空、XAUTO 空白、SMBLN 空白、BWART = '101'</b>（工單入庫）。</li>
+    <li><span class="kw">UPDATE_ZPPPRORHD0001_RTN</span>：每筆 MSEG 呼叫 <b>BAPI_PRODORD_GET_DETAIL</b>（ORDER_OBJECTS 的 HEADER、POSITIONS = 'X'）；中繼表有此工單且表頭 <b>SYSTEM_STATUS CS 'DLV'</b> 時，STAT = 'I0012'、TXT04 = 'DLV'；若 WEMNG ≠ 第一個項目的 DELIVERED_QUANTITY，更新 WEMNG，AEDAT／AETIM 以較晚的 CPUDT_MKPF／CPUTM_MKPF 取代，清空 UPSTS（變成待送）後 MODIFY。</li>
+    <li><span class="kw">SELECT_ZPPPRORHD0001_RTN</span>：AUFNR／AUART／WERKS 符合、<b>(ERDAT IN S_ERDAT OR AEDAT IN S_ERDAT)</b>、<b>UPSTS IN ('', 'E')</b>。</li>
+    <li>逐筆工單：作業 ZPPPRORDE0001（工作中心 ARBPL 從 <b>S022</b> 依 AUFNR＋VORNR 補）；元件 ZPPPRORDE0002（先找 AEDAT／AETIM 與表頭相同的版本，找不到就從 <b>RESB</b> 重建：POSNR、RSPOS、MATNR、MATXT＝MAKT 英文說明，無料號時用 POTX1、BDMNG、MEINS、LGORT、SORTF、XLOEK）。</li>
+    <li>AEDAT IN S_ERDAT → 先刪外部再插入；否則直接插入。外部表 POHEADER 欄位：MANDT、AUFNR、AUART、WERKS、PLNBEZ、GAMNG、WEMNG、GMEIN、GSTRP、GLTRP、TERKZ、TXT、ABLAD、LGORT、KDAUF、KDPOS、KDEIN、VDATU、EDATU、STAT、TXT04、CLSTS 與四個時間欄；POOPERATIONS：VORNR、ARBPL、LTXA1、RUECK、VGW01、VGE01、VGW02、VGE02；POCOMPONENT：POSNR、RSPOS、MATNR、MATXT、BDMNG、MEINS、LGORT、SORTF、XLOEK。單位欄（GMEIN、VGE01、VGE02、MEINS）一樣先轉外部碼。</li>
+    <li>狀態回寫與結果 ALV 同 ZMMI0001。</li>
+  </ol>
+
+  <h3 id="ch06-5-09">9. ZPPI0001 關鍵段落現代改寫</h3>
+  <p>第一段：找出「期間內有入庫或入庫沖銷的工單」，<b>去重後</b>再逐張讀狀態。原程式每一筆 MSEG 都呼叫一次 BAPI，同一張工單分十次入庫就讀十次。</p>
+  <pre><code class="abap">METHOD select_gr_orders.
+  " S/4HANA：MSEG 是相容性 view，讀取會導向 MATDOC；新開發也可直接讀 MATDOC
+  " 或 released CDS I_MaterialDocumentItem_2
+  SELECT DISTINCT aufnr
+    FROM mseg
+    WHERE cpudt_mkpf IN @mt_date
+      AND aufnr      &lt;&gt; @space
+      AND xauto       = @abap_false
+      AND bwart      IN ( '101', '102' )      " 102 沖銷也要觸發，否則完工數永遠不會減回來
+    ORDER BY aufnr
+    INTO TABLE @DATA(lt_orders).
+
+  LOOP AT lt_orders INTO DATA(ls_order).
+    update_delivered( ls_order-aufnr ).
+  ENDLOOP.
+ENDMETHOD.</code></pre>
+  <p>第二段：判斷 DLV 狀態。原程式 <span class="kw">system_status CS 'DLV'</span> 是<b>子字串比對</b>，「PDLV（部分交貨，I0074）」也會命中，部分入庫的工單會被誤標成 I0012 已交貨。改成直接查狀態表 JEST 的 I0012：</p>
+  <pre><code class="abap">METHOD update_delivered.
+  SELECT SINGLE a~objnr, p~wemng
+    FROM aufk AS a
+    INNER JOIN afpo AS p ON p~aufnr = a~aufnr
+    WHERE a~aufnr = @iv_aufnr
+      AND p~posnr = '0001'                    " 明確指定主產出項目，不用「INDEX 1」
+    INTO @DATA(ls_order).
+  IF sy-subrc &lt;&gt; 0.
+    RETURN.
+  ENDIF.
+
+  " I0012 = DLV（已交貨）；INACT 空白才是目前有效的狀態
+  SELECT SINGLE @abap_true
+    FROM jest
+    WHERE objnr = @ls_order-objnr
+      AND stat  = 'I0012'
+      AND inact = @space
+    INTO @DATA(lv_dlv).
+  IF lv_dlv = abap_false.
+    RETURN.                                   " 業務規則：只有 DLV 才回寫完工數
+  ENDIF.
+
+  SELECT SINGLE * FROM zppprorhd0001
+    WHERE aufnr = @iv_aufnr
+    INTO @DATA(ls_hd).
+  IF sy-subrc &lt;&gt; 0 OR ls_hd-wemng = ls_order-wemng.
+    RETURN.
+  ENDIF.
+
+  ls_hd-stat  = 'I0012'.
+  ls_hd-txt04 = 'DLV'.
+  ls_hd-wemng = ls_order-wemng.
+  GET TIME STAMP FIELD DATA(lv_ts).
+  CONVERT TIME STAMP lv_ts TIME ZONE sy-zonlo INTO DATE ls_hd-aedat TIME ls_hd-aetim.
+  CLEAR ls_hd-upsts.                          " 標記為待送
+  MODIFY zppprorhd0001 FROM @ls_hd.
+ENDMETHOD.</code></pre>
+  <div class="note">原程式用 <span class="kw">READ TABLE it_position INDEX 1</span> 取 DELIVERED_QUANTITY。聯產品或多項目工單時「第一筆」取決於 BAPI 回傳順序，屬於 Casper 的第 1 條經驗：<b>任何「取第一筆」都要先說清楚依什麼排序</b>。改寫直接讀 AFPO 並指定 POSNR（或加總所有項目，依業務決定）。AFPO-WEMNG 就是該項目的已入庫量。</div>
+  <p>第三段：作業的工作中心。原程式從 <b>S022</b>（LIS 資訊結構「工單作業」）補 ARBPL，S022 需要 LIS 更新有開才有資料，S/4HANA 也不建議再依賴 LIS。改從工單途程本身讀：</p>
+  <pre><code class="abap">METHOD select_operations.
+  SELECT o~vornr, o~ltxa1, o~rueck, w~arbpl,
+         v~vgw01, v~vge01, v~vgw02, v~vge02
+    FROM afko AS k
+    INNER JOIN afvc AS o ON o~aufpl = k~aufpl
+    INNER JOIN afvv AS v ON v~aufpl = o~aufpl
+                        AND v~aplzl = o~aplzl
+    LEFT OUTER JOIN crhd AS w ON w~objid = o~arbid
+                             AND w~objty = 'A'          " A = 工作中心
+    WHERE k~aufnr = @iv_aufnr
+    ORDER BY o~vornr
+    INTO TABLE @rt_ops.
+ENDMETHOD.
+
+METHOD select_components.
+  SELECT r~rsnum, r~rspos, r~posnr, r~matnr, r~bdmng, r~meins, r~lgort,
+         r~sortf, r~xloek, r~potx1,
+         t~maktx
+    FROM resb AS r
+    LEFT OUTER JOIN makt AS t ON t~matnr = r~matnr
+                             AND t~spras = 'E'
+    WHERE r~aufnr = @iv_aufnr
+    ORDER BY r~rspos
+    INTO TABLE @DATA(lt_resb).
+
+  rt_comp = VALUE #( FOR r IN lt_resb
+                     ( mandt = sy-mandt
+                       aufnr = iv_aufnr
+                       posnr = r-posnr
+                       rspos = r-rspos
+                       matnr = r-matnr
+                       matxt = COND #( WHEN r-matnr IS INITIAL THEN r-potx1 ELSE r-maktx )
+                       bdmng = r-bdmng
+                       meins = r-meins
+                       lgort = r-lgort
+                       sortf = r-sortf
+                       xloek = r-xloek ) ).
+ENDMETHOD.</code></pre>
+
+  <h3 id="ch06-5-10">10. ZPPI0001 原程式問題與上線注意</h3>
+  <table>
+    <thead><tr><th>#</th><th>原程式寫法</th><th>問題</th><th>改法</th></tr></thead>
+    <tbody>
+      <tr><td>1</td><td><span class="kw">MODIFY zppprorde0001 FROM t_zppprorde0001</span>（無 TABLE）</td><td>有 header line 的內表，這句只把<b>表頭行（最後一筆）</b>寫回 DB，其他作業的 ARBPL 都沒存到中繼表</td><td><span class="kw">MODIFY zppprorde0001 FROM TABLE @lt_ops</span></td></tr>
+      <tr><td>2</td><td><span class="kw">system_status CS 'DLV'</span></td><td>PDLV 也命中，部分交貨被當成已交貨</td><td>查 JEST STAT = 'I0012'（第 9 節）或 SPLIT 後比整字</td></tr>
+      <tr><td>3</td><td>只抓 101、<span class="kw">SMBLN IS INITIAL</span></td><td>被沖銷的原始 101 本身 SMBLN 仍是空白（SMBLN 記在沖銷憑證 102 上），所以「排除沖銷」其實沒排除；而 102 沒被抓，沖銷後完工數不會更新</td><td>101／102 都當觸發，重新讀 AFPO-WEMNG 為準</td></tr>
+      <tr><td>4</td><td>每筆 MSEG 呼叫一次 BAPI；<span class="kw">READ TABLE it_position INDEX 1</span></td><td>重複呼叫；取第一筆沒有定義排序</td><td>DISTINCT 去重；指定 POSNR</td></tr>
+      <tr><td>5</td><td>ARBPL 取自 S022</td><td>依賴 LIS 更新；S/4 不建議</td><td>AFVC-ARBID → CRHD（第 9 節）</td></tr>
+      <tr><td>6</td><td>元件用「AEDAT、AETIM 與表頭相同」找版本，找不到才讀 RESB</td><td>時間戳記對不上就每次重建，對得上卻可能是舊版元件</td><td>每次送出一律以 RESB 目前內容為準</td></tr>
+      <tr><td>7</td><td><span class="kw">CHECK_DATE</span> 在 START-OF-SELECTION 才檢查並 STOP</td><td>使用者得重新進入畫面</td><td><span class="kw">AT SELECTION-SCREEN</span> 檢查，或 S_ERDAT 加 <span class="kw">OBLIGATORY</span></td></tr>
+      <tr><td>8</td><td><span class="kw">SELECT *</span> 無 @ 的舊式寫法與新式 <span class="kw">@</span> 寫法混用；<span class="kw">TABLES</span>、<span class="kw">WITH HEADER LINE</span>、FORM</td><td>禁用語法；風格不一致</td><td>全面改成區域類別</td></tr>
+      <tr><td>9</td><td>MAKT 只取英文</td><td>無英文說明的料號元件說明空白</td><td>比照第 5 節的語言優先序</td></tr>
+    </tbody>
+  </table>
+  <div class="warn"><b>MSEG／MATDOC 提醒</b>：S/4HANA 的庫存與物料憑證以 <b>MATDOC</b> 為唯一實體表，MKPF、MSEG、MARD、MCHB 等在 SE11 仍看得到，但讀取時會透過「代理物件（Proxy Object）」導向相容性 CDS view。讀相容性 view 在大量資料下比直接讀 MATDOC 慢，而且<b>寫入</b>這些舊表是不允許的。</div>
+  <div class="tip"><b>先找標準</b>：生產工單下傳 MES 的標準路線是 PP-PI／POI 介面的 <b>LOIPRO</b> IDoc（工單）與 <b>LOIROU</b>（途程）、<b>LOIMAT</b>（物料），以及 SAP Digital Manufacturing 的標準整合；完工回報則走 CONF32 等 IDoc 或 BAPI_PRODORDCONF_CREATE_TT。先確認 MES 廠商是否支援，再決定是否自寫。</div>
+
+  <h3 id="ch06-5-11">11. 真正的「檔案下載」：前景 gui_download 與背景 OPEN DATASET</h3>
+  <p>講義把 ZMMI0001 放在「檔案下載」單元，是因為很多客戶的 MES 只收檔案。若對方要的是檔案而不是 DB，同一份中繼資料的輸出方式如下。規則只有一條：<b>前景（有 SAP GUI）存到使用者電腦；背景作業（<span class="kw">sy-batch = abap_true</span>）只能寫應用伺服器</b>——背景沒有 GUI，呼叫前端服務會直接失敗。舊的 <span class="kw">WS_DOWNLOAD</span>／<span class="kw">GUI_DOWNLOAD</span> 函數一律改用 <span class="kw">CL_GUI_FRONTEND_SERVICES</span>。</p>
+  <pre><code class="abap">METHOD build_csv.
+  " 數值用 NUMBER = RAW：不受使用者小數點格式影響；料號去前導零
+  rt_lines = VALUE #( ( `MATNR;WERKS;LGORT;LABST;INSME;SPEME` ) ).
+  LOOP AT it_stock INTO DATA(ls).
+    APPEND |{ ls-matnr ALPHA = OUT };{ ls-werks };{ ls-lgort };| &amp;&amp;
+           |{ ls-labst NUMBER = RAW };{ ls-insme NUMBER = RAW };{ ls-speme NUMBER = RAW }|
+      TO rt_lines.
+  ENDLOOP.
+ENDMETHOD.
+
+METHOD save_file.
+  IF sy-batch = abap_false.
+    " 前景：讓使用者選路徑
+    DATA: lv_name TYPE string, lv_path TYPE string, lv_full TYPE string,
+          lv_action TYPE i.
+    cl_gui_frontend_services=&gt;file_save_dialog(
+      EXPORTING default_extension = `csv`
+                default_file_name = |stock_{ sy-datum }.csv|
+                initial_directory = `C:\temp\`
+      CHANGING  filename = lv_name  path = lv_path
+                fullpath = lv_full  user_action = lv_action
+      EXCEPTIONS OTHERS = 1 ).
+    IF sy-subrc &lt;&gt; 0 OR lv_action &lt;&gt; cl_gui_frontend_services=&gt;action_ok.
+      RETURN.
+    ENDIF.
+    cl_gui_frontend_services=&gt;gui_download(
+      EXPORTING filename  = lv_full
+                filetype  = 'ASC'
+                codepage  = '4110'          " UTF-8
+                write_bom = abap_true       " Excel 直接開啟中文不亂碼
+      CHANGING  data_tab  = it_lines
+      EXCEPTIONS OTHERS   = 1 ).
+    IF sy-subrc &lt;&gt; 0.
+      MESSAGE ID sy-msgid TYPE 'S' NUMBER sy-msgno DISPLAY LIKE 'E'
+              WITH sy-msgv1 sy-msgv2 sy-msgv3 sy-msgv4.
+    ENDIF.
+  ELSE.
+    " 背景：寫應用伺服器，路徑由邏輯檔名（TCODE FILE）決定，不寫死
+    DATA(lv_file) = |/interface/out/stock_{ sy-datum }.csv|.
+    TRY.
+        OPEN DATASET lv_file FOR OUTPUT IN TEXT MODE ENCODING UTF-8
+             WITH BYTE-ORDER MARK.
+        LOOP AT it_lines INTO DATA(lv_line).
+          TRANSFER lv_line TO lv_file.
+        ENDLOOP.
+        CLOSE DATASET lv_file.
+      CATCH cx_sy_file_open cx_sy_file_authority cx_sy_file_io INTO DATA(lx_file).
+        MESSAGE lx_file-&gt;get_text( ) TYPE 'E'.
+    ENDTRY.
+  ENDIF.
+ENDMETHOD.</code></pre>
+  <div class="tip">應用伺服器檔案用 <span class="tcode">AL11</span> 查看、<span class="tcode">CG3Y</span> 下載到本機；正式環境請用 <span class="tcode">FILE</span> 定義邏輯路徑並以 <span class="kw">FILE_VALIDATE_NAME</span> 驗證，避免使用者或變式把檔案寫到任意目錄（目錄穿越）。細節見 <a href="#ch04-4-11">4-4 章第 11 節</a>。</div>
+
+  <h3 id="ch06-5-12">12. MARD 下載 Excel：需求與 S/4HANA 庫存資料模型</h3>
+  <p><b>需求原文</b>：「下載此表到 EXCEL，請到網上找案例」。欄位：</p>
+  <table>
+    <thead><tr><th>欄位</th><th>說明</th><th>備註</th></tr></thead>
+    <tbody>
+      <tr><td>MATNR</td><td>物料</td><td>講義誤植為「工廠」，MATNR 是物料號碼</td></tr>
+      <tr><td>WERKS</td><td>工廠</td><td></td></tr>
+      <tr><td>LGORT</td><td>儲存位置</td><td></td></tr>
+      <tr><td>LABST</td><td>良品數（未限制使用庫存）</td><td></td></tr>
+      <tr><td>INSME</td><td>品檢中（品質檢驗庫存）</td><td></td></tr>
+      <tr><td>SPEME</td><td>鎖定中（凍結庫存）</td><td></td></tr>
+    </tbody>
+  </table>
+  <div class="warn"><b>S/4HANA 的 MARD 已不是實體庫存表</b>：庫存數量由 <b>MATDOC</b> 即時彙總，MARD 保留主資料性欄位，數量欄的讀取經代理物件導向相容性 CDS view（<span class="tcode">SE11</span> 開 MARD → Extras → Proxy Object 可看到，依版本為 NSDM_E_MARD 或舊名 NSDM_V_MARD）。所以 <span class="kw">SELECT … FROM mard</span> 語法照樣可用、結果正確，但它其實是一個聚合查詢——範圍不要開太大，至少帶工廠條件。新開發可考慮 released CDS <b>I_MaterialStock</b> 系列（以 InventoryStockType 區分庫存類型，代碼值以系統 domain 為準）。</div>
+  <pre><code class="abap">TYPES: BEGIN OF ty_stock,
+         matnr TYPE mard-matnr,
+         werks TYPE mard-werks,
+         lgort TYPE mard-lgort,
+         labst TYPE mard-labst,
+         insme TYPE mard-insme,
+         speme TYPE mard-speme,
+       END OF ty_stock,
+       tt_stock TYPE STANDARD TABLE OF ty_stock WITH EMPTY KEY.
+
+DATA: gv_werks TYPE mard-werks,
+      gv_matnr TYPE mard-matnr.
+SELECT-OPTIONS: s_werks FOR gv_werks OBLIGATORY,     " 工廠必填，避免全表聚合
+                s_matnr FOR gv_matnr.
+PARAMETERS p_zero AS CHECKBOX DEFAULT abap_false.    " 是否含三數皆為 0 的列
+
+START-OF-SELECTION.
+  SELECT matnr, werks, lgort, labst, insme, speme
+    FROM mard
+    WHERE werks IN @s_werks
+      AND matnr IN @s_matnr
+      AND (    @p_zero = @abap_true
+            OR labst &lt;&gt; 0 OR insme &lt;&gt; 0 OR speme &lt;&gt; 0 )
+    ORDER BY werks, matnr, lgort                     " HANA 沒有預設排序，Excel 要穩定就要排
+    INTO TABLE @DATA(gt_stock).</code></pre>
+
+  <h3 id="ch06-5-13">13. 三個網路案例評析：SMW0 範本、SAP_CONVERT_TO_XLS_FORMAT、abap2xlsx</h3>
+  <table>
+    <thead><tr><th>案例</th><th>做法</th><th>評析</th></tr></thead>
+    <tbody>
+      <tr><td>一</td><td><span class="tcode">SMW0</span> 上傳 Excel 範本（WWWDATA，RELID = 'MI'，SRTF2 = 0）→ <span class="kw">file_exist</span> 檢查、<span class="kw">POPUP_TO_CONFIRM</span> 詢問覆蓋 → <span class="kw">file_save_dialog</span> → <span class="kw">DOWNLOAD_WEB_OBJECT</span> 下載</td><td>只下載「空白範本」，並沒有把資料填進去，本身不解決需求；適合「給使用者一份上傳用範本」。預設副檔名 .xls、檔名 = 範本描述＋日期。file_exist 檢查的是沒有路徑的檔名，實際上判斷不到使用者選的位置——應在 file_save_dialog 之後檢查</td></tr>
+      <tr><td>二</td><td>先用某部落客自寫的類別從 SMW0 下載「儲存格設為文字格式」的範本，<span class="kw">WAIT UP TO 2 SECONDS</span> 等檔案落地，再以 <span class="kw">SAP_CONVERT_TO_XLS_FORMAT</span>（I_LINE_HEADER = 'X'）把全 CHAR 欄位的內表寫進去；表頭列用 RTTS（CL_ABAP_STRUCTDESCR）動態塞欄位名</td><td>該類別不是 SAP 標準；靠 WAIT 等檔案是競態條件；SAP_CONVERT_TO_XLS_FORMAT 依賴前端 Excel（OLE），背景作業不能用、產生的是舊 .xls 格式。「全部轉 CHAR 防止格式跑掉」的觀念值得保留（料號前導零、長數字不被 Excel 轉成科學記號）</td></tr>
+      <tr><td>三</td><td>abap2xlsx：<span class="kw">ZCL_EXCEL</span> 建活頁簿、<span class="kw">ZCL_EXCEL_STYLE</span> 設粗體／置中／細框線，<span class="kw">lo_style-&gt;get_guid( )</span> 取樣式鍵給 <span class="kw">set_cell( ip_style = … )</span>，<span class="kw">set_merge</span> 合併儲存格，<span class="kw">ZCL_EXCEL_WRITER_2007</span> 輸出 XSTRING，再轉二進位 <span class="kw">gui_download( filetype = 'BIN' )</span></td><td>功能最完整（樣式、合併、公式、多工作表、圖表），不需要前端 Excel，背景也能產生 .xlsx。但要注意下方說明</td></tr>
+    </tbody>
+  </table>
+  <div class="warn"><b>abap2xlsx 是開源套件，不是 SAP 標準。</b>它是社群在 GitHub 維護的專案（Apache 2.0 授權），要先用 abapGit 或 SAPlink 安裝到系統，所有物件都是 Z 開頭（ZCL_EXCEL、ZIF_EXCEL_WRITER、資料元素 ZEXCEL_EXPORT_DIR…）。導入前請確認：(1) 客戶是否允許安裝開源程式碼、由誰負責維護升級；(2) 各系統（DEV／QAS／PRD）版本一致；(3) SAP 不對其提供支援。案例三的 <span class="kw">SCMS_XSTRING_TO_BINARY</span> 可用 <span class="kw">cl_bcs_convert=&gt;xstring_to_solix( )</span> 取代。</div>
+  <pre><code class="abap">" 已安裝 abap2xlsx 時的最短寫法：直接把內表綁上工作表
+TRY.
+    DATA(lo_excel) = NEW zcl_excel( ).
+    DATA(lo_sheet) = lo_excel-&gt;get_active_worksheet( ).
+    lo_sheet-&gt;set_title( 'MARD' ).
+    lo_sheet-&gt;bind_table( ip_table = gt_stock ).        " 自動產生表頭與表格樣式
+
+    DATA(lo_writer) = CAST zif_excel_writer( NEW zcl_excel_writer_2007( ) ).
+    DATA(lv_xlsx)   = lo_writer-&gt;write_file( lo_excel ).
+  CATCH zcx_excel INTO DATA(lx_excel).
+    MESSAGE lx_excel-&gt;get_text( ) TYPE 'S' DISPLAY LIKE 'E'.
+    RETURN.
+ENDTRY.</code></pre>
+
+  <h3 id="ch06-5-14">14. SAP 標準替代方案：SALV 匯出、CL_SALV_BS_LEX、XCO_CP_XLSX</h3>
+  <p>不裝任何套件也能在伺服器端產生真正的 .xlsx。依「越標準越好」排序：</p>
+  <p><b>方案 A：直接用 ALV 的匯出</b>。把 GT_STOCK 以 CL_SALV_TABLE 顯示，使用者按工具列「匯出 → 試算表」即可（見 <a href="#ch02-3-14">2-3 章第 14 節</a>）。需求若只是「使用者要一份 Excel」，這就是答案，一行額外程式都不用寫。</p>
+  <p><b>方案 B：程式產生 xlsx（前景下載或背景寄信）</b>——CL_SALV_TABLE 的 <span class="kw">to_xml</span>：</p>
+  <pre><code class="abap">METHOD export_xlsx_salv.
+  TRY.
+      cl_salv_table=&gt;factory( IMPORTING r_salv_table = DATA(lo_salv)
+                              CHANGING  t_table      = gt_stock ).
+      DATA(lv_xlsx) = lo_salv-&gt;to_xml( xml_type = if_salv_bs_xml=&gt;c_type_xlsx ).
+    CATCH cx_salv_msg INTO DATA(lx_salv).
+      MESSAGE lx_salv-&gt;get_text( ) TYPE 'S' DISPLAY LIKE 'E'.
+      RETURN.
+  ENDTRY.
+
+  DATA(lt_bin) = cl_bcs_convert=&gt;xstring_to_solix( lv_xlsx ).
+  cl_gui_frontend_services=&gt;gui_download(
+    EXPORTING bin_filesize = xstrlen( lv_xlsx )
+              filename     = |C:\\temp\\mard_{ sy-datum }.xlsx|
+              filetype     = 'BIN'
+    CHANGING  data_tab     = lt_bin
+    EXCEPTIONS OTHERS      = 1 ).
+ENDMETHOD.</code></pre>
+  <p><b>方案 C：CL_SALV_BS_LEX</b>——SALV 匯出背後的引擎，可自訂欄位目錄（欄名、隱藏欄）：</p>
+  <pre><code class="abap">METHOD export_xlsx_lex.
+  TRY.
+      cl_salv_table=&gt;factory( IMPORTING r_salv_table = DATA(lo_salv)
+                              CHANGING  t_table      = gt_stock ).
+    CATCH cx_salv_msg.
+      RETURN.
+  ENDTRY.
+
+  DATA(lt_fcat) = cl_salv_controller_metadata=&gt;get_lvc_fieldcatalog(
+                    r_columns      = lo_salv-&gt;get_columns( )
+                    r_aggregations = lo_salv-&gt;get_aggregations( ) ).
+  " 例：改欄名
+  LOOP AT lt_fcat ASSIGNING FIELD-SYMBOL(&lt;ls_fcat&gt;).
+    &lt;ls_fcat&gt;-coltext = SWITCH #( &lt;ls_fcat&gt;-fieldname
+                                  WHEN 'LABST' THEN '良品數'
+                                  WHEN 'INSME' THEN '品檢中'
+                                  WHEN 'SPEME' THEN '鎖定中'
+                                  ELSE &lt;ls_fcat&gt;-coltext ).
+  ENDLOOP.
+
+  DATA(lo_result) = cl_salv_ex_util=&gt;factory_result_data_table(
+                      r_data         = REF #( gt_stock )
+                      t_fieldcatalog = lt_fcat ).
+  cl_salv_bs_lex=&gt;export_from_result_data_table(
+    EXPORTING is_format            = if_salv_bs_lex_format=&gt;mc_format_xlsx
+              ir_result_data_table = lo_result
+    IMPORTING er_result_file       = DATA(lv_xlsx) ).
+  " lv_xlsx：前景用 gui_download(BIN)、背景用 OPEN DATASET … IN BINARY MODE 或 CL_BCS 寄出
+ENDMETHOD.</code></pre>
+  <p><b>方案 D：XCO_CP_XLSX</b>——SAP 為 <b>ABAP Cloud</b> 提供的 released API（可讀也可寫 xlsx）。<b>版本門檻</b>：SAP BTP ABAP Environment／S/4HANA Cloud 可用；地端 S/4HANA 約 2022 版（ABAP Platform 2022）以後才有，<b>1809 沒有</b>，請以系統中是否存在 XCO_CP_XLSX 為準。以下依官方文件範例改寫<span class="src">（依官方文件整理，細節以系統版本為準）</span>：</p>
+  <pre><code class="abap">" 門檻：ABAP Cloud / S/4HANA 2022 以上
+DATA(lo_doc)   = xco_cp_xlsx=&gt;document-&gt;empty( )-&gt;write_access( ).
+DATA(lo_sheet) = lo_doc-&gt;get_workbook( )-&gt;worksheet-&gt;at_position( 1 ).
+
+DATA(lo_pattern) = xco_cp_xlsx_selection=&gt;pattern_builder-&gt;simple_from_to(
+  )-&gt;from_column( xco_cp_xlsx=&gt;coordinate-&gt;for_alphabetic_value( 'A' )
+  )-&gt;from_row( xco_cp_xlsx=&gt;coordinate-&gt;for_numeric_value( 1 )
+  )-&gt;get_pattern( ).
+
+lo_sheet-&gt;select( lo_pattern
+  )-&gt;row_stream(
+  )-&gt;operation-&gt;write_from( REF #( gt_stock )
+  )-&gt;execute( ).
+
+DATA(lv_xlsx) = lo_doc-&gt;get_file_content( ).</code></pre>
+  <table>
+    <thead><tr><th>方案</th><th>標準？</th><th>背景可用</th><th>樣式控制</th><th>1809 可用</th></tr></thead>
+    <tbody>
+      <tr><td>A ALV 工具列匯出</td><td>是</td><td>否（使用者操作）</td><td>低</td><td>是</td></tr>
+      <tr><td>B SALV to_xml</td><td>是</td><td>是</td><td>低</td><td>是</td></tr>
+      <tr><td>C CL_SALV_BS_LEX</td><td>是（非 released，未來可能變動）</td><td>是</td><td>中（欄位目錄）</td><td>是</td></tr>
+      <tr><td>D XCO_CP_XLSX</td><td>是（released，ABAP Cloud）</td><td>是</td><td>低～中</td><td>否</td></tr>
+      <tr><td>abap2xlsx</td><td>否（開源）</td><td>是</td><td>高</td><td>是（需安裝）</td></tr>
+      <tr><td>SAP_CONVERT_TO_XLS_FORMAT</td><td>是（舊）</td><td>否</td><td>低</td><td>可用但不建議</td></tr>
+    </tbody>
+  </table>
+
+  <h3 id="ch06-5-15">15. 選型總結：先標準、再檔案、最後才是 DB 直連</h3>
+  <table>
+    <thead><tr><th>需求</th><th>第一選擇（標準）</th><th>其次</th><th>最後手段</th></tr></thead>
+    <tbody>
+      <tr><td>看庫存、偶爾匯出</td><td><span class="tcode">MB52</span>、<span class="tcode">MMBE</span>、Fiori「Stock – Multiple Materials」＋匯出</td><td>客製 SALV 報表＋工具列匯出</td><td>客製程式產生 xlsx</td></tr>
+      <tr><td>每天定時給外部一份檔案</td><td>標準 IDoc 檔案埠（<span class="tcode">WE21</span> File port）</td><td>背景作業 OPEN DATASET ＋ 外部 SFTP 取檔</td><td>—</td></tr>
+      <tr><td>物料主檔給 MES</td><td>MATMAS IDoc＋變更指標／OData API</td><td>中繼表＋檔案</td><td>DBCO 直寫外部 DB（ZMMI0001）</td></tr>
+      <tr><td>工單給 MES</td><td>LOIPRO／LOIROU IDoc、Digital Manufacturing 整合</td><td>中繼表＋檔案</td><td>DBCO 直寫外部 DB（ZPPI0001）</td></tr>
+    </tbody>
+  </table>
+  <div class="warn"><b>DB 直連的三個代價</b>：(1) 對方改欄位，SAP 這邊就壞，而且要到執行時才知道；(2) 兩邊交易無法一起 COMMIT（SAP 中繼表成功、外部失敗的情況一定會發生），必須有 UPSTS 與重送；(3) 網路或外部 DB 停機時，背景作業卡在連線逾時。能用 IDoc／API 就不要直連。</div>
+  <div class="tip"><b>三個實務坑在本章的對應</b>：HANA 無預設排序 → 語言 fallback 的「任一語言」、BAPI 項目「INDEX 1」、MARD 下載未排序；列舉優於區間 → S_MATNR、S_AUFNR 指定清單時用多筆 EQ；先標準再客製 → MATMAS／LOIPRO／MB52 與 ALV 匯出。</div>
+
+  <h3 id="ch06-5-qa">練習與自我檢核</h3>
+  <ol>
+    <li>ZMMI0001 的 P_LAEDA 只比對單一天。請設計一張水位線表，讓背景作業漏跑一天也不會漏送，並說明 MARC／MVKE 變更為何不一定反映在 MARA-LAEDA。</li>
+    <li>原程式 <span class="kw">SELECT SINGLE * FROM makt WHERE matnr = …</span>（不指定語言）在 HANA 上會有什麼行為？請改寫成結果可重現的版本。</li>
+    <li>把 <span class="kw">thead-tdspras = 'EN'</span> 傳給 READ_TEXT 為什麼「剛好能用」？正確的值是什麼？MVKE 銷售文字的 TDNAME 在 S/4HANA 與 ECC 有什麼差別？</li>
+    <li>用 ADBC 改寫 MATERIALSALES 的 INSERT，並說明為什麼 DELETE 與 INSERT 要在同一個外部交易裡。</li>
+    <li>ZPPI0001 的 <span class="kw">system_status CS 'DLV'</span> 會把哪個狀態誤判進來？請用 JEST 改寫。</li>
+    <li>為什麼 <span class="kw">SMBLN IS INITIAL</span> 不能排除「已被沖銷的 101」？沖銷後完工數要怎麼正確更新？</li>
+    <li>找出 ZPPI0001 中只寫回一筆資料的 MODIFY 敘述，說明原因並改正。</li>
+    <li>寫一個方法：前景時用 <span class="kw">cl_gui_frontend_services=&gt;gui_download</span> 存 CSV，背景時改用 <span class="kw">OPEN DATASET</span>，數值不受使用者小數點格式影響。</li>
+    <li>S/4HANA 中 <span class="kw">SELECT … FROM mard</span> 實際讀的是什麼？為什麼選擇畫面要強制輸入工廠？</li>
+    <li>比較 abap2xlsx、CL_SALV_TABLE→to_xml、CL_SALV_BS_LEX、XCO_CP_XLSX 四種產生 xlsx 的方式：哪些是 SAP 標準？哪些在 1809 可用？哪些能在背景作業執行？</li>
+  </ol>
+</section>
