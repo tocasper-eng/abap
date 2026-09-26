@@ -1,0 +1,712 @@
+<section class="chapter" id="ch10-3" data-title="AMDP">
+  <h2>第 10-3 章 AMDP：用 ABAP 類別寫 SQLScript</h2>
+  <p class="lede">ABAP SQL 和 CDS 已經能把大部分運算下推到 HANA，AMDP（ABAP Managed Database Procedures）是最後一層：在 ABAP 類別的方法裡直接寫 SQLScript，由 ABAP 管理傳輸、版本與呼叫。本章說明什麼時候真的需要 AMDP，以及它的語法限制、用戶端（client）處理、CDS table function、AMDP BAdI、除錯、例外與效能陷阱。最後用「每個客戶最近三張訂單」比較 ABAP SQL、CDS、AMDP 三種寫法。</p>
+  <div class="meta">
+    <div><b>核心 TCODE</b><span class="tcode">ADT（Eclipse）</span><span class="tcode">SE24（只能顯示）</span><span class="tcode">SE18</span><span class="tcode">SE19</span><span class="tcode">ST05</span><span class="tcode">SQLM</span><span class="tcode">SAT</span><span class="tcode">SICK</span><span class="tcode">DB_SCHEMA_MAP</span><span class="tcode">DBACOCKPIT</span></div>
+    <div><b>關鍵物件</b>IF_AMDP_MARKER_HDB、CL_ABAP_DBFEATURES、CX_AMDP_ERROR、CX_AMDP_EXECUTION_FAILED、CL_SHDB_SELTAB、SESSION_CONTEXT、APPLY_FILTER、ROW_NUMBER、DEFINE TABLE FUNCTION、VBAK、VBAP</div>
+  </div>
+
+  <h3 id="ch10-3-01">1. 定位：Code Pushdown 的三個層次與版本門檻</h3>
+  <p>本章的版本門檻如下。讀者基準是 S/4HANA 1809（ABAP 7.53）；除了 ABAP SQL 視窗運算式（7.54）以外，本章用到的 AMDP 功能在 1809 都能使用。</p>
+  <table>
+    <thead><tr><th>本章功能</th><th>版本門檻</th><th>1809 可用？</th></tr></thead>
+    <tbody>
+      <tr><td>AMDP procedure（<span class="kw">IF_AMDP_MARKER_HDB</span>、<span class="kw">BY DATABASE PROCEDURE</span>）</td><td>7.40 SP05</td><td>可</td></tr>
+      <tr><td>AMDP table function、<span class="kw">FOR TABLE FUNCTION</span>、CDS table function</td><td>7.50</td><td>可</td></tr>
+      <tr><td>AMDP Debugger（ADT）</td><td>7.50 SP00、HANA SPS9、ADT 2.51</td><td>可</td></tr>
+      <tr><td>宣告端的 <span class="kw">AMDP OPTIONS READ-ONLY</span>／<span class="kw">CDS SESSION CLIENT</span>、巨集 <span class="kw">"$ABAP.type( )"</span></td><td>7.52</td><td>可</td></tr>
+      <tr><td>AMDP scalar function、<span class="kw">OPTIONS DETERMINISTIC</span>、<span class="kw">USING SCHEMA</span></td><td>7.53</td><td>可</td></tr>
+      <tr><td>ABAP SQL 視窗運算式 <span class="kw">ROW_NUMBER( ) OVER( … )</span></td><td>7.54（S/4HANA 1909）</td><td><b>不可</b></td></tr>
+      <tr><td>宣告端的 <span class="kw">CDS SESSION CLIENT DEPENDENT</span>／<span class="kw">CLIENT INDEPENDENT</span>、CDS scalar function</td><td>比 7.53 新（SAP 官方 cheat sheet 中的寫法），確切版本本章未能確認</td><td><b>不可</b>（1809 用 <span class="kw">CDS SESSION CLIENT clnt|CURRENT</span>）</td></tr>
+    </tbody>
+  </table>
+  <p>把運算下推到資料庫（Code-to-Data）有三個層次，<b>能用上一層解決，就不要往下一層走</b>（細節見 <a href="#ch05-21-23">5-21 章第 23 節</a>）：</p>
+  <ol>
+    <li><b>ABAP SQL</b>：7.40 SP05 起的 SQL 運算式、CASE、JOIN、子查詢、UNION（7.50）、內表當資料來源（7.52）、視窗運算式（7.54）。語法見 <a href="#ch02-2-16">2-2 章第 16 節</a>。</li>
+    <li><b>CDS View</b>：可重用的資料模型，支援 association、參數、DCL 權限控制，也是 Fiori／RAP 的基礎，見 <a href="#ch10-1">10-1 章</a>、<a href="#ch10-2">10-2 章</a>。</li>
+    <li><b>AMDP</b>：在 ABAP 類別中寫 SQLScript。SAP 的程式設計準則寫得很清楚：<b>ABAP SQL（或 ABAP CDS）能做到的事，不建議用 AMDP</b>。只有在需要 ABAP SQL 沒有的資料庫專屬功能，或要把「在 DB 與應用伺服器之間反覆搬大量資料」的大型流程整段移到 DB 時，才用 AMDP。</li>
+  </ol>
+  <table>
+    <thead><tr><th>需求</th><th>建議做法</th><th>理由</th></tr></thead>
+    <tbody>
+      <tr><td>單一查詢：JOIN、彙總、CASE、字串與日期函數</td><td>ABAP SQL</td><td>可攜、ST05／SQLM 看得到、會自動處理 client</td></tr>
+      <tr><td>會被多支程式、Fiori、分析重複使用的資料模型</td><td>CDS View</td><td>可重用、可加 DCL、可發佈成 OData</td></tr>
+      <tr><td>每組取前 N 筆、排名、累計（1809）</td><td>CDS table function ＋ AMDP；升到 7.54 以上再評估改用 ABAP SQL 視窗運算式</td><td>1809 的 ABAP SQL 沒有 <span class="kw">OVER( )</span></td></tr>
+      <tr><td>多步驟運算，而且中間結果很大（先算 A、用 A 算 B、再用 B 算 C）</td><td>AMDP procedure</td><td>中間結果留在 HANA，不必搬回應用伺服器</td></tr>
+      <tr><td>HANA 專屬函式庫（預測分析 PAL、空間運算、HANA 專屬的轉換函數）</td><td>AMDP</td><td>ABAP SQL／CDS 沒有對應語法</td></tr>
+      <tr><td>效能關鍵、原本在 ABAP 逐筆迴圈裡反覆讀 DB 的邏輯</td><td>先改寫成集合式 ABAP SQL，真的不夠才用 AMDP</td><td>SAP 官方範例 <span class="kw">DEMO_AMDP_VS_OPEN_SQL</span> 就是在說明：寫不好的 ABAP SQL 多半改寫 ABAP SQL 即可，不需要 AMDP</td></tr>
+      <tr><td>需要寫入、而且要和 ABAP 的 LUW 一致</td><td>ABAP SQL（更新任務、RAP）</td><td>AMDP 內不能 COMMIT／ROLLBACK，也不能寫有表緩衝的表</td></tr>
+      <tr><td>要跑在非 HANA 資料庫，或要上 ABAP Cloud 且需讀取 client 相依資料</td><td>ABAP SQL／CDS</td><td>AMDP 只支援 HANA；ABAP Cloud 的 AMDP 限制更多（必須唯讀並保證 client-safe）</td></tr>
+    </tbody>
+  </table>
+  <pre><code class="abap">" 多數「想用 AMDP」的需求，1809 的 ABAP SQL 就做得到：
+" 依銷售組織、客戶彙總訂單金額，全部在 HANA 算完
+SELECT vkorg, kunnr, waerk,
+       SUM( netwr ) AS netwr,
+       COUNT( * )   AS order_cnt
+  FROM vbak
+  WHERE vkorg IN @s_vkorg
+    AND erdat BETWEEN @p_from AND @p_to
+  GROUP BY vkorg, kunnr, waerk
+  ORDER BY vkorg, netwr DESCENDING, kunnr
+  INTO TABLE @DATA(lt_sum).</code></pre>
+  <div class="warn">AMDP 的代價：<b>只能在 HANA 執行</b>、<b>不會自動處理 client</b>、<b>會繞過表緩衝</b>、只能用 ADT 編輯、SQLScript 除錯比 ABAP 難、ST05 只看得到一整段呼叫。AMDP 方法也<b>沒有隱含增強點</b>（implicit enhancement）。這些都是日後維護的成本。</div>
+  <div class="note">出處：<a href="https://help.sap.com/doc/abapdocu_753_index_htm/7.53/en-US/abenamdp.htm">ABAP Keyword Documentation 7.53 – AMDP</a>（程式設計準則、繞過緩衝、只能用 ADT 編輯）；<a href="https://help.sap.com/doc/abapdocu_753_index_htm/7.53/en-US/abennews-740_sp05-amdp.htm">7.40 SP05</a>、<a href="https://help.sap.com/doc/abapdocu_753_index_htm/7.53/en-US/abennews-750-amdp.htm">7.50</a>、<a href="https://help.sap.com/doc/abapdocu_753_index_htm/7.53/en-US/abennews-752-amdp.htm">7.52</a>、<a href="https://help.sap.com/doc/abapdocu_753_index_htm/7.53/en-US/abennews-753-amdp.htm">7.53</a> 各版本的 AMDP 新功能；<a href="https://help.sap.com/doc/abapdocu_754_index_htm/7.54/en-US/abennews-754-abap_sql.htm">ABAP SQL in Release 7.54</a>（視窗運算式）；<a href="https://github.com/SAP-samples/abap-cheat-sheets/blob/main/12_AMDP.md">SAP-samples ABAP cheat sheet: AMDP</a>。</div>
+
+  <h3 id="ch10-3-02">2. AMDP 類別與方法宣告的限制</h3>
+  <p>AMDP 類別就是一般的<b>全域類別</b>，只是多實作一個標記介面 <span class="kw">IF_AMDP_MARKER_HDB</span>（HDB＝SAP HANA，目前唯一支援的資料庫）。同一個類別可以同時有 AMDP 方法和一般方法。宣告區看不出哪個方法是 AMDP，要到實作區的 <span class="kw">METHOD … BY DATABASE PROCEDURE|FUNCTION</span> 才決定。</p>
+  <p><b>AMDP procedure</b> 的參數限制（7.53 文件）：</p>
+  <ul>
+    <li>參數一律 <span class="kw">VALUE( )</span> 傳值，<b>不能</b>傳參考。</li>
+    <li>型別不能是泛型（generic）；只能是<b>基本型別</b>，或<b>列型別為結構的表格型別</b>，且結構的元件也都要是基本型別（不能巢狀）。</li>
+    <li>不能用列舉型別，也不能參照已過時的 DF16_SCL／DF34_SCL。</li>
+    <li><b>不能有 RETURNING</b>（有 RETURNING 的是 AMDP function）。</li>
+    <li>只有 IMPORTING 能設成選用：基本型別要給 <span class="kw">DEFAULT</span>（只能是字面值或常數）；表格參數用 <span class="kw">OPTIONAL</span>（7.53 起）。<span class="kw">string</span>、<span class="kw">xstring</span>、<span class="kw">decfloat16/34</span> 不能選用。</li>
+    <li>參數名不能以 <span class="kw">%_</span> 開頭，不能叫 <span class="kw">endmethod</span>；<span class="kw">connection</span> 保留給資料庫連線名稱（型別 DBCON_NAME）；<b><span class="kw">client</span> 保留給未來擴充，不要拿來當 client 參數名稱</b>。</li>
+    <li><span class="kw">RAISING</span> 只能宣告 <span class="kw">CX_AMDP_…</span> 系列例外；不能用非類別式的 <span class="kw">EXCEPTIONS</span>。</li>
+    <li>建構子（constructor、class_constructor）不能是 AMDP 方法。</li>
+  </ul>
+  <pre><code class="abap">CLASS zcl_sd_amdp_sales DEFINITION
+  PUBLIC FINAL CREATE PUBLIC.
+
+  PUBLIC SECTION.
+    INTERFACES if_amdp_marker_hdb.          "標記介面：沒有它就不能寫 BY DATABASE …
+
+    "表格參數：列型別是「只有基本型別元件」的結構
+    TYPES: BEGIN OF ty_rank,
+             vkorg   TYPE vkorg,
+             kunnr   TYPE kunnr,
+             waerk   TYPE waerk,
+             netwr   TYPE netwr_ak,
+             rank_no TYPE i,
+           END OF ty_rank,
+           tt_rank TYPE STANDARD TABLE OF ty_rank WITH EMPTY KEY.
+
+    "AMDP procedure：全部 VALUE( )、沒有 RETURNING
+    METHODS get_customer_rank
+      IMPORTING VALUE(iv_mandt)     TYPE mandt        "不要命名為 client（保留字）
+                VALUE(iv_vkorg)     TYPE vkorg
+                VALUE(iv_date_from) TYPE erdat
+                VALUE(iv_date_to)   TYPE erdat
+                VALUE(iv_top)       TYPE i DEFAULT 10
+      EXPORTING VALUE(et_rank)      TYPE tt_rank
+      RAISING   cx_amdp_error.
+
+  PRIVATE SECTION.
+ENDCLASS.</code></pre>
+  <div class="tip">SAP 文件建議：不打算讓其他類別的 AMDP 呼叫的 AMDP procedure，宣告成 <b>PRIVATE</b>，再由一個一般的 PUBLIC 方法包起來呼叫。這樣在非 HANA 的系統上，可以在包裝方法裡改走 ABAP SQL 的替代實作（第 14 節）。</div>
+  <div class="note">出處：<a href="https://help.sap.com/doc/abapdocu_753_index_htm/7.53/en-US/abenamdp_procedure_methods.htm">AMDP - Procedure Implementations（7.53）</a>、<a href="https://help.sap.com/doc/abapdocu_753_index_htm/7.53/en-US/abenamdp_methods.htm">AMDP - Methods</a>、<a href="https://help.sap.com/doc/abapdocu_753_index_htm/7.53/en-US/abenamdp_calls.htm">AMDP - Use</a>。</div>
+
+  <h3 id="ch10-3-03">3. METHOD … BY DATABASE PROCEDURE：FOR、LANGUAGE、OPTIONS、USING</h3>
+  <p>實作區的完整語法（7.53）：</p>
+  <pre><code class="abap">METHOD meth BY DATABASE PROCEDURE|FUNCTION
+            FOR db
+            LANGUAGE db_lang
+            [OPTIONS db_options]
+            [USING db_entities]
+            [USING SCHEMA schema1 OBJECTS db_entities] ... .
+  ...   "這裡開始是 SQLScript，不是 ABAP
+ENDMETHOD.</code></pre>
+  <table>
+    <thead><tr><th>附加</th><th>可填內容</th><th>說明</th></tr></thead>
+    <tbody>
+      <tr><td><span class="kw">FOR</span></td><td><span class="kw">HDB</span></td><td>目前唯一值；類別必須實作 IF_AMDP_MARKER_HDB。標準資料庫不是 HANA 時呼叫會產生執行期錯誤。</td></tr>
+      <tr><td><span class="kw">LANGUAGE</span></td><td><span class="kw">SQLSCRIPT</span>（<span class="kw">LLANG</span> 限 SAP 內部）</td><td>語法檢查只有在 HANA 系統上才會真的檢查 SQLScript。</td></tr>
+      <tr><td><span class="kw">OPTIONS</span></td><td><span class="kw">READ-ONLY</span>、<span class="kw">DETERMINISTIC</span>（只給 scalar function）、<span class="kw">SUPPRESS SYNTAX ERRORS</span>（SAP 內部）</td><td><b>AMDP function 至少要在實作端（或宣告端 AMDP OPTIONS）指定一次 READ-ONLY</b>；READ-ONLY 的方法只能呼叫同樣 READ-ONLY 的 AMDP。</td></tr>
+      <tr><td><span class="kw">USING</span></td><td>DDIC 透明表、DDIC／CDS 資料庫 view、其他 AMDP（<span class="kw">class=&gt;meth</span>）</td><td><b>程式中用到的 ABAP 管理物件都必須列在這裡，列了就必須用到</b>；同一類別裡的其他 AMDP 方法也要列。</td></tr>
+      <tr><td><span class="kw">USING SCHEMA … OBJECTS</span></td><td>邏輯資料庫 schema（<span class="tcode">DB_SCHEMA_MAP</span>）</td><td>7.53；搭配巨集 <span class="kw">"$ABAP.schema( )"</span> 存取其他 schema 的物件。</td></tr>
+    </tbody>
+  </table>
+  <pre><code class="abap">CLASS zcl_sd_amdp_sales IMPLEMENTATION.
+
+  METHOD get_customer_rank BY DATABASE PROCEDURE
+                           FOR HDB
+                           LANGUAGE SQLSCRIPT
+                           OPTIONS READ-ONLY
+                           USING vbak.
+    -- 以下是 SQLScript（完整內容見第 7 節）
+    et_rank = SELECT vkorg, kunnr, waerk,
+                     SUM( netwr ) AS netwr,
+                     0 AS rank_no
+                FROM vbak
+               WHERE mandt = :iv_mandt
+                 AND vkorg = :iv_vkorg
+               GROUP BY vkorg, kunnr, waerk;
+  ENDMETHOD.
+
+ENDCLASS.</code></pre>
+  <p>其他實作限制：方法體不能是空的；不能下 DDL（CREATE／ALTER／DROP）；不能下 TRUNCATE、LOCK TABLE；<b>不能 COMMIT／ROLLBACK</b>（LUW 一律由 ABAP 程式控制）；不能寫有表緩衝的表（SQLScript 的寫入不會觸發緩衝同步）；存取 DDIC 表時，AMDP 會依字典的欄位順序對應。</p>
+  <div class="warn">AMDP 裡要寫 SQLScript 的註解（<span class="kw">--</span> 或 <span class="kw">/* */</span>）。SAP 強烈建議方法體只用 7-bit ASCII，也強烈不建議在 AMDP 裡用動態 SQL（EXEC）：資料庫物件是否存在無法靜態檢查，也有 SQL injection 風險。上面範例的中文註解只是為了講解，<b>正式程式請改成英文註解</b>。</div>
+  <div class="note">出處：<a href="https://help.sap.com/doc/abapdocu_753_index_htm/7.53/en-US/abapmethod_by_db_proc.htm">METHOD - BY DATABASE PROCEDURE, FUNCTION（7.53）</a>、<a href="https://help.sap.com/doc/abapdocu_753_index_htm/7.53/en-US/abenamdp_procedure_methods.htm">AMDP - Procedure Implementations</a>。</div>
+
+  <h3 id="ch10-3-04">4. SQLScript 基礎：table variable、冒號、IF、FOR</h3>
+  <p>SQLScript 是 HANA 的程序式 SQL。在 AMDP 裡最常用的是下面幾種寫法：</p>
+  <ul>
+    <li><b>Table variable</b>：<span class="kw">lt_x = SELECT … ;</span> 直接把查詢結果指派給變數，<b>不需要事先宣告</b>，型別由查詢推導。它不是實際存到 DB 的暫存表，HANA 最佳化器可以把多個步驟合併（inline）成一個執行計畫。</li>
+    <li><b>冒號</b>：<b>讀取</b>變數或參數時要加冒號（<span class="kw">:iv_vkorg</span>、<span class="kw">FROM :lt_x</span>）；<b>寫入</b>（等號左邊）不加。</li>
+    <li><b>純量變數</b>：<span class="kw">DECLARE lv_cnt INTEGER;</span>，宣告要放在區塊開頭；可用 <span class="kw">SELECT … INTO lv_cnt</span> 取值。7.52 起可用 AMDP 巨集 <span class="kw">"$ABAP.type( mandt )"</span> 直接參照 ABAP 型別。</li>
+    <li><b>控制結構</b>：<span class="kw">IF … THEN … ELSEIF … ELSE … END IF;</span>、<span class="kw">FOR i IN 1 .. n DO … END FOR;</span>、<span class="kw">WHILE … DO … END WHILE;</span>。</li>
+    <li><b>CE_ 函數</b>（Calculation Engine Plan Operators，例如 CE_COLUMN_TABLE、CE_JOIN）：SAP HANA SQLScript Reference 明寫 <b>SAP 建議用 SQL 而不要用 CE 運算子</b>，把兩者混用還可能明顯拖慢效能。看到舊教材的 CE_ 寫法，請改成一般 SQL。</li>
+  </ul>
+  <pre><code class="sql">-- 在 AMDP 方法體內（SQLScript）
+DECLARE lv_top INTEGER;
+DECLARE lv_cnt INTEGER;
+
+-- 1) 參數檢查：IF／ELSE
+IF :iv_top &lt;= 0 THEN
+  lv_top = 10;
+ELSE
+  lv_top = :iv_top;
+END IF;
+
+-- 2) 第一步就過濾 client、銷售組織、日期：中間結果越小越好
+lt_orders = SELECT vbeln, kunnr, waerk, netwr
+              FROM vbak
+             WHERE mandt = :iv_mandt
+               AND vkorg = :iv_vkorg
+               AND erdat BETWEEN :iv_date_from AND :iv_date_to;
+
+-- 3) 從 table variable 再查詢：FROM 後面要加冒號
+lt_sum = SELECT kunnr, waerk, SUM( netwr ) AS netwr
+           FROM :lt_orders
+          GROUP BY kunnr, waerk;
+
+-- 4) 純量查詢
+SELECT COUNT(*) INTO lv_cnt FROM :lt_sum;</code></pre>
+  <p>SQLScript 也能逐列處理：<span class="kw">RECORD_COUNT( :lt )</span> 取筆數，<span class="kw">:lt.col[:i]</span> 讀第 i 列的欄位。但這只是「能做」，不代表「該做」：</p>
+  <pre><code class="sql">-- ✗ 逐列迴圈：HANA 無法平行化，資料量一大就很慢
+-- （DECLARE 必須放在區塊開頭，這裡為了對照才寫在一起）
+DECLARE i INTEGER;
+DECLARE lv_total DECIMAL(23,2) DEFAULT 0;
+FOR i IN 1 .. RECORD_COUNT( :lt_sum ) DO
+  lv_total = :lv_total + :lt_sum.netwr[:i];
+END FOR;
+
+-- ✓ 集合式寫法：交給 SQL 引擎平行計算
+SELECT SUM( netwr ) INTO lv_total FROM :lt_sum;</code></pre>
+  <div class="warn">SQLScript 的語法會隨 HANA 版本增加（例如 <span class="kw">RECORD_COUNT</span>、以索引讀寫 table variable）。本章以 SAP HANA 2.0 SPS02 的 SQLScript Reference 為準；你的系統若是更舊的 HANA，請先在系統上確認。AMDP 的語法檢查是依<b>目前安裝的 HANA 版本</b>進行。</div>
+  <div class="note">出處：<a href="https://help.sap.com/doc/6254b3bb439c4f409a979dc407b49c9b/2.0.02/en-us/sap_hana_sql_script_reference_en.pdf">SAP HANA SQLScript Reference（2.0 SPS02，PDF）</a>：第 9.4.3 節 For Loop、RECORD_COUNT、第 10 章 Calculation Engine Plan Operators（「SAP recommends that you use SQL rather than Calculation Engine Plan Operators」）、第 17 章 Best Practices（避免 cursor、避免動態 SQL）；<a href="https://help.sap.com/doc/abapdocu_753_index_htm/7.53/en-US/abennews-752-amdp.htm">AMDP in Release 7.52（$ABAP.type 巨集）</a>。</div>
+
+  <h3 id="ch10-3-05">5. 視窗函數、APPLY_FILTER 與 SESSION_CONTEXT</h3>
+  <p><b>視窗函數</b>是 AMDP 最常見的用途：在 1809 的 ABAP SQL 還沒有 <span class="kw">OVER( )</span>（7.54 才有），要做「每組排名、每組取前 N 筆、累計」就要用 SQLScript。</p>
+  <pre><code class="sql">-- 每個客戶的訂單依建立日由新到舊編號
+lt_numbered = SELECT kunnr, vbeln, erdat, netwr, waerk,
+                     ROW_NUMBER() OVER ( PARTITION BY kunnr
+                                         ORDER BY erdat DESC, vbeln DESC ) AS rn
+                FROM :lt_orders;
+
+-- 只留每個客戶最新 3 張
+lt_last3 = SELECT kunnr, vbeln, erdat, netwr, waerk, rn
+             FROM :lt_numbered
+            WHERE rn &lt;= 3;</code></pre>
+  <div class="warn"><b>HANA 沒有預設排序：<span class="kw">ROW_NUMBER( )</span> 一定要有明確、而且唯一的 <span class="kw">ORDER BY</span>。</b>只寫 <span class="kw">ORDER BY erdat DESC</span> 時，同一天建立的兩張訂單誰排第 1、誰排第 2 是不確定的，每次執行都可能不同；所以上例加了 <span class="kw">vbeln DESC</span> 當次要排序（tie-breaker）。Casper 的實際案例：成本評價資料同時存在 item category「H」與 cost component「E」兩種角度，兩者的成本構成欄位數量不同。程式取第一筆卻沒有排序，HANA 一下回 H、一下回 E，同一個物料每次算出的成本都不一樣。最後的做法是<b>條件固定抓 H，並加上明確排序</b>。在 SQLScript 裡，這代表 PARTITION／ORDER BY 必須包含能唯一決定順序的欄位；如果「角度」本身就是業務條件，應該先在 WHERE 固定，而不是交給排序決定。另見 <a href="#ch05-21-24">5-21 章第 24 節</a>。</div>
+  <p><b>APPLY_FILTER</b> 把一段 WHERE 條件字串（不含 WHERE 關鍵字）套用到資料表或 table variable 上。它可以指派給 table variable，不會阻擋 SQL inline 最佳化；但 SQLScript Reference 也提醒，<b>動態 SQL 的其他缺點它都有</b>。篩選字串中不能有子查詢，也不能用完整限定的欄位名稱。</p>
+  <pre><code class="sql">-- iv_where 例如：( VKORG = '1000' OR VKORG = '2000' )
+-- 先用固定條件（client 一定要自己帶）縮小範圍，再套用動態條件
+lt_client   = SELECT vbeln, kunnr, vkorg, auart, netwr, waerk
+                FROM vbak
+               WHERE mandt = :iv_mandt;
+lt_filtered = APPLY_FILTER( :lt_client, :iv_where );   -- 對 table variable 套用</code></pre>
+  <p><b>SESSION_CONTEXT</b> 可以讀 HANA 的 session 變數。從 ABAP 呼叫時，ABAP 會設定兩個 ABAP 專用的變數：<span class="kw">SESSION_CONTEXT('CLIENT')</span> 永遠是 <span class="kw">sy-mandt</span>；<span class="kw">SESSION_CONTEXT('CDS_CLIENT')</span> 預設相同，但可能被 ABAP SQL 的 <span class="kw">USING CLIENT</span> 或 AMDP 的 <span class="kw">CDS SESSION CLIENT</span> 改掉。</p>
+  <pre><code class="sql">-- 可以這樣寫，但 SAP 文件建議改用輸入參數傳 client（見第 6 節）
+lt_orders = SELECT vbeln, kunnr, netwr
+              FROM vbak
+             WHERE mandt = SESSION_CONTEXT('CLIENT');</code></pre>
+  <div class="note">出處：<a href="https://help.sap.com/doc/6254b3bb439c4f409a979dc407b49c9b/2.0.02/en-us/sap_hana_sql_script_reference_en.pdf">SAP HANA SQLScript Reference 2.0 SPS02</a> 第 9.8.3 節 APPLY_FILTER；<a href="https://help.sap.com/doc/abapdocu_753_index_htm/7.53/en-US/abenamdp_client_handling.htm">AMDP - Client Handling（7.53）</a>（CLIENT／CDS_CLIENT）；<a href="https://help.sap.com/doc/abapdocu_754_index_htm/7.54/en-US/abapselect_over.htm">ABAP SQL sql_win（7.54）</a>。</div>
+
+  <h3 id="ch10-3-06">6. Client 處理：AMDP 不會幫你加 MANDT</h3>
+  <p>ABAP SQL 會自動加上「目前 client」的條件，<b>AMDP 不會</b>。SAP 文件的原則是：AMDP 存取 client 相依的表或 view 時，<b>必須明確選擇 client</b>。所以參數介面通常要有一個 client 輸入參數，並用在 WHERE 條件裡；JOIN 的 ON 條件也要比對兩邊的 mandt。</p>
+  <div class="warn"><b>忘了 client 條件，就會把所有 client 的資料一起讀出來。</b>開發機、測試機常有 100／200／300 等多個 client；彙總金額會莫名變成兩三倍，或 ROW_NUMBER 排進別的 client 的訂單。這種錯誤在只有一個 client 的正式機上看不出來，換到多 client 的測試機才爆出來，更難追。</div>
+  <p>1809（7.52 起）另有宣告端的選項 <span class="kw">AMDP OPTIONS CDS SESSION CLIENT clnt|CURRENT</span>，用來設定 HANA session 變數 <span class="kw">CDS_CLIENT</span>（也就是 CDS 裡的 <span class="kw">$session.client</span>）：</p>
+  <ul>
+    <li><span class="kw">CDS SESSION CLIENT iv_mandt</span>：以輸入參數（型別要相容於 CLNT）的值設定；<span class="kw">CURRENT</span>：設成目前登入的 client（sy-mandt）。</li>
+    <li><b>什麼時候必須用</b>：AMDP 讀取的 CDS 資料庫 view，其 client 處理是 <span class="kw">@ClientHandling.algorithm: #SESSION_VARIABLE</span>（該 view 在 DB 上已含 <span class="kw">MANDT = SESSION_CONTEXT('CDS_CLIENT')</span>）。7.52 時是警告，<b>7.53 起不加就是語法錯誤</b>。若自己在 WHERE 裡選的 client 與 session 變數不同，結果會是空的。</li>
+    <li>session 變數只有在<b>從 ABAP 呼叫</b>該方法時才會設定；AMDP 之間互相呼叫時不會改變。</li>
+  </ul>
+  <pre><code class="abap">" 7.52+（1809 可用）：讀取 SESSION_VARIABLE 型 CDS view 的 AMDP
+METHODS get_orders_from_cds
+  AMDP OPTIONS READ-ONLY
+               CDS SESSION CLIENT iv_mandt
+  IMPORTING VALUE(iv_mandt)  TYPE mandt
+  EXPORTING VALUE(et_orders) TYPE tt_orders
+  RAISING   cx_amdp_error.
+
+" 實作端：對這種 CDS view 不要再自己寫 mandt 條件
+" METHOD get_orders_from_cds BY DATABASE PROCEDURE FOR HDB
+"        LANGUAGE SQLSCRIPT OPTIONS READ-ONLY USING zsd_order_sqlv.
+"   et_orders = SELECT ... FROM zsd_order_sqlv;
+" ENDMETHOD.</code></pre>
+  <div class="note">ABAP Cloud（以及較新的 on-premise 版本）改用宣告端的 <span class="kw">AMDP OPTIONS READ-ONLY CDS SESSION CLIENT DEPENDENT</span> 或 <span class="kw">CLIENT INDEPENDENT</span>，並要求 AMDP 必須「client-safe」：USING 只能列 client-safe 的物件，SQLScript 不能呼叫帶 client 參數的 HANA 內建函數，也建議移除方法簽章中的 client 參數。<b>這組寫法在 1809 不能用</b>，確切的版本門檻本章未能確認，請以系統為準。</div>
+  <div class="note">出處：<a href="https://help.sap.com/doc/abapdocu_753_index_htm/7.53/en-US/abenamdp_client_handling.htm">AMDP - Client Handling（7.53）</a>、<a href="https://help.sap.com/doc/abapdocu_753_index_htm/7.53/en-US/abapmethods_amdp_options.htm">[CLASS-]METHODS - AMDP OPTIONS（7.53）</a>、<a href="https://help.sap.com/doc/abapdocu_753_index_htm/7.53/en-US/abennews-753-amdp.htm">AMDP in Release 7.53（Option CDS SESSION CLIENT mandatory）</a>、<a href="https://github.com/SAP-samples/abap-cheat-sheets/blob/main/12_AMDP.md">SAP-samples cheat sheet：Making AMDP Methods Client-Safe</a>。</div>
+
+  <h3 id="ch10-3-07">7. AMDP procedure 範例：銷售組織內的客戶銷售排名</h3>
+  <p>需求：指定銷售組織與期間，彙總每個客戶的訂單淨值，並在同一幣別內排名，只回傳前 N 名。這個需求在 1809 可以用 ABAP SQL 彙總後再到 ABAP 端排序；這裡用 AMDP 來示範完整流程（過濾 → 彙總 → 視窗函數 → 取前 N），並說明從 ABAP 呼叫的寫法。</p>
+  <pre><code class="abap">CLASS zcl_sd_amdp_sales IMPLEMENTATION.
+
+  METHOD get_customer_rank BY DATABASE PROCEDURE
+                           FOR HDB
+                           LANGUAGE SQLSCRIPT
+                           OPTIONS READ-ONLY
+                           USING vbak.
+    DECLARE lv_top INTEGER;
+
+    IF :iv_top &lt;= 0 THEN
+      lv_top = 10;
+    ELSE
+      lv_top = :iv_top;
+    END IF;
+
+    -- Step 1: filter client / sales org / period first
+    lt_orders = SELECT kunnr, waerk, netwr
+                  FROM vbak
+                 WHERE mandt = :iv_mandt
+                   AND vkorg = :iv_vkorg
+                   AND erdat BETWEEN :iv_date_from AND :iv_date_to;
+
+    -- Step 2: aggregate per customer and currency
+    lt_sum = SELECT kunnr, waerk, SUM( netwr ) AS netwr
+               FROM :lt_orders
+              GROUP BY kunnr, waerk;
+
+    -- Step 3: rank within currency; unique ORDER BY (netwr, kunnr)
+    lt_ranked = SELECT kunnr, waerk, netwr,
+                       CAST( ROW_NUMBER() OVER ( PARTITION BY waerk
+                                                 ORDER BY netwr DESC, kunnr )
+                             AS INTEGER ) AS rank_no
+                  FROM :lt_sum;
+
+    -- Step 4: column order and names match ty_rank
+    et_rank = SELECT :iv_vkorg AS vkorg, kunnr, waerk, netwr, rank_no
+                FROM :lt_ranked
+               WHERE rank_no &lt;= :lv_top
+               ORDER BY waerk, rank_no;
+  ENDMETHOD.
+
+ENDCLASS.</code></pre>
+  <p>從 ABAP 呼叫 AMDP procedure，就跟呼叫一般方法一樣。第一次呼叫時，ABAP 執行環境才會在 HANA 上建立（或更新）對應的資料庫 procedure。</p>
+  <pre><code class="abap">PARAMETERS: p_vkorg TYPE vkorg OBLIGATORY,
+            p_from  TYPE erdat OBLIGATORY,
+            p_to    TYPE erdat OBLIGATORY,
+            p_top   TYPE i DEFAULT 10.
+
+START-OF-SELECTION.
+  "目前的資料庫支援 AMDP 嗎？（非 HANA 時直接呼叫會產生執行期錯誤）
+  IF NOT cl_abap_dbfeatures=&gt;use_features(
+           requested_features = VALUE #( ( cl_abap_dbfeatures=&gt;call_amdp_method ) ) ).
+    MESSAGE '目前資料庫不支援 AMDP' TYPE 'I'.
+    RETURN.
+  ENDIF.
+
+  TRY.
+      NEW zcl_sd_amdp_sales( )-&gt;get_customer_rank(
+        EXPORTING iv_mandt     = sy-mandt          "client 一定要自己傳
+                  iv_vkorg     = p_vkorg
+                  iv_date_from = p_from
+                  iv_date_to   = p_to
+                  iv_top       = p_top
+        IMPORTING et_rank      = DATA(lt_rank) ).
+    CATCH cx_amdp_error INTO DATA(lx_amdp).
+      MESSAGE lx_amdp-&gt;get_text( ) TYPE 'I' DISPLAY LIKE 'E'.
+      RETURN.
+  ENDTRY.
+
+  "ORDER BY 寫在 SQLScript 裡，但回到 ABAP 後若有依賴順序的邏輯，仍建議明確 SORT
+  SORT lt_rank BY waerk rank_no.
+  TRY.
+      cl_salv_table=&gt;factory( IMPORTING r_salv_table = DATA(lo_alv)
+                              CHANGING  t_table      = lt_rank ).
+      lo_alv-&gt;display( ).
+    CATCH cx_salv_msg INTO DATA(lx_salv).
+      MESSAGE lx_salv-&gt;get_text( ) TYPE 'I' DISPLAY LIKE 'E'.
+  ENDTRY.</code></pre>
+  <div class="warn">金額不能跨幣別相加：上例依 <span class="kw">waerk</span> 分組與分區，是為了避免把 TWD 與 USD 加在一起。要換算成同一幣別，先查 ABAP SQL／CDS 有沒有內建的換算函數（例如 <span class="kw">CURRENCY_CONVERSION</span>；各版本是否可用，本章未能確認，請以系統為準），不要為了換算特地寫 AMDP。SAP 的官方 AMDP 範例中，換算的例子是呼叫 HANA 的 SQLScript 換算函數，屬於「ABAP SQL 沒有的資料庫功能」這類情況。</div>
+  <div class="tip"><span class="kw">cl_abap_dbfeatures=&gt;use_features( )</span> 常用的常數：<span class="kw">CALL_AMDP_METHOD</span>（支援呼叫 AMDP procedure）、<span class="kw">AMDP_TABLE_FUNCTION</span>（ABAP SQL 可讀 CDS table function）；7.54 起另有 <span class="kw">WINDOWING</span>（ABAP SQL 視窗運算式）。傳入不存在的值會引發 <span class="kw">CX_ABAP_INVALID_PARAM_VALUE</span>。</div>
+  <div class="note">出處：<a href="https://help.sap.com/doc/abapdocu_753_index_htm/7.53/en-US/abenamdp_calls.htm">AMDP - Use（7.53）</a>、<a href="https://help.sap.com/doc/abapdocu_753_index_htm/7.53/en-US/abencl_abap_dbfeatures.htm">System Class for Database Features（CL_ABAP_DBFEATURES）</a>、<a href="https://help.sap.com/doc/abapdocu_753_index_htm/7.53/en-US/abenamdp_functions_abexa.htm">AMDP, AMDP Functions（官方範例程式，含 use_features 與 TRY／CATCH cx_amdp_error）</a>、<a href="https://help.sap.com/doc/abapdocu_754_index_htm/7.54/en-US/abapselect_over.htm">sql_win（WINDOWING 常數）</a>。</div>
+
+  <h3 id="ch10-3-08">8. 把 SELECT-OPTIONS 傳進 AMDP：CL_SHDB_SELTAB 與 APPLY_FILTER</h3>
+  <p>AMDP 的參數不能是 range 表，所以選擇畫面的 SELECT-OPTIONS 不能直接傳進去。常見做法分兩步：在 ABAP 端用 <span class="kw">CL_SHDB_SELTAB=&gt;COMBINE_SELTABS( )</span> 把 range 轉成 WHERE 字串（這個轉換會做 SQL injection 檢查），再在 SQLScript 裡用 <span class="kw">APPLY_FILTER</span> 套用。</p>
+  <pre><code class="abap">DATA: gv_vkorg TYPE vkorg,
+      gv_auart TYPE auart.
+SELECT-OPTIONS: s_vkorg FOR gv_vkorg,
+                s_auart FOR gv_auart.
+
+"ABAP 端：把多個 range 合成一個 WHERE 字串
+DATA(lv_where) = cl_shdb_seltab=&gt;combine_seltabs(
+  it_named_seltabs = VALUE #( ( name = 'VKORG' dref = REF #( s_vkorg[] ) )
+                              ( name = 'AUART' dref = REF #( s_auart[] ) ) ) ).
+
+NEW zcl_sd_amdp_sales( )-&gt;get_orders_by_filter(
+  EXPORTING iv_mandt  = sy-mandt
+            iv_where  = lv_where
+  IMPORTING et_orders = DATA(lt_orders) ).
+
+" AMDP 端（SQLScript）：
+" METHOD get_orders_by_filter BY DATABASE PROCEDURE FOR HDB
+"        LANGUAGE SQLSCRIPT OPTIONS READ-ONLY USING vbak.
+"   lt_client = SELECT * FROM vbak WHERE mandt = :iv_mandt;
+"   lt_hit    = APPLY_FILTER( :lt_client, :iv_where );
+"   et_orders = SELECT vbeln, kunnr, auart, netwr, waerk FROM :lt_hit;
+" ENDMETHOD.</code></pre>
+  <div class="tip"><b>條件用列舉比用區間安全。</b>讓使用者在 SELECT-OPTIONS 輸入 <span class="kw">1000～1999</span> 這種 BT 區間，比的是字典序，不是業務語意；遇到號碼不連續、ALPHA 前導零、編碼規則改過，就會漏抓或多抓。能列舉（多筆 EQ）就列舉；轉成 WHERE 字串後，也比較容易在除錯時看出實際條件。</div>
+  <div class="warn"><span class="kw">CL_SHDB_SELTAB</span> 的介面（參數名 <span class="kw">IT_NAMED_SELTABS</span>、元件 <span class="kw">NAME</span>／<span class="kw">DREF</span>）是依 SAP Community 文章整理的；本章未能在 ABAP Keyword Documentation 中找到它的正式說明，請在 SE24 確認你系統上的介面。上例中 <span class="kw">SELECT *</span> 只放在「先過濾 client 的中間結果」，最終輸出仍明列欄位。</div>
+  <div class="note">出處：<a href="https://community.sap.com/t5/application-development-blog-posts/handling-of-select-options-parameters-within-amdp/ba-p/13136388">SAP Community：Handling of SELECT-OPTIONS parameters within AMDP</a>；<a href="https://help.sap.com/doc/6254b3bb439c4f409a979dc407b49c9b/2.0.02/en-us/sap_hana_sql_script_reference_en.pdf">SAP HANA SQLScript Reference 2.0 SPS02 – APPLY_FILTER</a>。</div>
+
+  <h3 id="ch10-3-09">9. AMDP function 與 CDS table function</h3>
+  <p>AMDP function（7.50 起）用 <span class="kw">BY DATABASE FUNCTION</span> 實作，有兩種 table function：</p>
+  <table>
+    <thead><tr><th>種類</th><th>宣告</th><th>誰能呼叫</th></tr></thead>
+    <tbody>
+      <tr><td>給 AMDP 用的 table function</td><td>一般 <span class="kw">METHODS</span>／<span class="kw">CLASS-METHODS</span>，<b>必須有 RETURNING</b>（表格型別），可有基本型別及表格型別的輸入參數；不能有 EXPORTING／CHANGING；<b>不能宣告 RAISING</b></td><td>只能被其他 AMDP 呼叫，<b>ABAP 不能直接呼叫</b></td></tr>
+      <tr><td>實作 CDS table function</td><td><span class="kw">CLASS-METHODS meth FOR TABLE FUNCTION cds_entity.</span> 只能放在 PUBLIC SECTION、必須是靜態方法、不能寫在 interface；參數介面由 CDS 定義產生</td><td>ABAP SQL（當成資料來源）、其他 CDS view、其他 AMDP</td></tr>
+    </tbody>
+  </table>
+  <p>CDS table function 的 DDL（1809 可用）。client 相依的 table function：元素清單的<b>第一個元素必須是 CLNT 型別的 client 欄位</b>；client 輸入參數加上 <span class="kw">@Environment.systemField: #CLIENT</span>，ABAP SQL 讀取時會自動把目前的 client 傳進去。</p>
+  <pre><code class="abap">@EndUserText.label: 'Last 3 sales orders per customer'
+@ClientHandling.type: #CLIENT_DEPENDENT
+@AccessControl.authorizationCheck: #NOT_REQUIRED
+define table function ZSD_TF_LAST3_ORDERS
+  with parameters
+    @Environment.systemField: #CLIENT
+    p_clnt  : abap.clnt,
+    p_vkorg : vkorg,
+    p_top   : abap.int4
+  returns
+  {
+    mandt   : abap.clnt;
+    kunnr   : kunnr;
+    vbeln   : vbeln_va;
+    erdat   : erdat;
+    netwr   : netwr_ak;
+    waerk   : waerk;
+    rank_no : abap.int4;
+  }
+  implemented by method zcl_sd_tf_last3=&gt;get_last3;</code></pre>
+  <pre><code class="abap">CLASS zcl_sd_tf_last3 DEFINITION PUBLIC FINAL CREATE PUBLIC.
+  PUBLIC SECTION.
+    INTERFACES if_amdp_marker_hdb.
+    "參數與回傳值（名稱固定為 result）都由 CDS 定義產生，這裡不能自己寫
+    CLASS-METHODS get_last3 FOR TABLE FUNCTION zsd_tf_last3_orders.
+ENDCLASS.
+
+CLASS zcl_sd_tf_last3 IMPLEMENTATION.
+  METHOD get_last3 BY DATABASE FUNCTION
+                   FOR HDB
+                   LANGUAGE SQLSCRIPT
+                   OPTIONS READ-ONLY
+                   USING vbak.
+    lt_numbered = SELECT mandt, kunnr, vbeln, erdat, netwr, waerk,
+                         ROW_NUMBER() OVER ( PARTITION BY kunnr
+                                             ORDER BY erdat DESC, vbeln DESC ) AS rn
+                    FROM vbak
+                   WHERE mandt = :p_clnt          -- client filter first
+                     AND vkorg = :p_vkorg;
+
+    RETURN SELECT mandt, kunnr, vbeln, erdat, netwr, waerk,
+                  CAST( rn AS INTEGER ) AS rank_no
+             FROM :lt_numbered
+            WHERE rn &lt;= :p_top;
+  ENDMETHOD.
+ENDCLASS.</code></pre>
+  <pre><code class="abap">"在 ABAP SQL 中像一般 view 一樣讀；p_clnt 由 @Environment.systemField 自動帶入
+SELECT kunnr, vbeln, erdat, netwr, waerk, rank_no
+  FROM zsd_tf_last3_orders( p_vkorg = @p_vkorg, p_top = 3 )
+  ORDER BY kunnr, rank_no
+  INTO TABLE @DATA(lt_last3)
+  ##DB_FEATURE_MODE[AMDP_TABLE_FUNCTION].</code></pre>
+  <div class="warn">table function 在 SQLScript 裡的 ORDER BY <b>不保證</b>會保留到 ABAP SQL 的結果；需要順序時，<b>在最外層的 ABAP SQL 寫 ORDER BY</b>。另外，ABAP SQL 讀 client 相依的 table function 時，雖然只會留下目前 client 的列，但 SAP 文件強調<b>要在實作裡先依 client 過濾</b>：一是效能，二是確保讀到正確的資料。</div>
+  <div class="tip">pragma <span class="kw">##DB_FEATURE_MODE[AMDP_TABLE_FUNCTION]</span> 用來隱藏延伸語法檢查的「此資料庫功能不一定支援」警告，前提是你確定只會在 HANA 上執行（官方範例程式也這樣寫）。不支援時讀取會引發無法處理的 <span class="kw">CX_SY_SQL_UNSUPPORTED_FEATURE</span>。CDS table function 的其他寫法（參數、annotation、在其他 CDS 中使用）見 <a href="#ch10-1">10-1 章</a>。</div>
+  <div class="note">出處：<a href="https://help.sap.com/doc/abapdocu_753_index_htm/7.53/en-US/abenamdp_function_methods.htm">AMDP - Function Implementations（7.53）</a>、<a href="https://help.sap.com/doc/abapdocu_753_index_htm/7.53/en-US/abapclass-methods_for_tabfunc.htm">CLASS-METHODS - FOR TABLE FUNCTION</a>、<a href="https://help.sap.com/doc/abapdocu_753_index_htm/7.53/en-US/abencds_f1_define_table_function.htm">ABAP CDS - DEFINE TABLE FUNCTION</a>、<a href="https://help.sap.com/doc/abapdocu_753_index_htm/7.53/en-US/abencds_func_client_handling.htm">Client Handling in CDS Table Functions</a>、<a href="https://help.sap.com/doc/abapdocu_753_index_htm/7.53/en-US/abenamdp_functions_abexa.htm">AMDP Functions 官方範例</a>。</div>
+
+  <h3 id="ch10-3-10">10. AMDP scalar function（7.53）</h3>
+  <p>7.53 起支援 AMDP scalar function：回傳值與輸入參數都是基本型別，可以像一般 functional method 在 ABAP 中呼叫（包括放在 ABAP SQL 的主機運算式裡），也可以在其他 AMDP 中呼叫。<span class="kw">OPTIONS DETERMINISTIC</span> 會在同一個查詢內，把相同輸入的結果緩衝起來。scalar function 也不能宣告 RAISING。</p>
+  <pre><code class="abap">"宣告（PUBLIC SECTION）
+METHODS get_max_netwr
+  IMPORTING VALUE(iv_mandt)    TYPE mandt
+            VALUE(iv_kunnr)    TYPE kunnr
+  RETURNING VALUE(rv_netwr)    TYPE netwr_ak.
+
+"實作
+METHOD get_max_netwr BY DATABASE FUNCTION
+                     FOR HDB
+                     LANGUAGE SQLSCRIPT
+                     OPTIONS READ-ONLY DETERMINISTIC
+                     USING vbak.
+  SELECT MAX( netwr ) INTO rv_netwr
+    FROM vbak
+   WHERE mandt = :iv_mandt
+     AND kunnr = :iv_kunnr;
+ENDMETHOD.
+
+"ABAP 呼叫：像一般函數式方法
+DATA(lv_max) = NEW zcl_sd_amdp_sales( )-&gt;get_max_netwr( iv_mandt = sy-mandt
+                                                         iv_kunnr = lv_kunnr ).</code></pre>
+  <div class="note">CDS scalar function（<span class="kw">define scalar function</span>，由 <span class="kw">FOR SCALAR FUNCTION</span> 的 AMDP 實作）是更新版本才有的功能，1809 不能用；確切版本本章未能確認。出處：<a href="https://help.sap.com/doc/abapdocu_753_index_htm/7.53/en-US/abenamdp_function_methods.htm">AMDP - Function Implementations（AMDP Scalar Functions）</a>、<a href="https://help.sap.com/doc/abapdocu_753_index_htm/7.53/en-US/abennews-753-amdp.htm">AMDP in Release 7.53</a>、<a href="https://github.com/SAP-samples/abap-cheat-sheets/blob/main/12_AMDP.md">SAP-samples cheat sheet（CDS scalar function）</a>。</div>
+
+  <h3 id="ch10-3-11">11. AMDP BAdI 與 fallback class</h3>
+  <p>BAdI 方法本來就可以用 AMDP procedure 實作，並用 <span class="kw">GET BADI</span>／<span class="kw">CALL BADI</span> 呼叫。另外還有專門的 <b>AMDP BAdI</b>：在 BAdI Builder 中標記為 AMDP BAdI，具有下列特性（7.53 文件）：</p>
+  <ul>
+    <li><b>沒有 filter</b>。</li>
+    <li><b>必須指定 fallback 實作類別</b>：沒有啟用任何增強實作時就執行 fallback；而且 AMDP BAdI 的 procedure 必須先在 DB 上存在，其他 AMDP 才能在語法無誤的情況下呼叫它，所以 fallback 是強制的。</li>
+    <li>每個 BAdI 方法都必須是 AMDP procedure，而且都針對同一種資料庫。</li>
+    <li>主要用途：<b>讓 AMDP 能在 AMDP 內部，依 Switch Framework 呼叫到客戶的增強實作</b>。從 ABAP 呼叫不需要 AMDP BAdI；但要從 AMDP 呼叫，就只能透過 AMDP BAdI。呼叫端要在 USING 宣告。</li>
+    <li>AMDP BAdI 目前<b>不支援 AMDP function</b>。</li>
+  </ul>
+  <pre><code class="abap">" 實作類別（fallback 與客戶實作的結構相同）：必須含 IF_AMDP_MARKER_HDB
+CLASS zcl_sd_price_adj_impl DEFINITION PUBLIC FINAL CREATE PUBLIC.
+  PUBLIC SECTION.
+    INTERFACES if_amdp_marker_hdb.
+    INTERFACES zif_sd_price_adj.         "BAdI 介面：方法參數必須符合 AMDP procedure 的限制
+ENDCLASS.
+
+CLASS zcl_sd_price_adj_impl IMPLEMENTATION.
+  METHOD zif_sd_price_adj~adjust BY DATABASE PROCEDURE
+                                 FOR HDB
+                                 LANGUAGE SQLSCRIPT
+                                 OPTIONS READ-ONLY.
+    -- customer logic; here: pass input through unchanged
+    et_items = SELECT * FROM :it_items;
+  ENDMETHOD.
+ENDCLASS.
+
+" ABAP 端呼叫（和一般 BAdI 一樣）
+DATA lo_badi TYPE REF TO zbadi_sd_price_adj.
+GET BADI lo_badi.
+CALL BADI lo_badi-&gt;adjust
+  EXPORTING it_items = lt_items
+  IMPORTING et_items = lt_adjusted.</code></pre>
+  <p>標準中的例子：SAP Community 的文章指出，S/4HANA 的 MRP Live（<span class="tcode">MD01N</span>）把部分傳統 ABAP BAdI 換成了 AMDP BAdI，例如 <span class="kw">PPH_MRP_SOURCING_BADI</span>（方法 SOS_DET_ADJUST）與 <span class="kw">PPH_MRP_RUN_BADI</span>（方法 MDPS_ADJUST）。這表示在 MRP Live 中，原本 MD01 用的 ABAP BAdI 不一定會被呼叫。<b>這些名稱來自 SAP Community，本章未能在 SAP Help 或 SAP Note 原文中核對，請在 <span class="tcode">SE18</span> 確認</b>。costing 相關的 AMDP BAdI 本章查不到可靠出處，因此不列。</p>
+  <div class="tip"><b>先找標準，再想客製。</b>在 MRP Live、HANA 最佳化的標準流程裡找增強點時，要先確認該流程實際呼叫的是傳統 BAdI 還是 AMDP BAdI。實作了傳統 BAdI 卻「沒有作用」，常常就是因為流程已經改走 AMDP BAdI。順序仍然是：標準設定 → BAdI（含 AMDP BAdI）／Enhancement Spot → Enhancement Point → 修改標準。見 <a href="#ch03-4">3-4 章</a>。</div>
+  <div class="warn">上例 BAdI 介面、Enhancement Spot 名稱與 <span class="kw">SELECT *</span> 都是示意用（<span class="kw">SELECT * FROM :it_items</span> 是把輸入表原樣回傳）。建立 AMDP BAdI 的步驟需要在 ADT 的 Enhancement Spot 編輯器中勾選 AMDP BAdI 並指定 fallback class；確切的畫面名稱依 ADT 版本而定。<span class="src">（依官方文件整理）</span></div>
+  <div class="note">出處：<a href="https://help.sap.com/doc/abapdocu_753_index_htm/7.53/en-US/abenamdp_badis.htm">AMDP - BAdIs（7.53）</a>；MRP Live 的 AMDP BAdI 見 SAP Community：<a href="https://community.sap.com/t5/enterprise-resource-planning-blog-posts-by-sap/sap-s-4hana-2022-new-badi-to-influence-mrp-elements-in-mrp-live-and-classic/ba-p/13568425">SAP S/4HANA 2022: New BAdI to influence MRP elements in MRP Live and Classic MRP</a>、<a href="https://community.sap.com/t5/enterprise-resource-planning-blog-posts-by-members/sap-hana-mrp-live-badi-usage/ba-p/13324779">SAP HANA MRP Live BADI Usage</a>。</div>
+
+  <h3 id="ch10-3-12">12. 除錯：AMDP Debugger、TRACE、ST05／SQLM 的限制</h3>
+  <p><b>AMDP Debugger</b> 是 ADT 內建、<b>獨立於 ABAP Debugger</b> 的除錯器：ABAP Debugger 除錯的是應用伺服器上的 ABAP，AMDP Debugger 除錯的是在 HANA 上執行的資料庫 procedure。前提是 NetWeaver 7.50 SP00 以上、HANA SPS9 以上（SPS8 功能受限）、ADT 2.51 以上；1809 都符合。</p>
+  <ol>
+    <li><b>先啟用</b>：和 ABAP Debugger 不同，AMDP Debugger 必須先啟用才會停在中斷點。可以在 AMDP 程式碼左側的尺規按右鍵選 <i>Activate AMDP Debugger</i>，或直接在 SQLScript 行上設中斷點（會自動啟用）。需要的是一般的 ABAP 除錯權限，<b>不需要另外的 DB 使用者</b>。</li>
+    <li><b>設定中斷點</b>：在 SQLScript 可執行敘述那一行的尺規上雙擊，或用右鍵 <i>Toggle Breakpoint</i>。</li>
+    <li><b>執行</b>：從 ABAP 端執行程式；停下後可在 Variables 檢視看 table variable 的內容。</li>
+    <li><b>操作</b>：F8 Resume（跑到下一個 AMDP 中斷點）、F6 Step Over（執行下一個 SQLScript 敘述）；<b>沒有 F5 Step Into</b>，要進入被呼叫的 procedure，就在那邊先設中斷點。</li>
+    <li><b>設定</b>：<i>Window → Preferences → ABAP Development → Debug</i> 的專案設定中，<i>Compile in Debug Mode</i> 可選「只有含中斷點的 procedure」（預設，啟動快，但最佳化可能讓某些中斷點停不到）或「所有被呼叫的 procedure」（沒有副作用，但啟動慢）。</li>
+  </ol>
+  <p><b>SQLScript 的 TRACE</b>：<span class="kw">TRACE( :var )</span> 會把 table variable 的內容寫到一個本機暫存表，原樣回傳輸入；暫存表名稱可以從監控 view <span class="kw">SYS.SQLSCRIPT_TRACE</span> 查。SQLScript Reference 明確說<b>不要用在正式程式</b>（負擔很大，而且命名規則可能改變）。</p>
+  <pre><code class="sql">-- 開發時暫時加上，上線前一定要刪
+lt_orders = SELECT kunnr, waerk, netwr FROM vbak WHERE mandt = :iv_mandt;
+lt_orders = TRACE( :lt_orders );
+
+-- 事後在 HANA 的 SQL console（例如 DBACOCKPIT 或 HANA Studio）查暫存表名稱
+-- SELECT * FROM SYS.SQLSCRIPT_TRACE;</code></pre>
+  <div class="warn">AMDP 不能存取本機暫存資料庫物件，而 TRACE 會寫本機暫存表。<b>TRACE 在 AMDP（尤其是 OPTIONS READ-ONLY 的 AMDP）中能否使用，本章未能確認，請以系統為準</b>；AMDP 的除錯請優先用 AMDP Debugger。</div>
+  <p><b>ST05／SQLM 的限制</b>：ST05 的 SQL trace 對 AMDP 只記到「呼叫資料庫 procedure」這一筆與它的總時間，<b>看不到 procedure 內哪一段 SQL 慢</b>。SQLM（SQL Monitor）是以 ABAP 端的資料庫存取點彙總，也看不到 SQLScript 內部各敘述的細節。要分析內部，改到 HANA 端看執行計畫（SQLScript Reference 的 <span class="kw">EXPLAIN PLAN FOR CALL</span>、PlanViz），或用 AMDP Debugger 逐步確認中間結果的筆數。SAP Community 文章提到 ST05 另有 AMDP 相關工具，可以追到個別敘述，但本章<b>未能確認</b>它在 1809 的名稱與位置。</p>
+  <div class="note">出處：SAP Help（NW 7.5）<a href="https://help.sap.com/doc/saphelp_nw75/7.5.5/en-US/79/eae83dbf594660bd91cefdd55f7791/content.htm?no_cache=true">Debugging AMDPs</a>、<a href="https://help.sap.com/doc/saphelp_nw75/7.5.5/en-US/cf/c51c2c03704080b7635bfe1ce79374/content.htm?no_cache=true">Activating the AMDP Debugger</a>、<a href="https://help.sap.com/doc/saphelp_nw75/7.5.5/en-US/d2/191e2bcb10496ab654fd05bb1b5237/content.htm?no_cache=true">Stepping in the AMDP Debugger</a>、<a href="https://help.sap.com/doc/saphelp_nw75/7.5.5/en-US/aa/9a495b205f4e81a8690bf81d46af6f/content.htm?no_cache=true">AMDP Debugger Settings</a>；<a href="https://help.sap.com/doc/6254b3bb439c4f409a979dc407b49c9b/2.0.02/en-us/sap_hana_sql_script_reference_en.pdf">SQLScript Reference 2.0 SPS02 第 10.3.3 節 TRACE、第 16.5 節 EXPLAIN PLAN FOR Call</a>；<a href="https://blogs.sap.com/2019/02/13/amdp-statement-performance-trace/">SAP Community：AMDP Statement performance trace</a>；除錯概念另見 <a href="#ch06-1">6-1 章</a>。</div>
+
+  <h3 id="ch10-3-13">13. 錯誤處理：CX_AMDP_ERROR 例外家族與 RAISING</h3>
+  <p>呼叫 AMDP procedure 時可以處理的例外，類別名稱都以 <span class="kw">CX_AMDP</span> 開頭，全部屬於 <span class="kw">CX_DYNAMIC_CHECK</span>。<b>必須在 AMDP procedure 的宣告中用 RAISING 列出，呼叫端才接得到</b>；沒列就會變成執行期錯誤（dump）。</p>
+  <table>
+    <thead><tr><th>例外類別</th><th>上層</th><th>典型情境</th></tr></thead>
+    <tbody>
+      <tr><td><span class="kw">CX_AMDP_ERROR</span></td><td>CX_DYNAMIC_CHECK</td><td>全部 AMDP 例外的根，最常直接接這個</td></tr>
+      <tr><td><span class="kw">CX_AMDP_VERSION_MISMATCH</span></td><td>CX_AMDP_VERSION_ERROR</td><td>DB 上的 procedure 版本與 ABAP 端不一致</td></tr>
+      <tr><td><span class="kw">CX_AMDP_DBPROC_GENERATE_FAILED</span>、<span class="kw">CX_AMDP_DBPROC_CREATE_FAILED</span>、<span class="kw">CX_AMDP_NATIVE_DBCALL_FAILED</span>、<span class="kw">CX_AMDP_WRONG_DBSYS</span></td><td>CX_AMDP_CREATION_ERROR</td><td>第一次呼叫時在 HANA 上產生／建立 procedure 失敗，或資料庫不是 HANA</td></tr>
+      <tr><td><span class="kw">CX_AMDP_EXECUTION_FAILED</span>、<span class="kw">CX_AMDP_IMPORT_TABLE_ERROR</span>、<span class="kw">CX_AMDP_RESULT_TABLE_ERROR</span></td><td>CX_AMDP_EXECUTION_ERROR</td><td>執行時 SQL 錯誤（除以零、型別轉換失敗等）、輸入表／結果表傳遞錯誤</td></tr>
+      <tr><td><span class="kw">CX_AMDP_NO_CONNECTION</span>、<span class="kw">CX_AMDP_NO_CONNECTION_FOR_CALL</span>、<span class="kw">CX_AMDP_WRONG_CONNECTION</span></td><td>CX_AMDP_CONNECTION_ERROR</td><td>使用 <span class="kw">connection</span> 參數走次要連線時的連線問題</td></tr>
+    </tbody>
+  </table>
+  <pre><code class="abap">" 宣告端：列出要讓呼叫端處理的例外（procedure 才能宣告，function 不行）
+METHODS get_customer_rank
+  IMPORTING VALUE(iv_mandt) TYPE mandt
+            VALUE(iv_vkorg) TYPE vkorg
+  EXPORTING VALUE(et_rank)  TYPE tt_rank
+  RAISING   cx_amdp_execution_error
+            cx_amdp_creation_error.
+
+" 呼叫端：先接具體的，再接根類別
+TRY.
+    NEW zcl_sd_amdp_sales( )-&gt;get_customer_rank(
+      EXPORTING iv_mandt = sy-mandt
+                iv_vkorg = p_vkorg
+      IMPORTING et_rank  = DATA(lt_rank) ).
+  CATCH cx_amdp_execution_failed INTO DATA(lx_exec).
+    "SQLScript 執行失敗：訊息文字通常含 HANA 的錯誤碼，記錄到應用日誌（BAL）
+    MESSAGE lx_exec-&gt;get_text( ) TYPE 'I' DISPLAY LIKE 'E'.
+  CATCH cx_amdp_error INTO DATA(lx_amdp).
+    MESSAGE lx_amdp-&gt;get_text( ) TYPE 'I' DISPLAY LIKE 'E'.
+ENDTRY.</code></pre>
+  <div class="warn"><b>AMDP function（table／scalar）不能宣告任何例外。</b>用 ABAP SQL 讀 CDS table function 時，SQLScript 的錯誤會以 ABAP SQL 的例外或 dump 的形式出現（例如 <span class="kw">CX_SY_OPEN_SQL_DB</span>）。確切的例外類別本章未能在文件中確認，請實際觸發一次錯誤，從 <span class="tcode">ST22</span> 確認。若在呼叫端只寫 <span class="kw">CATCH cx_amdp_execution_failed</span>，但宣告只寫了 <span class="kw">RAISING cx_amdp_execution_error</span>，這仍然合法（前者是後者的子類別）。</div>
+  <div class="note">出處：<a href="https://help.sap.com/doc/abapdocu_753_index_htm/7.53/en-US/abenamdp_exceptions.htm">AMDP - Exception Classes（7.53，含完整繼承樹）</a>、<a href="https://help.sap.com/doc/abapdocu_753_index_htm/7.53/en-US/abenamdp_procedure_methods.htm">AMDP - Procedure Implementations（RAISING 限制）</a>、<a href="https://help.sap.com/doc/abapdocu_753_index_htm/7.53/en-US/abenamdp_function_methods.htm">AMDP - Function Implementations（function 不可宣告 RAISING）</a>。</div>
+
+  <h3 id="ch10-3-14">14. 效能陷阱</h3>
+  <p>AMDP 不是「寫了就快」。以下是最常見、會讓 AMDP 比 ABAP SQL 還慢的寫法：</p>
+  <table>
+    <thead><tr><th>陷阱</th><th>症狀</th><th>正確做法</th></tr></thead>
+    <tbody>
+      <tr><td>沒有在第一步就過濾 client 與日期</td><td>中間 table variable 有上千萬筆，記憶體與時間暴增</td><td>第一個 SELECT 就帶 <span class="kw">mandt</span>、組織、日期等條件，並只選需要的欄位</td></tr>
+      <tr><td>逐列迴圈（FOR／WHILE、cursor）</td><td>無法平行化，筆數一多就很慢</td><td>改成集合式 SQL；SQLScript Reference 的最佳實務就寫了要避免 cursor</td></tr>
+      <tr><td>隱含型別轉換</td><td>條件欄位被逐列轉型，過濾條件無法有效下推；或結果指派到輸出參數時型別不符而失敗</td><td>參數直接參照欄位的字典型別（<span class="kw">TYPE erdat</span>、<span class="kw">TYPE vkorg</span>），不要用 string 或 i 去比字元欄位；視窗函數、COUNT 的結果用 <span class="kw">CAST( … AS INTEGER )</span> 明確轉成輸出型別；區域變數用 <span class="kw">"$ABAP.type( )"</span></td></tr>
+      <tr><td>中間結果過大、重複計算</td><td>同一個子查詢被算好幾次</td><td>把共同子運算抽成一個 table variable 重複使用</td></tr>
+      <tr><td>混用 CE_ 函數與 SQL</td><td>最佳化器無法合併，效能明顯變差</td><td>全部用 SQL</td></tr>
+      <tr><td>依賴結果的順序</td><td>「取第一筆」的結果每次不同</td><td><span class="kw">ROW_NUMBER</span> 要有唯一的 ORDER BY；回到 ABAP 後若依賴順序，要明確 SORT</td></tr>
+      <tr><td>把 AMDP 放在 ABAP 迴圈裡逐筆呼叫</td><td>每次呼叫都有一次 DB 往返</td><td>一次傳入整批鍵值（表格參數），在 SQLScript 裡 JOIN</td></tr>
+    </tbody>
+  </table>
+  <pre><code class="sql">-- ✗ 先讀全部、最後才過濾：lt_all 是所有 client、所有年度的訂單
+lt_all  = SELECT * FROM vbak;
+lt_sum  = SELECT kunnr, SUM( netwr ) AS netwr FROM :lt_all GROUP BY kunnr;
+et_out  = SELECT kunnr, netwr FROM :lt_sum;          -- 還忘了 client
+
+-- ✓ 第一步就過濾 client 與日期，只選需要的欄位
+lt_ord  = SELECT kunnr, waerk, netwr
+            FROM vbak
+           WHERE mandt = :iv_mandt
+             AND erdat BETWEEN :iv_date_from AND :iv_date_to;
+et_out  = SELECT kunnr, waerk, SUM( netwr ) AS netwr
+            FROM :lt_ord
+           GROUP BY kunnr, waerk;</code></pre>
+  <div class="warn"><b>HANA 沒有預設排序。</b>SQLScript 裡的 table variable 沒有「列的順序」可言；<span class="kw">ROW_NUMBER( )</span>、<span class="kw">LIMIT</span>、「取第一筆」都要有明確而且唯一的 ORDER BY。Casper 的成本評價 H／E 案例（第 5 節）就是這個問題：兩種角度的資料並存、排序沒有唯一性，結果就會隨執行不同而改變。解法有兩層：<b>先用 WHERE 把業務上該選的那一種固定下來（固定抓 H），再用唯一的 ORDER BY 決定剩下的順序</b>。</div>
+  <div class="note">出處：<a href="https://help.sap.com/doc/6254b3bb439c4f409a979dc407b49c9b/2.0.02/en-us/sap_hana_sql_script_reference_en.pdf">SAP HANA SQLScript Reference 2.0 SPS02 第 17 章 Best Practices for Using SQLScript</a>（Reduce Complexity、Identify Common Sub-Expressions、Avoid Mixing CE Operators、Avoid Using Cursors、Avoid Using Dynamic SQL）；<a href="https://help.sap.com/doc/abapdocu_753_index_htm/7.53/en-US/abenamdp_calls.htm">AMDP - Use</a>（ABAP 型別與 DB 型別的對應需在程序內妥善轉型）。</div>
+
+  <h3 id="ch10-3-15">15. 傳輸與相依性：USING、DDIC 變更、只能在 HANA 上執行</h3>
+  <ul>
+    <li><b>AMDP 跟一般類別一起傳輸</b>。傳到目標系統後，並不是在匯入時建立 DB procedure，而是<b>第一次被呼叫時</b>才由 ABAP 執行環境在 HANA 上建立或更新。所以匯入成功，不代表在正式機一定能執行；正式機第一次呼叫可能比較慢，產生失敗會以 <span class="kw">CX_AMDP_CREATION_ERROR</span> 系列例外出現。</li>
+    <li><b>USING 子句就是相依性宣告</b>：where-used、套件檢查都靠它，也讓 AMDP 能依字典的欄位順序存取表。沒列在 USING 的 ABAP 管理物件不能存取（<span class="kw">/1BCAMDP/</span> 命名空間的暫存物件除外）。</li>
+    <li><b>DDIC 變更的影響</b>：USING 列出的表如果刪除或改名了 AMDP 用到的欄位，AMDP 會在語法檢查或第一次呼叫時失敗。改表之前，先用 where-used 找出所有列了這個表的 AMDP，逐一重新做語法檢查。表結構變更後，AMDP 是否會自動重新產生，本章未能確認，請以系統為準。</li>
+    <li><b>只能在 HANA 上執行</b>：標準資料庫不是 HANA 時，呼叫會產生執行期錯誤。要支援多種資料庫，就依 <span class="kw">cl_abap_dbfeatures</span> 分流到 ABAP SQL 的替代實作。</li>
+    <li><b>權限</b>：AS ABAP 連線 HANA 的資料庫使用者要有管理 procedure 的權限；權限不足時 AMDP 可能出現語法錯誤，可用 <span class="tcode">SICK</span> 檢查。</li>
+    <li><b>跨 schema</b>：若要讀其他 schema 的物件，用邏輯 schema（<span class="tcode">DB_SCHEMA_MAP</span>）＋ <span class="kw">"$ABAP.schema( )"</span>，每個系統各自設定對應，程式碼就不必改。</li>
+  </ul>
+  <pre><code class="abap">"包裝方法：HANA 走 AMDP，其他資料庫走 ABAP SQL（AMDP 本身設為 PRIVATE）
+"宣告示意：METHODS get_rank_portable IMPORTING iv_vkorg ... iv_top TYPE i
+"                                   RETURNING VALUE(rt_rank) TYPE tt_rank.
+METHOD get_rank_portable.
+  IF cl_abap_dbfeatures=&gt;use_features(
+       requested_features = VALUE #( ( cl_abap_dbfeatures=&gt;call_amdp_method ) ) ).
+    get_customer_rank_amdp( EXPORTING iv_mandt     = sy-mandt
+                                      iv_vkorg     = iv_vkorg
+                                      iv_date_from = iv_date_from
+                                      iv_date_to   = iv_date_to
+                                      iv_top       = iv_top
+                            IMPORTING et_rank      = rt_rank ).
+  ELSE.
+    SELECT kunnr, waerk, SUM( netwr ) AS netwr
+      FROM vbak
+      WHERE vkorg = @iv_vkorg
+        AND erdat BETWEEN @iv_date_from AND @iv_date_to
+      GROUP BY kunnr, waerk
+      ORDER BY waerk, netwr DESCENDING, kunnr
+      INTO TABLE @DATA(lt_sum).
+    LOOP AT lt_sum INTO DATA(ls_sum)
+         GROUP BY ls_sum-waerk INTO DATA(lg_waerk).
+      DATA(lv_no) = 0.
+      LOOP AT GROUP lg_waerk INTO DATA(ls_member).
+        lv_no = lv_no + 1.
+        IF lv_no &gt; iv_top.
+          EXIT.
+        ENDIF.
+        rt_rank = VALUE #( BASE rt_rank
+                           ( vkorg = iv_vkorg kunnr = ls_member-kunnr waerk = ls_member-waerk
+                             netwr = ls_member-netwr rank_no = lv_no ) ).
+      ENDLOOP.
+    ENDLOOP.
+  ENDIF.
+ENDMETHOD.</code></pre>
+  <div class="warn">AMDP 分支的例外處理這裡省略，請依第 13 節處理或在包裝方法宣告 RAISING。<span class="kw">LOOP AT … GROUP BY</span> 保證會依照內表原本的順序處理群組內的成員，所以前面的 <span class="kw">ORDER BY</span> 不能省。</div>
+  <div class="note">出處：<a href="https://help.sap.com/doc/abapdocu_753_index_htm/7.53/en-US/abenamdp_calls.htm">AMDP - Use（第一次呼叫時建立 procedure）</a>、<a href="https://help.sap.com/doc/abapdocu_753_index_htm/7.53/en-US/abapmethod_by_db_proc.htm">METHOD - BY DATABASE PROCEDURE（USING、USING SCHEMA、SICK）</a>、<a href="https://help.sap.com/doc/abapdocu_753_index_htm/7.53/en-US/abenamdp.htm">AMDP（CL_ABAP_DBFEATURES、SICK）</a>。</div>
+
+  <h3 id="ch10-3-16">16. 實作範例：每個客戶最近三張訂單──ABAP SQL、CDS、AMDP 三種做法</h3>
+  <p>需求：指定銷售組織，列出每個客戶最近建立的三張銷售訂單（VBAK）。「最近」的定義是 <span class="kw">erdat</span> 由新到舊；同一天的訂單再依 <span class="kw">vbeln</span> 由大到小，確保排序唯一。</p>
+  <h4>做法 A：ABAP SQL 視窗運算式（7.54 以上）</h4>
+  <pre><code class="abap">" 需 7.54（S/4HANA 1909）以上：ABAP SQL 的 OVER( ) 視窗運算式
+SELECT kunnr, vbeln, erdat, netwr, waerk,
+       ROW_NUMBER( ) OVER( PARTITION BY kunnr
+                           ORDER BY erdat DESCENDING, vbeln DESCENDING ) AS rn
+  FROM vbak
+  WHERE vkorg = @p_vkorg
+  ORDER BY kunnr, erdat DESCENDING, vbeln DESCENDING
+  INTO TABLE @DATA(lt_numbered).
+
+DELETE lt_numbered WHERE rn &gt; 3.    "只留每個客戶最新 3 張</code></pre>
+  <div class="warn">7.54 文件寫明：視窗運算式<b>只能出現在查詢的 SELECT 清單</b>，不能用在 WHERE、GROUP BY、HAVING。所以上例是讀回後在 ABAP 端刪掉 rn &gt; 3 的列，<b>多傳了資料</b>。能否把它放進 <span class="kw">WITH</span> 的 CTE、再在外層用 <span class="kw">WHERE rn &lt;= 3</span> 過濾，本章未能在 7.54 文件中確認，請以系統為準。<b>1809 不能用做法 A。</b></div>
+  <h4>做法 B：CDS</h4>
+  <p>本章查閱 7.53／7.54 的 CDS DDL 文件，沒有找到視窗函數（<span class="kw">OVER</span>）語法。所以「每組取前 N 筆」<b>不能只靠一般的 CDS view</b>，CDS 端的做法就是第 9 節的 <b>CDS table function</b>（DDL 在 CDS、實作在 AMDP）。它的好處是：外界看到的是一個 CDS entity，可以在 ABAP SQL、其他 CDS view 中使用，也能加 DCL；壞處是實作仍然是 SQLScript。更新版本的 CDS view entity 是否支援視窗函數，本章未能確認。</p>
+  <pre><code class="abap">" CDS 做法：定義見第 9 節 ZSD_TF_LAST3_ORDERS；ABAP 端只要這樣讀
+SELECT kunnr, vbeln, erdat, netwr, waerk, rank_no
+  FROM zsd_tf_last3_orders( p_vkorg = @p_vkorg, p_top = 3 )
+  ORDER BY kunnr, rank_no
+  INTO TABLE @DATA(lt_last3)
+  ##DB_FEATURE_MODE[AMDP_TABLE_FUNCTION].
+
+" 也可以當另一個 CDS view 的資料來源（示意，傳統 DDIC-based 寫法）：
+" @AbapCatalog.sqlViewName: 'ZVSDLAST3'
+" define view ZI_SD_Last3WithName
+"   with parameters p_vkorg : vkorg
+"   as select from ZSD_TF_LAST3_ORDERS( p_clnt  : $session.client,
+"                                       p_vkorg : $parameters.p_vkorg,
+"                                       p_top   : 3 ) as t
+"     inner join kna1 on kna1.kunnr = t.kunnr
+" { key t.kunnr, key t.vbeln, t.erdat, t.netwr, t.waerk, kna1.name1 }</code></pre>
+  <div class="warn">上面註解中「CDS view 以 table function 當資料來源、並把 <span class="kw">$session.client</span> 傳給 client 參數」的寫法是示意，<b>本章未能逐字核對</b>。在 1809 實作前，請參考 ADT 的語法檢查與 <a href="#ch10-1">10-1 章</a>。</div>
+  <h4>做法 C：AMDP procedure（1809 可用，可直接從 ABAP 呼叫）</h4>
+  <pre><code class="abap">"宣告
+TYPES: BEGIN OF ty_last3,
+         kunnr   TYPE kunnr,
+         vbeln   TYPE vbeln_va,
+         erdat   TYPE erdat,
+         netwr   TYPE netwr_ak,
+         waerk   TYPE waerk,
+         rank_no TYPE i,
+       END OF ty_last3,
+       tt_last3 TYPE STANDARD TABLE OF ty_last3 WITH EMPTY KEY.
+
+METHODS get_last3_orders
+  IMPORTING VALUE(iv_mandt) TYPE mandt
+            VALUE(iv_vkorg) TYPE vkorg
+  EXPORTING VALUE(et_last3) TYPE tt_last3
+  RAISING   cx_amdp_error.
+
+"實作
+METHOD get_last3_orders BY DATABASE PROCEDURE
+                        FOR HDB
+                        LANGUAGE SQLSCRIPT
+                        OPTIONS READ-ONLY
+                        USING vbak.
+  lt_numbered = SELECT kunnr, vbeln, erdat, netwr, waerk,
+                       ROW_NUMBER() OVER ( PARTITION BY kunnr
+                                           ORDER BY erdat DESC, vbeln DESC ) AS rn
+                  FROM vbak
+                 WHERE mandt = :iv_mandt
+                   AND vkorg = :iv_vkorg;
+
+  et_last3 = SELECT kunnr, vbeln, erdat, netwr, waerk,
+                    CAST( rn AS INTEGER ) AS rank_no
+               FROM :lt_numbered
+              WHERE rn &lt;= 3
+              ORDER BY kunnr, rn;
+ENDMETHOD.</code></pre>
+  <table>
+    <thead><tr><th>比較</th><th>A. ABAP SQL（7.54+）</th><th>B. CDS table function</th><th>C. AMDP procedure</th></tr></thead>
+    <tbody>
+      <tr><td>1809 可用</td><td>否</td><td>是</td><td>是</td></tr>
+      <tr><td>client 處理</td><td>自動</td><td>ABAP SQL 自動帶 client 參數；實作裡要自己過濾</td><td><b>全部自己處理</b></td></tr>
+      <tr><td>在 DB 端過濾前 3 筆</td><td>否（讀回再刪；CTE 寫法未確認）</td><td>是</td><td>是</td></tr>
+      <tr><td>重用性</td><td>程式內</td><td>高：ABAP SQL、其他 CDS、DCL</td><td>只能用方法呼叫</td></tr>
+      <tr><td>可攜性</td><td>高（有 WINDOWING 功能的資料庫）</td><td>只能 HANA</td><td>只能 HANA</td></tr>
+      <tr><td>除錯</td><td>ABAP Debugger、ST05</td><td>AMDP Debugger</td><td>AMDP Debugger</td></tr>
+      <tr><td>建議</td><td>升級到 7.54+ 後的首選</td><td>1809 的首選（要被多處重用時）</td><td>只給單一程式用、又需要多步驟運算時</td></tr>
+    </tbody>
+  </table>
+  <div class="note">出處：<a href="https://help.sap.com/doc/abapdocu_754_index_htm/7.54/en-US/abapselect_over.htm">sql_exp - sql_win（7.54）</a>、<a href="https://help.sap.com/doc/abapdocu_754_index_htm/7.54/en-US/abensql_win_func.htm">sql_exp - win_func（ROW_NUMBER、RANK、DENSE_RANK、LEAD／LAG）</a>、<a href="https://help.sap.com/doc/abapdocu_754_index_htm/7.54/en-US/abensql_expr_over_order_by_abexa.htm">Window Expressions with Sort（官方範例）</a>、<a href="https://help.sap.com/doc/abapdocu_753_index_htm/7.53/en-US/abencds_f1_define_table_function.htm">DEFINE TABLE FUNCTION（7.53）</a>。</div>
+
+  <h3 id="ch10-3-qa">練習與自我檢核</h3>
+  <ol>
+    <li>列出三種「不應該用 AMDP」的情況，並說明各自改用什麼做法。</li>
+    <li>AMDP procedure 的參數為什麼不能傳參考、也不能有 RETURNING？如果需要回傳值，應該改成哪一種 AMDP？</li>
+    <li>以下 SQLScript 有兩個錯誤，請指出來：<span class="kw">lt_x = SELECT kunnr, netwr FROM vbak WHERE vkorg = iv_vkorg; et_y = SELECT * FROM lt_x;</span>（提示：冒號；另外還少了一個條件）。</li>
+    <li>一支 AMDP 在只有一個 client 的正式機上結果正確，在有 100、200 兩個 client 的測試機上金額變成兩倍。最可能的原因是什麼？要怎麼修？</li>
+    <li>什麼情況下 1809 的 AMDP <b>必須</b>在宣告端加 <span class="kw">AMDP OPTIONS CDS SESSION CLIENT</span>？加了之後，實作裡還能自己寫 <span class="kw">WHERE mandt = …</span> 嗎？</li>
+    <li>把第 16 節做法 C 的 <span class="kw">ORDER BY erdat DESC, vbeln DESC</span> 改成只有 <span class="kw">ORDER BY erdat DESC</span>，會發生什麼事？請用「HANA 沒有預設排序」和 Casper 的成本評價 H／E 案例說明。</li>
+    <li>寫一個 CDS table function <span class="kw">ZSD_TF_TOP_MATERIAL</span>：參數為銷售組織，回傳每個客戶銷售淨值（VBAP-NETWR 加總）最高的前 5 個物料，並從 ABAP SQL 讀取。</li>
+    <li>AMDP BAdI 為什麼一定要有 fallback class？AMDP BAdI 能不能有 filter？能不能用 AMDP function 實作？</li>
+    <li>ST05 看到某個 AMDP 呼叫花了 40 秒，下一步要用什麼工具找出是哪一段 SQLScript 慢？</li>
+    <li>要從選擇畫面把 <span class="kw">S_VKORG</span> 傳進 AMDP，請寫出 ABAP 端與 SQLScript 端的關鍵程式碼，並說明為什麼建議使用者以列舉而不是區間輸入。</li>
+  </ol>
+  <div class="note">出處（總覽）：<a href="https://help.sap.com/doc/abapdocu_753_index_htm/7.53/en-US/abenamdp.htm">ABAP Keyword Documentation 7.53 – AMDP</a>、<a href="https://github.com/SAP-samples/abap-cheat-sheets/blob/main/12_AMDP.md">SAP-samples ABAP cheat sheet: AMDP</a>。延伸閱讀：<a href="#ch05-21">5-21 章 BC490 效能調校</a>、<a href="#ch10-1">10-1 章</a>、<a href="#ch10-2">10-2 章</a>。</div>
+</section>

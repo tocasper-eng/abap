@@ -1,0 +1,1536 @@
+<section class="chapter" id="ch10-5" data-title="RAP 進階">
+  <h2>第 10-5 章 RAP 進階：驗證、決定、動作、draft 與 unmanaged</h2>
+  <p class="lede">第 10-4 章把報價單 <span class="kw">ZI_Quote</span> 做成可以新增、修改、刪除的 managed RAP BO。真正上線的交易系統還需要這些功能：建立時自動帶狀態、存檔前檢查客戶、按一個按鈕就「接受報價」、依狀態鎖住畫面、依銷售組織控管權限、用號碼範圍配報價單號、允許使用者先存成草稿，以及包裝既有 BAPI。本章沿用同一個例子，把 behavior 的每一種零件放進交易生命週期裡說明。每一段語法都附上版本門檻和官方出處。</p>
+  <div class="meta">
+    <div><b>核心工具</b>ADT（Eclipse）<span class="tcode">SE80</span><span class="tcode">SNRO</span><span class="tcode">SU21</span><span class="tcode">SM12</span><span class="tcode">SE91</span></div>
+    <div><b>關鍵物件</b>ZI_Quote、ZI_QuoteItem、ZC_Quote、ZBP_I_Quote、CL_ABAP_BEHAVIOR_HANDLER、CL_ABAP_BEHAVIOR_SAVER、CL_ABAP_BEHAVIOR_SAVER_FAILED、IF_ABAP_BEHV、IF_ABAP_BEHV_MESSAGE、CL_NUMBERRANGE_RUNTIME、CL_ABAP_LOCK_OBJECT_FACTORY、CL_BOTD_TXBUFDBL_BO_TEST_ENV、CL_BOTD_MOCKEMLAPI_BO_TEST_ENV、I_Customer、BAPI_SALESORDER_CREATEFROMDAT2</div>
+  </div>
+
+  <h3 id="ch10-5-01">1. 本章功能 × 版本門檻，以及沿用的資料模型</h3>
+  <p><b>先講結論：本書的基準 S/4HANA 1809（ABAP 7.53）完全沒有 RAP。</b>ABAP 關鍵字文件的版本新功能列表中，7.53 沒有任何 behavior definition 語法，RAP 是 7.54（S/4HANA 1909）才出現。本章每個功能的門檻都依 SAP 官方的 ABAP 版本新功能整理（ABAP 版本與 S/4HANA 版本的對應：7.54＝1909、7.55＝2020、7.56＝2021、7.57＝2022、7.58＝2023）。</p>
+  <table>
+    <thead><tr><th>功能</th><th>最早版本</th><th>本章小節</th><th>備註</th></tr></thead>
+    <tbody>
+      <tr><td>unmanaged RAP BO、determination、validation、action</td><td>7.54（1909）</td><td>3～5、11</td><td>官方 Flight 參考情境的 1909 分支（ABAP-platform-2019）只有 unmanaged 與唯讀情境</td></tr>
+      <tr><td>managed RAP BO（語法 <span class="kw">managed</span>）</td><td>7.54（1909）</td><td>全章</td><td>版本新功能列在 7.54，但官方 managed 範例從 2020 分支才出現。<b>1909 地端能否順利做 managed 未能確認，請以系統為準；實務上建議以 2020 當起點</b></td></tr>
+      <tr><td><span class="kw">with draft</span>、<span class="kw">total etag</span>、<span class="kw">numbering : managed</span>、<span class="kw">precheck</span>、<span class="kw">lock master unmanaged</span>、<span class="kw">mandatory : create</span>／<span class="kw">readonly : update</span></td><td>7.55（2020）</td><td>7、9、10</td><td></td></tr>
+      <tr><td>managed 的 <span class="kw">with additional save</span>／<span class="kw">with unmanaged save</span></td><td>7.55（2020）</td><td>11</td><td></td></tr>
+      <tr><td>action／function 的輸出參數可以是其他實體或結構、<span class="kw">selective</span></td><td>7.55（2020）</td><td>5、6</td><td>function 本身是否 1909 就有，未能確認</td></tr>
+      <tr><td><span class="kw">strict</span> 模式、<span class="kw">authorization master ( global )</span>、<span class="kw">features : global</span>、<span class="kw">lock : none</span>、<span class="kw">authorization : update</span>、managed 的 <span class="kw">early numbering</span>、<span class="kw">and cleanup</span>、abstract BDEF</td><td>7.56（2021）</td><td>7～9</td><td>2020 只有 instance 權限</td></tr>
+      <tr><td><span class="kw">strict ( 2 )</span>、managed／draft 的 <span class="kw">late numbering</span>、managed 的 instance-bound factory action、BDEF extension、RAP business event、<span class="kw">with full data</span>、<span class="kw">field ( suppress )</span>、repeatable action／function</td><td>7.57（2022）</td><td>5、9、11、15</td><td></td></tr>
+      <tr><td>ABAP Unit 的 RAP test double（<span class="kw">CL_BOTD_*</span>）、<span class="kw">new_message_with_text</span>、<span class="kw">CL_ABAP_BEHAVIOR_SAVER_FAILED</span></td><td>未能確認</td><td>11～13</td><td>官方範例皆出自新版（ABAP Cloud／2022 以後），請以系統為準</td></tr>
+    </tbody>
+  </table>
+  <div class="warn"><b>版本門檻</b>：本章所有 BDEF 與 EML 語法都 <b>超過 1809</b>。完整範例是以 <b>S/4HANA 2022（7.57）</b> 為準，因為用到 <span class="kw">strict ( 2 )</span>、global 權限、factory action。2020 或 2021 的系統請依上表刪去不支援的行；語法檢查器會直接告訴你哪一行不支援。1809 的替代方案是 CDS＋BOPF 的 ABAP Programming Model for SAP Fiori，見 <a href="#ch10-4">第 10-4 章</a>。</div>
+  <p>本章沿用 <a href="#ch10-4">第 10-4 章</a>建好的報價單 BO：資料表、interface view、projection、service <span class="kw">ZUI_QUOTE_O4</span> 與 behavior pool <span class="kw">ZBP_I_Quote</span> 都照用，名稱完全一致。</p>
+  <table>
+    <thead><tr><th>實體（BDEF alias）</th><th>資料表</th><th>CDS 元素（資料表欄位）</th><th>association</th></tr></thead>
+    <tbody>
+      <tr><td><span class="kw">ZI_Quote</span>（Quote，root）<br>projection <span class="kw">ZC_Quote</span></td><td>ZQUOTE_H</td><td>QuoteUUID（quote_uuid，key）、QuoteID（quote_id，NUMC 10）、SoldToParty（sold_to_party）、SalesOrganization（sales_org）、QuoteDate（quote_date）、ValidTo（valid_to）、NetAmount（net_amount）、Currency（currency）、OverallStatus（overall_status）、CreatedBy、CreatedAt、LastChangedBy、LastChangedAt、LocalLastChangedAt；<b>本章新增</b> RejectReason（reject_reason）、SalesOrder（sales_order）</td><td><span class="kw">_Item</span>（composition）、<span class="kw">_Customer</span>（I_Customer）</td></tr>
+      <tr><td><span class="kw">ZI_QuoteItem</span>（Item）<br>projection <span class="kw">ZC_QuoteItem</span></td><td>ZQUOTE_I</td><td>ItemUUID（item_uuid，key）、ParentUUID（parent_uuid）、ItemNo（item_no）、Material（material）、Quantity（quantity）、QuantityUnit（quantity_unit）、NetPrice（net_price）、Currency（currency）、CreatedBy、LastChangedBy、LocalLastChangedAt</td><td><span class="kw">_Quote</span>（to parent）</td></tr>
+    </tbody>
+  </table>
+  <p>OverallStatus 的值沿用 10-4 章：<b>N</b>＝新建、<b>C</b>＝已結案，本章另外定義 <b>A</b>＝已接受、<b>X</b>＝已拒絕（10-4 章第 16 節的逾期處理也是寫 X）。handler class 的名稱也沿用 10-4 章：表頭是 <span class="kw">lhc_quote</span>，saver 是 <span class="kw">lsc_zi_quote</span>；明細新增 <span class="kw">lhc_item</span>。</p>
+  <p><b>在 10-4 章的模型上新增兩個欄位。</b>拒絕原因與轉出的銷售訂單號，要先加進資料表、interface view、projection 與 BDEF 的 mapping，後面各節才接得上：</p>
+  <pre><code class="abap">// 1. 資料表 zquote_h：在 overall_status 之後加兩個欄位（啟用後既有資料為空值）
+define table zquote_h {
+  ...
+  overall_status        : abap.char(1);
+  reject_reason         : abap.char(40);
+  sales_order           : vbeln_va;
+  created_by            : abp_creation_user;
+  ...
+}
+
+// 2. ZI_Quote：select list 加別名
+      overall_status        as OverallStatus,
+      reject_reason         as RejectReason,
+      sales_order           as SalesOrder,
+
+// 3. ZC_Quote：projection 加欄位
+      OverallStatus,
+      RejectReason,
+      SalesOrder,
+
+// 4. BDEF 的 mapping for zquote_h 加兩行
+    RejectReason       = reject_reason;
+    SalesOrder         = sales_order;</code></pre>
+  <p>和 10-4 章的 BDEF 相比，本章還做了以下改變：</p>
+  <ul>
+    <li>加上 <span class="kw">with draft</span> 與 <span class="kw">draft table</span>（第 10 節）。</li>
+    <li>權限改成 <span class="kw">( global, instance )</span>，這也是 10-4 章第 6 節建議的正式寫法（第 8 節）。</li>
+    <li><b>QuoteID 從「建立時由使用者輸入」（<span class="kw">mandatory : create, readonly : update</span>）改成 readonly</b>，存檔時用號碼範圍配號（第 9 節）。</li>
+    <li>加上 determination、validation、action、function、feature control。</li>
+  </ul>
+  <p>下面是本章做完之後的完整 behavior definition。後面各節會逐段拆開說明：</p>
+  <pre><code class="abap">managed implementation in class zbp_i_quote unique;
+strict ( 2 );
+with draft;
+
+define behavior for ZI_Quote alias Quote
+persistent table zquote_h
+draft table zquote_h_d
+lock master
+total etag LastChangedAt
+authorization master ( global, instance )
+etag master LocalLastChangedAt
+{
+  create;
+  update ( features : instance );
+  delete ( features : instance );
+  association _Item { create ( features : instance ); with draft; }
+
+  field ( numbering : managed, readonly ) QuoteUUID;
+  field ( readonly ) QuoteID, OverallStatus, RejectReason, NetAmount, SalesOrder,
+                     CreatedBy, CreatedAt, LastChangedBy, LastChangedAt, LocalLastChangedAt;
+  field ( mandatory ) SoldToParty, SalesOrganization, Currency;
+  field ( features : instance ) ValidTo;
+
+  action ( features : instance ) acceptQuote result [1] $self;
+  action ( features : instance ) rejectQuote parameter ZA_QuoteReject result [1] $self;
+  factory action copyQuote [1];
+  static action closeExpired;
+  function getItemCount result [1] ZA_QuoteItemCount;
+
+  determination setStatusOpen on modify { create; }
+  determination setQuoteID on save { create; }
+
+  validation validateCustomer on save { create; field SoldToParty; }
+
+  draft action Edit;
+  draft action Activate;
+  draft action Discard;
+  draft action Resume;
+  draft determine action Prepare
+  {
+    validation validateCustomer;
+    validation Item~validateQuantity;
+  }
+
+  mapping for zquote_h
+  {
+    QuoteUUID          = quote_uuid;
+    QuoteID            = quote_id;
+    SoldToParty        = sold_to_party;
+    SalesOrganization  = sales_org;
+    QuoteDate          = quote_date;
+    ValidTo            = valid_to;
+    NetAmount          = net_amount;
+    Currency           = currency;
+    OverallStatus      = overall_status;
+    RejectReason       = reject_reason;
+    SalesOrder         = sales_order;
+    CreatedBy          = created_by;
+    CreatedAt          = created_at;
+    LastChangedBy      = last_changed_by;
+    LastChangedAt      = last_changed_at;
+    LocalLastChangedAt = local_last_changed_at;
+  }
+}
+
+define behavior for ZI_QuoteItem alias Item
+persistent table zquote_i
+draft table zquote_i_d
+lock dependent by _Quote
+authorization dependent by _Quote
+etag master LocalLastChangedAt
+{
+  update;
+  delete;
+  association _Quote { with draft; }
+
+  field ( numbering : managed, readonly ) ItemUUID;
+  field ( readonly ) ParentUUID, CreatedBy, LastChangedBy, LocalLastChangedAt;
+  field ( mandatory ) Material, Quantity, QuantityUnit;
+
+  determination calcTotal on modify { create; field Quantity, NetPrice; }
+  validation validateQuantity on save { create; field Quantity; }
+
+  mapping for zquote_i
+  {
+    ItemUUID           = item_uuid;
+    ParentUUID         = parent_uuid;
+    ItemNo             = item_no;
+    Material           = material;
+    Quantity           = quantity;
+    QuantityUnit       = quantity_unit;
+    NetPrice           = net_price;
+    Currency           = currency;
+    CreatedBy          = created_by;
+    LastChangedBy      = last_changed_by;
+    LocalLastChangedAt = local_last_changed_at;
+  }
+}</code></pre>
+  <div class="note"><b>BDEF 的關鍵字大小寫不拘</b>，官方範例兩種寫法都有。<span class="kw">mapping for</span> 左邊是 CDS 元素名稱，右邊是資料表欄位名稱；如果兩邊名稱相同，可以寫 <span class="kw">mapping for zquote_h corresponding;</span>。<span class="kw">ZA_QuoteReject</span> 和 <span class="kw">ZA_QuoteItemCount</span> 是 abstract entity，見第 5、6 節。<br>出處：<a href="https://github.com/SAP-samples/abap-cheat-sheets/blob/main/33_ABAP_Release_News.md">SAP-samples：ABAP Release News（整理自 ABAP 關鍵字文件的版本新功能）</a>、<a href="https://github.com/SAP-samples/abap-cheat-sheets/blob/main/36_RAP_Behavior_Definition_Language.md">SAP-samples：RAP Behavior Definition Language</a>、<a href="https://github.com/SAP-samples/abap-platform-refscen-flight">SAP-samples：ABAP Flight Reference Scenario（各版本分支）</a>、<a href="https://help.sap.com/docs/abap-cloud/abap-keyword/rap-bdl-for-behavior-definitions">ABAP Keyword Documentation：RAP BDL</a></div>
+
+  <h3 id="ch10-5-02">2. Behavior 的完整拼圖：交易生命週期與執行時機</h3>
+  <p>RAP 的一筆交易分成兩個階段。第一個是 <b>interaction phase</b>：資料只寫進 transactional buffer，可以暫時不一致。第二個是 <b>save sequence</b>，又分成可以退回的 early save 和不能退回的 late save。每一種 behavior 零件都掛在固定的時間點上，先把這張表記住，後面各節就容易理解了：</p>
+  <table>
+    <thead><tr><th>階段</th><th>時間點</th><th>會執行的零件</th><th>實作方法（handler／saver）</th><th>能做什麼</th></tr></thead>
+    <tbody>
+      <tr><td rowspan="4">Interaction phase</td><td>UI 開畫面、決定按鈕與欄位狀態</td><td>feature control、authorization</td><td><span class="kw">FOR INSTANCE FEATURES</span>、<span class="kw">FOR GLOBAL AUTHORIZATION</span>、<span class="kw">FOR INSTANCE AUTHORIZATION</span></td><td>只回傳允許或不允許，不改資料</td></tr>
+      <tr><td>每一次 MODIFY 之前</td><td>框架檢查：權限、feature、precheck；update、delete、action 還會上鎖</td><td><span class="kw">FOR PRECHECK</span>、<span class="kw">FOR LOCK</span>（unmanaged 或 <span class="kw">lock master unmanaged</span>）</td><td>擋下不合法的請求，資料不會進 buffer</td></tr>
+      <tr><td>MODIFY 執行</td><td>CRUD（managed 由框架處理）、action、early numbering</td><td><span class="kw">FOR MODIFY … FOR ACTION</span>、<span class="kw">FOR NUMBERING</span></td><td>改 buffer</td></tr>
+      <tr><td>MODIFY 之後</td><td><span class="kw">determination … on modify</span></td><td><span class="kw">FOR DETERMINE ON MODIFY</span></td><td>立即反映在 UI（例如預設值、小計）</td></tr>
+      <tr><td rowspan="3">Early save<br>（可退回）</td><td>finalize</td><td><span class="kw">determination … on save</span></td><td><span class="kw">FOR DETERMINE ON SAVE</span>、saver 的 <span class="kw">finalize</span></td><td>最後的計算，例如配正式號碼</td></tr>
+      <tr><td>check_before_save</td><td><span class="kw">validation … on save</span></td><td><span class="kw">FOR VALIDATE ON SAVE</span>、saver 的 <span class="kw">check_before_save</span></td><td>填 failed 就整筆交易不存，回到 interaction phase</td></tr>
+      <tr><td>有錯時</td><td>—</td><td>saver 的 <span class="kw">cleanup_finalize</span></td><td>撤銷 finalize 做過的事</td></tr>
+      <tr><td rowspan="3">Late save<br>（不可退回）</td><td>adjust_numbers</td><td>late numbering</td><td>saver 的 <span class="kw">adjust_numbers</span></td><td>暫時鍵換成正式鍵</td></tr>
+      <tr><td>save</td><td>寫資料庫</td><td>managed 由框架寫入；unmanaged 用 <span class="kw">save</span>；additional／unmanaged save 用 <span class="kw">save_modified</span></td><td>唯一可以改資料庫、呼叫 update task 的地方</td></tr>
+      <tr><td>cleanup</td><td>清 buffer</td><td>saver 的 <span class="kw">cleanup</span></td><td>—</td></tr>
+    </tbody>
+  </table>
+  <p>draft 另有一條路徑：使用者按 <b>Save</b> 時執行的是 <span class="kw">Activate</span>。Activate 會先執行 <span class="kw">Prepare</span>（也就是對 draft 執行登記在 Prepare 裡的 on save determination 和 validation），通過之後才把 draft 複製成 active，接著進入上表的 save sequence。</p>
+  <p>從程式端（例如背景作業、測試類別）呼叫 BO 時，交易邊界由 <span class="kw">COMMIT ENTITIES</span> 決定。OData／Fiori 情境則由框架自動執行 COMMIT ENTITIES：</p>
+  <pre><code class="abap">" 消費端：一次 MODIFY（interaction phase）＋ COMMIT ENTITIES（save sequence）
+MODIFY ENTITIES OF ZI_Quote
+  ENTITY Quote
+    CREATE FIELDS ( SoldToParty SalesOrganization ValidTo Currency )
+      WITH VALUE #( ( %cid                = 'Q1'
+                      SoldToParty         = '0017100001'
+                      SalesOrganization   = '1710'
+                      ValidTo             = sy-datlo + 30
+                      Currency            = 'USD' ) )
+    CREATE BY \_Item FIELDS ( ItemNo Material Quantity QuantityUnit NetPrice Currency )
+      WITH VALUE #( ( %cid_ref = 'Q1'
+                      %target  = VALUE #( ( %cid = 'Q1_10' ItemNo = '000010' Material = 'TG11'
+                                            Quantity = 5 QuantityUnit = 'PC'
+                                            NetPrice = '120.00' Currency = 'USD' ) ) ) )
+  MAPPED   DATA(mapped)
+  FAILED   DATA(failed)
+  REPORTED DATA(reported).
+
+IF failed IS NOT INITIAL.
+  ROLLBACK ENTITIES.                    " 清掉 transactional buffer
+  RETURN.
+ENDIF.
+
+COMMIT ENTITIES
+  RESPONSE OF ZI_Quote
+    FAILED   DATA(commit_failed)
+    REPORTED DATA(commit_reported).
+
+IF sy-subrc &lt;&gt; 0.
+  " early save 的 validation 擋下來了：commit_reported 裡有訊息
+ENDIF.</code></pre>
+  <div class="warn"><b>behavior pool 裡不可以寫 COMMIT ENTITIES</b>，也不可以寫 COMMIT WORK、ROLLBACK WORK、CALL TRANSACTION、SUBMIT、MESSAGE（不帶 INTO）或 RAISE EXCEPTION 把例外拋出交易。這些語法在 strict 模式下會被語法檢查或執行期擋下。完整的允許／禁止表見第 11 節。</div>
+  <div class="note">上表把「權限、feature、precheck、鎖」統稱為框架在 MODIFY 前的檢查，這四者彼此的精確先後順序，本章未能以官方文件逐一確認。實作時不要讓邏輯依賴它們的順序。<br>出處：<a href="https://github.com/SAP-samples/abap-cheat-sheets/blob/main/08_EML_ABAP_for_RAP.md">SAP-samples：ABAP EML（Phases of a RAP Transaction、COMMIT ENTITIES）</a>、<a href="https://help.sap.com/docs/abap-cloud/abap-keyword/rap-interaction-phase">ABAP Keyword Documentation：RAP interaction phase</a>、<a href="https://help.sap.com/docs/abap-cloud/abap-keyword/rap-save-sequence">RAP save sequence</a></div>
+
+  <h3 id="ch10-5-03">3. Determination：建立時帶預設狀態、自動計算總金額</h3>
+  <p>Determination 會在觸發條件成立時，由框架自動呼叫，用來計算或補值。觸發條件可以是作業（<span class="kw">create</span>、<span class="kw">update</span>、<span class="kw">delete</span>），也可以是欄位（<span class="kw">field …</span>）。有兩種執行時機：</p>
+  <ul>
+    <li><span class="kw">on modify</span>：資料一寫進 buffer 就執行，結果馬上反映在 UI 上。適合預設值、小計。</li>
+    <li><span class="kw">on save</span>：在 save sequence 的 finalize 執行。適合只在存檔時才做一次的事，例如配正式號碼。<span class="kw">on save</span> 的 <span class="kw">update</span> 條件必須和 <span class="kw">create</span> 一起寫。</li>
+  </ul>
+  <pre><code class="abap">// ZI_Quote（表頭）
+determination setStatusOpen on modify { create; }
+determination setQuoteID    on save   { create; }
+
+// ZI_QuoteItem（明細）：數量或單價變動 → 重算表頭總金額
+determination calcTotal on modify { create; field Quantity, NetPrice; }</code></pre>
+  <p>實作寫在 behavior pool <span class="kw">ZBP_I_Quote</span> 的 local handler class 裡。實作裡讀寫 BO 一律用 EML 加 <span class="kw">IN LOCAL MODE</span>，這樣會略過 feature control、權限檢查與 precheck。例如 OverallStatus 是 readonly，只有 LOCAL MODE 才寫得進去：</p>
+  <pre><code class="abap">CLASS lhc_quote DEFINITION INHERITING FROM cl_abap_behavior_handler.
+  PRIVATE SECTION.
+    CONSTANTS:
+      BEGIN OF quote_status,
+        open     TYPE c LENGTH 1 VALUE 'N',   " 新建（沿用 10-4 章）
+        accepted TYPE c LENGTH 1 VALUE 'A',
+        rejected TYPE c LENGTH 1 VALUE 'X',
+        closed   TYPE c LENGTH 1 VALUE 'C',   " 已結案（沿用 10-4 章）
+      END OF quote_status.
+
+    METHODS setStatusOpen FOR DETERMINE ON MODIFY
+      IMPORTING keys FOR Quote~setStatusOpen.
+    METHODS setQuoteID FOR DETERMINE ON SAVE
+      IMPORTING keys FOR Quote~setQuoteID.
+    " 其他方法（validation、action、features、authorization）見後面各節
+ENDCLASS.
+
+CLASS lhc_quote IMPLEMENTATION.
+
+  METHOD setStatusOpen.
+    READ ENTITIES OF ZI_Quote IN LOCAL MODE
+      ENTITY Quote
+        FIELDS ( OverallStatus )
+        WITH CORRESPONDING #( keys )
+      RESULT DATA(quotes).
+
+    " 冪等：已經有狀態的（例如 factory action 複製出來的）不動
+    DELETE quotes WHERE OverallStatus IS NOT INITIAL.
+    CHECK quotes IS NOT INITIAL.
+
+    MODIFY ENTITIES OF ZI_Quote IN LOCAL MODE
+      ENTITY Quote
+        UPDATE FIELDS ( OverallStatus )
+        WITH VALUE #( FOR quote IN quotes
+                      ( %tky          = quote-%tky
+                        OverallStatus = quote_status-open ) )
+      REPORTED DATA(update_reported).
+
+    reported = CORRESPONDING #( DEEP update_reported ).
+  ENDMETHOD.
+
+ENDCLASS.</code></pre>
+  <p>總金額的觸發點在明細上，要改的卻是表頭：把每一筆明細的 <b>NetPrice × Quantity</b> 加總，寫進表頭的 <b>NetAmount</b>。做法是先用 read-by-association 從明細（alias <span class="kw">Item</span>）找回表頭，再讀出表頭底下的全部明細並加總。明細用 <span class="kw">ParentUUID</span> 對應表頭的 <span class="kw">QuoteUUID</span>：</p>
+  <pre><code class="abap">CLASS lhc_item DEFINITION INHERITING FROM cl_abap_behavior_handler.
+  PRIVATE SECTION.
+    METHODS calcTotal FOR DETERMINE ON MODIFY
+      IMPORTING keys FOR Item~calcTotal.
+    METHODS validateQuantity FOR VALIDATE ON SAVE
+      IMPORTING keys FOR Item~validateQuantity.
+ENDCLASS.
+
+CLASS lhc_item IMPLEMENTATION.
+
+  METHOD calcTotal.
+    " 1. 明細 → 表頭（to-parent association）
+    READ ENTITIES OF ZI_Quote IN LOCAL MODE
+      ENTITY Item BY \_Quote
+        FIELDS ( QuoteUUID )
+        WITH CORRESPONDING #( keys )
+      RESULT DATA(quotes).
+
+    " 多筆明細可能指向同一張表頭，先去重
+    SORT quotes BY QuoteUUID %is_draft.
+    DELETE ADJACENT DUPLICATES FROM quotes COMPARING QuoteUUID %is_draft.
+
+    " 2. 表頭 → 全部明細
+    READ ENTITIES OF ZI_Quote IN LOCAL MODE
+      ENTITY Quote BY \_Item
+        FIELDS ( ParentUUID Quantity NetPrice )
+        WITH CORRESPONDING #( quotes )
+      RESULT DATA(items).
+
+    " 3. 加總後回寫表頭
+    DATA quotes_upd TYPE TABLE FOR UPDATE ZI_Quote\\Quote.
+    LOOP AT quotes INTO DATA(quote).
+      DATA total LIKE quote-NetAmount.
+      CLEAR total.
+      LOOP AT items INTO DATA(item) WHERE ParentUUID = quote-QuoteUUID
+                                      AND %is_draft = quote-%is_draft.
+        total += item-Quantity * item-NetPrice.
+      ENDLOOP.
+      APPEND VALUE #( %tky        = quote-%tky
+                      NetAmount = total ) TO quotes_upd.
+    ENDLOOP.
+
+    MODIFY ENTITIES OF ZI_Quote IN LOCAL MODE
+      ENTITY Quote
+        UPDATE FIELDS ( NetAmount )
+        WITH quotes_upd
+      REPORTED DATA(update_reported).
+
+    reported = CORRESPONDING #( DEEP update_reported ).
+  ENDMETHOD.
+
+  METHOD validateQuantity.
+    " 見第 4 節
+  ENDMETHOD.
+
+ENDCLASS.</code></pre>
+  <div class="tip"><b>determination 一定要冪等</b>：同一筆資料可能因為多個觸發條件被呼叫好幾次。多個 determination 之間的執行順序是任意的，官方文件明講 "arbitrary"，所以不能假設 A 一定先於 B。上例 <span class="kw">+=</span> 是 7.54 語法，RAP 的最低版本就是 7.54，所以可以直接用。本例假設同一張報價單只有一種幣別；多幣別要先換算。</div>
+  <div class="warn"><b>HANA 沒有預設排序</b>（Casper 實務經驗第 1 條）：read-by-association 回傳的明細沒有保證順序。如果邏輯是「取第一筆明細的工廠」或「依序扣減」，一定要先 <span class="kw">SORT</span>，不能依賴回傳順序。詳見 <a href="#ch05-21-24">5-21 章第 24 節</a>。</div>
+  <div class="note">出處：<a href="https://github.com/SAP-samples/abap-cheat-sheets/blob/main/36_RAP_Behavior_Definition_Language.md">SAP-samples：RAP BDL（Determinations）</a>、<a href="https://github.com/SAP-samples/abap-platform-refscen-flight/tree/ABAP-platform-2022/src/draft">官方 Flight 參考情境 2022：/DMO/BP_TRAVEL_D（setStatusToOpen、calculateTotalPrice）</a>、<a href="https://help.sap.com/docs/abap-cloud/abap-keyword/abap-eml-in-local-mode">ABAP Keyword Documentation：IN LOCAL MODE</a></div>
+
+  <h3 id="ch10-5-04">4. Validation：客戶必須存在、數量必須大於 0</h3>
+  <p>Validation 在 early save 的 check_before_save 階段執行。只要有一筆填了 <span class="kw">failed</span>，<b>整個 transactional buffer 都不會存檔</b>，連沒有錯的資料也一樣，這是 all-or-nothing。錯誤訊息放在 <span class="kw">reported</span>，用 <span class="kw">%element</span> 指出是哪個欄位錯，Fiori 會把該欄位標紅：</p>
+  <pre><code class="abap">// 表頭
+validation validateCustomer on save { create; field SoldToParty; }
+// 明細
+validation validateQuantity on save { create; field Quantity; }
+// draft BO：要登記進 Prepare，按 Save（Activate）時才會對 draft 執行
+draft determine action Prepare
+{
+  validation validateCustomer;
+  validation Item~validateQuantity;
+}</code></pre>
+  <p>檢查客戶是否存在時，<b>先找標準的 released view</b>，不要直接讀 KNA1。S/4HANA 的客戶主檔有 released CDS view <span class="kw">I_Customer</span>，鍵值欄位是 <span class="kw">Customer</span>：</p>
+  <pre><code class="abap">METHOD validateCustomer.   " 宣告：METHODS validateCustomer FOR VALIDATE ON SAVE IMPORTING keys FOR Quote~validateCustomer.
+  READ ENTITIES OF ZI_Quote IN LOCAL MODE
+    ENTITY Quote
+      FIELDS ( SoldToParty )
+      WITH CORRESPONDING #( keys )
+    RESULT DATA(quotes).
+
+  " 收集要查的客戶：唯一鍵的 SORTED 表，重複值 INSERT 時自動略過
+  DATA customers TYPE SORTED TABLE OF I_Customer-Customer WITH UNIQUE KEY table_line.
+  LOOP AT quotes INTO DATA(q) WHERE SoldToParty IS NOT INITIAL.
+    INSERT q-SoldToParty INTO TABLE customers.
+  ENDLOOP.
+
+  IF customers IS NOT INITIAL.        " FOR ALL ENTRIES 前一定要檢查非空
+    SELECT FROM I_Customer
+      FIELDS Customer
+      FOR ALL ENTRIES IN @customers
+      WHERE Customer = @customers-table_line
+      INTO TABLE @DATA(existing_customers).
+  ENDIF.
+
+  LOOP AT quotes INTO DATA(quote).
+    " 先清掉這個 state area 的舊訊息（draft 重跑 validation 時才不會殘留）
+    APPEND VALUE #( %tky        = quote-%tky
+                    %state_area = 'VALIDATE_CUSTOMER' ) TO reported-quote.
+
+    IF quote-SoldToParty IS INITIAL
+       OR NOT line_exists( existing_customers[ Customer = quote-SoldToParty ] ).
+      APPEND VALUE #( %tky = quote-%tky ) TO failed-quote.
+      APPEND VALUE #( %tky        = quote-%tky
+                      %state_area = 'VALIDATE_CUSTOMER'
+                      %msg        = new_message( id       = 'ZQUOTE'
+                                                 number   = '001'   " 客戶 &amp;1 不存在
+                                                 v1       = quote-SoldToParty
+                                                 severity = if_abap_behv_message=&gt;severity-error )
+                      %element-SoldToParty = if_abap_behv=&gt;mk-on ) TO reported-quote.
+    ENDIF.
+  ENDLOOP.
+ENDMETHOD.</code></pre>
+  <p>明細的數量檢查示範 <span class="kw">new_message_with_text</span>（不需要訊息類別），以及子實體訊息的 <span class="kw">%path</span>。draft 的 Object Page 要靠 <span class="kw">%path</span> 才能把明細的錯誤連回表頭：</p>
+  <pre><code class="abap">METHOD validateQuantity.
+  READ ENTITIES OF ZI_Quote IN LOCAL MODE
+    ENTITY Item
+      FIELDS ( Quantity )
+      WITH CORRESPONDING #( keys )
+    RESULT DATA(items).
+
+  " 取得明細 → 表頭的連結，供 %path 使用
+  READ ENTITIES OF ZI_Quote IN LOCAL MODE
+    ENTITY Item BY \_Quote
+      FROM CORRESPONDING #( items )
+    LINK DATA(item_quote_links).
+
+  LOOP AT items INTO DATA(item).
+    APPEND VALUE #( %tky        = item-%tky
+                    %state_area = 'VALIDATE_QTY' ) TO reported-item.
+
+    IF item-Quantity &lt;= 0.
+      APPEND VALUE #( %tky = item-%tky ) TO failed-item.
+      APPEND VALUE #( %tky        = item-%tky
+                      %state_area = 'VALIDATE_QTY'
+                      %msg        = new_message_with_text(
+                                      severity = if_abap_behv_message=&gt;severity-error
+                                      text     = '數量必須大於 0' )
+                      %path       = VALUE #( quote-%tky = item_quote_links[ KEY id source-%tky = item-%tky ]-target-%tky )
+                      %element-Quantity = if_abap_behv=&gt;mk-on ) TO reported-item.
+    ENDIF.
+  ENDLOOP.
+ENDMETHOD.</code></pre>
+  <div class="warn"><b>讀 released view 會套用 DCL</b>：如果 <span class="kw">I_Customer</span> 定義了 access control（請在 ADT 開啟該 view 查看 Access Control），使用者沒有某客戶的讀取權限時，SELECT 會查不到那一筆，validation 就會誤報「客戶不存在」。上線前要用權限較小的測試帳號實測。另外 <span class="kw">new_message_with_text</span> 的版本門檻未能確認，1909／2020 請改用 <span class="kw">new_message</span> 搭配 <span class="tcode">SE91</span> 訊息類別 ZQUOTE（正式系統本來就建議用訊息類別，才能翻譯）。</div>
+  <div class="tip"><b>條件用列舉比用區間安全</b>（Casper 實務經驗第 2 條）：如果 validation 要檢查「客戶群組必須屬於某幾類」，請寫成明確的值清單（多筆 EQ），不要寫成 BT 區間。區間比的是字典序，前導零或編碼規則一改就會漏抓。</div>
+  <div class="note">出處：<a href="https://github.com/SAP-samples/abap-platform-refscen-flight/tree/ABAP-platform-2022/src/draft">官方 Flight 參考情境 2022：/DMO/BP_TRAVEL_D validateCustomer、/DMO/BP_BOOKING_D（%path 與 LINK）</a>、<a href="https://github.com/SAP-samples/abap-cheat-sheets/blob/main/14_ABAP_Unit_Tests.md">SAP-samples：ABAP Unit Tests（new_message_with_text 用例）</a>、<a href="https://help.sap.com/docs/abap-cloud/abap-keyword/rap-response-parameter">ABAP Keyword Documentation：RAP response parameters</a></div>
+
+  <h3 id="ch10-5-05">5. Action：接受報價、帶參數拒絕、複製報價（factory）、static action</h3>
+  <p>Action 是 CRUD 以外的<b>會修改資料</b>的操作，一定要自己實作。常見的型態如下：</p>
+  <table>
+    <thead><tr><th>型態</th><th>BDEF 寫法</th><th>用途</th><th>版本</th></tr></thead>
+    <tbody>
+      <tr><td>instance action</td><td><span class="kw">action acceptQuote result [1] $self;</span></td><td>對選取的報價單執行</td><td>7.54 起；<span class="kw">result</span> 回傳其他實體或結構要 7.55</td></tr>
+      <tr><td>帶參數</td><td><span class="kw">action rejectQuote parameter ZA_QuoteReject result [1] $self;</span></td><td>Fiori 會自動跳出輸入視窗</td><td>參數是 CDS abstract entity</td></tr>
+      <tr><td>factory action</td><td><span class="kw">factory action copyQuote [1];</span></td><td>建立新實例（例如複製）；<b>不可以</b>寫 result</td><td>managed 的 instance-bound factory 要 7.57</td></tr>
+      <tr><td>static action</td><td><span class="kw">static action closeExpired;</span></td><td>不綁定任何實例，對整個實體執行</td><td>managed 的 static action 門檻未能確認</td></tr>
+      <tr><td>internal action</td><td><span class="kw">internal action recalcTotal;</span></td><td>只能在 BO 自己的實作中呼叫</td><td></td></tr>
+    </tbody>
+  </table>
+  <pre><code class="abap">@EndUserText.label: '拒絕報價的參數'
+define abstract entity ZA_QuoteReject
+{
+  RejectReason : abap.char(40);
+}</code></pre>
+  <p>實作方法的簽章是 <span class="kw">FOR MODIFY … FOR ACTION 實體~action</span>。有 <span class="kw">result</span> 的 action 要回傳 <span class="kw">%tky</span> 與 <span class="kw">%param</span>：</p>
+  <pre><code class="abap">" lhc_quote 的 DEFINITION 內
+METHODS acceptQuote FOR MODIFY
+  IMPORTING keys FOR ACTION Quote~acceptQuote RESULT result.
+METHODS rejectQuote FOR MODIFY
+  IMPORTING keys FOR ACTION Quote~rejectQuote RESULT result.
+
+" IMPLEMENTATION
+METHOD acceptQuote.
+  MODIFY ENTITIES OF ZI_Quote IN LOCAL MODE
+    ENTITY Quote
+      UPDATE FIELDS ( OverallStatus )
+      WITH VALUE #( FOR key IN keys
+                    ( %tky          = key-%tky
+                      OverallStatus = quote_status-accepted ) )
+    FAILED failed
+    REPORTED reported.
+
+  " 回傳更新後的完整資料（result [1] $self）
+  READ ENTITIES OF ZI_Quote IN LOCAL MODE
+    ENTITY Quote
+      ALL FIELDS WITH CORRESPONDING #( keys )
+    RESULT DATA(quotes).
+
+  result = VALUE #( FOR quote IN quotes
+                    ( %tky   = quote-%tky
+                      %param = quote ) ).
+ENDMETHOD.
+
+METHOD rejectQuote.
+  " 參數在 key-%param
+  LOOP AT keys INTO DATA(key) WHERE %param-RejectReason IS INITIAL.
+    APPEND VALUE #( %tky = key-%tky ) TO failed-quote.
+    APPEND VALUE #( %tky = key-%tky
+                    %msg = new_message( id       = 'ZQUOTE'
+                                        number   = '002'   " 請輸入拒絕原因
+                                        severity = if_abap_behv_message=&gt;severity-error ) )
+      TO reported-quote.
+  ENDLOOP.
+
+  DATA(valid_keys) = keys.
+  DELETE valid_keys WHERE %param-RejectReason IS INITIAL.
+  CHECK valid_keys IS NOT INITIAL.
+
+  MODIFY ENTITIES OF ZI_Quote IN LOCAL MODE
+    ENTITY Quote
+      UPDATE FIELDS ( OverallStatus RejectReason )
+      WITH VALUE #( FOR key2 IN valid_keys
+                    ( %tky          = key2-%tky
+                      OverallStatus = quote_status-rejected
+                      RejectReason  = key2-%param-RejectReason ) ).
+
+  READ ENTITIES OF ZI_Quote IN LOCAL MODE
+    ENTITY Quote
+      ALL FIELDS WITH CORRESPONDING #( valid_keys )
+    RESULT DATA(quotes).
+
+  result = VALUE #( FOR quote IN quotes ( %tky = quote-%tky %param = quote ) ).
+ENDMETHOD.</code></pre>
+  <p>Factory action 用來「以既有報價單為範本建一張新的」。消費端呼叫時會帶 <span class="kw">%cid</span>，實作要把新實例登記進 <span class="kw">mapped</span>。以下以<b>非 draft</b> 的寫法為例，與官方 /DMO/I_Travel_M 的 copyTravel 相同：</p>
+  <pre><code class="abap">METHODS copyQuote FOR MODIFY
+  IMPORTING keys FOR ACTION Quote~copyQuote.
+
+METHOD copyQuote.
+  READ ENTITIES OF ZI_Quote IN LOCAL MODE
+    ENTITY Quote
+      ALL FIELDS WITH CORRESPONDING #( keys )
+    RESULT DATA(quotes)
+    FAILED failed.
+
+  READ ENTITIES OF ZI_Quote IN LOCAL MODE
+    ENTITY Quote BY \_Item
+      ALL FIELDS WITH CORRESPONDING #( quotes )
+    RESULT DATA(items).
+
+  DATA quotes_new TYPE TABLE FOR CREATE ZI_Quote\\Quote.
+  DATA items_cba  TYPE TABLE FOR CREATE ZI_Quote\\Quote\_Item.
+
+  LOOP AT quotes INTO DATA(quote).
+    DATA(cid) = keys[ KEY entity %tky = quote-%tky ]-%cid.
+
+    APPEND VALUE #( %cid  = cid
+                    %data = CORRESPONDING #( quote EXCEPT QuoteUUID QuoteID OverallStatus
+                                                          RejectReason SalesOrder ) )
+      TO quotes_new.
+
+    APPEND VALUE #( %cid_ref = cid
+                    %target  = VALUE #( FOR item IN items WHERE ( ParentUUID = quote-QuoteUUID )
+                                        ( %cid  = |{ cid }_{ item-ItemNo }|
+                                          %data = CORRESPONDING #( item EXCEPT ItemUUID ParentUUID ) ) ) )
+      TO items_cba.
+  ENDLOOP.
+
+  MODIFY ENTITIES OF ZI_Quote IN LOCAL MODE
+    ENTITY Quote
+      CREATE FIELDS ( SoldToParty SalesOrganization ValidTo Currency )
+        WITH quotes_new
+      CREATE BY \_Item FIELDS ( ItemNo Material Quantity QuantityUnit NetPrice Currency )
+        WITH items_cba
+    MAPPED DATA(mapped_create).
+
+  mapped-quote = mapped_create-quote.
+ENDMETHOD.</code></pre>
+  <p>Static action 沒有實例鍵，<span class="kw">keys</span> 裡只有 <span class="kw">%cid</span> 與 <span class="kw">%param</span>。例如「把逾期未處理的報價單全部改成拒絕」：</p>
+  <pre><code class="abap">// BDEF
+static action closeExpired;
+
+" handler
+METHODS closeExpired FOR MODIFY
+  IMPORTING keys FOR ACTION Quote~closeExpired.
+
+METHOD closeExpired.
+  " 狀態用列舉（EQ），不要用區間
+  SELECT FROM zi_quote
+    FIELDS QuoteUUID
+    WHERE OverallStatus = 'N'
+      AND ValidTo &lt; @sy-datlo
+    INTO TABLE @DATA(expired).
+  CHECK expired IS NOT INITIAL.
+
+  MODIFY ENTITIES OF ZI_Quote IN LOCAL MODE
+    ENTITY Quote
+      UPDATE FIELDS ( OverallStatus RejectReason )
+      WITH VALUE #( FOR e IN expired
+                    ( QuoteUUID     = e-QuoteUUID
+                      OverallStatus = quote_status-rejected
+                      RejectReason  = '逾期自動關閉' ) )
+    FAILED   DATA(upd_failed)
+    REPORTED DATA(upd_reported).
+
+  reported = CORRESPONDING #( DEEP upd_reported ).
+ENDMETHOD.</code></pre>
+  <p>要在 Fiori Elements 上出現按鈕，就在 projection view 的 metadata extension 加 <span class="kw">#FOR_ACTION</span>。放在 <span class="kw">lineItem</span> 會出現在清單工具列，放在 <span class="kw">identification</span> 會出現在 Object Page。projection BDEF 也要 <span class="kw">use action</span>：</p>
+  <pre><code class="abap">// ZC_Quote 的 metadata extension（ddlx，完整版見第 14 節）
+@UI: { lineItem:       [ { position: 10, importance: #HIGH },
+                         { type: #FOR_ACTION, dataAction: 'acceptQuote',  label: '接受報價' },
+                         { type: #FOR_ACTION, dataAction: 'rejectQuote',  label: '拒絕報價' },
+                         { type: #FOR_ACTION, dataAction: 'copyQuote',    label: '複製' },
+                         { type: #FOR_ACTION, dataAction: 'closeExpired', label: '關閉逾期報價' } ],
+       identification: [ { position: 10 },
+                         { type: #FOR_ACTION, dataAction: 'acceptQuote', label: '接受報價' },
+                         { type: #FOR_ACTION, dataAction: 'rejectQuote', label: '拒絕報價' } ] }
+QuoteID;
+
+// ZC_Quote 的 projection BDEF
+projection;
+strict ( 2 );
+use draft;
+
+define behavior for ZC_Quote alias Quote
+use etag
+{
+  use create;
+  use update;
+  use delete;
+
+  use action acceptQuote;
+  use action rejectQuote;
+  use action copyQuote;
+  use action closeExpired;
+  use function getItemCount;
+
+  use action Edit;
+  use action Activate;
+  use action Discard;
+  use action Resume;
+  use action Prepare;
+
+  use association _Item { create; with draft; }
+}
+
+define behavior for ZC_QuoteItem alias Item
+use etag
+{
+  use update;
+  use delete;
+
+  use association _Quote { with draft; }
+}</code></pre>
+  <p>程式端呼叫 action 用 <span class="kw">MODIFY … EXECUTE</span>：</p>
+  <pre><code class="abap">MODIFY ENTITIES OF ZI_Quote
+  ENTITY Quote
+    EXECUTE acceptQuote
+      FROM VALUE #( ( %tky-QuoteUUID = lv_quote_uuid ) )   " 非 draft 實例
+  RESULT   DATA(accept_result)
+  FAILED   DATA(failed)
+  REPORTED DATA(reported).
+
+IF failed IS INITIAL.
+  COMMIT ENTITIES.
+ENDIF.</code></pre>
+  <div class="warn">action 裡<b>不要直接呼叫會寫資料庫的 BAPI</b>。例如「接受報價就建立銷售訂單」，要把 BAPI 放到 save sequence，做法見第 11 節。action 只負責改狀態，也就是在 buffer 裡做個標記。</div>
+  <div class="note">出處：<a href="https://github.com/SAP-samples/abap-cheat-sheets/blob/main/36_RAP_Behavior_Definition_Language.md">SAP-samples：RAP BDL（Actions）</a>、<a href="https://github.com/SAP-samples/abap-platform-refscen-flight/tree/ABAP-platform-2022/src/managed">官方 Flight 參考情境 2022：/DMO/BP_TRAVEL_M copyTravel（factory action）</a>、<a href="https://github.com/SAP-samples/abap-platform-refscen-flight/tree/ABAP-platform-2022/src/draft">/DMO/C_TRAVEL_A_D metadata extension（#FOR_ACTION）</a>、<a href="https://help.sap.com/docs/abap-cloud/abap-keyword/rap-action">ABAP Keyword Documentation：RAP action</a></div>
+
+  <h3 id="ch10-5-06">6. Function：唯讀運算</h3>
+  <p>Function 和 action 的差別在於 function <b>不修改資料、不上鎖</b>，只回傳計算結果，而且一定要有輸出參數。常用來預覽試算、查詢可選值，或當作 key function 依替代鍵找實例。Function 的實作放在 <span class="kw">FOR READ</span> handler 方法，消費端用 <span class="kw">READ … EXECUTE</span> 呼叫：</p>
+  <pre><code class="abap">@EndUserText.label: '報價單明細筆數'
+define abstract entity ZA_QuoteItemCount
+{
+  ItemCount : abap.int4;
+}
+
+// BDEF（ZI_Quote）
+function getItemCount result [1] ZA_QuoteItemCount;</code></pre>
+  <pre><code class="abap">" handler：function 屬於 READ 類
+METHODS getItemCount FOR READ
+  IMPORTING keys FOR FUNCTION Quote~getItemCount RESULT result.
+
+METHOD getItemCount.
+  READ ENTITIES OF ZI_Quote IN LOCAL MODE
+    ENTITY Quote BY \_Item
+      FIELDS ( ParentUUID )
+      WITH CORRESPONDING #( keys )
+    RESULT DATA(items).
+
+  LOOP AT keys INTO DATA(key).
+    DATA(cnt) = 0.
+    LOOP AT items TRANSPORTING NO FIELDS WHERE ParentUUID = key-QuoteUUID
+                                           AND %is_draft = key-%is_draft.
+      cnt += 1.
+    ENDLOOP.
+    APPEND VALUE #( %tky             = key-%tky
+                    %param-ItemCount = cnt ) TO result.
+  ENDLOOP.
+ENDMETHOD.
+
+" 消費端
+READ ENTITIES OF ZI_Quote
+  ENTITY Quote
+    EXECUTE getItemCount
+      FROM VALUE #( ( %tky-QuoteUUID = lv_quote_uuid ) )
+  RESULT DATA(fn_result)
+  FAILED DATA(fn_failed).
+
+DATA(item_count) = COND i( WHEN fn_result IS NOT INITIAL
+                           THEN fn_result[ 1 ]-%param-ItemCount ).</code></pre>
+  <div class="warn"><b>版本門檻</b>：7.55（2020）的版本新功能已經寫到「action 與 function 的輸出參數可以是實體或結構」，所以 2020 可以使用 function。<b>1909 是否支援 function 未能確認，請以系統為準。</b>repeatable function、key function 是更新版本的功能（repeatable 為 7.57）。</div>
+  <div class="note">出處：<a href="https://github.com/SAP-samples/abap-cheat-sheets/blob/main/36_RAP_Behavior_Definition_Language.md">SAP-samples：RAP BDL（Functions）</a>、<a href="https://github.com/SAP-samples/abap-cheat-sheets/blob/main/33_ABAP_Release_News.md">SAP-samples：ABAP Release News 7.55、7.57</a>、<a href="https://help.sap.com/docs/abap-cloud/abap-keyword/rap-key-function">ABAP Keyword Documentation：RAP key function</a></div>
+
+  <h3 id="ch10-5-07">7. Feature control：狀態是 Accepted 時停用編輯與 action</h3>
+  <p><b>static feature control</b> 寫死在 BDEF，不需要實作：<span class="kw">field ( readonly )</span>、<span class="kw">field ( mandatory )</span>、<span class="kw">field ( mandatory : create, readonly : update )</span>。其中 <span class="kw">mandatory : create</span> 與 <span class="kw">readonly : update</span> 從 7.55 起提供。<b>dynamic feature control</b> 是依實例狀態決定，BDEF 寫 <span class="kw">features : instance</span>，再實作 <span class="kw">FOR INSTANCE FEATURES</span>：</p>
+  <pre><code class="abap">// static
+field ( readonly )  QuoteID, OverallStatus, NetAmount;
+field ( mandatory ) SoldToParty, SalesOrganization;
+
+// dynamic（每一項都要在 get_instance_features 回傳）
+update ( features : instance );
+delete ( features : instance );
+association _Item { create ( features : instance ); with draft; }
+field ( features : instance ) ValidTo;
+action ( features : instance ) acceptQuote result [1] $self;
+action ( features : instance ) rejectQuote parameter ZA_QuoteReject result [1] $self;</code></pre>
+  <pre><code class="abap">METHODS get_instance_features FOR INSTANCE FEATURES
+  IMPORTING keys REQUEST requested_features FOR Quote RESULT result.
+
+METHOD get_instance_features.
+  READ ENTITIES OF ZI_Quote IN LOCAL MODE
+    ENTITY Quote
+      FIELDS ( OverallStatus )
+      WITH CORRESPONDING #( keys )
+    RESULT DATA(quotes)
+    FAILED failed.
+
+  LOOP AT quotes INTO DATA(quote).
+    " 已接受、已拒絕或已結案 → 全部停用（狀態用列舉判斷）
+    DATA(op) = if_abap_behv=&gt;fc-o-enabled.
+    DATA(fld) = if_abap_behv=&gt;fc-f-unrestricted.
+    IF quote-OverallStatus = quote_status-accepted
+       OR quote-OverallStatus = quote_status-rejected
+       OR quote-OverallStatus = quote_status-closed.
+      op  = if_abap_behv=&gt;fc-o-disabled.
+      fld = if_abap_behv=&gt;fc-f-read_only.
+    ENDIF.
+
+    APPEND VALUE #( %tky                = quote-%tky
+                    %update             = op
+                    %delete             = op
+                    %assoc-_Item        = op
+                    %action-acceptQuote = op
+                    %action-rejectQuote = op
+                    %field-ValidTo      = fld ) TO result.
+  ENDLOOP.
+ENDMETHOD.</code></pre>
+  <div class="warn"><b>版本差異</b>：官方 2020 的 managed 範例用的是舊簽章 <span class="kw">FOR FEATURES IMPORTING keys REQUEST requested_features FOR travel RESULT result</span>，結果欄位寫成 <span class="kw">%features-%action-acceptTravel</span>；同一版的 draft 範例已改寫成 <span class="kw">%action-acceptTravel</span>。2022 範例一律用 <span class="kw">FOR INSTANCE FEATURES</span>，這是 7.56 加入 <span class="kw">features : global</span> 之後，為了區分 instance 與 global 而改的名稱。<b>確切在哪一版切換未能確認</b>。最穩當的做法是在 BDEF 上用 ADT 的 quick fix（Ctrl+1）產生方法，以它產生的簽章為準。</div>
+  <div class="warn"><b>draft 情境的「編輯」按鈕</b>：draft BO 的 Edit 按鈕觸發的是 <span class="kw">Edit</span> draft action，不是 update。<span class="kw">%update</span> 停用之後，Edit 按鈕是否跟著隱藏，要看 UI 與版本。要不要再對 Edit 加 feature control，請以語法檢查器與實測為準（未能確認）。官方 2022 範例是在<b>權限</b>檢查中把 <span class="kw">%action-Edit</span> 與 <span class="kw">%update</span> 一起處理（見第 8 節）。</div>
+  <div class="note">feature control 只負責「UI 上按鈕灰掉」與「EML 被拒」。真正的商業規則（例如接受後不可再改）最好在 validation 或 precheck 裡再守一道。<span class="kw">IN LOCAL MODE</span> 的呼叫會略過 feature control。<br>出處：<a href="https://github.com/SAP-samples/abap-platform-refscen-flight/tree/ABAP-platform-2020/src">官方 Flight 參考情境 2020（managed：FOR FEATURES／%features；draft：%action）</a>、<a href="https://github.com/SAP-samples/abap-platform-refscen-flight/tree/ABAP-platform-2022/src/draft">2022：get_instance_features</a>、<a href="https://github.com/SAP-samples/abap-cheat-sheets/blob/main/36_RAP_Behavior_Definition_Language.md">SAP-samples：RAP BDL（Field-specific characteristics）</a></div>
+
+  <h3 id="ch10-5-08">8. Authorization：global 與 instance 權限，以及與 DCL 的分工</h3>
+  <p>RAP 的權限要分兩層處理：</p>
+  <table>
+    <thead><tr><th>要擋的動作</th><th>由誰負責</th><th>寫在哪裡</th></tr></thead>
+    <tbody>
+      <tr><td>看得到哪些資料（讀取）</td><td>CDS access control（DCL）</td><td><span class="kw">DEFINE ROLE … GRANT SELECT ON ZI_Quote</span>，見 <a href="#ch10-2">第 10-2 章</a></td></tr>
+      <tr><td>能不能新增（不看個別資料）</td><td>global authorization</td><td><span class="kw">FOR GLOBAL AUTHORIZATION</span></td></tr>
+      <tr><td>能不能改、刪、執行 action（看這一筆的銷售組織等欄位）</td><td>instance authorization</td><td><span class="kw">FOR INSTANCE AUTHORIZATION</span></td></tr>
+    </tbody>
+  </table>
+  <p>BDEF 在 root 宣告 <span class="kw">authorization master ( global, instance )</span>，子實體宣告 <span class="kw">authorization dependent by _Quote</span>。create 只能用 global 權限檢查，因為新增時還沒有實例。<b>先找標準權限物件</b>：銷售文件有標準的權限物件 <span class="kw">V_VBAK_VKO</span>（欄位 VKORG、VTWEG、SPART、ACTVT，請以 <span class="tcode">SU21</span> 確認）。如果報價單的權限要和銷售訂單分開管，再用 <span class="tcode">SU21</span> 自建 ZQUOTE。</p>
+  <pre><code class="abap">METHODS get_global_authorizations FOR GLOBAL AUTHORIZATION
+  IMPORTING REQUEST requested_authorizations FOR Quote RESULT result.
+
+METHOD get_global_authorizations.
+  IF requested_authorizations-%create = if_abap_behv=&gt;mk-on.
+    AUTHORITY-CHECK OBJECT 'V_VBAK_VKO'
+      ID 'VKORG' DUMMY
+      ID 'VTWEG' DUMMY
+      ID 'SPART' DUMMY
+      ID 'ACTVT' FIELD '01'.
+    result-%create = COND #( WHEN sy-subrc = 0 THEN if_abap_behv=&gt;auth-allowed
+                                              ELSE if_abap_behv=&gt;auth-unauthorized ).
+  ENDIF.
+
+  " draft：Edit 視同 update
+  IF requested_authorizations-%update = if_abap_behv=&gt;mk-on
+     OR requested_authorizations-%action-Edit = if_abap_behv=&gt;mk-on.
+    AUTHORITY-CHECK OBJECT 'V_VBAK_VKO'
+      ID 'VKORG' DUMMY
+      ID 'VTWEG' DUMMY
+      ID 'SPART' DUMMY
+      ID 'ACTVT' FIELD '02'.
+    DATA(upd) = if_abap_behv=&gt;auth-allowed.
+    IF sy-subrc &lt;&gt; 0.
+      upd = if_abap_behv=&gt;auth-unauthorized.
+    ENDIF.
+    result-%update      = upd.
+    result-%action-Edit = upd.
+  ENDIF.
+ENDMETHOD.</code></pre>
+  <pre><code class="abap">METHODS get_instance_authorizations FOR INSTANCE AUTHORIZATION
+  IMPORTING keys REQUEST requested_authorizations FOR Quote RESULT result.
+
+METHOD get_instance_authorizations.
+  READ ENTITIES OF ZI_Quote IN LOCAL MODE
+    ENTITY Quote
+      FIELDS ( SalesOrganization )
+      WITH CORRESPONDING #( keys )
+    RESULT DATA(quotes)
+    FAILED failed.
+
+  DATA(want_update) = xsdbool( requested_authorizations-%update      = if_abap_behv=&gt;mk-on
+                            OR requested_authorizations-%action-Edit = if_abap_behv=&gt;mk-on ).
+  DATA(want_delete) = xsdbool( requested_authorizations-%delete      = if_abap_behv=&gt;mk-on ).
+
+  LOOP AT quotes INTO DATA(quote).
+    DATA(upd) = if_abap_behv=&gt;auth-allowed.
+    DATA(del) = if_abap_behv=&gt;auth-allowed.
+
+    IF want_update = abap_true.
+      AUTHORITY-CHECK OBJECT 'V_VBAK_VKO'
+        ID 'VKORG' FIELD quote-SalesOrganization
+        ID 'VTWEG' DUMMY
+        ID 'SPART' DUMMY
+        ID 'ACTVT' FIELD '02'.
+      IF sy-subrc &lt;&gt; 0.
+        upd = if_abap_behv=&gt;auth-unauthorized.
+        APPEND VALUE #( %tky = quote-%tky
+                        %msg = new_message( id       = 'ZQUOTE'
+                                            number   = '003'   " 無銷售組織 &amp;1 的修改權限
+                                            v1       = quote-SalesOrganization
+                                            severity = if_abap_behv_message=&gt;severity-error )
+                        %element-SalesOrganization = if_abap_behv=&gt;mk-on ) TO reported-quote.
+      ENDIF.
+    ENDIF.
+
+    IF want_delete = abap_true.
+      AUTHORITY-CHECK OBJECT 'V_VBAK_VKO'
+        ID 'VKORG' FIELD quote-SalesOrganization
+        ID 'VTWEG' DUMMY
+        ID 'SPART' DUMMY
+        ID 'ACTVT' FIELD '06'.
+      IF sy-subrc &lt;&gt; 0.
+        del = if_abap_behv=&gt;auth-unauthorized.
+      ENDIF.
+    ENDIF.
+
+    APPEND VALUE #( %tky                = quote-%tky
+                    %update             = upd
+                    %action-Edit        = upd
+                    %delete             = del
+                    %action-acceptQuote = upd
+                    %action-rejectQuote = upd ) TO result.
+  ENDLOOP.
+ENDMETHOD.</code></pre>
+  <div class="warn"><b>版本門檻</b>：<span class="kw">authorization master ( global )</span>（global 權限）要 7.56（2021）。2020 只有 instance 權限，官方 2020 範例的方法簽章是 <span class="kw">FOR AUTHORIZATION IMPORTING … REQUEST … RESULT</span>。2020 的系統請把 create 的檢查改放在 precheck 或 validation。action 可以寫 <span class="kw">authorization : update</span>，把權限委派給 update 的檢查，這也是 7.56 的功能。</div>
+  <div class="tip">官方 2022 範例的 instance 權限只對「已經有 active 版本」的資料檢查銷售組織。新建但還沒存檔的 draft，改用 create 權限判斷，因為它在資料庫還沒有 before image。這個細節在 draft 情境很重要。<span class="kw">IN LOCAL MODE</span> 會略過權限檢查，所以 BO 內部的 determination 或 action 改資料時不會被擋。</div>
+  <div class="note">出處：<a href="https://github.com/SAP-samples/abap-platform-refscen-flight/tree/ABAP-platform-2022/src/draft">官方 Flight 參考情境 2022：/DMO/BP_TRAVEL_D（get_global_authorizations、get_instance_authorizations、AUTHORITY-CHECK）</a>、<a href="https://github.com/SAP-samples/abap-cheat-sheets/blob/main/36_RAP_Behavior_Definition_Language.md">SAP-samples：RAP BDL（Authorization control）</a>、<a href="https://github.com/SAP-samples/abap-cheat-sheets/blob/main/25_Authorization_Checks.md">SAP-samples：Authorization Checks</a></div>
+
+  <h3 id="ch10-5-09">9. Numbering：UUID、early numbering、late numbering 與號碼範圍</h3>
+  <p>Numbering 決定主鍵值「何時」由「誰」給。RAP 支援以下幾種：</p>
+  <table>
+    <thead><tr><th>方式</th><th>BDEF</th><th>誰給號</th><th>何時</th><th>版本</th></tr></thead>
+    <tbody>
+      <tr><td>external</td><td>（預設，什麼都不寫）</td><td>消費端自己帶</td><td>create 時</td><td>—</td></tr>
+      <tr><td>managed（UUID）</td><td><span class="kw">field ( numbering : managed, readonly ) QuoteUUID;</span></td><td>框架</td><td>create 時</td><td>7.55</td></tr>
+      <tr><td>unmanaged early</td><td><span class="kw">early numbering</span></td><td>自己寫 <span class="kw">FOR NUMBERING</span></td><td>create 時</td><td>managed 要 7.56</td></tr>
+      <tr><td>late</td><td><span class="kw">late numbering</span></td><td>自己寫 saver 的 <span class="kw">adjust_numbers</span></td><td>late save</td><td>unmanaged 7.54；managed／draft 7.57</td></tr>
+    </tbody>
+  </table>
+  <p>本章主範例採官方 draft 範例的做法：<b>主鍵用 UUID（managed numbering），給人看的報價單號 QuoteID 在 on save determination 裡用號碼範圍配</b>。這樣 draft 期間就有穩定的鍵，存檔時才消耗號碼。號碼範圍物件在 <span class="tcode">SNRO</span> 建立（例如 ZQUOTE，區間 01）：</p>
+  <pre><code class="abap">METHOD setQuoteID.
+  READ ENTITIES OF ZI_Quote IN LOCAL MODE
+    ENTITY Quote
+      FIELDS ( QuoteID )
+      WITH CORRESPONDING #( keys )
+    RESULT DATA(quotes).
+
+  DELETE quotes WHERE QuoteID IS NOT INITIAL.   " 冪等
+  CHECK quotes IS NOT INITIAL.
+
+  TRY.
+      cl_numberrange_runtime=&gt;number_get(
+        EXPORTING
+          nr_range_nr       = '01'
+          object            = 'ZQUOTE'
+          quantity          = CONV #( lines( quotes ) )
+        IMPORTING
+          number            = DATA(last_number)
+          returncode        = DATA(rc)
+          returned_quantity = DATA(got) ).
+    CATCH cx_number_ranges INTO DATA(nr_error).
+      LOOP AT quotes INTO DATA(q_err).
+        APPEND VALUE #( %tky = q_err-%tky %msg = nr_error ) TO reported-quote.
+      ENDLOOP.
+      RETURN.
+  ENDTRY.
+
+  " 取回的是「最後一個號碼」與數量，往回推算（QuoteID 是 NUMC 10）
+  DATA next_no TYPE n LENGTH 10.
+  next_no = last_number - got.
+  MODIFY ENTITIES OF ZI_Quote IN LOCAL MODE
+    ENTITY Quote
+      UPDATE FIELDS ( QuoteID )
+      WITH VALUE #( FOR quote IN quotes INDEX INTO i
+                    ( %tky    = quote-%tky
+                      QuoteID = next_no + i ) )
+    REPORTED DATA(upd_reported).
+
+  reported = CORRESPONDING #( DEEP upd_reported ).
+ENDMETHOD.</code></pre>
+  <p>如果主鍵本身就是報價單號（沒有 UUID），就改成 <span class="kw">early numbering</span>，在 <span class="kw">FOR NUMBERING</span> 方法裡配號，並回填 <span class="kw">mapped</span>。以下以一個假設的非 draft 版 ZI_QuoteNum（主鍵 QuoteID）為例：</p>
+  <pre><code class="abap">// BDEF
+define behavior for ZI_QuoteNum alias Quote
+persistent table zquote_h2
+lock master
+authorization master ( instance )
+early numbering
+{
+  create;
+  field ( readonly ) QuoteID;
+}
+
+" handler
+METHODS earlynumbering_create FOR NUMBERING
+  IMPORTING entities FOR CREATE Quote.
+
+METHOD earlynumbering_create.
+  " 已帶號的（例如 draft 重送）直接回填，不再配號
+  LOOP AT entities INTO DATA(with_id) WHERE QuoteID IS NOT INITIAL.
+    APPEND CORRESPONDING #( with_id ) TO mapped-quote.
+  ENDLOOP.
+
+  DATA(todo) = entities.
+  DELETE todo WHERE QuoteID IS NOT INITIAL.
+  CHECK todo IS NOT INITIAL.
+
+  TRY.
+      cl_numberrange_runtime=&gt;number_get(
+        EXPORTING nr_range_nr       = '01'
+                  object            = 'ZQUOTE'
+                  quantity          = CONV #( lines( todo ) )
+        IMPORTING number            = DATA(last_number)
+                  returned_quantity = DATA(got) ).
+    CATCH cx_number_ranges INTO DATA(nr_error).
+      LOOP AT todo INTO DATA(e).
+        APPEND VALUE #( %cid = e-%cid %key = e-%key %msg = nr_error ) TO reported-quote.
+        APPEND VALUE #( %cid = e-%cid %key = e-%key ) TO failed-quote.
+      ENDLOOP.
+      RETURN.
+  ENDTRY.
+
+  DATA no TYPE n LENGTH 10.
+  no = last_number - got.
+  LOOP AT todo INTO DATA(entity).
+    no += 1.
+    APPEND VALUE #( %cid    = entity-%cid
+                    QuoteID = no ) TO mapped-quote.
+  ENDLOOP.
+ENDMETHOD.</code></pre>
+  <p><b>late numbering</b> 用在「號碼一定要連續、不能跳號」的情境，例如某些國家法規要求發票號連續。create 時只給暫時鍵（<span class="kw">%pid</span> 或暫時值），到 late save 的 <span class="kw">adjust_numbers</span> 才配正式號碼。消費端要用 <span class="kw">COMMIT ENTITIES BEGIN … CONVERT KEY … COMMIT ENTITIES END</span> 取回正式鍵。saver 的寫法可以參考官方 unmanaged 範例：<span class="kw">mapped-travel = VALUE #( … ( %tmp = 暫時鍵 TravelID = 正式鍵 ) )</span>。</p>
+  <pre><code class="abap">// BDEF（managed 需 7.57；draft 的 late numbering 另需 DRAFTUUID 鍵欄位）
+define behavior for ZI_Quote alias Quote
+...
+late numbering
+{ ... }
+
+" saver
+CLASS lsc_zi_quote DEFINITION INHERITING FROM cl_abap_behavior_saver.
+  PROTECTED SECTION.
+    METHODS adjust_numbers REDEFINITION.
+ENDCLASS.
+
+CLASS lsc_zi_quote IMPLEMENTATION.
+  METHOD adjust_numbers.
+    " 1. 從 transactional buffer 找出本次新建、只有暫時鍵的實例
+    " 2. 一次向號碼範圍取號（late save 已經不能失敗，取號失敗只能 dump，
+    "    所以號碼區間的剩餘量要事前監控）
+    " 3. 把「暫時鍵 → 正式鍵」填進 mapped-quote
+  ENDMETHOD.
+ENDCLASS.</code></pre>
+  <div class="warn"><b>SELECT MAX( ) + 1 不是配號</b>：官方 2020 的 draft 範例為了簡化，用 <span class="kw">SELECT SINGLE … MAX( travel_id )</span> 再加 1。兩個人同時存檔就會撞號，正式專案一律用號碼範圍。號碼範圍的緩衝會造成跳號，這是正常現象；不可跳號時才考慮 late numbering 或不緩衝，細節見 <a href="#ch05-11-15">5-11 章第 15 節</a>。另外，社群有人回報在 <span class="kw">strict ( 2 )</span> 下呼叫 <span class="kw">number_get</span> 發生 dump，原因與號碼範圍的緩衝／提交方式有關，<b>官方說法未能確認，請以系統實測為準</b>。</div>
+  <div class="warn"><b>CL_NUMBERRANGE_RUNTIME 的版本</b>：官方 2022 範例（/DMO/BP_TRAVEL_M earlynumbering_create）就是用這支類別。1909／2020 地端是否可用未能確認；不可用時改用傳統的 <span class="kw">NUMBER_GET_NEXT</span> 函數。</div>
+  <div class="note">出處：<a href="https://github.com/SAP-samples/abap-platform-refscen-flight/tree/ABAP-platform-2022/src/managed">官方 Flight 參考情境 2022：/DMO/BP_TRAVEL_M earlynumbering_create（cl_numberrange_runtime）</a>、<a href="https://github.com/SAP-samples/abap-platform-refscen-flight/tree/ABAP-platform-2022/src/unmanaged">unmanaged adjust_numbers</a>、<a href="https://help.sap.com/docs/abap-cloud/abap-rap/numbering">RAP Development Guide：Numbering</a>、<a href="https://github.com/SAP-samples/abap-cheat-sheets/blob/main/36_RAP_Behavior_Definition_Language.md">SAP-samples：RAP BDL（Numbering）</a></div>
+
+  <h3 id="ch10-5-10">10. Draft：先存草稿、稍後再繼續</h3>
+  <p>加上 <span class="kw">with draft;</span> 之後，使用者每改一個欄位，資料就寫進 draft table，不必一次填完。按 Save 時才執行 Activate，把 draft 轉成正式資料。<b>版本門檻：7.55（S/4HANA 2020）。</b>draft 需要以下這些配件：</p>
+  <table>
+    <thead><tr><th>配件</th><th>說明</th></tr></thead>
+    <tbody>
+      <tr><td><span class="kw">with draft;</span></td><td>放在 BDEF 表頭，整個 BO 啟用 draft</td></tr>
+      <tr><td><span class="kw">draft table zquote_h_d</span></td><td>每個實體各一張。欄位名稱要用 CDS 元素名稱（alias），而且要包含 <span class="kw">"%admin" : include sych_bdl_draft_admin_inc;</span>。可以在 BDEF 上用 quick fix 產生。<b>不要用 ABAP SQL 直接讀寫這張表</b></td></tr>
+      <tr><td><span class="kw">total etag LastChangedAt</span></td><td>draft BO 必填，要寫在 <span class="kw">lock master</span> 之後。建議和 <span class="kw">etag master</span> 用不同欄位。managed 要搭配 <span class="kw">@Semantics.systemDateTime.lastChangedAt: true</span></td></tr>
+      <tr><td>draft actions</td><td><span class="kw">Edit</span>（active 複製成 draft）、<span class="kw">Activate</span>（draft 轉 active，內含 Prepare）、<span class="kw">Discard</span>（丟棄 draft）、<span class="kw">Resume</span>（鎖過期後繼續編輯時重新上鎖）、<span class="kw">Prepare</span>（執行登記的 on save determination 與 validation）</td></tr>
+      <tr><td>association</td><td>composition 要寫 <span class="kw">{ create; with draft; }</span>、to-parent 要寫 <span class="kw">{ with draft; }</span></td></tr>
+      <tr><td>projection</td><td>projection BDEF 表頭要 <span class="kw">use draft;</span>，並 <span class="kw">use action Edit;</span> 等等（見第 5 節）</td></tr>
+      <tr><td><span class="kw">%is_draft</span></td><td>包含在 <span class="kw">%tky</span> 裡。這就是一律用 <span class="kw">%tky</span>、不用 <span class="kw">%key</span> 的原因：將來改成 draft 時程式不必修改</td></tr>
+    </tbody>
+  </table>
+  <p>draft table 的欄位名稱要用 ZI_Quote 的元素名稱（例如 NetAmount 對應欄位 netamount），不是資料表欄位名稱。明細的 zquote_i_d 依 ZI_QuoteItem 的元素照同樣方式建立：</p>
+  <pre><code class="abap">@EndUserText.label : '報價單表頭 draft'
+@AbapCatalog.enhancement.category : #EXTENSIBLE_ANY
+@AbapCatalog.tableCategory : #TRANSPARENT
+@AbapCatalog.deliveryClass : #A
+@AbapCatalog.dataMaintenance : #RESTRICTED
+define table zquote_h_d {
+  key client          : mandt not null;
+  key quoteuuid       : sysuuid_x16 not null;
+  quoteid             : abap.numc(10);
+  soldtoparty         : kunnr;
+  salesorganization   : vkorg;
+  quotedate           : abap.dats;
+  validto             : abap.dats;
+  @Semantics.amount.currencyCode : 'zquote_h_d.currency'
+  netamount           : abap.curr(15,2);
+  currency            : waerk;
+  overallstatus       : abap.char(1);
+  rejectreason        : abap.char(40);
+  salesorder          : vbeln_va;
+  createdby           : abp_creation_user;
+  createdat           : abp_creation_tstmpl;
+  lastchangedby       : abp_lastchange_user;
+  lastchangedat       : abp_lastchange_tstmpl;
+  locallastchangedat  : abp_locinst_lastchange_tstmpl;
+  "%admin"            : include sych_bdl_draft_admin_inc;
+}</code></pre>
+  <p>從程式端操作 draft 時，要在 <span class="kw">%is_draft</span> 標明對象是 draft 還是 active：</p>
+  <pre><code class="abap">" 建立一張 draft（不驗證、不配號，Activate 時才會）
+MODIFY ENTITIES OF ZI_Quote
+  ENTITY Quote
+    CREATE FIELDS ( SoldToParty SalesOrganization )
+      WITH VALUE #( ( %cid              = 'D1'
+                      %is_draft         = if_abap_behv=&gt;mk-on
+                      SoldToParty       = '0017100001'
+                      SalesOrganization = '1710' ) )
+  MAPPED   DATA(mapped)
+  FAILED   DATA(failed)
+  REPORTED DATA(reported).
+COMMIT ENTITIES.     " draft 也要 COMMIT 才會寫進 draft table
+
+" 讀 draft 版本
+READ ENTITIES OF ZI_Quote
+  ENTITY Quote
+    ALL FIELDS WITH VALUE #( ( %is_draft = if_abap_behv=&gt;mk-on
+                               QuoteUUID = mapped-quote[ 1 ]-QuoteUUID ) )
+  RESULT DATA(drafts).</code></pre>
+  <div class="warn"><b>draft 與鎖的交互作用</b>：
+    <ul>
+      <li>建立 draft（Edit）時，框架會對 active 實例上<b>排他鎖</b>。這個鎖在 ABAP session 結束後<b>仍然保留</b>一段可設定的時間。所以使用者按了「編輯」就關掉瀏覽器，同一張報價單在這段時間內<b>其他人都改不了</b>，傳統程式或 BAPI 去改也會遇到鎖。支援人員要會用 <span class="tcode">SM12</span> 查鎖。</li>
+      <li>排他鎖過期之後進入樂觀鎖階段。使用者回來繼續編輯時會執行 <span class="kw">Resume</span>，框架比對 draft 與 active 的 <span class="kw">total etag</span>。如果期間 active 已經被別人改過，這份 draft 就不能再繼續。</li>
+      <li>如果還有傳統 Dynpro、報表或 BAPI 也會改 ZQUOTE_H，它們用的自建鎖物件和 RAP 框架的鎖是否互斥，<b>未能確認，請在 SM12 實測</b>。確認之前，不要讓兩套程式同時維護同一張表。</li>
+      <li>draft 會一直累積在 draft table。沒有人 Discard 的 draft 要靠框架的清理機制，保留天數與清理作業請以系統文件為準（未能確認）。</li>
+    </ul>
+  </div>
+  <div class="tip"><b>validation 要登記進 Prepare</b>：on save validation 如果沒有寫在 <span class="kw">draft determine action Prepare { … }</span> 裡，draft 期間就不會跑，要等到 Activate 才會出現錯誤。子實體的 validation 用 <span class="kw">validation Item~validateQuantity;</span> 登記。<span class="kw">draft action Activate optimized;</span> 可以減少重複執行 determination 與 validation，這個 <span class="kw">optimized</span> 關鍵字的版本門檻未能確認。</div>
+  <div class="note">官方 2022 範例（strict(2)）會明列全部 draft action；2020 範例則沒有列。strict 模式下請照 2022 的寫法明列。<br>出處：<a href="https://github.com/SAP-samples/abap-cheat-sheets/blob/main/36_RAP_Behavior_Definition_Language.md">SAP-samples：RAP BDL（Draft handling、Concurrency control、Draft actions）</a>、<a href="https://github.com/SAP-samples/abap-platform-refscen-flight/tree/ABAP-platform-2022/src/draft">官方 Flight 參考情境 2022：/DMO/R_TRAVEL_D、/DMO/C_TRAVEL_D_D</a>、<a href="https://help.sap.com/docs/abap-cloud/abap-rap/draft">RAP Development Guide：Draft</a>、<a href="https://help.sap.com/docs/abap-cloud/abap-rap/pessimistic-concurrency-control-locking">Pessimistic Concurrency Control</a></div>
+
+  <h3 id="ch10-5-11">11. Unmanaged 與 managed with unmanaged save：包裝既有 BAPI</h3>
+  <p>「既有邏輯」要接到 RAP 有三種做法，<b>由輕到重</b>排列：</p>
+  <table>
+    <thead><tr><th>做法</th><th>BDEF</th><th>誰管 buffer</th><th>誰寫資料庫</th><th>適用</th></tr></thead>
+    <tbody>
+      <tr><td>managed with additional save</td><td><span class="kw">managed with additional save …</span></td><td>框架</td><td>框架＋你（<span class="kw">save_modified</span>）</td><td>存 BO 資料之外，還要寫變更文件、應用日誌、通知其他系統</td></tr>
+      <tr><td>managed with unmanaged save</td><td><span class="kw">managed with unmanaged save …</span>（不可再寫 <span class="kw">persistent table</span>）</td><td>框架</td><td>你（<span class="kw">save_modified</span>）</td><td>存檔要透過既有 API（BAPI、函數），但互動期的行為交給框架</td></tr>
+      <tr><td>unmanaged</td><td><span class="kw">unmanaged implementation in class …</span></td><td>你</td><td>你（saver 的 <span class="kw">save</span>）</td><td>既有應用程式已經有自己的 buffer 與 API（例如官方 /DMO/FLIGHT_TRAVEL_* 函數群）</td></tr>
+    </tbody>
+  </table>
+  <p><b>完全 unmanaged</b> 時，CRUD 與鎖都要自己寫 handler，資料先暫存在自己的 transactional buffer（通常是 local class 的 static 屬性，或既有函數群的全域表），saver 再寫進資料庫：</p>
+  <pre><code class="abap">unmanaged implementation in class zbp_i_quote_u unique;
+strict ( 2 );
+
+define behavior for ZI_Quote_U alias Quote
+lock master
+authorization master ( global )
+etag master LastChangedAt
+late numbering
+{
+  create;
+  update;
+  delete;
+  field ( readonly ) QuoteID;
+}
+
+" handler：每一種作業各一個方法
+CLASS lhc_quote DEFINITION INHERITING FROM cl_abap_behavior_handler.
+  PRIVATE SECTION.
+    METHODS create FOR MODIFY IMPORTING entities FOR CREATE Quote.
+    METHODS update FOR MODIFY IMPORTING entities FOR UPDATE Quote.
+    METHODS delete FOR MODIFY IMPORTING keys     FOR DELETE Quote.
+    METHODS read   FOR READ   IMPORTING keys     FOR READ   Quote RESULT result.
+    METHODS lock   FOR LOCK   IMPORTING keys     FOR LOCK   Quote.
+    METHODS get_global_authorizations FOR GLOBAL AUTHORIZATION
+      IMPORTING REQUEST requested_authorizations FOR Quote RESULT result.
+ENDCLASS.
+
+CLASS lhc_quote IMPLEMENTATION.
+  METHOD lock.
+    TRY.
+        DATA(lock) = cl_abap_lock_object_factory=&gt;get_instance( iv_name = 'EZQUOTE_H' ).
+      CATCH cx_abap_lock_failure INTO DATA(lock_failure).
+        RAISE SHORTDUMP lock_failure.
+    ENDTRY.
+
+    LOOP AT keys INTO DATA(key).
+      TRY.
+          lock-&gt;enqueue( it_parameter = VALUE #( ( name  = 'QUOTE_ID'
+                                                   value = REF #( key-QuoteID ) ) ) ).
+        CATCH cx_abap_foreign_lock INTO DATA(foreign_lock).
+          APPEND VALUE #( %tky = key-%tky ) TO failed-quote.
+          APPEND VALUE #( %tky = key-%tky
+                          %msg = new_message( id       = 'ZQUOTE'
+                                              number   = '010'   " 報價單 &amp;1 被 &amp;2 鎖定
+                                              v1       = key-QuoteID
+                                              v2       = foreign_lock-&gt;user_name
+                                              severity = if_abap_behv_message=&gt;severity-error ) )
+            TO reported-quote.
+        CATCH cx_abap_lock_failure INTO lock_failure.
+          RAISE SHORTDUMP lock_failure.
+      ENDTRY.
+    ENDLOOP.
+  ENDMETHOD.
+
+  METHOD create.
+    " 寫進自己的 buffer（例如 lcl_buffer=&gt;mt_create），給暫時號碼，填 mapped
+  ENDMETHOD.
+  METHOD update.
+    " 依 %control 只更新有標記的欄位
+  ENDMETHOD.
+  METHOD delete.
+  ENDMETHOD.
+  METHOD read.
+    " 先讀 buffer，buffer 沒有再讀資料庫
+  ENDMETHOD.
+  METHOD get_global_authorizations.
+  ENDMETHOD.
+ENDCLASS.</code></pre>
+  <pre><code class="abap">" saver：六個可重新定義的方法（依執行順序）
+CLASS lsc_zi_quote_u DEFINITION INHERITING FROM cl_abap_behavior_saver.
+  PROTECTED SECTION.
+    METHODS finalize          REDEFINITION.   " early save：最後計算
+    METHODS check_before_save REDEFINITION.   " early save：一致性檢查，可填 failed 退回
+    METHODS cleanup_finalize  REDEFINITION.   " early save 失敗時，撤銷 finalize
+    METHODS adjust_numbers    REDEFINITION.   " late save：暫時鍵 → 正式鍵（late numbering 才有）
+    METHODS save              REDEFINITION.   " late save：寫資料庫（唯一可以寫的地方）
+    METHODS cleanup           REDEFINITION.   " 清空 transactional buffer
+ENDCLASS.
+
+CLASS lsc_zi_quote_u IMPLEMENTATION.
+  METHOD finalize.          ENDMETHOD.
+  METHOD check_before_save. ENDMETHOD.
+  METHOD cleanup_finalize.  ENDMETHOD.
+  METHOD adjust_numbers.    ENDMETHOD.
+  METHOD save.
+    " INSERT／UPDATE／DELETE zquote_h FROM buffer；或 CALL FUNCTION ... IN UPDATE TASK
+  ENDMETHOD.
+  METHOD cleanup.
+    " CLEAR buffer
+  ENDMETHOD.
+ENDCLASS.</code></pre>
+  <p><b>實戰：接受報價時建立銷售訂單。</b>報價單 BO 維持 managed＋draft，表頭改成 <span class="kw">managed with unmanaged save with full data</span>（<span class="kw">with full data</span> 要 7.57，會把完整欄位傳進 <span class="kw">save_modified</span>；沒有這個選項時，只會傳鍵與有變動的欄位），並刪掉 <span class="kw">persistent table</span>。save_modified 先自己寫 ZQUOTE_H／ZQUOTE_I，再對「本次被改成 Accepted」的報價單呼叫 <span class="kw">BAPI_SALESORDER_CREATEFROMDAT2</span>（BAPI 基礎見 <a href="#ch04-1-08">4-1 章第 8 節</a>、<a href="#ch04-1-09">第 9 節</a>）：</p>
+  <pre><code class="abap">// BDEF 表頭
+managed with unmanaged save with full data implementation in class zbp_i_quote unique;
+strict ( 2 );
+with draft;
+define behavior for ZI_Quote alias Quote
+// persistent table zquote_h     ← unmanaged save 不可以寫
+draft table zquote_h_d
+...</code></pre>
+  <pre><code class="abap">CLASS lsc_zi_quote DEFINITION INHERITING FROM cl_abap_behavior_saver.
+  PROTECTED SECTION.
+    METHODS save_modified REDEFINITION.
+ENDCLASS.
+
+CLASS lsc_zi_quote IMPLEMENTATION.
+  METHOD save_modified.
+    " (1) 自己把 BO 資料寫進資料表
+    IF create-quote IS NOT INITIAL.
+      INSERT zquote_h FROM TABLE @create-quote MAPPING FROM ENTITY.
+    ENDIF.
+    IF update-quote IS NOT INITIAL.
+      UPDATE zquote_h FROM TABLE @update-quote
+        INDICATORS SET STRUCTURE %control MAPPING FROM ENTITY.
+    ENDIF.
+    LOOP AT delete-quote INTO DATA(del).
+      DELETE FROM zquote_h WHERE quote_uuid = @del-QuoteUUID.
+      DELETE FROM zquote_i WHERE parent_uuid = @del-QuoteUUID.
+    ENDLOOP.
+    " 明細（create-item／update-item／delete-item）同理，略
+
+    " (2) 本次狀態被改成 Accepted 的 → 建銷售訂單
+    LOOP AT update-quote INTO DATA(quote)
+         WHERE %control-OverallStatus = if_abap_behv=&gt;mk-on
+           AND OverallStatus = 'A'.
+
+      SELECT FROM zquote_i
+        FIELDS item_no, material, quantity, quantity_unit
+        WHERE parent_uuid = @quote-QuoteUUID
+        ORDER BY item_no                         " HANA 沒有預設排序
+        INTO TABLE @DATA(q_items).
+
+      DATA(header)    = VALUE bapisdhd1( doc_type   = 'ZQT'      " 訂單類型請做成設定
+                                         sales_org  = quote-SalesOrganization
+                                         distr_chan = '10'
+                                         division   = '00' ).
+      DATA partners   TYPE STANDARD TABLE OF bapiparnr WITH EMPTY KEY.
+      partners        = VALUE #( ( partn_role = 'AG'
+                                   partn_numb = quote-SoldToParty ) ).
+      DATA items      TYPE STANDARD TABLE OF bapisditm WITH EMPTY KEY.
+      DATA schedules  TYPE STANDARD TABLE OF bapischdl WITH EMPTY KEY.
+      DATA bapi_return TYPE STANDARD TABLE OF bapiret2 WITH EMPTY KEY.
+      DATA sales_doc  TYPE vbeln_va.
+      CLEAR: items, schedules, bapi_return, sales_doc.
+
+      LOOP AT q_items INTO DATA(qi).
+        APPEND VALUE #( itm_number    = qi-item_no
+                        material_long = qi-material ) TO items.   " 40 碼料號欄位，請以 SE11 確認
+        APPEND VALUE #( itm_number = qi-item_no
+                        req_qty    = qi-quantity ) TO schedules.
+      ENDLOOP.
+
+      CALL FUNCTION 'BAPI_SALESORDER_CREATEFROMDAT2'
+        EXPORTING
+          order_header_in    = header
+        IMPORTING
+          salesdocument      = sales_doc
+        TABLES
+          return             = bapi_return
+          order_items_in     = items
+          order_partners     = partners
+          order_schedules_in = schedules.
+
+      " late save 已經不能退回：錯誤應在 early save 的 validation 先以 TESTRUN 擋掉
+      ASSERT NOT line_exists( bapi_return[ type = 'E' ] )
+         AND NOT line_exists( bapi_return[ type = 'A' ] ).
+
+      UPDATE zquote_h SET sales_order = @sales_doc
+        WHERE quote_uuid = @quote-QuoteUUID.
+    ENDLOOP.
+    " 不可以呼叫 BAPI_TRANSACTION_COMMIT：COMMIT 由 RAP 執行
+  ENDMETHOD.
+ENDCLASS.</code></pre>
+  <p>對應的預檢放在 early save：用 validation 以 <b>TESTRUN</b> 模式呼叫同一支 BAPI，把 BAPIRET2 轉成 RAP 訊息。這是 SAP 官方 RAP640 教材包裝 <span class="kw">BAPI_REQUISITION_CREATE</span> 時用的模式：</p>
+  <pre><code class="abap">" validation validateSalesOrder on save { field OverallStatus; }（並登記進 Prepare）
+METHOD validateSalesOrder.
+  READ ENTITIES OF ZI_Quote IN LOCAL MODE
+    ENTITY Quote ALL FIELDS WITH CORRESPONDING #( keys )
+    RESULT DATA(quotes).
+
+  LOOP AT quotes INTO DATA(quote) WHERE OverallStatus = 'A' AND SalesOrder IS INITIAL.
+    " （省略宣告與組值：header／items／partners 的寫法同上一段）
+    CALL FUNCTION 'BAPI_SALESORDER_CREATEFROMDAT2'
+      EXPORTING
+        order_header_in = header
+        testrun         = abap_true            " 參數名稱請以 SE37 確認
+      TABLES
+        return          = bapi_return
+        order_items_in  = items
+        order_partners  = partners.
+
+    LOOP AT bapi_return INTO DATA(ret) WHERE type = 'E' OR type = 'A'.
+      APPEND VALUE #( %tky = quote-%tky ) TO failed-quote.
+      APPEND VALUE #( %tky = quote-%tky
+                      %msg = new_message( id       = ret-id
+                                          number   = ret-number
+                                          v1       = ret-message_v1
+                                          v2       = ret-message_v2
+                                          v3       = ret-message_v3
+                                          v4       = ret-message_v4
+                                          severity = if_abap_behv_message=&gt;severity-error ) )
+        TO reported-quote.
+    ENDLOOP.
+  ENDLOOP.
+ENDMETHOD.</code></pre>
+  <div class="warn"><b>RAP 交易模型的限制（saver 與 handler 都適用）</b>：
+    <ul>
+      <li><b>不可以 COMMIT WORK／ROLLBACK WORK</b>，也不可以呼叫內部會 COMMIT 的函數，例如 <span class="kw">BAPI_TRANSACTION_COMMIT</span>。RAP 是交易的擁有者，COMMIT 由 COMMIT ENTITIES（Fiori 情境由框架）統一執行。</li>
+      <li><b>改資料庫只允許在 late save</b>，也就是 <span class="kw">save</span>、<span class="kw">save_modified</span>、<span class="kw">adjust_numbers</span>。<span class="kw">CALL FUNCTION … IN UPDATE TASK</span> 與 bgRFC 也只能在 late save 註冊。許多 BAPI 內部會註冊 update task，<b>所以 BAPI 的正式呼叫只能放在 save／save_modified</b>；放在 action 或 validation 會 runtime error（官方 RAP640 教材明文說明）。</li>
+      <li>sRFC／aRFC 不可以用在 late save；CALL TRANSACTION、SUBMIT、Dynpro 相關語法，以及 MESSAGE（不帶 INTO）在所有階段都禁止。</li>
+      <li><b>SET UPDATE TASK LOCAL 不需要自己下</b>：COMMIT ENTITIES 本身就會強制 local update（本地更新失敗才退回 COMMIT WORK AND WAIT），所以 BAPI 註冊的更新模組會在同一個交易內同步執行。在 behavior pool 裡自己下 SET UPDATE TASK LOCAL 是否被允許，未能確認，建議不要寫。</li>
+      <li>late save 原則上不可以失敗。如果不得不在 late save 呼叫可能失敗的 BAPI，官方提供基底類別 <span class="kw">CL_ABAP_BEHAVIOR_SAVER_FAILED</span>，讓 saver 可以回報 failed／reported。此時 COMMIT ENTITIES 的 sy-subrc 會是 8，消費端必須 ROLLBACK ENTITIES（版本門檻未能確認）。</li>
+      <li><span class="kw">BAPI_SALESORDER_CREATEFROMDAT2</span> 的 TESTRUN 模式是否完全不註冊 update task，<b>未能確認</b>。如果在 validation 呼叫時 dump，就只能拿掉預檢，改用前一點的 <span class="kw">CL_ABAP_BEHAVIOR_SAVER_FAILED</span> 回報錯誤。</li>
+    </ul>
+  </div>
+  <div class="tip"><b>先找標準再包裝</b>（Casper 實務經驗第 3 條）：S/4HANA 2022 起，銷售訂單有 SAP 自己的 RAP BO 介面（見第 15 節）。能用 EML 呼叫標準 RAP BO 的話，就不需要在 saver 裡包 BAPI，也就沒有上面這些限制要處理。</div>
+  <div class="note"><span class="kw">INSERT … MAPPING FROM ENTITY</span>、<span class="kw">INDICATORS SET STRUCTURE %control</span> 是 ABAP SQL 搭配 BDEF 衍生型別的寫法，取自官方 RAP640 教材；其版本門檻未能確認，不支援時請改用 <span class="kw">CORRESPONDING … MAPPING</span> 先轉成資料表結構。<br>出處：<a href="https://github.com/SAP-samples/abap-cheat-sheets/blob/main/08_EML_ABAP_for_RAP.md">SAP-samples：ABAP EML（Allowed/Forbidden Operations、Commit and Rollback、RAP Additional and Unmanaged Save）</a>、<a href="https://github.com/SAP-samples/abap-platform-rap640/blob/main/exercises/ex4/README.md">SAP-samples：RAP640 Exercise 4（BAPI 以 testrun 在 validation 預檢、正式呼叫放 save_modified）</a>、<a href="https://github.com/SAP-samples/abap-platform-refscen-flight/tree/ABAP-platform-2022/src/unmanaged">官方 Flight 參考情境：/DMO/BP_TRAVEL_U（FOR LOCK、saver）</a>、<a href="https://help.sap.com/docs/abap-cloud/developer-guide-from-classic-abap-to-abap-cloud/bapi-consumption-in-rap-late-numbering-and-save-sequence">SAP Help：BAPI Consumption in RAP: Late Numbering and Save Sequence</a>、<a href="https://help.sap.com/docs/abap-cloud/abap-keyword/rap-saver-class-and-methods">ABAP Keyword Documentation：RAP saver class and methods</a></div>
+
+  <h3 id="ch10-5-12">12. 錯誤處理與訊息：failed、reported、%tky、%msg、%state_area</h3>
+  <p>handler 與 saver 的方法都有隱含的 CHANGING 參數，稱為 response parameter，名稱是固定的：</p>
+  <table>
+    <thead><tr><th>參數</th><th>結構</th><th>常用元件</th><th>用途</th></tr></thead>
+    <tbody>
+      <tr><td><span class="kw">mapped</span></td><td>每個實體一張表（<span class="kw">mapped-quote</span>）</td><td><span class="kw">%cid</span>、<span class="kw">%tky</span>／鍵、late numbering 的 <span class="kw">%pid</span>／<span class="kw">%tmp</span></td><td>新建實例的 %cid 與鍵的對應（只有會新建實例的作業才有）</td></tr>
+      <tr><td><span class="kw">failed</span></td><td>每個實體一張表</td><td><span class="kw">%tky</span>、<span class="kw">%cid</span>、<span class="kw">%fail-cause</span>（<span class="kw">if_abap_behv=&gt;cause-…</span>，例如 unspecific、conflict）</td><td>「哪一筆失敗」：有資料就代表失敗</td></tr>
+      <tr><td><span class="kw">reported</span></td><td>每個實體一張表，另有 <span class="kw">%other</span></td><td><span class="kw">%tky</span>、<span class="kw">%msg</span>、<span class="kw">%element-欄位</span>、<span class="kw">%state_area</span>、<span class="kw">%path</span>、<span class="kw">%global</span>、<span class="kw">%action-…</span></td><td>「要顯示什麼訊息」：可以只有警告、沒有 failed</td></tr>
+    </tbody>
+  </table>
+  <ul>
+    <li><b><span class="kw">%tky</span></b>（transactional key）＝ <span class="kw">%key</span> ＋ <span class="kw">%is_draft</span>（late numbering 另含 <span class="kw">%pid</span>）。一律用 <span class="kw">%tky</span>，draft 化時才不用改程式。</li>
+    <li><b><span class="kw">%msg</span></b> 的型別是 <span class="kw">REF TO if_abap_behv_message</span>，可以用 <span class="kw">new_message( )</span>、<span class="kw">new_message_with_text( )</span> 產生，或用自建例外類別（官方的 <span class="kw">/DMO/CM_FLIGHT_MESSAGES</span> 繼承 <span class="kw">CX_STATIC_CHECK</span>，實作 <span class="kw">IF_T100_DYN_MSG</span>、<span class="kw">IF_T100_MESSAGE</span>、<span class="kw">IF_ABAP_BEHV_MESSAGE</span>）。號碼範圍的例外 <span class="kw">cx_number_ranges</span> 也可以直接放進 <span class="kw">%msg</span>（見第 9 節）。</li>
+    <li><b><span class="kw">%state_area</span></b>：幫訊息分組。draft 情境裡，validation 的訊息會跟著 draft 保留；validation 重跑時，先 APPEND 一筆「只有 %tky 與 %state_area、沒有 %msg」的列，就能清掉該區舊訊息（第 4 節的寫法）。這是官方範例的固定模式，清除規則的完整說明未能以文件逐字確認。</li>
+    <li><b><span class="kw">%global</span></b>：和特定實例無關的訊息，官方範例在 global 權限不足時使用。</li>
+  </ul>
+  <pre><code class="abap">" 在 handler 裡：把 EML 的 response 轉回自己的 response
+MODIFY ENTITIES OF ZI_Quote IN LOCAL MODE
+  ENTITY Quote
+    UPDATE FIELDS ( OverallStatus )
+    WITH VALUE #( FOR k IN keys ( %tky = k-%tky OverallStatus = 'A' ) )
+  FAILED   DATA(upd_failed)
+  REPORTED DATA(upd_reported).
+
+failed   = CORRESPONDING #( DEEP upd_failed ).
+reported = CORRESPONDING #( DEEP upd_reported ).
+
+" 不屬於任何實例的訊息：%other
+APPEND new_message_with_text( severity = if_abap_behv_message=&gt;severity-warning
+                              text     = '匯率表尚未更新，金額僅供參考' )
+  TO reported-%other.
+
+" 在消費端：把 reported 轉成可以寫日誌的文字
+LOOP AT reported-quote INTO DATA(rep) WHERE %msg IS BOUND.
+  DATA(text) = rep-%msg-&gt;if_message~get_text( ).
+  " 寫 BAL 應用日誌、或回傳給呼叫端
+ENDLOOP.</code></pre>
+  <div class="warn">validation 與 action 的錯誤都要<b>同時</b>填 failed 和 reported：只填 reported，交易還是會被存檔；只填 failed，使用者看不到原因。<b>不要用 RAISE EXCEPTION 表示業務錯誤</b>，把例外拋出 RAP 交易是被禁止的。</div>
+  <div class="note">出處：<a href="https://github.com/SAP-samples/abap-cheat-sheets/blob/main/08_EML_ABAP_for_RAP.md">SAP-samples：ABAP EML（Parameters of Handler Methods、Components of BDEF Derived Types）</a>、<a href="https://help.sap.com/docs/abap-cloud/abap-keyword/tky">ABAP Keyword Documentation：%tky</a>、<a href="https://help.sap.com/docs/abap-cloud/abap-rap/general-rap-bo-implementation-contract">RAP BO implementation contract</a>、<a href="https://github.com/SAP-samples/abap-platform-refscen-flight/tree/ABAP-platform-2022/src/reuse">/DMO/CM_FLIGHT_MESSAGES</a></div>
+
+  <h3 id="ch10-5-13">13. 測試：用 ABAP Unit 測 RAP BO</h3>
+  <p>測試 behavior pool 有兩種角度：</p>
+  <ul>
+    <li><b>直接測 handler 方法</b>：handler class 是 local 且隱含 ABSTRACT FINAL，要先宣告 <span class="kw">FRIENDS</span> 測試類別，再用 <span class="kw">CREATE OBJECT … FOR TESTING</span> 建立實例。資料用 <b>transactional buffer test double</b>（<span class="kw">CL_BOTD_TXBUFDBL_BO_TEST_ENV</span>）預先塞好，不碰真實資料庫。</li>
+    <li><b>測「呼叫 BO 的程式」</b>：用 <span class="kw">CL_BOTD_MOCKEMLAPI_BO_TEST_ENV</span> 把 EML 呼叫整個 mock 掉，指定某個 READ 要回傳什麼。</li>
+  </ul>
+  <pre><code class="abap">" behavior pool 的 Local Types：讓測試類別可以存取 private 方法
+CLASS ltc_quote DEFINITION DEFERRED FOR TESTING.
+CLASS lhc_item DEFINITION INHERITING FROM cl_abap_behavior_handler FRIENDS ltc_quote.
+  " ...（第 3 節的定義）
+ENDCLASS.
+
+" behavior pool 的 Test Classes
+CLASS ltc_quote DEFINITION FINAL FOR TESTING
+  DURATION SHORT RISK LEVEL HARMLESS.
+  PRIVATE SECTION.
+    CLASS-DATA cut       TYPE REF TO lhc_item.
+    CLASS-DATA txbuf_env TYPE REF TO if_botd_txbufdbl_bo_test_env.
+    CLASS-DATA double    TYPE REF TO if_botd_txbufdbl_test_double.
+
+    DATA failed_late   TYPE RESPONSE FOR FAILED LATE ZI_Quote.
+    DATA reported_late TYPE RESPONSE FOR REPORTED LATE ZI_Quote.
+
+    CLASS-METHODS class_setup.
+    CLASS-METHODS class_teardown.
+    METHODS setup.
+    METHODS qty_zero_is_rejected FOR TESTING.
+ENDCLASS.
+
+CLASS ltc_quote IMPLEMENTATION.
+  METHOD class_setup.
+    CREATE OBJECT cut FOR TESTING.
+    txbuf_env = cl_botd_txbufdbl_bo_test_env=&gt;create(
+      environment_config = cl_botd_txbufdbl_bo_test_env=&gt;prepare_environment_config(
+        )-&gt;set_bdef_dependencies( bdef_dependencies = VALUE #( ( 'ZI_QUOTE' ) ) ) ).
+  ENDMETHOD.
+
+  METHOD setup.
+    txbuf_env-&gt;clear_doubles( ).
+    double = txbuf_env-&gt;get_test_double( 'ZI_QUOTE' ).
+  ENDMETHOD.
+
+  METHOD class_teardown.
+    txbuf_env-&gt;destroy( ).
+  ENDMETHOD.
+
+  METHOD qty_zero_is_rejected.
+    DATA items TYPE TABLE FOR CREATE ZI_Quote\\Item.
+    DATA(uuid) = cl_system_uuid=&gt;create_uuid_x16_static( ).
+    items = VALUE #( %control = VALUE #( ItemUUID      = if_abap_behv=&gt;mk-on
+                                         Quantity      = if_abap_behv=&gt;mk-on )
+                     ( %cid = 'I1' ItemUUID = uuid Quantity = 0 ) ).
+    double-&gt;insert_test_data( instances = items ).
+
+    cut-&gt;validateQuantity(
+      EXPORTING keys     = CORRESPONDING #( items )
+      CHANGING  failed   = failed_late
+                reported = reported_late ).
+
+    cl_abap_unit_assert=&gt;assert_not_initial( act = failed_late-item ).
+  ENDMETHOD.
+ENDCLASS.</code></pre>
+  <div class="warn"><b>版本門檻</b>：<span class="kw">CL_BOTD_TXBUFDBL_BO_TEST_ENV</span>、<span class="kw">CL_BOTD_MOCKEMLAPI_BO_TEST_ENV</span> 這兩支類別名稱已經和 SAP 官方 cheat sheet 核對過，但範例都出自 ABAP Cloud 環境。<b>在 S/4HANA 地端哪一版開始提供，未能確認，請以系統為準</b>（在 ADT 用 Ctrl+Shift+A 搜尋類別是否存在）。<span class="kw">insert_test_data</span> 傳入的表型別（CREATE 或其他）與 draft 實例的處理方式，也請以該類別的方法簽章為準。上例的 validateQuantity 內部還有 read-by-association（%path），test double 是否支援請實測。</div>
+  <div class="tip">沒有 test double 的舊系統，退而求其次的做法是寫「整合測試」：在測試方法裡用 EML 建一張報價單、<span class="kw">COMMIT ENTITIES IN SIMULATION MODE</span>（只跑 early save，不真的寫入），再檢查 sy-subrc 與 reported。純 SQL 的部分另外可以用 <span class="kw">CL_OSQL_TEST_ENVIRONMENT</span> 隔離資料庫。</div>
+  <div class="note">出處：<a href="https://github.com/SAP-samples/abap-cheat-sheets/blob/main/14_ABAP_Unit_Tests.md">SAP-samples：ABAP Unit Tests（RAP business object：transactional buffer test double、Testing ABAP behavior pool、Mocking ABAP EML APIs）</a>、<a href="https://github.com/SAP-samples/abap-cheat-sheets/blob/main/08_EML_ABAP_for_RAP.md">SAP-samples：ABAP EML（IN SIMULATION MODE、Handling Dependencies on RAP BOs in ABAP Unit）</a>、<a href="https://help.sap.com/docs/abap-cloud/abap-rap/test">RAP Development Guide：Test</a></div>
+
+  <h3 id="ch10-5-14">14. Fiori Elements 的進階 UI 註解：facet、field group、value help、text、criticality</h3>
+  <p>Projection view 放「資料面」的註解：value help、text 關聯、criticality 欄位。Metadata extension（ddlx）放「版面」的註解：facet、lineItem、fieldGroup。這樣版面可以單獨調整，也可以做成 layer。以下兩段是 <a href="#ch10-4-08">10-4 章第 8 節</a> ZC_Quote 與其 metadata extension 的<b>進階版</b>，直接取代原內容。名稱與 10-4 章一致，並加上本章的兩個新欄位與一個 criticality 計算欄位：</p>
+  <pre><code class="abap">@EndUserText.label: '報價單（Fiori 用 projection）'
+@AccessControl.authorizationCheck: #NOT_REQUIRED
+@Metadata.allowExtensions: true
+@Search.searchable: true
+@ObjectModel.semanticKey: ['QuoteID']
+define root view entity ZC_Quote
+  provider contract transactional_query
+  as projection on ZI_Quote
+{
+  key QuoteUUID,
+      @Search.defaultSearchElement: true
+      QuoteID,
+
+      @ObjectModel.text.element: [ 'CustomerName' ]
+      @Consumption.valueHelpDefinition: [{ entity: { name: 'I_Customer', element: 'Customer' },
+                                           useForValidation: true }]
+      @Search.defaultSearchElement: true
+      SoldToParty,
+      _Customer.CustomerName as CustomerName,
+
+      SalesOrganization,
+      QuoteDate,
+      ValidTo,
+      NetAmount,
+      @Consumption.valueHelpDefinition: [{ entity: { name: 'I_CurrencyStdVH', element: 'Currency' } }]
+      Currency,
+      OverallStatus,
+
+      // criticality：0 中性（灰）、1 負面（紅）、2 警示（橘）、3 正面（綠）
+      case OverallStatus
+        when 'A' then 3
+        when 'X' then 1
+        when 'N' then 2
+        else 0
+      end as StatusCriticality,
+
+      RejectReason,
+      SalesOrder,
+      CreatedBy,
+      CreatedAt,
+      LastChangedBy,
+      LastChangedAt,
+      LocalLastChangedAt,
+
+      /* associations */
+      _Item : redirected to composition child ZC_QuoteItem,
+      _Customer
+}</code></pre>
+  <pre><code class="abap">@Metadata.layer: #CUSTOMER
+@UI: {
+  headerInfo: { typeName: '報價單',
+                typeNamePlural: '報價單',
+                title: { type: #STANDARD, value: 'QuoteID' } },
+  presentationVariant: [{ sortOrder: [{ by: 'QuoteID', direction: #DESC }] }] }
+annotate view ZC_Quote with
+{
+  @UI.facet: [ { id: 'QuoteGroup', purpose: #STANDARD, type: #COLLECTION,
+                 label: '報價單', position: 10 },
+               { id: 'General',    purpose: #STANDARD, type: #FIELDGROUP_REFERENCE,
+                 parentId: 'QuoteGroup', targetQualifier: 'General_FG',
+                 label: '一般資料', position: 10 },
+               { id: 'Amount',     purpose: #STANDARD, type: #FIELDGROUP_REFERENCE,
+                 parentId: 'QuoteGroup', targetQualifier: 'Amount_FG',
+                 label: '金額與結果', position: 20 },
+               { id: 'Item',       purpose: #STANDARD, type: #LINEITEM_REFERENCE,
+                 label: '明細', position: 20, targetElement: '_Item' } ]
+
+  @UI.hidden: true
+  QuoteUUID;
+
+  @UI: { lineItem:       [ { position: 10, importance: #HIGH },
+                           { type: #FOR_ACTION, dataAction: 'acceptQuote', label: '接受報價' },
+                           { type: #FOR_ACTION, dataAction: 'rejectQuote', label: '拒絕報價' } ],
+         identification: [ { position: 10 },
+                           { type: #FOR_ACTION, dataAction: 'acceptQuote', label: '接受報價' },
+                           { type: #FOR_ACTION, dataAction: 'rejectQuote', label: '拒絕報價' } ],
+         selectionField: [ { position: 10 } ],
+         fieldGroup:     [ { qualifier: 'General_FG', position: 10 } ] }
+  QuoteID;
+
+  @UI: { lineItem:       [ { position: 20, importance: #HIGH } ],
+         selectionField: [ { position: 20 } ],
+         fieldGroup:     [ { qualifier: 'General_FG', position: 20 } ] }
+  SoldToParty;
+
+  @UI: { lineItem:       [ { position: 30 } ],
+         selectionField: [ { position: 30 } ],
+         fieldGroup:     [ { qualifier: 'General_FG', position: 30 } ] }
+  SalesOrganization;
+
+  @UI: { fieldGroup: [ { qualifier: 'General_FG', position: 40 } ] }
+  ValidTo;
+
+  @UI: { lineItem:   [ { position: 40, criticality: 'StatusCriticality' } ],
+         fieldGroup: [ { qualifier: 'General_FG', position: 50, criticality: 'StatusCriticality' } ] }
+  OverallStatus;
+
+  @UI: { lineItem:   [ { position: 50 } ],
+         fieldGroup: [ { qualifier: 'Amount_FG', position: 10 } ] }
+  NetAmount;
+
+  @UI: { fieldGroup: [ { qualifier: 'Amount_FG', position: 20 } ] }
+  RejectReason;
+
+  @UI: { fieldGroup: [ { qualifier: 'Amount_FG', position: 30 } ] }
+  SalesOrder;
+
+  @UI.hidden: true
+  StatusCriticality;
+
+  @UI.hidden: true
+  LocalLastChangedAt;
+}</code></pre>
+  <div class="warn"><b>名稱請以系統為準</b>：客戶的 value help 沿用 10-4 章，直接用 <span class="kw">I_Customer</span>；SAP 另有專用的 value help view，名稱本章未能核對。幣別的 <span class="kw">I_CurrencyStdVH</span> 是官方 Flight 範例使用的名稱。<span class="kw">_Customer.CustomerName</span> 假設 I_Customer 有 CustomerName 元素，請在 ADT 確認。狀態目前沒有文字表，所以不加 <span class="kw">@ObjectModel.text.element</span>；如果要顯示「已接受」這類文字，另建狀態的 value help／text view 再加上關聯。<span class="kw">provider contract transactional_query</span> 的版本門檻見 <a href="#ch10-4">第 10-4 章</a>。</div>
+  <div class="tip"><span class="kw">useForValidation: true</span> 讓 Fiori 在前端就依 value help 檢查輸入值。它<b>不能取代</b>第 4 節的 validation，因為 EML、API 等 UI 以外的呼叫不會經過這個檢查。</div>
+  <div class="note">criticality 的數值（0 中性、1 負面、2 警示、3 正面）依 OData UI vocabulary 的 CriticalityType。<br>出處：<a href="https://github.com/SAP-samples/abap-platform-refscen-flight/tree/ABAP-platform-2022/src">官方 Flight 參考情境 2022：/DMO/C_TRAVEL_A_D（valueHelpDefinition、text.element、facet）、/DMO/C_AGENCYTP（#COLLECTION、#FIELDGROUP_REFERENCE、fieldGroup qualifier）</a>、<a href="https://github.com/SAP/odata-vocabularies/blob/main/vocabularies/UI.md">SAP OData Vocabularies：UI（CriticalityType）</a>、<a href="https://developers.sap.com/tutorials/fiori-tools-rap-modify-list-report..html">SAP Tutorial：Refine the List Report with Annotations（criticality）</a></div>
+
+  <h3 id="ch10-5-15">15. 實務建議：何時用 RAP、先找標準 RAP BO、擴充標準 BO</h3>
+  <p><b>何時該用 RAP，何時仍用傳統 Dynpro／ALV：</b></p>
+  <table>
+    <thead><tr><th>情境</th><th>建議</th><th>理由</th></tr></thead>
+    <tbody>
+      <tr><td>新的主檔或單據維護、需要 Fiori、手機、draft、對外 API</td><td>RAP（2020 以上）</td><td>一次開發同時得到 UI 服務與 Web API，權限、鎖、交易由框架統一處理</td></tr>
+      <tr><td>1809 系統</td><td>CDS＋BOPF（ABAP Programming Model for SAP Fiori）或傳統 Dynpro</td><td>1809 沒有 RAP，見 <a href="#ch10-4">第 10-4 章</a></td></tr>
+      <tr><td>大量資料的查詢報表、批次作業、背景清單</td><td><span class="kw">CL_SALV_TABLE</span>＋CDS 取數</td><td>RAP 的交易能力用不到；唯讀 Fiori 清單可以只用 CDS＋service binding</td></tr>
+      <tr><td>重度 GUI 互動（拖放、樹狀＋網格多窗格）、只給內部少數 key user 用</td><td>傳統 Dynpro／<span class="kw">CL_GUI_ALV_GRID</span></td><td>開發成本低，使用者已經熟悉</td></tr>
+      <tr><td>改的是標準單據（銷售訂單、採購單）</td><td>先找標準 RAP BO 或 BAPI，不自建</td><td>見下一段</td></tr>
+    </tbody>
+  </table>
+  <p><b>先找標準</b>（Casper 實務經驗第 3 條）：新版 S/4HANA 的許多標準單據已經有 SAP 提供的 RAP BO interface，可以直接用 EML 呼叫，取代 BAPI。銷售訂單對應 <span class="kw">I_SalesOrderTP</span>，社群文章指出它從 S/4HANA 2022 起在地端提供，用來取代 <span class="kw">BAPI_SALESORDER_CREATEFROMDAT2</span>。<b>這個名稱與版本只在社群文章中看到，未能以 SAP 官方文件確認</b>。請在 ADT 的 Released Objects 樹或 SAP Business Accelerator Hub 查詢該 BO 在你的版本是否 released，以及支援哪些作業。</p>
+  <p><b>擴充標準（或自己的）RAP BO：BDEF extension（7.57／2022 起）。</b>原 BDEF 要先宣告 <span class="kw">extensible { … }</span> 開放哪些擴充點，擴充方再建立一個 extension BDEF。以下結構取自官方 Flight 範例的 agency 擴充，名稱已改成報價單的例子：</p>
+  <pre><code class="abap">// 原 BDEF（提供方）：開放擴充點
+managed implementation in class zbp_i_quote unique;
+strict ( 2 );
+with draft;
+extensible
+{
+  with determinations on modify;
+  with determinations on save;
+  with validations on save;
+  with additional save;
+}
+define behavior for ZI_Quote alias Quote
+...
+extensible
+{ ... }
+
+// 擴充 BDEF（擴充方，另一個物件）：用 interface 擴充
+extension using interface zi_quotetp
+implementation in class zbp_x_quote_check unique;
+
+extend behavior for Quote
+{
+  validation zz_validateCreditLimit on save { field SoldToParty; }
+  extend draft determine action Prepare
+  {
+    validation zz_validateCreditLimit;
+  }
+}</code></pre>
+  <div class="warn"><b>擴充標準 RAP BO 前先確認三件事</b>：(1) 該 BO 是否宣告了 <span class="kw">extensible</span>、開放了哪些擴充點；(2) 是否有 C0（擴充用）released 的 interface；(3) 需求能不能用標準設定或既有 BAdI 解決。升級成本依「標準設定 → BAdI／Enhancement Spot → Enhancement Point → 修改標準」的順序，每往右一步就高一個量級，詳見 <a href="#ch03-4-17">3-4 章第 17 節</a>。擴充欄位要加命名空間前綴（例如 zz_），避免和 SAP 日後新增的欄位撞名。</div>
+  <div class="note">出處：<a href="https://github.com/SAP-samples/abap-platform-refscen-flight/tree/ABAP-platform-2022/src/reuse/agency">官方 Flight 參考情境 2022：/DMO/R_AGENCYTP（extensible）、/DMO/ZZ_X_COUNTRY_R_AGENCYTP（extension using interface）</a>、<a href="https://github.com/SAP-samples/abap-cheat-sheets/blob/main/33_ABAP_Release_News.md">SAP-samples：ABAP Release News 7.57（BDEF Extensions）</a>、<a href="https://github.com/SAP-samples/abap-cheat-sheets/blob/main/36_RAP_Behavior_Definition_Language.md">SAP-samples：RAP BDL</a></div>
+
+  <h3 id="ch10-5-qa">練習與自我檢核</h3>
+  <ol>
+    <li>把第 2 節的時序表默寫出來：determination on modify、determination on save、validation、adjust_numbers、save_modified 各在哪個階段執行？哪個階段之後就「不能退回」？</li>
+    <li>為什麼 validation 要同時填 failed 與 reported？只填其中一個，各會發生什麼事？</li>
+    <li>在 draft BO 中，validateCustomer 沒有登記進 <span class="kw">Prepare</span>，使用者會看到什麼現象？</li>
+    <li>把第 3 節 calcTotal 改成支援多幣別：同一張報價單的明細幣別不同時，先換算成表頭幣別再加總（提示：換算要不要放到 on save？）。</li>
+    <li>寫一個 <span class="kw">function previewDiscount parameter ZA_QuoteDiscount result [1] ZA_QuoteAmount;</span>，傳入折扣百分比，回傳折扣後金額，不修改資料。</li>
+    <li>同一張報價單已接受時：Fiori 上哪些按鈕應該灰掉？用 EML 在 LOCAL MODE 和非 LOCAL MODE 各呼叫一次 acceptQuote，結果有什麼不同？</li>
+    <li>你的系統是 S/4HANA 2020：第 1 節的完整 BDEF 有哪幾行要刪掉或改寫？（提示：strict(2)、global 權限、factory action）</li>
+    <li>說明為什麼 <span class="kw">BAPI_SALESORDER_CREATEFROMDAT2</span> 不能在 action 裡呼叫，也不能在 saver 裡接著呼叫 <span class="kw">BAPI_TRANSACTION_COMMIT</span>。如果 late save 呼叫 BAPI 失敗，有哪兩種處理方式？</li>
+    <li>主鍵用 UUID、報價單號用號碼範圍，和主鍵直接用號碼範圍（early numbering）相比，各有什麼優缺點？什麼情況一定要 late numbering？</li>
+    <li>使用者按了「編輯」就關掉瀏覽器，業務助理用傳統程式改同一張報價單會遇到什麼？要去哪個 TCODE 查？</li>
+    <li>客戶要求「接受報價就自動建銷售訂單」。依「先找標準」的原則，你會先查哪些東西，才決定要在 saver 裡包 BAPI？</li>
+  </ol>
+</section>

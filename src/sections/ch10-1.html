@@ -1,0 +1,853 @@
+<section class="chapter" id="ch10-1" data-title="CDS View 基礎">
+  <h2>第 10-1 章 CDS View 基礎：從 DDIC-based view 到 view entity</h2>
+  <p class="lede">S/4HANA 的標準資料模型、Fiori、RAP 全部建立在 ABAP CDS 上。本章是第十部的開篇：先說明 CDS、AMDP、RAP 三者的定位與版本門檻，再從零開始教 CDS view：兩種寫法（1809 能用的 DDIC-based view 與 2020 起的 view entity）、在 ADT 建立與預覽、SELECT 清單、JOIN 與 association、彙總、參數、常用註解、在 ABAP 與 ALV with IDA 中使用，最後以銷售訂單（VBAK／VBAP）做一套 1809 版與一套 2020+ 版的完整範例。</p>
+  <div class="meta">
+    <div><b>核心工具</b>Eclipse ADT（Data Definition、Data Preview）<span class="tcode">SE11</span>（只能顯示）<span class="tcode">SE38</span><span class="tcode">SE24</span><span class="tcode">SE16N</span><span class="tcode">ST05</span></div>
+    <div><b>關鍵物件</b>VBAK、VBAP、KNA1、T006、TCURR、I_SalesOrder、I_SalesOrderItem、CL_SALV_GUI_TABLE_IDA、CL_SALV_TABLE、RUTDDLS_MIGRATION_CANDIDATES、RUTDDLSV2MIGRATION、RUT_WHERE_USE_SQLVIEW</div>
+    <div><b>版本基準</b>S/4HANA 1809（ABAP 7.53）；超過 1809 的語法一律以 warn 標註門檻</div>
+  </div>
+
+  <h3 id="ch10-1-01">1. 第十部導覽：Code Pushdown → 資料模型 → 交易模型</h3>
+  <p>前面各部教的是「在 ABAP 應用伺服器上處理資料」。第十部處理的是 S/4HANA 時代的另一條主線：<b>把運算推到 HANA（Code Pushdown），把資料表包裝成有業務語意的資料模型（CDS），再在資料模型上加上新增、修改、刪除等交易行為（RAP）</b>。三者是一層疊一層的關係，不是互相取代：</p>
+  <table>
+    <thead><tr><th>層次</th><th>技術</th><th>解決什麼問題</th><th>一句話定位</th></tr></thead>
+    <tbody>
+      <tr><td>① Code Pushdown</td><td>ABAP SQL 運算式、CDS、<b>AMDP</b>（SQLScript）</td><td>JOIN、彙總、計算搬到 HANA 做，只傳結果回來</td><td>能用 ABAP SQL／CDS 的就不要寫 AMDP；AMDP 是最後手段</td></tr>
+      <tr><td>② 資料模型</td><td><b>CDS view</b>、association、註解、DCL 權限</td><td>把 VBAK、VBAP 這類難懂的表變成 SalesOrder、SoldToParty 這類有語意、可重用的實體</td><td>S/4HANA 的標準資料模型（VDM）就是一大堆 CDS view</td></tr>
+      <tr><td>③ 交易模型</td><td><b>RAP</b>（behavior definition、behavior pool、service binding）</td><td>在 CDS 模型上定義新增／修改／刪除、動作、驗證，對外發布成 OData 給 Fiori 使用</td><td>1909 起才有；1809 的交易型開發用 CDS＋BOPF</td></tr>
+    </tbody>
+  </table>
+  <p><b>第十部 5 章的閱讀路線</b>（先讀完本章，再依需要往下）：</p>
+  <ol>
+    <li><b>10-1（本章）CDS View 基礎</b>：每個人都要會。會寫、會讀、會在報表裡用 CDS。</li>
+    <li><b><a href="#ch10-2">10-2 CDS 進階</a></b>：存取控制 DCL、擴充與 metadata extension、table function、Analytics、OData 發佈（1809 的 <span class="kw">@OData.publish</span>）、UI 註解、效能與測試。</li>
+    <li><b><a href="#ch10-3">10-3 AMDP</a></b>：用 ABAP 類別寫 SQLScript。CDS 做不到的運算才進這一章。</li>
+    <li><b><a href="#ch10-4">10-4 RAP 基礎</a></b>：managed 情境，以自建報價單 <span class="kw">ZQUOTE_H</span>／<span class="kw">ZQUOTE_I</span> 貫穿，從 interface view <span class="kw">ZI_Quote</span> 一路做到 service <span class="kw">ZUI_QUOTE_O4</span> 與 Fiori Elements 預覽；最後一節是 1809 的替代方案（CDS＋BOPF）。</li>
+    <li><b><a href="#ch10-5">10-5 RAP 進階</a></b>：determination、validation、action、feature control、權限、numbering、draft，以及用 unmanaged 包裝既有 BAPI。</li>
+  </ol>
+  <p>本部統一情境：<b>讀取類用銷售訂單</b>（標準表 VBAK／VBAP，或標準 CDS <span class="kw">I_SalesOrder</span>／<span class="kw">I_SalesOrderItem</span>），<b>交易類用自建報價單</b>（因為不能對標準表直接做 RAP 寫入）。與本館既有章節的關係：<a href="#ch01-2-13">1-2 章第 13 節</a>（CDS 取代 DB View 的第一印象）、<a href="#ch05-5-11">5-5 章第 11 節</a>（BC404 ADT 教材裡的 CDS）、<a href="#ch05-21-23">5-21 章第 23 節</a>（BC490 的 Code Pushdown 觀點）、<a href="#ch05-24-14">5-24 章第 14 節</a>（Fiori 架構）。那幾節是入門介紹，本部是完整教學。</p>
+  <div class="tip"><b>學習順序的建議</b>：先把本章的 CDS 寫熟，在自己的 Z 報表裡把「SELECT 多張表再 LOOP 合併」改成「讀一個 CDS view」。這一步在 1809 就能做，也最立刻見效。RAP 要 1909 以上才有，系統版本不夠時先不必急著學。</div>
+  <div class="note">出處：<a href="https://help.sap.com/doc/abapdocu_latest_index_htm/latest/en-US/ABENCDS_V2_VIEWS.html">ABAP Keyword Documentation – ABAP CDS View Entities</a>；<a href="https://help.sap.com/docs/SAP_S4HANA_ON-PREMISE/ee6ff9b281d8448f96b4fe6c89f2bdc8/0a875bc7a005465aad92c08becc11776.html">SAP Help – VDM Layers and View Types</a>。</div>
+
+  <h3 id="ch10-1-02">2. 版本門檻總表與本章功能 × 版本</h3>
+  <p>S/4HANA 版本與 ABAP 版本的對應（依 ABAP Keyword Documentation 的 Release Mapping 表）：</p>
+  <table>
+    <thead><tr><th>S/4HANA／ABAP Platform</th><th>ABAP 版本</th><th>Kernel</th></tr></thead>
+    <tbody>
+      <tr><td>1809</td><td>7.53</td><td>7.73</td></tr>
+      <tr><td>1909</td><td>7.54</td><td>7.77</td></tr>
+      <tr><td>2020</td><td>7.55</td><td>7.81</td></tr>
+      <tr><td>2021</td><td>7.56</td><td>7.85</td></tr>
+      <tr><td>2022</td><td>7.57</td><td>7.89</td></tr>
+      <tr><td>2023</td><td>7.58</td><td>7.93</td></tr>
+    </tbody>
+  </table>
+  <p><b>第十部總版本門檻表</b>（每一項都對過 ABAP 各版的 Release News）：</p>
+  <table>
+    <thead><tr><th>功能</th><th>最早版本</th><th>1809 可用？</th><th>說明</th></tr></thead>
+    <tbody>
+      <tr><td>CDS DDIC-based view（<span class="kw">DEFINE VIEW</span>＋<span class="kw">@AbapCatalog.sqlViewName</span>）</td><td>7.40 SP05</td><td>可以</td><td>7.57（2022）起文件正式標為 obsolete，但既有物件照常可用</td></tr>
+      <tr><td>CDS access control（DCL，<span class="kw">DEFINE ROLE</span>）</td><td>7.40 SP10；7.50 起 ABAP SQL 會自動套用</td><td>可以</td><td>見 10-2</td></tr>
+      <tr><td>CDS table function（由 AMDP function 實作）</td><td>7.50</td><td>可以</td><td>見 10-2、10-3</td></tr>
+      <tr><td>CDS 參數、<span class="kw">@Environment.systemField</span>、<span class="kw">$session</span> 變數</td><td>7.50（參數在 7.40 就有，7.50 起所有資料庫都支援）</td><td>可以</td><td>本章第 11 節</td></tr>
+      <tr><td>AMDP procedure（<span class="kw">BY DATABASE PROCEDURE</span>）</td><td>7.40 SP05</td><td>可以</td><td>見 10-3</td></tr>
+      <tr><td>AMDP function（<span class="kw">BY DATABASE FUNCTION</span>）</td><td>7.50</td><td>可以</td><td>見 10-3</td></tr>
+      <tr><td>交易型：ABAP Programming Model for SAP Fiori（CDS＋BOPF，<span class="kw">@ObjectModel.transactionalProcessingEnabled</span>）</td><td>1809 以前就有</td><td>可以</td><td>1809 唯一的「CDS 上做交易」方案</td></tr>
+      <tr><td>CDS projection view、service definition（<span class="kw">DEFINE SERVICE</span>）</td><td>7.54</td><td>不行</td><td>1909 起</td></tr>
+      <tr><td>RAP managed BO</td><td>7.54</td><td>不行</td><td>1909 起</td></tr>
+      <tr><td>RAP draft</td><td>7.55</td><td>不行</td><td>2020 起</td></tr>
+      <tr><td>CDS view entity（<span class="kw">DEFINE VIEW ENTITY</span>）</td><td>7.55</td><td>不行</td><td>2020 起；SAP 建議新開發一律用它</td></tr>
+      <tr><td>view entity 的 UNION、DISTINCT、typed literal、<span class="kw">get_numeric_value</span></td><td>7.56</td><td>不行</td><td>2021 起</td></tr>
+      <tr><td>遷移報表 RUTDDLS_MIGRATION_CANDIDATES、RUTDDLSV2MIGRATION</td><td>7.56</td><td>不行</td><td>2021 起</td></tr>
+      <tr><td>RUT_WHERE_USE_SQLVIEW（找出誰還在用 SQL view）</td><td>7.57</td><td>不行</td><td>2022 起</td></tr>
+      <tr><td>ADT 遷移精靈「Migrate to CDS View Entity...」</td><td>S/4HANA 2023 FPS00（7.58）</td><td>不行</td><td>本章第 6 節</td></tr>
+      <tr><td>Service binding 的 OData V4</td><td colspan="3">未能確認確切起始版本，請以系統為準；詳見 10-4</td></tr>
+    </tbody>
+  </table>
+  <p><b>本章功能 × 版本門檻</b>：</p>
+  <table>
+    <thead><tr><th>本章功能</th><th>1809（7.53）</th><th>2020（7.55）</th><th>2021（7.56）以上</th></tr></thead>
+    <tbody>
+      <tr><td>DDIC-based view、association、path expression、JOIN、GROUP BY、HAVING</td><td>✓</td><td>✓</td><td>✓（obsolete，但可用）</td></tr>
+      <tr><td>DDIC-based view 的 UNION</td><td>✓</td><td>✓</td><td>✓</td></tr>
+      <tr><td>view entity 基本語法（JOIN、association、CASE、CAST、函數、參數、GROUP BY、HAVING）</td><td>✗</td><td>✓</td><td>✓</td></tr>
+      <tr><td>view entity 的 UNION</td><td>✗</td><td>✗</td><td>✓</td></tr>
+      <tr><td>ABAP SQL 讀 CDS、傳參數、path expression <span class="kw">\_assoc-field</span></td><td>✓</td><td>✓</td><td>✓</td></tr>
+      <tr><td>ALV with IDA 顯示 CDS（CL_SALV_GUI_TABLE_IDA）</td><td>✓</td><td>✓</td><td>✓</td></tr>
+    </tbody>
+  </table>
+  <div class="note">出處：<a href="https://help.sap.com/doc/abapdocu_latest_index_htm/latest/en-US/ABENNEWS-75.html">News for ABAP Release 7.5x（Release Mapping 表）</a>；<a href="https://help.sap.com/doc/abapdocu_latest_index_htm/latest/en-US/ABENNEWS-740_SP10-ABAP_CDS.html">ABAP CDS in 7.40 SP10</a>；<a href="https://help.sap.com/doc/abapdocu_latest_index_htm/latest/en-US/ABENNEWS-750-ABAP_CDS.html">ABAP CDS in 7.50</a>；<a href="https://help.sap.com/doc/abapdocu_latest_index_htm/latest/en-US/ABENNEWS-750-AMDP.html">AMDP in 7.50</a>；<a href="https://help.sap.com/doc/abapdocu_latest_index_htm/latest/en-US/ABENNEWS-740_SP05-AMDP.html">AMDP in 7.40 SP05</a>；<a href="https://help.sap.com/doc/abapdocu_latest_index_htm/latest/en-US/ABENNEWS-754-CDS_BDL.html">RAP BDL in 7.54</a>；<a href="https://help.sap.com/doc/abapdocu_latest_index_htm/latest/en-US/ABENNEWS-755-CDS_BDL.html">RAP BDL in 7.55</a>；<a href="https://help.sap.com/doc/abapdocu_latest_index_htm/latest/en-US/ABENNEWS-755-ABAP_CDS.html">ABAP CDS in 7.55</a>；<a href="https://help.sap.com/doc/abapdocu_latest_index_htm/latest/en-US/ABENNEWS-756-ABAP_CDS.html">ABAP CDS in 7.56</a>；<a href="https://help.sap.com/doc/abapdocu_latest_index_htm/latest/en-US/ABENNEWS-757-ABAP_CDS.html">ABAP CDS in 7.57</a>；<a href="https://help.sap.com/doc/3750bcdf7b8045e18f1b759e6d2b000b/2020%20FPS00/en-US/ABAP_Programming_Model_for_Fiori_EN.pdf">ABAP Programming Model for SAP Fiori（SAP Help PDF）</a>。</div>
+
+  <h3 id="ch10-1-03">3. CDS 是什麼：跟 SE11 資料庫 view 差在哪</h3>
+  <p><b>ABAP CDS（Core Data Services）是 ABAP 的資料模型層。</b>你用一種類似 SQL 的 DDL（資料定義語言）在 ADT 裡寫出「這個實體有哪些欄位、從哪些表來、跟誰有關聯、每個欄位是什麼語意」，啟用後它就是一個全域的結構型別，可以在 ABAP SQL 裡當資料來源讀取，也可以當別的 CDS 的資料來源、當 OData 服務的基礎。</p>
+  <table>
+    <thead><tr><th>比較項目</th><th>SE11 Database View</th><th>CDS view</th></tr></thead>
+    <tbody>
+      <tr><td>建立工具</td><td>SE11 表單</td><td><b>只能在 ADT</b>（SE11／SE80 只能顯示）</td></tr>
+      <tr><td>JOIN</td><td>只有 inner join</td><td>inner、left outer、right outer，另有 association</td></tr>
+      <tr><td>運算</td><td>沒有</td><td>CASE、CAST、算術、字串與日期函數、幣別與單位換算</td></tr>
+      <tr><td>彙總</td><td>沒有</td><td>SUM、COUNT、MIN、MAX、AVG、GROUP BY、HAVING</td></tr>
+      <tr><td>參數</td><td>沒有</td><td>可以（<span class="kw">with parameters</span>）</td></tr>
+      <tr><td>語意</td><td>只有 DDIC 型別</td><td>註解：幣別參照、單位參照、文字、權限、UI、分析</td></tr>
+      <tr><td>權限</td><td>程式自己 AUTHORITY-CHECK</td><td>DCL role，ABAP SQL 讀取時自動套用（7.50 起）</td></tr>
+      <tr><td>重用性</td><td>低</td><td>CDS 可以疊 CDS，形成分層的資料模型（VDM）</td></tr>
+    </tbody>
+  </table>
+  <p>CDS 與 HANA 原生的 calculation view 不同：ABAP CDS 由 ABAP 管理（有傳輸、有版本、有語法檢查），在所有 SAP 支援的資料庫上都能用；只是 S/4HANA 一律跑在 HANA 上，所以 CDS 的運算最後都在 HANA 執行。</p>
+  <pre><code class="abap">" 最小的 CDS view（1809 可用的 DDIC-based 寫法）
+@AbapCatalog.sqlViewName: 'ZVSOHEADMIN'
+@AbapCatalog.compiler.compareFilter: true
+@AccessControl.authorizationCheck: #NOT_REQUIRED
+@EndUserText.label: '銷售訂單表頭（最小範例）'
+define view ZI_SalesOrderMin
+  as select from vbak
+{
+  key vbeln as SalesOrder,
+      erdat as CreationDate,
+      auart as SalesOrderType,
+      vkorg as SalesOrganization,
+      kunnr as SoldToParty
+}</code></pre>
+  <pre><code class="abap">" 在 ABAP 讀 CDS 跟讀表一樣，而且 CDS 名稱本身就是 DDIC 結構型別
+SELECT SalesOrder, CreationDate, SoldToParty
+  FROM zi_salesordermin
+  WHERE SalesOrganization = @p_vkorg
+  ORDER BY SalesOrder
+  INTO TABLE @DATA(lt_head).
+
+DATA ls_head TYPE zi_salesordermin.   " 用 CDS 實體名稱當型別</code></pre>
+  <div class="note">出處：<a href="https://help.sap.com/doc/abapdocu_latest_index_htm/latest/en-US/ABENCDS_V1_VIEWS.html">ABAP CDS – DDIC-Based Views (Obsolete)</a>；<a href="https://help.sap.com/doc/abapdocu_latest_index_htm/latest/en-US/ABENNEWS-750-ABAP_CDS.html">ABAP CDS in 7.50（DCL 自動套用、參數）</a>。</div>
+
+  <h3 id="ch10-1-04">4. VDM：S/4HANA 的標準 CDS 分層與命名</h3>
+  <p>S/4HANA 的 VDM（Virtual Data Model）就是 SAP 用 CDS 建出的整套標準資料模型。它分層，而且從名稱前綴就看得出是哪一層：</p>
+  <table>
+    <thead><tr><th>前綴</th><th>類型</th><th><span class="kw">@VDM.viewType</span></th><th>說明</th></tr></thead>
+    <tbody>
+      <tr><td>I_</td><td>Interface view（basic 或 composite）</td><td>#BASIC／#COMPOSITE</td><td>可重用層。basic 直接讀資料表、把欄位改成有語意的名稱；composite 由 basic 組合而成。例如 <span class="kw">I_SalesOrder</span> 是銷售訂單業務物件的 root，<span class="kw">I_SalesOrderItem</span> 是它的明細</td></tr>
+      <tr><td>C_</td><td>Consumption view</td><td>#CONSUMPTION</td><td>最上層，為特定 app 或分析報表設計；唯一可作為 analytical query 的 VDM 類型</td></tr>
+      <tr><td>R_</td><td>Restricted reuse view</td><td>#BASIC／#COMPOSITE</td><td>跟 I_ 一樣是重用層，但不開放給客戶與夥伴重用</td></tr>
+      <tr><td>P_</td><td>Private view</td><td>—</td><td>內部輔助用</td></tr>
+      <tr><td>A_</td><td>Remote API view</td><td>—</td><td>對外 API 的基礎</td></tr>
+      <tr><td>X_</td><td>View extend</td><td>—</td><td>SAP 提供的產業別、國家別欄位擴充</td></tr>
+      <tr><td>E_</td><td>Extension include view</td><td>#EXTENSION</td><td>Key user 欄位擴充的技術載體</td></tr>
+      <tr><td>F_、D_</td><td>Derivation function、abstract entity</td><td>#DERIVATION_FUNCTION／—</td><td>較少直接接觸</td></tr>
+    </tbody>
+  </table>
+  <p><span class="kw">@VDM.viewType</span> 允許的值（依註解定義）：<span class="kw">#BASIC、#COMPOSITE、#CONSUMPTION、#DERIVATION_FUNCTION、#EXTENSION、#TRANSACTIONAL</span>。其中 #TRANSACTIONAL 是定義交易執行期（含 draft）的特殊 composite view。VDM 註解<b>不影響執行期</b>，只是讓 view browser 之類的工具正確分類。常見後綴：<span class="kw">Query／Q</span>（分析查詢）、<span class="kw">Cube</span>、<span class="kw">Text</span>（語言相關文字）、<span class="kw">TP</span>（transactional processing）、<span class="kw">VH</span>（value help）。</p>
+  <pre><code class="abap">" 自建 CDS 也建議跟著 VDM 命名：Z + 前綴 + 語意名稱
+@AbapCatalog.sqlViewName: 'ZISDSOTYPE'
+@AccessControl.authorizationCheck: #NOT_REQUIRED
+@EndUserText.label: '銷售訂單類型'
+@VDM.viewType: #BASIC                    // 只是分類，不影響執行
+@ObjectModel.representativeKey: 'SalesOrderType'
+define view ZI_SalesOrderType
+  as select from tvak
+{
+  key auart as SalesOrderType,
+      vbtyp as SalesDocumentCategory
+}</code></pre>
+  <div class="tip"><b>先找標準，再想客製。</b>要讀銷售訂單之前，先在 ADT 用 Ctrl+Shift+A 搜尋 <span class="kw">I_SalesOrder*</span>，看標準 VDM 有沒有現成的 view。標準 view 是否可以讓客戶直接使用，要看它的 release 狀態（stability contract，例如 C1 表示可在系統內部重用）：在 ADT 開啟該 view，看 Properties → API State。有 released 的就直接用，沒有才自己從 VBAK 建。</div>
+  <div class="note">出處：<a href="https://help.sap.com/docs/SAP_S4HANA_ON-PREMISE/ee6ff9b281d8448f96b4fe6c89f2bdc8/0a875bc7a005465aad92c08becc11776.html">SAP Help – VDM Layers and View Types</a>；<a href="https://help.sap.com/docs/SAP_S4HANA_ON-PREMISE/ee6ff9b281d8448f96b4fe6c89f2bdc8/8a8cee943ef944fe8936f4cc60ba9bc1.html">SAP Help – Naming Conventions in the Virtual Data Model</a>；<a href="https://help.sap.com/docs/SAP_S4HANA_ON-PREMISE/ee6ff9b281d8448f96b4fe6c89f2bdc8/2e4edbede2f94fb7b7f6eac856c02b19.html">SAP Help – Stability Contracts for CDS Views</a>；<a href="https://help.sap.com/doc/abapdocu_latest_index_htm/latest/en-US/ABENCDS_2063101229-_ANNO.html">VDM.viewType 註解定義</a>。</div>
+
+  <h3 id="ch10-1-05">5. 兩種 CDS view：DDIC-based view 與 view entity</h3>
+  <p>CDS view 有兩代。<b>1809、1909 只有第一代</b>；2020 起有第二代，SAP 建議新開發一律用第二代。</p>
+  <table>
+    <thead><tr><th>比較項目</th><th>DDIC-based view（第一代）</th><th>CDS view entity（第二代）</th></tr></thead>
+    <tbody>
+      <tr><td>語法</td><td><span class="kw">define view</span></td><td><span class="kw">define view entity</span></td></tr>
+      <tr><td>可用版本</td><td>7.40 SP05 起（1809 可用）；7.57 起標為 obsolete</td><td>7.55（S/4HANA 2020）起</td></tr>
+      <tr><td>SQL view 物件</td><td>必須寫 <span class="kw">@AbapCatalog.sqlViewName</span>（最多 16 字元），啟用時在 DDIC 產生一個「CDS-managed DDIC view」，SE11 看得到</td><td><b>不產生</b> DDIC view，不寫也不能寫 sqlViewName</td></tr>
+      <tr><td>名稱</td><td>三個名稱：DDL source、CDS 實體、SQL view</td><td>一個名稱：DDL source 與實體名稱必須相同</td></tr>
+      <tr><td>啟用</td><td>CDS 實體、DDIC view、資料庫 view 都要啟用</td><td>只啟用 CDS 實體與 HANA 上的 view，<b>啟用較快</b></td></tr>
+      <tr><td>Client 處理</td><td>用 <span class="kw">@ClientHandling.type</span>、<span class="kw">@ClientHandling.algorithm</span> 控制；client 欄位可以寫在 SELECT 清單</td><td>全自動（依 session 變數 <span class="kw">$session.client</span> 過濾），<b>不允許</b> client 註解，SELECT 清單也<b>不能</b>放 client 欄位</td></tr>
+      <tr><td><span class="kw">@AbapCatalog.compiler.compareFilter</span></td><td>建議設 true（不寫時預設 false：相同過濾條件的 path 會各自產生 JOIN）</td><td>不需要也不允許，一律自動比對</td></tr>
+      <tr><td>語法檢查</td><td>較寬鬆</td><td>較嚴格，例如多個資料來源時欄位要加來源別名、CURR 欄位必須有幣別參照註解</td></tr>
+      <tr><td>參數引用</td><td><span class="kw">:p_x</span> 或 <span class="kw">$parameters.p_x</span></td><td>只能 <span class="kw">$parameters.p_x</span></td></tr>
+      <tr><td><span class="kw">SELECT *</span></td><td>可以</td><td>不支援</td></tr>
+      <tr><td>AMDP 的 USING</td><td>不行（DDIC-based view 不是 client-safe）</td><td>可以</td></tr>
+    </tbody>
+  </table>
+  <pre><code class="abap">" 第一代：DDIC-based view（1809 起可用）
+@AbapCatalog.sqlViewName: 'ZVSOGEN1'           // SQL view 名稱，最多 16 字元
+@AbapCatalog.compiler.compareFilter: true
+@ClientHandling.algorithm: #SESSION_VARIABLE    // 可省略；省略時預設 #AUTOMATED
+@AccessControl.authorizationCheck: #NOT_REQUIRED
+@EndUserText.label: '第一代 CDS'
+define view ZI_SoGen1
+  as select from vbak
+{
+  key vbeln as SalesOrder,
+      erdat as CreationDate
+}</code></pre>
+  <pre><code class="abap">" 第二代：CDS view entity（7.55／S/4HANA 2020 起）
+@AccessControl.authorizationCheck: #NOT_REQUIRED
+@EndUserText.label: '第二代 CDS'
+define view entity ZI_SoGen2
+  as select from vbak
+{
+  key vbak.vbeln as SalesOrder,
+      vbak.erdat as CreationDate
+}</code></pre>
+  <div class="warn"><b>門檻：</b><span class="kw">define view entity</span> 需要 ABAP 7.55（S/4HANA 2020）以上，1809、1909 會語法錯誤。1809 的專案請一律用第一代寫法，並在命名與欄位別名上就照 VDM 規則走，將來升級後遷移會很順。</div>
+  <div class="note">出處：<a href="https://help.sap.com/docs/ABAP_PLATFORM_NEW/f2e545608079437ab165c105649b89db/7c078765ec6d4e6b88b71bdaf8a2bd9f.html">SAP Help – CDS View Entities（Comparison of CDS DDIC-Based Views vs. CDS View Entities）</a>；<a href="https://help.sap.com/doc/abapdocu_latest_index_htm/latest/en-US/ABENCDS_VIEW_CLIENT_HDL_DEF.html">Client Handling for CDS View Entities</a>；<a href="https://help.sap.com/doc/abapdocu_latest_index_htm/latest/en-US/ABENCDS_VIEW_CLIENT_HANDLING_V1.html">Client Handling in CDS DDIC-Based Views</a>；<a href="https://help.sap.com/doc/abapdocu_latest_index_htm/latest/en-US/ABENCDS_VIEW_ENTITY_ANNO.html">view_entity_annot（compareFilter、ClientHandling 不允許）</a>；<a href="https://help.sap.com/doc/abapdocu_latest_index_htm/latest/en-US/ABENCDS_1687178802-_ANNO.html">AbapCatalog.compiler.compareFilter</a>；<a href="https://help.sap.com/doc/abapdocu_latest_index_htm/latest/en-US/ABENCDS_253495944_ANNO.html">AbapCatalog.sqlViewName</a>；<a href="https://help.sap.com/doc/abapdocu_latest_index_htm/latest/en-US/ABENCDS_DEFINE_VIEW_ENTITY.html">DEFINE VIEW ENTITY</a>。</div>
+
+  <h3 id="ch10-1-06">6. 從 DDIC-based view 遷移到 view entity</h3>
+  <p>升級到 2020 以上之後，既有的第一代 CDS 照樣能用，不必急著全部改；但新開發用第二代，舊的可以分批遷移。可用的工具依版本而定：</p>
+  <table>
+    <thead><tr><th>版本</th><th>工具</th><th>用途</th></tr></thead>
+    <tbody>
+      <tr><td>2020（7.55）</td><td>無官方工具</td><td>手動改寫（見下方檢查清單）</td></tr>
+      <tr><td>2021（7.56）起</td><td>程式 <b>RUTDDLS_MIGRATION_CANDIDATES</b></td><td>分析哪些 DDIC-based view 可以遷移</td></tr>
+      <tr><td>2021（7.56）起</td><td>程式 <b>RUTDDLSV2MIGRATION</b></td><td>實際遷移：自動做大部分調整，產生<b>未啟用</b>的新版本，確認後再手動啟用</td></tr>
+      <tr><td>2022（7.57）起</td><td>程式 <b>RUT_WHERE_USE_SQLVIEW</b></td><td>列出所有還在使用 CDS-managed DDIC view（SQL view 名稱）的 repository 物件</td></tr>
+      <tr><td>2023 FPS00（7.58）起</td><td>ADT 精靈 <b>Migrate to CDS View Entity...</b></td><td>在 Project Explorer 選 Data Definition → 右鍵 → Migrate to CDS View Entity...；可選 Simulation（只檢查）或 Migration（產生未啟用版本，要手動啟用），可指定傳輸請求，結果可匯出 CSV</td></tr>
+    </tbody>
+  </table>
+  <div class="note"><b>名稱更正</b>：常被提到的「RUT_WHERE_USE_SQLVIEW」<b>不是</b>遷移工具，它是 7.57 起用來找出「誰還在用 SQL view 名稱」的清單程式；真正做遷移的是 7.56 起的 <b>RUTDDLSV2MIGRATION</b>，分析可否遷移的是 <b>RUTDDLS_MIGRATION_CANDIDATES</b>。</div>
+  <p><b>遷移前一定要先查的事</b>：第二代沒有 SQL view。任何程式、SE11 物件、查詢若用的是 <span class="kw">sqlViewName</span>（例如 <span class="kw">SELECT … FROM zvsogen1</span>），遷移後就會失效。所以先用 RUT_WHERE_USE_SQLVIEW（7.57 起）或 where-used 找出這些使用者，改成用 CDS 實體名稱。</p>
+  <p><b>手動遷移檢查清單</b>（7.55 沒有工具時照這個做）：</p>
+  <ol>
+    <li><span class="kw">define view</span> 改成 <span class="kw">define view entity</span>；DDL source 名稱與實體名稱必須一致。</li>
+    <li>刪除 <span class="kw">@AbapCatalog.sqlViewName</span>、<span class="kw">@AbapCatalog.compiler.compareFilter</span>、<span class="kw">@ClientHandling.*</span>（第二代不允許）。</li>
+    <li>SELECT 清單如果有 <span class="kw">mandt</span>，刪掉。</li>
+    <li>參數引用 <span class="kw">:p_x</span> 全部改成 <span class="kw">$parameters.p_x</span>。</li>
+    <li>多個資料來源時，每個欄位都加上來源別名（<span class="kw">vbak.vbeln</span>）。</li>
+    <li>CURR、QUAN 欄位補上 <span class="kw">@Semantics.amount.currencyCode</span>／<span class="kw">@Semantics.quantity.unitOfMeasure</span>，而且要指向<b>同一個 view 裡</b>的幣別／單位欄位。</li>
+    <li>有 UNION 的 view 要 7.56 以上才能遷移；有 <span class="kw">SELECT *</span> 的要改成明列欄位。</li>
+    <li>把所有使用 SQL view 名稱的地方改成實體名稱，再啟用並測試。</li>
+  </ol>
+  <pre><code class="abap">" 遷移前（DDIC-based）
+@AbapCatalog.sqlViewName: 'ZVSOAMT'
+@AbapCatalog.compiler.compareFilter: true
+@AccessControl.authorizationCheck: #NOT_REQUIRED
+@EndUserText.label: '訂單金額'
+define view ZI_SoAmount
+  with parameters p_vkorg : vkorg
+  as select from vbak
+{
+  key vbeln as SalesOrder,
+      @Semantics.amount.currencyCode: 'Currency'
+      netwr as NetAmount,
+      @Semantics.currencyCode: true
+      waerk as Currency
+}
+where vkorg = :p_vkorg
+
+" 遷移後（view entity，7.55+）：去掉 sqlViewName／compareFilter，
+" :p_vkorg 改成 $parameters.p_vkorg，幣別參照指向同一 view 的 Currency
+@AccessControl.authorizationCheck: #NOT_REQUIRED
+@EndUserText.label: '訂單金額'
+define view entity ZI_SoAmount
+  with parameters p_vkorg : vkorg
+  as select from vbak
+{
+  key vbak.vbeln as SalesOrder,
+      @Semantics.amount.currencyCode: 'Currency'
+      vbak.netwr as NetAmount,
+      vbak.waerk as Currency
+}
+where vbak.vkorg = $parameters.p_vkorg</code></pre>
+  <div class="warn">遷移精靈的文件明講：<b>遷移後的 view entity 一旦啟用，就不能還原成 DDIC-based view</b>。正式遷移前先跑 Simulation，並在開發機用 SE16N／Data Preview 對照遷移前後的筆數與金額。</div>
+  <div class="note">出處：<a href="https://help.sap.com/doc/abapdocu_latest_index_htm/latest/en-US/ABENNEWS-756-ABAP_CDS.html">ABAP CDS in 7.56（第 16、17 項：RUTDDLS_MIGRATION_CANDIDATES、RUTDDLSV2MIGRATION）</a>；<a href="https://help.sap.com/doc/abapdocu_latest_index_htm/latest/en-US/ABENNEWS-757-ABAP_CDS.html">ABAP CDS in 7.57（RUT_WHERE_USE_SQLVIEW、DDIC-based views obsolete）</a>；<a href="https://help.sap.com/docs/ABAP_PLATFORM_NEW/f2e545608079437ab165c105649b89db/250ef63d7941437194f6dc7663a44af5.html">SAP Help – Migrating CDS DDIC-Based Views to CDS View Entities（ADT 精靈）</a>；<a href="https://help.sap.com/doc/abapdocu_latest_index_htm/latest/en-US/ABENCDS_PARAMETER_V2.html">CDS View Entity, parameter</a>。</div>
+
+  <h3 id="ch10-1-07">7. 在 ADT 建立、啟用與預覽 CDS</h3>
+  <p>CDS 只能在 Eclipse ADT 建立，SAP GUI 沒有 CDS 編輯器（SE11 只能顯示 DDIC-based view 產生的 SQL view）。ADT 的安裝與專案建立見 <a href="#ch05-5">5-5 章</a>。</p>
+  <ol>
+    <li>在 Project Explorer 選好套件（例如 <span class="kw">$TMP</span> 或 Z 套件）→ 右鍵 <b>New → Other... → Core Data Services → Data Definition</b>。</li>
+    <li>輸入 Name（例如 <span class="kw">ZI_SALESORDER</span>）、Description。可選填 <b>Referenced Object</b>（例如 VBAK），精靈會把該表所有欄位預先帶進來。</li>
+    <li>Next → 指定傳輸請求 → Next → <b>Templates</b> 頁：1809 選 <b>Define View</b>（DDIC-based），2020 以上選 <b>Define View Entity</b>。ADT 會記住上次選的範本。</li>
+    <li>Finish。系統建立一個未啟用的 data definition，放在套件的 Core Data Services 資料夾，並開啟編輯器。</li>
+    <li>寫好之後按 <b>Ctrl+F3</b> 啟用（或 Project Explorer 右鍵 Activate）。兩支互相 association 的 view 可以一起選取後一起啟用。</li>
+    <li>按 <b>F8</b> 開啟 <b>Data Preview</b>（或右鍵 Open Data Preview）。有參數的 view 會先跳出輸入參數的視窗；可以過濾、改筆數，也能沿著 association 往下看關聯資料。</li>
+  </ol>
+  <pre><code class="abap">" ADT「Define View」範本（1809）大致長這樣，名稱欄位要自己填
+@AbapCatalog.sqlViewName: 'ZISDSO'
+@AbapCatalog.compiler.compareFilter: true
+@AccessControl.authorizationCheck: #CHECK
+@EndUserText.label: '銷售訂單表頭'
+define view ZI_SalesOrder
+  as select from vbak
+{
+  key vbeln as SalesOrder
+}</code></pre>
+  <div class="tip">較新的 ADT 範本還會帶 <span class="kw">@AbapCatalog.preserveKey: true</span>。這個註解在 7.58 起已經 obsolete、不再有作用（只剩語法警告），看到可以刪。範本預設 <span class="kw">#CHECK</span>：如果這支 view 沒有寫 DCL role，啟用時會出現警告；純技術用途或還沒要做權限的 view，改成 <span class="kw">#NOT_REQUIRED</span>。</div>
+  <div class="warn">Data Preview 的筆數比預期少時，先想到<b>存取控制</b>：如果這個實體有 DCL role，預覽結果會被權限過濾。另外 Data Preview 顯示的順序<b>不代表任何排序</b>，HANA 沒有預設排序。</div>
+  <div class="note">出處：<a href="https://help.sap.com/docs/ABAP_PLATFORM_NEW/f2e545608079437ab165c105649b89db/4ed280596e391014adc9fffe4e204223.html">SAP Help – Creating a Data Definition</a>；<a href="https://help.sap.com/docs/ABAP_PLATFORM_NEW/f2e545608079437ab165c105649b89db/4ed266bd6e391014adc9fffe4e204223.html">SAP Help – Activating Data Definitions（Ctrl+F3）</a>；<a href="https://help.sap.com/docs/ABAP_PLATFORM_NEW/f2e545608079437ab165c105649b89db/4ed2e8816e391014adc9fffe4e204223.html">SAP Help – Previewing Data Records</a>；<a href="https://developers.sap.com/tutorials/abap-dev-create-cds-view/">SAP Developer Tutorial – Create an ABAP CDS View（F8 開啟 Data Preview、Define View Entity 範本）</a>；<a href="https://help.sap.com/doc/abapdocu_latest_index_htm/latest/en-US/ABENNEWS-758-ABAP_CDS.html">ABAP CDS in 7.58（preserveKey obsolete）</a>。</div>
+
+  <h3 id="ch10-1-08">8. SELECT 清單：key、別名、CAST、CASE、函數與運算</h3>
+  <p>大括號 <span class="kw">{ }</span> 裡是 SELECT 清單。規則：</p>
+  <ul>
+    <li><span class="kw">key</span> 欄位要放在清單最前面、連續排列。它是給 ABAP SQL 語法檢查與框架看的語意鍵，<b>不會</b>在資料庫建立唯一性限制。</li>
+    <li><span class="kw">as</span> 給別名，用 VDM 風格的 CamelCase（SalesOrder、SoldToParty）。ABAP 端讀取時不分大小寫。</li>
+    <li><span class="kw">cast( x as abap.char(8) )</span> 轉成內建型別，或 <span class="kw">cast( x as kunnr )</span> 轉成資料元素（7.50 起），後者會帶上資料元素的語意（標籤、轉換常式）。</li>
+    <li><span class="kw">case … when … then … else … end</span>：簡單與搜尋式兩種都有。</li>
+    <li>字串函數：<span class="kw">concat( a, b )</span>、<span class="kw">concat_with_space( a, b, 空格數 )</span>、<span class="kw">substring( s, 起始位置, 長度 )</span>、<span class="kw">left</span>、<span class="kw">right</span>、<span class="kw">length</span>、<span class="kw">lpad</span>、<span class="kw">replace</span>。</li>
+    <li>日期函數（參數都是 DATS）：<span class="kw">dats_days_between( date1, date2 )</span> 回傳 INT4，date2 較大時為正；<span class="kw">dats_add_days( date, days, on_error )</span>、<span class="kw">dats_add_months( date, months, on_error )</span>，on_error 只能填 <span class="kw">'FAIL'、'NULL'、'INITIAL'、'UNCHANGED'</span>（大小寫有別）；<span class="kw">dats_is_valid( date )</span>。</li>
+    <li>算術：<span class="kw">+ - *</span>；整數或 DEC 相除用 <span class="kw">division( a, b, 小數位 )</span>；<span class="kw">/</span> 只適用浮點數。</li>
+  </ul>
+  <pre><code class="abap">@AbapCatalog.sqlViewName: 'ZVSOCALC'
+@AbapCatalog.compiler.compareFilter: true
+@AccessControl.authorizationCheck: #NOT_REQUIRED
+@EndUserText.label: 'SELECT 清單示範'
+define view ZI_SalesOrderCalc
+  as select from vbak
+{
+  key vbak.vbeln                                         as SalesOrder,
+      vbak.erdat                                         as CreationDate,
+      cast( vbak.erdat as abap.char(8) )                 as CreationDateText,
+      concat( vbak.vkorg, vbak.vtweg )                   as SalesOrgChannel,
+      concat_with_space( vbak.vkorg, vbak.vtweg, 1 )     as SalesOrgChannelText,
+      substring( vbak.vbeln, 1, 4 )                      as OrderPrefix,
+
+      // 日期與算術
+      dats_days_between( vbak.erdat, $session.system_date )           as AgeInDays,
+      division( dats_days_between( vbak.erdat, $session.system_date ), 7, 1 )
+                                                                     as AgeInWeeks,
+      dats_add_days( vbak.erdat, 30, 'INITIAL' )                      as FollowUpDate,
+
+      // 簡單 CASE：S/4HANA 的整體處理狀態已放在 VBAK-GBSTK
+      case vbak.gbstk
+        when 'A' then 'OPEN'
+        when 'B' then 'PART'
+        when 'C' then 'DONE'
+        else          'NONE'
+      end                                                as ProcessStatus,
+
+      // 搜尋式 CASE
+      case
+        when vbak.netwr &gt;= 1000000 then 'L'
+        when vbak.netwr &gt;= 100000  then 'M'
+        else                            'S'
+      end                                                as SizeClass
+}</code></pre>
+  <p><b>幣別與單位換算</b>：<span class="kw">currency_conversion</span> 與 <span class="kw">unit_conversion</span> 用具名參數（<span class="kw">=&gt;</span>）呼叫，匯率依 TCURR（<span class="tcode">OB08</span> 維護），單位依 T006（<span class="tcode">CUNI</span>）：</p>
+  <table>
+    <thead><tr><th>函數</th><th>必填參數</th><th>選填參數</th></tr></thead>
+    <tbody>
+      <tr><td>currency_conversion</td><td>amount、source_currency、target_currency、exchange_rate_date</td><td>exchange_rate_type（預設 'M'）、client、round（預設 'X'）、decimal_shift、decimal_shift_back、error_handling</td></tr>
+      <tr><td>unit_conversion</td><td>quantity、source_unit、target_unit</td><td>client、error_handling</td></tr>
+    </tbody>
+  </table>
+  <p>error_handling 可填 <span class="kw">'FAIL_ON_ERROR'</span>（預設，出錯就丟例外）、<span class="kw">'SET_TO_NULL'</span>、<span class="kw">'KEEP_UNCONVERTED'</span>。DDIC-based view 的 client 參數預設取當筆資料的 client 欄位；view entity 不能把 client 欄位當實參，省略即可。</p>
+  <pre><code class="abap">" 幣別與單位換算（1809 DDIC-based 寫法）
+@AbapCatalog.sqlViewName: 'ZVSOITCONV'
+@AbapCatalog.compiler.compareFilter: true
+@AccessControl.authorizationCheck: #NOT_REQUIRED
+@EndUserText.label: '明細金額與數量換算'
+define view ZI_SalesOrderItemConv
+  with parameters
+    p_target_curr : waers,
+    p_rate_date   : abap.dats,
+    p_target_unit : abap.unit(3)
+  as select from vbap
+{
+  key vbap.vbeln as SalesOrder,
+  key vbap.posnr as SalesOrderItem,
+
+      @Semantics.amount.currencyCode: 'TargetCurrency'
+      currency_conversion( amount             =&gt; vbap.netwr,
+                           source_currency    =&gt; vbap.waerk,
+                           target_currency    =&gt; :p_target_curr,
+                           exchange_rate_date =&gt; :p_rate_date,
+                           error_handling     =&gt; 'SET_TO_NULL' ) as NetAmountInTarget,
+      @Semantics.currencyCode: true
+      :p_target_curr                                             as TargetCurrency,
+
+      @Semantics.quantity.unitOfMeasure: 'TargetUnit'
+      unit_conversion( quantity       =&gt; vbap.kwmeng,
+                       source_unit    =&gt; vbap.vrkme,
+                       target_unit    =&gt; :p_target_unit,
+                       error_handling =&gt; 'SET_TO_NULL' )         as QuantityInTarget,
+      @Semantics.unitOfMeasure: true
+      :p_target_unit                                             as TargetUnit
+}</code></pre>
+  <div class="warn"><b>view entity 的差異（7.55+）</b>：① CURR 型別欄位<b>不能直接做算術</b>（例如 <span class="kw">netwr * 2</span>），要先用 7.56 起的 <span class="kw">get_numeric_value( )</span> 取出數值；② 所有 CURR 欄位（含換算結果）都必須有 <span class="kw">@Semantics.amount.currencyCode</span>，且指向同一個 view 的欄位；③ 7.55 的 <span class="kw">substring</span> 位置與長度只能填常數，7.57 起才可以填欄位或運算式；④ typed literal（<span class="kw">abap.char'X'</span>）要 7.56。上例的換算結果在 DDIC-based view 是 CURR／QUAN(31,14)；view entity 則依 amount／quantity 實參的型別而定。</div>
+  <div class="note">出處：<a href="https://help.sap.com/doc/abapdocu_753_index_htm/7.53/en-US/abencds_f1_conv_func_unit_curr.htm">ABAP 7.53 – Conversion Functions for Units and Currencies</a>；<a href="https://help.sap.com/doc/abapdocu_latest_index_htm/latest/en-US/ABENCDS_CONV_FUNC_UNIT_CURR_V2.html">CDS View Entity, Unit and Currency Conversion Functions</a>；<a href="https://help.sap.com/doc/abapdocu_753_index_htm/7.53/en-US/abencds_f1_date_functions.htm">ABAP 7.53 – CDS Date Functions</a>；<a href="https://help.sap.com/doc/abapdocu_753_index_htm/7.53/en-US/abencds_f1_sql_functions_character.htm">ABAP 7.53 – CDS String Functions</a>；<a href="https://help.sap.com/doc/abapdocu_latest_index_htm/latest/en-US/ABENNEWS-757-ABAP_CDS.html">ABAP CDS in 7.57（SUBSTRING 參數擴充）</a>。</div>
+
+  <h3 id="ch10-1-09">9. JOIN 與 association</h3>
+  <p>CDS 有兩種把表連起來的方法：</p>
+  <ul>
+    <li><b>JOIN</b>（<span class="kw">inner join</span>、<span class="kw">left outer join</span>、<span class="kw">right outer join</span>）：跟 SQL 一樣，<b>每次讀這個 view 都一定會 JOIN</b>。</li>
+    <li><b>association</b>：宣告「我跟誰有關聯、基數多少、用什麼條件」，<b>只有真的用到時才會 JOIN</b>（on-demand）。</li>
+  </ul>
+  <p>association 什麼時候真的產生 JOIN（依 SAP 文件的分析）：</p>
+  <table>
+    <thead><tr><th>用法</th><th>資料庫上發生什麼</th></tr></thead>
+    <tbody>
+      <tr><td>只定義並曝露（SELECT 清單寫 <span class="kw">_Customer</span>），沒有取目標欄位</td><td><b>不產生 JOIN</b>，SQL 裡根本不出現目標表</td></tr>
+      <tr><td>在 SELECT 清單用 path expression 取目標欄位（<span class="kw">_Customer.name1</span>）</td><td>產生 <b>left outer join</b></td></tr>
+      <tr><td>在 WHERE 用 path expression</td><td>產生 left outer join（many to one）</td></tr>
+      <tr><td>在 FROM 用 path expression 當資料來源</td><td>產生 <b>inner join</b></td></tr>
+      <tr><td>上層 view 或 ABAP SQL 透過曝露的 association 取欄位</td><td>在「使用端」產生 left outer join，不在定義端</td></tr>
+    </tbody>
+  </table>
+  <p>基數寫法 <span class="kw">[0..1]</span>、<span class="kw">[1..1]</span>、<span class="kw">[0..*]</span>、<span class="kw">[1..*]</span>，省略時預設 <span class="kw">[0..1]</span>。ON 條件裡引用自己的欄位用 <span class="kw">$projection.別名</span>，被 <span class="kw">$projection</span> 引用的欄位必須在 SELECT 清單裡。association 名稱習慣以底線開頭（<span class="kw">_Item</span>）。</p>
+  <pre><code class="abap">" JOIN 與 association 並用（1809 DDIC-based）
+@AbapCatalog.sqlViewName: 'ZVSOJOIN'
+@AbapCatalog.compiler.compareFilter: true
+@AccessControl.authorizationCheck: #NOT_REQUIRED
+@EndUserText.label: 'JOIN 與 association'
+define view ZI_SalesOrderJoin
+  as select from vbak
+    inner join   tvak on tvak.auart = vbak.auart          // 每次都 JOIN
+    left outer join kna1 on kna1.kunnr = vbak.kunnr         // 每次都 JOIN
+  association [0..*] to vbap as _ItemTable                  // 用到才 JOIN
+    on $projection.SalesOrder = _ItemTable.vbeln
+  association [0..1] to tvkot as _SalesOrgText
+    on  $projection.SalesOrganization = _SalesOrgText.vkorg
+    and _SalesOrgText.spras           = $session.system_language
+{
+  key vbak.vbeln           as SalesOrder,
+      vbak.auart           as SalesOrderType,
+      tvak.vbtyp           as SalesDocumentCategory,
+      vbak.vkorg           as SalesOrganization,
+      _SalesOrgText.vtext  as SalesOrganizationName,       // path expression → left outer join
+      vbak.kunnr           as SoldToParty,
+      kna1.name1           as SoldToPartyName,
+
+      // 曝露：本 view 不 JOIN，讓上層 view 或 ABAP SQL 需要時再用
+      _ItemTable
+}</code></pre>
+  <div class="tip"><b>該用 JOIN 還是 association？</b>一定需要、而且是 1 對 1 或多對 1 的資料（例如客戶名稱），用 JOIN 或在清單中直接取 path 都可以；「有時才需要」的關聯（明細、文字、主檔細節）用 association 曝露出去，讀取端要用才付 JOIN 的成本。<b>表頭 view 不要直接 JOIN 明細</b>，會讓表頭筆數變成明細筆數，金額加總就會重複。</div>
+  <div class="note">出處：<a href="https://help.sap.com/doc/abapdocu_latest_index_htm/latest/en-US/ABENCDS_ASSOC_JOIN_V2.html">CDS View Entity, Associations and Joins（何時產生 JOIN）</a>；<a href="https://help.sap.com/doc/abapdocu_latest_index_htm/latest/en-US/ABENCDS_SIMPLE_ASSOCIATION_V2.html">CDS View Entity, ASSOCIATION</a>；<a href="https://help.sap.com/doc/abapdocu_latest_index_htm/latest/en-US/ABENCDS_1687178802-_ANNO.html">compareFilter（同條件 path 合併 JOIN）</a>。</div>
+
+  <h3 id="ch10-1-10">10. WHERE、GROUP BY、HAVING、聚合函數與 UNION</h3>
+  <p>子句的位置在大括號<b>之後</b>：<span class="kw">where</span> → <span class="kw">group by</span> → <span class="kw">having</span>，最後才是 <span class="kw">union</span>。聚合函數有 <span class="kw">sum</span>、<span class="kw">count(*)</span>、<span class="kw">count( distinct x )</span>、<span class="kw">min</span>、<span class="kw">max</span>、<span class="kw">avg( x as 型別 )</span>（view entity 的 avg 必須寫 as 型別）。SELECT 清單中所有非聚合欄位都要出現在 <span class="kw">group by</span>，聚合欄位都要有別名。</p>
+  <div class="warn"><b>CDS 沒有 ORDER BY。</b>CDS view 的 SELECT 語法只有 WHERE、GROUP BY、HAVING 與集合運算（UNION 等），沒有 ORDER BY。排序一律在使用端處理：ABAP SQL 加 <span class="kw">ORDER BY</span>，ALV 設排序。HANA 沒有預設排序，同一個 view 每次回傳順序都可能不同；「取第一筆」前一定要先排序（Casper 的成本評價 H／E 案例，見 <a href="#ch05-21-24">5-21 章第 24 節</a>）。</div>
+  <pre><code class="abap">" 客戶別訂單彙總（1809 DDIC-based）
+@AbapCatalog.sqlViewName: 'ZVSOCUSTSUM'
+@AbapCatalog.compiler.compareFilter: true
+@AccessControl.authorizationCheck: #NOT_REQUIRED
+@EndUserText.label: '客戶別訂單彙總'
+define view ZI_SalesOrderCustSum
+  as select from vbak
+{
+  key vbak.kunnr                    as SoldToParty,
+  key vbak.waerk                    as Currency,
+      count( * )                    as OrderCount,
+      @Semantics.amount.currencyCode: 'Currency'
+      sum( vbak.netwr )             as NetAmount,
+      min( vbak.erdat )             as FirstOrderDate,
+      max( vbak.erdat )             as LastOrderDate
+}
+where ( vbak.auart = 'OR' or vbak.auart = 'ZOR' )   // 列舉，不用區間
+  and vbak.vkorg = '1000'
+group by vbak.kunnr, vbak.waerk
+having count( * ) &gt;= 3</code></pre>
+  <div class="warn"><b>條件用列舉比用區間安全。</b>上例的訂單類型寫成 <span class="kw">auart = 'OR' or auart = 'ZOR'</span>，而不是 <span class="kw">between 'OR' and 'ZOR'</span>。區間比的是字典序，不是業務意義，會把中間所有代碼都掃進來；號碼段不連續、ALPHA 前導零、編碼規則改過時就會多抓或漏抓。</div>
+  <p><b>UNION</b>：把兩個 SELECT 的結果接起來。<span class="kw">union</span> 會去重複，<span class="kw">union all</span> 不去重複（較快）。各分支的欄位數與順序要一致、型別要相容；DDIC-based view 中各分支的欄位名稱（含 as 別名）必須相同，<b>key 的定義取第一個分支</b>，所以 <span class="kw">key</span> 只寫在第一個分支。</p>
+  <pre><code class="abap">" 訂單與交貨單的統一清單（1809 DDIC-based 可用 UNION）
+@AbapCatalog.sqlViewName: 'ZVSDDOCLIST'
+@AbapCatalog.compiler.compareFilter: true
+@AccessControl.authorizationCheck: #NOT_REQUIRED
+@EndUserText.label: '銷售單據清單'
+define view ZI_SdDocumentList
+  as select from vbak
+{
+  key vbak.vbeln                              as Document,
+      cast( 'ORDER' as abap.char(10) )        as DocumentKind,
+      vbak.erdat                              as CreationDate,
+      vbak.kunnr                              as Customer
+}
+union all
+  select from likp
+{
+      likp.vbeln                              as Document,
+      cast( 'DELIVERY' as abap.char(10) )     as DocumentKind,
+      likp.erdat                              as CreationDate,
+      likp.kunnr                              as Customer
+}</code></pre>
+  <div class="warn"><b>門檻：</b>view entity 的 UNION 要 7.56（S/4HANA 2021）以上；2020（7.55）的 view entity 不能寫 UNION，只能維持 DDIC-based 或拆成兩次讀取。view entity 另有 7.56 起的 EXCEPT、INTERSECT。</div>
+  <div class="note">出處：<a href="https://help.sap.com/doc/abapdocu_latest_index_htm/latest/en-US/ABENCDS_SELECT_STATEMENT_V2.html">CDS View Entity, SELECT（子句只有條件、分組、集合運算）</a>；<a href="https://help.sap.com/doc/abapdocu_latest_index_htm/latest/en-US/ABENCDS_AGGREGATE_FUNCTIONS_V2.html">CDS View Entity, aggr_expr</a>；<a href="https://help.sap.com/doc/abapdocu_latest_index_htm/latest/en-US/ABENCDS_GROUP_BY_V2.html">GROUP BY</a>；<a href="https://help.sap.com/doc/abapdocu_latest_index_htm/latest/en-US/ABENCDS_HAVING_CLAUSE_V2.html">HAVING</a>；<a href="https://help.sap.com/doc/abapdocu_latest_index_htm/latest/en-US/ABENCDS_UNION_V2.html">UNION（view entity）</a>；<a href="https://help.sap.com/doc/abapdocu_753_index_htm/7.53/en-US/abencds_f1_union.htm">ABAP 7.53 – SELECT, UNION（DDIC-based）</a>；<a href="https://help.sap.com/doc/abapdocu_latest_index_htm/latest/en-US/ABENNEWS-756-ABAP_CDS.html">ABAP CDS in 7.56（UNION、EXCEPT、INTERSECT）</a>。</div>
+
+  <h3 id="ch10-1-11">11. 參數：with parameters、$parameters 與 @Environment.systemField</h3>
+  <p>參數讓呼叫端在讀取時傳值進來，常用於「基準日」「目標幣別」「語言」這類<b>必須先知道才能算</b>的條件（純粹過濾用的條件交給 ABAP SQL 的 WHERE 即可，不必做成參數）。</p>
+  <ul>
+    <li>宣告：<span class="kw">with parameters p_date : abap.dats, p_curr : waers</span>，型別可以是內建型別（<span class="kw">abap.dats</span>、<span class="kw">abap.char(10)</span>）或資料元素。</li>
+    <li>引用：view entity 只能用 <span class="kw">$parameters.p_date</span>；DDIC-based view 也可以寫 <span class="kw">:p_date</span>。</li>
+    <li><span class="kw">@Environment.systemField</span>：讓 ABAP SQL 在呼叫端沒傳值時，自動帶入系統欄位。可用值：<span class="kw">#CLIENT</span>（sy-mandt）、<span class="kw">#SYSTEM_DATE</span>（sy-datum）、<span class="kw">#SYSTEM_TIME</span>（sy-uzeit）、<span class="kw">#SYSTEM_LANGUAGE</span>（sy-langu）、<span class="kw">#USER</span>（sy-uname）、<span class="kw">#USER_DATE</span>（sy-datlo）、<span class="kw">#USER_TIMEZONE</span>（sy-zonlo）。只在 <b>ABAP SQL</b> 讀取時有效；別的 CDS 使用這支 view 時仍要明確傳參數。</li>
+    <li>session 變數：<span class="kw">$session.client</span>、<span class="kw">$session.system_language</span>、<span class="kw">$session.user</span>、<span class="kw">$session.system_date</span>，可直接在 view 內使用，不必做成參數。</li>
+  </ul>
+  <pre><code class="abap">" 帶參數的 view：基準日當天仍未完成的訂單與拖延天數（1809 DDIC-based）
+@AbapCatalog.sqlViewName: 'ZVSOOPENKD'
+@AbapCatalog.compiler.compareFilter: true
+@AccessControl.authorizationCheck: #NOT_REQUIRED
+@EndUserText.label: '基準日未完成訂單'
+define view ZI_SalesOrderOpenKeyDate
+  with parameters
+    @Environment.systemField: #SYSTEM_DATE
+    p_key_date : abap.dats
+  as select from vbak
+{
+  key vbak.vbeln                                           as SalesOrder,
+      vbak.kunnr                                           as SoldToParty,
+      vbak.vdatu                                           as RequestedDeliveryDate,
+      dats_days_between( vbak.vdatu, $parameters.p_key_date ) as DaysOverdue
+}
+where vbak.gbstk    &lt;&gt; 'C'
+  and vbak.vdatu     &lt;= $parameters.p_key_date</code></pre>
+  <pre><code class="abap">" ABAP 端：明確傳參數，或因為有 @Environment.systemField 而省略
+SELECT SalesOrder, SoldToParty, DaysOverdue
+  FROM zi_salesorderopenkeydate( p_key_date = @p_date )
+  WHERE SoldToParty IN @s_kunnr
+  ORDER BY DaysOverdue DESCENDING, SalesOrder
+  INTO TABLE @DATA(lt_overdue).
+
+SELECT SalesOrder, DaysOverdue
+  FROM zi_salesorderopenkeydate          " 省略：自動帶入 sy-datum
+  ORDER BY SalesOrder
+  INTO TABLE @DATA(lt_overdue_today).</code></pre>
+  <div class="note">出處：<a href="https://help.sap.com/doc/abapdocu_latest_index_htm/latest/en-US/ABENCDS_1937921420_ANNO.html">Environment.systemField 註解定義（可用值與限制）</a>；<a href="https://help.sap.com/doc/abapdocu_latest_index_htm/latest/en-US/ABENCDS_PARAMETER_V2.html">CDS View Entity, parameter（必須用 $parameters.）</a>；<a href="https://help.sap.com/doc/abapdocu_latest_index_htm/latest/en-US/ABENCDS_PARAMETER_LIST_V2.html">CDS View Entity, parameter_list</a>；<a href="https://help.sap.com/doc/abapdocu_latest_index_htm/latest/en-US/ABENNEWS-750-ABAP_CDS.html">ABAP CDS in 7.50（session 變數、Environment.systemField）</a>。</div>
+
+  <h3 id="ch10-1-12">12. 常用註解</h3>
+  <p>註解（annotation）以 <span class="kw">@</span> 開頭，寫在 view 前面是 view 註解，寫在欄位前面是元素註解。分兩種：<b>ABAP 註解</b>由 ABAP 執行期解讀（例如權限、client、SQL view 名稱）；<b>框架註解</b>只給特定框架看（例如 VDM、UI、Analytics），不影響 ABAP SQL 的結果。</p>
+  <table>
+    <thead><tr><th>註解</th><th>範圍</th><th>作用</th></tr></thead>
+    <tbody>
+      <tr><td><span class="kw">@EndUserText.label</span></td><td>view、元素、參數</td><td>可翻譯的短文字，最多 60 字元</td></tr>
+      <tr><td><span class="kw">@AccessControl.authorizationCheck</span></td><td>view</td><td>值：<span class="kw">#CHECK</span>（有 role 就檢查，沒有 role 會有語法警告）、<span class="kw">#NOT_REQUIRED</span>（有 role 就檢查，沒有也不警告；<b>不寫時的預設</b>）、<span class="kw">#MANDATORY</span>（一定要有 role，否則執行期錯誤）、<span class="kw">#NOT_ALLOWED</span>（不做權限檢查，即使有 role 也忽略）、<span class="kw">#PRIVILEGED_ONLY</span>（框架專用，客戶不要用）</td></tr>
+      <tr><td><span class="kw">@Semantics.amount.currencyCode: '幣別欄位'</span></td><td>元素</td><td>標示金額的幣別參照。view entity 中 CURR 欄位<b>必填</b>，且必須指向同一個 view 的欄位</td></tr>
+      <tr><td><span class="kw">@Semantics.currencyCode: true</span></td><td>元素</td><td>標示這個欄位是幣別鍵（DDIC-based view 常用）</td></tr>
+      <tr><td><span class="kw">@Semantics.quantity.unitOfMeasure: '單位欄位'</span></td><td>元素、參數</td><td>標示數量的單位參照。view entity 中 QUAN 欄位<b>必填</b></td></tr>
+      <tr><td><span class="kw">@Semantics.unitOfMeasure: true</span></td><td>元素</td><td>標示這個欄位是單位鍵</td></tr>
+      <tr><td><span class="kw">@ObjectModel.representativeKey: '鍵欄位'</span></td><td>view</td><td>指定複合鍵中「代表這個實體」的那個鍵欄位，例如明細 view 的 SalesOrderItem；給 foreign key 關聯、分析與 value help 框架判讀（框架註解）</td></tr>
+      <tr><td><span class="kw">@VDM.viewType</span></td><td>view</td><td>#BASIC／#COMPOSITE／#CONSUMPTION／#TRANSACTIONAL／#EXTENSION／#DERIVATION_FUNCTION，只是分類，不影響執行期</td></tr>
+      <tr><td><span class="kw">@AbapCatalog.sqlViewName</span></td><td>view</td><td>只用於 DDIC-based view，必填</td></tr>
+      <tr><td><span class="kw">@Environment.systemField</span></td><td>參數</td><td>見第 11 節</td></tr>
+    </tbody>
+  </table>
+  <pre><code class="abap">@AbapCatalog.sqlViewName: 'ZVSOITANNO'
+@AbapCatalog.compiler.compareFilter: true
+@AccessControl.authorizationCheck: #CHECK           // 之後會寫 DCL role（見 10-2）
+@EndUserText.label: '銷售訂單明細（註解示範）'
+@VDM.viewType: #BASIC
+@ObjectModel.representativeKey: 'SalesOrderItem'
+define view ZI_SoItemAnno
+  as select from vbap
+{
+      @EndUserText.label: '銷售訂單'
+  key vbap.vbeln  as SalesOrder,
+      @EndUserText.label: '項目'
+  key vbap.posnr  as SalesOrderItem,
+
+      @Semantics.quantity.unitOfMeasure: 'OrderQuantityUnit'
+      vbap.kwmeng as OrderQuantity,
+      @Semantics.unitOfMeasure: true
+      vbap.vrkme  as OrderQuantityUnit,
+
+      @Semantics.amount.currencyCode: 'TransactionCurrency'
+      vbap.netwr  as NetAmount,
+      @Semantics.currencyCode: true
+      vbap.waerk  as TransactionCurrency
+}</code></pre>
+  <div class="warn"><span class="kw">#NOT_ALLOWED</span> 會讓這支 view 完全略過 DCL 權限，等於任何能執行程式的人都讀得到全部資料。只有技術性、跨用戶端或確定不需要權限的 view 才用；業務資料請用 <span class="kw">#CHECK</span> 並寫 DCL role。</div>
+  <div class="note">出處：<a href="https://help.sap.com/doc/abapdocu_latest_index_htm/latest/en-US/ABENCDS_924137870_ANNO.html">EndUserText.label</a>；<a href="https://help.sap.com/doc/abapdocu_latest_index_htm/latest/en-US/ABENCDS_1180334353_ANNO.html">AccessControl.authorizationCheck</a>；<a href="https://help.sap.com/doc/abapdocu_latest_index_htm/latest/en-US/ABENCDS_689127610-_ANNO.html">Semantics.amount.currencyCode</a>；<a href="https://help.sap.com/doc/abapdocu_latest_index_htm/latest/en-US/ABENCDS_653082254-_ANNO.html">Semantics.quantity.unitOfMeasure</a>；<a href="https://help.sap.com/doc/abapdocu_latest_index_htm/latest/en-US/ABENCDS_1426106406_ANNO.html">ObjectModel.representativeKey（屬性表）</a>；<a href="https://help.sap.com/doc/saphelp_nw75/7.5.5/en-US/89/6496ecfe4f4f8b857c6d93d4489841/content.htm">SAP Help – ObjectModel Annotations（representativeKey 的語意）</a>；<a href="https://help.sap.com/doc/abapdocu_latest_index_htm/latest/en-US/ABENCDS_2063101229-_ANNO.html">VDM.viewType</a>。</div>
+
+  <h3 id="ch10-1-13">13. 在 ABAP 中使用 CDS：ABAP SQL、參數與 path expression</h3>
+  <p>ABAP SQL 讀 CDS 的規則：</p>
+  <ul>
+    <li>FROM 後面寫<b>CDS 實體名稱</b>（ZI_SALESORDER），不要寫 SQL view 名稱（ZISDSO）。讀 SQL view 名稱在 7.56 起已是 obsolete，遷移成 view entity 後更會直接失效。</li>
+    <li>用 CDS 名稱讀取時，ABAP SQL 自動進入 strict mode：主機變數一定要加 <span class="kw">@</span>、欄位用逗號分隔。</li>
+    <li>傳參數：<span class="kw">FROM zi_x( p_a = @lv_a, p_b = @lv_b )</span>。</li>
+    <li>path expression：用反斜線開頭 <span class="kw">\_association-欄位</span>，在 SELECT 清單中預設是 left outer join，在 FROM 中預設是 inner join。只有 CDS view <b>有曝露</b>的 association 才能這樣用。1809（7.53）已可使用。</li>
+    <li>CDS view 若有 DCL role，ABAP SQL 讀取時會<b>自動套用權限</b>（7.50 起）。</li>
+  </ul>
+  <pre><code class="abap">" 明細 view 曝露 _SalesOrder（to-one）時，ABAP SQL 可沿路徑取表頭欄位
+SELECT SalesOrder,
+       SalesOrderItem,
+       Material,
+       \_SalesOrder-SoldToParty       AS SoldToParty,
+       \_SalesOrder-SalesOrganization AS SalesOrganization
+  FROM zi_salesorderitem
+  WHERE SalesOrder IN @s_vbeln
+  ORDER BY SalesOrder, SalesOrderItem
+  INTO TABLE @DATA(lt_item).</code></pre>
+  <div class="tip">path expression 盡量走 <b>to-one</b>（明細 → 表頭、訂單 → 客戶）。從表頭沿 to-many 的 <span class="kw">\_Item</span> 取欄位，會讓結果列數變成明細筆數，ABAP SQL 也會對基數不符給出語法警告；需要明細就直接讀明細 view。</div>
+  <div class="warn">ABAP SQL 的 <span class="kw">SELECT SINGLE</span> 或 <span class="kw">UP TO 1 ROWS</span> 讀 CDS 時，只要條件不是完整主鍵，就等於「取第一筆」。HANA 沒有預設排序，一定要先 <span class="kw">ORDER BY</span>，或改用 MIN／MAX 彙總，否則結果每次可能不同。</div>
+  <div class="note">出處：<a href="https://help.sap.com/doc/abapdocu_753_index_htm/7.53/en-US/abenopen_sql_path.htm">ABAP 7.53 – ABAP SQL Path Expressions</a>；<a href="https://help.sap.com/doc/abapdocu_latest_index_htm/latest/en-US/ABENABAP_SQL_PATH.html">ABAP SQL – SQL Path Expressions（最新版）</a>；<a href="https://help.sap.com/doc/abapdocu_latest_index_htm/latest/en-US/ABENCDS_DEFINE_VIEW_ENTITY.html">DEFINE VIEW ENTITY（用實體名稱讀取時為 strict mode）</a>；<a href="https://help.sap.com/doc/abapdocu_latest_index_htm/latest/en-US/ABENNEWS-756-ABAP_CDS.html">ABAP CDS in 7.56（使用 CDS-managed DDIC view 為 obsolete）</a>。</div>
+
+  <h3 id="ch10-1-14">14. ALV with IDA：直接把 CDS 顯示成 ALV</h3>
+  <p><b>CL_SALV_GUI_TABLE_IDA</b>（ALV with Integrated Data Access）不把資料全部讀進內表，而是讓 ALV 在使用者捲動、排序、過濾、小計時，才對資料庫下對應的 SQL。資料量很大（幾十萬筆以上）又只是要看的報表，用它比 CL_SALV_TABLE 省記憶體。</p>
+  <pre><code class="abap">REPORT zsd_so_ida.
+
+PARAMETERS p_curr TYPE waers DEFAULT 'TWD'.
+
+START-OF-SELECTION.
+  " 無參數的 CDS：一行就能顯示（名稱用 CDS 實體名稱）
+  " cl_salv_gui_table_ida=&gt;create_for_cds_view( 'ZI_SALESORDER' )-&gt;fullscreen( )-&gt;display( ).
+
+  " 有參數的 CDS：先建立，再設定參數
+  DATA(lo_ida) = cl_salv_gui_table_ida=&gt;create_for_cds_view(
+                   iv_cds_view_name = 'ZI_SALESORDERITEMCONV' ).
+
+  lo_ida-&gt;set_view_parameters(
+    it_parameters = VALUE #( ( name = 'P_TARGET_CURR' value = p_curr )
+                             ( name = 'P_RATE_DATE'   value = sy-datum )
+                             ( name = 'P_TARGET_UNIT' value = 'ST' ) ) ).
+
+  lo_ida-&gt;fullscreen( )-&gt;display( ).</code></pre>
+  <div class="note"><span class="kw">create_for_cds_view( )-&gt;fullscreen( )-&gt;display( )</span> 的寫法取自 SAP 官方 tutorial。<span class="kw">set_view_parameters</span> 的參數 <span class="kw">it_parameters</span>（型別 <span class="kw">IF_SALV_GUI_TYPES_IDA=&gt;YT_PARAMETER</span>，每列 name／value）取自 SAP Community 範例，官方文件頁未能確認；各元件的確切型別請在 <span class="tcode">SE24</span> 看 <span class="kw">IF_SALV_GUI_TABLE_IDA</span> 為準。出處：<a href="https://developers.sap.com/tutorials/abap-dev-adt-use-cds-view">SAP Developer Tutorial – Display a CDS View Using ALV with IDA</a>；<a href="https://blogs.sap.com/2018/07/16/sap-list-viewer-with-integrated-data-access-alv-with-ida/">SAP Community – SAP List Viewer with Integrated Data Access</a>。</div>
+  <div class="tip">IDA 適合「只看、量大」的報表；要編輯、要自己控制每一列的顏色或事件，還是用 CL_SALV_TABLE 或 CL_GUI_ALV_GRID（見 <a href="#ch02-3">2-3 章</a>）。IDA 的排序由使用者在 ALV 上操作，程式沒有指定排序時，初始畫面的順序不保證固定。</div>
+
+  <h3 id="ch10-1-15">15. 實作範例（1809 版）：ZI_SalesOrder 與 ZI_SalesOrderItem</h3>
+  <p><b>先找標準</b>：S/4HANA 已有 <span class="kw">I_SalesOrder</span>（銷售訂單 root）與 <span class="kw">I_SalesOrderItem</span>（明細）。如果你的系統中它們是 released 狀態、欄位也夠用，直接讀標準 view，不必自己建。只有標準沒有、或需要大量 Z 欄位時，才照下面自建。</p>
+  <pre><code class="abap">" 先試標準 view（欄位名稱以系統中的定義為準；可在 ADT 用 F2 看元素清單）
+SELECT SalesOrder, SalesOrderType, SalesOrganization, SoldToParty,
+       TotalNetAmount, TransactionCurrency
+  FROM i_salesorder
+  WHERE SalesOrganization = @p_vkorg
+  ORDER BY SalesOrder
+  INTO TABLE @DATA(lt_std)
+  UP TO 100 ROWS.</code></pre>
+  <div class="note">上例 I_SalesOrder 的欄位名稱（SalesOrderType、SoldToParty、TotalNetAmount、TransactionCurrency）依 VDM 命名慣例撰寫，各版本可能不同，未能逐版確認，請以系統為準。標準 view 若掛有 DCL role，讀取結果會依使用者權限過濾。</div>
+  <p><b>自建表頭 view（1809，DDIC-based）</b>：</p>
+  <pre><code class="abap">@AbapCatalog.sqlViewName: 'ZISDSO'
+@AbapCatalog.compiler.compareFilter: true
+@AccessControl.authorizationCheck: #NOT_REQUIRED
+@EndUserText.label: '銷售訂單表頭'
+@VDM.viewType: #BASIC
+@ObjectModel.representativeKey: 'SalesOrder'
+define view ZI_SalesOrder
+  as select from vbak
+  association [0..*] to ZI_SalesOrderItem as _Item
+    on $projection.SalesOrder = _Item.SalesOrder
+  association [0..1] to kna1 as _SoldToParty
+    on $projection.SoldToParty = _SoldToParty.kunnr
+{
+  key vbak.vbeln                                        as SalesOrder,
+      vbak.auart                                        as SalesOrderType,
+      vbak.vkorg                                        as SalesOrganization,
+      vbak.vtweg                                        as DistributionChannel,
+      vbak.spart                                        as OrganizationDivision,
+      vbak.kunnr                                        as SoldToParty,
+      _SoldToParty.name1                                as SoldToPartyName,
+      vbak.bstnk                                        as PurchaseOrderByCustomer,
+      vbak.erdat                                        as CreationDate,
+      vbak.ernam                                        as CreatedByUser,
+      vbak.vdatu                                        as RequestedDeliveryDate,
+      vbak.gbstk                                        as OverallProcessStatus,
+      dats_days_between( vbak.erdat, $session.system_date ) as AgeInDays,
+
+      @Semantics.amount.currencyCode: 'TransactionCurrency'
+      vbak.netwr                                        as TotalNetAmount,
+      @Semantics.currencyCode: true
+      vbak.waerk                                        as TransactionCurrency,
+
+      _Item,
+      _SoldToParty
+}</code></pre>
+  <p><b>自建明細 view（1809，DDIC-based）</b>：</p>
+  <pre><code class="abap">@AbapCatalog.sqlViewName: 'ZISDSOITEM'
+@AbapCatalog.compiler.compareFilter: true
+@AccessControl.authorizationCheck: #NOT_REQUIRED
+@EndUserText.label: '銷售訂單明細'
+@VDM.viewType: #BASIC
+@ObjectModel.representativeKey: 'SalesOrderItem'
+define view ZI_SalesOrderItem
+  as select from vbap
+  association [1..1] to ZI_SalesOrder as _SalesOrder
+    on $projection.SalesOrder = _SalesOrder.SalesOrder
+{
+  key vbap.vbeln   as SalesOrder,
+  key vbap.posnr   as SalesOrderItem,
+      vbap.matnr   as Material,
+      vbap.arktx   as SalesOrderItemText,
+      vbap.werks   as Plant,
+      vbap.abgru   as SalesDocumentRjcnReason,
+
+      @Semantics.quantity.unitOfMeasure: 'OrderQuantityUnit'
+      vbap.kwmeng  as OrderQuantity,
+      @Semantics.unitOfMeasure: true
+      vbap.vrkme   as OrderQuantityUnit,
+
+      @Semantics.amount.currencyCode: 'TransactionCurrency'
+      vbap.netwr   as NetAmount,
+      @Semantics.currencyCode: true
+      vbap.waerk   as TransactionCurrency,
+
+      _SalesOrder
+}</code></pre>
+  <p><b>使用端報表</b>（local class，不用 FORM；結果用 CL_SALV_TABLE 顯示）：</p>
+  <pre><code class="abap">REPORT zsd_so_cds_list.
+
+DATA gv_vbeln TYPE vbeln_va.
+SELECT-OPTIONS s_vbeln FOR gv_vbeln.
+PARAMETERS     p_vkorg TYPE vkorg OBLIGATORY.
+
+CLASS lcl_app DEFINITION FINAL.
+  PUBLIC SECTION.
+    METHODS run.
+ENDCLASS.
+
+CLASS lcl_app IMPLEMENTATION.
+  METHOD run.
+    " 明細 + 沿 to-one association 取表頭欄位；排序一定要自己寫
+    SELECT SalesOrder,
+           SalesOrderItem,
+           Material,
+           OrderQuantity,
+           OrderQuantityUnit,
+           NetAmount,
+           TransactionCurrency,
+           \_SalesOrder-SoldToParty     AS SoldToParty,
+           \_SalesOrder-SoldToPartyName AS SoldToPartyName
+      FROM zi_salesorderitem
+      WHERE SalesOrder IN @s_vbeln
+        AND \_SalesOrder-SalesOrganization = @p_vkorg
+        AND SalesDocumentRjcnReason = @space          " 排除已拒絕的項目
+      ORDER BY SalesOrder, SalesOrderItem
+      INTO TABLE @DATA(lt_item).
+
+    IF lt_item IS INITIAL.
+      MESSAGE '查無資料' TYPE 'S' DISPLAY LIKE 'W'.
+      RETURN.
+    ENDIF.
+
+    TRY.
+        cl_salv_table=&gt;factory( IMPORTING r_salv_table = DATA(lo_alv)
+                                CHANGING  t_table      = lt_item ).
+        lo_alv-&gt;get_functions( )-&gt;set_all( abap_true ).
+        lo_alv-&gt;get_columns( )-&gt;set_optimize( abap_true ).
+        lo_alv-&gt;display( ).
+      CATCH cx_salv_msg INTO DATA(lx_salv).
+        MESSAGE lx_salv TYPE 'E'.
+    ENDTRY.
+  ENDMETHOD.
+ENDCLASS.
+
+START-OF-SELECTION.
+  NEW lcl_app( )-&gt;run( ).</code></pre>
+  <div class="note">兩支 view 互相 association（表頭 → 明細 <span class="kw">_Item</span>、明細 → 表頭 <span class="kw">_SalesOrder</span>），第一次建立時請兩支一起選取後啟用。在 WHERE 中使用 path expression 需要 7.53 的 ABAP SQL 支援；若你的系統在這行報語法錯誤，改成讀取表頭 view 再 JOIN。出處：<a href="https://help.sap.com/docs/SAP_S4HANA_ON-PREMISE/ee6ff9b281d8448f96b4fe6c89f2bdc8/0a875bc7a005465aad92c08becc11776.html">SAP Help – VDM Layers（I_SalesOrder、I_SalesOrderItem）</a>；<a href="https://help.sap.com/doc/abapdocu_753_index_htm/7.53/en-US/abenopen_sql_path.htm">ABAP 7.53 – ABAP SQL Path Expressions</a>；<a href="https://help.sap.com/doc/abapdocu_latest_index_htm/latest/en-US/ABENCDS_V1_VIEWS.html">DDIC-Based Views</a>。</div>
+
+  <h3 id="ch10-1-16">16. 實作範例（2020+ 版）：同一組 view 改寫成 view entity</h3>
+  <div class="warn"><b>門檻：</b>本節全部需要 ABAP 7.55（S/4HANA 2020）以上。跟 1809 版相比的改動：拿掉 sqlViewName 與 compareFilter、每個欄位加來源別名、幣別與單位參照一律指向本 view 的欄位（不再需要 <span class="kw">@Semantics.currencyCode: true</span> 這類標示）、session 變數與 association 寫法不變。使用端 ABAP 程式<b>完全不用改</b>，因為本來就是用實體名稱讀取。</div>
+  <pre><code class="abap">@AccessControl.authorizationCheck: #NOT_REQUIRED
+@EndUserText.label: '銷售訂單表頭'
+@VDM.viewType: #BASIC
+@ObjectModel.representativeKey: 'SalesOrder'
+define view entity ZI_SalesOrder
+  as select from vbak
+  association [0..*] to ZI_SalesOrderItem as _Item
+    on $projection.SalesOrder = _Item.SalesOrder
+  association [0..1] to kna1 as _SoldToParty
+    on $projection.SoldToParty = _SoldToParty.kunnr
+{
+  key vbak.vbeln                                            as SalesOrder,
+      vbak.auart                                            as SalesOrderType,
+      vbak.vkorg                                            as SalesOrganization,
+      vbak.vtweg                                            as DistributionChannel,
+      vbak.spart                                            as OrganizationDivision,
+      vbak.kunnr                                            as SoldToParty,
+      _SoldToParty.name1                                    as SoldToPartyName,
+      vbak.bstnk                                            as PurchaseOrderByCustomer,
+      vbak.erdat                                            as CreationDate,
+      vbak.ernam                                            as CreatedByUser,
+      vbak.vdatu                                            as RequestedDeliveryDate,
+      vbak.gbstk                                            as OverallProcessStatus,
+      dats_days_between( vbak.erdat, $session.system_date ) as AgeInDays,
+
+      @Semantics.amount.currencyCode: 'TransactionCurrency'
+      vbak.netwr                                            as TotalNetAmount,
+      vbak.waerk                                            as TransactionCurrency,
+
+      _Item,
+      _SoldToParty
+}</code></pre>
+  <pre><code class="abap">@AccessControl.authorizationCheck: #NOT_REQUIRED
+@EndUserText.label: '銷售訂單明細'
+@VDM.viewType: #BASIC
+@ObjectModel.representativeKey: 'SalesOrderItem'
+define view entity ZI_SalesOrderItem
+  as select from vbap
+  association [1..1] to ZI_SalesOrder as _SalesOrder
+    on $projection.SalesOrder = _SalesOrder.SalesOrder
+{
+  key vbap.vbeln   as SalesOrder,
+  key vbap.posnr   as SalesOrderItem,
+      vbap.matnr   as Material,
+      vbap.arktx   as SalesOrderItemText,
+      vbap.werks   as Plant,
+      vbap.abgru   as SalesDocumentRjcnReason,
+
+      @Semantics.quantity.unitOfMeasure: 'OrderQuantityUnit'
+      vbap.kwmeng  as OrderQuantity,
+      vbap.vrkme   as OrderQuantityUnit,
+
+      @Semantics.amount.currencyCode: 'TransactionCurrency'
+      vbap.netwr   as NetAmount,
+      vbap.waerk   as TransactionCurrency,
+
+      _SalesOrder
+}</code></pre>
+  <pre><code class="abap">" 2020+ 的客戶別彙總（view entity）
+@AccessControl.authorizationCheck: #NOT_REQUIRED
+@EndUserText.label: '客戶別訂單彙總'
+define view entity ZI_SalesOrderCustSum
+  as select from ZI_SalesOrder
+{
+  key SoldToParty,
+  key TransactionCurrency,
+      count( * )           as OrderCount,
+      @Semantics.amount.currencyCode: 'TransactionCurrency'
+      sum( TotalNetAmount ) as TotalNetAmount
+}
+where ( SalesOrderType = 'OR' or SalesOrderType = 'ZOR' )
+group by SoldToParty, TransactionCurrency</code></pre>
+  <div class="note">view entity 對金額欄位做 SUM 時，結果也需要幣別參照註解（上例已加）。這一版在 7.55 的系統上請以實際啟用結果為準；若 7.55 對 CURR 彙總報錯，可維持 DDIC-based 版本，或升級到 7.56 後改用 <span class="kw">get_numeric_value</span>、<span class="kw">curr_to_decfloat_amount</span>。出處：<a href="https://help.sap.com/doc/abapdocu_latest_index_htm/latest/en-US/ABENCDS_AGGREGATE_FUNCTIONS_V2.html">CDS View Entity, aggr_expr（amount 欄位的結果型別需要參照註解）</a>；<a href="https://help.sap.com/doc/abapdocu_latest_index_htm/latest/en-US/ABENCDS_689127610-_ANNO.html">Semantics.amount.currencyCode（view entity 必填）</a>；<a href="https://help.sap.com/doc/abapdocu_latest_index_htm/latest/en-US/ABENNEWS-756-ABAP_CDS.html">ABAP CDS in 7.56（amount／quantity 特殊處理、新轉換函數）</a>。</div>
+  <div class="tip">同名改寫要注意：DDIC-based 的 ZI_SalesOrder 若要改成同名的 view entity，就是第 6 節的「遷移」。它原本的 SQL view <span class="kw">ZISDSO</span> 會消失，先確認沒有程式直接讀 ZISDSO。</div>
+
+  <h3 id="ch10-1-17">17. 常見錯誤與除錯</h3>
+  <table>
+    <thead><tr><th>症狀</th><th>原因</th><th>處理</th></tr></thead>
+    <tbody>
+      <tr><td>啟用時說 SQL view 名稱已存在或太長</td><td>sqlViewName 最多 16 字元，且在 DDIC 命名空間中不可重複</td><td>取短而唯一的名稱（例如 ZISDSO、ZISDSOITEM）；傳輸後就不能改</td></tr>
+      <tr><td>view entity 啟用失敗：DDL source 名稱不符</td><td>view entity 的 DDL source 名稱與實體名稱必須相同</td><td>名稱照 <span class="kw">define view entity</span> 後的名字建立</td></tr>
+      <tr><td>view entity 不能放 mandt</td><td>view entity 的 client 處理全自動，SELECT 清單不可有 client 欄位</td><td>刪掉 mandt；也不要寫 @ClientHandling</td></tr>
+      <tr><td>「元素需要幣別／單位參照」</td><td>view entity 的 CURR／QUAN 欄位必須有 @Semantics 註解，且參照欄位在同一個 view</td><td>補註解，並把 waerk／vrkme 一起選出來</td></tr>
+      <tr><td>「欄位不明確」</td><td>view entity 在多個資料來源時要求加別名</td><td>寫成 <span class="kw">vbak.vbeln</span></td></tr>
+      <tr><td>比較 NUMC 欄位時型別不符或查不到</td><td>NUMC（例如 POSNR 6 碼）要和相同長度的字元常數比較</td><td>寫 <span class="kw">vbap.posnr = '000010'</span>，不要寫 '10'</td></tr>
+      <tr><td>用單號過濾查不到資料</td><td>VBELN 在資料庫存的是內部格式（ALPHA 前導零），CDS 不會幫你轉換</td><td>CDS 內的常數寫內部格式 '0000012345'；ABAP 端先用 <span class="kw">|{ lv_vbeln ALPHA = IN }|</span> 轉換再傳入</td></tr>
+      <tr><td>讀 CDS 的筆數比 SE16N 少</td><td>CDS 掛了 DCL role，依使用者權限過濾</td><td>檢查 <span class="kw">@AccessControl.authorizationCheck</span> 與 role；比較時用同一個使用者</td></tr>
+      <tr><td>表頭金額加總變成好幾倍</td><td>表頭 view JOIN 了明細，或在表頭用 to-many path</td><td>表頭與明細分開 view，明細用 association 曝露</td></tr>
+      <tr><td>同一報表兩次執行結果順序不同、「第一筆」不一樣</td><td>CDS 沒有 ORDER BY，HANA 沒有預設排序</td><td>使用端一律 ORDER BY；取第一筆前先排序或用 MIN／MAX</td></tr>
+      <tr><td>換算結果是 NULL 或 0</td><td>error_handling 設成 SET_TO_NULL，而 TCURR／T006 沒有對應匯率或換算規則</td><td>到 <span class="tcode">OB08</span>、<span class="tcode">CUNI</span> 檢查；開發時可先用 FAIL_ON_ERROR 看出錯原因</td></tr>
+    </tbody>
+  </table>
+  <pre><code class="abap">" ALPHA 前導零：ABAP 端先轉成內部格式，再用列舉（IN）而不是區間
+DATA lt_vbeln TYPE RANGE OF vbeln_va.
+
+lt_vbeln = VALUE #( FOR lv_ext IN VALUE string_table( ( `12345` ) ( `12350` ) )
+                    ( sign = 'I' option = 'EQ' low = |{ lv_ext ALPHA = IN WIDTH = 10 }| ) ).
+
+SELECT SalesOrder, SoldToParty, TotalNetAmount, TransactionCurrency
+  FROM zi_salesorder
+  WHERE SalesOrder IN @lt_vbeln
+  ORDER BY SalesOrder                       " CDS 沒有順序，使用端一定要排序
+  INTO TABLE @DATA(lt_result).</code></pre>
+  <p><b>除錯工具</b>：</p>
+  <ul>
+    <li><b>Data Preview（F8）</b>：啟用後先在 ADT 看資料，確認筆數與欄位。</li>
+    <li><b>ADT 的 SQL 顯示</b>：在 DDL 編輯器右鍵可以看產生出來的 CREATE 陳述式（選單名稱依 ADT 版本而異，未能逐版確認），用來確認 association 有沒有被展開成 JOIN、client 條件是怎麼加的。</li>
+    <li><span class="tcode">ST05</span> SQL trace：看 ABAP SQL 讀 CDS 時實際送到 HANA 的語句與執行時間。</li>
+    <li><span class="tcode">SE11</span>：DDIC-based view 可以用 SQL view 名稱在 SE11 顯示產生的 DDIC view（只能看，不能改）。</li>
+  </ul>
+  <div class="warn"><b>HANA 沒有預設排序，這一點在 CDS 最容易被忽略。</b>Casper 在成本評價專案上遇過：資料同時存在 item category「H」與 cost component「E」兩種角度，程式沒排序就取第一筆，結果一下抓到 H、一下抓到 E，成本忽高忽低。CDS 本身不能排序，所以「取第一筆」的邏輯要嘛在 CDS 裡用條件固定只留一種（該案最後固定抓 H），要嘛在使用端明確 ORDER BY。</div>
+  <div class="note">出處：<a href="https://help.sap.com/doc/abapdocu_latest_index_htm/latest/en-US/ABENCDS_VIEW_CLIENT_HDL_DEF.html">Client Handling for CDS View Entities（不允許 client 欄位）</a>；<a href="https://help.sap.com/doc/abapdocu_latest_index_htm/latest/en-US/ABENCDS_DEFINE_VIEW_ENTITY.html">DEFINE VIEW ENTITY（名稱規則）</a>；<a href="https://help.sap.com/doc/abapdocu_latest_index_htm/latest/en-US/ABENCDS_253495944_ANNO.html">AbapCatalog.sqlViewName（16 字元）</a>；<a href="https://help.sap.com/docs/ABAP_PLATFORM_NEW/f2e545608079437ab165c105649b89db/4ed2e8816e391014adc9fffe4e204223.html">SAP Help – Previewing Data Records（DCL 會過濾預覽結果）</a>；<a href="https://help.sap.com/doc/abapdocu_latest_index_htm/latest/en-US/ABENCDS_CONV_FUNC_UNIT_CURR_V2.html">Unit and Currency Conversion Functions（error_handling）</a>。</div>
+
+  <h3 id="ch10-1-qa">練習與自我檢核</h3>
+  <ol>
+    <li>你的系統是 S/4HANA 1809。同事貼了一段 <span class="kw">define view entity</span> 的範例要你照做，會發生什麼事？你要怎麼改寫？</li>
+    <li>說出 DDIC-based view 與 view entity 在「SQL view 物件」「client 處理」「compareFilter」「參數引用」四方面的差異。</li>
+    <li>一支 DDIC-based view 被三支 Z 程式用 SQL view 名稱讀取。升級到 2022 後要遷移成 view entity，依序要用哪些程式或工具？遷移後那三支程式會怎樣？</li>
+    <li>表頭 view 定義了 <span class="kw">association [0..*] to ZI_SalesOrderItem as _Item</span> 並在清單中曝露 <span class="kw">_Item</span>，但沒有取任何明細欄位。讀這支 view 時資料庫上會不會 JOIN VBAP？為什麼？</li>
+    <li>寫一支 1809 可用的 CDS：列出每個銷售組織、每種幣別的訂單筆數與金額合計，只統計訂單類型 OR、ZOR，並只顯示筆數大於 10 的組合。條件為什麼要用列舉而不是 BETWEEN？</li>
+    <li>把第 5 題改寫成 2020 的 view entity，需要改哪些地方？</li>
+    <li>為 ZI_SalesOrder 加一個參數 <span class="kw">p_key_date</span>，並讓 ABAP 端不傳值時自動帶入系統日期。ABAP SQL 要怎麼寫傳值與不傳值兩種呼叫？</li>
+    <li>用 ABAP SQL 從 ZI_SalesOrderItem 沿 <span class="kw">\_SalesOrder</span> 取出 SoldToPartyName，並依訂單、項目排序。為什麼不建議從表頭沿 <span class="kw">\_Item</span> 取明細欄位？</li>
+    <li>某支報表用 <span class="kw">SELECT SINGLE … FROM zi_salesorder WHERE SoldToParty = @lv_kunnr</span> 取「該客戶最新的一張訂單」，請指出問題並改寫。</li>
+    <li>使用者輸入訂單號碼 12345，CDS 查不到資料，SE16N 卻看得到。最可能的原因是什麼？ABAP 端要怎麼處理？</li>
+    <li>要做一支 50 萬筆明細的查詢報表，只需要看、排序、過濾、小計，你會用 CL_SALV_TABLE 還是 CL_SALV_GUI_TABLE_IDA？為什麼？</li>
+    <li>要讀銷售訂單之前，依「先找標準，再想客製」的原則，你應該先查什麼？如何確認標準 view 可以讓客戶使用？</li>
+  </ol>
+  <div class="note">本節題目依本章各節內容設計；參考來源見各節末尾。版本對照見 <a href="https://help.sap.com/doc/abapdocu_latest_index_htm/latest/en-US/ABENNEWS-75.html">News for ABAP Release 7.5x</a>。</div>
+</section>

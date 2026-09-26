@@ -1,0 +1,661 @@
+<section class="chapter" id="ch10-2" data-title="CDS 進階">
+  <h2>第 10-2 章 CDS 進階：權限、擴充、分析、OData 與效能</h2>
+  <p class="lede"><a href="#ch10-1">第 10-1 章</a>把 CDS view 寫出來了，本章處理它上線以後會碰到的事：誰能看到哪些資料（DCL）、怎麼擴充標準 view 而不修改它、怎麼把 UI 註解和資料模型分開放、怎麼交給分析工具與 Fiori（OData），以及怎麼測試、怎麼避免 CDS 在大量資料下變慢。全章以 S/4HANA 1809（ABAP 7.53）為基準，只有較新版本才有的語法都會標出版本門檻。</p>
+  <div class="meta">
+    <div><b>核心 TCODE</b><span class="tcode">ADT（Eclipse）</span><span class="tcode">PFCG</span><span class="tcode">SU53</span><span class="tcode">/IWFND/MAINT_SERVICE</span><span class="tcode">/IWFND/GW_CLIENT</span><span class="tcode">/IWFND/ERROR_LOG</span><span class="tcode">SEGW</span><span class="tcode">RSRT</span><span class="tcode">ST05</span><span class="tcode">SAT</span></div>
+    <div><b>關鍵物件</b>DEFINE ROLE、pfcg_auth、aspect user、WITH PRIVILEGED ACCESS、EXTEND VIEW、ANNOTATE VIEW、DEFINE TABLE FUNCTION、@Analytics、@OData.publish、@UI、IF_SADL_EXIT_CALC_ELEMENT_READ、I_SalesOrder、CL_CDS_TEST_ENVIRONMENT、V_VBAK_VKO</div>
+  </div>
+
+  <h3 id="ch10-2-01">1. 本章功能 × 版本門檻</h3>
+  <p>讀者基準是 <b>S/4HANA 1809 = ABAP 7.53</b>。下表列出本章各功能的最低版本；標「1809 可用」的是在 7.53 版 ABAP Keyword Documentation 中已經有收錄、或 SAP 官方文件寫明更早版本就提供的功能。</p>
+  <table>
+    <thead><tr><th>功能</th><th>語法／工具</th><th>版本門檻</th><th>本章小節</th></tr></thead>
+    <tbody>
+      <tr><td>CDS 存取控制（DCL）</td><td><span class="kw">DEFINE ROLE</span>、<span class="kw">aspect pfcg_auth</span>、<span class="kw">aspect user</span></td><td>1809 可用（7.53 文件已收錄）</td><td>2、3</td></tr>
+      <tr><td>ABAP SQL 略過 DCL</td><td><span class="kw">WITH PRIVILEGED ACCESS</span></td><td>7.52 起（1809 可用）</td><td>3</td></tr>
+      <tr><td>擴充 DDIC-based view</td><td><span class="kw">EXTEND VIEW</span> ＋ <span class="kw">@AbapCatalog.sqlViewAppendName</span></td><td>1809 可用</td><td>4</td></tr>
+      <tr><td>擴充 view entity</td><td><span class="kw">EXTEND VIEW ENTITY</span></td><td><b>7.55（S/4HANA 2020）</b></td><td>4</td></tr>
+      <tr><td>正式的 C0 擴充契約</td><td>Released for extension（C0）</td><td><b>S/4HANA 2022</b></td><td>4、11</td></tr>
+      <tr><td>Metadata extension</td><td><span class="kw">ANNOTATE VIEW</span>、<span class="kw">@Metadata.layer</span></td><td>1809 可用</td><td>5</td></tr>
+      <tr><td>CDS table function</td><td><span class="kw">DEFINE TABLE FUNCTION … IMPLEMENTED BY METHOD</span></td><td>7.50 起（1809 可用）</td><td>6</td></tr>
+      <tr><td>分析查詢（舊）</td><td><span class="kw">@Analytics.query: true</span></td><td>1809 可用</td><td>7</td></tr>
+      <tr><td>分析查詢（新）</td><td><span class="kw">DEFINE TRANSIENT VIEW ENTITY … PROVIDER CONTRACT analytical_query</span></td><td><b>7.57（S/4HANA 2022）</b></td><td>7</td></tr>
+      <tr><td>OData 發佈（CDS 註解）</td><td><span class="kw">@OData.publish: true</span></td><td>7.50 起（1809 可用）</td><td>8、14</td></tr>
+      <tr><td>OData 發佈（SEGW 引用）</td><td>SEGW Referenced Data Source</td><td>7.50 起（1809 可用）</td><td>8</td></tr>
+      <tr><td>OData 發佈（RAP）</td><td>Service definition ＋ service binding</td><td><b>S/4HANA 1909</b> 起（OData V2）；OData V4 為 <b>2020 FPS01</b> 起</td><td>8</td></tr>
+      <tr><td>Virtual element</td><td><span class="kw">@ObjectModel.virtualElementCalculatedBy</span></td><td>1809 可用（7.53 註解表已收錄）</td><td>10</td></tr>
+      <tr><td>效能註解</td><td><span class="kw">@ObjectModel.usageType</span></td><td>1809 可用</td><td>12</td></tr>
+      <tr><td>CDS Test Double Framework</td><td><span class="kw">CL_CDS_TEST_ENVIRONMENT</span></td><td>7.51 起（1809 可用）</td><td>13</td></tr>
+    </tbody>
+  </table>
+  <div class="tip">本章不重複講 CDS 基本語法（select list、association、path expression、參數），那些在 <a href="#ch10-1">10-1 章</a>。與既有章節的分工：<a href="#ch01-2-13">1-2 章第 13 節</a>講「CDS 取代 DB View」、<a href="#ch05-5-11">5-5 章第 11 節</a>講在 ADT 建立 CDS 的操作、<a href="#ch05-21-23">5-21 章第 23 節</a>講 Code Pushdown 的觀念、<a href="#ch05-24-14">5-24 章第 14 節</a>講 Fiori 架構。AMDP 在 <a href="#ch10-3">10-3 章</a>，RAP 在 <a href="#ch10-4">10-4 章</a>。</div>
+  <div class="note">出處：<a href="https://help.sap.com/doc/abapdocu_753_index_htm/7.53/en-US/abapselect_data_source.htm">ABAP Keyword Documentation 7.53：SELECT, data_source（WITH PRIVILEGED ACCESS）</a>；<a href="https://help.sap.com/doc/abapdocu_latest_index_htm/latest/en-US/abennews-755-abap_cds.htm">ABAP CDS in Release 7.55</a>；<a href="https://help.sap.com/doc/abapdocu_757_index_htm/7.57/en-US/abennews-757-abap_cds.htm">ABAP CDS in Release 7.57</a>。</div>
+
+  <h3 id="ch10-2-02">2. CDS 存取控制（DCL）：@AccessControl 與 DEFINE ROLE</h3>
+  <p>傳統報表的權限檢查是在程式裡寫 <span class="kw">AUTHORITY-CHECK OBJECT 'V_VBAK_VKO'</span>，再把沒權限的資料一筆一筆刪掉。CDS 的做法是把檢查規則寫在 view 旁邊的 <b>CDS role（DCL 原始碼）</b>裡，由 ABAP SQL 執行時自動變成 WHERE 條件。這樣程式不用自己檢查，而且沒有權限的資料根本不會從資料庫讀出來。</p>
+  <p>要用 DCL 必須有兩樣東西：</p>
+  <ol>
+    <li>view 本身標 <span class="kw">@AccessControl.authorizationCheck: #CHECK</span>（預設值就是 <span class="kw">#CHECK</span>）。另外兩個常用值：<span class="kw">#NOT_REQUIRED</span>（不需要檢查，例如組態值；啟用時不會出現「沒有 role」的警告）、<span class="kw">#NOT_ALLOWED</span>（禁止為此 view 建 role）。</li>
+    <li>一個 <b>Access Control</b> 物件（ADT：New → Other ABAP Repository Object → Core Data Services → Access Control），裡面寫 <span class="kw">DEFINE ROLE</span>。</li>
+  </ol>
+  <pre><code class="abap">" 受保護的 view（DDIC-based，1809 可用）
+@AbapCatalog.sqlViewName: 'ZVSOAUTH'
+@AbapCatalog.compiler.compareFilter: true
+@AccessControl.authorizationCheck: #CHECK
+@EndUserText.label: '銷售訂單（含權限檢查）'
+define view ZI_SalesOrderAuth
+  as select from vbak
+{
+  key vbak.vbeln as SalesOrder,
+      vbak.auart as SalesOrderType,
+      vbak.vkorg as SalesOrganization,
+      vbak.vtweg as DistributionChannel,
+      vbak.spart as OrganizationDivision,
+      vbak.kunnr as SoldToParty,
+      vbak.ernam as CreatedByUser,
+      vbak.erdat as CreationDate,
+      @Semantics.amount.currencyCode: 'TransactionCurrency'
+      vbak.netwr as TotalNetAmount,
+      @Semantics.currencyCode: true
+      vbak.waerk as TransactionCurrency
+}</code></pre>
+  <pre><code class="abap">" 對應的 CDS role（Access Control 物件，名稱建議與 view 相同）
+@EndUserText.label: '銷售訂單：依銷售範圍檢查 V_VBAK_VKO'
+@MappingRole: true
+define role ZI_SalesOrderAuth {
+  grant select on ZI_SalesOrderAuth
+    where ( SalesOrganization, DistributionChannel, OrganizationDivision ) =
+          aspect pfcg_auth( V_VBAK_VKO, VKORG, VTWEG, SPART, actvt = '03' );
+}</code></pre>
+  <p>語法重點：</p>
+  <ul>
+    <li><b>左邊</b>是 view 的元素，<b>右邊</b> <span class="kw">aspect pfcg_auth( 權限物件, 權限欄位… )</span> 依<b>位置</b>對應：SalesOrganization ↔ <b>VKORG</b>、DistributionChannel ↔ <b>VTWEG</b>、OrganizationDivision ↔ <b>SPART</b>。</li>
+    <li><span class="kw">actvt = '03'</span> 是固定值過濾：只採用使用者權限中「活動 = 03 顯示」的那幾組值。</li>
+    <li>權限物件 <b>V_VBAK_VKO</b>（Sales Document: Authorization for Sales Areas）的欄位是 VKORG、VTWEG、SPART、ACTVT。這是 VA01／VA03 本來就在檢查的物件，所以 CDS 與傳統交易的權限規則一致。</li>
+    <li>DCL 的物件名稱慣例與 view 同名，一個 view 可以有多個 role，<b>多個 role 之間是 OR</b>（任何一個 role 放行就看得到）。</li>
+  </ul>
+  <div class="warn"><b>DCL 只在透過 ABAP SQL 讀取 CDS entity 時才生效。</b>程式直接 <span class="kw">SELECT … FROM vbak</span>、用 <span class="kw">SE16N</span> 看底層表、或在 AMDP／原生 SQL 裡讀，都<b>完全不受 DCL 限制</b>。所以「把權限做在 CDS」的前提是：所有讀取路徑都經過這個 CDS view。另外兩個常見誤會：①沒有權限時<b>不會報錯</b>，只是回傳 0 筆，使用者會以為「沒資料」，請教他看 <span class="tcode">SU53</span>；② view 標了 <span class="kw">#CHECK</span> 卻沒有建 role，啟用時只有警告，執行時<b>不做任何限制</b>。</div>
+  <div class="tip">第 14 節的 OData／Fiori Elements 清單也是透過 SADL 以 ABAP SQL 讀 CDS，所以同一個 role 會自動套用到 Fiori。這是 CDS 權限最大的好處：報表、Fiori、分析查詢一套規則。</div>
+  <div class="note">出處：<a href="https://help.sap.com/doc/abapdocu_752_index_htm/7.52/en-us/abencds_authorizations.htm">ABAP Keyword Documentation 7.52：ABAP CDS - Access Control</a>；<a href="https://help.sap.com/doc/abapdocu_753_index_htm/7.53/en-US/abencds_f1_cond_pfcg.htm">7.53：DEFINE ROLE, pfcg_condition</a>（範例 <span class="kw">aspect pfcg_auth (s_carrid, carrid, actvt='03')</span>）。V_VBAK_VKO 欄位與 CDS 元素的對應見 <a href="https://blog.sap-press.com/cds-access-control-fundamentals-for-abap">SAP PRESS：CDS Access Control Fundamentals</a>，建議在系統 <span class="tcode">SU21</span> 再確認一次。</div>
+
+  <h3 id="ch10-2-03">3. DCL 的條件種類、組合與 WITH PRIVILEGED ACCESS</h3>
+  <p>除了 PFCG 條件，1809 的 DCL 還能寫下列幾種條件，並用 <span class="kw">and</span>／<span class="kw">or</span> 組合：</p>
+  <table>
+    <thead><tr><th>條件</th><th>寫法</th><th>用途</th></tr></thead>
+    <tbody>
+      <tr><td>PFCG 條件</td><td><span class="kw">( a, b ) = aspect pfcg_auth( OBJ, F1, F2, actvt = '03' )</span></td><td>對應傳統權限物件（最常用）</td></tr>
+      <tr><td>Literal 條件</td><td><span class="kw">SalesOrderType = 'OR'</span></td><td>固定值過濾，例如只開放某種訂單類型</td></tr>
+      <tr><td>使用者條件</td><td><span class="kw">CreatedByUser = aspect user</span></td><td>只看自己建立的資料；運算子可用 <span class="kw">=</span>、<span class="kw">&lt;&gt;</span>、<span class="kw">?=</span></td></tr>
+    </tbody>
+  </table>
+  <p><span class="kw">?=</span> 的意思是「等於目前使用者，<b>或</b>該欄位是初始值／NULL」。</p>
+  <pre><code class="abap">" 組合條件：有銷售範圍權限，而且（是一般訂單，或是自己建立的）
+@EndUserText.label: '銷售訂單：組合條件示範'
+@MappingRole: true
+define role ZI_SalesOrderAuth_Own {
+  grant select on ZI_SalesOrderAuth
+    where ( SalesOrganization, DistributionChannel, OrganizationDivision ) =
+            aspect pfcg_auth( V_VBAK_VKO, VKORG, VTWEG, SPART, actvt = '03' )
+      and ( SalesOrderType = 'OR'
+            or CreatedByUser = aspect user );
+}</code></pre>
+  <div class="warn">Literal 條件和 SQL 的 WHERE 一樣：<b>用列舉（多個 <span class="kw">=</span> 以 <span class="kw">or</span> 串起來）比用區間安全</b>。訂單類型、銷售組織這類代碼是字元欄位，區間比的是字典序，不是業務上的「一段範圍」。遇到號碼段不連續、前導零、編碼規則改過，就會多放行或少放行，而且權限錯了使用者不會察覺。</div>
+  <p><b>在 ABAP SQL 中略過 DCL</b>：有些技術程式（例如背景整合、資料搬遷、已在前面做過檢查的程式）必須讀全部資料，這時在 FROM 後面加 <span class="kw">WITH PRIVILEGED ACCESS</span>：</p>
+  <pre><code class="abap">" 背景作業：已用 AUTHORITY-CHECK 驗證過執行者，這裡要讀全部銷售範圍
+SELECT SalesOrder, SalesOrganization, TotalNetAmount, TransactionCurrency
+  FROM zi_salesorderauth WITH PRIVILEGED ACCESS
+  WHERE SalesOrganization IN @s_vkorg
+  ORDER BY SalesOrder
+  INTO TABLE @DATA(lt_all_orders).</code></pre>
+  <ul>
+    <li><span class="kw">WITH PRIVILEGED ACCESS</span> 會讓該 entity 上的<b>所有</b>role（SAP 交付的和自建的）失效。寫了它，ABAP SQL 從 7.52 起會以 strict mode 檢查語法。</li>
+    <li>不能和 path expression 同時使用。</li>
+    <li>對資料庫表與傳統 view 寫了也沒作用（它們本來就沒有 DCL）。</li>
+  </ul>
+  <div class="warn">「略過權限」等於把資料開給執行這支程式的所有人。程式碼審查時要把 <span class="kw">WITH PRIVILEGED ACCESS</span> 當作必查項目，並在註解寫明「為什麼可以略過」「前面在哪裡做了什麼檢查」。</div>
+  <div class="note">出處：<a href="https://help.sap.com/doc/abapdocu_753_index_htm/7.53/en-US/abencds_f1_cond_user.htm">7.53：DEFINE ROLE, user_condition</a>（<span class="kw">uname ?= aspect user</span>）；<a href="https://help.sap.com/doc/abapdocu_753_index_htm/7.53/en-US/abapselect_data_source.htm">7.53：SELECT, data_source</a>（WITH PRIVILEGED ACCESS 的位置、7.52 strict mode、不可與 path expression 並用）。</div>
+
+  <h3 id="ch10-2-04">4. 擴充 CDS：EXTEND VIEW 與 EXTEND VIEW ENTITY</h3>
+  <p>要在既有 CDS view（包括 SAP 標準 view）加欄位或 association，不必複製一份 view，也不必修改標準，而是建立一個 <b>view extension</b>。這是 CDS 版的 Append Structure（見 <a href="#ch01-2-12">1-2 章第 12 節</a>）。</p>
+  <pre><code class="abap">" 1809：擴充 DDIC-based view，必須給一個 append view 名稱
+@AbapCatalog.sqlViewAppendName: 'ZXVSOAUTH'
+@EndUserText.label: 'ZI_SalesOrderAuth 擴充：付款條件與出貨條件'
+extend view ZI_SalesOrderAuth with ZX_SalesOrderAuth
+  association [0..1] to I_Customer as _ZZSoldToParty
+    on $projection.SoldToParty = _ZZSoldToParty.Customer
+{
+  vbak.zterm as ZZPaymentTerms,
+  vbak.vsbed as ZZShippingCondition,
+  _ZZSoldToParty
+}</code></pre>
+  <pre><code class="abap">" 7.55（S/4HANA 2020）起：擴充 view entity，不需要 append view 名稱
+extend view entity ZI_SalesOrderEntity with
+{
+  vbak.zterm as ZZPaymentTerms
+}</code></pre>
+  <div class="warn"><span class="kw">EXTEND VIEW ENTITY</span> 需 <b>ABAP 7.55（S/4HANA 2020）</b>以上；1809 只能用 <span class="kw">EXTEND VIEW</span> 擴充 DDIC-based view。7.55 的新寫法還允許「只加 association 不加欄位」，而且啟用速度快很多。</div>
+  <p>能不能擴充，取決於原 view 的 <span class="kw">@AbapCatalog.viewEnhancementCategory</span>：</p>
+  <table>
+    <thead><tr><th>值</th><th>意思</th></tr></thead>
+    <tbody>
+      <tr><td><span class="kw">#PROJECTION_LIST</span>（預設）</td><td>可擴充沒有聚合、沒有 UNION 的 view</td></tr>
+      <tr><td><span class="kw">#GROUP_BY</span>（要和 #PROJECTION_LIST 一起寫）</td><td>原 view 有聚合；擴充時要一併擴充 GROUP BY</td></tr>
+      <tr><td><span class="kw">#UNION</span>（要和 #PROJECTION_LIST 一起寫）</td><td>原 view 有 UNION；擴充時每個分支都要補</td></tr>
+      <tr><td><span class="kw">#NONE</span></td><td>禁止擴充</td></tr>
+    </tbody>
+  </table>
+  <p>其他限制：extension 本身不能再被擴充；有明確 name list 的 view 不能擴充；view entity 另外不能加 KEY 欄位、不能加參數、原 view 的 <span class="kw">@AbapCatalog.extensibility.extensible</span> 不可為 false（此註解屬較新版本）。傳輸之後，extension 名稱與 append view 名稱都不能再改，所以<b>一開始就要用客戶命名空間與 ZZ 欄位前綴</b>。</p>
+  <div class="warn"><b>擴充標準 view 前先確認它對擴充的承諾。</b>在 1809，技術上只要不是 <span class="kw">#NONE</span> 就能 <span class="kw">EXTEND VIEW</span>，但 SAP 並沒有保證該 view 的欄位名稱、結構在升級後不變，升級時要自己重測。S/4HANA 2022 起 SAP 以 <b>C0 契約（released for extension）</b>正式標示哪些 view 是穩定的擴充點，而且常提供專門的擴充 include view（E_ 開頭）。<b>先找標準</b>：先看 SAP 是否已提供該欄位（很多欄位標準 view 已經有，只是名稱不同）、是否有 Key User 擴充（Custom Fields）可用，最後才自己擴充；增強的升級成本層級見 <a href="#ch03-4">3-4 章</a>，特別是 <a href="#ch03-4-17">第 17 節 Clean Core 三層擴充模型</a>。</div>
+  <div class="note">出處：<a href="https://help.sap.com/doc/abapdocu_753_index_htm/7.53/en-US/abencds_f1_extend_view.htm">7.53：EXTEND VIEW</a>（語法、sqlViewAppendName、viewEnhancementCategory）；<a href="https://help.sap.com/doc/abapdocu_757_index_htm/7.57/en-US/abencds_extend_view_entity.htm">7.57：EXTEND VIEW ENTITY</a>；<a href="https://help.sap.com/doc/abapdocu_latest_index_htm/latest/en-US/abennews-755-abap_cds.htm">ABAP CDS in Release 7.55</a>；<a href="https://blogs.sap.com/2022/08/18/c0-developer-extensibility-for-cds-data-models/">SAP Blog：C0 Developer Extensibility for CDS Data Models</a>。</div>
+
+  <h3 id="ch10-2-05">5. Metadata extension：把 UI 註解與資料模型分開</h3>
+  <p>Fiori Elements 需要大量 <span class="kw">@UI</span> 註解（第 9 節），全部寫在 view 裡會讓資料模型很難讀。<b>Metadata extension</b>（MDE，ADT 中的 Metadata Extension 物件）讓你把這些註解放到另一個原始碼檔：</p>
+  <ul>
+    <li>被擴充的 view 必須寫 <span class="kw">@Metadata.allowExtensions: true</span>。</li>
+    <li>MDE 用 <span class="kw">ANNOTATE VIEW view名 WITH { … }</span>，只能寫<b>註解</b>，不能加欄位、不能改 SQL。</li>
+    <li>只有註解定義中允許用在 MDE 的註解才能寫（<span class="kw">@UI</span>、<span class="kw">@EndUserText</span>、<span class="kw">@Consumption</span> 等可以；<span class="kw">@AbapCatalog</span>、<span class="kw">@AccessControl</span> 這類技術註解不行）。</li>
+    <li>必須寫 <span class="kw">@Metadata.layer</span>，值由低到高是 <span class="kw">#CORE</span> → <span class="kw">#LOCALIZATION</span> → <span class="kw">#INDUSTRY</span> → <span class="kw">#PARTNER</span> → <span class="kw">#CUSTOMER</span>。同一個註解在多層都有時，<b>高層覆蓋低層</b>；view 本身寫的註解優先權最低。</li>
+  </ul>
+  <pre><code class="abap">" MDE：客戶層，只放 UI 註解
+@Metadata.layer: #CUSTOMER
+@UI.headerInfo: { typeName: '銷售訂單',
+                  typeNamePlural: '銷售訂單',
+                  title: { type: #STANDARD, value: 'SalesOrder' } }
+annotate view ZI_SalesOrderAuth with
+{
+  @UI.lineItem:       [ { position: 10 } ]
+  @UI.selectionField: [ { position: 10 } ]
+  SalesOrder;
+
+  @UI.lineItem:       [ { position: 20 } ]
+  @UI.selectionField: [ { position: 20 } ]
+  SalesOrganization;
+
+  @UI.lineItem:       [ { position: 30 } ]
+  TotalNetAmount;
+}</code></pre>
+  <div class="tip">在 SAP 標準 view 上，SAP 自己的 MDE 是 <span class="kw">#CORE</span> 等較低層；客戶若要調整標準 Fiori 應用的欄位順序，可以在 <span class="kw">#CUSTOMER</span> 層寫自己的 MDE 覆蓋（前提是該 view 有 <span class="kw">@Metadata.allowExtensions: true</span>）。這仍屬於「不修改標準」的擴充，但同樣要先確認 SAP 是否提供更正式的 UI 調整方式（例如 Fiori 的使用者個人化或 Key User adaptation）。</div>
+  <div class="note">出處：<a href="https://help.sap.com/doc/abapdocu_753_index_htm/7.53/en-US/abencds_f1_annotate_view.htm">7.53：ANNOTATE VIEW</a>（@Metadata.layer 五個值、@Metadata.allowExtensions 前提、只能用 MetadataExtension.usageAllowed 的註解）。</div>
+
+  <h3 id="ch10-2-06">6. CDS table function：CDS 的外殼、AMDP 的內容</h3>
+  <p>CDS view 本質是一條 SELECT。遇到一條 SELECT 寫不出來的邏輯（多步驟運算、HANA 專屬函數、需要中間暫存結果），可以改用 <b>CDS table function</b>：在 CDS 裡宣告參數與回傳欄位，實作交給一個 <b>AMDP function</b>（<span class="kw">BY DATABASE FUNCTION</span>）。對消費端來說，它跟一般 CDS entity 一樣可以 SELECT、可以被別的 view 引用、可以掛 DCL。</p>
+  <pre><code class="abap">" 7.50 起可用：客戶別訂單筆數排行
+@EndUserText.label: '客戶別訂單筆數（table function）'
+@ClientHandling.type: #CLIENT_DEPENDENT
+define table function ZTF_SalesOrderCountByCustomer
+  with parameters
+    @Environment.systemField: #CLIENT
+    p_client : abap.clnt,
+    p_from   : abap.dats
+  returns
+  {
+    client      : abap.clnt;
+    SoldToParty : kunnr;
+    OrderCount  : abap.int4;
+  }
+  implemented by method zcl_sd_so_tf=>get_count_by_customer;</code></pre>
+  <pre><code class="abap">" 消費端：p_client 由 @Environment.systemField: #CLIENT 自動帶入，不必傳
+SELECT SoldToParty, OrderCount
+  FROM ztf_salesordercountbycustomer( p_from = @p_datum )
+  ORDER BY OrderCount DESCENDING, SoldToParty
+  INTO TABLE @DATA(lt_rank)
+  UP TO 20 ROWS.</code></pre>
+  <ul>
+    <li>用戶端相依的 table function，回傳清單的<b>第一個欄位必須是用戶端欄位</b>。</li>
+    <li>實作的 AMDP 類別要實作 <span class="kw">IF_AMDP_MARKER_HDB</span>，方法寫成 <span class="kw">FOR TABLE FUNCTION ztf_…</span>，SQLScript 裡要自己處理用戶端條件。詳細寫法見 <a href="#ch10-3">10-3 章</a>。</li>
+  </ul>
+  <div class="warn">table function 的回傳沒有順序。上面範例在 ABAP SQL 端用 <span class="kw">ORDER BY OrderCount DESCENDING, SoldToParty</span>，第二個排序鍵是為了讓「同筆數」的客戶順序也固定。<b>HANA 沒有預設排序</b>，任何「取前 N 名、取第一筆」都要在最外層明確排序；只在 AMDP 裡排序、外層不排，結果不保證。</div>
+  <div class="note">出處：<a href="https://help.sap.com/doc/abapdocu_753_index_htm/7.53/en-US/abencds_f1_define_table_function.htm">7.53：DEFINE TABLE FUNCTION</a>（語法與 @ClientHandling.type: #CLIENT_DEPENDENT、@Environment.systemField: #CLIENT 範例）。</div>
+
+  <h3 id="ch10-2-07">7. Analytics：Cube、Dimension 與 Query</h3>
+  <p>S/4HANA 的 Embedded Analytics 直接拿 CDS view 當 BW 的 InfoProvider 用，不必另建 BW 模型。三層結構：</p>
+  <table>
+    <thead><tr><th>角色</th><th>註解</th><th>內容</th></tr></thead>
+    <tbody>
+      <tr><td>Dimension</td><td><span class="kw">@Analytics.dataCategory: #DIMENSION</span></td><td>主資料（客戶、物料），提供屬性與文字</td></tr>
+      <tr><td>Cube</td><td><span class="kw">@Analytics.dataCategory: #CUBE</span></td><td>交易資料＋量值（measure），元素用 <span class="kw">@DefaultAggregation: #SUM</span> 指定預設彙總</td></tr>
+      <tr><td>Query</td><td><span class="kw">@Analytics.query: true</span></td><td>選 cube 的欄位、指定列／欄軸，給分析工具使用</td></tr>
+    </tbody>
+  </table>
+  <p><span class="kw">@Analytics.dataCategory</span> 在 7.53 的值還有 <span class="kw">#FACT</span>、<span class="kw">#AGGREGATIONLEVEL</span>；<span class="kw">@DefaultAggregation</span> 的值有 #SUM、#MIN、#MAX、#AVG、#COUNT、#COUNT_DISTINCT、#FORMULA、#NONE。</p>
+  <pre><code class="abap">" Cube（1809 可用）
+@AbapCatalog.sqlViewName: 'ZVSOCUBE'
+@AccessControl.authorizationCheck: #CHECK
+@EndUserText.label: '銷售訂單分析 Cube'
+@Analytics.dataCategory: #CUBE
+@VDM.viewType: #COMPOSITE
+define view ZI_SalesOrderCube
+  as select from vbak
+{
+  vbak.vkorg as SalesOrganization,
+  vbak.kunnr as SoldToParty,
+  vbak.erdat as CreationDate,
+
+  @Semantics.currencyCode: true
+  vbak.waerk as TransactionCurrency,
+
+  @DefaultAggregation: #SUM
+  @Semantics.amount.currencyCode: 'TransactionCurrency'
+  vbak.netwr as TotalNetAmount
+}</code></pre>
+  <pre><code class="abap">" Query（1809 寫法）：@Analytics.query: true
+@AbapCatalog.sqlViewName: 'ZVSOQRY'
+@AccessControl.authorizationCheck: #CHECK
+@EndUserText.label: '銷售組織 × 客戶 訂單金額'
+@Analytics.query: true
+@VDM.viewType: #CONSUMPTION
+define view ZC_SalesOrderQuery
+  as select from ZI_SalesOrderCube
+{
+  @AnalyticsDetails.query.axis: #ROWS
+  SalesOrganization,
+  @AnalyticsDetails.query.axis: #ROWS
+  SoldToParty,
+  @AnalyticsDetails.query.axis: #COLUMNS
+  TotalNetAmount,
+  TransactionCurrency
+}</code></pre>
+  <p><b>怎麼看結果</b>：</p>
+  <ul>
+    <li><span class="tcode">RSRT</span>：Query 名稱輸入 <b>2C ＋ SQL view 名稱</b>，本例是 <b>2CZVSOQRY</b>。「2C」前綴是為了避免和 BW 物件同名。</li>
+    <li>Fiori 應用 <b>Query Browser</b>：<span class="kw">@Analytics.query: true</span> 的 view 會出現在這裡，可以直接開成分析表格（需要對應的 Fiori 角色）。</li>
+    <li>也可以用 Analysis for Office 連線。</li>
+  </ul>
+  <pre><code class="abap">" S/4HANA 2022（7.57）起的新寫法：analytical projection view（示意）
+@EndUserText.label: '銷售組織 × 客戶 訂單金額'
+@AccessControl.authorizationCheck: #NOT_ALLOWED
+define transient view entity ZC_SalesOrderAQ
+  provider contract analytical_query
+  as projection on ZI_SalesOrderCubeVE
+{
+  @AnalyticsDetails.query.axis: #ROWS
+  SalesOrganization,
+  @AnalyticsDetails.query.axis: #COLUMNS
+  TotalNetAmount
+}</code></pre>
+  <div class="warn"><span class="kw">DEFINE TRANSIENT VIEW ENTITY … PROVIDER CONTRACT analytical_query</span> 需 <b>ABAP 7.57（S/4HANA 2022）</b>以上。它不會在 HANA 產生 SQL view（所以叫 transient），被投影的必須是 analytical cube 或 dimension view（上例假設已把 cube 改寫成 view entity <span class="kw">ZI_SalesOrderCubeVE</span>）。transient view 的 DCL 註解在新版要求寫法可能不同，<b>未能確認，請以系統的語法檢查為準</b>。1809 請用上面的 <span class="kw">@Analytics.query: true</span>。</div>
+  <div class="warn">分析查詢常見的錯誤是在 cube 裡先把不同幣別的金額加總。<span class="kw">@DefaultAggregation: #SUM</span> 的量值一定要帶 <span class="kw">@Semantics.amount.currencyCode</span>，讓分析引擎依幣別分開彙總。</div>
+  <div class="note">出處：<a href="https://help.sap.com/doc/abapdocu_753_index_htm/7.53/en-US/abencds_annotations_frmwrk_tables.htm">7.53：Framework-Specific Annotations</a>（Analytics.dataCategory、Analytics.query、DefaultAggregation 的值）；<a href="https://blogs.sap.com/2017/02/26/step-2-define-the-analytical-query-cds-view/">SAP Blog：Define the Analytical Query CDS View</a>（RSRT 用 2C 前綴）；<a href="https://help.sap.com/doc/abapdocu_757_index_htm/7.57/en-US/abennews-757-abap_cds.htm">ABAP CDS in Release 7.57</a>、<a href="https://help.sap.com/doc/abapdocu_latest_index_htm/latest/en-US/abencds_define_view_as_analytical.htm">DEFINE TRANSIENT VIEW ENTITY AS PROJECTION ON, Analytical Query</a>。</div>
+
+  <h3 id="ch10-2-08">8. OData 發佈：@OData.publish、SEGW 引用、Service Binding</h3>
+  <p>把 CDS 變成 Fiori 能用的 OData 服務，依版本有三條路：</p>
+  <table>
+    <thead><tr><th>方式</th><th>版本</th><th>做法</th><th>適合</th><th>限制</th></tr></thead>
+    <tbody>
+      <tr><td><b>@OData.publish: true</b></td><td>7.50 起；1809 主要做法之一</td><td>view 加註解 → 啟用時產生 Gateway 物件 → <span class="tcode">/IWFND/MAINT_SERVICE</span> 註冊 <b>view名_CDS</b></td><td>唯讀清單、快速原型</td><td>一個服務只有一個 view（加上它曝露的 association）；新版已不建議用於新開發</td></tr>
+      <tr><td><b>SEGW Referenced Data Source</b></td><td>7.50 起</td><td>SEGW 專案 → Data Model 右鍵 Reference → Data Source → 選 CDS 與 association → Generate → 註冊</td><td>一個服務要包多個 view；需要自己寫 CREATE／UPDATE（DPC_EXT）</td><td>寫入邏輯要自己寫</td></tr>
+      <tr><td><b>Service definition ＋ Service binding</b>（RAP）</td><td><b>S/4HANA 1909</b> 起（OData V2）；V4 為 <b>2020 FPS01</b> 起</td><td>ADT 建 service definition（<span class="kw">expose</span>）→ service binding 選 OData V2／V4 → Publish</td><td>所有新開發</td><td>1809 沒有</td></tr>
+    </tbody>
+  </table>
+  <pre><code class="abap">" 方式一（1809）：在 consumption view 加 @OData.publish: true
+@AbapCatalog.sqlViewName: 'ZVSOLIST'
+@AccessControl.authorizationCheck: #CHECK
+@EndUserText.label: '銷售訂單清單'
+@OData.publish: true
+define view ZC_SalesOrderList
+  as select from ZI_SalesOrderAuth
+{
+  key SalesOrder,
+      SalesOrganization,
+      SoldToParty,
+      TotalNetAmount,
+      TransactionCurrency
+}
+" 啟用後服務名稱：ZC_SALESORDERLIST_CDS
+" /IWFND/MAINT_SERVICE → Add Service → System Alias LOCAL
+"   → External Service Name 輸入 ZC_SALESORDERLIST_CDS → Add Selected Services
+" 測試：/IWFND/GW_CLIENT
+"   /sap/opu/odata/sap/ZC_SALESORDERLIST_CDS/$metadata</code></pre>
+  <pre><code class="abap">" 方式三（1909 起）：service definition，再到 ADT 建 service binding
+@EndUserText.label: '銷售訂單清單服務'
+define service ZUI_SALESORDER_LIST {
+  expose ZC_SalesOrderList as SalesOrder;
+}</code></pre>
+  <div class="warn">Service definition 與 service binding 需 <b>S/4HANA 1909</b> 以上；binding 選 OData V4 需 <b>2020 FPS01</b> 以上。RAP 的完整流程（behavior definition、交易處理）見 <a href="#ch10-4">10-4 章</a>。</div>
+  <div class="tip">OData 常見排錯：服務啟用後讀不到資料，先看 <span class="tcode">/IWFND/ERROR_LOG</span>（前端）與 <span class="tcode">/IWBEP/ERROR_LOG</span>（後端），再看 <span class="tcode">SU53</span> 是不是 DCL 或 <b>S_SERVICE</b> 權限不足。改了 view 欄位後 metadata 沒更新，清 <span class="tcode">/IWFND/CACHE_CLEANUP</span>。<span class="kw">$top</span> 分頁時沒給 <span class="kw">$orderby</span>，第 2 頁可能和第 1 頁重複，原因同樣是 HANA 沒有預設排序（Fiori Elements 會自動帶排序，自己寫前端要注意）。SEGW 手寫 DPC 的分頁範例見 <a href="#ch05-24-14">5-24 章第 14 節</a>。</div>
+  <div class="note">出處：<a href="https://help.sap.com/doc/saphelp_nw75/7.5.5/en-US/79/cb3bf4eafd4af9b39bc6842e5be8bd/content.htm">SAP Help：Expose CDS View as an OData Service</a>（@OData.publish、SADL 產生 Gateway 物件、/IWFND/MAINT_SERVICE）；<a href="https://community.sap.com/t5/technology-blog-posts-by-sap/odata-service-development-options/ba-p/13359604">SAP Blog（Andre Fischer）：OData service development options</a>（Referenced Data Source 7.50 起、RAP 1909 起）；<a href="https://help.sap.com/docs/abap-cloud/abap-rap/abap-restful-application-programming-model">SAP Help：ABAP RESTful Application Programming Model</a>。</div>
+
+  <h3 id="ch10-2-09">9. UI 註解與 Fiori Elements 入門</h3>
+  <p><b>Fiori Elements</b> 是 SAP 提供的「樣板式」Fiori 應用：前端不寫 JavaScript，畫面長相完全由 OData metadata 中的 UI 註解決定。最常用的兩個樣板是 <b>List Report</b>（查詢條件＋結果清單）與 <b>Object Page</b>（點一筆進去看明細）。Fiori 的整體架構見 <a href="#ch05-24">5-24 章</a>。</p>
+  <table>
+    <thead><tr><th>註解</th><th>層級</th><th>在畫面上的效果</th></tr></thead>
+    <tbody>
+      <tr><td><span class="kw">@UI.headerInfo</span></td><td>entity</td><td>清單的標題（typeNamePlural，例如「銷售訂單（25）」）、Object Page 頁首標題（title）</td></tr>
+      <tr><td><span class="kw">@UI.selectionField</span></td><td>元素</td><td>List Report 上方篩選列的欄位，position 決定順序</td></tr>
+      <tr><td><span class="kw">@UI.lineItem</span></td><td>元素</td><td>List Report 結果表格的欄位；也可放 action 按鈕</td></tr>
+      <tr><td><span class="kw">@UI.identification</span></td><td>元素</td><td>Object Page「一般資訊」區塊中的欄位</td></tr>
+      <tr><td><span class="kw">@UI.facet</span></td><td>元素（通常寫在第一個欄位上）</td><td>Object Page 的區段（section）；type 可為 #IDENTIFICATION_REFERENCE、#LINEITEM_REFERENCE、#FIELDGROUP_REFERENCE、#COLLECTION 等</td></tr>
+    </tbody>
+  </table>
+  <pre><code class="abap">" 元素層級 UI 註解（一般寫在 MDE 裡，見第 5 節）
+@UI.facet: [ { id:       'General',
+               purpose:  #STANDARD,
+               type:     #IDENTIFICATION_REFERENCE,
+               label:    '一般資料',
+               position: 10 } ]
+@UI: { lineItem:       [ { position: 10, importance: #HIGH } ],
+       selectionField: [ { position: 10 } ],
+       identification: [ { position: 10 } ] }
+SalesOrder;
+
+@UI: { lineItem:       [ { position: 20 } ],
+       selectionField: [ { position: 20 } ],
+       identification: [ { position: 20 } ] }
+SalesOrganization;</code></pre>
+  <div class="note">1809 的 UI 註解能力取決於前端 SAPUI5 版本與 Fiori Elements 樣板版本，較新的註解（例如部分 facet 類型、criticality 呈現）在舊前端可能不生效。<b>出現「註解有寫、畫面沒變化」時，先確認前端 UI5 版本</b>，未能逐項確認各註解最低版本，請以系統為準。出處：<a href="https://github.com/SAP-samples/fiori-elements-opensap/blob/main/week2/unit1.md">SAP-samples：fiori-elements-opensap（List Report 與 CDS UI 註解）</a>；<a href="https://developers.sap.com/tutorials/fiori-tools-rap-modify-object-page..html">SAP Tutorial：Refine the Object Page with Annotations</a>。</div>
+
+  <h3 id="ch10-2-10">10. Virtual elements：用 ABAP 算出來的欄位</h3>
+  <p>有些欄位 SQL 算不出來或不該用 SQL 算（例如要呼叫函數模組、讀文字、依複雜規則判斷），可以宣告成 <b>virtual element</b>：CDS 裡只佔一個位置，值由一個 ABAP 類別在 OData 讀取後算好填進去。</p>
+  <pre><code class="abap">" consumption view 中宣告 virtual element（1809 可用）
+@AbapCatalog.sqlViewName: 'ZVSOLISTV'
+@AccessControl.authorizationCheck: #CHECK
+@EndUserText.label: '銷售訂單清單（含開單天數）'
+define view ZC_SalesOrderListV
+  as select from ZI_SalesOrderAuth
+{
+  key SalesOrder,
+      CreationDate,
+      @ObjectModel.virtualElement: true
+      @ObjectModel.virtualElementCalculatedBy: 'ABAP:ZCL_SO_DAYS_OPEN'
+      cast( 0 as abap.int4 ) as DaysSinceCreation
+}</code></pre>
+  <pre><code class="abap">CLASS zcl_so_days_open DEFINITION PUBLIC FINAL CREATE PUBLIC.
+  PUBLIC SECTION.
+    INTERFACES if_sadl_exit_calc_element_read.
+ENDCLASS.
+
+CLASS zcl_so_days_open IMPLEMENTATION.
+  METHOD if_sadl_exit_calc_element_read~get_calculation_info.
+    " 告訴框架：要算 DaysSinceCreation，必須一起讀 CreationDate
+    "（就算前端沒有要求 CreationDate 這一欄）
+    IF line_exists( it_requested_calc_elements[ table_line = `DAYSSINCECREATION` ] ).
+      INSERT `CREATIONDATE` INTO TABLE et_requested_orig_elements.
+    ENDIF.
+  ENDMETHOD.
+
+  METHOD if_sadl_exit_calc_element_read~calculate.
+    DATA lt_data TYPE STANDARD TABLE OF zc_salesorderlistv WITH EMPTY KEY.
+    lt_data = CORRESPONDING #( it_original_data ).
+
+    LOOP AT lt_data ASSIGNING FIELD-SYMBOL(&lt;ls_data&gt;).
+      &lt;ls_data&gt;-dayssincecreation = COND #(
+        WHEN &lt;ls_data&gt;-creationdate IS INITIAL THEN 0
+        ELSE sy-datum - &lt;ls_data&gt;-creationdate ).
+    ENDLOOP.
+
+    ct_calculated_data = CORRESPONDING #( lt_data ).
+  ENDMETHOD.
+ENDCLASS.</code></pre>
+  <div class="warn"><b>Virtual element 只在 SADL 執行環境生效（@OData.publish、SEGW Referenced Data Source、RAP 的 OData 服務）。</b>在 ABAP 程式用 <span class="kw">SELECT … FROM zc_salesorderlistv</span> 讀到的 DaysSinceCreation 永遠是 CAST 的預設值 0；分析查詢、其他 CDS view 也讀不到算好的值。另外它是讀出資料<b>之後</b>才算，所以<b>不能拿來當篩選或排序條件</b>（資料庫不知道它的值）。需要在 ABAP 報表中使用同樣的計算，請把邏輯寫成獨立方法，兩邊共用。</div>
+  <div class="note">出處：<a href="https://help.sap.com/docs/ABAP_PLATFORM_BW4HANA/cc0c305d2fab47bd808adcad3ca7ee9d/4b5e56ec6f28453f81ac370bd91fb06d.html">SAP Help：Interface IF_SADL_EXIT_CALC_ELEMENT_READ</a>（方法 GET_CALCULATION_INFO、CALCULATE）；<a href="https://help.sap.com/doc/abapdocu_753_index_htm/7.53/en-US/abencds_annotations_frmwrk_tables.htm">7.53：Framework-Specific Annotations</a>（ObjectModel.virtualElement、virtualElementCalculatedBy）。參數名稱（it_original_data、ct_calculated_data、it_requested_calc_elements、et_requested_orig_elements）請在系統中以 F2 確認。</div>
+
+  <h3 id="ch10-2-11">11. Released API 與 C1 契約：先找標準 view 再自建</h3>
+  <p>S/4HANA 內建數千個 CDS view，組成 <b>VDM（Virtual Data Model）</b>，命名有規則：<b>I_</b> 開頭是 interface view（可重用的基礎模型，例如 <span class="kw">I_SalesOrder</span>、<span class="kw">I_SalesOrderItem</span>、<span class="kw">I_Customer</span>）、<b>C_</b> 開頭是 consumption view（給特定應用用）、<b>P_</b> 開頭是私有輔助 view（不該被客戶引用）、<b>E_</b> 開頭是擴充 include view。</p>
+  <p>但「存在」不等於「可以放心用」。SAP 對 view 的穩定性承諾稱為 <b>release contract</b>：</p>
+  <table>
+    <thead><tr><th>契約</th><th>ADT 顯示名稱</th><th>承諾</th></tr></thead>
+    <tbody>
+      <tr><td>C0</td><td>Extend</td><td>可在指定擴充點擴充，升級時擴充點穩定</td></tr>
+      <tr><td>C1</td><td>Use System-Internally (Contract C1)</td><td>可在同一系統內引用（ABAP 程式、自建 CDS），升級時欄位與行為穩定</td></tr>
+      <tr><td>C2</td><td>Use as Remote API</td><td>可作為遠端 API 對外提供</td></tr>
+    </tbody>
+  </table>
+  <p>在 ADT 開啟 view → <b>Properties</b> 視窗 → <b>API State</b> 頁籤，可看到 Release State（Released／Deprecated）與是否勾選 <b>Use in Cloud Development</b>（可在 ABAP Cloud 開發中使用）、<b>Use in Key User Apps</b>。</p>
+  <pre><code class="abap">" 直接用 released 標準 view 讀銷售訂單，不自己 JOIN VBAK/VBAP
+" I_SalesOrder 本身帶有 SAP 交付的 DCL，報表自動套用銷售範圍權限
+SELECT SalesOrder,
+       SalesOrderType,
+       SalesOrganization,
+       SoldToParty,
+       CreationDate,
+       TotalNetAmount,
+       TransactionCurrency
+  FROM i_salesorder
+  WHERE SalesOrganization IN @s_vkorg
+    AND CreationDate      IN @s_erdat
+  ORDER BY SalesOrder
+  INTO TABLE @DATA(lt_so)
+  UP TO 500 ROWS.</code></pre>
+  <div class="warn"><b>1809 的 API State 頁籤與 release contract 的呈現方式，與 2020／2022 以後的系統不同</b>：C0／C1 的完整標示和「Use in Cloud Development」主要是隨 ABAP Cloud（S/4HANA 2022 起的 on-premise 開發者擴充）普及的。1809 系統上該頁籤是否存在、內容為何，<b>未能確認，請以系統為準</b>；查不到時，可到 SAP Business Accelerator Hub（api.sap.com）查該 view 是否列為 released，或看 view 原始碼的 <span class="kw">@VDM.viewType</span> 與 SAP Note。</div>
+  <div class="tip"><b>先找標準，再想客製</b>：要做銷售訂單清單，先查 <span class="kw">I_SalesOrder</span>／<span class="kw">I_SalesOrderItem</span> 是否已有需要的欄位，再決定用 <span class="kw">EXTEND VIEW</span> 補欄位，最後才考慮從 VBAK／VBAP 自建。自建 view 直接讀底層表，SAP 改表結構（例如 S/4HANA 把 VBUK／VBUP 的狀態欄位併入 VBAK／VBAP）時要自己改；引用 released view 則由 SAP 負責相容。另外 SAP 標準 view 的名稱與欄位在不同版本可能不同，本章範例中的 I_ view 欄位請以系統中 ADT 開啟的定義為準。</div>
+  <div class="note">出處：<a href="https://help.sap.com/docs/abap-cloud/abap-development-tools-user-guide/use-system-internally-c1">SAP Help（ADT User Guide）：Contract C1 - Use System-Internally</a>；<a href="https://github.com/SAP-samples/abap-cheat-sheets/blob/main/19_ABAP_for_Cloud_Development.md">SAP-samples：ABAP cheat sheet - ABAP for Cloud Development</a>；<a href="https://blogs.sap.com/2022/08/18/c0-developer-extensibility-for-cds-data-models/">SAP Blog：C0 Developer Extensibility for CDS Data Models</a>。</div>
+
+  <h3 id="ch10-2-12">12. 效能：usageType 註解、association、非 SARGable 函數與分析工具</h3>
+  <p><b>(1) 效能註解</b>：<span class="kw">@ObjectModel.usageType</span> 不會改變執行計畫，它是給消費者看的「使用說明」，也是 SAP 內部 VDM 審查的依據。</p>
+  <table>
+    <thead><tr><th>註解</th><th>7.53 允許值</th><th>意思</th></tr></thead>
+    <tbody>
+      <tr><td><span class="kw">serviceQuality</span></td><td>#A、#B、#C、#D、#P、#X（預設 #X）</td><td>預期的效能等級。依 SAP 的 VDM 指引，#A 的 view 底層表不超過 3 個、#B 不超過 5 個；#D 用於分析、不支援交易處理；#X 表示未分類。各值完整定義請在 ADT 按 F1 查看</td></tr>
+      <tr><td><span class="kw">sizeCategory</span></td><td>#S、#M、#L、#XL、#XXL（預設 #S）</td><td>預期筆數量級：#S 約 1,000 筆以下、#M 約 100,000 筆以下，其餘依序更大（細部門檻請按 F1）</td></tr>
+      <tr><td><span class="kw">dataClass</span></td><td>#TRANSACTIONAL、#MASTER、#ORGANIZATIONAL、#CUSTOMIZING、#META、#MIXED（預設 #MIXED）</td><td>資料性質，影響快取與使用情境判斷</td></tr>
+    </tbody>
+  </table>
+  <pre><code class="abap">@AbapCatalog.sqlViewName: 'ZVSOPERF'
+@AccessControl.authorizationCheck: #CHECK
+@EndUserText.label: '銷售訂單（效能註解示範）'
+@ObjectModel.usageType: { serviceQuality: #B,
+                          sizeCategory:   #L,
+                          dataClass:      #TRANSACTIONAL }
+define view ZI_SalesOrderPerf
+  as select from vbak
+  association [0..*] to vbap as _Item
+    on $projection.SalesOrder = _Item.vbeln
+{
+  key vbak.vbeln as SalesOrder,
+      vbak.vkorg as SalesOrganization,
+      vbak.erdat as CreationDate,
+      _Item          " 只曝露，不在這裡使用 → 不產生 JOIN
+}</code></pre>
+  <p><b>(2) Association 是「用到才 JOIN」</b>：只曝露 <span class="kw">_Item</span> 不會讓 SQL 多一個 JOIN；消費者在 select list 或 WHERE 用到 <span class="kw">_Item.matnr</span> 這種 path 時才會產生。要注意的是 <b>to-many（[0..*]）的 path 會讓結果筆數倍增</b>：從表頭 view 取 <span class="kw">_Item.matnr</span>，一張有 10 行的訂單就變成 10 筆，接著任何以表頭為單位的加總都會算錯。</p>
+  <p><b>(3) 避免非 SARGable 的寫法</b>：在欄位上套函數後再比較，資料庫就不能直接用欄位的索引／欄式字典做過濾，必須先把每一筆都算出來。</p>
+  <pre><code class="abap">" ✗ 在 CDS 中把日期轉成年份字串，再讓消費者用年份篩選
+"   → WHERE OrderYear = '2025' 時，HANA 必須先對每一筆 erdat 做 substring
+define view ZI_SalesOrderYearBad
+  as select from vbak
+{
+  key vbak.vbeln                    as SalesOrder,
+      substring( vbak.erdat, 1, 4 ) as OrderYear
+}
+
+" ✓ 保留原始欄位讓消費者直接篩選；年份欄位只用來顯示
+"   SELECT … FROM zi_salesorderyear
+"     WHERE CreationDate BETWEEN @lv_from AND @lv_to   日期是連續值，用區間沒問題
+define view ZI_SalesOrderYear
+  as select from vbak
+{
+  key vbak.vbeln                    as SalesOrder,
+      vbak.erdat                    as CreationDate,
+      substring( vbak.erdat, 1, 4 ) as OrderYear
+}</code></pre>
+  <div class="note">上面兩段在真實系統中還需要 <span class="kw">@AbapCatalog.sqlViewName</span> 等表頭註解，此處省略以突顯差異。日期是真正的連續值，可以用區間；但訂單類型、物料群組這類<b>代碼</b>請用列舉（<span class="kw">IN</span> 明列值），理由見第 3 節。</div>
+  <p><b>(4) 分析工具</b>：</p>
+  <ul>
+    <li>ADT 在 view 上右鍵 <b>Open With → Dependency Analyzer</b>：SQL Dependency Tree／Graph 與 <b>Complexity Metrics</b>（底層用了幾張表、幾個 JOIN、UNION、函數），是檢查 view 疊太多層最快的方法。</li>
+    <li>ADT 在 view 上右鍵 <b>Show SQL CREATE Statement</b>：看 CDS 最後產生的 SQL，確認 association 有沒有變成預期的 JOIN。</li>
+    <li><span class="tcode">ST05</span> SQL trace：錄下執行的 SQL，用 Explain 看執行計畫（HANA 上可進一步看 PlanViz）；<span class="tcode">SAT</span> 看 ABAP 端時間分佈。ST05 的操作見 <a href="#ch05-21-09">5-21 章第 9 節</a>，SQL Monitor 見 <a href="#ch05-21-08">第 8 節</a>。</li>
+  </ul>
+  <div class="warn"><b>HANA 沒有預設排序，而且 CDS view 定義裡不能寫 ORDER BY。</b>所以排序永遠是消費端的責任：ABAP SQL 要寫 <span class="kw">ORDER BY</span>，OData 要帶 <span class="kw">$orderby</span>。Casper 的專案實例：成本評價資料同時有 item category「H」與 cost component「E」兩種角度，兩者的成本構成欄位數量不同，程式取第一筆卻沒排序，結果時而是 H、時而是 E，成本不穩定；最後的做法是<b>條件固定抓 H，並明確排序</b>。把這種查詢改寫成 CDS 也一樣：view 裡用 WHERE 固定角度，消費端用 ORDER BY 固定順序。詳見 <a href="#ch05-21-24">5-21 章第 24 節</a>。</div>
+  <div class="note">出處：<a href="https://help.sap.com/doc/abapdocu_753_index_htm/7.53/en-US/abencds_annotations_frmwrk_tables.htm">7.53：Framework-Specific Annotations</a>（usageType 三個註解的允許值與預設值）；<a href="https://blogs.sap.com/2018/11/15/safeguard-performance-of-abap-cds-views-part-1-cds-view-complexity/">SAP Blog：Safeguard Performance of ABAP CDS Views – Part 1</a>（serviceQuality 與底層表數、Dependency Analyzer）；<a href="https://help.sap.com/docs/abap-cloud/abap-development-tools-user-guide/dependency-analyzer">SAP Help：Dependency Analyzer</a>。</div>
+
+  <h3 id="ch10-2-13">13. CDS 的測試：CDS Test Double Framework</h3>
+  <p>CDS 的邏輯在資料庫執行，一般的 ABAP 測試替身（test double）插不進去。<b>CDS Test Double Framework</b>（7.51 起）的做法是：為被測 view 所依賴的表或 view 在資料庫建立暫時的替身表，測試期間把讀取導向替身表，你只要塞入測試資料、比對 view 的輸出。</p>
+  <pre><code class="abap">" 本地測試類別（放在任一全域類別或程式的 Test Classes 中）
+CLASS ltc_sales_order_auth DEFINITION FINAL
+  FOR TESTING RISK LEVEL HARMLESS DURATION SHORT.
+  PRIVATE SECTION.
+    CLASS-DATA go_env TYPE REF TO if_cds_test_environment.
+    CLASS-METHODS class_setup.
+    CLASS-METHODS class_teardown.
+    METHODS setup.
+    METHODS maps_header_fields FOR TESTING.
+ENDCLASS.
+
+CLASS ltc_sales_order_auth IMPLEMENTATION.
+  METHOD class_setup.
+    " 自動找出 ZI_SalesOrderAuth 依賴的 VBAK，建立替身
+    go_env = cl_cds_test_environment=&gt;create( i_for_entity = 'ZI_SALESORDERAUTH' ).
+  ENDMETHOD.
+
+  METHOD class_teardown.
+    go_env-&gt;destroy( ).
+  ENDMETHOD.
+
+  METHOD setup.
+    go_env-&gt;clear_doubles( ).       " 每個測試方法都從空資料開始
+  ENDMETHOD.
+
+  METHOD maps_header_fields.
+    " Given：兩張訂單
+    DATA lt_vbak TYPE STANDARD TABLE OF vbak WITH EMPTY KEY.
+    lt_vbak = VALUE #(
+      ( vbeln = '0000000001' auart = 'OR' vkorg = '1000' netwr = '100.00' waerk = 'TWD' )
+      ( vbeln = '0000000002' auart = 'OR' vkorg = '2000' netwr = '250.00' waerk = 'TWD' ) ).
+    go_env-&gt;insert( cl_cds_test_data=&gt;create( i_data = lt_vbak ) ).
+
+    " When：讀被測 view（略過 DCL，讓結果不受執行測試者的權限影響）
+    SELECT SalesOrder, SalesOrganization, TotalNetAmount
+      FROM zi_salesorderauth WITH PRIVILEGED ACCESS
+      ORDER BY SalesOrder
+      INTO TABLE @DATA(lt_act).
+
+    " Then：筆數與欄位對應正確（有 ORDER BY，才能用索引 [ 2 ] 比對）
+    cl_abap_unit_assert=&gt;assert_equals( act = lines( lt_act ) exp = 2 ).
+    cl_abap_unit_assert=&gt;assert_equals( act = lt_act[ 2 ]-SalesOrganization exp = '2000' ).
+  ENDMETHOD.
+ENDCLASS.</code></pre>
+  <ul>
+    <li><span class="kw">create( i_for_entity = … )</span>：預設替身化被測 entity 的直接依賴。</li>
+    <li><span class="kw">insert( cl_cds_test_data=&gt;create( i_data = … ) )</span> 是最早（7.51）的 API；較新版本另有 <span class="kw">insert_test_data( i_data = … )</span> 的簡寫。1809 兩者是否都有，<b>未能確認，請在系統中以 F2 查看 IF_CDS_TEST_ENVIRONMENT</b>。</li>
+    <li>DCL：本例在測試的 SELECT 用 <span class="kw">WITH PRIVILEGED ACCESS</span> 避開權限。框架本身也提供測試 DCL 的選項（官方部落格建議正式測試時在 create 關閉 DCL），參數名稱各版本不同，<b>未能確認，請以系統為準</b>。</li>
+  </ul>
+  <div class="warn">斷言中取 <span class="kw">lt_act[ 2 ]</span> 之前一定要有 <span class="kw">ORDER BY</span>，否則測試會「有時過、有時不過」，這正是 HANA 沒有預設排序在測試中的表現。</div>
+  <div class="note">出處：<a href="https://help.sap.com/docs/SAP_NETWEAVER_AS_ABAP_752/f2e545608079437ab165c105649b89db/cbedc08ff4de48ffa8d04d3067ef08e7.html">SAP Help（7.52）：ABAP CDS Test Double Framework</a>；<a href="https://community.sap.com/t5/enterprise-resource-planning-blog-posts-by-sap/introduction-to-cds-test-double-framework-how-to-write-unit-tests-for-abap/ba-p/13280809">SAP Blog：Introduction to CDS Test Double Framework</a>（7.51 起、cl_cds_test_data=&gt;create 與 insert、clear_doubles、destroy）；<a href="https://github.com/SAP-samples/abap-cheat-sheets/blob/main/14_ABAP_Unit_Tests.md">SAP-samples：ABAP cheat sheet - ABAP Unit Tests</a>（insert_test_data）。</div>
+
+  <h3 id="ch10-2-14">14. 實作範例：權限＋UI 註解＋@OData.publish 的銷售訂單清單（1809）</h3>
+  <p>延續 <a href="#ch10-1">10-1 章</a>的銷售訂單 view，本節把前面各節串成一個在 1809 就能完成的 Fiori Elements 清單。物件一覽：</p>
+  <table>
+    <thead><tr><th>物件</th><th>名稱</th><th>內容</th></tr></thead>
+    <tbody>
+      <tr><td>Interface view</td><td>ZI_SalesOrderAuth</td><td>第 2 節已建（VBAK 表頭，含 #CHECK）</td></tr>
+      <tr><td>Consumption view</td><td>ZC_SalesOrderFE</td><td>選欄位、@Metadata.allowExtensions、@OData.publish</td></tr>
+      <tr><td>Access control</td><td>ZC_SalesOrderFE</td><td>繼承 V_VBAK_VKO 檢查</td></tr>
+      <tr><td>Metadata extension</td><td>ZC_SalesOrderFE</td><td>List Report 與 Object Page 的 UI 註解</td></tr>
+      <tr><td>OData 服務</td><td>ZC_SALESORDERFE_CDS</td><td>自動產生，<span class="tcode">/IWFND/MAINT_SERVICE</span> 註冊</td></tr>
+    </tbody>
+  </table>
+  <h4>步驟 1：Consumption view</h4>
+  <pre><code class="abap">@AbapCatalog.sqlViewName: 'ZVSOFE'
+@AbapCatalog.compiler.compareFilter: true
+@AccessControl.authorizationCheck: #CHECK
+@EndUserText.label: '銷售訂單清單（Fiori Elements）'
+@Metadata.allowExtensions: true
+@VDM.viewType: #CONSUMPTION
+@ObjectModel.usageType: { serviceQuality: #C, sizeCategory: #L, dataClass: #TRANSACTIONAL }
+@OData.publish: true
+define view ZC_SalesOrderFE
+  as select from ZI_SalesOrderAuth
+{
+  key SalesOrder,
+      SalesOrderType,
+      SalesOrganization,
+      DistributionChannel,
+      OrganizationDivision,
+      SoldToParty,
+      CreationDate,
+      @Semantics.amount.currencyCode: 'TransactionCurrency'
+      TotalNetAmount,
+      @Semantics.currencyCode: true
+      TransactionCurrency
+}</code></pre>
+  <h4>步驟 2：Access control</h4>
+  <pre><code class="abap">@EndUserText.label: '銷售訂單清單：沿用 V_VBAK_VKO'
+@MappingRole: true
+define role ZC_SalesOrderFE {
+  grant select on ZC_SalesOrderFE
+    where ( SalesOrganization, DistributionChannel, OrganizationDivision ) =
+          aspect pfcg_auth( V_VBAK_VKO, VKORG, VTWEG, SPART, actvt = '03' );
+}</code></pre>
+  <div class="note">從 ZC 讀資料時，DCL 檢查的是 ZC 本身的 role；ZC 內部去讀 ZI 時，ZI 的 role 不會再套一次。所以<b>每一層有 #CHECK 的 view 都要有自己的 role</b>，否則繞過上層直接讀下層就能看到全部資料。較新版本的 DCL 另有 <span class="kw">inheriting conditions from entity</span> 可以沿用下層條件，1809 是否可用<b>未能確認</b>，本例直接重寫同樣的條件。</div>
+  <h4>步驟 3：Metadata extension（UI 註解）</h4>
+  <pre><code class="abap">@Metadata.layer: #CUSTOMER
+@UI.headerInfo: { typeName:       '銷售訂單',
+                  typeNamePlural: '銷售訂單',
+                  title:          { type: #STANDARD, value: 'SalesOrder' },
+                  description:    { type: #STANDARD, value: 'SoldToParty' } }
+annotate view ZC_SalesOrderFE with
+{
+  @UI.facet: [ { id: 'General', purpose: #STANDARD,
+                 type: #IDENTIFICATION_REFERENCE,
+                 label: '一般資料', position: 10 } ]
+  @UI: { lineItem:       [ { position: 10, importance: #HIGH } ],
+         selectionField: [ { position: 10 } ],
+         identification: [ { position: 10 } ] }
+  SalesOrder;
+
+  @UI: { lineItem:       [ { position: 20 } ],
+         selectionField: [ { position: 20 } ],
+         identification: [ { position: 20 } ] }
+  SalesOrderType;
+
+  @UI: { lineItem:       [ { position: 30 } ],
+         selectionField: [ { position: 30 } ],
+         identification: [ { position: 30 } ] }
+  SalesOrganization;
+
+  @UI: { lineItem:       [ { position: 40 } ],
+         selectionField: [ { position: 40 } ],
+         identification: [ { position: 40 } ] }
+  SoldToParty;
+
+  @UI: { lineItem:       [ { position: 50 } ],
+         selectionField: [ { position: 50 } ],
+         identification: [ { position: 50 } ] }
+  CreationDate;
+
+  @UI: { lineItem:       [ { position: 60, importance: #HIGH } ],
+         identification: [ { position: 60 } ] }
+  TotalNetAmount;
+}</code></pre>
+  <h4>步驟 4：註冊與預覽</h4>
+  <ol>
+    <li>啟用 ZC_SalesOrderFE。ADT 會在 <span class="kw">@OData.publish</span> 那一行旁顯示服務 <b>ZC_SALESORDERFE_CDS</b> 尚未啟用的提示。</li>
+    <li><span class="tcode">/IWFND/MAINT_SERVICE</span> → Add Service → System Alias <b>LOCAL</b> → External Service Name <b>ZC_SALESORDERFE_CDS</b> → Add Selected Services，指定套件與傳輸。</li>
+    <li><span class="tcode">/IWFND/GW_CLIENT</span> 測試 <span class="kw">/sap/opu/odata/sap/ZC_SALESORDERFE_CDS/$metadata</span>，確認 metadata 中有 UI 註解（Annotations 區段）。</li>
+    <li>預覽：1809 沒有 service binding 的「Preview」按鈕。用 SAP Web IDE 或 SAP Fiori tools（VS Code／Business Application Studio）以 <b>List Report Object Page</b> 樣板連到這個服務產生應用即可預覽；部署到 ABAP 前端伺服器後，再在 Fiori launchpad 建 tile。</li>
+    <li>權限：使用者要有啟用服務的 <b>S_SERVICE</b>（PFCG 角色加入該 OData 服務）以及 <b>V_VBAK_VKO</b> 的銷售範圍權限，才會看到資料。</li>
+  </ol>
+  <pre><code class="abap">" 同一個 view 在 ABAP 報表中也能直接用，DCL 一樣生效
+SELECT SalesOrder, SalesOrderType, SalesOrganization, SoldToParty,
+       CreationDate, TotalNetAmount, TransactionCurrency
+  FROM zc_salesorderfe
+  WHERE SalesOrderType IN @s_auart          " 選擇畫面請引導使用者逐一列舉類型
+    AND CreationDate   IN @s_erdat
+  ORDER BY CreationDate DESCENDING, SalesOrder
+  INTO TABLE @DATA(lt_list).
+
+TRY.
+    cl_salv_table=&gt;factory( IMPORTING r_salv_table = DATA(lo_alv)
+                            CHANGING  t_table      = lt_list ).
+    lo_alv-&gt;display( ).
+  CATCH cx_salv_msg INTO DATA(lx_salv).
+    MESSAGE lx_salv-&gt;get_text( ) TYPE 'E'.
+ENDTRY.</code></pre>
+  <div class="tip">升級到 1909 以後，這個範例只要把 <span class="kw">@OData.publish: true</span> 拿掉、改建 service definition（<span class="kw">expose ZC_SalesOrderFE</span>）與 service binding，就能在 ADT 直接按 Preview 看 Fiori Elements 畫面；再往 2020 以後，建議把 view 改寫為 <span class="kw">DEFINE VIEW ENTITY</span>，並依 <a href="#ch10-4">10-4 章</a>的 RAP 流程加上交易行為。</div>
+  <div class="note">出處：<a href="https://help.sap.com/doc/saphelp_nw75/7.5.5/en-US/79/cb3bf4eafd4af9b39bc6842e5be8bd/content.htm">SAP Help：Expose CDS View as an OData Service</a>；<a href="https://help.sap.com/doc/abapdocu_753_index_htm/7.53/en-US/abencds_f1_cond_pfcg.htm">7.53：DEFINE ROLE, pfcg_condition</a>；<a href="https://help.sap.com/doc/abapdocu_753_index_htm/7.53/en-US/abencds_f1_annotate_view.htm">7.53：ANNOTATE VIEW</a>；<a href="https://github.com/SAP-samples/fiori-elements-opensap/blob/main/week2/unit1.md">SAP-samples：fiori-elements-opensap</a>。</div>
+
+  <h3 id="ch10-2-qa">練習與自我檢核</h3>
+  <ol>
+    <li>view 標了 <span class="kw">@AccessControl.authorizationCheck: #CHECK</span>，但使用者說「報表完全沒資料，SE16N 看 VBAK 明明有」。列出你會依序檢查的三件事。</li>
+    <li>寫一個 CDS role：只讓使用者看到自己建立（ERNAM）的訂單，而且訂單類型只能是 OR、ZOR 兩種。為什麼訂單類型要用 <span class="kw">or</span> 列舉，而不是寫成區間？</li>
+    <li>哪些情況下可以在 ABAP SQL 使用 <span class="kw">WITH PRIVILEGED ACCESS</span>？程式碼審查時你會要求寫出什麼說明？</li>
+    <li>要在標準 view <span class="kw">I_SalesOrder</span> 補一個客製欄位 ZZ_REGION（已用 Append Structure 加在 VBAK）。1809 與 2022 的做法分別是什麼？動手前要先確認哪些事？</li>
+    <li>Metadata extension 與 view 本身都寫了 <span class="kw">@UI.lineItem</span> 的 position，最後畫面採用哪一個？如果同時有 <span class="kw">#CORE</span> 與 <span class="kw">#CUSTOMER</span> 兩層 MDE 呢？</li>
+    <li>把第 6 節的 table function 用在一支 ABAP 報表中，取「訂單筆數前 10 名客戶」。為什麼 ORDER BY 要有第二個排序鍵？</li>
+    <li>寫出 1809 的 cube 與 query view，彙總「銷售組織 × 月份」的訂單金額，並說明在 <span class="tcode">RSRT</span> 要輸入的名稱。</li>
+    <li>比較 <span class="kw">@OData.publish</span>、SEGW Referenced Data Source、service binding 三種方式各自適用的版本與情境。</li>
+    <li>virtual element DaysSinceCreation 在 Fiori 上看得到，但在 ABAP 報表中永遠是 0，為什麼？要讓兩邊結果一致應該怎麼設計？</li>
+    <li>一個表頭 view 曝露了 <span class="kw">_Item</span>（[0..*]），某支報表寫 <span class="kw">SELECT SalesOrder, _Item-matnr, TotalNetAmount</span> 再加總金額，結果比 VA05 多出好幾倍。說明原因與改法。</li>
+    <li>用 <span class="kw">CL_CDS_TEST_ENVIRONMENT</span> 為第 7 節的 cube 寫一個測試：兩筆同幣別訂單的 TotalNetAmount 加總是否正確。</li>
+    <li>一個查詢「取每個物料最新一筆成本估算」的 CDS 在測試機結果正確，在正式機偶爾錯。依本章與 <a href="#ch05-21-24">5-21 章第 24 節</a>，最可能的原因是什麼？</li>
+  </ol>
+</section>

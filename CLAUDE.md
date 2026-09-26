@@ -39,6 +39,7 @@
 | 第七部 | ch07-1 ~ ch07-7 | 程式範例庫・ABAP OOP 原則．模式．實踐：例外與程序式基礎／類別與物件／封裝繼承多型／SOLID／設計模式／進階技術（RTTS、BAL、ALV、持久化、BAdI）／綜合實戰 |
 | 第八部 | ch08-1 ~ ch08-8 | 實戰源碼庫・36 套專案程式：增強實例／SD 報價訂單發票表單（PayPal）／月對帳單與外貿單據／採購領料憑證表單與退料／FI 報表／MM・SD 報表／主資料與 BOM 途程批導／外部介面整合 |
 | 第九部 | ch09-1 ~ ch09-5 | 模組二次開發案例：主機管理與開發導論（TCODE、權限、內部稽核）／MM 五案例（BAPI 讀庫存、Excel 更新前置時間、BAPI_PR_CREATE、採購確認、GR／IR 與重複發票）／PP：MRP Element 與工單報表 ZCO03／PP：物料修改日誌 ZMMQ0003 與插件位置 ZMMI0005／跨模組工具（資料表上下載、幣別小數位、QM 客製清單） |
+| 第十部 | ch10-1 ~ ch10-5 | S/4HANA 新世代開發：CDS View 基礎（DDIC-based view 與 view entity）／CDS 進階（DCL、擴充、Analytics、OData、效能）／AMDP 與 SQLScript／RAP 基礎（managed、EML、1809 的 CDS＋BOPF 替代方案）／RAP 進階（驗證、決定、動作、draft、unmanaged 包裝 BAPI） |
 | 附錄 | ap-01 | 舊語法 → S/4HANA 現代寫法速查 |
 
 第五部（2026-09 新增）取材自 `L28_强晟_19本原廠教材筆記_含原廠教材\`：强晟 2007/2008 簡體筆記 19 本 ＋ SAP 原廠英文教材 Col15~Col19 19 份（含 IDoc guide）。
@@ -60,7 +61,9 @@
 
 第九部（2026-09-26 新增）取材自 `09_ABAP二次開發_report_painter\09_0～09_9\`：實際有內容的只有 09_0 BASIS（3 份）、09_2 MM（新版五案例 docx 2023/10 為主，舊版四案例 PDF 2022/09 用來比對）、09_3 PP（PDF 與 docx 重複，Biz_52 = Biz_59；`11_ 下載TXT到 POWERBI` 已在 ch06-13）、09_9 QM（只有 12 支程式的目錄，ch09-5 依 SAP 標準整理成清單）。**09_1 SD、09_4 FI、09_5 CO、09_6 AA、09_7 HR 資料夾是空的**。`GBIKE` 是 SAP 大學聯盟的示範公司 Global Bike，不是客戶名稱。
 
-規模：77 章、1434 個小節、1342 段程式碼、821 則注意事項、492 則實務技巧（v1 為 18 章／319 小節／398 段程式碼）。
+第十部（2026-09-26 新增）**沒有本機素材**，全部依 SAP 官方文件撰寫（ABAP Keyword Documentation、SAP Help、SAP-samples GitHub），每節都附出處，5 章共約 170 個官方連結。每章開頭有版本門檻表；超過 1809 的語法都有 warn。查不到確切資料的地方標「未能確認，請以系統為準」（共約 40 處），不要把它們當成已查證的內容。RAP 以自建報價單 `ZQUOTE_H`／`ZQUOTE_I` → `ZI_Quote`／`ZC_Quote`／`ZBP_I_Quote`／`ZUI_QUOTE_O4` 貫穿，**ch10-4 的資料模型為準**，ch10-5 在其上新增 `RejectReason`、`SalesOrder`。狀態碼：N 新建、C 已結案、A 已接受、X 已拒絕。
+
+規模：82 章、1517 個小節、1477 段程式碼、895 則注意事項、523 則實務技巧（v1 為 18 章／319 小節／398 段程式碼）。
 
 ### 尚未納入（下次擴充的優先順序）
 
@@ -71,7 +74,7 @@
 5. ~~`L31_ABAP36套源碼\`~~（已完成，第八部 ch08-1 ~ ch08-8）
 6. ~~`L35_SAP调试技术\`~~（已完成，第六部 ch06-1 ~ ch06-3）
 7. ~~L28、L29 原廠教材~~（v2 已完成，第五部）；尚待補 TAW10/11/12、HA100/300/400 的重點摘要
-8. **全新主題**：CDS View、AMDP、RAP、ABAP Cloud、Fiori Elements — 現有教材完全沒有，但 S/4HANA 專案一定會碰到
+8. **全新主題**：~~CDS View、AMDP、RAP~~（已完成，第十部 ch10-1 ~ ch10-5）；尚待補 **ABAP Cloud**（Clean Core、released API、tier 1～3、Developer Extensibility）與 **Fiori Elements** 專章（目前只在 ch10-2、ch10-5 講到 UI 註解）
 
 ---
 
@@ -217,4 +220,4 @@ class-based exception（`TRY … CATCH cx_…`）。
 
 ---
 
-_最後更新：2026-09-26 · v2.7（77 章，含 L29、L35、L36、L31、15_實務案例、15_累計心得、09_x 模組案例）· GitHub 為唯一來源，CI 自動部署 Pages_
+_最後更新：2026-09-26 · v2.8（82 章，含 L29、L35、L36、L31、15_實務案例、15_累計心得、09_x 模組案例、第十部 CDS／AMDP／RAP）· GitHub 為唯一來源，CI 自動部署 Pages_

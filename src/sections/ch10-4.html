@@ -1,0 +1,947 @@
+<section class="chapter" id="ch10-4" data-title="RAP 基礎">
+  <h2>第 10-4 章 RAP 基礎：managed 情境從資料表到 Fiori Elements</h2>
+  <p class="lede">RAP（ABAP RESTful Application Programming Model）是 SAP 目前唯一推薦、用來寫「可交易的 Fiori app 與 Web API」的程式設計模型。本章用一個自建的「報價單」（表頭 <span class="kw">ZQUOTE_H</span>、明細 <span class="kw">ZQUOTE_I</span>）從零走完 managed 情境的六個步驟：資料表 → interface view → behavior definition → behavior pool → projection 與 metadata extension → service definition 與 service binding，最後用 EML 從一般 ABAP 報表建立報價單。determination、validation、action、draft 與 unmanaged 放在 <a href="#ch10-5">10-5 章</a>。<b>1809 沒有 RAP</b>，1809 的讀者請直接看第 15 節的替代方案。</p>
+  <div class="meta">
+    <div><b>核心 TCODE</b><span class="tcode">ADT（Eclipse）</span><span class="tcode">/IWFND/MAINT_SERVICE</span><span class="tcode">/IWFND/V4_ADMIN</span><span class="tcode">/IWFND/ERROR_LOG</span><span class="tcode">SE11</span><span class="tcode">BOBX</span></div>
+    <div><b>關鍵物件</b>ZQUOTE_H、ZQUOTE_I、ZI_Quote、ZI_QuoteItem、ZC_Quote、ZC_QuoteItem、ZBP_I_Quote、ZUI_QUOTE_O4、CL_ABAP_BEHAVIOR_HANDLER、CL_ABAP_BEHAVIOR_SAVER、IF_ABAP_BEHV、READ ENTITIES、MODIFY ENTITIES、COMMIT ENTITIES</div>
+    <div><b>版本基準</b>RAP managed 需 S/4HANA 1909（ABAP 7.54）以上；本章範例以 S/4HANA 2022（ABAP 7.57）語法為準，較舊版本的差異見第 1 節版本表與第 14 節</div>
+  </div>
+
+  <h3 id="ch10-4-01">1. RAP 是什麼：定位、演進與版本門檻</h3>
+  <p><b>定位</b>：RAP 把一個業務物件拆成「資料模型（CDS）＋行為（behavior definition／implementation）＋服務（service definition／binding）」三塊，框架負責 OData 協定、交易緩衝、鎖定、ETag、儲存順序等技術細節，開發者只寫業務邏輯。SAP 官方說法是：RAP 是在 BTP ABAP environment、S/4HANA Cloud，以及<b>從 1909 起的 S/4HANA（on-premise／Private Edition）</b>上建置雲端就緒交易型 app、服務與擴充的推薦模型。</p>
+  <p><b>ABAP 程式設計模型的三代演進</b>：</p>
+  <table>
+    <thead><tr><th>世代</th><th>技術組合</th><th>可用版本</th><th>現況</th></tr></thead>
+    <tbody>
+      <tr><td>1. 程式碼型 OData</td><td>SEGW（Service Builder）建模型＋在 DPC_EXT／MPC_EXT 手寫方法</td><td>SAP NetWeaver 7.0 SP18 以上（Gateway add-on）</td><td>仍可用，但新開發不建議；見 <a href="#ch05-24">5-24 章</a>第 14 節</td></tr>
+      <tr><td>2. ABAP Programming Model for SAP Fiori</td><td>CDS＋BOPF（<span class="kw">@ObjectModel.transactionalProcessingEnabled</span>）＋<span class="kw">@OData.publish: true</span> 或 SEGW Referenced Data Source</td><td>AS ABAP 7.50 SP01 起；<b>1809 的主力</b></td><td>不建議新開發；升級後遷移到 RAP（第 15 節）</td></tr>
+      <tr><td>3. RAP</td><td>CDS＋BDEF＋behavior pool＋service definition／binding；OData V2／V4</td><td>S/4HANA 1909（ABAP 7.54）起；draft、OData V4 為 2020 起</td><td>現行標準；也是 ABAP Cloud 的交易模型</td></tr>
+    </tbody>
+  </table>
+  <p><b>與 ABAP Cloud 的關係</b>：ABAP Cloud 是 SAP 在 2022 年提出的總稱，把近年的新技術定為「雲端就緒 ABAP」的標準：ADT 開發、CDS 資料模型、<b>RAP 作為交易與服務模型</b>、只用 released API，以及語言版本 <i>ABAP for Cloud Development</i>。完整的 ABAP Cloud 開發模型在 BTP ABAP Environment，以及 S/4HANA 2022／2208 以上可用。換句話說，<b>RAP 可以在經典 ABAP（Standard ABAP）裡用，不一定要 ABAP Cloud；ABAP Cloud 的交易開發則一定是 RAP</b>。</p>
+  <p><b>本章功能 × 版本門檻</b>（S/4HANA 版本與 ABAP 版本的對應：1909＝7.54、2020＝7.55、2021＝7.56、2022＝7.57、2023＝7.58）：</p>
+  <table>
+    <thead><tr><th>功能</th><th>門檻</th><th>本章位置</th></tr></thead>
+    <tbody>
+      <tr><td>managed BDEF、projection BDEF、CDS projection view（<span class="kw">AS PROJECTION ON</span>）、<span class="kw">DEFINE SERVICE</span>、CDS custom entity</td><td>7.54（1909）</td><td>第 6、8、9 節</td></tr>
+      <tr><td>CDS view entity（<span class="kw">DEFINE [ROOT] VIEW ENTITY … AS SELECT</span>）</td><td>7.55（2020）；1909 只能用 DDIC-based <span class="kw">DEFINE ROOT VIEW</span></td><td>第 5、14 節</td></tr>
+      <tr><td><span class="kw">mapping for</span>、<span class="kw">numbering:managed</span>、<span class="kw">with additional save</span>／<span class="kw">with unmanaged save</span>、<span class="kw">with draft</span>、<span class="kw">mandatory:create</span>、<span class="kw">readonly:update</span></td><td>7.55（2020）</td><td>第 6 節；draft 見 10-5 章</td></tr>
+      <tr><td>RAP 的 OData V4 端到端支援</td><td>S/4HANA 2020 <b>FPS01</b></td><td>第 9 節</td></tr>
+      <tr><td>BDEF strict mode（<span class="kw">strict;</span>）、<span class="kw">authorization master ( global )</span>、projection 的 <span class="kw">provider contract</span></td><td>7.56（2021）</td><td>第 6、8 節</td></tr>
+      <tr><td><span class="kw">strict ( 2 );</span>、BDEF extension、RAP business events、managed 的 late numbering</td><td>7.57（2022）</td><td>第 6 節</td></tr>
+      <tr><td>ADT 精靈 <i>Generate ABAP Repository Objects</i>（由資料表產生 RAP 服務）</td><td>S/4HANA 2022 on-premise；BTP ABAP Environment 2111 起</td><td>第 13 節</td></tr>
+      <tr><td><span class="kw">authorization master ( instance )</span>、<span class="kw">etag master</span>、EML（<span class="kw">READ／MODIFY／COMMIT ENTITIES</span>）</td><td>隨 RAP 提供；確切的最早版本<b>未能確認，請以系統為準</b>（release news 只記載 7.56 新增 global）</td><td>第 6、10 節</td></tr>
+    </tbody>
+  </table>
+  <div class="warn"><b>1809 沒有 RAP。</b>S/4HANA 1809（ABAP 7.53）沒有 behavior definition、EML、service binding，也沒有 CDS view entity。1809 要做可寫入的 Fiori Elements app，只能用 CDS＋BOPF 的 ABAP Programming Model for SAP Fiori，請看第 15 節「1809 的替代方案」。本章其餘程式碼<b>全部超過 1809</b>，每段的門檻都在旁邊的 warn 註明。</div>
+  <div class="note"><b>出處</b>：<a href="https://help.sap.com/doc/abapdocu_latest_index_htm/latest/en-US/ABENNEWS-754-CDS_BDL.html">ABAP Keyword Documentation：RAP BDL in Release 7.54</a>、<a href="https://help.sap.com/doc/abapdocu_latest_index_htm/latest/en-US/ABENNEWS-755-CDS_BDL.html">7.55</a>、<a href="https://help.sap.com/doc/abapdocu_latest_index_htm/latest/en-US/ABENNEWS-756-CDS_BDL.html">7.56</a>、<a href="https://help.sap.com/doc/abapdocu_latest_index_htm/latest/en-US/ABENNEWS-757-CDS_BDL.html">7.57</a>；<a href="https://help.sap.com/doc/abapdocu_latest_index_htm/latest/en-US/ABENNEWS-754-ABAP_CDS.html">ABAP CDS in Release 7.54</a>、<a href="https://help.sap.com/doc/abapdocu_latest_index_htm/latest/en-US/ABENNEWS-755-ABAP_CDS.html">7.55</a>、<a href="https://help.sap.com/doc/abapdocu_latest_index_htm/latest/en-US/ABENNEWS-756-ABAP_CDS.html">7.56</a>；<a href="https://pages.community.sap.com/topics/abap/rap">SAP Community：ABAP RESTful Application Programming Model</a>；<a href="https://community.sap.com/t5/technology-blog-posts-by-sap/odata-service-development-options/ba-p/13359604">André Fischer（SAP）：OData service development options</a>；<a href="https://blogs.sap.com/2022/12/22/abap-cloud/">SAP：ABAP Cloud</a>；<a href="https://pages.community.sap.com/topics/abap/abap-cloud-faq">ABAP Cloud FAQ</a>；<a href="https://community.sap.com/t5/enterprise-resource-planning-blog-posts-by-sap/abap-platform-for-sap-s-4hana-2023/ba-p/13573791">ABAP Platform for SAP S/4HANA 2023（SAP_BASIS 758）</a>。</div>
+
+  <h3 id="ch10-4-02">2. RAP 的組成：Business Object、Business Service、Consumption</h3>
+  <p>RAP 把物件分成三層。下表是「架構圖的文字版」，由下往上讀：</p>
+  <table>
+    <thead><tr><th>層</th><th>物件（ADT 類型）</th><th>本章名稱</th><th>職責</th></tr></thead>
+    <tbody>
+      <tr><td rowspan="4"><b>Business Object</b>（BO）</td><td>資料表（TABL）</td><td>ZQUOTE_H、ZQUOTE_I</td><td>持久層，managed 框架直接寫入</td></tr>
+      <tr><td>CDS 資料模型（DDLS，root view entity＋composition）</td><td>ZI_Quote、ZI_QuoteItem</td><td>定義 BO 的節點結構（composition tree）與欄位語意</td></tr>
+      <tr><td>Behavior Definition（BDEF，BDL 語言）</td><td>ZI_Quote</td><td>宣告可做哪些操作（create／update／delete）、鎖、權限、ETag、欄位控制</td></tr>
+      <tr><td>Behavior Implementation（ABAP behavior pool，類別）</td><td>ZBP_I_Quote</td><td>用 handler class／saver class 實作業務邏輯</td></tr>
+      <tr><td rowspan="3"><b>Business Service</b></td><td>Projection（CDS projection view＋projection BDEF＋metadata extension）</td><td>ZC_Quote、ZC_QuoteItem</td><td>針對某個服務挑出欄位、操作與 UI 註解</td></tr>
+      <tr><td>Service Definition（SRVD）</td><td>ZUI_QUOTE_O4</td><td>決定要對外公開（expose）哪些 entity</td></tr>
+      <tr><td>Service Binding（SRVB）</td><td>ZUI_QUOTE_O4（V4 UI）</td><td>綁定協定：OData V2／V4、UI 或 Web API</td></tr>
+      <tr><td><b>Consumption</b></td><td>Fiori Elements app、Web API 使用者、ABAP 程式（EML）</td><td>—</td><td>透過 OData 或 EML 使用 BO</td></tr>
+    </tbody>
+  </table>
+  <pre><code class="abap">" 報價單 RAP 範例：本章建立的物件與順序（ADT 的 Project Explorer 會這樣分類）
+" ┌ Dictionary
+" │   TABL  ZQUOTE_H          報價單表頭（active persistence）
+" │   TABL  ZQUOTE_I          報價單明細
+" ├ Core Data Services
+" │   DDLS  ZI_QUOTE          root view entity（BO 根節點）
+" │   DDLS  ZI_QUOTEITEM      子節點（association to parent）
+" │   BDEF  ZI_QUOTE          managed behavior definition
+" │   DDLS  ZC_QUOTE          projection（provider contract transactional_query）
+" │   DDLS  ZC_QUOTEITEM      projection 子節點
+" │   BDEF  ZC_QUOTE          projection behavior definition
+" │   DDLX  ZC_QUOTE          metadata extension（@UI 註解）
+" │   DDLX  ZC_QUOTEITEM
+" ├ Source Code Library
+" │   CLAS  ZBP_I_QUOTE       ABAP behavior pool（local types 內放 lhc_／lsc_）
+" └ Business Services
+"     SRVD  ZUI_QUOTE_O4      service definition
+"     SRVB  ZUI_QUOTE_O4      service binding（OData V4 - UI）</code></pre>
+  <div class="tip"><b>命名慣例</b>：<b>I_</b> 表 interface（BO 層，可重用），<b>C_</b> 表 consumption（服務專用的 projection），<b>BP_</b> 表 behavior pool，<b>UI_</b> 表給 UI 用的服務、<b>API_</b> 表 Web API，服務名稱最後的 <b>_O2／_O4</b> 表 OData 版本。SAP 自己的範例（/DMO/ 飛航參考情境）也用 <b>R_</b>（restricted／reuse）取代 I_，兩種都常見，團隊統一即可。</div>
+  <div class="note"><b>出處</b>：<a href="https://github.com/SAP-samples/abap-cheat-sheets/blob/main/36_RAP_Behavior_Definition_Language.md">SAP-samples／abap-cheat-sheets：RAP Behavior Definition Language</a>（RAP 物件與 service binding 說明）；<a href="https://help.sap.com/docs/abap-cloud/abap-rap/service-binding">SAP Help：Service Binding</a>。</div>
+
+  <h3 id="ch10-4-03">3. 三種實作類型：managed、managed with unmanaged save、unmanaged</h3>
+  <table>
+    <thead><tr><th>類型</th><th>交易緩衝（buffer）</th><th>儲存（save）</th><th>適用情境</th></tr></thead>
+    <tbody>
+      <tr><td><b>managed</b></td><td>框架提供</td><td>框架依 <span class="kw">persistent table</span> 自動寫表</td><td>全新開發（greenfield），資料放在自己的 Z 表</td></tr>
+      <tr><td><b>managed with additional save</b></td><td>框架提供</td><td>框架寫表＋你在 saver 裡多做一段（寫變更文件、送事件、寫 log）</td><td>標準儲存之外還要附加動作</td></tr>
+      <tr><td><b>managed with unmanaged save</b></td><td>框架提供</td><td>你自己寫 <span class="kw">save_modified</span>（例如呼叫既有更新函數）</td><td>想用框架的 buffer 與 CRUD，但持久化要走既有程式</td></tr>
+      <tr><td><b>unmanaged</b></td><td>你自己管</td><td>你自己寫</td><td>包裝既有 BAPI／函數／類別（brownfield），既有程式已有自己的 buffer 與 LUW</td></tr>
+    </tbody>
+  </table>
+  <pre><code class="abap">// 1) managed（本章主角）：框架負責 buffer 與寫表
+managed implementation in class zbp_i_quote unique;
+strict ( 2 );
+
+// 2) managed with additional save：框架寫表後，再呼叫 saver 的 save_modified
+//    （7.55 起；7.56 以後也可以寫在 entity 層，位置請以 ADT 的 F1 說明為準）
+managed with additional save implementation in class zbp_i_quote unique;
+
+// 3) managed with unmanaged save：持久化完全自己寫
+managed with unmanaged save implementation in class zbp_i_quote unique;
+
+// 4) unmanaged：包裝既有 BAPI，所有操作都要自己實作（見 10-5 章）
+unmanaged implementation in class zbp_i_quote_u unique;</code></pre>
+  <div class="tip"><b>怎麼選</b>：新開發、資料在自己的 Z 表 → <b>managed</b>；要把既有 BAPI（例如 <span class="kw">BAPI_QUOTATION_CREATEFROMDATA2</span>）包成 Fiori 服務 → <b>unmanaged</b>，做法見 <a href="#ch10-5">10-5 章</a>。卡在中間（想用框架但儲存要走舊程式）才考慮 managed with unmanaged save。</div>
+  <div class="warn"><b>先找標準再客製</b>：做報價單之前先確認 SAP 是否已有 released 的 RAP BO 或 API。例如銷售訂單已有 RAP BO interface <span class="kw">I_SalesOrderTP</span>，可以直接用 EML 建單；它在哪一版 on-premise 釋出<b>未能確認</b>，請在 ADT 的 <i>Released Objects</i> 樹或 SAP Business Accelerator Hub 查詢。本章自建 Z 報價單只是教學用，實務上請依「標準設定 → released API／BAdI → 自建」的順序評估。</div>
+  <div class="note"><b>出處</b>：<a href="https://help.sap.com/doc/abapdocu_latest_index_htm/latest/en-US/ABENNEWS-755-CDS_BDL.html">ABAP Keyword Documentation：RAP BDL in Release 7.55</a>（additional save、unmanaged save）；<a href="https://github.com/SAP-samples/abap-cheat-sheets/blob/main/36_RAP_Behavior_Definition_Language.md">abap-cheat-sheets：Managed implementation type</a>。</div>
+
+  <h3 id="ch10-4-04">4. 步驟 1：資料表 ZQUOTE_H／ZQUOTE_I</h3>
+  <p>managed BO 的資料表要注意四件事：</p>
+  <ol>
+    <li><b>client 欄位</b>放第一個鍵欄位。</li>
+    <li><b>鍵值</b>：UUID key（<span class="kw">sysuuid_x16</span>，RAW 16）讓框架用 <span class="kw">numbering : managed</span> 自動產生；業務看的號碼（semantic key，如報價單號）另外放一個非鍵欄位。子表要有父節點 UUID 欄位，composition 才接得起來。</li>
+    <li><b>管理欄位</b>：created_by、created_at、last_changed_by、last_changed_at、local_last_changed_at。其中 <b>local_last_changed_at</b> 是 ETag 的依據，每個節點都要有。</li>
+    <li>SAP 提供管理欄位專用的資料元素（ABP_CREATION_USER 等）；如果系統查不到，用 <span class="kw">syuname</span>／<span class="kw">timestampl</span> 也可以（SAP openSAP 範例就是這樣寫）。</li>
+  </ol>
+  <pre><code class="abap">@EndUserText.label : '報價單表頭'
+@AbapCatalog.enhancementCategory : #NOT_EXTENSIBLE
+@AbapCatalog.tableCategory : #TRANSPARENT
+@AbapCatalog.deliveryClass : #A
+@AbapCatalog.dataMaintenance : #RESTRICTED
+define table zquote_h {
+  key client            : mandt not null;
+  key quote_uuid        : sysuuid_x16 not null;
+  quote_id              : abap.numc(10);
+  sold_to_party         : kunnr;
+  sales_org             : vkorg;
+  quote_date            : abap.dats;
+  valid_to              : abap.dats;
+  @Semantics.amount.currencyCode : 'zquote_h.currency'
+  net_amount            : abap.curr(15,2);
+  currency              : waerk;
+  overall_status        : abap.char(1);
+  created_by            : abp_creation_user;
+  created_at            : abp_creation_tstmpl;
+  last_changed_by       : abp_lastchange_user;
+  last_changed_at       : abp_lastchange_tstmpl;
+  local_last_changed_at : abp_locinst_lastchange_tstmpl;
+}</code></pre>
+  <pre><code class="abap">@EndUserText.label : '報價單明細'
+@AbapCatalog.enhancementCategory : #NOT_EXTENSIBLE
+@AbapCatalog.tableCategory : #TRANSPARENT
+@AbapCatalog.deliveryClass : #A
+@AbapCatalog.dataMaintenance : #RESTRICTED
+define table zquote_i {
+  key client            : mandt not null;
+  key item_uuid         : sysuuid_x16 not null;
+  parent_uuid           : sysuuid_x16 not null;
+  item_no               : abap.numc(6);
+  material              : matnr;
+  @Semantics.quantity.unitOfMeasure : 'zquote_i.quantity_unit'
+  quantity              : abap.quan(13,3);
+  quantity_unit         : meins;
+  @Semantics.amount.currencyCode : 'zquote_i.currency'
+  net_price             : abap.curr(15,2);
+  currency              : waerk;
+  created_by            : abp_creation_user;
+  last_changed_by       : abp_lastchange_user;
+  local_last_changed_at : abp_locinst_lastchange_tstmpl;
+}</code></pre>
+  <div class="note"><b>UUID key 還是 semantic key？</b>UUID key 的好處是框架能自動編號（<span class="kw">numbering : managed</span>），也方便 draft；缺點是使用者看不懂，所以一定要另外放 quote_id 這種業務號碼。若用 semantic key（例如直接以 quote_id 當鍵），就要自己在 early numbering 或 determination 產生號碼，見 <a href="#ch10-5">10-5 章</a>。報價單號要用號碼範圍（SNRO）取號，也在 10-5 章示範。</div>
+  <div class="warn"><b>版本</b>：ADT 的原始碼式資料表編輯器（<span class="kw">define table</span>）在 1809 就有；但 ABP_* 管理欄位資料元素在 1909／2020 是否已提供<b>未能確認</b>，查不到就改用 <span class="kw">syuname</span>、<span class="kw">timestampl</span>。資料表本身也可以用 <span class="tcode">SE11</span> 建（見 <a href="#ch01-2">1-2 章</a>）。</div>
+  <div class="note"><b>出處</b>：<a href="https://help.sap.com/docs/abap-cloud/abap-rap/creating-persistent-database-tables">SAP Help：Creating Persistent Database Tables</a>（UUID 鍵、父 UUID、管理欄位與 ETag）；<a href="https://help.sap.com/docs/abap-cloud/abap-rap/rap-reuse-data-elements">SAP Help：RAP Reuse Data Elements</a>；<a href="https://github.com/SAP-samples/abap-platform-rap-opensap">SAP-samples／abap-platform-rap-opensap</a>（week2 資料表範例）。</div>
+
+  <h3 id="ch10-4-05">5. 步驟 2：interface view（root view entity＋composition）</h3>
+  <p>BO 的節點樹用 CDS 的 <b>composition</b> 表達：根節點用 <span class="kw">define root view entity</span>，對子節點宣告 <span class="kw">composition [0..*] of</span>；子節點用 <span class="kw">association to parent</span> 指回父節點。<b>管理欄位要在這一層加上 @Semantics 註解</b>，managed 框架才會自動填值（只加在 projection 上是不會生效的）。</p>
+  <pre><code class="abap">@AccessControl.authorizationCheck: #NOT_REQUIRED
+@EndUserText.label: '報價單（BO 根節點）'
+define root view entity ZI_Quote
+  as select from zquote_h
+  composition [0..*] of ZI_QuoteItem as _Item
+  association [0..1] to I_Customer   as _Customer on $projection.SoldToParty = _Customer.Customer
+{
+  key quote_uuid            as QuoteUUID,
+      quote_id              as QuoteID,
+      sold_to_party         as SoldToParty,
+      sales_org             as SalesOrganization,
+      quote_date            as QuoteDate,
+      valid_to              as ValidTo,
+      @Semantics.amount.currencyCode: 'Currency'
+      net_amount            as NetAmount,
+      currency              as Currency,
+      overall_status        as OverallStatus,
+      @Semantics.user.createdBy: true
+      created_by            as CreatedBy,
+      @Semantics.systemDateTime.createdAt: true
+      created_at            as CreatedAt,
+      @Semantics.user.lastChangedBy: true
+      last_changed_by       as LastChangedBy,
+      @Semantics.systemDateTime.lastChangedAt: true
+      last_changed_at       as LastChangedAt,
+      @Semantics.systemDateTime.localInstanceLastChangedAt: true
+      local_last_changed_at as LocalLastChangedAt,
+
+      /* associations */
+      _Item,
+      _Customer
+}</code></pre>
+  <pre><code class="abap">@AccessControl.authorizationCheck: #NOT_REQUIRED
+@EndUserText.label: '報價單明細（BO 子節點）'
+define view entity ZI_QuoteItem
+  as select from zquote_i
+  association to parent ZI_Quote as _Quote on $projection.ParentUUID = _Quote.QuoteUUID
+{
+  key item_uuid             as ItemUUID,
+      parent_uuid           as ParentUUID,
+      item_no               as ItemNo,
+      material              as Material,
+      @Semantics.quantity.unitOfMeasure: 'QuantityUnit'
+      quantity              as Quantity,
+      quantity_unit         as QuantityUnit,
+      @Semantics.amount.currencyCode: 'Currency'
+      net_price             as NetPrice,
+      currency              as Currency,
+      @Semantics.user.createdBy: true
+      created_by            as CreatedBy,
+      @Semantics.user.lastChangedBy: true
+      last_changed_by       as LastChangedBy,
+      @Semantics.systemDateTime.localInstanceLastChangedAt: true
+      local_last_changed_at as LocalLastChangedAt,
+
+      /* associations */
+      _Quote
+}</code></pre>
+  <ul>
+    <li><b>composition</b> 的語意是「子節點的生命週期屬於父節點」：刪除表頭時框架會連帶刪除明細；建立明細只能透過 <span class="kw">create by association</span>（BDEF 的 <span class="kw">association _Item { create; }</span>）。</li>
+    <li><b>association to parent</b> 的 ON 條件必須用子節點的父鍵欄位對父節點的鍵（這裡是 ParentUUID ＝ QuoteUUID）。</li>
+    <li><b>lastChangedAt</b> 與 <b>localInstanceLastChangedAt</b> 不同：前者代表「本節點或其子樹最後異動」（draft 的 total ETag 會用到），後者只代表「本節點自己最後異動」，是一般 ETag 的依據。</li>
+  </ul>
+  <div class="warn"><b>版本門檻</b>：<span class="kw">define root view entity … as select</span> 需 <b>7.55（S/4HANA 2020）</b>；1909 只能寫 DDIC-based 的 <span class="kw">define root view</span>＋<span class="kw">@AbapCatalog.sqlViewName</span>（第 14 節）。<span class="kw">I_Customer</span> 是 S/4HANA 的標準 CDS，請在系統確認名稱與鍵欄位。CDS view entity 的完整語法見 <a href="#ch10-1">10-1 章</a>，存取控制（DCL，<span class="kw">#CHECK</span>）見 <a href="#ch10-2">10-2 章</a>；本章為了聚焦 RAP 先用 <span class="kw">#NOT_REQUIRED</span>，正式環境請改 <span class="kw">#CHECK</span> 並寫 DCL。</div>
+  <div class="note"><b>出處</b>：<a href="https://github.com/SAP-samples/abap-platform-rap-opensap">SAP-samples／abap-platform-rap-opensap</a>（W2U3_DDLS_ZI_RAP_TRAVEL／BOOKING：composition、association to parent、@Semantics 管理欄位）；<a href="https://help.sap.com/docs/abap-cloud/abap-rap/rap-reuse-data-elements">SAP Help：RAP Reuse Data Elements</a>（managed BO 依 CDS 註解自動更新管理欄位）；<a href="https://help.sap.com/doc/abapdocu_latest_index_htm/latest/en-US/ABENNEWS-755-ABAP_CDS.html">ABAP CDS in Release 7.55</a>（CDS view entity）。</div>
+
+  <h3 id="ch10-4-06">6. 步驟 3：behavior definition（managed）</h3>
+  <p>在 ADT 對 <span class="kw">ZI_Quote</span> 按右鍵 → <i>New Behavior Definition</i>，實作類型選 <b>Managed</b>，ADT 會產生骨架。完成後如下：</p>
+  <pre><code class="abap">managed implementation in class zbp_i_quote unique;
+strict ( 2 );
+
+define behavior for ZI_Quote alias Quote
+persistent table zquote_h
+lock master
+authorization master ( instance )
+etag master LocalLastChangedAt
+{
+  create;
+  update;
+  delete;
+  association _Item { create; }
+
+  field ( numbering : managed, readonly ) QuoteUUID;
+  field ( readonly ) CreatedBy, CreatedAt, LastChangedBy, LastChangedAt, LocalLastChangedAt;
+  field ( mandatory : create, readonly : update ) QuoteID;
+  field ( mandatory ) SoldToParty, SalesOrganization, Currency;
+
+  mapping for zquote_h
+  {
+    QuoteUUID          = quote_uuid;
+    QuoteID            = quote_id;
+    SoldToParty        = sold_to_party;
+    SalesOrganization  = sales_org;
+    QuoteDate          = quote_date;
+    ValidTo            = valid_to;
+    NetAmount          = net_amount;
+    Currency           = currency;
+    OverallStatus      = overall_status;
+    CreatedBy          = created_by;
+    CreatedAt          = created_at;
+    LastChangedBy      = last_changed_by;
+    LastChangedAt      = last_changed_at;
+    LocalLastChangedAt = local_last_changed_at;
+  }
+}
+
+define behavior for ZI_QuoteItem alias Item
+persistent table zquote_i
+lock dependent by _Quote
+authorization dependent by _Quote
+etag master LocalLastChangedAt
+{
+  update;
+  delete;
+  association _Quote;
+
+  field ( numbering : managed, readonly ) ItemUUID;
+  field ( readonly ) ParentUUID, CreatedBy, LastChangedBy, LocalLastChangedAt;
+  field ( mandatory ) Material, Quantity, QuantityUnit;
+
+  mapping for zquote_i
+  {
+    ItemUUID           = item_uuid;
+    ParentUUID         = parent_uuid;
+    ItemNo             = item_no;
+    Material           = material;
+    Quantity           = quantity;
+    QuantityUnit       = quantity_unit;
+    NetPrice           = net_price;
+    Currency           = currency;
+    CreatedBy          = created_by;
+    LastChangedBy      = last_changed_by;
+    LocalLastChangedAt = local_last_changed_at;
+  }
+}</code></pre>
+  <table>
+    <thead><tr><th>語法</th><th>意義</th></tr></thead>
+    <tbody>
+      <tr><td><span class="kw">managed implementation in class zbp_i_quote unique;</span></td><td>managed 類型；behavior pool 是 ZBP_I_QUOTE；<span class="kw">unique</span> 是必填，表示每個操作只能實作一次</td></tr>
+      <tr><td><span class="kw">strict ( 2 );</span></td><td>啟用 strict mode 第 2 版：禁止過時語法、要求隱含操作明確宣告、檢查是否符合 RAP BO contract；projection BDEF 要用同一版</td></tr>
+      <tr><td><span class="kw">persistent table zquote_h</span></td><td>managed 框架要寫入的資料表</td></tr>
+      <tr><td><span class="kw">lock master</span>／<span class="kw">lock dependent by _Quote</span></td><td>根節點負責鎖；改明細時鎖的是整張報價單（框架用通用 lock 機制，不必自建 lock object）</td></tr>
+      <tr><td><span class="kw">authorization master ( instance )</span>／<span class="kw">authorization dependent by _Quote</span></td><td>根節點做實例權限檢查（第 7 節實作）；明細的 update、delete、create-by-association 一律轉成「對表頭的 update 權限」</td></tr>
+      <tr><td><span class="kw">etag master LocalLastChangedAt</span></td><td>樂觀鎖：OData 的 If-Match 比對這個欄位，別人先改過就擋下</td></tr>
+      <tr><td><span class="kw">create; update; delete;</span></td><td>開放的標準操作（read 不用宣告，永遠可讀）；子節點不寫 create，只能經由 <span class="kw">association _Item { create; }</span> 建立</td></tr>
+      <tr><td><span class="kw">field ( numbering : managed, readonly )</span></td><td>框架在 create 時自動產生 UUID，消費者不能填</td></tr>
+      <tr><td><span class="kw">field ( readonly )</span>／<span class="kw">( mandatory )</span>／<span class="kw">( mandatory : create, readonly : update )</span></td><td>靜態欄位控制；最後一種表示「建立時必填、之後不可改」</td></tr>
+      <tr><td><span class="kw">mapping for zquote_h { … }</span></td><td>CDS 元素名稱 ↔ 資料表欄位名稱的對應</td></tr>
+    </tbody>
+  </table>
+  <div class="warn"><b>版本門檻</b>：<span class="kw">strict</span>（第 1 版）是 <b>7.56（2021）</b>，<span class="kw">strict ( 2 )</span> 是 <b>7.57（2022）</b>——2021 請改寫 <span class="kw">strict;</span>，2020 以前整行刪掉。<span class="kw">mapping for</span>、<span class="kw">numbering : managed</span>、<span class="kw">mandatory : create</span>、<span class="kw">readonly : update</span> 都是 <b>7.55（2020）</b>。所以 <b>1909 寫不出這份 BDEF</b>：1909 沒有 mapping（CDS 元素名稱要和資料表欄位一致）、沒有 managed UUID 編號，實務上建議至少 2020、最好 2022 以上再導入 RAP。</div>
+  <div class="warn"><b>instance 權限不檢查根節點的 create</b>：依官方文件，instance 權限只適用於 create by association、update、delete 與 instance action；根節點的 <b>create 沒有實例可檢查</b>，要擋 create 必須用 <span class="kw">authorization master ( global )</span> 或 <span class="kw">( global, instance )</span>，並實作 <span class="kw">FOR GLOBAL AUTHORIZATION</span> 方法。本章照需求示範 instance，正式專案建議用 <span class="kw">( global, instance )</span>。</div>
+  <div class="note"><b>出處</b>：<a href="https://help.sap.com/doc/abapdocu_latest_index_htm/latest/en-US/ABENBDL_STRICT.html">ABAP Keyword Documentation：RAP - BDEF Strict Mode</a>；<a href="https://help.sap.com/doc/abapdocu_latest_index_htm/latest/en-US/ABENBDL_AUTHORIZATION.html">RAP - Authorization</a>；<a href="https://help.sap.com/doc/abapdocu_latest_index_htm/latest/en-US/ABENNEWS-756-CDS_BDL.html">RAP BDL in Release 7.56</a>（strict）；<a href="https://help.sap.com/doc/abapdocu_latest_index_htm/latest/en-US/ABENNEWS-757-CDS_BDL.html">7.57</a>（strict(2)）；<a href="https://github.com/SAP-samples/abap-platform-rap-opensap">abap-platform-rap-opensap</a>（W3U2 managed BDEF）；<a href="https://github.com/SAP-samples/abap-cheat-sheets/blob/main/36_RAP_Behavior_Definition_Language.md">abap-cheat-sheets：RAP BDL</a>。</div>
+
+  <h3 id="ch10-4-07">7. 步驟 4：behavior implementation（ABAP behavior pool）</h3>
+  <p>在 BDEF 第一行的類別名稱上按 <b>Ctrl+1</b>（Quick Fix）→ <i>Create behavior implementation class zbp_i_quote</i>，ADT 會產生全域類別與 local types 裡的 handler 骨架。全域類別本身是空殼：</p>
+  <pre><code class="abap">CLASS zbp_i_quote DEFINITION PUBLIC ABSTRACT FINAL FOR BEHAVIOR OF zi_quote.
+ENDCLASS.
+
+CLASS zbp_i_quote IMPLEMENTATION.
+ENDCLASS.</code></pre>
+  <p>真正的邏輯在 <b>Local Types</b> 分頁的 <b>local handler class</b>（慣例 <span class="kw">lhc_</span> 開頭，繼承 <span class="kw">CL_ABAP_BEHAVIOR_HANDLER</span>）。這份 BDEF 在 managed 下<b>只有一個方法必須實作</b>：instance 權限。create、update、delete、讀取、鎖、ETag、寫表全部由框架處理，不用寫任何程式。</p>
+  <pre><code class="abap">CLASS lhc_quote DEFINITION INHERITING FROM cl_abap_behavior_handler.
+  PRIVATE SECTION.
+    METHODS get_instance_authorizations FOR INSTANCE AUTHORIZATION
+      IMPORTING keys REQUEST requested_authorizations FOR Quote RESULT result.
+ENDCLASS.
+
+CLASS lhc_quote IMPLEMENTATION.
+
+  METHOD get_instance_authorizations.
+    " IN LOCAL MODE：自己讀自己，略過權限檢查（避免遞迴）
+    READ ENTITIES OF zi_quote IN LOCAL MODE
+      ENTITY Quote
+        FIELDS ( SalesOrganization OverallStatus )
+        WITH CORRESPONDING #( keys )
+      RESULT DATA(quotes)
+      FAILED failed.
+
+    LOOP AT quotes ASSIGNING FIELD-SYMBOL(&lt;quote&gt;).
+      " 以銷售組織檢查修改權限（V_VBAK_VKO，ACTVT 02＝修改）
+      AUTHORITY-CHECK OBJECT 'V_VBAK_VKO'
+        ID 'VKORG' FIELD &lt;quote&gt;-SalesOrganization
+        ID 'VTWEG' DUMMY
+        ID 'SPART' DUMMY
+        ID 'ACTVT' FIELD '02'.
+      DATA(change_allowed) = xsdbool( sy-subrc = 0 ).
+
+      APPEND VALUE #(
+        %tky    = &lt;quote&gt;-%tky
+        " 狀態 C（已結案）一律不可改、不可刪
+        %update = COND #( WHEN change_allowed = abap_true AND &lt;quote&gt;-OverallStatus &lt;&gt; 'C'
+                          THEN if_abap_behv=&gt;auth-allowed
+                          ELSE if_abap_behv=&gt;auth-unauthorized )
+        %delete = COND #( WHEN change_allowed = abap_true AND &lt;quote&gt;-OverallStatus &lt;&gt; 'C'
+                          THEN if_abap_behv=&gt;auth-allowed
+                          ELSE if_abap_behv=&gt;auth-unauthorized ) )
+        TO result.
+    ENDLOOP.
+  ENDMETHOD.
+
+ENDCLASS.</code></pre>
+  <p><b>saver class</b>（慣例 <span class="kw">lsc_</span> 開頭，繼承 <span class="kw">CL_ABAP_BEHAVIOR_SAVER</span>）在純 managed 下<b>完全不需要</b>，框架自己寫表。只有 BDEF 宣告了 <span class="kw">with additional save</span> 或 <span class="kw">with unmanaged save</span> 時才要寫 <span class="kw">save_modified</span>：</p>
+  <pre><code class="abap">" 只有 BDEF 宣告 with additional save（或 with unmanaged save）時才需要
+CLASS lsc_zi_quote DEFINITION INHERITING FROM cl_abap_behavior_saver.
+  PROTECTED SECTION.
+    METHODS save_modified REDEFINITION.
+ENDCLASS.
+
+CLASS lsc_zi_quote IMPLEMENTATION.
+  METHOD save_modified.
+    " create／update／delete 參數依 BDEF 的 alias 分成 create-quote、create-item 等內表
+    " additional save：框架寫完 ZQUOTE_H／ZQUOTE_I 之後，在同一個 LUW 裡多做一段，
+    " 例如寫變更文件或應用日誌。這裡不可 COMMIT WORK、不可呼叫會自己 commit 的 BAPI。
+    LOOP AT create-quote ASSIGNING FIELD-SYMBOL(&lt;new_quote&gt;).
+      " 例：記錄新建立的報價單 UUID（實際內容依需求）
+      DATA(new_uuid) = &lt;new_quote&gt;-QuoteUUID.
+    ENDLOOP.
+  ENDMETHOD.
+ENDCLASS.</code></pre>
+  <table>
+    <thead><tr><th>方法類型</th><th>managed 下是否必寫</th><th>說明</th></tr></thead>
+    <tbody>
+      <tr><td>create／update／delete／read／lock</td><td>不用</td><td>框架提供</td></tr>
+      <tr><td><span class="kw">FOR INSTANCE AUTHORIZATION</span>／<span class="kw">FOR GLOBAL AUTHORIZATION</span></td><td>宣告了 authorization master 就必寫</td><td>方法可以先留空（等於不擋），但正式環境不建議</td></tr>
+      <tr><td><span class="kw">FOR DETERMINE</span>／<span class="kw">FOR VALIDATE</span>／<span class="kw">FOR ACTION</span>／<span class="kw">FOR FEATURES</span></td><td>宣告了才要寫</td><td>見 <a href="#ch10-5">10-5 章</a></td></tr>
+      <tr><td>saver 的 <span class="kw">save_modified</span>、<span class="kw">cleanup</span></td><td>只在 additional／unmanaged save 時</td><td>—</td></tr>
+    </tbody>
+  </table>
+  <div class="warn"><b>behavior pool 裡的禁忌</b>：不可 <span class="kw">COMMIT WORK</span>、<span class="kw">COMMIT ENTITIES</span>、<span class="kw">CALL TRANSACTION</span>、<span class="kw">SUBMIT</span>、<span class="kw">MESSAGE</span>（不含 INTO）、<span class="kw">WRITE</span> 等畫面處理；更新函數 <span class="kw">IN UPDATE TASK</span> 只能在 late save 階段。strict mode 下違規會變成語法錯誤或 runtime error。訊息要透過 <span class="kw">reported</span> 參數回傳（第 12 節）。</div>
+  <div class="note"><b>出處</b>：<a href="https://help.sap.com/doc/abapdocu_latest_index_htm/latest/en-US/ABENBDL_AUTHORIZATION.html">ABAP Keyword Documentation：RAP - Authorization</a>（get_instance_auth 範例、auth-allowed／auth-unauthorized）；<a href="https://github.com/SAP-samples/abap-cheat-sheets/blob/main/08_EML_ABAP_for_RAP.md">abap-cheat-sheets：ABAP EML in RAP</a>（各交易階段禁止的語句）。</div>
+
+  <h3 id="ch10-4-08">8. 步驟 5：projection view、projection BDEF 與 metadata extension</h3>
+  <p>projection 是「給某個服務用的切面」：挑欄位、加搜尋與值說明、決定開放哪些操作。同一個 BO 可以有多個 projection（例如給業務的 UI、給外部系統的 API）。</p>
+  <pre><code class="abap">@EndUserText.label: '報價單（Fiori 用 projection）'
+@AccessControl.authorizationCheck: #NOT_REQUIRED
+@Metadata.allowExtensions: true
+@Search.searchable: true
+@ObjectModel.semanticKey: ['QuoteID']
+define root view entity ZC_Quote
+  provider contract transactional_query
+  as projection on ZI_Quote
+{
+  key QuoteUUID,
+      @Search.defaultSearchElement: true
+      QuoteID,
+      @Consumption.valueHelpDefinition: [{ entity: { name: 'I_Customer', element: 'Customer' } }]
+      @Search.defaultSearchElement: true
+      SoldToParty,
+      SalesOrganization,
+      QuoteDate,
+      ValidTo,
+      NetAmount,
+      Currency,
+      OverallStatus,
+      CreatedBy,
+      CreatedAt,
+      LastChangedBy,
+      LastChangedAt,
+      LocalLastChangedAt,
+
+      /* associations */
+      _Item : redirected to composition child ZC_QuoteItem,
+      _Customer
+}</code></pre>
+  <pre><code class="abap">@EndUserText.label: '報價單明細（Fiori 用 projection）'
+@AccessControl.authorizationCheck: #NOT_REQUIRED
+@Metadata.allowExtensions: true
+define view entity ZC_QuoteItem
+  as projection on ZI_QuoteItem
+{
+  key ItemUUID,
+      ParentUUID,
+      ItemNo,
+      Material,
+      Quantity,
+      QuantityUnit,
+      NetPrice,
+      Currency,
+      LocalLastChangedAt,
+
+      /* associations */
+      _Quote : redirected to parent ZC_Quote
+}</code></pre>
+  <p>composition 在 projection 層一定要 <b>redirect</b>：父→子用 <span class="kw">redirected to composition child</span>，子→父用 <span class="kw">redirected to parent</span>，否則 OData 會從 projection 跳回 interface 層，語法檢查也不會過。</p>
+  <p><b>projection BDEF</b>：對 ZC_Quote 按右鍵 → <i>New Behavior Definition</i>，類型自動是 <b>Projection</b>，用 <span class="kw">use</span> 挑要開放的操作：</p>
+  <pre><code class="abap">projection;
+strict ( 2 );
+
+define behavior for ZC_Quote alias Quote
+use etag
+{
+  use create;
+  use update;
+  use delete;
+
+  use association _Item { create; }
+}
+
+define behavior for ZC_QuoteItem alias Item
+use etag
+{
+  use update;
+  use delete;
+
+  use association _Quote;
+}</code></pre>
+  <p><b>metadata extension</b>（DDLX）把 <span class="kw">@UI</span> 註解從資料模型分離出來，Fiori Elements 依此畫出清單頁（List Report）與物件頁（Object Page）：</p>
+  <pre><code class="abap">@Metadata.layer: #CUSTOMER
+@UI: {
+  headerInfo: { typeName: '報價單',
+                typeNamePlural: '報價單',
+                title: { type: #STANDARD, value: 'QuoteID' } },
+  presentationVariant: [{ sortOrder: [{ by: 'QuoteID', direction: #DESC }] }] }
+annotate view ZC_Quote with
+{
+  @UI.facet: [ { id:            'Quote',
+                 purpose:       #STANDARD,
+                 type:          #IDENTIFICATION_REFERENCE,
+                 label:         '一般資料',
+                 position:      10 },
+               { id:            'Item',
+                 purpose:       #STANDARD,
+                 type:          #LINEITEM_REFERENCE,
+                 label:         '明細',
+                 position:      20,
+                 targetElement: '_Item' } ]
+
+  @UI.hidden: true
+  QuoteUUID;
+
+  @UI: { lineItem:       [ { position: 10 } ],
+         identification: [ { position: 10 } ],
+         selectionField: [ { position: 10 } ] }
+  QuoteID;
+
+  @UI: { lineItem:       [ { position: 20 } ],
+         identification: [ { position: 20 } ],
+         selectionField: [ { position: 20 } ] }
+  SoldToParty;
+
+  @UI: { lineItem:       [ { position: 30 } ],
+         identification: [ { position: 30 } ],
+         selectionField: [ { position: 30 } ] }
+  SalesOrganization;
+
+  @UI: { lineItem:       [ { position: 40 } ],
+         identification: [ { position: 40 } ] }
+  ValidTo;
+
+  @UI: { lineItem:       [ { position: 50 } ],
+         identification: [ { position: 50 } ] }
+  NetAmount;
+
+  @UI.hidden: true
+  LocalLastChangedAt;
+}</code></pre>
+  <div class="tip">明細的 DDLX（ZC_QuoteItem）寫法相同：<span class="kw">@UI.facet</span> 放一個 <span class="kw">#IDENTIFICATION_REFERENCE</span>，欄位加 <span class="kw">lineItem</span>／<span class="kw">identification</span>，<span class="kw">ItemUUID</span>、<span class="kw">ParentUUID</span> 設 <span class="kw">@UI.hidden: true</span>。清單的預設排序寫在 <span class="kw">presentationVariant</span>，不要指望資料庫的自然順序。</div>
+  <div class="warn"><b>版本門檻</b>：CDS projection view 與 projection BDEF 是 <b>7.54（1909）</b>；<span class="kw">provider contract transactional_query</span> 是 <b>7.56（2021）</b>，2020 以前請刪除這一行；<span class="kw">strict ( 2 )</span> 是 7.57，而且<b>必須與基底 BDEF 同一版</b>。metadata extension（<span class="kw">annotate view</span>）自 7.51 起即有，1809 也能用（第 15 節）。</div>
+  <div class="note"><b>出處</b>：<a href="https://help.sap.com/doc/abapdocu_latest_index_htm/latest/en-US/ABENNEWS-754-ABAP_CDS.html">ABAP CDS in Release 7.54</a>（CDS projection views）；<a href="https://help.sap.com/doc/abapdocu_latest_index_htm/latest/en-US/ABENNEWS-756-ABAP_CDS.html">ABAP CDS in Release 7.56</a>（PROVIDER CONTRACT，當時只有 TRANSACTIONAL_QUERY）；<a href="https://help.sap.com/doc/abapdocu_latest_index_htm/latest/en-US/ABENBDL_STRICT.html">RAP - BDEF Strict Mode</a>（projection 與基底需同版 strict）；<a href="https://github.com/SAP-samples/abap-platform-rap-opensap">abap-platform-rap-opensap</a>（W2U4 projection、W2U5 DDLX、W3U3 projection BDEF）。</div>
+
+  <h3 id="ch10-4-09">9. 步驟 6：service definition 與 service binding</h3>
+  <p><b>service definition</b>（SRVD）決定要公開哪些 entity，名稱是 OData 裡的 entity set 名稱：</p>
+  <pre><code class="abap">@EndUserText.label: '報價單服務（Fiori UI）'
+define service ZUI_QUOTE_O4 {
+  expose ZC_Quote     as Quote;
+  expose ZC_QuoteItem as QuoteItem;
+}</code></pre>
+  <p><b>service binding</b>（SRVB）不是原始碼，是 ADT 的表單編輯器：對 service definition 按右鍵 → <i>New Service Binding</i>，選 Binding Type，啟用（Activate）後按 <b>Publish</b>。</p>
+  <table>
+    <thead><tr><th>Binding Type</th><th>用途</th><th>Fiori Elements Preview</th><th>備註</th></tr></thead>
+    <tbody>
+      <tr><td>OData V2 - UI</td><td>Fiori Elements app</td><td>有</td><td>1909 起可用；<b>非 draft</b> 的 managed BO 在 2020／2021 建議用它</td></tr>
+      <tr><td>OData V4 - UI</td><td>Fiori Elements app</td><td>有</td><td>2020 FPS01 起；官方說明 Fiori Elements 對 V4 的<b>完整支援只限 draft 情境</b></td></tr>
+      <tr><td>OData V2 - Web API／OData V4 - Web API</td><td>給外部系統呼叫</td><td>無</td><td>metadata 不含 UI 註解；Web API 可以被擴充</td></tr>
+      <tr><td>InA - UI、SQL - Web API</td><td>分析（InA）與 SQL 存取</td><td>—</td><td>與本章交易情境無關</td></tr>
+    </tbody>
+  </table>
+  <ul>
+    <li><b>Publish</b> 只在本系統啟用服務（本機 endpoint），其他系統用不到。</li>
+    <li><b>service binding 產生的本機服務不能直接跟著傳輸走</b>：要進 QAS／PRD，先在開發機 <i>Unpublish</i>，傳輸相關物件後，在目標系統用 Gateway 工具啟用——OData V2 用 <span class="tcode">/IWFND/MAINT_SERVICE</span>，OData V4 用 <span class="tcode">/IWFND/V4_ADMIN</span>（service group）。錯誤查 <span class="tcode">/IWFND/ERROR_LOG</span>。</li>
+    <li>同一個 service definition 可以綁多個 binding（例如同時有 _O2 與 _O4），商業邏輯不用重寫。</li>
+  </ul>
+  <div class="tip"><b>本章的建議</b>：報價單目前沒有 draft。若系統是 2022 以上，照命名建立 <span class="kw">ZUI_QUOTE_O4</span>（OData V4 - UI）；Preview 發現物件頁的編輯行為不完整時，另建一個 OData V2 - UI 的 binding 對照，或在 <a href="#ch10-5">10-5 章</a>加上 <span class="kw">with draft</span> 之後再用 V4。</div>
+  <div class="warn"><b>版本門檻</b>：<span class="kw">DEFINE SERVICE</span> 與 service binding 是 <b>7.54（1909）</b>，1909 只有 OData V2；RAP 的 OData V4 端到端支援從 <b>S/4HANA 2020 FPS01</b> 起。</div>
+  <div class="note"><b>出處</b>：<a href="https://help.sap.com/docs/abap-cloud/abap-rap/service-binding">SAP Help：Service Binding</a>（binding type、Publish、Preview、V2／V4 比較、傳輸方式）；<a href="https://help.sap.com/doc/abapdocu_latest_index_htm/latest/en-US/ABENNEWS-754-CDS_SDL.html">CDS SDL in Release 7.54</a>；<a href="https://community.sap.com/t5/technology-blog-posts-by-sap/odata-service-development-options/ba-p/13359604">André Fischer（SAP）：OData service development options</a>（V4 自 2020 FPS01）。</div>
+
+  <h3 id="ch10-4-10">10. EML 基本語法：READ ENTITIES 與 MODIFY ENTITIES</h3>
+  <p>EML（Entity Manipulation Language）是 ABAP 裡操作 RAP BO 的語言，Fiori 透過 OData 做的事，ABAP 程式都能用 EML 做。四個核心語句：</p>
+  <table>
+    <thead><tr><th>語句</th><th>作用</th><th>寫到資料庫了嗎</th></tr></thead>
+    <tbody>
+      <tr><td><span class="kw">READ ENTITIES OF</span></td><td>讀取（含交易緩衝中尚未存檔的變更）</td><td>—</td></tr>
+      <tr><td><span class="kw">MODIFY ENTITIES OF</span></td><td>CREATE、CREATE BY \_assoc、UPDATE、DELETE、EXECUTE action</td><td>還沒，只在 transactional buffer</td></tr>
+      <tr><td><span class="kw">COMMIT ENTITIES</span></td><td>觸發 save sequence（檢查 → 存檔），內含 COMMIT WORK</td><td>是</td></tr>
+      <tr><td><span class="kw">ROLLBACK ENTITIES</span></td><td>丟棄 buffer 中的所有變更</td><td>—</td></tr>
+    </tbody>
+  </table>
+  <pre><code class="abap">" (1) 讀指定欄位
+READ ENTITIES OF zi_quote
+  ENTITY Quote
+    FIELDS ( QuoteID SoldToParty OverallStatus )
+    WITH VALUE #( ( QuoteUUID = lv_quote_uuid ) )
+  RESULT DATA(quotes)
+  FAILED DATA(read_failed).
+
+" (2) 讀全部欄位 ＋ 經由 association 讀明細（一句裡可以有多個 ENTITY 子句）
+READ ENTITIES OF zi_quote
+  ENTITY Quote
+    ALL FIELDS WITH VALUE #( ( QuoteUUID = lv_quote_uuid ) )
+    RESULT DATA(quote_all)
+  ENTITY Quote BY \_Item
+    ALL FIELDS WITH VALUE #( ( QuoteUUID = lv_quote_uuid ) )
+    RESULT DATA(items).
+
+" (3) 更新：FIELDS ( ) 列出要改的欄位，框架據此設定 %control
+MODIFY ENTITIES OF zi_quote
+  ENTITY Quote
+    UPDATE FIELDS ( ValidTo OverallStatus )
+    WITH VALUE #( ( QuoteUUID     = lv_quote_uuid
+                    ValidTo       = sy-datum + 60
+                    OverallStatus = 'N' ) )   "延長有效期並重新開啟（N＝新建）
+  FAILED   DATA(upd_failed)
+  REPORTED DATA(upd_reported).
+
+" (4) 刪除（composition：明細會一起刪）
+MODIFY ENTITIES OF zi_quote
+  ENTITY Quote
+    DELETE FROM VALUE #( ( QuoteUUID = lv_quote_uuid ) )
+  FAILED   DATA(del_failed)
+  REPORTED DATA(del_reported).
+
+" 以上 MODIFY 都還在 buffer 裡，必須 COMMIT ENTITIES 才會寫入
+COMMIT ENTITIES.
+IF sy-subrc &lt;&gt; 0.
+  " 存檔失敗（例如 validation 擋下），詳見第 12 節的 RESPONSE 寫法
+ENDIF.</code></pre>
+  <ul>
+    <li><b>%cid</b>：建立時給的暫時識別碼（content ID），同一個 EML 請求裡後續操作用 <b>%cid_ref</b> 指向它。官方建議即使用不到也一律填 %cid。</li>
+    <li><b>%tky</b>（transactional key）：包含鍵值（draft 時還含 %is_draft），handler 裡傳遞實例一律用 %tky。</li>
+    <li><b>%control</b>：標示哪些欄位有給值；用 <span class="kw">FIELDS ( … ) WITH</span> 時框架自動設定，用 <span class="kw">FROM</span> 時要自己填 <span class="kw">if_abap_behv=&gt;mk-on</span>。</li>
+    <li><b>IN LOCAL MODE</b>：只能在 BO 自己的 behavior pool 裡用，會略過權限與 feature control。</li>
+  </ul>
+  <div class="warn"><b>READ ENTITIES 的結果沒有保證順序。</b>managed BO 最後還是由資料庫讀出，HANA 沒有預設排序；要照明細編號處理就先 <span class="kw">SORT items BY ItemNo</span>，「取第一筆」前一定要先排序。</div>
+  <div class="warn"><b>版本門檻</b>：EML 隨 RAP 提供（1909 起），確切的最早版本<b>未能確認</b>。<span class="kw">COMMIT ENTITIES</span> 不可以在 behavior pool 裡用，只能在「消費者」端（報表、類別、背景作業）用。</div>
+  <div class="note"><b>出處</b>：<a href="https://github.com/SAP-samples/abap-cheat-sheets/blob/main/08_EML_ABAP_for_RAP.md">abap-cheat-sheets：ABAP EML in RAP</a>（%cid／%cid_ref／%control、COMMIT／ROLLBACK ENTITIES、sy-subrc）；<a href="https://github.com/SAP-samples/abap-platform-rap-opensap">abap-platform-rap-opensap</a>（W3U4_CLAS_ZCL_RAP_EML：READ／MODIFY／COMMIT 範例）。</div>
+
+  <h3 id="ch10-4-11">11. EML 完整範例：從一般 ABAP 報表建立報價單</h3>
+  <p>下面是一支經典報表（Standard ABAP），用 EML 一次建立表頭與一筆明細：先 <span class="kw">CREATE</span> 表頭（%cid = 'QUOTE_1'），同一句再 <span class="kw">CREATE BY \_Item</span>（%cid_ref 指向 'QUOTE_1'），最後 <span class="kw">COMMIT ENTITIES</span>。這等於用 RAP BO 取代「自己 INSERT 兩張表」——鎖、權限、管理欄位、UUID 都由框架處理。</p>
+  <pre><code class="abap">REPORT zquote_create_eml.
+
+PARAMETERS: p_qid   TYPE n LENGTH 10 OBLIGATORY,
+            p_kunnr TYPE kunnr OBLIGATORY,
+            p_vkorg TYPE vkorg OBLIGATORY,
+            p_matnr TYPE matnr OBLIGATORY,
+            p_menge TYPE menge_d DEFAULT 10,
+            p_meins TYPE meins DEFAULT 'EA',
+            p_price TYPE netpr DEFAULT '1200.00',
+            p_waers TYPE waerk DEFAULT 'TWD'.
+
+START-OF-SELECTION.
+
+  " 1. 表頭＋明細在同一個 EML 請求建立；%cid_ref 把明細掛到剛建立的表頭
+  MODIFY ENTITIES OF zi_quote
+    ENTITY Quote
+      CREATE FIELDS ( QuoteID SoldToParty SalesOrganization QuoteDate ValidTo Currency OverallStatus )
+      WITH VALUE #( ( %cid              = 'QUOTE_1'
+                      QuoteID           = p_qid
+                      SoldToParty       = p_kunnr
+                      SalesOrganization = p_vkorg
+                      QuoteDate         = sy-datum
+                      ValidTo           = sy-datum + 30
+                      Currency          = p_waers
+                      OverallStatus     = 'N' ) )
+      CREATE BY \_Item
+      FIELDS ( ItemNo Material Quantity QuantityUnit NetPrice Currency )
+      WITH VALUE #( ( %cid_ref = 'QUOTE_1'
+                      %target  = VALUE #( ( %cid         = 'ITEM_10'
+                                            ItemNo       = '000010'
+                                            Material     = p_matnr
+                                            Quantity     = p_menge
+                                            QuantityUnit = p_meins
+                                            NetPrice     = p_price
+                                            Currency     = p_waers ) ) ) )
+    MAPPED   DATA(mapped)
+    FAILED   DATA(failed)
+    REPORTED DATA(reported).
+
+  " 2. MODIFY 階段失敗（權限、必填、欄位控制）：印訊息、丟棄 buffer
+  IF failed IS NOT INITIAL.
+    LOOP AT reported-quote ASSIGNING FIELD-SYMBOL(&lt;rep_quote&gt;) WHERE %msg IS BOUND.
+      DATA(msg_text) = &lt;rep_quote&gt;-%msg-&gt;if_message~get_text( ).
+      WRITE / |表頭：{ msg_text }|.
+    ENDLOOP.
+    LOOP AT reported-item ASSIGNING FIELD-SYMBOL(&lt;rep_item&gt;) WHERE %msg IS BOUND.
+      DATA(item_text) = &lt;rep_item&gt;-%msg-&gt;if_message~get_text( ).
+      WRITE / |明細：{ item_text }|.
+    ENDLOOP.
+    ROLLBACK ENTITIES.
+    RETURN.
+  ENDIF.
+
+  " 3. 存檔：觸發 save sequence（validation 會在這裡跑，見 10-5 章）
+  COMMIT ENTITIES
+    RESPONSE OF zi_quote
+      FAILED   DATA(commit_failed)
+      REPORTED DATA(commit_reported).
+
+  IF sy-subrc &lt;&gt; 0 OR commit_failed IS NOT INITIAL.
+    LOOP AT commit_reported-quote ASSIGNING FIELD-SYMBOL(&lt;c_rep&gt;) WHERE %msg IS BOUND.
+      DATA(commit_text) = &lt;c_rep&gt;-%msg-&gt;if_message~get_text( ).
+      WRITE / |存檔失敗：{ commit_text }|.
+    ENDLOOP.
+    RETURN.
+  ENDIF.
+
+  " 4. MAPPED 帶回框架產生的 UUID（numbering : managed 是 early numbering，MODIFY 當下就有值）
+  IF line_exists( mapped-quote[ %cid = 'QUOTE_1' ] ).
+    DATA(new_uuid) = mapped-quote[ %cid = 'QUOTE_1' ]-QuoteUUID.
+  ENDIF.
+
+  " 5. 讀回結果；結果沒有保證順序，先排序再輸出
+  READ ENTITIES OF zi_quote
+    ENTITY Quote BY \_Item
+      FIELDS ( ItemNo Material Quantity QuantityUnit NetPrice Currency )
+      WITH VALUE #( ( QuoteUUID = new_uuid ) )
+    RESULT DATA(items).
+
+  SORT items BY ItemNo.
+  WRITE / |報價單 { p_qid } 建立完成，明細 { lines( items ) } 筆|.
+  LOOP AT items ASSIGNING FIELD-SYMBOL(&lt;item&gt;).
+    WRITE / |{ &lt;item&gt;-ItemNo } { &lt;item&gt;-Material } { &lt;item&gt;-Quantity } { &lt;item&gt;-QuantityUnit }|.
+  ENDLOOP.</code></pre>
+  <div class="tip"><b>和 BAPI 的差別</b>：BAPI 回傳 RETURN 表、要自己呼叫 <span class="kw">BAPI_TRANSACTION_COMMIT</span>；EML 回傳 FAILED／REPORTED／MAPPED 三個結構、用 <span class="kw">COMMIT ENTITIES</span> 存檔。報價單號 p_qid 這裡由使用者輸入只是為了簡化，正式做法是在 determination 裡用號碼範圍取號（<a href="#ch10-5">10-5 章</a>）。</div>
+  <div class="warn"><b>版本門檻</b>：需 RAP BO 存在（本章 BDEF 需 7.57）。在 ABAP Cloud 語言版本下不能用 <span class="kw">REPORT</span>／<span class="kw">WRITE</span>，要改成實作 <span class="kw">IF_OO_ADT_CLASSRUN</span> 的類別；經典 ABAP 報表則兩者皆可。報表中若同時用 EML 又自己 <span class="kw">COMMIT WORK</span>，會把 RAP 交易切成兩半，請只用 <span class="kw">COMMIT ENTITIES</span>。</div>
+  <div class="note"><b>出處</b>：<a href="https://github.com/SAP-samples/abap-cheat-sheets/blob/main/08_EML_ABAP_for_RAP.md">abap-cheat-sheets：ABAP EML in RAP</a>（CREATE BY \_assoc 的 %cid_ref／%target、COMMIT ENTITIES RESPONSE OF、sy-subrc 檢查）；<a href="https://github.com/SAP-samples/abap-platform-rap-opensap">abap-platform-rap-opensap</a>（W3U4 MODIFY Create 與 MAPPED）。</div>
+
+  <h3 id="ch10-4-12">12. FAILED、REPORTED、MAPPED 與交易控制</h3>
+  <table>
+    <thead><tr><th>參數</th><th>結構</th><th>內容</th><th>什麼時候看</th></tr></thead>
+    <tbody>
+      <tr><td><b>MAPPED</b></td><td>每個 entity alias 一個內表（mapped-quote、mapped-item）</td><td>%cid 與框架產生的鍵值對照</td><td>CREATE 之後取新鍵</td></tr>
+      <tr><td><b>FAILED</b></td><td>每個 entity 一個內表</td><td>失敗實例的 %tky（或 %cid）＋ <span class="kw">%fail-cause</span>（not_found、unauthorized、locked、conflict 等）</td><td>判斷成功與否：<span class="kw">IS INITIAL</span> 才算全部成功</td></tr>
+      <tr><td><b>REPORTED</b></td><td>每個 entity 一個內表，另有 %other</td><td>訊息物件 <span class="kw">%msg</span>（<span class="kw">IF_ABAP_BEHV_MESSAGE</span>）與 %element（指向出錯欄位）</td><td>顯示給使用者；Fiori 會自動把訊息貼到對應欄位</td></tr>
+    </tbody>
+  </table>
+  <pre><code class="abap">" 通用的錯誤處理：把 FAILED 的原因與 REPORTED 的訊息整理成一個字串表
+DATA messages TYPE string_table.
+
+MODIFY ENTITIES OF zi_quote
+  ENTITY Quote
+    UPDATE FIELDS ( OverallStatus )
+    WITH VALUE #( ( QuoteUUID = lv_quote_uuid OverallStatus = 'C' ) )
+  FAILED   DATA(failed)
+  REPORTED DATA(reported).
+
+LOOP AT failed-quote ASSIGNING FIELD-SYMBOL(&lt;fail&gt;).
+  " %fail-cause 的值是 IF_ABAP_BEHV=&gt;CAUSE 的常數
+  DATA(cause) = SWITCH string( &lt;fail&gt;-%fail-cause
+                  WHEN if_abap_behv=&gt;cause-not_found  THEN `找不到資料`
+                  WHEN if_abap_behv=&gt;cause-unspecific THEN `未指定原因（看 REPORTED 的訊息）`
+                  ELSE |原因代碼 { &lt;fail&gt;-%fail-cause }| ).
+  APPEND |更新失敗：{ cause }| TO messages.
+ENDLOOP.
+
+LOOP AT reported-quote ASSIGNING FIELD-SYMBOL(&lt;rep&gt;) WHERE %msg IS BOUND.
+  APPEND &lt;rep&gt;-%msg-&gt;if_message~get_text( ) TO messages.
+ENDLOOP.
+
+IF failed IS INITIAL.
+  COMMIT ENTITIES RESPONSE OF zi_quote
+    FAILED   DATA(c_failed)
+    REPORTED DATA(c_reported).
+  IF sy-subrc &lt;&gt; 0.
+    APPEND `存檔失敗，變更未寫入` TO messages.
+  ENDIF.
+ELSE.
+  ROLLBACK ENTITIES.
+ENDIF.</code></pre>
+  <ul>
+    <li><b>兩個階段各有一組 FAILED／REPORTED</b>：MODIFY 階段（interaction phase）擋下的是權限、鎖、必填；COMMIT 階段（save sequence）擋下的是 validation。兩組都要看。</li>
+    <li><b>COMMIT ENTITIES 之後要檢查 sy-subrc</b>：官方說明 COMMIT ENTITIES 不保證 COMMIT WORK 一定成功。</li>
+    <li>批次處理多張報價單時，建議「一張一個 COMMIT ENTITIES」，一張失敗就 ROLLBACK ENTITIES 不影響其他張；全部塞同一個 commit，一張 validation 失敗會整批不存。</li>
+  </ul>
+  <div class="warn"><b>版本</b>：<span class="kw">if_abap_behv=&gt;cause-not_found</span>、<span class="kw">cause-unspecific</span> 取自 SAP openSAP 範例；其他原因（權限不足、被鎖定等）對應的常數名稱<b>未能確認</b>，請在系統對 <span class="kw">IF_ABAP_BEHV</span> 按 F2 查看。1809 沒有這些類別。</div>
+  <div class="note"><b>出處</b>：<a href="https://github.com/SAP-samples/abap-cheat-sheets/blob/main/08_EML_ABAP_for_RAP.md">abap-cheat-sheets：ABAP EML in RAP</a>（RAP response 參數、COMMIT ENTITIES 與 sy-subrc、ROLLBACK ENTITIES）；<a href="https://help.sap.com/doc/abapdocu_latest_index_htm/latest/en-US/ABENBDL_AUTHORIZATION.html">RAP - Authorization</a>（授權失敗回傳錯誤訊息的範例）。</div>
+
+  <h3 id="ch10-4-13">13. ADT 操作：RAP generator、Fiori Elements preview 與除錯</h3>
+  <p><b>一鍵產生（RAP generator）</b>：S/4HANA 2022 起，在 ADT 對資料表按右鍵 → <b>Generate ABAP Repository Objects…</b> → 選 <i>OData UI Service</i>，精靈會一次產生 interface／projection view、BDEF、behavior pool、metadata extension、service definition 與 binding。注意兩點：</p>
+  <ul>
+    <li>ADT 內建精靈<b>只支援一張表</b>，而且產生的是 <b>draft-enabled 的 managed BO</b>；多層 composition（表頭＋明細）要手寫，或用 SAP 在 GitHub 開源的 RAP Generator（SAP-samples／cloud-abap-rap，有 on-prem-2021／2022／2023 分支）。</li>
+    <li>精靈產出適合當「範本」看 SAP 推薦的寫法，本章手寫的每一步都能在產出物裡找到對應。</li>
+  </ul>
+  <p><b>Fiori Elements preview</b>：開啟 service binding → 在 <i>Entity Set and Association</i> 清單選 <b>Quote</b> → 按 <b>Preview…</b>，瀏覽器開出 List Report；按 <i>Go</i> 查資料、<i>Create</i> 新增、點列進 Object Page 編輯明細。Preview 是開發測試用，正式上線要在 Fiori launchpad 設定 app（見 <a href="#ch05-24">5-24 章</a>第 14 節）。</p>
+  <pre><code class="abap">" ADT 常用操作速查（RAP 開發）
+" Ctrl+1                     Quick Fix：由 BDEF 產生 behavior pool、補齊缺少的 handler 方法
+" F2                         在 BDEF／EML 上看元素說明（element info）
+" F1                         ABAP Keyword Documentation（BDL、EML 語法都在）
+" Shift+F1                   格式化（Pretty Printer；CDS、BDEF 也適用）
+" Service binding → Preview  開 Fiori Elements 預覽
+" Service binding → Publish  啟用本機 OData 服務（V2：/IWFND/MAINT_SERVICE；V4：/IWFND/V4_ADMIN）
+" 除錯：在 lhc_quote 的方法設 ADT 斷點，從 Preview 或 EML 報表觸發即可停下
+" OData 錯誤：/IWFND/ERROR_LOG（前端）、/IWBEP/ERROR_LOG（後端）</code></pre>
+  <div class="tip">on-premise 的 Preview 如果按了沒反應或畫面空白，常見原因是系統的 SAPUI5 函式庫太舊；SAP 的 RAP Generator 說明文件提到可以升級 SAPUI5，或依官方部落格改用較新的 UI5 版本做預覽。</div>
+  <div class="warn"><b>版本門檻</b>：ADT 內建的 <i>Generate ABAP Repository Objects</i> 精靈：<b>S/4HANA 2022</b> on-premise、BTP ABAP Environment 2111 起；2021 以前只能用 GitHub 上的開源 RAP Generator 或手寫。Fiori Elements Preview 隨 service binding 提供（1909 起）。</div>
+  <div class="note"><b>出處</b>：<a href="https://github.com/SAP-samples/cloud-abap-rap">SAP-samples／cloud-abap-rap（RAP Generator）README</a>（ADT 精靈自 S/4HANA 2022 起、只支援一張表；on-prem 分支；SAPUI5 版本問題）；<a href="https://community.sap.com/t5/technology-blog-posts-by-sap/the-rap-generator/ba-p/13456829">André Fischer（SAP）：The RAP Generator</a>（2111 起 ADT 標準精靈、產出 draft-enabled managed BO）；<a href="https://help.sap.com/docs/abap-cloud/abap-rap/service-binding">SAP Help：Service Binding</a>（Preview）。</div>
+
+  <h3 id="ch10-4-14">14. 版本差異：1909、2020、2021 的寫法</h3>
+  <p>本章程式以 2022（7.57）為準。舊版本要做以下調整：</p>
+  <table>
+    <thead><tr><th>項目</th><th>1909（7.54）</th><th>2020（7.55）</th><th>2021（7.56）</th><th>2022＋（7.57＋）</th></tr></thead>
+    <tbody>
+      <tr><td>interface view</td><td><span class="kw">define root view</span>＋sqlViewName</td><td colspan="3"><span class="kw">define root view entity</span></td></tr>
+      <tr><td>strict</td><td colspan="2">無，刪除該行</td><td><span class="kw">strict;</span></td><td><span class="kw">strict ( 2 );</span></td></tr>
+      <tr><td>mapping for／numbering : managed</td><td>無</td><td colspan="3">有</td></tr>
+      <tr><td>provider contract</td><td colspan="2">無，刪除該行</td><td colspan="2"><span class="kw">transactional_query</span></td></tr>
+      <tr><td>draft</td><td>無</td><td colspan="3">有（<a href="#ch10-5">10-5 章</a>）</td></tr>
+      <tr><td>OData V4</td><td>無</td><td>FPS01 起</td><td colspan="2">有</td></tr>
+      <tr><td>ADT 精靈</td><td colspan="3">無</td><td>有</td></tr>
+    </tbody>
+  </table>
+  <pre><code class="abap">// 1909（7.54）的 interface view：只能用 DDIC-based CDS view
+@AbapCatalog.sqlViewName: 'ZIQUOTE'
+@AbapCatalog.compiler.compareFilter: true
+@AccessControl.authorizationCheck: #NOT_REQUIRED
+@EndUserText.label: '報價單（1909 寫法）'
+define root view ZI_Quote
+  as select from zquote_h
+  composition [0..*] of ZI_QuoteItem as _Item
+{
+  key quote_uuid     as QuoteUUID,
+      quote_id       as QuoteID,
+      sold_to_party  as SoldToParty,
+      _Item
+}</code></pre>
+  <pre><code class="abap">// 2020（7.55）的 BDEF 開頭與 projection：沒有 strict、沒有 provider contract
+managed implementation in class zbp_i_quote unique;
+
+define behavior for ZI_Quote alias Quote
+persistent table zquote_h
+lock master
+authorization master ( instance )
+etag master LocalLastChangedAt
+{
+  create; update; delete;
+  association _Item { create; }
+  field ( numbering : managed, readonly ) QuoteUUID;
+  // mapping for zquote_h { … } 與 2022 版相同
+}
+
+// projection（2020）：
+// define root view entity ZC_Quote as projection on ZI_Quote { … }</code></pre>
+  <div class="warn"><b>1909 能做的有限</b>：沒有 mapping for 與 managed UUID 編號，CDS 元素名稱要能對上資料表欄位、鍵值要另想辦法產生（1909 的具體寫法<b>未能確認</b>，請以系統的 F1 說明為準）；也沒有 draft 與 OData V4。SAP 自己的部落格也建議：非必要不急著在 1909 導入，<b>2020 FPS01 以上</b>才有 draft 與 V4。1909 上寫好的 DDIC-based CDS，升級後可用 ADT 的遷移工具轉成 view entity（見 <a href="#ch10-1">10-1 章</a>）。</div>
+  <div class="note"><b>出處</b>：<a href="https://help.sap.com/doc/abapdocu_latest_index_htm/latest/en-US/ABENNEWS-754-CDS_BDL.html">RAP BDL in Release 7.54</a>、<a href="https://help.sap.com/doc/abapdocu_latest_index_htm/latest/en-US/ABENNEWS-755-CDS_BDL.html">7.55</a>、<a href="https://help.sap.com/doc/abapdocu_latest_index_htm/latest/en-US/ABENNEWS-756-CDS_BDL.html">7.56</a>、<a href="https://help.sap.com/doc/abapdocu_latest_index_htm/latest/en-US/ABENNEWS-757-CDS_BDL.html">7.57</a>；<a href="https://community.sap.com/t5/technology-blog-posts-by-sap/odata-service-development-options/ba-p/13359604">André Fischer（SAP）：OData service development options</a>（1909／2020 的建議）。</div>
+
+  <h3 id="ch10-4-15">15. 1809 的替代方案：CDS＋BOPF（ABAP Programming Model for SAP Fiori）</h3>
+  <p>1809 沒有 RAP，要做可新增／修改／刪除的 Fiori Elements app，用的是 <b>ABAP Programming Model for SAP Fiori</b>：在 CDS interface view 加上 <span class="kw">@ObjectModel</span> 註解，啟用時系統會<b>自動產生一個 BOPF 業務物件</b>（可在 <span class="tcode">BOBX</span> 看到），再用 consumption view 加 <span class="kw">@OData.publish: true</span> 產生 OData V2 服務。這套模型自 AS ABAP 7.50 SP01 起提供。</p>
+  <pre><code class="abap">// 1809：BOPF 版的報價單表頭（interface view，DDIC-based CDS）
+@AbapCatalog.sqlViewName: 'ZIQUOTEBO'
+@AbapCatalog.compiler.compareFilter: true
+@AccessControl.authorizationCheck: #NOT_REQUIRED
+@EndUserText.label: '報價單（BOPF 根節點）'
+
+@ObjectModel.semanticKey: 'quote_id'
+@ObjectModel.modelCategory: #BUSINESS_OBJECT
+@ObjectModel.compositionRoot: true
+@ObjectModel.transactionalProcessingEnabled: true
+@ObjectModel.writeActivePersistence: 'ZQUOTE_H'
+
+@ObjectModel.createEnabled: true
+@ObjectModel.updateEnabled: true
+@ObjectModel.deleteEnabled: true
+
+define view ZI_QuoteBO
+  as select from zquote_h
+  association [0..*] to ZI_QuoteItemBO as _Item on $projection.quote_uuid = _Item.parent_uuid
+{
+  key quote_uuid,
+      quote_id,
+      sold_to_party,
+      sales_org,
+      valid_to,
+      @Semantics.amount.currencyCode: 'currency'
+      net_amount,
+      currency,
+      @ObjectModel.readOnly: true
+      overall_status,
+
+      @ObjectModel.association.type: [#TO_COMPOSITION_CHILD]
+      _Item
+}
+// 子節點 ZI_QuoteItemBO：writeActivePersistence: 'ZQUOTE_I'，
+// 指回表頭的 association 標 @ObjectModel.association.type: [#TO_COMPOSITION_PARENT, #TO_COMPOSITION_ROOT]</code></pre>
+  <pre><code class="abap">// 1809：consumption view，交易委派給 BOPF，並自動發布 OData V2
+@AbapCatalog.sqlViewName: 'ZCQUOTEBO'
+@AccessControl.authorizationCheck: #NOT_REQUIRED
+@EndUserText.label: '報價單（Fiori 用，BOPF）'
+
+@ObjectModel.semanticKey: 'quote_id'
+@ObjectModel.transactionalProcessingDelegated: true
+@ObjectModel.createEnabled: true
+@ObjectModel.updateEnabled: true
+@ObjectModel.deleteEnabled: true
+
+@UI.headerInfo: { typeName: '報價單', typeNamePlural: '報價單' }
+@OData.publish: true
+
+define view ZC_QuoteBO
+  as select from ZI_QuoteBO
+{
+  key quote_uuid,
+      quote_id,
+      sold_to_party,
+      sales_org,
+      valid_to,
+      net_amount,
+      currency,
+      overall_status,
+      _Item
+}
+// 啟用後產生服務 ZC_QUOTEBO_CDS，要到 /IWFND/MAINT_SERVICE 註冊才能用</code></pre>
+  <table>
+    <thead><tr><th>1809 BOPF 註解</th><th>作用</th><th>RAP 中的對應</th></tr></thead>
+    <tbody>
+      <tr><td><span class="kw">@ObjectModel.modelCategory: #BUSINESS_OBJECT</span>＋<span class="kw">compositionRoot: true</span></td><td>宣告為 BO 根節點</td><td><span class="kw">define root view entity</span></td></tr>
+      <tr><td><span class="kw">@ObjectModel.transactionalProcessingEnabled: true</span></td><td>啟用交易執行環境（只能放根節點）</td><td>behavior definition</td></tr>
+      <tr><td><span class="kw">@ObjectModel.writeActivePersistence</span></td><td>指定寫入的資料表</td><td><span class="kw">persistent table</span></td></tr>
+      <tr><td><span class="kw">@ObjectModel.writeDraftPersistence</span></td><td>指定 draft 資料表</td><td><span class="kw">draft table</span>（10-5 章）</td></tr>
+      <tr><td><span class="kw">@ObjectModel.association.type: [#TO_COMPOSITION_CHILD]</span></td><td>組合關係</td><td><span class="kw">composition</span>／<span class="kw">association to parent</span></td></tr>
+      <tr><td><span class="kw">create／update／deleteEnabled</span></td><td>開放操作</td><td><span class="kw">create; update; delete;</span></td></tr>
+      <tr><td><span class="kw">@ObjectModel.readOnly</span>、<span class="kw">@ObjectModel.mandatory</span></td><td>欄位控制</td><td><span class="kw">field ( readonly )</span>、<span class="kw">field ( mandatory )</span></td></tr>
+      <tr><td><span class="kw">@ObjectModel.transactionalProcessingDelegated: true</span></td><td>consumption view 把交易委派給下層 BO</td><td>projection BDEF 的 <span class="kw">use</span></td></tr>
+      <tr><td><span class="kw">@OData.publish: true</span></td><td>自動產生 OData V2 服務</td><td>service definition＋service binding</td></tr>
+      <tr><td>BOPF 的 determination／validation／action（在 <span class="tcode">BOBX</span> 或 ADT 建）</td><td>業務邏輯</td><td>BDEF 的 determination／validation／action（10-5 章）</td></tr>
+    </tbody>
+  </table>
+  <div class="warn"><b>已不建議新開發</b>：SAP 在這套模型的官方教學開頭就註明，S/4HANA 2020 以上應改用 RAP。1809 上寫的 BOPF-CDS 程式在升級後仍可執行，但屬於舊技術，<b>升級後請規劃遷移到 RAP</b>（資料表可以沿用，CDS 改成 view entity、@ObjectModel 交易註解改成 BDEF、BOPF 的 determination／validation 改寫到 behavior pool）。SAP 是否提供自動遷移工具及其版本<b>未能確認</b>，請查 SAP Help。另外，draft 用的 <span class="kw">@ObjectModel.draftEnabled</span> 在 7.50 的官方註解清單中查不到，1809 是否可用<b>未能確認</b>，請以系統為準。</div>
+  <div class="warn"><b>BOPF 依名稱對應資料表欄位</b>：SAP 官方教學的 interface view 元素名稱與資料表欄位同名（只差大小寫），這也是上面範例不另取別名的原因；RAP 到 7.55 才有 <span class="kw">mapping for</span> 可以任意改名。1809 的 <span class="kw">@ObjectModel.semanticKey</span> 在官方範例寫成單一字串；多個欄位時請改用陣列並以系統語法檢查為準。</div>
+  <div class="note"><b>出處</b>：<a href="https://community.sap.com/t5/technology-blog-posts-by-sap/how-to-develop-a-transactional-app-using-the-abap-programming-model-for-sap/ba-p/13343355">André Fischer（SAP）：How to develop a transactional app using the ABAP Programming Model for SAP Fiori</a>（interface／consumption view 的完整註解、BOPF 自動產生、2020 以上改用 RAP 的提醒）；<a href="https://help.sap.com/doc/saphelp_nw75/7.5.5/en-US/89/6496ecfe4f4f8b857c6d93d4489841/content.htm">SAP Help（NW 7.5）：ObjectModel Annotations</a>（modelCategory、compositionRoot、transactionalProcessingEnabled／Delegated、writeActivePersistence、writeDraftPersistence、association.type、create／update／deleteEnabled、readOnly、mandatory 的定義）；<a href="https://community.sap.com/t5/technology-blog-posts-by-sap/odata-service-development-options/ba-p/13359604">OData service development options</a>（7.50 SP01 起）。</div>
+
+  <h3 id="ch10-4-16">16. 實務坑與上線檢查清單</h3>
+  <ol>
+    <li><b>HANA 沒有預設排序</b>：<span class="kw">READ ENTITIES</span> 的結果、Fiori 清單的預設順序都不能依賴資料庫。報表端「取第一筆明細」前要 <span class="kw">SORT</span>；Fiori 端用 <span class="kw">presentationVariant</span> 的 <span class="kw">sortOrder</span> 明確指定。</li>
+    <li><b>條件用列舉比區間安全</b>：用 EML 批次讀報價單時，建議先用 ABAP SQL 讀 interface view 取得要處理的鍵，並以列舉的狀態值（例如 OverallStatus IN ('N','R')）篩選，不要用 BT 區間比號碼；報價單號有前導零（NUMC）或號碼段不連續時，區間會漏抓或多抓。</li>
+    <li><b>先找標準再客製</b>：做 Z 報價單前先查 SAP 標準的報價單交易（<span class="tcode">VA21</span>）與 released API；若只是要在標準單據加欄位或檢查，優先用 released BAdI 或 RAP BO 的擴充（BDEF extension，7.57 起），而不是自建一套 BO。</li>
+    <li><b>管理欄位沒填值</b>：@Semantics 註解要加在 <b>interface view</b>（BO 層），只加在 projection 不會生效；BDEF 的 mapping 也要列出這些欄位。</li>
+    <li><b>ETag 衝突</b>：兩個人同時編輯，後存檔的會收到「資料已被變更」；這是正常的樂觀鎖行為。<span class="kw">local_last_changed_at</span> 每個節點都要有。</li>
+    <li><b>傳輸</b>：service binding 的本機發布不能直接傳到 QAS／PRD，目標系統要用 <span class="tcode">/IWFND/MAINT_SERVICE</span>（V2）或 <span class="tcode">/IWFND/V4_ADMIN</span>（V4）啟用。</li>
+    <li><b>權限</b>：本章 CDS 用 <span class="kw">#NOT_REQUIRED</span> 只為教學；上線前改 <span class="kw">#CHECK</span> 並寫 DCL（讀取權限），BDEF 的 authorization master 管的是「修改」權限，兩者要一起設計。</li>
+  </ol>
+  <pre><code class="abap">" 批次處理：先用 ABAP SQL 以「列舉」條件取鍵、明確排序，再逐張用 EML 更新
+SELECT QuoteUUID, QuoteID
+  FROM zi_quote
+  WHERE OverallStatus IN ( 'N', 'R' )          " 列舉，不用 BT 區間
+    AND ValidTo &lt; @sy-datum
+  ORDER BY QuoteID                             " HANA 沒有預設排序
+  INTO TABLE @DATA(expired).
+
+LOOP AT expired ASSIGNING FIELD-SYMBOL(&lt;exp&gt;).
+  MODIFY ENTITIES OF zi_quote
+    ENTITY Quote
+      UPDATE FIELDS ( OverallStatus )
+      WITH VALUE #( ( QuoteUUID = &lt;exp&gt;-QuoteUUID OverallStatus = 'X' ) )
+    FAILED DATA(failed).
+
+  IF failed IS INITIAL.
+    COMMIT ENTITIES.                           " 一張一個 commit，失敗不影響其他張
+  ELSE.
+    ROLLBACK ENTITIES.
+  ENDIF.
+ENDLOOP.</code></pre>
+  <div class="warn"><b>版本</b>：直接對 CDS view entity 下 ABAP SQL 需 7.55 以上（1909 用 DDIC-based view 亦可查詢）。用 ABAP SQL 讀 interface view 只讀得到<b>已存檔</b>的資料，看不到 transactional buffer 內尚未 commit 的變更；要讀 buffer 請用 <span class="kw">READ ENTITIES</span>。</div>
+  <div class="note"><b>出處</b>：<a href="https://help.sap.com/docs/abap-cloud/abap-rap/service-binding">SAP Help：Service Binding</a>（傳輸方式）；<a href="https://help.sap.com/docs/abap-cloud/abap-rap/creating-persistent-database-tables">SAP Help：Creating Persistent Database Tables</a>（管理欄位與 ETag）；<a href="https://help.sap.com/doc/abapdocu_latest_index_htm/latest/en-US/ABENNEWS-757-CDS_BDL.html">RAP BDL in Release 7.57</a>（BDEF extension）。其他實務建議依本圖書館第 5 節的 Casper 實務經驗整理。</div>
+
+  <h3 id="ch10-4-qa">練習與自我檢核</h3>
+  <ol>
+    <li><b>版本判斷</b>：客戶系統是 S/4HANA 1809，想做可編輯的 Fiori Elements 報價單 app，你會建議哪一種模型？升級到 2023 之後呢？<br><i>要點：1809 沒有 RAP，只能用 CDS＋BOPF（@ObjectModel.transactionalProcessingEnabled、writeActivePersistence、@OData.publish）；升級後遷移到 RAP managed，資料表可沿用。</i></li>
+    <li><b>實作類型</b>：公司已有一支穩定的報價單建立函數（含自己的 commit 與鎖），要包成 Fiori 服務，選 managed 還是 unmanaged？為什麼？<br><i>要點：unmanaged（或至少 managed with unmanaged save），因為既有程式有自己的 buffer／LUW；新開發且資料在 Z 表才選 managed。</i></li>
+    <li><b>BDEF 閱讀</b>：解釋 <span class="kw">lock dependent by _Quote</span>、<span class="kw">authorization dependent by _Quote</span>、<span class="kw">etag master LocalLastChangedAt</span> 各自的效果。<br><i>要點：改明細鎖整張報價單；明細的 update／delete／create-by-association 以表頭的 update 權限判斷；ETag 以明細自己的 local_last_changed_at 做樂觀鎖。</i></li>
+    <li><b>strict 版本</b>：同一份 BDEF 要放到 2021 系統，第二行要怎麼改？放到 2020 呢？<br><i>要點：2021 改 <span class="kw">strict;</span>；2020 刪除整行，projection 的 provider contract 也要刪。</i></li>
+    <li><b>權限陷阱</b>：只宣告 <span class="kw">authorization master ( instance )</span>，能不能擋住「沒有權限的人新建報價單」？<br><i>要點：不能，根節點 create 沒有實例可檢查；要用 global 或 ( global, instance ) 並實作 FOR GLOBAL AUTHORIZATION。</i></li>
+    <li><b>EML</b>：改寫第 11 節範例，一次建立兩筆明細（10、20），並在建立後印出兩筆明細的 UUID。<br><i>要點：%target 放兩行、各自 %cid；從 mapped-item 依 %cid 取 ItemUUID。</i></li>
+    <li><b>FAILED 與 REPORTED</b>：MODIFY 成功但 COMMIT ENTITIES 失敗，可能是什麼原因？要看哪個參數？<br><i>要點：save sequence 的 validation 擋下（10-5 章）；看 COMMIT ENTITIES RESPONSE OF 的 FAILED／REPORTED 與 sy-subrc。</i></li>
+    <li><b>service binding</b>：開發機 Preview 正常，傳到 QAS 後 Fiori 打不開服務，最可能漏了什麼？<br><i>要點：service binding 的本機發布不會隨傳輸生效，要在 QAS 用 /IWFND/MAINT_SERVICE（V2）或 /IWFND/V4_ADMIN（V4）啟用。</i></li>
+    <li><b>HANA 排序</b>：同事寫 <span class="kw">READ ENTITIES … BY \_Item … RESULT DATA(items)</span> 後直接取 <span class="kw">items[ 1 ]</span> 當「第一筆明細」，有什麼問題？<br><i>要點：結果沒有保證順序，先 SORT items BY ItemNo；這和 SELECT 不寫 ORDER BY 是同一個坑。</i></li>
+    <li><b>先找標準</b>：業務要求「報價單轉訂單」，你會先查哪些標準功能或 API，再決定是否用 EML 客製？<br><i>要點：標準 VA21 參考建立 VA01、released 的銷售訂單 RAP BO（如 I_SalesOrderTP，版本需確認）或 BAPI；確認都不符合才客製。</i></li>
+  </ol>
+</section>
