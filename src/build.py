@@ -36,6 +36,8 @@ PARTS = [
      [("ch07-1", None), ("ch07-2", None), ("ch07-3", None), ("ch07-4", None), ("ch07-5", None), ("ch07-6", None), ("ch07-7", None)]),
     ("第八部 · 實戰源碼庫：36 套專案程式（L31）",
      [("ch08-1", None), ("ch08-2", None), ("ch08-3", None), ("ch08-4", None), ("ch08-5", None), ("ch08-6", None), ("ch08-7", None), ("ch08-8", None)]),
+    ("第九部 · 模組二次開發案例（09_x）",
+     [("ch09-1", None), ("ch09-2", None), ("ch09-3", None), ("ch09-4", None), ("ch09-5", None)]),
     ("附錄", [("ap-01", None)]),
 ]
 

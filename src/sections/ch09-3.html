@@ -1,0 +1,710 @@
+<section class="chapter" id="ch09-3" data-title="PP：MRP Element 與工單報表">
+  <h2>第 9-3 章 PP 二次開發（一）：MRP Element 與生產工單報表</h2>
+  <p class="lede">PP 報表寫得好不好，關鍵在兩件事：看得懂 MD04 上每一列「MRP 元素」代表哪張單據、從哪張表來；以及把生產工單的表頭（AFKO）、項目（AFPO）、訂單主檔（AUFK）與狀態（JEST）正確串起來。本章前半整理 MRP Element 全清單、程式取得方式、DELKZ 對照，以及「重工（遞迴 BOM）」這個讓 CO 頭痛的主題；後半把教學系統 GBIKE（SAP 大學聯盟示範公司 Global Bike）上的生產工單報表 ZCO03，從 <span class="kw">TABLES</span>＋<span class="kw">slis</span> ALV 完整改寫成 CL_SALV_TABLE，並補上工單狀態、計畫與實際數量、工單類型，以及 S/4HANA 的 released CDS view。</p>
+  <div class="meta">
+    <div><b>核心 TCODE</b><span class="tcode">MD04</span><span class="tcode">MD05</span><span class="tcode">MD06</span><span class="tcode">MD07</span><span class="tcode">MD01N</span><span class="tcode">CO01</span><span class="tcode">CO02</span><span class="tcode">CO03</span><span class="tcode">COOIS</span><span class="tcode">CS02</span><span class="tcode">CKM3N</span><span class="tcode">SE11</span><span class="tcode">SE37</span><span class="tcode">SU21</span></div>
+    <div><b>關鍵物件</b>MD_STOCK_REQUIREMENTS_LIST_API、BAPI_MATERIAL_STOCK_REQ_LIST、MDPS、MDEZ、MDKP、MDTB、PPH_DBVM、T457T、PLAF、AFKO、AFPO、AUFK、RESB、JEST、TJ02T、TJ30T、STATUS_TEXT_EDIT、I_ManufacturingOrder、CL_SALV_TABLE</div>
+  </div>
+
+  <h3 id="ch09-3-01">1. 素材對照與本章地圖</h3>
+  <table>
+    <thead><tr><th>本章小節</th><th>原始檔名</th><th>原素材內容</th><th>本章補充</th></tr></thead>
+    <tbody>
+      <tr><td>§2 MRP Element 總表</td><td>ABAP_11_1_pp_KnowHow_04（第 01 節 MRP ELEMENT）</td><td>MD04 上 MRP 元素的英文名稱與縮寫，共約 70 列（含 6 列畫面分隔線）</td><td>依類別分組、標出與目前版本縮寫不一致的地方</td></tr>
+      <tr><td>§3、§4 資料來源與 DELKZ</td><td>（素材未提，本章補寫）</td><td>—</td><td>MD04、MD_STOCK_REQUIREMENTS_LIST_API、BAPI_MATERIAL_STOCK_REQ_LIST、MDKP／MDTB、S/4HANA MRP Live、DELKZ 分流程式</td></tr>
+      <tr><td>§5 重工</td><td>ABAP_11_1_pp_KnowHow_04（第 02 節 重工遞迴）</td><td>一段討論：重工工單「投 A 產 A」、遞迴 BOM、Material Ledger 價差過大；SAP note 2031136、1610 之後 note 2998739</td><td>重工的幾種做法、找出重工工單的程式</td></tr>
+      <tr><td>§6～§13 ZCO03</td><td>ABAP_11_2_PP_Gbike_12（第 01 節 ZCO03）</td><td>約 580 行：AFKO＋AFPO JOIN、LOOP 內 SELECT SINGLE AUFK、依建檔人員編項次、REUSE_ALV_GRID_DISPLAY、TOP_OF_PAGE、USER_COMMAND；以自建表 ZABAP 限定可執行人員</td><td>改寫成 local class＋CL_SALV_TABLE；補工單狀態、PSMNG／WEMNG、AUART、I_ManufacturingOrder</td></tr>
+    </tbody>
+  </table>
+  <div class="note">兩份素材都是 Casper 2022-12 的講義（PDF 轉文字）。docx 版本的程式碼放在文字方塊裡，內容與 PDF 相同；兩份檔案的圖片都只有浮水印頁，沒有操作截圖，所以本章的畫面描述是依 SAP 標準補寫的 <span class="src">（依講義步驟整理）</span>。重疊主題請直接跳到既有章節：缺料表與 MD_STOCK_REQUIREMENTS_LIST_API 的完整案例看 <a href="#ch06-6">6-6 章 ZPPB0002</a>；生產數據介面 ZPPI0001 看 <a href="#ch06-5">6-5 章</a>；BAPI 基本觀念看 <a href="#ch04-1">4-1 章</a>。</div>
+
+  <h3 id="ch09-3-02">2. MRP Element 總表（MD04 的每一列是什麼）</h3>
+  <p>MD04（庫存／需求清單）每一列都是一個「MRP 元素」：庫存、供給（收）、需求（發）三大類。下表<b>完整保留講義列出的名稱與縮寫</b>，依講義原本的空行分成八組。縮寫是 MD04「MRP 元素」欄的顯示文字，會隨版本與登入語言不同。</p>
+  <h4>2.1 庫存類（期初可用量）</h4>
+  <table>
+    <thead><tr><th>英文名稱</th><th>縮寫</th><th>中文說明</th></tr></thead>
+    <tbody>
+      <tr><td>Plant stock</td><td>Stock</td><td>工廠庫存（MD04 第一列的期初量）</td></tr>
+      <tr><td>Safety stock</td><td>SafeSt</td><td>安全庫存（以需求的身分扣掉，MRP 群組可設定是否可用）</td></tr>
+      <tr><td>Storage location stock</td><td>SLocSt</td><td>儲存地點庫存（儲位不參與 MRP 或單獨計劃時會分開顯示）</td></tr>
+      <tr><td>Individual customer stock</td><td>CustSt</td><td>銷售訂單庫存（客戶個別段）</td></tr>
+      <tr><td>Consignment stock for customer (availability check)</td><td>CCsgmt</td><td>客戶寄售庫存（可用性檢查用）</td></tr>
+      <tr><td>Project stock</td><td>ProjSt</td><td>專案庫存（WBS 段）</td></tr>
+      <tr><td>Stock with subcontractor</td><td>SubcSt</td><td>外包商處庫存（提供料）</td></tr>
+      <tr><td>Batch stock</td><td>BtchSt</td><td>批次庫存</td></tr>
+      <tr><td>Batch/storage location stock</td><td>BtSLoc</td><td>批次／儲存地點庫存</td></tr>
+      <tr><td>Inspection lot for quality management</td><td>QM-lot</td><td>品檢批（品檢庫存，視設定算供給）</td></tr>
+    </tbody>
+  </table>
+  <h4>2.2 生產／內部供給</h4>
+  <table>
+    <thead><tr><th>英文名稱</th><th>縮寫</th><th>中文說明</th></tr></thead>
+    <tbody>
+      <tr><td>Planned order</td><td>PldOrd</td><td>計劃訂單（PLAF）</td></tr>
+      <tr><td>Simulation order</td><td>PldOrd</td><td>模擬訂單（講義縮寫與計劃訂單相同，見下方說明）</td></tr>
+      <tr><td>Production order</td><td>PrdOrd</td><td>生產工單（AFKO／AFPO）</td></tr>
+      <tr><td>Confirmation</td><td>POConf</td><td>確認（採購單確認／供應商確認）</td></tr>
+      <tr><td>Process order</td><td>PrcOrd</td><td>流程訂單（PP-PI）</td></tr>
+      <tr><td>Maintenance order</td><td>PMOrdr</td><td>維修工單</td></tr>
+      <tr><td>Network order</td><td>NtwOrd</td><td>網路（PS 專案）</td></tr>
+    </tbody>
+  </table>
+  <h4>2.3 採購／外部供給</h4>
+  <table>
+    <thead><tr><th>英文名稱</th><th>縮寫</th><th>中文說明</th></tr></thead>
+    <tbody>
+      <tr><td>Purchase requisition</td><td>PurRqs</td><td>請購單（EBAN）</td></tr>
+      <tr><td>Purchase order item</td><td>POitem</td><td>採購單項目（EKPO／EKET）</td></tr>
+      <tr><td>SA delivery schedule line</td><td>SchLne</td><td>排程協議交貨排程行</td></tr>
+      <tr><td>JIT call</td><td>JITCll</td><td>JIT 叫料</td></tr>
+      <tr><td>JIT delivery schedule</td><td>JIT-DS</td><td>JIT 交貨排程</td></tr>
+      <tr><td>Forecast delivery schedule</td><td>ForcDS</td><td>預測交貨排程</td></tr>
+      <tr><td>Shipping notification</td><td>ShpgNt</td><td>出貨通知（ASN，EKES）</td></tr>
+    </tbody>
+  </table>
+  <h4>2.4 需求類</h4>
+  <table>
+    <thead><tr><th>英文名稱</th><th>縮寫</th><th>中文說明</th></tr></thead>
+    <tbody>
+      <tr><td>Transfer requirements WMS</td><td>TrnReq</td><td>倉儲管理轉儲需求</td></tr>
+      <tr><td>Safety requirement</td><td>SfyReq</td><td>安全需求</td></tr>
+      <tr><td>Dependent requirement</td><td>DepReq</td><td>相依需求（計劃訂單的 BOM 元件）</td></tr>
+      <tr><td>Sim. dependent reqmt</td><td>SimReq</td><td>模擬相依需求</td></tr>
+      <tr><td>Simulation requirement</td><td>SimReq</td><td>模擬需求</td></tr>
+      <tr><td>Simulated requirement from availability check</td><td>SimReq</td><td>可用性檢查產生的模擬需求</td></tr>
+      <tr><td>Total requirements</td><td>TotReq</td><td>彙總需求</td></tr>
+      <tr><td>Subcontractor requirements of material provided</td><td>SubReq</td><td>外包提供料需求</td></tr>
+      <tr><td>Planned independent requirement</td><td>IndReq</td><td>計劃獨立需求（PBIM／PBED，MD61）</td></tr>
+      <tr><td>Customer independent requirement</td><td>CusReq</td><td>客戶獨立需求</td></tr>
+      <tr><td>External sales order</td><td>CusReq</td><td>外部銷售訂單</td></tr>
+      <tr><td>Forecast requirement</td><td>ForReq</td><td>預測需求</td></tr>
+      <tr><td>Unplanned requirement</td><td>UnplRq</td><td>非計劃需求</td></tr>
+    </tbody>
+  </table>
+  <h4>2.5 調撥下達單（Release order）</h4>
+  <table>
+    <thead><tr><th>英文名稱</th><th>縮寫</th><th>中文說明</th></tr></thead>
+    <tbody>
+      <tr><td>Release order for a stock transfer requisition</td><td>PRqRel</td><td>調撥請購的下達單</td></tr>
+      <tr><td>Release order for a stock transfer order</td><td>RelOrd</td><td>調撥採購單的下達單</td></tr>
+      <tr><td>Release order for stock transport scheduling agreement</td><td>ScAgDS</td><td>調撥排程協議的下達單</td></tr>
+      <tr><td>Release order for stock transfer planned order</td><td>PlORel</td><td>調撥計劃訂單的下達單</td></tr>
+    </tbody>
+  </table>
+  <h4>2.6 預留類</h4>
+  <table>
+    <thead><tr><th>英文名稱</th><th>縮寫</th><th>中文說明</th></tr></thead>
+    <tbody>
+      <tr><td>Reservation</td><td>MtlRes</td><td>手動預留（MB21）</td></tr>
+      <tr><td>Dependent reservation</td><td>OrdRes</td><td>相依預留（生產工單元件，RESB）</td></tr>
+      <tr><td>Reservation in another plant</td><td>StTRes</td><td>他廠預留</td></tr>
+      <tr><td>Stock transfer reservation</td><td>TrnRes</td><td>調撥預留</td></tr>
+    </tbody>
+  </table>
+  <h4>2.7 銷售與物料移動</h4>
+  <table>
+    <thead><tr><th>英文名稱</th><th>縮寫</th><th>中文說明</th></tr></thead>
+    <tbody>
+      <tr><td>Request for quotation</td><td>RFQuot</td><td>詢價</td></tr>
+      <tr><td>Quotation</td><td>Quottn</td><td>報價</td></tr>
+      <tr><td>Order</td><td>CusOrd</td><td>銷售訂單（VBBE）</td></tr>
+      <tr><td>SD scheduling agreement</td><td>SchAgr</td><td>SD 排程協議</td></tr>
+      <tr><td>SD scheduling agreement; external service agent</td><td>SA-ESP</td><td>SD 排程協議（外部服務代理）</td></tr>
+      <tr><td>Contract</td><td>Contrc</td><td>合約</td></tr>
+      <tr><td>Delivery w/o charge</td><td>FOCDly</td><td>免費交貨</td></tr>
+      <tr><td>Delivery</td><td>Delvry</td><td>交貨單（LIPS）</td></tr>
+      <tr><td>Returns (availability check)</td><td>RetDly</td><td>退貨（可用性檢查）</td></tr>
+      <tr><td>Returns item</td><td>Return</td><td>退貨項目</td></tr>
+      <tr><td>Goods receipt</td><td>GdRcpt</td><td>收貨</td></tr>
+      <tr><td>Goods issue</td><td>GIssue</td><td>發貨</td></tr>
+    </tbody>
+  </table>
+  <h4>2.8 畫面分隔線（不是單據）</h4>
+  <table>
+    <thead><tr><th>英文名稱</th><th>縮寫</th><th>中文說明</th></tr></thead>
+    <tbody>
+      <tr><td>Planning</td><td>-----&gt;</td><td>計劃區段標示</td></tr>
+      <tr><td>Direct production</td><td>-----&gt;</td><td>直接生產（多階直接生產的區段）</td></tr>
+      <tr><td>End of planning time fence</td><td>-----&gt;</td><td>計劃時界結束日</td></tr>
+      <tr><td>Gross requirements planning</td><td>-----&gt;</td><td>毛需求計劃</td></tr>
+      <tr><td>End replenishment period</td><td>-----&gt;</td><td>補貨前置時間結束日</td></tr>
+      <tr><td>Effective-out date</td><td>-----&gt;</td><td>失效日（料號替代）</td></tr>
+    </tbody>
+  </table>
+  <div class="warn"><b>講義原文的小問題：</b>① 「Returns (availability check))」多了一個右括號，上表已修正。② 講義把 Simulation order 的縮寫也寫成 PldOrd，跟 Planned order 相同；不同版本的 MD04 可能顯示不同縮寫，<b>程式裡不要拿縮寫文字判斷元素種類</b>，一律用 DELKZ（§4）。③ 同理，SimReq、CusReq 都有多種元素共用同一縮寫，只看縮寫會分不出來。④ 其他資料常見的 PlOrd、PchOrd、SalesOrd 等寫法是不同版本／語言的顯示文字，本章以講義為準。</div>
+
+  <h3 id="ch09-3-03">3. MRP Element 在程式裡從哪裡來</h3>
+  <p>同一份「庫存／需求清單」可以從幾個地方拿，差別在「即時或是 MRP 當下的快照」以及「是否為 released API」：</p>
+  <table>
+    <thead><tr><th>來源</th><th>性質</th><th>適用</th><th>備註</th></tr></thead>
+    <tbody>
+      <tr><td><span class="tcode">MD04</span></td><td>即時（每次開啟重新讀單據）</td><td>使用者查詢</td><td>程式可用 SET PARAMETER ID 'MAT'／'WRK' 後 CALL TRANSACTION 'MD04' 跳轉</td></tr>
+      <tr><td><span class="kw">MD_STOCK_REQUIREMENTS_LIST_API</span></td><td>即時，輸出 MDPSX／MDEZX／MDSUX 與 E_MDKP</td><td>客製報表（缺料表、交期推算）</td><td>非 released，但實務上最常用；完整案例見 <a href="#ch06-6">6-6 章</a></td></tr>
+      <tr><td><span class="kw">BAPI_MATERIAL_STOCK_REQ_LIST</span></td><td>即時，BAPI 介面（MRP_ITEMS 等）</td><td>RFC、外部系統</td><td>唯讀 BAPI；參數與結構請以 <span class="tcode">SE37</span> 確認（S/4 另有長料號參數）</td></tr>
+      <tr><td>MDKP／MDTB（MD05 MRP 清單）</td><td>MRP 執行當下的快照</td><td>比對「MRP 跑完當時」的結果</td><td>MDKP 是表頭（DTNUM），MDTB 是項目；會過時，不適合當即時資料</td></tr>
+      <tr><td>PPH_DBVM（S/4HANA）</td><td>計劃檔（planning file）</td><td>了解哪些料會被下一次 MRP 重算</td><td>S/4HANA 以 PPH_DBVM 取代 ECC 的 MDVM／DBVM；它記錄「待計劃的料」，<b>不是 MRP 元素本身</b></td></tr>
+    </tbody>
+  </table>
+  <div class="warn"><b>S/4HANA MRP Live（MD01N）的注意事項（有不確定處，請在系統確認）：</b>MRP Live 在 HANA 裡以資料庫程序執行，依 SAP 說明預設不產生 MD05 用的 MRP 清單，因此 MDKP／MDTB 在 S/4HANA 可能是空的或只剩舊資料——需要 MRP 結果時請用 MD_STOCK_REQUIREMENTS_LIST_API 讀即時清單。網路資料中常見的「PPH_DBVM_MRP」這類物件名稱，本章<b>無法確認是否存在於 1809</b>；PPH_* 開頭的是 MRP Live 內部物件，就算存在也不是 released API，不建議客製程式直接讀取。可以在 SE11 以 <span class="kw">PPH_DBVM*</span> 搜尋自己系統的實際物件。</div>
+  <p>BAPI 版本的呼叫方式（適合 RFC 給外部系統，或不想依賴非 released 函數時）：</p>
+  <pre><code class="abap">" 介面請以 SE37 確認：S/4HANA 另有 40 碼長料號參數（MATERIAL_LONG 等）
+DATA lt_items  TYPE STANDARD TABLE OF bapi_mrp_items WITH EMPTY KEY.
+DATA ls_return TYPE bapiret2.
+
+CALL FUNCTION 'BAPI_MATERIAL_STOCK_REQ_LIST'
+  EXPORTING
+    material  = p_matnr
+    plant     = p_werks
+  IMPORTING
+    return    = ls_return
+  TABLES
+    mrp_items = lt_items.
+
+IF ls_return-type CA 'EA'.
+  MESSAGE ls_return-message TYPE 'I' DISPLAY LIKE 'E'.
+  RETURN.
+ENDIF.
+
+" 唯讀 BAPI，不需要 BAPI_TRANSACTION_COMMIT
+" MRP_ITEMS 的欄位（MRP_ELEMENT_IND = DELKZ、AVAIL_DATE、REC_REQD_QTY …）請以 SE11 BAPI_MRP_ITEMS 確認
+LOOP AT lt_items INTO DATA(ls_item).
+  WRITE: / ls_item-mrp_element_ind, ls_item-avail_date, ls_item-rec_reqd_qty.
+ENDLOOP.</code></pre>
+  <p>非 released 但最常用的 MD_STOCK_REQUIREMENTS_LIST_API，一次拿到 MD04 的每一列（MDEZX）與元素明細（MDPSX）：</p>
+  <pre><code class="abap">DATA: lt_mdps TYPE STANDARD TABLE OF mdps WITH EMPTY KEY,
+      lt_mdez TYPE STANDARD TABLE OF mdez WITH EMPTY KEY,
+      lt_mdsu TYPE STANDARD TABLE OF mdsu WITH EMPTY KEY,
+      ls_mdkp TYPE mdkp.
+
+CALL FUNCTION 'MD_STOCK_REQUIREMENTS_LIST_API'
+  EXPORTING
+    matnr                    = p_matnr
+    werks                    = p_werks
+  IMPORTING
+    e_mdkp                   = ls_mdkp
+  TABLES
+    mdpsx                    = lt_mdps
+    mdezx                    = lt_mdez
+    mdsux                    = lt_mdsu
+  EXCEPTIONS
+    material_plant_not_found = 1
+    plant_not_found          = 2
+    OTHERS                   = 3.
+IF sy-subrc &lt;&gt; 0.
+  MESSAGE |{ p_matnr } / { p_werks } 讀不到 MRP 清單（rc={ sy-subrc }）| TYPE 'S' DISPLAY LIKE 'E'.
+  RETURN.
+ENDIF.
+
+" MDEZ-DELKZ 是元素類型代碼，DELB0 是畫面縮寫（隨語言變動，只拿來顯示）
+LOOP AT lt_mdez INTO DATA(ls_mdez).
+  WRITE: / ls_mdez-dat00, ls_mdez-delkz, ls_mdez-delb0, ls_mdez-mng01, ls_mdez-plumi.
+ENDLOOP.</code></pre>
+  <div class="tip">要從 ALV 跳 MD04 給生管看：<span class="kw">SET PARAMETER ID 'MAT' FIELD lv_matnr.</span>、<span class="kw">SET PARAMETER ID 'WRK' FIELD lv_werks.</span> 後 <span class="kw">CALL TRANSACTION 'MD04' WITH AUTHORITY-CHECK AND SKIP FIRST SCREEN.</span>。報表只要「看一眼」就用跳轉，不必自己重畫一份 MD04。</div>
+
+  <h3 id="ch09-3-04">4. DELKZ：用代碼而不是縮寫判斷元素</h3>
+  <p>MDPS／MDEZ 的 <b>DELKZ</b>（MRP 元素指示碼，2 碼）是程式判斷元素種類唯一可靠的欄位。<b>完整的 DELKZ ↔ MD04 縮寫 ↔ 底層資料表對照，已整理在 <a href="#ch06-6">6-6 章第 5 節</a></b>，這裡不重複，只列本章常用、可以確認的幾個：</p>
+  <table>
+    <thead><tr><th>DELKZ</th><th>元素（對應 §2）</th><th>收／發</th><th>底層資料表</th></tr></thead>
+    <tbody>
+      <tr><td>WB</td><td>Plant stock</td><td>期初</td><td>MARD（S/4 由 MATDOC 彙總）</td></tr>
+      <tr><td>PA</td><td>Planned order</td><td>收</td><td>PLAF</td></tr>
+      <tr><td>FE</td><td>Production order</td><td>收</td><td>AFKO／AFPO</td></tr>
+      <tr><td>BA</td><td>Purchase requisition</td><td>收</td><td>EBAN</td></tr>
+      <tr><td>BE</td><td>Purchase order item</td><td>收</td><td>EKPO／EKET</td></tr>
+      <tr><td>LA</td><td>Shipping notification</td><td>收</td><td>EKES</td></tr>
+      <tr><td>QM</td><td>Inspection lot</td><td>收</td><td>QALS</td></tr>
+      <tr><td>AR</td><td>Dependent reservation</td><td>發</td><td>RESB</td></tr>
+      <tr><td>SB</td><td>Dependent requirement</td><td>發</td><td>RESB（計劃訂單元件）</td></tr>
+      <tr><td>BB</td><td>Subcontractor requirements</td><td>發</td><td>RESB</td></tr>
+      <tr><td>VC／VJ</td><td>Order／Delivery</td><td>發</td><td>VBBE、LIPS</td></tr>
+      <tr><td>PP</td><td>Planned independent requirement</td><td>發</td><td>PBIM／PBED</td></tr>
+      <tr><td>MR</td><td>Reservation</td><td>發</td><td>RESB</td></tr>
+    </tbody>
+  </table>
+  <p>其餘元素（JIT、排程協議、調撥下達單…）的代碼請在自己系統查 MRP 元素文字表 <span class="kw">T457T</span>（SE11 確認欄位），或直接從 API 回傳的 MDEZX 抓出「代碼 ↔ 縮寫」清單，以系統為準：</p>
+  <pre><code class="abap">" 從 API 結果整理出本料實際出現的 DELKZ ↔ 縮寫（以系統實際值為準，不寫死）
+TYPES: BEGIN OF ty_elem,
+         delkz TYPE mdez-delkz,
+         delb0 TYPE mdez-delb0,
+         cnt   TYPE i,
+       END OF ty_elem.
+DATA lt_elem TYPE SORTED TABLE OF ty_elem WITH UNIQUE KEY delkz.
+
+LOOP AT lt_mdez INTO DATA(ls_e) GROUP BY ( delkz = ls_e-delkz
+                                           delb0 = ls_e-delb0
+                                           size  = GROUP SIZE ) INTO DATA(ls_grp).
+  INSERT VALUE #( delkz = ls_grp-delkz delb0 = ls_grp-delb0 cnt = ls_grp-size ) INTO TABLE lt_elem.
+ENDLOOP.</code></pre>
+  <p>依 DELKZ 分流，計算「供給合計、需求合計、只算已確定供給」這類生管常問的數字：</p>
+  <pre><code class="abap">" 供給：排除 PA（計劃訂單）、BA（請購）這種還沒確定的單據——「已確定供給」
+DATA(lv_firm_supply) = REDUCE mng01( INIT s = CONV mng01( 0 )
+                                     FOR r IN lt_mdez
+                                     WHERE ( plumi = '+' AND delkz &lt;&gt; 'PA' AND delkz &lt;&gt; 'BA' )
+                                     NEXT s = s + r-mng01 ).
+
+" 需求：PLUMI = '-'；MNG01 需求列本身是負數，取絕對值較好閱讀
+DATA(lv_demand) = REDUCE mng01( INIT d = CONV mng01( 0 )
+                                FOR r IN lt_mdez WHERE ( plumi = '-' )
+                                NEXT d = d + abs( r-mng01 ) ).
+
+" 列顯示用的中文分類：用 SWITCH 對 DELKZ，不要對 DELB0
+LOOP AT lt_mdez INTO DATA(ls_row).
+  DATA(lv_kind) = SWITCH string( ls_row-delkz
+                    WHEN 'WB'               THEN `庫存`
+                    WHEN 'PA' OR 'FE'       THEN `生產供給`
+                    WHEN 'BA' OR 'BE' OR 'LA' THEN `採購供給`
+                    WHEN 'AR' OR 'SB' OR 'BB' THEN `元件需求`
+                    WHEN 'VC' OR 'VJ'       THEN `銷售需求`
+                    WHEN 'PP'               THEN `計劃獨立需求`
+                    ELSE                         `其他` ).
+  WRITE: / ls_row-dat00, ls_row-delkz, lv_kind, ls_row-mng01.
+ENDLOOP.</code></pre>
+  <div class="note">PLUMI（收／發指示）與 MNG01 的正負號在 MDEZ 上的實際值，請先用一支料在 MD04 對照 debug 看一次再寫邏輯；6-6 章的案例就是依 PLUMI 拆成「收／發／期初」三欄。</div>
+
+  <h3 id="ch09-3-05">5. 重工：投 A 產 A 的遞迴 BOM 與 ML 價差</h3>
+  <p>講義第 02 節記錄的是一個常見提問：<b>重工工單「投 A 產 A」</b>——領同一個料，廠內重工後產出同一個料號。用遞迴 BOM（元件 = 表頭料）開生產工單時，重工數量一大，CO 的 Material Ledger 會算出金額超大的價格差異；但實務上又確實是同一個料進、同一個料出。講義列出的參考資料是 SAP note <b>2031136</b>，以及 1610 之後適用的 note <b>2998739</b>（note 內容請登入 SAP for Me 查閱，本章不轉述）。</p>
+  <p>重工在 SAP 常見的幾種做法（實際要選哪一種，需要 PP 與 CO 顧問一起決定）：</p>
+  <table>
+    <thead><tr><th>做法</th><th>作法摘要</th><th>對成本的影響</th></tr></thead>
+    <tbody>
+      <tr><td>遞迴 BOM 的生產工單</td><td>BOM 項目元件 = 表頭料，需在 CS02 的 BOM 項目勾選「允許遞迴」指示碼（欄位請以 SE11 查 STPO 確認）</td><td>投入與產出同料號，ML 多階實際成本要迭代計算，量大時容易出現講義描述的大額價差</td></tr>
+      <tr><td>重工工單（rework order）</td><td>從原工單的作業衍生重工工單，只記錄重工作業與額外投料</td><td>重工成本歸到原工單或另行結算，不必把 A 當元件投入</td></tr>
+      <tr><td>在原工單加重工作業</td><td>CO02 在途程中插入重工作業</td><td>重工成本留在原工單，不另產生一次「投 A 產 A」</td></tr>
+      <tr><td>不含料號的工單／結算到成本中心</td><td>只收集重工的人工與額外材料</td><td>庫存價值不變，重工費用當期費用化</td></tr>
+    </tbody>
+  </table>
+  <div class="tip">ABAP 能幫上的忙是「先把重工工單找出來」，讓 CO 月結前先檢查數量與價差來源（CKM3N），而不是等 ML 算完才發現。判斷邏輯很單純：<b>工單的元件預留（RESB）裡出現與表頭產出料（AFPO-MATNR）相同的料號</b>。</div>
+  <pre><code class="abap">" 找出「投 A 產 A」的工單：元件料號 = 產出料號
+SELECT FROM afpo AS p
+       INNER JOIN resb AS r ON r~aufnr = p~aufnr
+                           AND r~matnr = p~matnr
+       INNER JOIN aufk AS k ON k~aufnr = p~aufnr
+  FIELDS p~aufnr, p~posnr, p~matnr, p~pwerk,
+         p~psmng, p~wemng, p~meins,
+         r~rsnum, r~rspos, r~bdmng, r~enmng, k~auart
+  WHERE p~pwerk IN @s_werks
+    AND k~erdat IN @s_erdat
+    AND k~autyp = '10'              " 10 = PP 生產工單
+    AND r~xloek = @abap_false       " 排除已刪除的預留項目
+  ORDER BY p~aufnr, p~posnr, r~rspos
+  INTO TABLE @DATA(lt_rework).
+
+IF lt_rework IS INITIAL.
+  MESSAGE '期間內沒有投入料 = 產出料的工單' TYPE 'S'.
+ENDIF.</code></pre>
+
+  <h3 id="ch09-3-06">6. ZCO03 業務情境、選擇畫面與輸出</h3>
+  <p><b>業務情境：</b>教學系統（GBIKE）上，生管或課堂學員要一張「最近開了哪些生產工單」的清單：誰建的、什麼時候開始／完工、數量多少、屬於哪個計劃工單與 MRP 區域，並依建檔人員分組編項次。原程式只看工單主檔，沒有狀態與收貨數量，所以只能回答「開了什麼單」，回答不了「做到哪裡」。改寫版把這兩個缺口補上。</p>
+  <p><b>選擇畫面：</b>原程式只有一個 <span class="kw">S_ERDAT</span>（AUFK 建檔日期），但 SQL 其實寫死 <span class="kw">GSTRP &gt; '20221201'</span>，S_ERDAT 是撈完才在記憶體過濾。改寫後的選擇畫面如下：</p>
+  <pre><code class="abap">REPORT zco03.
+
+DATA gv_aufnr TYPE aufk-aufnr.     " 只給 SELECT-OPTIONS 參照型別，取代 TABLES
+DATA gv_erdat TYPE aufk-erdat.
+DATA gv_werks TYPE afpo-pwerk.
+DATA gv_auart TYPE aufk-auart.
+DATA gv_ernam TYPE aufk-ernam.
+
+SELECTION-SCREEN BEGIN OF BLOCK b1 WITH FRAME TITLE TEXT-b01.
+  SELECT-OPTIONS: s_werks FOR gv_werks OBLIGATORY,
+                  s_auart FOR gv_auart,          " 工單類型：建議用多筆 EQ 列舉
+                  s_aufnr FOR gv_aufnr,          " 工單號碼：同上，避免 BT
+                  s_erdat FOR gv_erdat,
+                  s_ernam FOR gv_ernam.
+SELECTION-SCREEN END OF BLOCK b1.
+
+SELECTION-SCREEN BEGIN OF BLOCK b2 WITH FRAME TITLE TEXT-b02.
+  PARAMETERS: p_nodel AS CHECKBOX DEFAULT abap_true,   " 排除刪除旗標 DLFL
+              p_noclo AS CHECKBOX DEFAULT abap_false.  " 排除已結 CLSD
+SELECTION-SCREEN END OF BLOCK b2.
+
+INITIALIZATION.
+  " DEFAULT 不能寫運算式，預設「最近 30 天」要在 INITIALIZATION 填
+  s_erdat[] = VALUE #( ( sign = 'I' option = 'BT' low = sy-datum - 30 high = sy-datum ) ).</code></pre>
+  <p><b>輸出欄位</b>（原程式 21 欄＋本章補的 7 欄；中文欄名依講義，括號內是修正）：</p>
+  <table>
+    <thead><tr><th>欄位</th><th>來源</th><th>講義欄名</th><th>說明</th></tr></thead>
+    <tbody>
+      <tr><td>RECN</td><td>計算</td><td>項次</td><td>依建檔人員分組的序號（見 §10）</td></tr>
+      <tr><td>AUFNR</td><td>AFKO</td><td>製令編號</td><td>12 碼，ALPHA 前導零</td></tr>
+      <tr><td>GSTRP／GLTRP</td><td>AFKO</td><td>開始日期／完工日期</td><td>基本開始日／基本完工日</td></tr>
+      <tr><td>FTRMS</td><td>AFKO</td><td>發放日期（應為「計劃下達日」）</td><td>實際下達日是 FTRMI，改寫版一併輸出</td></tr>
+      <tr><td>GAMNG／GMEIN</td><td>AFKO</td><td>工單數量／單位</td><td>表頭總數量</td></tr>
+      <tr><td>PLNBEZ</td><td>AFKO</td><td>成品件號</td><td>表頭料號；多項目工單以 AFPO-MATNR 為準</td></tr>
+      <tr><td>PLNUM、PWERK、DAUAT、BERID</td><td>AFPO</td><td>計畫工單、計畫工廠、製令類別、MRP AREA</td><td>DAUAT 與 AUFK-AUART 相同</td></tr>
+      <tr><td>ERNAM、ERDAT、AUTYP、KOKRS、WAERS、KALSM、KVEWE、SCOPE</td><td>AUFK</td><td>建檔人員、建檔日期、工單群組（應為「訂單類別」）、控制範圍、幣別、COST SHEET、Usage、ObjectClass</td><td>AUTYP 是訂單類別（10 = 生產工單），不是「群組」</td></tr>
+      <tr><td><b>AUART</b>（補）</td><td>AUFK</td><td>—</td><td>工單類型</td></tr>
+      <tr><td><b>POSNR、MATNR</b>（補）</td><td>AFPO</td><td>—</td><td>工單項目與產出料（聯產品時一張工單多列）</td></tr>
+      <tr><td><b>PSMNG、WEMNG、MEINS</b>（補）</td><td>AFPO</td><td>—</td><td>項目計畫數量、已收貨數量、單位</td></tr>
+      <tr><td><b>OPEN_QTY、GR_PCT</b>（補）</td><td>計算</td><td>—</td><td>未收量 = PSMNG − WEMNG；收貨率 %</td></tr>
+      <tr><td><b>STATUS</b>（補）</td><td>JEST／TJ02T</td><td>—</td><td>系統狀態字串，如「REL PCNF」</td></tr>
+    </tbody>
+  </table>
+
+  <h3 id="ch09-3-07">7. 程式架構：舊結構對新結構</h3>
+  <table>
+    <thead><tr><th>步驟</th><th>原程式寫法</th><th>改寫後</th></tr></thead>
+    <tbody>
+      <tr><td>宣告</td><td>TABLES: AFKO, AFPO, AUFK；TYPE-POOLS slis；兩套 fieldcat／event 變數（lt_ 與 it_ 各一份）</td><td>一般 DATA 參照型別；型別集中在 local class</td></tr>
+      <tr><td>權限</td><td>SELECT SINGLE * FROM ZABAP WHERE MANDT = … AND USNAM = sy-uname，查不到就 CHECK 靜默結束</td><td>標準授權物件 AUTHORITY-CHECK（§13），查不到給訊息</td></tr>
+      <tr><td>取數</td><td>AFPO JOIN AFKO（寫死 GSTRP），LOOP 內逐筆 SELECT SINGLE * FROM AUFK，最後才 DELETE … NOT IN S_ERDAT</td><td>AFKO＋AFPO＋AUFK 一次 JOIN，所有條件下推到資料庫，明確 ORDER BY</td></tr>
+      <tr><td>狀態</td><td>沒有</td><td>JEST＋TJ02T 一次讀取，或 STATUS_TEXT_EDIT</td></tr>
+      <tr><td>項次</td><td>SORT BY ERNAM 後 LOOP＋MODIFY 計數</td><td>GROUP BY 迴圈或欄位引用直接寫入</td></tr>
+      <tr><td>輸出</td><td>手寫 21 段 fieldcat＋REUSE_ALV_GRID_DISPLAY＋REUSE_ALV_COMMENTARY_WRITE＋FORM 事件</td><td>CL_SALV_TABLE：欄名取自資料字典，只覆寫中文欄名；表頭用 CL_SALV_FORM_LAYOUT_GRID；雙擊用事件處理方法</td></tr>
+    </tbody>
+  </table>
+  <pre><code class="abap">CLASS lcl_report DEFINITION FINAL.
+  PUBLIC SECTION.
+    TYPES: BEGIN OF ty_out,
+             recn     TYPE i,
+             aufnr    TYPE afko-aufnr,
+             posnr    TYPE afpo-posnr,
+             auart    TYPE aufk-auart,
+             status   TYPE char40,
+             matnr    TYPE afpo-matnr,
+             gstrp    TYPE afko-gstrp,
+             gltrp    TYPE afko-gltrp,
+             ftrms    TYPE afko-ftrms,
+             ftrmi    TYPE afko-ftrmi,
+             gamng    TYPE afko-gamng,
+             gmein    TYPE afko-gmein,
+             psmng    TYPE afpo-psmng,
+             wemng    TYPE afpo-wemng,
+             open_qty TYPE afpo-psmng,
+             meins    TYPE afpo-meins,
+             gr_pct   TYPE p LENGTH 5 DECIMALS 1,
+             plnbez   TYPE afko-plnbez,
+             plnum    TYPE afpo-plnum,
+             pwerk    TYPE afpo-pwerk,
+             dauat    TYPE afpo-dauat,
+             berid    TYPE afpo-berid,
+             ernam    TYPE aufk-ernam,
+             erdat    TYPE aufk-erdat,
+             autyp    TYPE aufk-autyp,
+             kokrs    TYPE aufk-kokrs,
+             waers    TYPE aufk-waers,
+             kalsm    TYPE aufk-kalsm,
+             kvewe    TYPE aufk-kvewe,
+             scope    TYPE aufk-scope,
+             objnr    TYPE aufk-objnr,
+           END OF ty_out,
+           tt_out TYPE STANDARD TABLE OF ty_out WITH EMPTY KEY.
+
+    METHODS run.
+  PRIVATE SECTION.
+    DATA mt_out TYPE tt_out.
+    DATA mo_alv TYPE REF TO cl_salv_table.
+    METHODS check_authority RETURNING VALUE(rv_ok) TYPE abap_bool.
+    METHODS select_orders.
+    METHODS read_status.
+    METHODS number_by_creator.
+    METHODS display.
+    METHODS on_double_click FOR EVENT double_click OF cl_salv_events_table
+      IMPORTING row column.
+ENDCLASS.
+
+START-OF-SELECTION.
+  NEW lcl_report( )-&gt;run( ).</code></pre>
+
+  <h3 id="ch09-3-08">8. 關鍵段落（一）：一次 JOIN 取代迴圈內 SELECT SINGLE</h3>
+  <p>原程式先 JOIN AFPO／AFKO，再對每一筆工單 <span class="kw">SELECT SINGLE * FROM AUFK</span>（N 筆工單就 N＋1 次資料庫往返），而且 WHERE 寫死日期、真正的選擇條件 S_ERDAT 在撈完之後才用 DELETE 過濾。改寫後全部條件下推：</p>
+  <pre><code class="abap">METHOD select_orders.
+  " 要排除的系統狀態（勾選框決定）；空的 RANGE 在 IN 條件等於「全部成立」，所以放一個不存在的值
+  DATA lr_excl TYPE RANGE OF jest-stat.
+  IF p_nodel = abap_true.
+    APPEND VALUE #( sign = 'I' option = 'EQ' low = 'I0076' ) TO lr_excl.   " DLFL 刪除旗標
+  ENDIF.
+  IF p_noclo = abap_true.
+    APPEND VALUE #( sign = 'I' option = 'EQ' low = 'I0046' ) TO lr_excl.   " CLSD 已結
+  ENDIF.
+  IF lr_excl IS INITIAL.
+    APPEND VALUE #( sign = 'I' option = 'EQ' low = '#NONE' ) TO lr_excl.
+  ENDIF.
+
+  SELECT FROM afko AS h
+         INNER JOIN afpo AS p ON p~aufnr = h~aufnr
+         INNER JOIN aufk AS k ON k~aufnr = h~aufnr
+    FIELDS h~aufnr, p~posnr, k~auart, p~matnr,
+           h~gstrp, h~gltrp, h~ftrms, h~ftrmi, h~gamng, h~gmein,
+           p~psmng, p~wemng, p~meins,
+           h~plnbez, p~plnum, p~pwerk, p~dauat, p~berid,
+           k~ernam, k~erdat, k~autyp, k~kokrs, k~waers,
+           k~kalsm, k~kvewe, k~scope, k~objnr
+    WHERE p~pwerk IN @s_werks
+      AND k~auart IN @s_auart
+      AND h~aufnr IN @s_aufnr
+      AND k~erdat IN @s_erdat
+      AND k~ernam IN @s_ernam
+      AND k~autyp = '10'                                   " 只要 PP 生產工單
+      AND NOT EXISTS ( SELECT objnr FROM jest
+                         WHERE objnr = k~objnr
+                           AND stat  IN @lr_excl
+                           AND inact = @space )            " 只看目前有效的狀態
+    ORDER BY k~ernam, h~aufnr, p~posnr                     " HANA 沒有預設排序
+    INTO CORRESPONDING FIELDS OF TABLE @mt_out.
+
+  " 計算欄位：未收量與收貨率
+  LOOP AT mt_out ASSIGNING FIELD-SYMBOL(&lt;o&gt;).
+    &lt;o&gt;-open_qty = COND #( WHEN &lt;o&gt;-psmng &gt; &lt;o&gt;-wemng THEN &lt;o&gt;-psmng - &lt;o&gt;-wemng ELSE 0 ).
+    &lt;o&gt;-gr_pct   = COND #( WHEN &lt;o&gt;-psmng &gt; 0 THEN &lt;o&gt;-wemng / &lt;o&gt;-psmng * 100 ELSE 0 ).
+  ENDLOOP.
+ENDMETHOD.</code></pre>
+  <div class="note">原程式沒有 AUTYP 條件。AUFK 同時存放內部訂單（01）、生產工單（10）、維修工單（30）、流程訂單（40）等，雖然 JOIN AFKO／AFPO 已經隱含只剩生產類訂單，但流程訂單（PP-PI）也有 AFKO／AFPO，GBIKE 以外的正式系統若有 PP-PI 就會混進來，所以明寫 <span class="kw">autyp = '10'</span>。</div>
+
+  <h3 id="ch09-3-09">9. 關鍵段落（二）：工單狀態 JEST／TJ02T</h3>
+  <p>工單的狀態不在 AUFK／AFKO 的欄位裡，而是以物件號碼 <b>OBJNR</b>（生產工單是「OR」＋工單號碼）掛在狀態表 <b>JEST</b>：一個物件同時有多個狀態列，每列一個狀態碼 STAT。系統狀態 I 開頭，文字在 <b>TJ02T</b>（ISTAT、SPRAS、TXT04、TXT30）；使用者狀態 E 開頭，文字在 <b>TJ30T</b>（還要看狀態參數檔 STSMA）。</p>
+  <table>
+    <thead><tr><th>STAT</th><th>TXT04（英文登入）</th><th>意義</th></tr></thead>
+    <tbody>
+      <tr><td>I0001</td><td>CRTD</td><td>已建立</td></tr>
+      <tr><td>I0002</td><td>REL</td><td>已下達</td></tr>
+      <tr><td>I0010</td><td>PCNF</td><td>部分確認</td></tr>
+      <tr><td>I0009</td><td>CNF</td><td>已確認</td></tr>
+      <tr><td>I0012</td><td>DLV</td><td>已交貨（收貨完成）</td></tr>
+      <tr><td>I0045</td><td>TECO</td><td>技術完成</td></tr>
+      <tr><td>I0046</td><td>CLSD</td><td>已結</td></tr>
+      <tr><td>I0076</td><td>DLFL</td><td>刪除旗標</td></tr>
+    </tbody>
+  </table>
+  <div class="warn"><b>判斷狀態一定要加 <span class="kw">INACT = space</span>。</b>JEST 會保留曾經有效、後來被取消的狀態列（INACT = 'X'）——例如 TECO 後又「取消技術完成」，I0045 那一列還在，只是 INACT = 'X'。只寫 <span class="kw">stat = 'I0045'</span> 會把已取消 TECO 的工單誤判成已完成。另外，邏輯判斷用 STAT 代碼，不要用 TXT04：中文登入時 TXT04 會是翻譯過的文字。上表的代碼建議在自己系統用 TJ02T 再確認一次。</div>
+  <p>批次做法：一次讀出所有工單的有效系統狀態，依 OBJNR 串成字串（大量資料時比逐筆呼叫函數快很多）：</p>
+  <pre><code class="abap">METHOD read_status.
+  CHECK mt_out IS NOT INITIAL.
+
+  TYPES tt_objnr TYPE SORTED TABLE OF j_objnr WITH UNIQUE KEY table_line.
+  DATA(lt_objnr) = VALUE tt_objnr( FOR GROUPS g OF o IN mt_out GROUP BY o-objnr ( g ) ).
+
+  SELECT FROM jest AS s
+         INNER JOIN tj02t AS t ON t~istat = s~stat
+                              AND t~spras = @sy-langu
+    FIELDS s~objnr, s~stat, t~txt04
+    FOR ALL ENTRIES IN @lt_objnr
+    WHERE s~objnr = @lt_objnr-table_line
+      AND s~inact = @space                 " 只要目前有效的狀態
+      AND s~stat LIKE 'I%'                 " 系統狀態；使用者狀態 E* 的文字在 TJ30T
+    INTO TABLE @DATA(lt_stat).
+
+  SORT lt_stat BY objnr stat.              " FOR ALL ENTRIES 不保證順序，排好才穩定
+
+  LOOP AT mt_out ASSIGNING FIELD-SYMBOL(&lt;o&gt;).
+    &lt;o&gt;-status = REDUCE char40( INIT s = ``
+                               FOR st IN lt_stat WHERE ( objnr = &lt;o&gt;-objnr )
+                               NEXT s = condense( |{ s } { st-txt04 }| ) ).
+  ENDLOOP.
+ENDMETHOD.</code></pre>
+  <p>單筆或需要「與 CO03 畫面一模一樣的狀態字串（含使用者狀態）」時，用標準函數 <span class="kw">STATUS_TEXT_EDIT</span>：</p>
+  <pre><code class="abap">DATA lv_sys_line  TYPE bsvx-sttxt.   " 型別請以 SE37 介面確認
+DATA lv_user_line TYPE bsvx-sttxt.
+
+CALL FUNCTION 'STATUS_TEXT_EDIT'
+  EXPORTING
+    objnr            = ls_out-objnr
+    spras            = sy-langu
+    flg_user_stat    = abap_true      " 同時回傳使用者狀態
+    only_active      = abap_true      " 只顯示有效狀態（等同 INACT = space）
+  IMPORTING
+    line             = lv_sys_line    " 例：REL  PCNF PRC  MACM SETC
+    user_line        = lv_user_line
+  EXCEPTIONS
+    object_not_found = 1
+    OTHERS           = 2.
+IF sy-subrc &lt;&gt; 0.
+  CLEAR lv_sys_line.
+ENDIF.
+
+" 要判斷「是否已下達」時，查代碼而不是解析字串
+SELECT SINGLE FROM jest
+  FIELDS stat
+  WHERE objnr = @ls_out-objnr
+    AND stat  = 'I0002'
+    AND inact = @space
+  INTO @DATA(lv_rel_stat).
+DATA(lv_released) = xsdbool( sy-subrc = 0 ).</code></pre>
+  <div class="tip">STATUS_TEXT_EDIT 每呼叫一次就讀一次狀態，工單數量上千時會明顯變慢；清單報表用上一段的批次 JOIN，雙擊明細或列印單張時才用函數。另一種寫法是標準函數 <span class="kw">STATUS_READ</span> 讀單一物件的狀態表，介面請以 SE37 確認。</div>
+
+  <h3 id="ch09-3-10">10. 關鍵段落（三）：項次與 CL_SALV_TABLE 輸出</h3>
+  <p>原程式的「項次」其實不是列號，而是<b>建檔人員的組別序號</b>：SORT BY ERNAM 後，每換一位建檔人員 LV_RECN 加 1，同一人所有工單項次相同。改寫保留這個語意，用 GROUP BY 迴圈表達：</p>
+  <pre><code class="abap">METHOD number_by_creator.
+  " mt_out 已在 SELECT 以 ernam, aufnr, posnr 排序
+  DATA lv_recn TYPE i.
+  LOOP AT mt_out INTO DATA(ls_o) GROUP BY ls_o-ernam INTO DATA(lv_ernam).
+    lv_recn = lv_recn + 1.                       " 1809 不用 +=（7.54 起才支援）
+    LOOP AT GROUP lv_ernam ASSIGNING FIELD-SYMBOL(&lt;m&gt;).
+      &lt;m&gt;-recn = lv_recn.
+    ENDLOOP.
+  ENDLOOP.
+ENDMETHOD.</code></pre>
+  <p>原程式手寫 21 段 fieldcat，而且欄位型別多半寫成 CHAR（日期、數量都失去格式與加總能力）。CL_SALV_TABLE 直接從資料字典取欄位資訊，只需要覆寫中文欄名、隱藏技術欄位、設定排序與表頭：</p>
+  <pre><code class="abap">METHOD display.
+  TRY.
+      cl_salv_table=&gt;factory( IMPORTING r_salv_table = mo_alv
+                              CHANGING  t_table      = mt_out ).
+    CATCH cx_salv_msg INTO DATA(lx_msg).
+      MESSAGE lx_msg TYPE 'E'.
+  ENDTRY.
+
+  mo_alv-&gt;get_functions( )-&gt;set_all( abap_true ).
+  mo_alv-&gt;get_display_settings( )-&gt;set_striped_pattern( abap_true ).   " 原 ZEBRA
+  DATA(lo_cols) = mo_alv-&gt;get_columns( ).
+  lo_cols-&gt;set_optimize( abap_true ).                                  " 原 COLWIDTH_OPTIMIZE
+
+  " 中文欄名（講義用語，括號內為修正）
+  TYPES: BEGIN OF ty_txt, col TYPE lvc_fname, txt TYPE scrtext_m, END OF ty_txt.
+  DATA(lt_txt) = VALUE STANDARD TABLE OF ty_txt WITH EMPTY KEY(
+    ( col = 'RECN'     txt = '項次' )        ( col = 'AUFNR'  txt = '製令編號' )
+    ( col = 'AUART'    txt = '工單類型' )    ( col = 'STATUS' txt = '系統狀態' )
+    ( col = 'GSTRP'    txt = '開始日期' )    ( col = 'GLTRP'  txt = '完工日期' )
+    ( col = 'FTRMS'    txt = '計劃下達日' )  ( col = 'FTRMI'  txt = '實際下達日' )
+    ( col = 'GAMNG'    txt = '工單數量' )    ( col = 'PSMNG'  txt = '計畫數量' )
+    ( col = 'WEMNG'    txt = '已收貨量' )    ( col = 'OPEN_QTY' txt = '未收量' )
+    ( col = 'GR_PCT'   txt = '收貨率%' )     ( col = 'PLNBEZ' txt = '成品件號' )
+    ( col = 'PLNUM'    txt = '計畫工單' )    ( col = 'BERID'  txt = 'MRP AREA' )
+    ( col = 'ERNAM'    txt = '建檔人員' )    ( col = 'AUTYP'  txt = '訂單類別' ) ).
+  LOOP AT lt_txt INTO DATA(ls_txt).
+    TRY.
+        DATA(lo_col) = lo_cols-&gt;get_column( ls_txt-col ).
+        lo_col-&gt;set_medium_text( ls_txt-txt ).
+        lo_col-&gt;set_short_text( CONV scrtext_s( ls_txt-txt ) ).
+        lo_col-&gt;set_long_text( CONV scrtext_l( ls_txt-txt ) ).
+      CATCH cx_salv_not_found.
+    ENDTRY.
+  ENDLOOP.
+
+  TRY.
+      lo_cols-&gt;get_column( 'OBJNR' )-&gt;set_technical( abap_true ).     " 技術欄位不顯示
+      lo_cols-&gt;set_key_fixation( abap_true ).
+      CAST cl_salv_column_table( lo_cols-&gt;get_column( 'AUFNR' ) )-&gt;set_key( abap_true ).
+      mo_alv-&gt;get_sorts( )-&gt;add_sort( columnname = 'ERNAM' ).          " 原 IT_SORT
+      mo_alv-&gt;get_sorts( )-&gt;add_sort( columnname = 'AUFNR' ).
+      mo_alv-&gt;get_aggregations( )-&gt;add_aggregation( columnname = 'OPEN_QTY' ).
+    CATCH cx_salv_not_found cx_salv_existing cx_salv_data_error.
+  ENDTRY.
+
+  " 表頭：取代 REUSE_ALV_COMMENTARY_WRITE
+  DATA(lo_head) = NEW cl_salv_form_layout_grid( ).
+  lo_head-&gt;create_header_information( row = 1 column = 1 text = 'PP 生產模組：生產工單清單' ).
+  lo_head-&gt;create_label( row = 2 column = 1 text = '筆數' ).
+  lo_head-&gt;create_text(  row = 2 column = 2 text = |{ lines( mt_out ) }| ).
+  lo_head-&gt;create_label( row = 3 column = 1 text = '執行時間' ).
+  lo_head-&gt;create_text(  row = 3 column = 2 text = |{ sy-datum DATE = USER } { sy-uzeit TIME = USER }| ).
+  mo_alv-&gt;set_top_of_list( lo_head ).
+
+  DATA(lo_events) = mo_alv-&gt;get_event( ).
+  SET HANDLER on_double_click FOR lo_events.
+  mo_alv-&gt;display( ).
+ENDMETHOD.
+
+METHOD on_double_click.
+  " 雙擊工單號碼跳 CO03；雙擊料號跳 MD04
+  READ TABLE mt_out INDEX row INTO DATA(ls_row).
+  CHECK sy-subrc = 0.
+  CASE column.
+    WHEN 'AUFNR'.
+      SET PARAMETER ID 'ANR' FIELD ls_row-aufnr.
+      CALL TRANSACTION 'CO03' WITH AUTHORITY-CHECK AND SKIP FIRST SCREEN.
+    WHEN 'MATNR' OR 'PLNBEZ'.
+      SET PARAMETER ID 'MAT' FIELD ls_row-matnr.
+      SET PARAMETER ID 'WRK' FIELD ls_row-pwerk.
+      CALL TRANSACTION 'MD04' WITH AUTHORITY-CHECK AND SKIP FIRST SCREEN.
+  ENDCASE.
+ENDMETHOD.</code></pre>
+  <div class="note">原程式的「雙擊彈出明細」（LAYOUT-DETAIL_POPUP、F2CODE = '&amp;ETA'）在 CL_SALV_TABLE 的標準工具列已有「明細」按鈕，不必另外設定；原程式 USER_COMMAND 只處理 'EXIT'（LEAVE PROGRAM），而標準工具列本來就有返回鍵，也不需要自訂 PF-STATUS。CALL TRANSACTION … WITH AUTHORITY-CHECK 在 7.40 SP02 以上可用，1809 沒有問題。</div>
+
+  <h3 id="ch09-3-11">11. S/4HANA：released CDS view I_ManufacturingOrder</h3>
+  <p>S/4HANA 提供 released（C1 可用於客製開發）的 CDS view <b>I_ManufacturingOrder</b>，以 ManufacturingOrder 為鍵，封裝了 AFKO／AFPO／AUFK 的欄位與關聯，是 ABAP Cloud／RAP 或 Fiori 報表的建議資料來源；傳統 SE38 報表直接讀 AFKO／AFPO／AUFK 仍然可以。</p>
+  <pre><code class="abap">" 只示範確定的欄位；其餘欄位名稱請在 ADT 開 I_ManufacturingOrder 查（F2 / Element Info），
+" 並確認你的版本上它的 API State 為 Released（1809 的 release 狀態請以系統為準）
+SELECT FROM i_manufacturingorder
+  FIELDS manufacturingorder,
+         manufacturingordertype
+  WHERE manufacturingordertype IN @s_auart
+    AND manufacturingorder     IN @s_aufnr
+  ORDER BY manufacturingorder
+  INTO TABLE @DATA(lt_mfg)
+  UP TO 500 ROWS.</code></pre>
+  <div class="warn">CDS view 的欄位用駝峰式長名稱（ManufacturingOrderType 對應 AUFK-AUART），不同版本會陸續加欄位，<b>本章不列出沒有把握的欄位名稱</b>；動手前先在 ADT 用 Open ABAP Development Object 打開 view 看定義與關聯，並在 API State 確認是否 released。CDS view 同樣沒有預設排序，一樣要寫 ORDER BY。工單狀態在 CDS 世界也有對應的狀態 view，請以 ADT 搜尋 I_ManufacturingOrder* 相關 view 確認名稱後再用。</div>
+
+  <h3 id="ch09-3-12">12. 原程式問題清單</h3>
+  <table>
+    <thead><tr><th>#</th><th>原程式寫法</th><th>問題</th><th>改寫</th></tr></thead>
+    <tbody>
+      <tr><td>1</td><td>TABLES: AFKO, AFPO, AUFK；TYPE-POOLS slis</td><td>S/4 禁用寫法；TABLES 只為了給 SELECT-OPTIONS 參照</td><td>DATA 變數參照型別（§6）</td></tr>
+      <tr><td>2</td><td>WHERE a~GSTRP &gt; '20221201'，S_ERDAT 被註解掉</td><td>寫死日期；使用者輸入的條件沒下推到資料庫</td><td>所有條件放進 WHERE（§8）</td></tr>
+      <tr><td>3</td><td>LOOP 內 SELECT SINGLE * FROM AUFK，再 MODIFY</td><td>N＋1 次資料庫往返；SELECT *</td><td>三表 JOIN、明列欄位</td></tr>
+      <tr><td>4</td><td>撈完才 DELETE LT_OUTTAB WHERE ERDAT NOT IN S_ERDAT</td><td>多撈大量無用資料再丟掉</td><td>k~erdat IN @s_erdat</td></tr>
+      <tr><td>5</td><td>SELECT … FROM ZABAP WHERE MANDT = LV_MANDT</td><td>ABAP SQL 自動處理用戶端，手寫 MANDT 多餘；主機變數沒有 @</td><td>拿掉 MANDT、改用授權物件</td></tr>
+      <tr><td>6</td><td>CHECK WA_ZABAP-USNAM IS NOT INITIAL</td><td>沒權限時選擇畫面照常出現，按執行後一片空白，使用者以為沒資料</td><td>明確 MESSAGE 告知</td></tr>
+      <tr><td>7</td><td>i_callback_pf_status_set = 'STATUS_SET'、i_callback_user_command = 'USER_COMMAND'、i_callback_top_of_page = 'TOP_OF_PAGE '（尾端空白）</td><td>程式裡實際的 FORM 叫 FORM_PF_STATUS_SET／FORM_USER_COMMAND／FORM_TOP_OF_PAGE，callback 名稱全部對不上，只是剛好又透過 IT_EVENTS 傳了一次才有作用</td><td>事件處理方法＋SET HANDLER</td></tr>
+      <tr><td>8</td><td>lt_event 與 it_event、lt_fieldcat 與 it_fieldcat 各宣告一套，PERFORM SET_COMMAND 填的 it_event 從未使用</td><td>死碼，容易改錯邊</td><td>刪除</td></tr>
+      <tr><td>9</td><td>第二個欄位 ERNAM 沒有 lv_colpos + 1</td><td>RECN 與 ERNAM 的 COL_POS 相同，欄位順序不可預期</td><td>SALV 依結構順序</td></tr>
+      <tr><td>10</td><td>GSTRP、GLTRP、FTRMS 的 datatype 寫成 'CHAR'；KALSM outputlen 5（實際 6 碼）</td><td>日期不依使用者格式顯示、不能用日期篩選；欄位被截斷</td><td>型別取自資料字典</td></tr>
+      <tr><td>11</td><td>FTRMS 標為「發放日期」、AUTYP 標為「工單群組」</td><td>FTRMS 是計劃下達日（實際是 FTRMI）；AUTYP 是訂單類別</td><td>修正欄名並補 FTRMI</td></tr>
+      <tr><td>12</td><td>SET PF-STATUS 'STANDARD'</td><td>程式裡沒有複製 STANDARD 狀態時工具列會空白</td><td>SALV 標準工具列</td></tr>
+      <tr><td>13</td><td>表頭資訊寫「CO01」、I_LOGO = 'ZNCU'. 後面多一個句點</td><td>CO01 是建立工單交易；多餘句點是空敘述，無害但表示沒整理</td><td>CL_SALV_FORM_LAYOUT_GRID</td></tr>
+      <tr><td>14</td><td>SORT BY ERNAM 後依序編項次</td><td>同一人內工單順序不固定（沒排 AUFNR），每次執行順序可能不同</td><td>ORDER BY ernam, aufnr, posnr</td></tr>
+      <tr><td>15</td><td>沒有排除刪除／已結工單，也沒有狀態欄</td><td>清單混入 DLFL 工單，看不出進度</td><td>JEST 條件與狀態欄（§9）</td></tr>
+      <tr><td>16</td><td>USER_COMMAND 內大段註解掉的 ME23N／ZMMB0021 程式</td><td>從別支採購程式複製來的殘留</td><td>刪除</td></tr>
+    </tbody>
+  </table>
+
+  <h3 id="ch09-3-13">13. 上線注意：權限、ALPHA 與列舉條件</h3>
+  <p><b>權限：</b>原程式用自建表 ZABAP（使用者名單）決定誰能執行，這在教學系統限定學員很方便，但正式系統應改用標準授權物件，並在 SE93 建交易碼時掛上 S_TCODE。生產工單常用的授權物件是 <span class="kw">C_AFKO_AWK</span>（工廠＋工單類型），欄位請以 <span class="tcode">SU21</span> 確認：</p>
+  <pre><code class="abap">METHOD check_authority.
+  rv_ok = abap_true.
+  SELECT FROM t001w FIELDS werks WHERE werks IN @s_werks INTO TABLE @DATA(lt_werks).
+  LOOP AT lt_werks INTO DATA(ls_w).
+    AUTHORITY-CHECK OBJECT 'C_AFKO_AWK'          " 欄位名稱請以 SU21 確認
+      ID 'WERKS'  FIELD ls_w-werks
+      ID 'AUFART' DUMMY.
+    IF sy-subrc &lt;&gt; 0.
+      MESSAGE |沒有工廠 { ls_w-werks } 的生產工單顯示權限| TYPE 'S' DISPLAY LIKE 'E'.
+      rv_ok = abap_false.
+      RETURN.
+    ENDIF.
+  ENDLOOP.
+ENDMETHOD.
+
+METHOD run.
+  CHECK check_authority( ).
+  select_orders( ).
+  IF mt_out IS INITIAL.
+    MESSAGE '沒有符合條件的生產工單' TYPE 'S'.
+    RETURN.
+  ENDIF.
+  read_status( ).
+  number_by_creator( ).
+  display( ).
+ENDMETHOD.</code></pre>
+  <p><b>工單號碼的 ALPHA 前導零與列舉條件：</b>AUFNR 是 12 碼 CHAR，資料庫存的是「000001000123」。選擇畫面的 SELECT-OPTIONS 會自動做轉換，但程式自己組條件（例如從 Excel 上傳的工單清單、介面傳進來的號碼）時必須自己補零：</p>
+  <pre><code class="abap">" 從外部清單組工單條件：一律多筆 EQ 列舉，並做 ALPHA 轉換
+DATA lt_input TYPE STANDARD TABLE OF string WITH EMPTY KEY.   " 例：上傳的 1000123、1000456
+DATA lr_aufnr TYPE RANGE OF aufk-aufnr.
+
+lr_aufnr = VALUE #( FOR lv_in IN lt_input
+                    ( sign = 'I' option = 'EQ'
+                      low  = |{ CONV aufnr( condense( lv_in ) ) ALPHA = IN }| ) ).
+SORT lr_aufnr BY low.
+DELETE ADJACENT DUPLICATES FROM lr_aufnr COMPARING low.
+
+SELECT FROM aufk
+  FIELDS aufnr, auart, objnr
+  WHERE aufnr IN @lr_aufnr
+  ORDER BY aufnr
+  INTO TABLE @DATA(lt_orders).</code></pre>
+  <div class="warn"><b>工單號碼用列舉（多筆 EQ）比用區間（BT）安全。</b>AUFK 的號碼範圍是依訂單類型分配的，內部訂單、維修工單、生產工單可能交錯在同一段數字附近；區間比的是字典序而不是業務語意，一個 BT 就可能把別種訂單、或號碼範圍改過之後的新舊號碼一起帶進來，沒補零的值更會整段比錯。工單類型（AUART）也一樣，列出要的 ZP01、ZP02… 比寫 Z* 或 BT 安全。</div>
+  <div class="warn"><b>HANA 沒有預設排序。</b>原程式只 SORT BY ERNAM，同一建檔人員底下的工單順序每次執行都可能不同；任何「取第一張工單」「取最早開始日」的邏輯都要先明確 ORDER BY 或 SORT 到唯一鍵（ernam、aufnr、posnr）。FOR ALL ENTRIES 的結果也不保證順序，讀完狀態後要自己 SORT（§9 已示範）。</div>
+  <div class="tip">上線前檢核：① 用 COOIS 以相同條件跑一次，筆數與數量（PSMNG、WEMNG）要對得起來；② 找一張曾經 TECO 又取消 TECO 的工單，確認狀態欄沒有顯示 TECO；③ 找一張有聯產品（多個 AFPO 項目）的工單，確認每個項目各一列；④ 用 ST05 確認只有一次主 SELECT＋一次狀態 SELECT；⑤ 用沒有該工廠權限的帳號測試訊息。先找標準：如果使用者只是要「工單清單＋狀態」，COOIS 加版面變式就能滿足，客製報表要有標準做不到的理由（例如依建檔人員分組、收貨率、跳 MD04）。</div>
+
+  <h3 id="ch09-3-qa">練習與自我檢核</h3>
+  <ol>
+    <li>MD04 上顯示「PldOrd」的一列，程式要怎麼判斷它是計劃訂單還是模擬訂單？為什麼不能拿縮寫判斷？</li>
+    <li>寫一段程式：呼叫 MD_STOCK_REQUIREMENTS_LIST_API，只統計 DELKZ 為 BE 與 LA 的收貨數量合計。</li>
+    <li>S/4HANA 跑 MRP Live 後，為什麼從 MDKP／MDTB 讀 MRP 結果可能不可靠？應該改讀什麼？PPH_DBVM 記錄的是什麼？</li>
+    <li>「投 A 產 A」的重工工單在 ML 會造成什麼問題？請寫出一個 SELECT，列出期間內元件料號等於產出料號的工單。</li>
+    <li>原程式 ZCO03 的「項次」代表什麼？若要改成單純的列號，要改哪一個方法？</li>
+    <li>某工單先 TECO、後來取消 TECO，JEST 裡會有幾列 I0045？只寫 <span class="kw">stat = 'I0045'</span> 會發生什麼事？</li>
+    <li>為什麼 ZCO03 原程式的 i_callback_user_command = 'USER_COMMAND' 沒有造成錯誤？雙擊事件實際是從哪條路徑觸發的？</li>
+    <li>FTRMS 與 FTRMI 差在哪裡？報表要給主管看「實際下達日」時該用哪一個？</li>
+    <li>使用者上傳 200 個不含前導零的工單號碼，請寫出組 RANGE 並查 AUFK 的程式，並說明為什麼不把最小值到最大值組成一個 BT。</li>
+    <li>在 ADT 打開 I_ManufacturingOrder，找出對應 AFPO-PSMNG 與 AFPO-WEMNG 的欄位名稱，並確認它在你的系統是否為 Released。</li>
+  </ol>
+</section>

@@ -1,0 +1,857 @@
+<section class="chapter" id="ch09-1" data-title="主機管理與開發導論">
+  <h2>第 9-1 章 主機管理與開發導論：TCODE、權限與內部稽核</h2>
+  <p class="lede">第九部從 BASIS 的角度起頭：開發人員進系統前要先懂主機怎麼管、權限怎麼開、稽核人員會查什麼。本章整理 Casper「ABAP for S/4HANA」課程的導論講義（主機維運）、開發人員權限設定，以及一份 SAP 審計概要。已經在第 1-1、1-2 章寫過的基礎只做索引並附連結，這裡補的是講義獨有的內容：課程議題地圖、期末作業要讀懂的 ACDOCA 報表、熱鍵表、課程用 Z 表結構、開發權限與 SU21 自訂權限物件，以及內部稽核的 TCODE 清單與 ABAP 稽核報表。</p>
+  <div class="meta">
+    <div><b>核心 TCODE</b><span class="tcode">SE11</span><span class="tcode">SE38</span><span class="tcode">SPRO</span><span class="tcode">SE16N</span><span class="tcode">SE16</span><span class="tcode">VA03</span><span class="tcode">SE21</span><span class="tcode">SE09</span><span class="tcode">SE80</span><span class="tcode">SA38</span><span class="tcode">SE93</span><span class="tcode">SU1</span><span class="tcode">SU53</span><span class="tcode">ST05</span><span class="tcode">STMS</span><span class="tcode">PFCG</span><span class="tcode">SU01</span><span class="tcode">SU21</span><span class="tcode">SU24</span><span class="tcode">SUIM</span><span class="tcode">OBR3</span><span class="tcode">SCC4</span><span class="tcode">SE06</span><span class="tcode">SM19</span><span class="tcode">SM20</span><span class="tcode">RSAU_CONFIG</span><span class="tcode">RSAU_READ_LOG</span><span class="tcode">SM21</span><span class="tcode">ST22</span><span class="tcode">ST01</span><span class="tcode">STAUTHTRACE</span><span class="tcode">STAD</span><span class="tcode">SCU3</span><span class="tcode">OY18</span><span class="tcode">ST02</span><span class="tcode">ST04</span><span class="tcode">RZ10</span></div>
+    <div><b>關鍵物件</b>VBAP、BKPF、BSEG、ACDOCA、T002、LIPS、USR02、USR21、ADRP、UST04、AGR_USERS、AGR_1251、AGR_DEFINE、E070、E07T、T001-XPROD、S_DEVELOP、S_TCODE、S_TABU_DIS、S_TABU_NAM、F_BKPF_BUK、CL_SALV_TABLE、CX_SY_AUTHORIZATION_ERROR</div>
+  </div>
+
+  <h3 id="ch09-1-01">1. 素材對照</h3>
+  <p>三份素材都在 <span class="kw">09_ABAP二次開發_report_painter\09_0*\</span>（BASIS 類，檔名前綴 <span class="kw">0__</span>）。講義中的程式以 <span class="kw">TABLES</span>、<span class="kw">SELECT … ENDSELECT</span>、<span class="kw">OCCURS 0</span>、<span class="kw">LIKE</span>、<span class="kw">FORM</span>、<span class="kw">REUSE_ALV_GRID_DISPLAY_LVC</span> 寫成，本章全部改寫為 S/4HANA 1809+ 寫法；舊寫法只在對照表以文字說明。</p>
+  <table>
+    <thead><tr><th>原始檔</th><th>內容</th><th>本章小節</th><th>已在他章詳述</th></tr></thead>
+    <tbody>
+      <tr><td>0__ABAP_00_1_主機維運（第 01～02 節）</td><td>認識六個 TCODE、寫程式四步驟、程式狀態</td><td>3</td><td><a href="#ch01-1">第 1-1 章</a> §1、§3</td></tr>
+      <tr><td>0__ABAP_00_1_主機維運（第 03 節）</td><td>Z2202_00_01～05：SQL 與內表的五次進化</td><td>4</td><td><a href="#ch01-1">第 1-1 章</a> §5～§8</td></tr>
+      <tr><td>0__ABAP_00_1_主機維運（第 04 節）</td><td>傳票案例 BKPF／BSEG、主子檔關聯</td><td>5</td><td><a href="#ch01-1">第 1-1 章</a> §9、<a href="#ch06-12">第 6-12 章</a></td></tr>
+      <tr><td>0__ABAP_00_1_主機維運（第 05 節）</td><td>ABAP 議題（20 週）、ACDOCA 重要欄位</td><td>2、5</td><td><a href="#ch06-12">第 6-12 章</a> §3</td></tr>
+      <tr><td>0__ABAP_00_1_主機維運（第 06 節）</td><td>期末作業：看懂 ZFIR083、SU1、ST05、ABAPDOCU</td><td>6、7</td><td>—</td></tr>
+      <tr><td>0__ABAP_00_1_主機維運（第 07 節）</td><td>Package、SE21、SE09、SE80、程式類型</td><td>8</td><td><a href="#ch01-1">第 1-1 章</a> §14、§15</td></tr>
+      <tr><td>0__ABAP_00_1_主機維運（第 08 節）</td><td>編輯器熱鍵、T002 與 JOIN、同名不同義欄位、多語系、HIDE、TOP-OF-PAGE、RANGE</td><td>9</td><td><a href="#ch01-1">第 1-1 章</a> §11～§13、§17</td></tr>
+      <tr><td>0__ABAP_00_1_主機維運（第 09 節）</td><td>課程用自訂資料表四張、建表提示</td><td>10</td><td><a href="#ch01-2">第 1-2 章</a> §2～§7</td></tr>
+      <tr><td>0__ABAP_00_1_主機維運（第 10 節）</td><td>SA38、SE93、個人清單、萬用字元、SU53、STMS、Pretty Printer</td><td>11</td><td><a href="#ch01-1">第 1-1 章</a> §15、§17</td></tr>
+      <tr><td>0__ABAP_00_2_權限設定</td><td>僅四行：TABLE ZABAP、ROLE ABAP、PROFILE、PFCG</td><td>12、13</td><td>—（依 SAP 標準補寫）</td></tr>
+      <tr><td>0__ABAP_00_3_內部稽核（簡體）</td><td>SAP 審計概要：使用者權限、系統安全、審計功能、監控策略、權限審計規範</td><td>14～17</td><td><a href="#ch05-24">第 5-24 章</a>（Security Audit Log 概念）</td></tr>
+    </tbody>
+  </table>
+  <div class="note">「權限設定」素材中的 PROFILE 名稱是真實系統的值，本章不引用，一律以 <span class="kw">Z_DEV_PROFILE</span> 代稱；角色名 <span class="kw">ABAP</span> 改為符合命名規則的 <span class="kw">Z_DEV_ABAP</span>。「內部稽核」素材目錄第 02～10 節只有頁碼沒有標題，內文只有第 01 節，本章依內文完整整理。</div>
+
+  <h3 id="ch09-1-02">2. 課程地圖：ABAP for S/4HANA 的 20 個議題</h3>
+  <p>講義第 05 節列出整門課的 20 週議題，範圍從開發工具到 HANA、CDS。下表保留原順序（修正原文拼字 <span class="kw">Moudle</span>→Module、<span class="kw">Founction</span>→Function），並對照本圖書館的章節，可以當作學習順序：</p>
+  <table>
+    <thead><tr><th>週</th><th>議題</th><th>本圖書館對應</th></tr></thead>
+    <tbody>
+      <tr><td>01</td><td>Introducing the ABAP Development Tools</td><td><a href="#ch01-1">1-1</a>、<a href="#ch05-5">5-5（BC404 ADT）</a></td></tr>
+      <tr><td>02</td><td>ABAP Dictionary</td><td><a href="#ch01-2">1-2</a>、<a href="#ch05-16">5-16</a></td></tr>
+      <tr><td>03</td><td>Debugging of ABAP</td><td><a href="#ch05-4">5-4</a>、<a href="#ch06-1">6-1</a></td></tr>
+      <tr><td>04</td><td>Open SQL Programming（現稱 ABAP SQL）</td><td><a href="#ch02-2">2-2</a></td></tr>
+      <tr><td>05</td><td>Native SQL Programming</td><td><a href="#ch06-5">6-5</a>（DBCO／ADBC）</td></tr>
+      <tr><td>06</td><td>Function Module and Function Group</td><td><a href="#ch02-4">2-4</a></td></tr>
+      <tr><td>07</td><td>Dialog Programming</td><td><a href="#ch04-2">4-2</a></td></tr>
+      <tr><td>08</td><td>Selection Programming</td><td><a href="#ch03-1">3-1</a></td></tr>
+      <tr><td>09</td><td>ALV Programming</td><td><a href="#ch02-3">2-3</a>、<a href="#ch03-2">3-2</a></td></tr>
+      <tr><td>10</td><td>Smart Form Programming</td><td><a href="#ch04-3">4-3</a></td></tr>
+      <tr><td>11</td><td>BADI Enhancement</td><td><a href="#ch03-4">3-4</a></td></tr>
+      <tr><td>12</td><td>BDC &amp; BAPI Programming</td><td><a href="#ch04-4">4-4</a>、<a href="#ch04-1">4-1</a></td></tr>
+      <tr><td>13</td><td>LSMW</td><td><a href="#ch04-4">4-4</a></td></tr>
+      <tr><td>14</td><td>Report Painter</td><td><a href="#ch01-4">1-4</a></td></tr>
+      <tr><td>15</td><td>Enhancement</td><td><a href="#ch03-3">3-3</a>、<a href="#ch03-4">3-4</a></td></tr>
+      <tr><td>16</td><td>RFC &amp; BAPI</td><td><a href="#ch04-1">4-1</a></td></tr>
+      <tr><td>17</td><td>SAP HANA Basics and Technical Concepts</td><td><a href="#ch05-21">5-21</a></td></tr>
+      <tr><td>18</td><td>Create a Core Data Services View and use it in ABAP</td><td><a href="#ch01-2">1-2</a> §13</td></tr>
+      <tr><td>19</td><td>Issue a Native SQL Statement via ADBC</td><td><a href="#ch06-5">6-5</a></td></tr>
+      <tr><td>20</td><td>Use Associations in Core Data Services in ABAP</td><td><a href="#ch06-12">6-12</a> §9（I_JournalEntryItem）</td></tr>
+    </tbody>
+  </table>
+  <div class="tip">第 18～20 週是 S/4HANA 專案一定會碰到、但舊教材完全沒有的主題。建議先把 01～09 週練熟，再用 CDS 重寫第 6 節的 ZFIR083，對照兩種寫法的差異。</div>
+
+  <h3 id="ch09-1-03">3. 認識六個 TCODE 與寫程式四步驟</h3>
+  <p>講義目錄寫「六個」，內文標題卻寫「五個」，實際列了六個：<span class="tcode">SE11</span> 資料字典、<span class="tcode">SE38</span> 建立程式、<span class="tcode">SPRO</span> 後台配置、<span class="tcode">SE16N</span> 維護與瀏覽資料、<span class="tcode">SE16</span> 瀏覽資料、<span class="tcode">VA03</span> 瀏覽訂單。每個 TCODE 的操作與擴充到十個核心 TCODE 的說明見 <a href="#ch01-1">第 1-1 章 §1</a>。</p>
+  <p>寫程式的四步驟：</p>
+  <ol>
+    <li><b>取名</b>：程式名稱一定要 Z（或 Y）開頭，屬於客戶命名空間。</li>
+    <li><b>設定屬性</b>：類型選 Executable Program，<b>Status（程式狀態）</b>有四種：
+      <ul>
+        <li><b>P</b>：SAP Standard Production Program（標準生產程式）</li>
+        <li><b>K</b>：Customer Production Program（客戶生產程式）── <b>預設選這一項</b></li>
+        <li><b>S</b>：System Program（系統程式）</li>
+        <li><b>T</b>：Test Program（測試程式）</li>
+      </ul></li>
+    <li><b>指定套件</b>：練習環境可全部選 <b>Local Object</b>（套件 <span class="kw">$TMP</span>，不會產生傳輸請求，也不能傳到其他系統）。</li>
+    <li><b>執行</b>：啟用（Ctrl+F3）後按 F8 執行。</li>
+  </ol>
+  <p>以下是符合 1809+ 規範的第一支程式骨架，後面各節的範例都以這個結構為基礎：</p>
+  <pre><code class="abap">REPORT z2202_00_00.
+
+"--- 選擇畫面：參考資料字典欄位，才會自動帶出 Search Help
+PARAMETERS p_matnr TYPE vbap-matnr OBLIGATORY.
+
+START-OF-SELECTION.
+  SELECT vbeln, posnr, matnr, meins, kwmeng
+    FROM vbap
+    WHERE matnr = @p_matnr
+    ORDER BY vbeln, posnr                 "HANA 沒有預設排序，要自己排
+    INTO TABLE @DATA(lt_vbap)
+    UP TO 100 ROWS.
+
+  cl_demo_output=&gt;display( lt_vbap ).   "練習用；正式報表請改 CL_SALV_TABLE</code></pre>
+  <div class="warn"><b>程式狀態不是權限控制。</b>Status K／T 只是分類屬性，並不會阻止測試程式被傳到生產系統。真正擋住「測試程式上正式機」的是傳輸流程（STMS）與 <span class="kw">$TMP</span>／Z 套件的區分，見第 8 節。</div>
+
+  <h3 id="ch09-1-04">4. SQL 與內表的五次進化（Z2202_00_01～05）</h3>
+  <p>講義用五支程式示範從「讀一筆印一筆」進化到「一次讀進內表」。每一支的逐行說明與改寫已在 <a href="#ch01-1">第 1-1 章 §5～§8</a> 完成，這裡只列演進重點與原程式的問題：</p>
+  <table>
+    <thead><tr><th>程式</th><th>講義標示的「進化」</th><th>原寫法（文字說明）</th><th>現代寫法</th></tr></thead>
+    <tbody>
+      <tr><td>Z2202_00_01 取出訂單明細</td><td>1 UP TO N ROWS、2 FIELD LIST、3 WHERE</td><td>TABLES: VBAP；SELECT * … ENDSELECT；物料號寫死為示範料號</td><td>明列欄位、UP TO n ROWS、INTO TABLE</td></tr>
+      <tr><td>Z2202_00_02 操作者指定的訂單明細</td><td>WORKAREA、FIELDS OF、有 Search Help</td><td>PARAMETERS P_MATNR TYPE VBAP-MATNR</td><td>主機變數加 @</td></tr>
+      <tr><td>Z2202_00_03 自定型態與標準 MATNR</td><td>TYPES 宣告、ENDSELECT 的缺點、無 Search Help</td><td>TYPES TY_MATNR(40) TYPE C → 選擇畫面沒有 F4</td><td>參考 MATNR 資料元素才有 F4</td></tr>
+      <tr><td>Z2202_00_04 工作區與內表</td><td>TYPES、STRUCTURE、WORKAREA、INTERNAL TABLE</td><td>DATA WA_／IT_ 分開宣告</td><td>內嵌宣告 @DATA( )</td></tr>
+      <tr><td>Z2202_00_05 用內表提升效率（關鍵案例）</td><td>LOOP 取代 ENDSELECT、TABLE OF 與 FIELDS OF</td><td>SELECT * INTO CORRESPONDING FIELDS OF TABLE；保留多餘的 TABLES</td><td>明列欄位、INTO TABLE、LOOP … ASSIGNING</td></tr>
+    </tbody>
+  </table>
+  <p>講義在 Z2202_00_05 留了小作業：「請找出多餘的程式碼並刪除之，請讓選擇螢幕的料號可下拉選單。」參考解答：多餘的是 <span class="kw">TABLES: VBAP</span>、沒被使用的 <span class="kw">W_MATNR</span>；要有下拉選單（F4），選擇畫面欄位必須參考字典欄位，而不是自訂的 <span class="kw">TY_MATNR(40) TYPE C</span>。</p>
+  <pre><code class="abap">REPORT z2202_00_05.
+
+"小作業解答：刪除 TABLES 與未使用變數；參考 VBAP-MATNR 才有 F4
+PARAMETERS p_matnr TYPE vbap-matnr.
+
+START-OF-SELECTION.
+  SELECT vbeln, posnr, matnr, meins, kwmeng
+    FROM vbap
+    WHERE matnr = @p_matnr
+    ORDER BY vbeln, posnr
+    INTO TABLE @DATA(lt_vbap).
+
+  IF lt_vbap IS INITIAL.
+    MESSAGE |物料 { p_matnr ALPHA = OUT } 沒有銷售訂單明細| TYPE 'S' DISPLAY LIKE 'W'.
+    RETURN.
+  ENDIF.
+
+  LOOP AT lt_vbap ASSIGNING FIELD-SYMBOL(&lt;ls_vbap&gt;).
+    WRITE: / &lt;ls_vbap&gt;-vbeln, &lt;ls_vbap&gt;-posnr, &lt;ls_vbap&gt;-matnr,
+             &lt;ls_vbap&gt;-meins, &lt;ls_vbap&gt;-kwmeng.
+  ENDLOOP.</code></pre>
+  <div class="note">講義 Z2202_00_03 的註解提到「基本類型 C D P N I F String」。完整的內建型態與字典型態對照見 <a href="#ch02-1">第 2-1 章</a>。</div>
+
+  <h3 id="ch09-1-05">5. 傳票案例：BKPF／BSEG 與 S/4HANA 的 ACDOCA</h3>
+  <p>講義第 04 節用兩支程式讀傳票：04-01 分別讀 BKPF（表頭）與 BSEG（明細）各自 WRITE；04-02 用 <span class="kw">BSEG RIGHT JOIN BKPF</span> 把主子檔關聯起來，並依輸入人員（USNAM）與傳票號碼排序。原程式問題：</p>
+  <ul>
+    <li>04-01 用兩段 SELECT … ENDSELECT，兩段輸出沒有關聯，看不出哪筆明細屬於哪張傳票。</li>
+    <li>04-02 的 JOIN 條件只有 GJAHR＋BELNR，<b>少了公司代碼 BUKRS</b>；多公司代碼環境會把不同公司的同號傳票串在一起。</li>
+    <li>04-02 寫 RIGHT JOIN，卻又在 WHERE 放 <span class="kw">D~GJAHR = '2021'</span>，外部連結的效果被 WHERE 抵銷，實際等於 INNER JOIN。</li>
+    <li>04-01 以 BSEG-VALUT（起息日）篩「當天的明細」，VALUT 不是過帳日；應以表頭的 BUDAT 為準。</li>
+    <li>MANDT 不需要選出也不需要 WRITE，ABAP SQL 會自動處理用戶端。</li>
+    <li>用 <span class="kw">OCCURS 0</span>＋<span class="kw">LIKE</span> 宣告帶表頭行的內表，並以年度、日期寫死在程式裡。</li>
+  </ul>
+  <p>改寫一：保留 BKPF／BSEG 的關聯邏輯，但補上 BUKRS，並改成選擇畫面輸入：</p>
+  <pre><code class="abap">REPORT z_fi_doc_by_day.
+
+PARAMETERS: p_bukrs TYPE bkpf-bukrs OBLIGATORY,
+            p_budat TYPE bkpf-budat OBLIGATORY DEFAULT sy-datum.
+
+START-OF-SELECTION.
+  DATA(lv_gjahr) = CONV gjahr( p_budat(4) ).
+
+  SELECT h~bukrs, h~gjahr, h~belnr, h~budat, h~cputm, h~usnam,
+         h~tcode, h~blart,
+         d~buzei, d~bschl, d~koart, d~shkzg, d~dmbtr,
+         d~prctr, d~kokrs, d~kostl, d~menge, d~werks
+    FROM bkpf AS h
+    INNER JOIN bseg AS d
+      ON  d~bukrs = h~bukrs
+      AND d~belnr = h~belnr
+      AND d~gjahr = h~gjahr
+    WHERE h~bukrs = @p_bukrs
+      AND h~gjahr = @lv_gjahr
+      AND h~budat = @p_budat
+    ORDER BY h~usnam, h~belnr, d~buzei
+    INTO TABLE @DATA(lt_doc).
+
+  TRY.
+      cl_salv_table=&gt;factory( IMPORTING r_salv_table = DATA(lo_alv)
+                              CHANGING  t_table      = lt_doc ).
+      lo_alv-&gt;get_functions( )-&gt;set_all( ).
+      lo_alv-&gt;display( ).
+    CATCH cx_salv_msg INTO DATA(lx_salv).
+      MESSAGE lx_salv TYPE 'E'.
+  ENDTRY.</code></pre>
+  <div class="warn"><b>會計年度不一定等於日曆年。</b>上例用 BUDAT 的前四碼當 GJAHR，只適用會計年度＝日曆年的公司代碼。非日曆年度要用 <span class="kw">FI_PERIOD_DETERMINE</span> 或 <span class="kw">GET_CURRENT_YEAR</span> 推算（請以 SE37 確認介面），或乾脆不帶 GJAHR 條件改用 BUDAT 區間。</div>
+  <p>改寫二：S/4HANA 的財務明細以 <b>ACDOCA（Universal Journal）</b>為準。BSEG 在 S/4HANA 仍是實體表，但不再是所有報表的唯一來源；CO、資產、物料評價的明細都在 ACDOCA。講義 05-2 的 ACDOCA 重要欄位對照（MANDT、RLDNR、GJAHR、BELNR、DOCLN、RBUKRS、RCNTR、GKONT、PRCTR、RFAREA、GKOAR、RACCT、RBUSA、KOKRS、SEGMENT、TSL、WSL、KSL、POPER、BUDAT、BLDAT、BLART、BSCHL、USNAM、KTOSL、LINETYPE、KTOPL、EBELN、KDAUF、MATNR、WERKS、KUNNR、WWERT、KOART、AFABE、ANLN1、ANLN2、PRZNR、ERKRS、TAX_COUNTRY）已完整收錄並核對於 <a href="#ch06-12">第 6-12 章 §3</a>，這裡不重複。</p>
+  <pre><code class="abap">"同一需求改讀 ACDOCA：一定要指定分類帳 RLDNR，否則多分類帳時金額會重複
+SELECT rbukrs, gjahr, belnr, docln, budat, usnam, blart, bschl,
+       racct, drcrk, hsl, rhcur, prctr, rcntr, werks
+  FROM acdoca
+  WHERE rldnr  = '0L'
+    AND rbukrs = @p_bukrs
+    AND budat  = @p_budat
+  ORDER BY usnam, belnr, docln
+  INTO TABLE @DATA(lt_acdoca).</code></pre>
+  <div class="note">講義 05-2 附註：「ACDOCA 的欄位會隨著 CO-PA 的設定而變動，約在 470～520 之間」。所以 ACDOCA 絕對不要 <span class="kw">SELECT *</span>，欄位清單要明列；幣別欄位 TSL／WSL／HSL／KSL 的意義請看 <a href="#ch06-12">第 6-12 章 §4</a>（講義把 TSL 寫成「財報幣別」、WSL 寫成「交易幣別」，第 6-12 章已更正）。</div>
+
+  <h3 id="ch09-1-06">6. 期末作業：看懂 ZFIR083（ACDOCA 存貨科目報表）</h3>
+  <p>講義第 06 節的「至少能達到的期望成果」是<b>看懂一支真實報表</b>。ZFIR083 的業務情境：依公司代碼、過帳期間、工廠、物料，從 ACDOCA 撈出一組存貨相關科目（原程式列舉 18 個科目號碼）的明細，<b>把同一物料金額加總為 0 的明細剔除</b>，以 ALV 顯示公司代碼、工廠、物料、年度、憑證、行項目、科目、金額。</p>
+  <h4>選擇畫面與輸出</h4>
+  <ul>
+    <li>SELECT-OPTIONS：S_BUKRS（RBUKRS）、S_POPER（POPER，INITIALIZATION 預設為本月）、S_WERKS、S_MATNR。</li>
+    <li>輸出欄位：RBUKRS、WERKS、MATNR、GJAHR、BELNR、DOCLN、RACCT、HSL。</li>
+  </ul>
+  <h4>原程式架構與問題</h4>
+  <table>
+    <thead><tr><th>原寫法</th><th>問題</th><th>改寫</th></tr></thead>
+    <tbody>
+      <tr><td>TABLES 宣告 bseg、bkpf、skat、acdoca、cskt、/srep/is_group</td><td>只有 acdoca 用到（給 SELECT-OPTIONS FOR），其餘多餘</td><td>SELECT-OPTIONS 改 FOR 已宣告的變數</td></tr>
+      <tr><td>s_poper = VALUE #( … ) 後再 APPEND s_poper</td><td>用到帶表頭行的選擇表，新舊寫法混用</td><td><span class="kw">s_poper[] = VALUE #( ( sign = 'I' option = 'EQ' low = … ) )</span></td></tr>
+      <tr><td>SELECT * INTO CORRESPONDING FIELDS</td><td>ACDOCA 有 500 個左右欄位，全部搬運</td><td>只選 8 個欄位</td></tr>
+      <tr><td>WHERE 沒有 RLDNR</td><td><b>多分類帳（0L、2L…）時同一筆會出現多次，金額加倍</b></td><td>加 <span class="kw">rldnr = '0L'</span>（或做成參數）</td></tr>
+      <tr><td>科目以 <span class="kw">racct IN ( '1404040200', … )</span> 列舉</td><td>這是對的做法（見下方 tip），但寫死在程式裡</td><td>改成常數內表或自建設定表</td></tr>
+      <tr><td>SORT 後 LOOP，AT END OF matnr 時 <span class="kw">DELETE gt_outtab WHERE matnr = …</span></td><td>① 在 LOOP 裡刪除自己正在迴圈的內表；② 只比 MATNR，把其他公司代碼／工廠同料號的列也一起刪掉；③ AT END OF 依賴欄位順序，matnr 前面的欄位變了也會觸發</td><td>LOOP AT … GROUP BY ( rbukrs werks matnr ) 加總後只收非 0 的群組</td></tr>
+      <tr><td>DEFINE addfieldcat 巨集＋FORM＋REUSE_ALV_GRID_DISPLAY_LVC</td><td>巨集無法除錯、FORM 已過時、REUSE_ALV 禁用</td><td>CL_SALV_TABLE，欄名用 set_long_text</td></tr>
+    </tbody>
+  </table>
+  <div class="tip"><b>列舉比區間安全（Casper 實務經驗 2）。</b>原程式把 18 個科目逐一列舉而不是寫 <span class="kw">BT '1404010100' '1409020100'</span>，這是正確的選擇：科目號碼段中間夾著不該算的科目（原程式還特意註解掉 1405900100），用區間就會多抓。</div>
+  <pre><code class="abap">REPORT zfir083_new.
+
+DATA gv_acdoca TYPE acdoca.   "只給 SELECT-OPTIONS 參考型態用
+SELECTION-SCREEN BEGIN OF BLOCK bk1 WITH FRAME TITLE TEXT-001.
+  SELECT-OPTIONS: s_bukrs FOR gv_acdoca-rbukrs,
+                  s_poper FOR gv_acdoca-poper,
+                  s_werks FOR gv_acdoca-werks,
+                  s_matnr FOR gv_acdoca-matnr.
+SELECTION-SCREEN END OF BLOCK bk1.
+
+CLASS lcl_report DEFINITION FINAL.
+  PUBLIC SECTION.
+    TYPES: BEGIN OF ty_out,
+             rbukrs TYPE acdoca-rbukrs,
+             werks  TYPE acdoca-werks,
+             matnr  TYPE acdoca-matnr,
+             gjahr  TYPE acdoca-gjahr,
+             belnr  TYPE acdoca-belnr,
+             docln  TYPE acdoca-docln,
+             racct  TYPE acdoca-racct,
+             hsl    TYPE acdoca-hsl,
+           END OF ty_out,
+           tt_out TYPE STANDARD TABLE OF ty_out WITH EMPTY KEY.
+    METHODS: get_data RETURNING VALUE(rt_out) TYPE tt_out,
+             show     CHANGING  ct_out TYPE tt_out.
+  PRIVATE SECTION.
+    CONSTANTS c_ledger TYPE acdoca-rldnr VALUE '0L'.   "主分類帳
+ENDCLASS.
+
+CLASS lcl_report IMPLEMENTATION.
+  METHOD get_data.
+    "存貨科目：列舉，不用區間（1405900100 刻意排除）
+    TYPES tt_racct TYPE RANGE OF acdoca-racct.
+    DATA(lt_racct) = VALUE tt_racct(
+      FOR lv_acct IN VALUE string_table(
+        ( `1404010100` ) ( `1404010200` ) ( `1404010300` )
+        ( `1404020101` ) ( `1404020102` ) ( `1404020103` )
+        ( `1404030100` ) ( `1404030200` ) ( `1404030300` )
+        ( `1404040100` ) ( `1404040200` ) ( `1404040300` )
+        ( `1404060100` ) ( `1404060200` ) ( `1404060300` )
+        ( `1409010100` ) ( `1409020100` ) )
+      ( sign = 'I' option = 'EQ' low = lv_acct ) ).
+
+    SELECT rbukrs, werks, matnr, gjahr, belnr, docln, racct, hsl
+      FROM acdoca
+      WHERE rldnr  = @c_ledger
+        AND rbukrs IN @s_bukrs
+        AND poper  IN @s_poper
+        AND werks  IN @s_werks
+        AND matnr  IN @s_matnr
+        AND racct  IN @lt_racct
+      ORDER BY rbukrs, werks, matnr, gjahr, belnr, docln
+      INTO TABLE @DATA(lt_items).
+
+    "同一公司代碼＋工廠＋物料加總為 0 的整組剔除
+    LOOP AT lt_items INTO DATA(ls_item)
+         GROUP BY ( rbukrs = ls_item-rbukrs werks = ls_item-werks
+                    matnr  = ls_item-matnr ) INTO DATA(ls_grp).
+      DATA(lv_sum) = REDUCE acdoca-hsl( INIT s = CONV acdoca-hsl( 0 )
+                       FOR m IN GROUP ls_grp NEXT s = s + m-hsl ).
+      IF lv_sum &lt;&gt; 0.
+        rt_out = VALUE #( BASE rt_out FOR m IN GROUP ls_grp ( CORRESPONDING #( m ) ) ).
+      ENDIF.
+    ENDLOOP.
+  ENDMETHOD.
+
+  METHOD show.
+    TRY.
+        cl_salv_table=&gt;factory( IMPORTING r_salv_table = DATA(lo_alv)
+                                CHANGING  t_table      = ct_out ).
+        lo_alv-&gt;get_functions( )-&gt;set_all( ).
+        lo_alv-&gt;get_columns( )-&gt;set_optimize( ).
+        lo_alv-&gt;get_display_settings( )-&gt;set_striped_pattern( abap_true ).
+        lo_alv-&gt;get_columns( )-&gt;get_column( 'DOCLN' )-&gt;set_long_text( '憑證行項目' ).
+        lo_alv-&gt;display( ).
+      CATCH cx_salv_msg cx_salv_not_found INTO DATA(lx).
+        MESSAGE lx TYPE 'E'.
+    ENDTRY.
+  ENDMETHOD.
+ENDCLASS.
+
+INITIALIZATION.
+  s_poper[] = VALUE #( ( sign = 'I' option = 'EQ' low = sy-datum+4(2) ) ).
+
+START-OF-SELECTION.
+  DATA(go_rep) = NEW lcl_report( ).
+  DATA(gt_out) = go_rep-&gt;get_data( ).
+  go_rep-&gt;show( CHANGING ct_out = gt_out ).</code></pre>
+  <div class="warn">講義註明「以上程式摘錄自網路（SAP 大牛原創）」。POPER 是三位數字（001～016），原程式把 <span class="kw">sy-datum+4(2)</span>（兩位）塞進 POPER，因為轉換規則會補前導零所以能動；但若公司是非日曆會計年度，「本月」並不等於「本期」，上線前要確認。</div>
+
+  <h3 id="ch09-1-07">7. 自學工具：SU1、ST05、ABAPDOCU</h3>
+  <ul>
+    <li><span class="tcode">SU1</span>：維護自己的使用者資料（姓名、預設值、參數）。講義練習：用 SU1 改自己的帳號資料，再寫程式輸出帳號、Last name、First name。畫面上看到的「personal number」就是 USR21-PERSNUMBER。</li>
+    <li><span class="tcode">ST05</span>：SQL Trace。講義提示「若 F1、Google 都解不開時，可善用 ST05（但不見得每個人都有權限）」── 開 Trace、執行交易、看它讀了哪些表，是找表最快的方法，詳見 <a href="#ch06-10">第 6-10 章</a>。</li>
+    <li><span class="tcode">ABAPDOCU</span>：講義稱「高手自學之路」，內含所有語法的官方範例程式，可直接執行並看原始碼。</li>
+  </ul>
+  <p>SU1 練習的參考解答：使用者名稱在 USR21 對應到位址管理的人員號碼，姓名存在 ADRP（有生效日期 DATE_FROM 與國家版本 NATION）。</p>
+  <pre><code class="abap">REPORT z_su1_whoami.
+
+SELECT SINGLE u~bname, u~persnumber, p~name_last, p~name_first
+  FROM usr21 AS u
+  INNER JOIN adrp AS p
+    ON p~persnumber = u~persnumber
+  WHERE u~bname     = @sy-uname
+    AND p~date_from &lt;= @sy-datum
+    AND p~nation    = @space            "國際版（非本地化版本）
+  INTO @DATA(ls_me).
+
+IF sy-subrc = 0.
+  WRITE: / |帳號：{ ls_me-bname }|,
+         / |人員號碼：{ ls_me-persnumber }|,
+         / |Last name：{ ls_me-name_last }　First name：{ ls_me-name_first }|.
+ELSE.
+  WRITE / |帳號 { sy-uname } 尚未在 SU1／SU01 維護姓名|.
+ENDIF.</code></pre>
+  <div class="note">若 ADRP 有多筆不同生效日的版本，SELECT SINGLE 取到哪一筆是不確定的（HANA 沒有預設排序）。正式程式請改用 <span class="kw">ORDER BY date_from DESCENDING</span> 搭配 <span class="kw">UP TO 1 ROWS</span>，或直接呼叫 <span class="kw">BAPI_USER_GET_DETAIL</span> 取 ADDRESS 結構。</div>
+
+  <h3 id="ch09-1-08">8. Package、傳輸請求與程式類型</h3>
+  <p>講義第 07 節的觀念（Package 舊稱開發類 Development Class；<span class="tcode">SE21</span> 建立 Package、<span class="tcode">SE09</span> 查看請求號 Modifiable 可修改／Released 已釋放、<span class="tcode">SE80</span> 物件瀏覽器；不屬於任何套件的物件放 <span class="kw">$TMP</span>，不能傳輸、主要用於測試）已在 <a href="#ch01-1">第 1-1 章 §14、§15</a> 詳述。這裡補講義獨有的程式類型清單：</p>
+  <table>
+    <thead><tr><th>類型</th><th>名稱</th><th>講義重點</th></tr></thead>
+    <tbody>
+      <tr><td>1（E）</td><td>Executable Program 可執行程式</td><td>可在 ABAP Editor 直接執行；processing blocks 依預先定義的順序執行；可用標準 selection screen；主要用來顯示 list</td></tr>
+      <tr><td>M</td><td>Module Pool 模組池</td><td>至少要定義一個 TCODE 指定 initial screen；畫面順序可由 screen attributes 靜態指定或由程式動態指定；呼叫其中任一 module 時整個主程式會載入目前的 internal session。例：<span class="tcode">VA01</span>／<span class="tcode">VA02</span>／<span class="tcode">VA03</span> 共用同一組畫面</td></tr>
+      <tr><td>F</td><td>Function Group 函數群組</td><td>包含 function modules、local data declarations 與 screens</td></tr>
+      <tr><td>I</td><td>Include Program</td><td>可包含任何 ABAP 敘述，不能單獨執行</td></tr>
+      <tr><td>J</td><td>Interface Pool 介面池</td><td>包含 global interfaces 與 local data declarations</td></tr>
+      <tr><td>K</td><td>Class Pool 類別池</td><td>包含 global classes 與 local data declarations</td></tr>
+    </tbody>
+  </table>
+  <p>講義 10-7 另提「程式的類別有 1 與 M」，指的就是上表前兩種。下面的小工具列出自己名下尚未釋放的傳輸請求，交付前自我檢查用：</p>
+  <pre><code class="abap">REPORT z_my_open_requests.
+
+"E070：請求表頭；E07T：請求說明；TRSTATUS D=可修改 L=可修改(受保護) R=已釋放
+SELECT r~trkorr, r~trfunction, r~trstatus, r~as4date, t~as4text
+  FROM e070 AS r
+  LEFT OUTER JOIN e07t AS t
+    ON  t~trkorr = r~trkorr
+    AND t~langu  = @sy-langu
+  WHERE r~as4user  = @sy-uname
+    AND r~trstatus IN ( 'D', 'L' )      "列舉，不用區間
+    AND r~strkorr  = @space              "只列上層請求，不列工作
+  ORDER BY r~as4date DESCENDING, r~trkorr
+  INTO TABLE @DATA(lt_req).
+
+cl_demo_output=&gt;display( lt_req ).</code></pre>
+
+  <h3 id="ch09-1-09">9. 程式編輯器熱鍵與講義第 08 節的小範例</h3>
+  <p>講義 08-1 的熱鍵表（<b>若失效，多半是被輸入法攔截</b>，先切回英數模式）：</p>
+  <table>
+    <thead><tr><th>功能</th><th>熱鍵</th><th>功能</th><th>熱鍵</th></tr></thead>
+    <tbody>
+      <tr><td>調整字體</td><td>Ctrl + 滑鼠滾輪</td><td>矩陣點選</td><td>Ctrl + ↑↓←→</td></tr>
+      <tr><td>加入註解</td><td>Ctrl + ,（逗號）</td><td>取消註解</td><td>Ctrl + .（句號）</td></tr>
+      <tr><td>刪除一行</td><td>Ctrl + Shift + X</td><td>刪除一行（要有反白）</td><td>Ctrl + X</td></tr>
+      <tr><td>複製一行</td><td>Ctrl + C</td><td>貼上一行</td><td>Ctrl + V</td></tr>
+      <tr><td>轉成小寫</td><td>Ctrl + L</td><td>轉成大寫</td><td>Ctrl + U</td></tr>
+      <tr><td>大小寫互轉</td><td>Ctrl + K</td><td>原地複製</td><td>Ctrl + D</td></tr>
+      <tr><td>取消</td><td>Ctrl + Z</td><td>重做</td><td>Ctrl + Y</td></tr>
+      <tr><td>尋找</td><td>Ctrl + F</td><td>替換</td><td>Ctrl + H</td></tr>
+    </tbody>
+  </table>
+  <p>SE38 畫面右下角的「Options」圖示可設定編輯器風格，講義建議勿動。其餘 08-2～08-8 的範例（T002 語系與 JOIN 差異、同名不同義欄位、多語系美化輸出、語系轉換、HIDE 雙擊、TOP-OF-PAGE 畫表格、RANGE 模擬區間）已在 <a href="#ch01-1">第 1-1 章 §11～§13</a> 改寫，以下只補兩個講義重點：</p>
+  <h4>「沒事別用 LEFT JOIN」的正解</h4>
+  <p>講義 08-2 比較 INNER JOIN 與 LEFT JOIN 的筆數，並在標題寫「沒事別用 LEFT JOIN」。更精確的說法是：<b>語言條件放在 ON 還是 WHERE 決定了結果</b>。放在 WHERE 會把沒有英文描述的物料濾掉，放在 ON 才會保留物料、描述留空。（原程式印出的字樣兩段都寫 'left join Recoud'，第一段其實是 inner join，拼字也應為 Record。）</p>
+  <pre><code class="abap">"INNER JOIN：沒有該語言描述的物料不會出現
+SELECT m~matnr, m~mtart, t~maktx
+  FROM mara AS m
+  INNER JOIN makt AS t ON t~matnr = m~matnr
+  WHERE t~spras = @sy-langu
+  INTO TABLE @DATA(lt_inner).
+
+"LEFT OUTER JOIN：語言條件必須放在 ON，物料全留，缺描述則 MAKTX 為空
+SELECT m~matnr, m~mtart, t~maktx
+  FROM mara AS m
+  LEFT OUTER JOIN makt AS t
+    ON  t~matnr = m~matnr
+    AND t~spras = @sy-langu
+  INTO TABLE @DATA(lt_left).
+
+WRITE: / |INNER JOIN 筆數：{ lines( lt_inner ) }|,
+       / |LEFT JOIN 筆數：{ lines( lt_left ) }|.</code></pre>
+  <h4>語系代碼與同名不同義欄位</h4>
+  <p>講義 08-5：簡體中文 1＝ZH、英文 E＝EN、德文 D＝DE、繁體中文 M＝ZF（左邊是 SPRAS 內碼，右邊是 T002 的兩碼 ISO 外碼）。講義 08-3：VBAK-VBELN／VBAP-VBELN 是訂單號，LIKP-VBELN／LIPS-VBELN 是交貨單（DN）號；兩者以 <b>LIPS-VGBEL = VBAP-VBELN、LIPS-VGPOS = VBAP-POSNR</b> 關聯。</p>
+  <pre><code class="abap">"語言內碼 ↔ ISO 外碼轉換（CONVERSION_EXIT_ISOLA_*）
+DATA lv_spras TYPE spras VALUE 'M'.
+DATA lv_laiso TYPE laiso.
+CALL FUNCTION 'CONVERSION_EXIT_ISOLA_OUTPUT'
+  EXPORTING input  = lv_spras
+  IMPORTING output = lv_laiso.          "→ ZF
+
+"訂單明細 → 交貨明細：同名欄位 VBELN 意義不同，要走 VGBEL／VGPOS
+PARAMETERS p_vbeln TYPE vbap-vbeln.
+SELECT a~vbeln AS so_no, a~posnr AS so_item,
+       l~vbeln AS dn_no, l~posnr AS dn_item, l~lfimg
+  FROM vbap AS a
+  INNER JOIN lips AS l
+    ON  l~vgbel = a~vbeln
+    AND l~vgpos = a~posnr
+  WHERE a~vbeln = @p_vbeln
+  ORDER BY so_item, dn_no, dn_item
+  INTO TABLE @DATA(lt_flow).</code></pre>
+
+  <h3 id="ch09-1-10">10. 建立整個課程所需的自訂資料表</h3>
+  <p>講義第 09 節要每位學員建四張表，命名規則 <b>Z_帳號_表名</b>（帳號用兩位數字，例 Z2202_00_KNA1）。建表步驟、Domain／Data Element、外來鍵與 SE54 已在 <a href="#ch01-2">第 1-2 章 §2～§7</a> 詳述，這裡完整保留四張表的欄位規格：</p>
+  <table>
+    <thead><tr><th>表</th><th>欄位</th><th>說明</th><th>型態</th><th>長度</th><th>小數</th></tr></thead>
+    <tbody>
+      <tr><td rowspan="3">Z2202_00_KNA1 客戶</td><td>MANDT</td><td>用戶端</td><td>CLNT</td><td>3</td><td></td></tr>
+      <tr><td>KUNNR</td><td>客戶編號</td><td>CHAR</td><td>10</td><td></td></tr>
+      <tr><td>NAME</td><td>客戶名稱</td><td>CHAR</td><td>40</td><td></td></tr>
+      <tr><td rowspan="3">Z2202_00_MARA 物料</td><td>MANDT</td><td>用戶端</td><td>CLNT</td><td>3</td><td></td></tr>
+      <tr><td>MATNR</td><td>物料編號</td><td>CHAR</td><td>40</td><td></td></tr>
+      <tr><td>NAME</td><td>物料名稱</td><td>CHAR</td><td>40</td><td></td></tr>
+      <tr><td rowspan="7">Z2202_00_VBAK 訂單主檔</td><td>MANDT</td><td>用戶端</td><td>CLNT</td><td>3</td><td></td></tr>
+      <tr><td>ZSDNO</td><td>銷售編號</td><td>CHAR</td><td>10</td><td></td></tr>
+      <tr><td>ZCC</td><td>公司代碼</td><td>CHAR</td><td>4</td><td></td></tr>
+      <tr><td>ZDT</td><td>銷售日期</td><td>DATS</td><td>8</td><td></td></tr>
+      <tr><td>KUNNR</td><td>客戶編號</td><td>CHAR</td><td>10</td><td></td></tr>
+      <tr><td>ZAMT</td><td>銷售金額</td><td>CURR</td><td>15</td><td>2</td></tr>
+      <tr><td>ZCUR</td><td>交易貨幣</td><td>CUKY</td><td>5</td><td>0</td></tr>
+      <tr><td rowspan="7">Z2202_00_VBAP 訂單明細</td><td>MANDT</td><td>用戶端</td><td>CLNT</td><td>3</td><td></td></tr>
+      <tr><td>ZSDNO</td><td>銷售編號</td><td>CHAR</td><td>10</td><td></td></tr>
+      <tr><td>MATNR</td><td>物料編號</td><td>CHAR</td><td>40</td><td></td></tr>
+      <tr><td>ZQTY</td><td>銷售數量</td><td>NUMC</td><td>8</td><td></td></tr>
+      <tr><td>ZPRI</td><td>物料單價</td><td>CURR</td><td>15</td><td>2</td></tr>
+      <tr><td>ZAMT</td><td>銷售金額</td><td>CURR</td><td>15</td><td>2</td></tr>
+      <tr><td>ZCUR</td><td>交易貨幣</td><td>CUKY</td><td>5</td><td>0</td></tr>
+    </tbody>
+  </table>
+  <div class="warn"><b>講義的筆誤與設計缺漏：</b>① 09-1 客戶表的說明寫「請改用 Z2202_00_KNA1（Z_帳號_MARA）」，括號應為 Z_帳號_KNA1；② 講義沒標主鍵，合理主鍵為 KNA1：MANDT＋KUNNR、MARA：MANDT＋MATNR、VBAK：MANDT＋ZSDNO；③ <b>VBAP 只有 MANDT＋ZSDNO＋MATNR，缺少項次欄位</b>，同一張訂單同一料號只能有一筆，建議補 <span class="kw">ZPOSNR NUMC 6</span> 為主鍵；④ ZQTY 用 NUMC 8 無法存小數也無法做數量運算，正式設計應用 QUAN 並參考單位欄位（UNIT）；⑤ CURR 欄位必須在 Currency/Quan. Fields 頁籤指定參考欄位 ZCUR，否則無法啟用。</div>
+  <p>講義的建表提示（第 50 頁有解答）：</p>
+  <ul>
+    <li>若未建立自己的 Function Group，請先至 <span class="tcode">SE80</span> 建立（產生表格維護時要用）。</li>
+    <li>先用 Predefined Type 型態的欄位練習。</li>
+    <li>要設定技術設定（Technical Settings）。</li>
+    <li>要先啟用，才能執行 Generate Table Maintenance（<span class="tcode">SE54</span>）。</li>
+    <li>利用 <span class="tcode">SE16N</span> 要可以編輯。</li>
+    <li>練習第二張表時，要學會用 Data Element、Domain 並建立 Foreign Key，例如 VBAK-MATNR → Data Element MATNR → Domain MATNR → Value Table MARA。</li>
+    <li>共 37 種預設型態，常用的有：CLNT 用戶端、CHAR 文字、CUKY 幣別、CURR 金額、DATS 日期 YYYYMMDD、INT2（±32767）、NUMC 文字的數字、QUAN 數量。</li>
+    <li>都做完之後再觀察 Database Table MARA，或許就能理解 STRUCTURE（Include）的意義。</li>
+    <li>各模組的重要資料表要靠日積月累熟悉，請看講義附件關聯圖；SD 重要表見 <a href="#ch01-3">第 1-3 章</a>。</li>
+  </ul>
+  <p>建好表後，用程式灌測試資料（資料為合成值）：</p>
+  <pre><code class="abap">REPORT z2202_00_seed.
+
+TYPES: tt_kna1 TYPE STANDARD TABLE OF z2202_00_kna1 WITH EMPTY KEY,
+       tt_vbak TYPE STANDARD TABLE OF z2202_00_vbak WITH EMPTY KEY.
+
+DATA(lt_kna1) = VALUE tt_kna1(
+  ( kunnr = 'C001' name = '示範客戶甲' )
+  ( kunnr = 'C002' name = '示範客戶乙' ) ).
+
+DATA(lt_vbak) = VALUE tt_vbak(
+  ( zsdno = 'S0001' zcc = '1000' zdt = sy-datum kunnr = 'C001'
+    zamt = '1500.00' zcur = 'TWD' ) ).
+
+"MODIFY = 有則更新、無則新增；MANDT 由系統自動補
+MODIFY z2202_00_kna1 FROM TABLE @lt_kna1.
+MODIFY z2202_00_vbak FROM TABLE @lt_vbak.
+IF sy-subrc = 0.
+  COMMIT WORK.
+  MESSAGE |寫入客戶 { lines( lt_kna1 ) } 筆、訂單 { lines( lt_vbak ) } 筆| TYPE 'S'.
+ELSE.
+  ROLLBACK WORK.
+ENDIF.</code></pre>
+
+  <h3 id="ch09-1-11">11. SA38、SE93、SU53 與 STMS：讓程式上線</h3>
+  <p>講義第 10 節重點（操作細節見 <a href="#ch01-1">第 1-1 章 §15、§17</a>）：</p>
+  <ul>
+    <li>10-1：<span class="tcode">SA38</span> 直接執行程式；<span class="tcode">SE93</span> 把程式包成 TCODE。講義提醒：學模組運用時，很多時候 PROGRAM 就夠了，不一定要建 TCODE。</li>
+    <li>10-2：個人清單（Favorites）的妙用：把常用 TCODE 與自己的程式放進 SAP Easy Access 的我的最愛。</li>
+    <li>10-3：搜尋的萬用字元（<span class="kw">*</span> 任意字串、<span class="kw">+</span> 單一字元）。</li>
+    <li>10-4：無權限時用 <span class="tcode">SU53</span> 看最後一次失敗的權限檢查。</li>
+    <li>10-5：STMS 的觀念：DEV → QAS → PRD，有時不只這三區（例如再加訓練機、Sandbox）。</li>
+    <li>10-6：指令（Command Field）的查找：在命令列輸入 <span class="kw">/n</span>、<span class="kw">/o</span>、<span class="kw">/nend</span> 等，或在 SE93 以萬用字元查 TCODE。</li>
+    <li>10-8：Pretty Printer（Shift+F1）統一縮排與大小寫。</li>
+    <li>10-9：SE38 的編輯器選項（Utilities → Settings）。</li>
+  </ul>
+  <p>自建 TCODE 包裝程式後，從程式呼叫另一個交易時，<b>一定要帶權限檢查</b>，否則使用者可以繞過 S_TCODE：</p>
+  <pre><code class="abap">"CALL TRANSACTION 預設不檢查 S_TCODE；明寫 WITH AUTHORITY-CHECK
+TRY.
+    CALL TRANSACTION 'VA03' WITH AUTHORITY-CHECK AND SKIP FIRST SCREEN.
+  CATCH cx_sy_authorization_error.
+    MESSAGE |您沒有交易 VA03 的權限，請用 SU53 查看並洽 BASIS| TYPE 'S' DISPLAY LIKE 'E'.
+ENDTRY.
+
+"SUBMIT 另一支報表前，檢查報表權限群組（S_PROGRAM）
+AUTHORITY-CHECK OBJECT 'S_PROGRAM'
+  ID 'P_GROUP'  DUMMY
+  ID 'P_ACTION' FIELD 'SUBMIT'.
+IF sy-subrc = 0.
+  SUBMIT z2202_00_05 VIA SELECTION-SCREEN AND RETURN.
+ENDIF.</code></pre>
+  <div class="note">SE93 建立「Transaction with parameters」時，可以勾選 Inherit GUI attributes，並在 Authorization Object 欄位直接指定進入交易時要檢查的權限物件，這是不用寫程式的第一道防線。</div>
+
+  <h3 id="ch09-1-12">12. 開發人員權限：PFCG、S_DEVELOP 與開發者金鑰</h3>
+  <p>素材 <b>0__ABAP_00_2_權限設定</b> 只有四行：一張表 <span class="kw">ZABAP</span>、一個角色 <span class="kw">ABAP</span>、一個 Profile，以及 TCODE <span class="tcode">PFCG</span>。意思是課程環境替學員建了一個開發角色並產生 Profile 後指派給帳號。以下依 SAP 標準補寫完整做法 <span class="src">（依講義步驟整理）</span>：</p>
+  <ol>
+    <li><span class="tcode">PFCG</span> 建立單一角色 <span class="kw">Z_DEV_ABAP</span>，在 Menu 頁籤加入開發用 TCODE（SE11、SE16N、SE37、SE38、SE80、SE09、SE93、ST05、SAT…）── 系統會依 <span class="tcode">SU24</span> 的預設值自動帶出相關權限物件。</li>
+    <li>Authorizations 頁籤 → Change Authorization Data，補齊或收斂下表各權限物件的欄位值。</li>
+    <li>Generate 產生 Profile（系統會提議名稱，本章以 <span class="kw">Z_DEV_PROFILE</span> 代稱）。</li>
+    <li>User 頁籤指派使用者，執行 User Comparison（或排程 PFUD）讓 Profile 寫進使用者主檔。</li>
+    <li>使用者登出再登入，權限才完整生效。</li>
+  </ol>
+  <table>
+    <thead><tr><th>權限物件</th><th>主要欄位</th><th>管控內容</th><th>開發機建議</th><th>生產機建議</th></tr></thead>
+    <tbody>
+      <tr><td>S_TCODE</td><td>TCD</td><td>可啟動哪些交易</td><td>開發用 TCODE</td><td>不給 SE38 修改、SE16N 編輯</td></tr>
+      <tr><td>S_DEVELOP</td><td>DEVCLASS、OBJTYPE、OBJNAME、P_GROUP、ACTVT</td><td>ABAP Workbench 物件的建立／修改／顯示，以及除錯</td><td>OBJNAME 限 Z*、Y*；ACTVT 01、02、03、06、07、16</td><td>只給 03（顯示）；<b>OBJTYPE = DEBUG 且 ACTVT = 02（除錯時改值）絕對不給</b></td></tr>
+      <tr><td>S_TABU_DIS</td><td>DICBERCLS、ACTVT</td><td>依「表權限群組」（Authorization Group）管控 SE16／SM30 存取</td><td>依群組給 02／03</td><td>只給 03，且排除敏感群組</td></tr>
+      <tr><td>S_TABU_NAM</td><td>TABLE、ACTVT</td><td>依表名逐一管控（例：素材中的 ZABAP）</td><td>TABLE = Z*</td><td>只列業務必要的表</td></tr>
+      <tr><td>S_TRANSPRT</td><td>TTYPE、ACTVT</td><td>建立／釋放傳輸請求</td><td>DTRA、TASK 的 01、02、43</td><td>不給</td></tr>
+      <tr><td>S_PROGRAM</td><td>P_GROUP、P_ACTION</td><td>依程式權限群組執行、變式維護</td><td>SUBMIT、VARIANT</td><td>依業務</td></tr>
+    </tbody>
+  </table>
+  <h4>開發者金鑰（Developer Key）與物件金鑰</h4>
+  <ul>
+    <li>傳統 on-premise 系統（含 S/4HANA on-premise）第一次在 SE38 建立或修改程式時，系統會要求輸入 <b>Developer Key</b>：由 BASIS 以 SAP 使用者（S-user）在 SAP 支援網站（SSCR，SAP Software Change Registration，現整合在 SAP for Me）為該開發帳號註冊取得，輸入後記錄在表 <span class="kw">DEVACCESS</span>。</li>
+    <li>要修改 SAP 標準物件，另需每個物件一把 <b>Object Key</b>（記錄在 <span class="kw">ADIRACCESS</span>）── 這正是 <a href="#ch00">Casper 實務經驗 3</a>「修改標準」成本最高的原因之一。</li>
+    <li>SAP BTP ABAP Environment 與 S/4HANA Cloud（ABAP Cloud 開發模式）沒有 Developer Key，改由 IAM 的 business catalog／role 控管開發權限，也不允許修改標準物件。</li>
+  </ul>
+  <p>在程式裡確認自己是否具備開發權限（例：檢查能否修改某個 Z 程式），常用於自建開發工具：</p>
+  <pre><code class="abap">"檢查目前使用者能否在套件 ZSD_DEV 中修改程式 ZSD_R001
+AUTHORITY-CHECK OBJECT 'S_DEVELOP'
+  ID 'DEVCLASS' FIELD 'ZSD_DEV'
+  ID 'OBJTYPE'  FIELD 'PROG'
+  ID 'OBJNAME'  FIELD 'ZSD_R001'
+  ID 'P_GROUP'  DUMMY
+  ID 'ACTVT'    FIELD '02'.
+
+CASE sy-subrc.
+  WHEN 0.  MESSAGE '具備修改權限' TYPE 'S'.
+  WHEN 4.  MESSAGE '沒有修改權限（SU53 可查詳細）' TYPE 'S' DISPLAY LIKE 'W'.
+  WHEN 12. MESSAGE '使用者主檔沒有 S_DEVELOP 任何授權' TYPE 'S' DISPLAY LIKE 'W'.
+  WHEN OTHERS. MESSAGE |權限檢查失敗 sy-subrc = { sy-subrc }| TYPE 'S' DISPLAY LIKE 'E'.
+ENDCASE.</code></pre>
+
+  <h3 id="ch09-1-13">13. 自訂權限物件（SU21）與程式中的權限檢查</h3>
+  <p>標準權限物件不夠細時，用 <span class="tcode">SU21</span> 自建 <span class="src">（依講義步驟整理）</span>：</p>
+  <ol>
+    <li>SU21 建立（或選用）Object Class，例如 <span class="kw">ZSD</span>。</li>
+    <li>在該 Class 下建立權限物件，例如 <span class="kw">Z_SD_VKORG</span>，欄位 <span class="kw">VKORG</span>（銷售組織）與 <span class="kw">ACTVT</span>（活動）。欄位需先存在於 <span class="tcode">SU20</span>（權限欄位），VKORG、ACTVT 都是標準欄位可直接用。</li>
+    <li>在物件的 Permitted Activities 勾選允許的活動（01 建立、02 修改、03 顯示）。</li>
+    <li>在 <span class="tcode">SU24</span> 把權限物件掛到自建 TCODE，之後在 PFCG 加入該 TCODE 就會自動帶出。</li>
+    <li>在 PFCG 角色中維護欄位值，再於程式中用 <span class="kw">AUTHORITY-CHECK OBJECT</span> 檢查。</li>
+  </ol>
+  <p>範例一：報表依選擇畫面的銷售組織逐一檢查，沒權限的組織直接排除並提示，而不是整支報表擋掉：</p>
+  <pre><code class="abap">REPORT z_sd_auth_demo.
+
+DATA gv_vkorg TYPE vbak-vkorg.
+SELECT-OPTIONS s_vkorg FOR gv_vkorg OBLIGATORY.
+
+START-OF-SELECTION.
+  "先把選擇畫面展開成實際的銷售組織清單
+  SELECT vkorg FROM tvko WHERE vkorg IN @s_vkorg
+    ORDER BY vkorg INTO TABLE @DATA(lt_vkorg).
+
+  DATA lt_allowed TYPE RANGE OF vbak-vkorg.
+  LOOP AT lt_vkorg INTO DATA(ls_vkorg).
+    AUTHORITY-CHECK OBJECT 'Z_SD_VKORG'
+      ID 'VKORG' FIELD ls_vkorg-vkorg
+      ID 'ACTVT' FIELD '03'.
+    IF sy-subrc = 0.
+      "列舉 EQ，不改寫成區間（Casper 實務經驗 2）
+      lt_allowed = VALUE #( BASE lt_allowed ( sign = 'I' option = 'EQ' low = ls_vkorg-vkorg ) ).
+    ELSE.
+      MESSAGE |無銷售組織 { ls_vkorg-vkorg } 的顯示權限，已排除| TYPE 'I'.
+    ENDIF.
+  ENDLOOP.
+
+  IF lt_allowed IS INITIAL.
+    MESSAGE '沒有任何可顯示的銷售組織' TYPE 'S' DISPLAY LIKE 'E'.
+    RETURN.
+  ENDIF.
+
+  SELECT vbeln, erdat, vkorg, kunnr, netwr, waerk
+    FROM vbak
+    WHERE vkorg IN @lt_allowed
+    ORDER BY vbeln
+    INTO TABLE @DATA(lt_vbak)
+    UP TO 500 ROWS.
+  cl_demo_output=&gt;display( lt_vbak ).</code></pre>
+  <div class="warn"><b>空的 RANGE 等於全部。</b>若沒檢查 <span class="kw">lt_allowed IS INITIAL</span> 就直接 <span class="kw">IN @lt_allowed</span>，當使用者一個組織都沒權限時，反而會查出<b>所有</b>銷售組織的資料 ── 這是權限程式最常見的漏洞。</div>
+  <p>範例二：用標準物件檢查公司代碼（FI 報表必備），以及素材中 ZABAP 表的表級權限：</p>
+  <pre><code class="abap">"FI：公司代碼顯示權限
+AUTHORITY-CHECK OBJECT 'F_BKPF_BUK'
+  ID 'BUKRS' FIELD p_bukrs
+  ID 'ACTVT' FIELD '03'.
+IF sy-subrc &lt;&gt; 0.
+  MESSAGE |無公司代碼 { p_bukrs } 的顯示權限| TYPE 'E'.
+ENDIF.
+
+"自建維護程式寫入 ZABAP 前，檢查表級權限 S_TABU_NAM
+AUTHORITY-CHECK OBJECT 'S_TABU_NAM'
+  ID 'ACTVT' FIELD '02'
+  ID 'TABLE' FIELD 'ZABAP'.
+IF sy-subrc &lt;&gt; 0.
+  MESSAGE '無資料表 ZABAP 的修改權限' TYPE 'E'.
+ENDIF.</code></pre>
+  <p>範例三：把權限檢查集中成一個小類別，方便單元測試時替換（測試替身）：</p>
+  <pre><code class="abap">INTERFACE lif_auth.
+  METHODS can_display_bukrs IMPORTING iv_bukrs TYPE bukrs
+                            RETURNING VALUE(rv_ok) TYPE abap_bool.
+ENDINTERFACE.
+
+CLASS lcl_auth DEFINITION FINAL.
+  PUBLIC SECTION.
+    INTERFACES lif_auth.
+ENDCLASS.
+
+CLASS lcl_auth IMPLEMENTATION.
+  METHOD lif_auth~can_display_bukrs.
+    AUTHORITY-CHECK OBJECT 'F_BKPF_BUK'
+      ID 'BUKRS' FIELD iv_bukrs
+      ID 'ACTVT' FIELD '03'.
+    rv_ok = xsdbool( sy-subrc = 0 ).
+  ENDMETHOD.
+ENDCLASS.
+
+"使用端：lo_auth 在正式執行時 = NEW lcl_auth( )，單元測試時換成永遠回 abap_true 的替身
+DATA(lo_auth) = CAST lif_auth( NEW lcl_auth( ) ).
+IF lo_auth-&gt;can_display_bukrs( '1000' ) = abap_false.
+  RETURN.
+ENDIF.</code></pre>
+
+  <h3 id="ch09-1-14">14. 內部稽核（一）：使用者權限與特殊帳號</h3>
+  <p>素材「SAP 審計概要」把 SAP 內部稽核分為<b>使用者權限安全</b>與<b>系統安全</b>兩大類。SAP 以 <b>Role（角色）</b>與 <b>Profile（參數檔）</b>兩種方式管理權限；系統安裝時就內建了幾個權限極大的 Profile，一旦指派，持有者就能對整個系統做管理操作，必須從一開始就慎用並訂出管理規則。</p>
+  <table>
+    <thead><tr><th>Profile</th><th>內容</th><th>S/4HANA 補註</th></tr></thead>
+    <tbody>
+      <tr><td>SAP_ALL</td><td>整個 SAP 系統的所有權限（不含之後新產生的）</td><td>仍存在；稽核必查</td></tr>
+      <tr><td>SAP_NEW</td><td>整個 SAP 系統所有新產生物件的權限</td><td>僅供升級過渡，新版不建議使用</td></tr>
+      <tr><td>S_A.ADMIN</td><td>SAP 系統操作權限</td><td rowspan="5">舊式複合 Profile，現行做法改用 PFCG 角色</td></tr>
+      <tr><td>S_A.CUSTOMIZ</td><td>所有後台配置權限（素材一處誤拼為 S_A.CUSOMIZ）</td></tr>
+      <tr><td>S_A.DEVELOP</td><td>無限制級別的開發權限</td></tr>
+      <tr><td>S_A.SYSTEM</td><td>SAP 系統管理權限（超級使用者）</td></tr>
+      <tr><td>S_A.USER</td><td>SAP 系統所有業務應用操作權限</td></tr>
+    </tbody>
+  </table>
+  <p>使用這些 Profile 的控制策略：</p>
+  <ol>
+    <li>盡量減少管理員與超級使用者的人數。</li>
+    <li>依需要的權限功能複製成新的 Profile／角色再調整，避免直接使用原始 Profile 帶來的控制漏洞。</li>
+    <li>管理員、業務人員、開發人員的權限分類，不混用角色與 Profile；必須遵守業務部門與稽核部門共同制定的權限制度，避免出現職責不相容（SoD，素材稱 CCA）。</li>
+  </ol>
+  <p>系統安裝後的特殊使用者，在設定階段結束後一定要妥善管理：</p>
+  <table>
+    <thead><tr><th>使用者</th><th>用途</th><th>管理建議</th></tr></thead>
+    <tbody>
+      <tr><td>SAP*</td><td>系統初始使用者，擁有所有權限</td><td>鎖定、改密碼、移除 Profile；設參數 <span class="kw">login/no_automatic_user_sapstar = 1</span>，避免刪除使用者主檔後以預設密碼登入</td></tr>
+      <tr><td>DDIC</td><td>系統初始化配置用，擁有所有權限（傳輸與升級會用到）</td><td>改密碼、平時鎖定或設為 System 類型使用者</td></tr>
+      <tr><td>SAPCPIC</td><td>系統通訊用途的使用者</td><td>改為 Communication／System 類型，改預設密碼</td></tr>
+      <tr><td>EARLYWATCH</td><td>系統分析用（位於用戶端 066）</td><td>新版改由 Solution Manager／SAP Cloud ALM 提供服務，066 用戶端可評估刪除</td></tr>
+    </tbody>
+  </table>
+  <p>素材的「ERP 系統安全設定」規範，並補上對應的系統參數（以 <span class="tcode">RZ10</span>／<span class="tcode">RZ11</span> 維護；參數名稱為 SAP 標準，實際值依公司政策）：</p>
+  <table>
+    <thead><tr><th>規範</th><th>對應參數或做法</th></tr></thead>
+    <tbody>
+      <tr><td>SAP 管理員與資料庫、作業系統管理員帳號分開</td><td>組織面管控</td></tr>
+      <tr><td>SAP_ALL、SAP_NEW、S_A.ADMIN、S_A.CUSTOMIZ、S_A.DEVELOP、S_A.SYSTEM、S_A.USER 不能指派給任何一般使用者</td><td>定期以第 17 節報表或 SUIM 檢查</td></tr>
+      <tr><td>SAP*、DDIC 凍結不用；另建由公司最高主管保管密碼的緊急超級使用者（密碼封存於保險箱），只在系統重大故障時啟用</td><td>業界稱 Firefighter／緊急存取（EAM）；啟用期間全程開 Security Audit Log</td></tr>
+      <tr><td>每 90 天更換密碼</td><td>login/password_expiration_time = 90</td></tr>
+      <tr><td>新密碼不得與前五次相同</td><td>login/password_history_size = 5</td></tr>
+      <tr><td>密碼需字母＋數字、至少 8 碼</td><td>login/min_password_lng = 8、login/min_password_letters = 1、login/min_password_digits = 1</td></tr>
+      <tr><td>登入失敗 6 次自動鎖定，需管理員解鎖（走內部簽核流程申請）</td><td>login/fails_to_user_lock = 6、login/failed_user_auto_unlock = 0</td></tr>
+      <tr><td>30 分鐘無操作自動登出</td><td>rdisp/gui_auto_logout = 1800（秒）</td></tr>
+    </tbody>
+  </table>
+
+  <h3 id="ch09-1-15">15. 內部稽核（二）：生產系統安全設定</h3>
+  <p>SAP 生產系統是企業的根本，任何資料、後台設定或系統參數的更改都會影響整個企業的資料流與業務流，因此生產系統上線後的「資料出口」一定要有嚴格的管控策略。素材列出三項設定：</p>
+  <table>
+    <thead><tr><th>TCODE</th><th>設定</th><th>說明</th></tr></thead>
+    <tbody>
+      <tr><td><span class="tcode">OBR3</span></td><td>把所有公司代碼設為「生產」（Productive）</td><td>勾選後旗標存在 T001-XPROD；生產公司代碼不能再用 <span class="tcode">OBR1</span> 等工具刪除交易資料</td></tr>
+      <tr><td><span class="tcode">SCC4</span></td><td>用戶端設定</td><td>Client Role 設為 Production；Client-specific 物件設為 No changes allowed；Cross-client 物件設為 No changes to repository and cross-client customizing objects；保護等級與 CATT／eCATT 限制一併設定</td></tr>
+      <tr><td><span class="tcode">SE06</span></td><td>系統可修改性（System Change Option）</td><td>Global Setting 設為 Not Modifiable；各軟體元件與命名空間都設為不可修改</td></tr>
+      <tr><td><span class="tcode">STMS</span></td><td>所有更改都透過傳輸機制</td><td>控制傳入的請求號碼，只有經 QAS 測試核准的請求才能匯入 PRD</td></tr>
+    </tbody>
+  </table>
+  <div class="tip">緊急時若必須在 PRD 暫時開放修改（例如改一筆無法傳輸的設定），要在 SE06／SCC4 開啟、改完立即關閉，並在 Security Audit Log 與變更單留下紀錄。SE06 與 SCC4 的每次變更本身也會寫入系統日誌，稽核人員會查。</div>
+  <p>以程式檢查生產公司代碼旗標，可以放進上線前的系統檢核報表：</p>
+  <pre><code class="abap">"列出尚未設為生產（XPROD 空白）的公司代碼
+SELECT bukrs, butxt, land1, waers, xprod
+  FROM t001
+  WHERE xprod = @abap_false
+  ORDER BY bukrs
+  INTO TABLE @DATA(lt_not_prod).
+
+IF lt_not_prod IS INITIAL.
+  WRITE / '所有公司代碼均已設為生產（OBR3）'.
+ELSE.
+  LOOP AT lt_not_prod INTO DATA(ls_cc).
+    WRITE: / |公司代碼 { ls_cc-bukrs } { ls_cc-butxt } 尚未設為生產|.
+  ENDLOOP.
+ENDIF.</code></pre>
+
+  <h3 id="ch09-1-16">16. 內部稽核（三）：審計功能、監控策略與稽核規範</h3>
+  <p>素材列出 SAP 審計功能主要包括：① 使用者登入及程序監控；② 檔案類型與檔案變更紀錄；③ 開發紀錄；④ 系統日誌檔稽核。素材並提醒：從職責分離角度來看，SAP 的 Audit Log 以檔案形式存在應用伺服器上，<b>SAP 管理員與作業系統管理員原則上更應真正分開</b>，否則 OS 管理員可以直接刪改稽核檔。</p>
+  <table>
+    <thead><tr><th>用途</th><th>素材中的 TCODE</th><th>S/4HANA／新版補註</th></tr></thead>
+    <tbody>
+      <tr><td>Security Audit Log 設定</td><td><span class="tcode">SM19</span></td><td>NetWeaver 7.50 起改用 <span class="tcode">RSAU_CONFIG</span>（S/4HANA 1809 適用）</td></tr>
+      <tr><td>Security Audit Log 查詢</td><td><span class="tcode">SM20</span></td><td>改用 <span class="tcode">RSAU_READ_LOG</span>；歸檔用 <span class="tcode">RSAU_ADMIN</span></td></tr>
+      <tr><td>系統日誌</td><td><span class="tcode">SM21</span></td><td>仍適用</td></tr>
+      <tr><td>程式短傾印（Dump）</td><td><span class="tcode">ST22</span></td><td>仍適用</td></tr>
+      <tr><td>資料表變更歷史</td><td><span class="tcode">OY18</span></td><td>常用 <span class="tcode">SCU3</span>；需開 rec/client 參數且表的技術設定勾 Log Changes</td></tr>
+      <tr><td>緩衝區監控</td><td><span class="tcode">ST02</span></td><td>仍適用</td></tr>
+      <tr><td>資料庫監控</td><td><span class="tcode">ST04</span></td><td>HANA 上導向 <span class="tcode">DBACOCKPIT</span></td></tr>
+      <tr><td>使用者交易統計</td><td>STAT（素材寫法）</td><td>STAT 已淘汰，改用 <span class="tcode">STAD</span></td></tr>
+      <tr><td>使用者資訊系統</td><td><span class="tcode">SUIM</span></td><td>仍適用；常用報表見下方</td></tr>
+      <tr><td>權限追蹤</td><td><span class="tcode">ST01</span></td><td>新版建議 <span class="tcode">STAUTHTRACE</span>（可跨應用伺服器）</td></tr>
+      <tr><td>傳輸管制</td><td><span class="tcode">STMS</span></td><td>仍適用</td></tr>
+    </tbody>
+  </table>
+  <p>SUIM 常用報表（可直接用 SA38 執行）：<span class="kw">RSUSR002</span>（依複合條件查使用者，例如誰有 S_DEVELOP 02）、<span class="kw">RSUSR003</span>（檢查各用戶端 SAP*、DDIC 等特殊使用者是否仍為預設密碼）、<span class="kw">RSUSR100</span>（使用者主檔變更紀錄）、<span class="kw">RSUSR200</span>（依最後登入日與密碼變更日列出使用者）。</p>
+  <h4>基本監控策略（素材原文整理）</h4>
+  <table>
+    <thead><tr><th>角色</th><th>頻率</th><th>工作</th></tr></thead>
+    <tbody>
+      <tr><td>系統管理員</td><td>每天</td><td>以 ST22、SM21、OY18、ST02、ST04 做日常檢查，掌握每日運行狀態</td></tr>
+      <tr><td>系統管理員</td><td>每三天</td><td>以 STAT（現 STAD）監控使用者的系統動作，搭配 SM20（現 RSAU_READ_LOG）看更詳細內容；不恰當的操作用 SUIM 監控</td></tr>
+      <tr><td>稽核部門</td><td>每兩週</td><td>系統管理員的任何動作都能在 SM20 看到，列出系統管理員的動作清單進行監控</td></tr>
+    </tbody>
+  </table>
+  <h4>系統權限審計規範（素材原文整理）</h4>
+  <ul>
+    <li>內控部的資訊稽核專員擁有對所有 SAP 帳號進行稽核的權限；內控部每年度至少做一次 ERP 權限稽核，結果通知資訊管理部與相關主管並存檔備查。</li>
+    <li>因管理需求要對特定事務持續追蹤時，由資訊稽核專員提出、經公司最高主管核准後，由 BASIS 人員持續追蹤並輸出報表。</li>
+    <li>資訊稽核專員每月匯出所有使用者在 ERP 的操作軌跡並存檔。</li>
+    <li>資訊稽核專員每週匯出 IT 人員在 ERP 的操作軌跡，彙整成分析報表呈報資訊管理部主管與公司最高主管並存檔。</li>
+  </ul>
+  <div class="note">素材目錄最後一行是「STMS 的概念」，內文未展開；傳輸路徑的說明見 <a href="#ch01-1">第 1-1 章 §15</a>。Security Audit Log 與 Audit Information System 的概念另見 <a href="#ch05-24">第 5-24 章</a>。</div>
+
+  <h3 id="ch09-1-17">17. 用 ABAP 做稽核報表：USR02、AGR_USERS、AGR_1251</h3>
+  <p>SUIM 能查的東西，稽核常要求「固定格式、定期產出」，這時自寫報表比每次手動操作可靠。常用的表：</p>
+  <table>
+    <thead><tr><th>表</th><th>內容</th><th>常用欄位</th></tr></thead>
+    <tbody>
+      <tr><td>USR02</td><td>使用者登入資料</td><td>BNAME、USTYP（A 對話、B 系統、C 通訊、S 服務、L 參考）、CLASS（使用者群組）、GLTGV／GLTGB（有效期間）、UFLAG（鎖定狀態）、TRDAT／LTIME（最後登入日期與時間）</td></tr>
+      <tr><td>UST04</td><td>使用者 ↔ Profile</td><td>BNAME、PROFILE</td></tr>
+      <tr><td>AGR_USERS</td><td>角色 ↔ 使用者</td><td>AGR_NAME、UNAME、FROM_DAT、TO_DAT</td></tr>
+      <tr><td>AGR_1251</td><td>角色中的權限值</td><td>AGR_NAME、OBJECT、AUTH、FIELD、LOW、HIGH、DELETED</td></tr>
+      <tr><td>AGR_DEFINE／AGR_TEXTS</td><td>角色定義與說明</td><td>AGR_NAME、TEXT</td></tr>
+    </tbody>
+  </table>
+  <div class="warn"><b>USR02 裡有密碼雜湊欄位（BCODE、PASSCODE、PWDSALTEDHASH）。</b>稽核報表一律明列欄位，絕不 SELECT *，也不可下載這些欄位；讀使用者資料的報表本身也要加權限檢查（例如 S_USER_GRP 顯示權限）。</div>
+  <p>報表一：擁有 SAP_ALL／SAP_NEW 等高權限 Profile、且未鎖定的使用者：</p>
+  <pre><code class="abap">REPORT z_audit_powerful_users.
+
+TYPES tt_prof TYPE RANGE OF ust04-profile.
+"高風險 Profile 用列舉，不用 'S_A*' 樣式或區間
+DATA(lt_prof) = VALUE tt_prof( sign = 'I' option = 'EQ'
+  ( low = 'SAP_ALL' )     ( low = 'SAP_NEW' )
+  ( low = 'S_A.ADMIN' )   ( low = 'S_A.CUSTOMIZ' )
+  ( low = 'S_A.DEVELOP' ) ( low = 'S_A.SYSTEM' ) ( low = 'S_A.USER' ) ).
+
+SELECT p~bname, p~profile, u~ustyp, u~class, u~uflag, u~trdat, u~gltgb
+  FROM ust04 AS p
+  INNER JOIN usr02 AS u ON u~bname = p~bname
+  WHERE p~profile IN @lt_prof
+    AND u~uflag   = 0                    "0 = 未鎖定
+  ORDER BY p~profile, p~bname
+  INTO TABLE @DATA(lt_hit).
+
+TRY.
+    cl_salv_table=&gt;factory( IMPORTING r_salv_table = DATA(lo_alv)
+                            CHANGING  t_table      = lt_hit ).
+    lo_alv-&gt;get_functions( )-&gt;set_all( ).
+    lo_alv-&gt;display( ).
+  CATCH cx_salv_msg INTO DATA(lx).
+    MESSAGE lx TYPE 'E'.
+ENDTRY.</code></pre>
+  <p>報表二：超過 90 天未登入、但仍有效且未鎖定的對話使用者（應停用的帳號）：</p>
+  <pre><code class="abap">DATA(lv_limit) = CONV d( sy-datum - 90 ).
+
+SELECT bname, class, trdat, ltime, gltgb
+  FROM usr02
+  WHERE ustyp = 'A'                                   "對話使用者
+    AND uflag = 0
+    AND ( gltgb = '00000000' OR gltgb &gt;= @sy-datum )  "尚在有效期間
+    AND ( trdat &lt; @lv_limit OR trdat = '00000000' )  "久未登入或從未登入
+  ORDER BY trdat, bname
+  INTO TABLE @DATA(lt_idle).
+
+WRITE / |{ lines( lt_idle ) } 個帳號超過 90 天未登入（基準日 { lv_limit DATE = USER }）|.</code></pre>
+  <p>報表三：哪些角色、哪些使用者在生產機具有「除錯時改值」（S_DEVELOP，OBJTYPE = DEBUG、ACTVT = 02）── 這是稽核最常開出的缺失之一：</p>
+  <pre><code class="abap">"步驟 1：找出 S_DEVELOP 授權中 ACTVT 含 02（或 *）的角色與授權
+SELECT DISTINCT agr_name, auth
+  FROM agr_1251
+  WHERE object  = 'S_DEVELOP'
+    AND field   = 'ACTVT'
+    AND ( low = '02' OR low = '*' )
+    AND deleted = @abap_false
+  INTO TABLE @DATA(lt_actvt).
+
+"步驟 2：同一授權（AUTH）的 OBJTYPE 也要涵蓋 DEBUG 才算命中
+SELECT DISTINCT a~agr_name
+  FROM agr_1251 AS a
+  INNER JOIN @lt_actvt AS x
+    ON x~agr_name = a~agr_name AND x~auth = a~auth
+  WHERE a~object  = 'S_DEVELOP'
+    AND a~field   = 'OBJTYPE'
+    AND ( a~low = 'DEBUG' OR a~low = '*' )
+    AND a~deleted = @abap_false
+  INTO TABLE @DATA(lt_roles).
+
+"步驟 3：列出目前有效期間內擁有這些角色的使用者
+SELECT r~agr_name, r~uname, r~from_dat, r~to_dat
+  FROM agr_users AS r
+  INNER JOIN @lt_roles AS k ON k~agr_name = r~agr_name
+  WHERE r~from_dat &lt;= @sy-datum
+    AND r~to_dat   &gt;= @sy-datum
+  ORDER BY r~agr_name, r~uname
+  INTO TABLE @DATA(lt_debug_users).
+
+cl_demo_output=&gt;display( lt_debug_users ).</code></pre>
+  <div class="note">步驟 2、3 用到「JOIN 內表」（<span class="kw">FROM … JOIN @itab</span>），這是 ABAP 7.52 起支援的語法，S/4HANA 1809（7.53）可用。舊系統請改用 <span class="kw">FOR ALL ENTRIES</span>，並先確認驅動內表不為空。另外本報表只看 LOW，未處理 LOW～HIGH 區間的授權值（例如 ACTVT 01～03）；正式稽核請改用 <span class="kw">RSUSR002</span> 或 SUSR_* 系列 API 做完整的值域比對。</div>
+
+  <h3 id="ch09-1-18">18. 上線與稽核檢核清單</h3>
+  <table>
+    <thead><tr><th>#</th><th>檢查項目</th><th>工具</th></tr></thead>
+    <tbody>
+      <tr><td>1</td><td>新程式屬於 Z 套件（不是 $TMP），有傳輸請求並已在 QAS 測試</td><td>SE80、SE09、STMS</td></tr>
+      <tr><td>2</td><td>報表有 AUTHORITY-CHECK，且權限不足時不會因空 RANGE 而查出全部資料</td><td>程式審查、SU53</td></tr>
+      <tr><td>3</td><td>自建 TCODE 在 SU24 掛好權限物件，PFCG 角色已更新並做 User Comparison</td><td>SU24、PFCG</td></tr>
+      <tr><td>4</td><td>PRD 的 SCC4、SE06 為不可修改，公司代碼已設為生產</td><td>SCC4、SE06、OBR3</td></tr>
+      <tr><td>5</td><td>沒有一般使用者持有 SAP_ALL／SAP_NEW／S_A.*；SAP*、DDIC 已鎖定並非預設密碼</td><td>第 17 節報表、RSUSR003</td></tr>
+      <tr><td>6</td><td>PRD 無人具備 S_DEVELOP DEBUG 02</td><td>第 17 節報表三、RSUSR002</td></tr>
+      <tr><td>7</td><td>Security Audit Log 已啟用並定期歸檔</td><td>RSAU_CONFIG、RSAU_READ_LOG、RSAU_ADMIN</td></tr>
+      <tr><td>8</td><td>讀取「第一筆」的邏輯都有明確 ORDER BY（HANA 沒有預設排序）</td><td>程式審查</td></tr>
+      <tr><td>9</td><td>讀 ACDOCA 的程式都有指定分類帳 RLDNR</td><td>程式審查、<a href="#ch06-12">第 6-12 章</a></td></tr>
+    </tbody>
+  </table>
+
+  <h3 id="ch09-1-qa">練習與自我檢核</h3>
+  <ol>
+    <li>講義列的六個 TCODE 各做什麼？SE16 與 SE16N 最大的差別是什麼？</li>
+    <li>程式屬性的 Status 有哪四種？練習時預設選哪一種？選了 T 能不能阻止程式傳到生產機？</li>
+    <li>Z2202_00_03 的選擇畫面為什麼沒有 F4？要怎麼改？</li>
+    <li>講義 04-02 的 BKPF／BSEG JOIN 少了哪個鍵？RIGHT JOIN 為什麼實際上變成 INNER JOIN？</li>
+    <li>ZFIR083 若沒加 <span class="kw">rldnr = '0L'</span>，在有兩個分類帳的系統會發生什麼事？原程式在 AT END OF 裡的 DELETE 有哪兩個問題？</li>
+    <li>寫出「註解／取消註解／大小寫互轉／原地複製」四個熱鍵。熱鍵失效時先檢查什麼？</li>
+    <li>課程用的 Z2202_00_VBAP 表設計有什麼缺陷？請提出你的主鍵設計。</li>
+    <li>CALL TRANSACTION 不加 WITH AUTHORITY-CHECK 會有什麼風險？</li>
+    <li>S_TABU_DIS 與 S_TABU_NAM 的差別？素材中的 ZABAP 表要用哪一個物件精準控制？</li>
+    <li>用 SU21 建立權限物件 Z_SD_VKORG 後，還要做哪兩個步驟使用者才能在自建 TCODE 中通過檢查？</li>
+    <li>為什麼權限檢查後得到的 RANGE 若為空，必須先擋下來而不是直接拿去 SELECT？</li>
+    <li>SAP*、DDIC、SAPCPIC、EARLYWATCH 各是什麼帳號？<span class="kw">login/no_automatic_user_sapstar</span> 在防什麼？</li>
+    <li>生產系統要在 OBR3、SCC4、SE06 各設定什麼？</li>
+    <li>SM19／SM20、STAT、ST01 在 S/4HANA 各改用哪個交易？</li>
+    <li>修改報表三，改成列出「具有 SE16N 且 S_TABU_DIS 為 * 的使用者」。</li>
+  </ol>
+</section>

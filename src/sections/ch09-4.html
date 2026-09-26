@@ -1,0 +1,789 @@
+<section class="chapter" id="ch09-4" data-title="PP：修改日誌與插件位置">
+  <h2>第 9-4 章 PP 二次開發（二）：物料修改日誌與插件位置報表</h2>
+  <p class="lede">本章拆解兩支 PP／MM 交界的客製報表。第一支 ZMMQ0003 查「誰在什麼時候改了物料主檔的哪個欄位」，重點是看懂變更文件 CDHDR／CDPOS，以及物件類別 MATERIAL 的 OBJECTID、TABKEY 組法。第二支 ZMMI0005（程式碼裡叫 ZMMI0003）是電子組裝廠的「插件位置報表」：把外包採購單或成品 BOM 的每個零件，連同它在電路板上的插件位置（C50、C53⋯）一起列出來給加工廠。它牽涉到 BOM 資料模型 MAST／STKO／STPO／STPU、生產版本、ECN 變更號碼，還有一段 2022-12 修正「抓錯 BOM 版本」的實戰紀錄。兩個案例都依「業務情境 → 選擇畫面與輸出 → 程式架構 → 關鍵段落現代改寫 → 原程式問題 → 上線注意」拆解，不整支貼原始碼。</p>
+
+  <div class="meta">
+    <div><b>核心 TCODE</b><span class="tcode">MM02</span><span class="tcode">MM03</span><span class="tcode">MM04</span><span class="tcode">SA38</span><span class="tcode">SCDO</span><span class="tcode">SE11</span><span class="tcode">SE16N</span><span class="tcode">SE37</span><span class="tcode">CS02</span><span class="tcode">CS03</span><span class="tcode">CS11</span><span class="tcode">CS12</span><span class="tcode">CS14</span><span class="tcode">CS15</span><span class="tcode">C223</span><span class="tcode">CC03</span><span class="tcode">ME23N</span><span class="tcode">ST05</span></div>
+    <div><b>關鍵物件</b>CDHDR、CDPOS、CDPOS_UID、CDPOS_STR、DD03M、DD04T、RSSCD100、CHANGEDOCUMENT_READ、CHANGEDOCUMENT_READ_HEADERS、CHANGEDOCUMENT_READ_POSITIONS、CONVERSION_EXIT_MATN1_INPUT、CL_ABAP_STRUCTDESCR、MAST、STKO、STPO、STPU、STAS、MKAL、RESB、EKKO、EKPO、STPOX、CSCMAT、CS_BOM_EXPL_MAT_V2、CSEP_MAT_BOM_SELECT_WHERE_USED、READ_TEXT、CL_SALV_TABLE、CL_GUI_FRONTEND_SERVICES</div>
+  </div>
+
+  <div class="warn"><b>資安說明：</b>原素材的截圖含有客戶公司名稱、供應商名稱、使用者帳號、實際料號與採購單號，程式註解中也有外部顧問的姓名。本章一律不轉錄：料號改成 <span class="kw">PCA-XXXX-B</span> 這類佔位符，工廠寫成 <span class="kw">'1000'</span>，使用者寫成 <span class="kw">USER01</span>。</div>
+
+  <h3 id="ch09-4-01">1. 素材對照</h3>
+  <table>
+    <thead><tr><th>本章小節</th><th>原始檔（txt／img）</th><th>原講義節次</th><th>說明</th></tr></thead>
+    <tbody>
+      <tr><td>§2～§9 ZMMQ0003</td><td><span class="src">3__ABAP_11_3_pp_Biz_52.txt</span>（與 Biz_59 內容相同）；精簡版 <span class="src">3__ABAP_11_3_pp_Biz_10.txt</span></td><td>第 01 節 01-1～01-4</td><td>主程式、ZMMQ0003TOP、ZMMQ0003FRM。講義把 FRM 的小標誤寫成「01-4．ZMMQ0003TOP」，內容其實是 FRM</td></tr>
+      <tr><td>§2</td><td>img\3__ABAP_11_3_pp_Biz_52\image1.png</td><td>01-1</td><td>手寫筆記：CDHDR／CDPOS 各欄位對一筆 MM02 修改（MARC-PLIFZ 由 140 改 144）的實際值</td></tr>
+      <tr><td>§2</td><td>image2.png</td><td>01-1</td><td>SE16 查 CDPOS 單筆的 Detailed Display：OBJECTCLAS、OBJECTID、CHANGENR、TABNAME、TABKEY、FNAME、CHNGIND、TEXT_CASE、UNIT_OLD／NEW、CUKY_OLD／NEW、VALUE_NEW／OLD、_DATAAGING</td></tr>
+      <tr><td>§10～§18 插件位置報表</td><td>3__ABAP_11_3_pp_Biz_52.txt</td><td>第 02 節 02-01～02-05</td><td>主程式 ZMMI0003、ZMMI0003TOP（include 檔頭寫 ZPPR0002TOP）、ZMMI0003F01</td></tr>
+      <tr><td>§11</td><td>image3.png、image4.png</td><td>02-01</td><td>選擇畫面、ABAP List 輸出（層次、項目、子階料號、單位用量、供貨數量、插件位置）</td></tr>
+      <tr><td>§14</td><td>image5.png、image6.png</td><td>02-05 之後</td><td>MM03 MRP 4 的生產版本：成品只有 0001 M-BOM；半成品有 0001 E-BOM 與 0002 M-BOM</td></tr>
+      <tr><td>—</td><td>Biz_10 的目錄「10-1 MRP ELEMENT」</td><td>—</td><td>只有目錄沒有內文，本章不處理</td></tr>
+      <tr><td>—</td><td>image7.jpeg</td><td>—</td><td>浮水印頁，無技術內容</td></tr>
+    </tbody>
+  </table>
+  <p>與既有章節的分工如下。<a href="#ch06-8">6-8 章</a>已經用採購單（物件類別 EINKBELEG）講過 CDHDR／CDPOS 的基本欄位、CHNGIND 五種值、ECC 的 CDPOS 是 cluster table 不能 JOIN、FOR ALL ENTRIES 的寫法，以及 CHANGEDOCUMENT_READ。本章不重寫這些內容，只補<b>物料主檔</b>特有的部分，包括 OBJECTID 補零、TABKEY 依表拆解、MM04／RSSCD100 的比較、READ_HEADERS／READ_POSITIONS 兩段式讀法，以及欄位中文化。BAPI 的一般用法請見 <a href="#ch04-1">4-1 章</a>。</p>
+
+  <h3 id="ch09-4-02">2. 物料的變更文件：物件類別 MATERIAL、OBJECTID 與 TABKEY</h3>
+  <p>只要資料元素勾了 Change document，MM01／MM02 存檔時系統就會寫變更文件。講義的手寫筆記用一筆實際修改示範了兩張表的欄位對應（帳號與料號已換成佔位符）：</p>
+  <table>
+    <thead><tr><th>表</th><th>欄位</th><th>講義中文</th><th>範例值</th></tr></thead>
+    <tbody>
+      <tr><td rowspan="7">CDHDR（檔頭，一次存檔一筆）</td><td>OBJECTCLAS</td><td>物件類別</td><td>MATERIAL</td></tr>
+      <tr><td>OBJECTID</td><td>物件編號</td><td>RM-0001（物料號碼，內部格式）</td></tr>
+      <tr><td>USERNAME</td><td>異動人</td><td>USER01</td></tr>
+      <tr><td>UDATE／UTIME</td><td>日期／時間</td><td>2022/08/12</td></tr>
+      <tr><td>TCODE</td><td>交易碼</td><td>MM02</td></tr>
+      <tr><td>CHANGE_IND</td><td>I／U／D</td><td>U</td></tr>
+      <tr><td>CHANGENR</td><td>更改編號</td><td>0003982979（講義把它叫 Doc.No）</td></tr>
+      <tr><td rowspan="7">CDPOS（明細，一個欄位一筆）</td><td>OBJECTCLAS／OBJECTID／CHANGENR</td><td>與檔頭相同</td><td>三個欄位合起來才是檔頭的鍵</td></tr>
+      <tr><td>TABNAME</td><td>資料表名</td><td>MARC</td></tr>
+      <tr><td>TABKEY</td><td>鍵值</td><td>200RM-0001⋯1000（MANDT＋MATNR＋WERKS）</td></tr>
+      <tr><td>FNAME</td><td>欄位名稱</td><td>PLIFZ（計畫交貨時間）</td></tr>
+      <tr><td>CHNGIND</td><td>變更類型</td><td>U</td></tr>
+      <tr><td>VALUE_NEW／VALUE_OLD</td><td>新值／舊值</td><td>144／140</td></tr>
+      <tr><td>UNIT_OLD／UNIT_NEW、CUKY_OLD／CUKY_NEW、TEXT_CASE</td><td>舊新單位、舊新幣別、文字旗標</td><td>數量、金額欄位才有值</td></tr>
+    </tbody>
+  </table>
+  <p>MATERIAL 這個物件類別不只涵蓋 MARA，也涵蓋工廠層、倉庫層、評價層等多張表。TABKEY 是「該表完整主鍵」直接串接，要依 TABNAME 拆：</p>
+  <table>
+    <thead><tr><th>TABNAME</th><th>TABKEY 組成（S/4HANA，MATNR 40 碼）</th><th>拆出工廠等欄位的位移</th></tr></thead>
+    <tbody>
+      <tr><td>MARA</td><td>MANDT(3)＋MATNR(40)</td><td>—</td></tr>
+      <tr><td>MARC</td><td>MANDT＋MATNR＋WERKS(4)</td><td>WERKS＝+43(4)</td></tr>
+      <tr><td>MARD</td><td>MANDT＋MATNR＋WERKS＋LGORT(4)</td><td>WERKS＝+43(4)、LGORT＝+47(4)</td></tr>
+      <tr><td>MBEW</td><td>MANDT＋MATNR＋BWKEY(4)＋BWTAR(10)</td><td>BWKEY＝+43(4)</td></tr>
+      <tr><td>MAKT</td><td>MANDT＋MATNR＋SPRAS(1)</td><td>SPRAS＝+43(1)</td></tr>
+      <tr><td>MARM</td><td>MANDT＋MATNR＋MEINH(3)</td><td>MEINH＝+43(3)</td></tr>
+    </tbody>
+  </table>
+  <div class="warn"><b>ECC → S/4HANA 的位移會變：</b>ECC 的 MATNR 是 18 碼，所以 MARC 的 WERKS 在 +21；S/4HANA 1809 的 MATNR 延長為 40 碼，WERKS 變成 +43。舊程式如果寫死 <span class="kw">tabkey+21(4)</span>，升級後會全部錯位，而且不會報錯。改寫版一律用 <span class="kw">CL_ABAP_TYPEDESCR</span> 取長度，或直接改用 CHANGEDOCUMENT_READ 系列（它會回傳已格式化的鍵）。表鍵的實際定義請以 SE11 確認。</div>
+  <p>截圖（SE16 的 Detailed Display）還看得到一個 <span class="kw">_DATAAGING</span> 欄位，表示這個系統的變更文件已經掛上 Data Aging。已經老化的資料不一定讀得到，查不到很舊的紀錄時，請先和 BASIS 確認老化策略，不要馬上懷疑程式。</p>
+  <pre><code class="abap">" 物件類別 MATERIAL 的 OBJECTID 就是 MATNR 的「內部格式」（CHAR90 靠左）
+" 純數字料號在內部會補前導零，所以使用者輸入的外部格式要先轉換
+DATA(lv_matnr) = CONV matnr( '4711' ).
+
+CALL FUNCTION 'CONVERSION_EXIT_MATN1_INPUT'
+  EXPORTING
+    input        = lv_matnr
+  IMPORTING
+    output       = lv_matnr          " 例：000000000000004711（依料號格式設定 OMSL 而定）
+  EXCEPTIONS
+    length_error = 1
+    OTHERS       = 2.
+IF sy-subrc &lt;&gt; 0.
+  MESSAGE |料號 { lv_matnr } 格式錯誤| TYPE 'E'.
+ENDIF.
+
+DATA(lv_objectid) = CONV cdhdr-objectid( lv_matnr ).
+
+" 其他常見物件類別的 OBJECTID（類別定義請以 SCDO 確認）
+"   EINKBELEG  採購單  → EBELN       （見 6-8 章）
+"   VERKBELEG  銷售單  → VBELN
+"   KRED／DEBI 供應商／客戶 → LIFNR／KUNNR（S/4HANA 由 BP 維護，請實測是否仍寫這兩類）</code></pre>
+  <div class="note">SELECT-OPTIONS 若宣告成 <span class="kw">FOR mara-matnr</span>，畫面上的轉換常式（MATN1）會自動把外部格式轉成內部格式，所以原程式直接拿 <span class="kw">p_obid</span> 比 OBJECTID 是可行的。要自己組 OBJECTID 的情況，例如從檔案讀料號、或從別的表帶入，才需要上面的轉換。</div>
+
+  <h3 id="ch09-4-03">3. 先找標準：MM04、RSSCD100、SCDO，何時才需要 ZMMQ0003</h3>
+  <p>依 Casper 經驗第 3 條「先找標準，再想客製」，寫程式前先確認標準功能做不到：</p>
+  <table>
+    <thead><tr><th>工具</th><th>能做什麼</th><th>限制</th></tr></thead>
+    <tbody>
+      <tr><td><span class="tcode">MM04</span>（Display Material Changes）</td><td>輸入一個料號，列出所有變更文件，可以展開到欄位、看新舊值；也可以依變更日期或使用者縮小範圍</td><td>一次只能查<b>一個</b>料號；不能跨料號用使用者或日期撈、不能匯出成一張清單給稽核</td></tr>
+      <tr><td><span class="tcode">SA38</span> → <span class="kw">RSSCD100</span>（Display Change Documents）</td><td>任何物件類別都能查，可以依物件類別、物件值、使用者、日期、表名篩選；結果是清單，可以下載</td><td>欄位名稱是技術名稱或資料元素短文；沒有料號說明、工廠等業務欄位；一般使用者通常沒有 SA38 權限</td></tr>
+      <tr><td><span class="tcode">SCDO</span></td><td>查物件類別 MATERIAL 包含哪些表、產生的更新函數</td><td>只是定義，不是查詢工具</td></tr>
+      <tr><td><span class="tcode">SE16N</span> 查 CDHDR／CDPOS</td><td>開發者自己看原始資料</td><td>兩張表要分開查；OBJECTID、TABKEY 要自己組</td></tr>
+    </tbody>
+  </table>
+  <p>ZMMQ0003 值得寫的理由是業務的需求：「某段期間、某些使用者、多個料號改過哪些欄位，一張表看完，最好欄位是中文，還能點回 MM03」。如果需求只是偶爾查一個料號，教使用者用 MM04 就好。</p>
+  <div class="tip"><b>包成交易碼比寫新程式便宜：</b>如果 RSSCD100 就夠用，只是使用者沒有 SA38 權限，可以用 SE93 建一個參數交易碼，預填 OBJECTCLAS = MATERIAL 並隱藏該欄位。這樣零開發就能交付，也比給 SA38 權限安全。</div>
+
+  <h3 id="ch09-4-04">4. ZMMQ0003 的業務情境、選擇畫面、輸出與原程式架構</h3>
+  <p><b>業務情境：</b>MRP 結果突然變了，追查後發現有人用 MM02 把某個料號的計畫交貨時間 MARC-PLIFZ 從 140 天改成 144 天。主管要一張「物料異動紀錄查詢」，可以依異動人、異動日期、料號查，看出每一筆的表、欄位、新舊值。</p>
+  <p><b>原選擇畫面</b>（區塊 blk1）：</p>
+  <ul>
+    <li><span class="kw">P_UNAME</span>：異動人。原程式參照 <span class="kw">CSKSZ-VERAK_USER</span>（成本中心負責人），是為了借用它的搜尋說明；被註解掉的那一行才是正確的 <span class="kw">CDHDR-USERNAME</span></li>
+    <li><span class="kw">P_UDATE</span>：異動日期（CDHDR-UDATE）</li>
+    <li><span class="kw">P_OBID</span>：料號，參照 <span class="kw">MARA-MATNR</span>，用來比 CDPOS-OBJECTID</li>
+    <li>被註解掉的 P_EKGRP、P_MMSTA、PERFORM GET_MATNR_EBELN／GET_MATNR_BKLAS 等，都是從別支程式（ZMMB0015）複製過來的殘留</li>
+  </ul>
+  <p><b>輸出：</b>用 REUSE_ALV_GRID_DISPLAY 顯示 12 欄：物件類別、物件編號、username、udate、tcode、change_ind、更改編號、資料表名、鍵值、欄位名稱、新值、舊值。版面設定了斑馬紋、最佳欄寬，雙擊（F2CODE = '&amp;ETA'）會跳出單筆明細。</p>
+  <p><b>原程式架構（include 結構）：</b></p>
+  <table>
+    <thead><tr><th>Include</th><th>內容</th><th>改寫後</th></tr></thead>
+    <tbody>
+      <tr><td>ZMMQ0003（主程式）</td><td><span class="kw">TABLES CSKSZ</span>、選擇畫面、<span class="kw">START-OF-SELECTION</span> 依序 PERFORM GET_DATA → CHECK → SET_SORT → SET_COMMAND → ALVDISPLAY</td><td>選擇畫面＋<span class="kw">NEW lcl_report( )-&gt;run( )</span></td></tr>
+      <tr><td>ZMMQ0003TOP</td><td><span class="kw">TABLES: mara, marc, ekpo, ekko, makt, matdoc, cdpos, cdhdr</span>、slis 欄位目錄與事件表、輸出結構 ty_cdpos，以及一整組用不到的 BAPI_MATERIAL_SAVEDATA 變數（BAPI_MARA、BAPI_MARC、BAPIRET2、<span class="kw">OCCURS 0 WITH HEADER LINE</span>）</td><td>TOP 只留選擇畫面參照用的變數；型別搬進類別的 PUBLIC SECTION</td></tr>
+      <tr><td>ZMMQ0003FRM（講義誤標為 TOP）</td><td>FORM set_sort、get_data、alvdisplay（逐欄 APPEND wa_fieldcat 共 12 次）、set_command、form_pf_status_set</td><td>類別的方法：get_data、add_texts、display、on_double_click</td></tr>
+    </tbody>
+  </table>
+
+  <h3 id="ch09-4-05">5. 關鍵段落改寫（一）：選擇畫面與 local class 骨架</h3>
+  <p>改寫原則：<span class="kw">TABLES</span> 改成一般變數；日期條件改成<b>必填並預設近 30 天</b>（理由見 §9）；多加一個「表名」條件，讓使用者只看 MARC 或只看 MBEW；筆數上限改成參數，而且不再用它來掩蓋錯誤。</p>
+  <pre><code class="abap">REPORT zmmq0003.
+
+" ---- ZMMQ0003TOP：只留選擇畫面參照用的變數（取代 TABLES）----
+DATA: gv_matnr TYPE mara-matnr,
+      gv_udate TYPE cdhdr-udate,
+      gv_uname TYPE cdhdr-username,
+      gv_tabnm TYPE cdpos-tabname.
+
+SELECTION-SCREEN BEGIN OF BLOCK blk1 WITH FRAME TITLE TEXT-001.
+  SELECT-OPTIONS: s_matnr FOR gv_matnr,                 " MATN1 轉換常式自動轉成內部格式
+                  s_udate FOR gv_udate OBLIGATORY,      " 一定要有日期
+                  s_uname FOR gv_uname,
+                  s_tabnm FOR gv_tabnm.                 " 例：MARA、MARC、MBEW
+  PARAMETERS      p_max TYPE i DEFAULT 5000.
+SELECTION-SCREEN END OF BLOCK blk1.
+
+INITIALIZATION.
+  s_udate[] = VALUE #( ( sign = 'I' option = 'BT' low = sy-datum - 30 high = sy-datum ) ).
+
+" ---- ZMMQ0003_CLS：類別定義與實作（見下兩節），必須放在 START-OF-SELECTION 之前 ----
+INCLUDE zmmq0003_cls.
+
+START-OF-SELECTION.
+  NEW lcl_matchg_report( )-&gt;run( ).</code></pre>
+  <pre><code class="abap">CLASS lcl_matchg_report DEFINITION FINAL.
+  PUBLIC SECTION.
+    TYPES: BEGIN OF ty_out,
+             matnr     TYPE mara-matnr,
+             maktx     TYPE makt-maktx,
+             werks     TYPE werks_d,          " 從 TABKEY 拆出（MARC／MARD）
+             udate     TYPE cdhdr-udate,
+             utime     TYPE cdhdr-utime,
+             username  TYPE cdhdr-username,
+             tcode     TYPE cdhdr-tcode,
+             changenr  TYPE cdhdr-changenr,
+             tabname   TYPE cdpos-tabname,
+             fname     TYPE cdpos-fname,
+             ftext     TYPE as4text,          " 欄位中文（§8）
+             chngind   TYPE cdpos-chngind,
+             value_old TYPE cdpos-value_old,
+             value_new TYPE cdpos-value_new,
+             unit_old  TYPE cdpos-unit_old,
+             unit_new  TYPE cdpos-unit_new,
+             cuky_old  TYPE cdpos-cuky_old,
+             cuky_new  TYPE cdpos-cuky_new,
+             tabkey    TYPE cdpos-tabkey,
+           END OF ty_out,
+           tt_out TYPE STANDARD TABLE OF ty_out WITH EMPTY KEY.
+
+    METHODS run.
+
+  PRIVATE SECTION.
+    DATA mt_out TYPE tt_out.
+    METHODS get_data  RETURNING VALUE(rt_out) TYPE tt_out.
+    METHODS add_texts CHANGING  ct_out TYPE tt_out.
+    METHODS display.
+    METHODS on_double_click FOR EVENT double_click OF cl_salv_events_table
+      IMPORTING row.
+ENDCLASS.
+
+CLASS lcl_matchg_report IMPLEMENTATION.
+  METHOD run.
+    mt_out = get_data( ).
+    IF mt_out IS INITIAL.
+      MESSAGE '查無符合條件的物料變更紀錄' TYPE 'S' DISPLAY LIKE 'W'.
+      RETURN.
+    ENDIF.
+    add_texts( CHANGING ct_out = mt_out ).
+    display( ).
+  ENDMETHOD.
+  " get_data／add_texts／display／on_double_click 見 §6～§8
+ENDCLASS.</code></pre>
+
+  <h3 id="ch09-4-06">6. 關鍵段落改寫（二）：CDHDR JOIN CDPOS，三個鍵都要對上</h3>
+  <p>這是原程式最嚴重的錯誤。原本的 JOIN 條件只寫了 <span class="kw">a~objectclas = b~objectclas</span>，等於讓每一筆 CDPOS 對上<b>所有</b>物件類別同為 MATERIAL 的 CDHDR，形成笛卡兒積：一個料號改一個欄位，會配上全系統幾十萬筆物料變更檔頭，而異動人、日期全是別人的。原程式靠 <span class="kw">UP TO 1000 ROWS</span> 才沒有跑到逾時，但畫面上的 username、udate 幾乎都是錯的。正確的 JOIN 必須三個鍵都對上：OBJECTCLAS、OBJECTID、CHANGENR。</p>
+  <pre><code class="abap">  METHOD get_data.
+    " S/4HANA 的 CDPOS 是透明表，可以直接 JOIN（ECC 是 cluster table，見 6-8 章）
+    SELECT h~objectid, h~changenr, h~username, h~udate, h~utime, h~tcode,
+           p~tabname, p~tabkey, p~fname, p~chngind,
+           p~value_old, p~value_new, p~unit_old, p~unit_new, p~cuky_old, p~cuky_new
+      FROM cdhdr AS h
+      INNER JOIN cdpos AS p
+         ON p~objectclas = h~objectclas
+        AND p~objectid   = h~objectid          " ← 原程式漏了
+        AND p~changenr   = h~changenr          " ← 原程式漏了
+      WHERE h~objectclas = 'MATERIAL'           " 一定要帶物件類別（主鍵第一欄）
+        AND h~objectid  IN @s_matnr
+        AND h~udate     IN @s_udate
+        AND h~username  IN @s_uname
+        AND p~tabname   IN @s_tabnm
+      ORDER BY h~objectid, h~udate, h~utime, h~changenr, p~tabname, p~tabkey, p~fname
+      INTO TABLE @DATA(lt_raw)
+      UP TO @p_max ROWS.
+
+    IF lines( lt_raw ) = p_max.
+      MESSAGE |已達筆數上限 { p_max }，請縮小日期或料號範圍| TYPE 'I'.
+    ENDIF.
+
+    " MATNR 長度（S/4HANA 為 40）用 RTTS 取得，不寫死位移
+    DATA(lv_len) = CAST cl_abap_elemdescr(
+                     cl_abap_typedescr=&gt;describe_by_name( 'MATNR' ) )-&gt;output_length.
+    DATA(lv_off) = 3 + lv_len.        " MANDT(3) + MATNR
+
+    rt_out = VALUE #( FOR r IN lt_raw
+      ( VALUE ty_out( BASE CORRESPONDING #( r )
+          matnr = CONV #( r-objectid )
+          werks = COND #( WHEN r-tabname = 'MARC' OR r-tabname = 'MARD'
+                          THEN substring( val = r-tabkey off = lv_off len = 4 ) ) ) ) ).
+  ENDMETHOD.</code></pre>
+  <div class="note"><b>關於 output_length：</b>CHAR 型資料元素的 <span class="kw">output_length</span> 就等於欄位長度，但若料號用了特殊的轉換常式，輸出長度可能不同。保險的做法是用 <span class="kw">cl_abap_elemdescr-&gt;length</span> 除以 <span class="kw">cl_abap_char_utilities=&gt;charsize</span>，或在 SE11 確認 MATNR 長度後定義成常數。這裡的重點是：不要把 18 或 40 散落在程式各處。</div>
+  <div class="tip"><b>Casper 經驗第 1 條：</b>HANA 沒有預設排序。原程式的 SET_SORT 只對 objectclas 排序，但所有資料都是 MATERIAL，排了等於沒排，每次執行的列序都可能不同。改寫版在 SQL 就用 <span class="kw">ORDER BY … udate, utime, changenr</span> 明確排序。如果之後要做「取某欄位最後一次的新值」，一定要依 CHANGENR 排序後再取最後一筆。</div>
+
+  <h3 id="ch09-4-07">7. 關鍵段落改寫（三）：標準函數 CHANGEDOCUMENT_READ_HEADERS／READ_POSITIONS</h3>
+  <p>直接 SELECT 最快，但得自己處理 TABKEY、格式化、欄位文字與歸檔資料。標準函數會處理這些事，適合「單一或少量物件、要看到跟 MM04 一樣的畫面值」的情境。6-8 章示範過一次讀完的 <span class="kw">CHANGEDOCUMENT_READ</span>，這裡示範兩段式：先讀檔頭，再逐筆讀明細。</p>
+  <pre><code class="abap">DATA lt_cdhdr TYPE STANDARD TABLE OF cdhdr WITH EMPTY KEY.
+DATA lt_pos   TYPE STANDARD TABLE OF cdshw WITH EMPTY KEY.   " 已格式化的明細
+
+" 1) 檔頭：一個料號在期間內的所有變更號碼
+CALL FUNCTION 'CHANGEDOCUMENT_READ_HEADERS'
+  EXPORTING
+    objectclass                = 'MATERIAL'
+    objectid                   = lv_objectid        " §2 轉好的內部格式
+    date_of_change             = lv_from          " 由 s_udate[ 1 ]-low 取得
+    date_until                 = lv_to            " 由 s_udate[ 1 ]-high 取得
+  TABLES
+    i_cdhdr                    = lt_cdhdr
+  EXCEPTIONS
+    no_position_found          = 1
+    wrong_access_to_archive    = 2
+    time_zone_conversion_error = 3
+    OTHERS                     = 4.
+IF sy-subrc &lt;&gt; 0.
+  RETURN.                                          " 1 = 沒有變更，屬正常情況
+ENDIF.
+
+SORT lt_cdhdr BY udate utime changenr.             " 函數回傳順序不保證，自己排
+
+" 2) 明細：每個變更號碼讀一次
+LOOP AT lt_cdhdr INTO DATA(ls_hdr).
+  CLEAR lt_pos.
+  CALL FUNCTION 'CHANGEDOCUMENT_READ_POSITIONS'
+    EXPORTING
+      changenumber      = ls_hdr-changenr
+    TABLES
+      editpos           = lt_pos
+    EXCEPTIONS
+      no_position_found = 1
+      OTHERS            = 2.
+  CHECK sy-subrc = 0.
+  LOOP AT lt_pos INTO DATA(ls_pos).
+    " ls_pos-ftext：欄位說明；ls_pos-f_old／f_new：已依單位、幣別格式化的舊新值
+    APPEND VALUE #( matnr    = CONV #( ls_hdr-objectid )
+                    udate    = ls_hdr-udate
+                    username = ls_hdr-username
+                    tcode    = ls_hdr-tcode
+                    changenr = ls_hdr-changenr
+                    tabname  = ls_pos-tabname
+                    fname    = ls_pos-fname
+                    ftext    = ls_pos-ftext
+                    chngind  = ls_pos-chngind
+                    value_old = ls_pos-f_old
+                    value_new = ls_pos-f_new ) TO mt_out.
+  ENDLOOP.
+ENDLOOP.</code></pre>
+  <div class="warn"><b>介面請以 SE37 確認：</b>上面三個函數與 CDSHW／CDRED 結構的欄位（FTEXT、F_OLD、F_NEW）在各版本大致相同，但選用參數（例如 USERNAME、TIME_OF_CHANGE、READ_CHANGEDOCU）可能增減，程式實際寫之前請先到 SE37 看你系統的介面。這些函數也沒有 SAP 的「released」承諾；ABAP Cloud 環境不能用，要改用 SAP 提供的 released API。</div>
+  <table>
+    <thead><tr><th>做法</th><th>適合</th><th>不適合</th></tr></thead>
+    <tbody>
+      <tr><td>直接 SELECT CDHDR JOIN CDPOS（§6）</td><td>跨料號、依日期或使用者大量查詢；稽核清單</td><td>要看已歸檔的資料；要依畫面格式顯示金額與數量</td></tr>
+      <tr><td>CHANGEDOCUMENT_READ（一次讀完）</td><td>單一物件、要欄位文字與格式化值</td><td>OBJECTID 用萬用字元掃大量物件（很慢）</td></tr>
+      <tr><td>READ_HEADERS＋READ_POSITIONS</td><td>先列清單讓使用者挑，挑了才讀明細（延遲載入）</td><td>一次要全部明細（變成 N+1 次呼叫）</td></tr>
+    </tbody>
+  </table>
+
+  <h3 id="ch09-4-08">8. 關鍵段落改寫（四）：欄位中文化（DD03M／DD04T／RTTS）與 SALV 輸出</h3>
+  <p>業務看不懂 PLIFZ、QMATV。欄位文字有三個來源：DD03M 是「表欄位＋資料元素文字」的檢視，一次就能拿到；DD04T 是資料元素文字表，適合 DD03M 沒有登入語言的文字時拿來補；RTTS 的 <span class="kw">get_ddic_field_list</span> 則以表為單位取欄位清單，不必自己寫 SQL。</p>
+  <pre><code class="abap">  METHOD add_texts.
+    TYPES: BEGIN OF lty_makt,
+             matnr TYPE makt-matnr,
+             maktx TYPE makt-maktx,
+           END OF lty_makt.
+    DATA lt_mat    TYPE STANDARD TABLE OF matnr WITH EMPTY KEY.
+    DATA lt_makt_h TYPE HASHED TABLE OF lty_makt WITH UNIQUE KEY matnr.
+
+    " 1) 料號說明：一次讀
+    lt_mat = VALUE #( FOR GROUPS g OF o IN ct_out GROUP BY o-matnr ( g ) ).
+    IF lt_mat IS NOT INITIAL.
+      SELECT matnr, maktx FROM makt
+        FOR ALL ENTRIES IN @lt_mat
+        WHERE matnr = @lt_mat-table_line
+          AND spras = @sy-langu
+        INTO TABLE @lt_makt_h.
+    ENDIF.
+
+    " 2) 欄位文字：先 DD03M（表＋欄位），不足再 DD04T（資料元素）
+    DATA(lt_tab) = VALUE rsdsselopt_t( FOR GROUPS t OF o IN ct_out GROUP BY o-tabname
+                                       ( sign = 'I' option = 'EQ' low = t ) ).
+    SELECT tabname, fieldname, rollname, scrtext_l, ddtext
+      FROM dd03m
+      WHERE tabname    IN @lt_tab
+        AND ddlanguage  = @sy-langu
+      INTO TABLE @DATA(lt_dd03m).
+    SORT lt_dd03m BY tabname fieldname.
+
+    LOOP AT ct_out ASSIGNING FIELD-SYMBOL(&lt;o&gt;).
+      &lt;o&gt;-maktx = VALUE #( lt_makt_h[ matnr = &lt;o&gt;-matnr ]-maktx OPTIONAL ).
+      READ TABLE lt_dd03m INTO DATA(ls_dd)
+           WITH KEY tabname = &lt;o&gt;-tabname fieldname = &lt;o&gt;-fname BINARY SEARCH.
+      IF sy-subrc = 0.
+        &lt;o&gt;-ftext = COND #( WHEN ls_dd-scrtext_l IS NOT INITIAL THEN ls_dd-scrtext_l
+                             ELSE ls_dd-ddtext ).
+      ELSEIF &lt;o&gt;-fname = 'KEY'.
+        &lt;o&gt;-ftext = '（整筆新增／刪除）'.
+      ENDIF.
+    ENDLOOP.
+  ENDMETHOD.</code></pre>
+  <pre><code class="abap">" 另一種取法：RTTS，以表為單位取欄位文字（不必知道 DD03M／DD04T 的結構）
+DATA(lo_struct) = CAST cl_abap_structdescr(
+                    cl_abap_typedescr=&gt;describe_by_name( 'MARC' ) ).
+DATA(lt_dfies) = lo_struct-&gt;get_ddic_field_list( p_langu = sy-langu ).
+" lt_dfies 每列有 fieldname、rollname、fieldtext、scrtext_s／m／l
+DATA(lv_text) = VALUE scrtext_l( lt_dfies[ fieldname = 'PLIFZ' ]-scrtext_l OPTIONAL ).  " 計畫交貨時間
+
+" 資料元素層級（DD04T）：同一個資料元素用在很多表時，只查一次
+SELECT SINGLE ddtext FROM dd04t
+  WHERE rollname   = 'PLIFZ'
+    AND ddlanguage = @sy-langu
+    AND as4local   = 'A'
+  INTO @DATA(lv_dtel_text).</code></pre>
+  <pre><code class="abap">  METHOD display.
+    TRY.
+        cl_salv_table=&gt;factory( IMPORTING r_salv_table = DATA(lo_alv)
+                                CHANGING  t_table      = mt_out ).
+      CATCH cx_salv_msg INTO DATA(lx).
+        MESSAGE lx TYPE 'E'.
+    ENDTRY.
+
+    lo_alv-&gt;get_functions( )-&gt;set_all( abap_true ).
+    lo_alv-&gt;get_display_settings( )-&gt;set_striped_pattern( abap_true ).   " 取代 zebra
+    DATA(lo_cols) = lo_alv-&gt;get_columns( ).
+    lo_cols-&gt;set_optimize( abap_true ).                                   " 取代 colwidth_optimize
+    TRY.
+        lo_cols-&gt;get_column( 'TABKEY' )-&gt;set_visible( abap_false ).      " 技術鍵預設隱藏
+        CAST cl_salv_column_table( lo_cols-&gt;get_column( 'FTEXT' ) )-&gt;set_long_text( '欄位說明' ).
+      CATCH cx_salv_not_found.
+    ENDTRY.
+
+    " 排序：料號 → 日期 → 時間 → 變更號碼（取代 SET_SORT 只排 objectclas）
+    DATA(lo_sort) = lo_alv-&gt;get_sorts( ).
+    TRY.
+        lo_sort-&gt;add_sort( 'MATNR' ).
+        lo_sort-&gt;add_sort( 'UDATE' ).
+        lo_sort-&gt;add_sort( 'UTIME' ).
+        lo_sort-&gt;add_sort( 'CHANGENR' ).
+      CATCH cx_salv_not_found cx_salv_existing cx_salv_data_error.
+    ENDTRY.
+
+    SET HANDLER on_double_click FOR lo_alv-&gt;get_event( ).
+    lo_alv-&gt;display( ).
+  ENDMETHOD.
+
+  METHOD on_double_click.
+    " 雙擊回 MM03；WITH AUTHORITY-CHECK 讓沒權限的人進不去
+    DATA(ls_row) = VALUE ty_out( mt_out[ row ] OPTIONAL ).
+    CHECK ls_row-matnr IS NOT INITIAL.
+    SET PARAMETER ID 'MAT' FIELD ls_row-matnr.
+    CALL TRANSACTION 'MM03' WITH AUTHORITY-CHECK AND SKIP FIRST SCREEN.
+  ENDMETHOD.</code></pre>
+  <div class="note">原程式的 ALVDISPLAY 有幾個與 SALV 對照時要知道的設定：<span class="kw">detail_popup</span>＋<span class="kw">f2code = '&amp;ETA'</span>（雙擊跳出明細），SALV 的工具列本來就有「明細」按鈕；<span class="kw">wa_setting-edt_cll_cb</span> 是可編輯 ALV 回傳修改值用的，查詢報表完全用不到；每個文字欄位都設了 <span class="kw">icon = 'X'</span>，會讓 ALV 嘗試把內容當圖示畫，是複製貼上的錯誤。</div>
+
+  <h3 id="ch09-4-09">9. ZMMQ0003 原程式問題與上線注意</h3>
+  <table>
+    <thead><tr><th>#</th><th>原程式寫法</th><th>問題</th><th>改寫</th></tr></thead>
+    <tbody>
+      <tr><td>1</td><td>JOIN 只對 OBJECTCLAS</td><td>笛卡兒積；異動人、日期對不上，結果錯誤</td><td>三鍵 JOIN（§6）</td></tr>
+      <tr><td>2</td><td><span class="kw">UP TO 1000 ROWS</span>，沒有 ORDER BY</td><td>HANA 無預設排序，每次抓到的 1000 筆不同，使用者也不知道被截斷</td><td>ORDER BY＋參數上限＋達上限時提示</td></tr>
+      <tr><td>3</td><td>日期、料號都可以空白</td><td>空白＝掃全部物料變更文件；大系統上億筆</td><td>日期必填、預設 30 天</td></tr>
+      <tr><td>4</td><td><span class="kw">TABLES</span> 八張表、<span class="kw">TYPE-POOLS slis</span>、一整組沒用到的 BAPI 變數（含 <span class="kw">OCCURS 0 WITH HEADER LINE</span>）</td><td>從別支程式複製的殘留，增加維護者的困惑</td><td>全部移除</td></tr>
+      <tr><td>5</td><td>P_UNAME 參照 CSKSZ-VERAK_USER</td><td>借別的欄位的 F4；語意錯，而且主程式要多一個 <span class="kw">TABLES CSKSZ</span></td><td>直接參照 CDHDR-USERNAME（F4 同樣是使用者清單）</td></tr>
+      <tr><td>6</td><td>REUSE_ALV_GRID_DISPLAY，12 段手寫欄位目錄</td><td>欄位名小寫（'objectclas'）、長度寫死、文字欄位誤設 icon</td><td>CL_SALV_TABLE 自動從 DDIC 取欄位目錄</td></tr>
+      <tr><td>7</td><td>i_callback_pf_status_set = 'STATUS_SET'，事件表又登記 FORM_PF_STATUS_SET；USER_COMMAND、TOP_OF_PAGE 的 FORM 根本不存在</td><td>兩套回呼名稱互相矛盾，實際生效的是哪一個很難判斷；沒有實作的回呼毫無作用</td><td>SALV 事件處理方法</td></tr>
+      <tr><td>8</td><td>只顯示技術欄位名、沒有料號說明</td><td>業務看不懂</td><td>DD03M／RTTS 中文化、MAKT</td></tr>
+    </tbody>
+  </table>
+  <div class="warn"><b>資料量與索引（上線前必做）：</b>CDHDR 的主鍵是 MANDANT＋OBJECTCLAS＋OBJECTID＋CHANGENR。只帶日期、不帶料號時，資料庫只能用到主鍵前綴 OBJECTCLAS，等於掃描全部 MATERIAL 變更文件。上線前請用 ST05 看執行計畫，確認 UDATE 條件有沒有索引可用；沒有的話，請和 BASIS 評估是否建次索引，或限制日期範圍的最大天數。無論如何，<b>OBJECTCLAS 與日期條件一定要帶</b>。</div>
+  <div class="warn"><b>CDPOS 的延伸表 CDPOS_UID／CDPOS_STR（請以 SE11 確認）：</b>CDPOS-TABKEY 只有 70 碼，VALUE_OLD／VALUE_NEW 也有長度上限。表鍵超過 70 碼時，系統會把完整鍵放在附加表 <span class="kw">CDPOS_UID</span>（說明為 Additional Table for Inclusion of TABKEY&gt;70 Characters，欄位含 KEYGUID 與 254 碼的 TABKEY）；STRING 型欄位的變更則放在 <span class="kw">CDPOS_STR</span>。依第三方 DDIC 資料庫的紀錄，這兩張表分別從 SAP Basis 6.20 與 7.0 就存在，並不是 S/4HANA 1809 才新增的，但 S/4HANA 把 MATNR 延長到 40 碼之後，用到它們的機會變多了。物料的 MARC、MARD 鍵長 47～51 碼，仍在 70 碼以內；如果你的物件類別含長鍵表，只讀 CDPOS 會漏資料，這時改用 CHANGEDOCUMENT_READ 系列比較保險。出處：<a href="https://www.tcodesearch.com/sap-tables/CDPOS_UID">tcodesearch.com：CDPOS_UID</a>、<a href="https://leanx.eu/en/sap/table/cdpos_str.html">leanx.eu：CDPOS_STR</a>、<a href="https://www.sapdatasheet.org/abap/tabl/cdpos_uid-tabkey.html">sapdatasheet.org：CDPOS_UID-TABKEY</a>。這些都是第三方整理，實際結構請以你系統的 SE11 為準。</div>
+  <ul>
+    <li><b>權限：</b>變更文件會透露誰改了什麼。請加 <span class="kw">AUTHORITY-CHECK</span>（例如依工廠檢查 M_MATE_WRK），不要讓所有人都能查全公司的異動人。</li>
+    <li><b>哪些欄位會記錄：</b>只有資料元素勾了 Change document 的欄位才會寫。使用者反映「我改了 XX 卻查不到」時，先到 SE11 看資料元素的 Further Characteristics，不要先懷疑程式。長文字（基本資料文字、採購單文字）由 SAPscript 文字管理，不在 CDPOS。</li>
+    <li><b>大量異動：</b>用 BAPI_MATERIAL_SAVEDATA、MM17 做的批次修改一樣會寫變更文件，TCODE 欄位可以看出來源，稽核時很有用。</li>
+  </ul>
+
+  <h3 id="ch09-4-10">10. 插件位置報表：業務情境、程式編號差異與「標準真的沒有嗎？」</h3>
+  <p><b>業務情境：</b>電子組裝廠把印刷電路板組裝（PCBA）發包給加工廠（外包採購，ME23N 的項目類別 L），並把零件以 RESB 預留一起發料。加工廠除了零件與數量，還需要每顆零件在板子上的<b>插件位置</b>（reference designator，例如電容 C50、C53、C59、C70），才能設定置件機。這張報表就是給加工廠的作業清單：每個子階料號一列，下面接著列出它的所有插件位置。</p>
+  <p><b>程式編號差異：</b>素材目錄寫「02-01．ZMMI0003 插件位置報表」，第 02 節的內文標題卻寫「ZMMI0005 插件位置報表」；程式碼本身是 <span class="kw">REPORT zmmi0003</span>，include 是 ZMMI0003TOP／ZMMI0003F01，而 TOP 的檔頭註解又寫 <span class="kw">ZPPR0002TOP</span>，訊息類別用 ZPP01。可以推測它是從 PP 報表 ZPPR0002 複製改名而來。本章依程式碼稱為 ZMMI0003，並以 ZMMI0005 為其交易碼或文件編號的別名；實際物件名稱請以 SE38 為準。</p>
+  <div class="warn"><b>教材說法需要修正：</b>講義 02-02 寫「SAP 標準功能沒有插件位置的功能，不得已才客製的」。這句話不精確。SAP 標準 BOM 有<b>子項目（sub-item）</b>，存在 <span class="kw">STPU</span>，每個子項目有<b>安裝點 EBORT</b>（Installation point）與子項目數量 UPMNG，正是為電子業的插件位置設計的，在 CS02 的項目上按「Sub-items」就能維護。這家公司的插件位置之所以放在自建表 ZPPBOMDHD0001（表頭）／ZPPBOMDDE0001（明細，PLGIN1～PLGIN40A 共 80 個文字欄位），比較可能的原因是資料從 PLM 或 ECN 系統整批匯入，而且要附帶加工指令、備註 1～5 等標準沒有的欄位。<br>
+  所以正確的說法是：「標準有 STPU-EBORT，但這家公司選擇了自建表」。§15 兩種寫法都會示範。<b>STPO 本身沒有安裝點欄位</b>；有人說「STPO-EBORT」，請以 SE11 確認，筆者所知的安裝點欄位在 STPU。</div>
+  <p>講義也列了兩個標準交易，供核對報表結果：<span class="tcode">CS11</span>（多階 BOM 展開，依層次）與 <span class="tcode">CS14</span>（BOM 比較，用來比 E-BOM 與 M-BOM、或兩個 ECN 之間的差異）。另外 <span class="tcode">CS12</span> 是多階結構展開、<span class="tcode">CS15</span> 是反查用途（where-used），<span class="tcode">CC03</span> 可以查 ECN 變更號碼（AENNR）的內容。</p>
+
+  <h3 id="ch09-4-11">11. 選擇畫面、輸出與原程式架構</h3>
+  <p><b>選擇畫面</b>（依截圖與 TOP 整理）：</p>
+  <table>
+    <thead><tr><th>區塊</th><th>欄位</th><th>說明</th></tr></thead>
+    <tbody>
+      <tr><td rowspan="2">資料來源（P_R1／P_R2 單選）</td><td>P_R1 採購單：S_EKORG 採購組織、S_EBELN 採購文件、S_EBELP 採購項次、S_LIFNR 供應商（MODIF ID GP1）</td><td>原程式 S_EBELN 預設寫死一張測試採購單號，上線前一定要拿掉</td></tr>
+      <tr><td>P_R2 料號：S_WERKS 工廠、S_MATNR 物料、S_STLAN BOM 用途（MODIF ID GP2）</td><td><span class="kw">AT SELECTION-SCREEN OUTPUT</span> 依單選鈕把另一組欄位關成不可輸入</td></tr>
+      <tr><td>共用</td><td>S_DATUV 生效日（NO INTERVALS NO-EXTENSION）；P_MMSTA「顯示 Plant-sp. Matl status」</td><td>生效日決定 BOM 展開日；MMSTA 是 MARC 的工廠特定物料狀態</td></tr>
+      <tr><td>展開</td><td>P_BOM2 單階／P_BOM1 多階；S_MATKL「下階不展開（Material Group）」</td><td>多階時，物料群組落在 S_MATKL 的組件不再往下展</td></tr>
+      <tr><td>輸出</td><td>P_PTR2 列印（ABAP List）／P_PTR1 下載 XLS；P_FILE 下載路徑</td><td>下載時 P_FILE 空白會報錯停止</td></tr>
+    </tbody>
+  </table>
+  <p><b>輸出</b>（截圖）：表頭是採購單號、供應商、名稱、ECN 號碼、注意事項（採購項目長文 READ_TEXT，物件 EKPO、ID F01）；項目區是料號、說明、數量、單位、工廠；明細區每列是層次、項目、子階料號、子階料號說明、單位用量、供貨數量、單位、替代群組、Priority、加工指令，下一行則是「插件位置 C44,C47,C49,…」。列印模式用 <span class="kw">GET_PRINT_PARAMETERS</span>／<span class="kw">SET_PRINT_PARAMETERS</span> 設定格式 X_65_200，頁尾的「第 n／總頁數」是先輸出佔位字串 '&amp;&amp;&amp;&amp;'，全部印完之後再用 <span class="kw">READ LINE … OF PAGE</span>／<span class="kw">MODIFY CURRENT LINE</span> 回頭取代。</p>
+  <p><b>原程式架構：</b></p>
+  <table>
+    <thead><tr><th>Include／FORM</th><th>做什麼</th></tr></thead>
+    <tbody>
+      <tr><td>ZMMI0003（主程式）</td><td>START-OF-SELECTION：檢查 → check_request_value → select_relation_data → generate_t_out（註解「挑 ECN 編號，請由此進入 BY CASPER 20221227」）→ 依 P_PTR2／P_PTR1 與 P_R1／P_R2 呼叫四種 list／download；TOP-OF-PAGE 輸出表頭</td></tr>
+      <tr><td>ZMMI0003TOP</td><td><span class="kw">TABLES</span> 12 張（含自建表 ZPPBOMDHD0001）、十幾個 <span class="kw">OCCURS 0 WITH HEADER LINE</span> 內表、輸出結構 T_OUT（含 PLGIN1(166)）、21 欄的 T_XLS、選擇畫面與畫面事件</td></tr>
+      <tr><td>ZMMI0003F01：採購單路徑</td><td>select_ekko_rtn → gene_t_out_by_ekko（LOOP EKKO → select_ekpo_rtn → process_ekpo_rtn → LOOP EKPO → select_resb_rtn → sort_resb → process_resb_rtn → select_zppbomdde0001_rtn → move_data_by_zbom）</td></tr>
+      <tr><td>ZMMI0003F01：料號路徑</td><td>select_mast_rtn → gene_t_out_by_mast（LOOP MAST → select_stko_rtn → call_cs_bom_expl_mat_v2 → append_t_skip → process_t_item_tab_rtn → select_zppbomdde0001 → move_data_by_zbom_2）</td></tr>
+      <tr><td>ZMMI0003F01：輸出</td><td>list_t_out_by_ekko／_by_matnr（WRITE＋AT NEW remrk8／plgin1）、download_t_xls_by_ekko／_by_matnr（組 T_XLS）→ download_t_xls（SAP_CONVERT_TO_XLS_FORMAT）</td></tr>
+      <tr><td>ZMMI0003F01：工具</td><td>select_makt（先讀英文 E，讀不到再讀繁中 M）、select_marc、call_read_text_rtn、call_conversion_cunit、ws_filename_get、append_plgin、call_where_used（CSEP_MAT_BOM_SELECT_WHERE_USED）等</td></tr>
+    </tbody>
+  </table>
+  <p>改寫後的類別切分：<span class="kw">lcl_source_po</span>／<span class="kw">lcl_source_mat</span> 負責兩種資料來源，<span class="kw">lcl_bom</span> 負責生產版本、展開與 ECN，<span class="kw">lcl_plugin</span> 負責插件位置（STPU 或自建表），<span class="kw">lcl_output</span> 負責 SALV 與 XLSX。下面各節只列關鍵方法。</p>
+
+  <h3 id="ch09-4-12">12. BOM 資料模型：MAST、STKO、STPO、STPU、STAS、MKAL 與 CS_BOM_EXPL_MAT_V2</h3>
+  <table>
+    <thead><tr><th>表</th><th>角色</th><th>關鍵欄位</th></tr></thead>
+    <tbody>
+      <tr><td>MAST</td><td>物料 → BOM 的連結</td><td>MATNR、WERKS、STLAN（用途，1＝生產）、STLNR（BOM 號）、STLAL（替代 BOM）、ANDAT（建檔日）</td></tr>
+      <tr><td>STKO</td><td>BOM 表頭（依替代與變更歷程）</td><td>STLTY（M＝物料 BOM）、STLNR、STLAL、STKOZ、DATUV（生效日）、AENNR（ECN）、BMENG（基準數量）</td></tr>
+      <tr><td>STPO</td><td>BOM 項目</td><td>STLTY、STLNR、STLKN（節點）、STPOZ（計數器）、POSNR、POSTP（L 庫存件／T 文字項）、IDNRK（子階料號）、MENGE、DATUV、AENNR、LKENZ（刪除旗標）、ALPGR／ALPRF（替代群組／優先順序）、SORTF</td></tr>
+      <tr><td>STAS</td><td>替代 BOM 與項目的對應</td><td>STLNR、STLAL、STLKN、DATUV、AENNR、LKENZ</td></tr>
+      <tr><td>STPU</td><td>BOM 子項目（插件位置）</td><td>STLTY、STLNR、STLKN、STPOZ、UPOSZ（子項目序號）、EBORT（安裝點）、UPMNG（子項目數量）</td></tr>
+      <tr><td>MKAL</td><td>生產版本</td><td>MATNR、WERKS、VERID、STLAL、STLAN、PLNTY／PLNNR（途程）、ADATU／BDATU（有效期間）、MKSP（鎖定）</td></tr>
+      <tr><td>STPOX／CSCMAT</td><td>CS_BOM_EXPL_MAT_V2 的回傳結構（不是表）</td><td>STPOX：STUFE（層次）、TTIDX（對應 CSCMAT 的索引）、IDNRK、POSNR、MNGLG（換算後數量）、AENNR、STLNR、STLKN、STPOZ；CSCMAT：每個被展開的組件一列</td></tr>
+    </tbody>
+  </table>
+  <pre><code class="abap">" 單一料號的 BOM 展開：日期、替代 BOM 都明確給，不依賴預設值
+DATA lt_stb TYPE STANDARD TABLE OF stpox  WITH EMPTY KEY.
+DATA lt_mat TYPE STANDARD TABLE OF cscmat WITH EMPTY KEY.
+
+CALL FUNCTION 'CS_BOM_EXPL_MAT_V2'
+  EXPORTING
+    capid                 = 'PP01'         " 應用別：生產
+    datuv                 = iv_date        " 展開日＝採購日或使用者給的生效日
+    emeng                 = iv_qty         " 需求數量（原程式給 STKO-BMENG）
+    mehrs                 = iv_multi       " 'X'＝多階
+    mtnrv                 = iv_matnr
+    werks                 = iv_werks
+    stlan                 = iv_stlan
+    stlal                 = iv_stlal       " ← 原程式沒給，§14 的錯就從這裡開始
+  TABLES
+    stb                   = lt_stb
+    matcat                = lt_mat
+  EXCEPTIONS
+    alt_not_found         = 1
+    call_invalid          = 2
+    material_not_found    = 3
+    missing_authorization = 4
+    no_bom_found          = 5
+    no_plant_data         = 6
+    no_suitable_bom_found = 7
+    conversion_error      = 8
+    OTHERS                = 9.
+IF sy-subrc &lt;&gt; 0.
+  RAISE EXCEPTION TYPE zcx_bom_error          " 自建例外類別（示意），呼叫端 CATCH 後寫入日誌
+    EXPORTING matnr = iv_matnr.
+ENDIF.
+SORT lt_stb BY stufe ttidx posnr alprf.     " 回傳順序不保證（原程式有排，這點是對的）</code></pre>
+  <div class="note"><b>S/4HANA 的 CDS 與 API：</b>S/4HANA 有 BOM 相關的 VDM CDS view（名稱以 I_BillOfMaterial 開頭）與 OData API（Bill of Material，服務名 API_BILL_OF_MATERIAL_SRV），但各版本的名稱、欄位與 released 狀態不同，本章不列出具體名稱以免誤導。要用時請在 ADT 搜尋 <span class="kw">I_BillOfMaterial*</span>，確認 API State 為 Released，並在 SAP Business Accelerator Hub 查對應版本。<b>多階展開與日期有效性</b>的邏輯很複雜，自己用 CDS 或 SQL 串 STPO 很容易出錯；在 1809 的傳統 ABAP 中，CS_BOM_EXPL_MAT_V2 仍然是最穩的做法。</div>
+
+  <h3 id="ch09-4-13">13. 關鍵段落改寫（一）：採購單路徑，EKKO／EKPO／LFA1 一次讀，再讀外包預留 RESB</h3>
+  <p>原程式在 LOOP EKKO 裡讀 EKPO，在 LOOP EKPO 裡讀 RESB，每一列再 SELECT SINGLE LFA1、MAKT（兩次）、MARC、MARA，是典型的 N+1。一張 20 項、每項 300 顆零件的外包單，就會打出上萬次 SQL。改寫版先一次讀表頭與項目，再用 FOR ALL ENTRIES 讀預留。</p>
+  <pre><code class="abap">  METHOD read_po.
+    SELECT k~ebeln, k~lifnr, k~aedat, l~name1,
+           p~ebelp, p~matnr, p~werks, p~menge, p~meins
+      FROM ekko AS k
+      INNER JOIN ekpo AS p       ON p~ebeln = k~ebeln
+      LEFT OUTER JOIN lfa1 AS l  ON l~lifnr = k~lifnr
+      WHERE k~ebeln IN @s_ebeln
+        AND k~ekorg IN @s_ekorg            " 原程式有這個條件卻沒用到
+        AND k~lifnr IN @s_lifnr
+        AND p~ebelp IN @s_ebelp
+        AND p~loekz  = @space              " 已刪除項目不列（20221227 的修正）
+      ORDER BY k~ebeln, p~ebelp
+      INTO TABLE @mt_po.
+    CHECK mt_po IS NOT INITIAL.            " FOR ALL ENTRIES 驅動表空白＝全表
+
+    " 外包採購項目的組件預留：RESB 以 EBELN／EBELP 連回採購單
+    SELECT rsnum, rspos, ebeln, ebelp, matnr, werks, erfmg, erfme,
+           posnr, postp, aufst, dumps, baugr, stlnr, aennr, alpgr, alprf, prio_req
+      FROM resb
+      FOR ALL ENTRIES IN @mt_po
+      WHERE ebeln = @mt_po-ebeln
+        AND ebelp = @mt_po-ebelp
+        AND xloek = @space                 " 已刪除預留不列
+      INTO TABLE @mt_resb.
+    " FOR ALL ENTRIES 不能 ORDER BY，而且會去掉重複列 → 選取欄位要含完整鍵 rsnum、rspos
+    SORT mt_resb BY ebeln ebelp dumps DESCENDING aufst posnr rspos.
+  ENDMETHOD.</code></pre>
+  <p>原程式的 <span class="kw">move_data_by_resb</span> 對虛擬件（<span class="kw">DUMPS = 'X'</span>，phantom assembly）把層次減一：<span class="kw">aufst = resb-aufst - 1</span>。原因是虛擬件本身不發料，它的子件在預留中會多一層，減一才會和 CS11 顯示的層次一致。這個業務規則要保留，改寫時用 COND 表達就好：<span class="kw">level = COND #( WHEN r-dumps = abap_true THEN r-aufst - 1 ELSE r-aufst )</span>。</p>
+  <pre><code class="abap">  METHOD get_maktx.
+    " 原程式：先讀英文 'E'，讀不到再讀 'M'（繁體中文），每列兩次 SELECT SINGLE
+    " 改寫：一次讀進 buffer，優先順序用登入語言 → 英文，而不是寫死
+    IF mt_makt IS INITIAL AND it_matnr IS NOT INITIAL.
+      SELECT matnr, spras, maktx FROM makt
+        FOR ALL ENTRIES IN @it_matnr
+        WHERE matnr = @it_matnr-table_line
+          AND ( spras = @sy-langu OR spras = 'E' )
+        INTO TABLE @mt_makt.                  " SORTED KEY matnr spras
+    ENDIF.
+    rv_maktx = COND #(
+      WHEN line_exists( mt_makt[ matnr = iv_matnr spras = sy-langu ] )
+        THEN mt_makt[ matnr = iv_matnr spras = sy-langu ]-maktx
+      WHEN line_exists( mt_makt[ matnr = iv_matnr spras = 'E' ] )
+        THEN mt_makt[ matnr = iv_matnr spras = 'E' ]-maktx ).
+  ENDMETHOD.</code></pre>
+
+  <h3 id="ch09-4-14">14. 關鍵段落改寫（二）：抓對 BOM 版本與 ECN（2022-12 修正案的正解）</h3>
+  <p><b>事件經過</b>（講義 02-02 與程式註解 20221227）：報表用預留的 <span class="kw">RESB-AENNR</span>（ECN 號碼）去對自建表 ZPPBOMDHD0001 的表頭，找到該 ECN 版本的插件位置。當外包料號是半成品 PCA-XXXX-B-01，而它的上階是 PCA-XXXX-AS 時，就會對錯版本。截圖顯示：</p>
+  <table>
+    <thead><tr><th>料號</th><th>生產版本（MM03 → MRP 4 → ProdVersions）</th><th>講義註記</th></tr></thead>
+    <tbody>
+      <tr><td>PCA-XXXX-B（成品）</td><td>0001 M-BOM，2019 起有效</td><td>「001 M-BOM（生產版本，正確）」</td></tr>
+      <tr><td>PCA-XXXX-B-01（半成品）</td><td>0001 E-BOM（2022/07/04 起）、0002 M-BOM（2022/07/07 起）</td><td>「002 M-BOM（生產版本，錯誤）」</td></tr>
+    </tbody>
+  </table>
+  <p>也就是說，半成品同時有工程 BOM 與製造 BOM 兩個生產版本，各自對到不同的替代 BOM（STLAL）。講義的「錯誤」依上下文判讀，是指<b>報表在這個料號上抓錯版本</b>（抓成 E-BOM）。當時的修正方式是：料號含 '-AS' 時，改用「MAST 建檔日 ANDAT 早於採購日」排序取最新一筆，再用「STPO 建檔日 ANDAT 早於採購日」取最新一筆的 AENNR，重新讀自建表。這個修正在當下有效，但有三個問題：</p>
+  <ol>
+    <li><b>ANDAT 是建檔日，不是生效日。</b>BOM 的有效性看 STKO／STPO 的 <b>DATUV</b>（配合 ECN）；先建檔、下個月才生效的變更，用 ANDAT 判斷就會提早套用。</li>
+    <li><b>沒有用到生產版本。</b>E-BOM 與 M-BOM 的差別在 STLAL，應該從 MKAL 取得「該日有效、未鎖定」的生產版本對應的 STLAL，而不是依建檔日猜。</li>
+    <li><b>依料號命名規則判斷（CS '-AS'）。</b>編碼規則一改就失效，和 Casper 經驗第 2 條同一類問題：用字串規則代替業務屬性。</li>
+  </ol>
+  <pre><code class="abap">  METHOD get_stlal.
+    " 依生產版本決定替代 BOM：iv_date 當天有效、未鎖定
+    SELECT verid, stlal, stlan, text1
+      FROM mkal
+      WHERE matnr  = @iv_matnr
+        AND werks  = @iv_werks
+        AND adatu &lt;= @iv_date
+        AND bdatu &gt;= @iv_date
+        AND mksp   = @space                     " 鎖定的版本不用
+      ORDER BY verid                            " HANA 無預設排序，一定要明確排序
+      INTO TABLE @DATA(lt_ver).
+
+    CASE lines( lt_ver ).
+      WHEN 0.
+        rv_stlal = '01'.                        " 沒有生產版本：退回替代 01，並記錄警告
+        add_log( |{ iv_matnr } 在 { iv_date DATE = USER } 無有效生產版本，使用替代 BOM 01| ).
+      WHEN 1.
+        rv_stlal = lt_ver[ 1 ]-stlal.
+      WHEN OTHERS.
+        " 同時有效的版本不只一個（例如 E-BOM 與 M-BOM），不能「取第一筆」了事。
+        " 用明確的業務規則選：此例以自建設定表 ZPP_VER_RULE 指定發包用的版本，找不到就報錯
+        LOOP AT lt_ver INTO DATA(ls_ver).
+          SELECT SINGLE @abap_true FROM zpp_ver_rule
+            WHERE werks = @iv_werks
+              AND verid = @ls_ver-verid
+              AND for_subcon = @abap_true
+            INTO @DATA(lv_hit).
+          IF sy-subrc = 0.
+            rv_stlal = ls_ver-stlal.
+            RETURN.
+          ENDIF.
+        ENDLOOP.
+        RAISE EXCEPTION TYPE zcx_bom_error EXPORTING matnr = iv_matnr.
+    ENDCASE.
+  ENDMETHOD.</code></pre>
+  <pre><code class="abap">  METHOD get_valid_aennr.
+    " 該 BOM 在採購日有效的 ECN：看 DATUV（生效日），不看 ANDAT（建檔日）
+    " 做法一（推薦）：用 CS_BOM_EXPL_MAT_V2 以採購日展開，STPOX-AENNR 就是當日有效項目的 ECN
+    " 做法二：直接查 STKO（表頭變更歷程），明確排序後取一筆
+    SELECT aennr, datuv, stkoz
+      FROM stko
+      WHERE stlty  = 'M'                        " 原程式查 STPO 時漏了 STLTY
+        AND stlnr  = @iv_stlnr
+        AND stlal  = @iv_stlal
+        AND datuv &lt;= @iv_date                  " 刪除旗標欄位請以 SE11 確認後再加
+      ORDER BY datuv DESCENDING, stkoz DESCENDING
+      INTO TABLE @DATA(lt_hist)
+      UP TO 1 ROWS.
+    rv_aennr = VALUE #( lt_hist[ 1 ]-aennr OPTIONAL ).
+  ENDMETHOD.</code></pre>
+  <div class="tip"><b>Casper 經驗第 1 條又出現了：</b>原修正先 SELECT 進 IT_MAST，再 <span class="kw">SORT BY andat DESCENDING</span>，然後 <span class="kw">READ TABLE … INDEX 1</span>。有排序，這點是對的。但同一天建了兩個替代 BOM 時，ANDAT 相同，誰排第一仍然不確定，就像成本評價 H／E 兩種角度一下抓到這個、一下抓到那個。排序鍵一定要排到「唯一」為止（加上 STLAL、STKOZ），或者像上面一樣，用業務規則（生產版本）來決定，根本不需要「取第一筆」。</div>
+
+  <h3 id="ch09-4-15">15. 關鍵段落改寫（三）：插件位置，標準 STPU 寫法與自建表 PLGIN1～PLGIN40A</h3>
+  <p><b>標準寫法（建議新專案採用）：</b>插件位置維護在 CS02 的子項目，報表展開 BOM 後，依 STLTY／STLNR／STLKN／STPOZ 讀 STPU，把同一項目的 EBORT 串成一個字串。</p>
+  <pre><code class="abap">  METHOD read_stpu.
+    " it_stb：CS_BOM_EXPL_MAT_V2 的 STB（STPOX 的欄位名請以 SE11 確認）
+    CHECK it_stb IS NOT INITIAL.
+    SELECT stlty, stlnr, stlkn, stpoz, uposz, ebort, upmng
+      FROM stpu
+      FOR ALL ENTRIES IN @it_stb
+      WHERE stlty = @it_stb-stlty
+        AND stlnr = @it_stb-stlnr
+        AND stlkn = @it_stb-stlkn
+        AND stpoz = @it_stb-stpoz
+      INTO TABLE @DATA(lt_stpu).
+    SORT lt_stpu BY stlty stlnr stlkn stpoz uposz.   " 插件位置依子項目序號輸出
+
+    LOOP AT ct_out ASSIGNING FIELD-SYMBOL(&lt;o&gt;).
+      &lt;o&gt;-plugin = REDUCE string(
+        INIT s = ``
+        FOR u IN lt_stpu WHERE ( stlty = &lt;o&gt;-stlty AND stlnr = &lt;o&gt;-stlnr
+                                 AND stlkn = &lt;o&gt;-stlkn AND stpoz = &lt;o&gt;-stpoz )
+        NEXT s = COND string( WHEN s IS INITIAL THEN u-ebort ELSE |{ s },{ u-ebort }| ) ).
+      " 檢核：子項目數量合計應等於項目數量（例：4 顆電容 → C50,C53,C59,C70）
+      DATA(lv_sum) = REDUCE stpu-upmng( INIT q = 0
+        FOR u IN lt_stpu WHERE ( stlnr = &lt;o&gt;-stlnr AND stlkn = &lt;o&gt;-stlkn AND stpoz = &lt;o&gt;-stpoz )
+        NEXT q = q + u-upmng ).
+      &lt;o&gt;-pos_check = xsdbool( lv_sum = &lt;o&gt;-use ).
+    ENDLOOP.
+  ENDMETHOD.</code></pre>
+  <p><b>沿用自建表的寫法：</b>原程式的 <span class="kw">move_data_by_zbom</span> 與 <span class="kw">move_data_by_zbom_2</span> 各寫了 79 行 <span class="kw">PERFORM append_plgin USING t_zbom-plgin1a … plgin40a</span>，兩段完全重複。每個非空欄位都 APPEND 成 T_OUT 的一列，輸出時再用 <span class="kw">AT NEW plgin1</span> 分辨是零件列還是插件位置列。改寫：用 <span class="kw">ASSIGN COMPONENT</span> 以迴圈取 80 個欄位，組成一個字串清單。</p>
+  <pre><code class="abap">  METHOD collect_zbom_plugin.
+    " is_zbom：自建表 ZPPBOMDDE0001 的一列，欄位 PLGIN1、PLGIN1A、PLGIN2 … PLGIN40A
+    DO 40 TIMES.
+      DATA(lt_comp) = VALUE string_table( ( |PLGIN{ sy-index }| ) ( |PLGIN{ sy-index }A| ) ).
+      LOOP AT lt_comp INTO DATA(lv_comp).
+        ASSIGN COMPONENT lv_comp OF STRUCTURE is_zbom TO FIELD-SYMBOL(&lt;lv_val&gt;).
+        IF sy-subrc = 0 AND &lt;lv_val&gt; IS NOT INITIAL.
+          APPEND CONV string( &lt;lv_val&gt; ) TO rt_plugin.
+        ENDIF.
+      ENDLOOP.
+    ENDDO.
+  ENDMETHOD.
+
+  " 讀自建表：ECN 由 §14 決定，不再用 RESB-AENNR 硬對，也不再用料號字尾判斷
+  METHOD read_zbom.
+    SELECT SINGLE matnr, werks, stlan, aennr
+      FROM zppbomdhd0001
+      WHERE matnr = @iv_matnr AND werks = @iv_werks
+        AND stlan = @iv_stlan AND aennr = @iv_aennr
+      INTO @DATA(ls_hd).
+    CHECK sy-subrc = 0.
+    SELECT * FROM zppbomdde0001                 " 自建表欄位多，示意用 *；正式請明列
+      WHERE matnr = @ls_hd-matnr AND werks = @ls_hd-werks
+        AND stlan = @ls_hd-stlan AND aennr = @ls_hd-aennr
+      ORDER BY posnr, idnrk
+      INTO TABLE @rt_zbom.
+  ENDMETHOD.</code></pre>
+  <div class="tip"><b>自建表的長期解：</b>PLGIN1～PLGIN40A 這種「把清單攤平成 80 個欄位」的設計，一顆零件超過 80 段就放不下，而且每段 166 碼也很難查詢（例如「C50 是哪顆料」就查不到）。如果要保留自建表，建議正規化成一列一個插件位置：ZPPBOMPOS（MATNR、WERKS、STLAN、AENNR、POSNR、IDNRK、SEQNR、EBORT）。更好的做法是評估改用標準 STPU，讓 CS02、CS11、CS14 都看得到插件位置。</div>
+
+  <h3 id="ch09-4-16">16. 關鍵段落改寫（四）：多階展開時「物料群組下階不展開」</h3>
+  <p>原程式的做法是：多階展開取得 CSCMAT，然後對每個組件呼叫 <span class="kw">CSEP_MAT_BOM_SELECT_WHERE_USED</span> 反查上階，再用遞迴的 PERFORM process_t_do 一層層往上找，看是否有祖先的物料群組落在 S_MATKL，有的話就放進 T_SKIP。這段有兩個問題：一是反查整個系統的 where-used，資料量隨 BOM 用途爆炸，而且沒有防循環；二是 process_where_used 裡 APPEND 的是 <span class="kw">t_cscmat-matnr</span>（外層 header line 的殘值），而不是正在檢查的 <span class="kw">lt_tmp-matnr</span>，所以跳過的料號可能是錯的。</p>
+  <p>改寫：不必反查。從上往下<b>自己遞迴單階展開</b>，遇到排除群組的組件就只列出、不往下展。</p>
+  <pre><code class="abap">  METHOD explode.
+    " iv_level：目前層次；it_path：從頂層到目前的料號，用來防止 BOM 循環
+    DATA lt_stb TYPE STANDARD TABLE OF stpox  WITH EMPTY KEY.
+    DATA lt_mat TYPE STANDARD TABLE OF cscmat WITH EMPTY KEY.
+
+    DATA(lv_stlal) = get_stlal( iv_matnr = iv_matnr iv_werks = iv_werks iv_date = iv_date ).
+
+    CALL FUNCTION 'CS_BOM_EXPL_MAT_V2'
+      EXPORTING capid = 'PP01'  datuv = iv_date  emeng = iv_qty
+                mehrs = space   mtnrv = iv_matnr werks = iv_werks
+                stlan = iv_stlan stlal = lv_stlal
+      TABLES    stb = lt_stb  matcat = lt_mat
+      EXCEPTIONS OTHERS = 1.
+    IF sy-subrc &lt;&gt; 0.
+      RETURN.                                   " 沒有 BOM＝葉節點
+    ENDIF.
+    SORT lt_stb BY posnr alprf.
+
+    LOOP AT lt_stb INTO DATA(ls_stb).
+      APPEND VALUE #( level = iv_level  posnr = ls_stb-posnr  idnrk = ls_stb-idnrk
+                      postp = ls_stb-postp  use = ls_stb-mnglg  aennr = ls_stb-aennr
+                      stlty = ls_stb-stlty  stlnr = ls_stb-stlnr
+                      stlkn = ls_stb-stlkn  stpoz = ls_stb-stpoz ) TO mt_out.
+
+      " 排除群組：只列不展。S_MATKL 空白時不排除任何群組
+      DATA(lv_matkl) = get_matkl( ls_stb-idnrk ).               " hashed buffer 讀 MARA
+      DATA(lv_stop)  = xsdbool( s_matkl[] IS NOT INITIAL AND lv_matkl IN s_matkl ).
+
+      IF ls_stb-postp &lt;&gt; 'L'                                   " 文字項 T 不往下
+         OR iv_level &gt;= 20                                      " 防呆：最多 20 階
+         OR line_exists( it_path[ table_line = ls_stb-idnrk ] )  " 防循環
+         OR lv_stop = abap_true.
+        CONTINUE.
+      ENDIF.
+
+      explode( iv_matnr = ls_stb-idnrk  iv_werks = iv_werks  iv_stlan = iv_stlan
+               iv_date  = iv_date       iv_qty   = ls_stb-mnglg
+               iv_level = iv_level + 1
+               it_path  = VALUE #( BASE it_path ( ls_stb-idnrk ) ) ).
+    ENDLOOP.
+  ENDMETHOD.</code></pre>
+  <div class="note">為什麼要先判斷 <span class="kw">s_matkl[] IS NOT INITIAL</span>：空的 range 對任何值都成立 IN，若直接寫 <span class="kw">lv_matkl IN s_matkl</span>，使用者沒填群組時會變成「全部排除、完全不展開」。get_matkl 請用 hashed buffer 讀 MARA，不要每個組件都 SELECT SINGLE。每一層都呼叫一次 CS_BOM_EXPL_MAT_V2，組件多時比一次多階展開慢，但換來「每一階都用自己的生產版本」與「排除群組不必反查」，對這張報表是值得的。</div>
+
+  <h3 id="ch09-4-17">17. 關鍵段落改寫（五）：輸出改 SALV，下載改 XLSX，列印需求怎麼辦</h3>
+  <p>原程式有四套輸出（列印或下載，各分採購單版與料號版），靠 <span class="kw">AT NEW remrk8</span>、<span class="kw">AT NEW plgin1</span> 這種依欄位順序的控制斷點，以及 21 欄全是 CHAR132 的 T_XLS，一個欄位一個欄位搬。改寫版每個子階料號一列，插件位置是一個字串欄位：畫面用 SALV，下載用 SALV 直接轉 XLSX，兩者共用同一張內表。</p>
+  <pre><code class="abap">" 選擇畫面：下載檔名用「另存新檔」對話框（原程式誤用 file_open_dialog）
+PARAMETERS p_file TYPE string LOWER CASE.
+
+AT SELECTION-SCREEN ON VALUE-REQUEST FOR p_file.
+  DATA: gv_name TYPE string, gv_path TYPE string, gv_full TYPE string.
+  cl_gui_frontend_services=&gt;file_save_dialog(
+    EXPORTING  default_extension = 'xlsx'
+               default_file_name = |plugin_{ sy-datum }.xlsx|
+               file_filter       = `Excel (*.xlsx)|*.xlsx`
+    CHANGING   filename = gv_name  path = gv_path  fullpath = gv_full
+    EXCEPTIONS OTHERS   = 1 ).
+  IF sy-subrc = 0 AND gv_full IS NOT INITIAL.
+    p_file = gv_full.                            " 例：C:\temp\plugin_20260926.xlsx
+  ENDIF.</code></pre>
+  <pre><code class="abap">  METHOD download_xlsx.
+    " 同一個 SALV 物件直接轉 XLSX，不必再組 T_XLS（21 欄 CHAR132）
+    DATA(lv_xlsx)  = io_alv-&gt;to_xml( xml_type = if_salv_bs_xml=&gt;c_type_xlsx ).
+    DATA(lt_solix) = cl_bcs_convert=&gt;xstring_to_solix( lv_xlsx ).
+    cl_gui_frontend_services=&gt;gui_download(
+      EXPORTING  bin_filesize = xstrlen( lv_xlsx )
+                 filename     = p_file
+                 filetype     = 'BIN'
+      CHANGING   data_tab     = lt_solix
+      EXCEPTIONS OTHERS       = 1 ).
+    IF sy-subrc &lt;&gt; 0.
+      MESSAGE |檔案 { p_file } 寫入失敗| TYPE 'S' DISPLAY LIKE 'E'.
+    ENDIF.
+  ENDMETHOD.</code></pre>
+  <ul>
+    <li><b>SAP_CONVERT_TO_XLS_FORMAT</b> 產生的是舊版 xls，且依賴 SAPGUI 與 Excel 的 OLE；背景作業不能跑。SALV 的 to_xml 產生真正的 xlsx（Open XML），背景也能產生 xstring，再寄信或放 AL11。</li>
+    <li><b>一定要紙本或 PDF 給加工廠：</b>可以用 <span class="kw">cl_salv_table=&gt;factory( list_display = abap_true … )</span> 以清單模式輸出，由 SAP spool 列印。表頭、頁碼、公司名稱等版面需求大的，改成 Adobe Form 或 SmartForms（見 <a href="#ch04-3">4-3 章</a>），不要再用 '&amp;&amp;&amp;&amp;' 回頭改頁碼的技巧。</li>
+    <li><b>採購項目長文：</b>原程式讀 READ_TEXT 時語言寫死 'M'，TDNAME 用 CONCATENATE 串 EBELN＋EBELP。改寫時改成 <span class="kw">|{ ebeln }{ ebelp }|</span>、語言用 sy-langu，並捕捉 NOT_FOUND（沒有長文是正常情況）。</li>
+  </ul>
+
+  <h3 id="ch09-4-18">18. 插件位置報表：原程式問題與上線注意</h3>
+  <table>
+    <thead><tr><th>#</th><th>原程式寫法</th><th>問題</th><th>改寫</th></tr></thead>
+    <tbody>
+      <tr><td>1</td><td>TABLES 12 張、OCCURS 0 WITH HEADER LINE、LIKE</td><td>全域狀態到處殘留，是 #6 那類錯誤的根源</td><td>local class＋內嵌宣告</td></tr>
+      <tr><td>2</td><td>LOOP 中 SELECT SINGLE LFA1／MAKT（兩次）／MARC／MARA</td><td>N+1，大張外包單很慢</td><td>JOIN＋FOR ALL ENTRIES＋hashed buffer（§13）</td></tr>
+      <tr><td>3</td><td>select_marc 只用 MATNR 查 MARC，沒帶 WERKS</td><td>多工廠料號會隨機拿到某個工廠的 MMSTA（HANA 無預設排序）</td><td>WHERE 帶 werks</td></tr>
+      <tr><td>4</td><td>MAST／STPO 用 ANDAT 選版本；料號含 '-AS' 才特別處理</td><td>建檔日不是生效日；依命名規則判斷</td><td>MKAL 生產版本＋DATUV（§14）</td></tr>
+      <tr><td>5</td><td>STPO 查詢沒帶 STLTY = 'M'</td><td>STLNR 在不同 BOM 類別（物料、設備、WBS⋯）之間可能重號</td><td>一律帶 STLTY</td></tr>
+      <tr><td>6</td><td>process_where_used APPEND <span class="kw">t_cscmat-matnr</span></td><td>用了外層 header line 的殘值，跳過的料號錯誤</td><td>改為由上往下遞迴，不反查（§16）</td></tr>
+      <tr><td>7</td><td>80 行 PERFORM append_plgin，寫了兩份</td><td>重複程式碼；欄位加到 41 組就要改兩處</td><td>ASSIGN COMPONENT 迴圈（§15）</td></tr>
+      <tr><td>8</td><td>select_mast_stko_rtn 寫死工廠與 STLAN = 1、讀 MAST 後直接 INDEX 1</td><td>換工廠就錯；多替代 BOM 時取第一筆不確定</td><td>參數化＋生產版本</td></tr>
+      <tr><td>9</td><td>sort_resb 用 <span class="kw">posnr(3) &amp;&amp; '0'</span>、<span class="kw">posnr+3(1) = '0'</span> 推算上階項目與層次</td><td>依賴項目號碼的編碼習慣（Casper 經驗第 2 條），項目號碼步距一改就錯</td><td>用 RESB-BAUGR（上階組件）與 BOM 結構判斷，不解析號碼字串</td></tr>
+      <tr><td>10</td><td>ws_filename_get 用 file_open_dialog 選「下載」路徑</td><td>開檔對話框要求檔案已存在</td><td>file_save_dialog（§17）</td></tr>
+      <tr><td>11</td><td>表頭 WRITE 寫死公司全名；S_EBELN 預設一張測試單號</td><td>換公司代碼或多公司就錯；測試資料進正式機</td><td>公司名稱讀 T001／ADRC；移除預設值</td></tr>
+      <tr><td>12</td><td>程式註解留有外部顧問姓名、議題單號</td><td>個資與合約資訊留在原始碼</td><td>改用傳輸單號與變更紀錄，註解只寫原因</td></tr>
+    </tbody>
+  </table>
+  <ul>
+    <li><b>核對標準：</b>上線前挑 3～5 張外包單，逐項比對報表與 <span class="tcode">CS11</span>（以採購日為展開日、指定替代 BOM）、<span class="tcode">CS14</span>（比較 E-BOM 與 M-BOM）的結果，特別是有虛擬件與替代群組（ALPGR）的料號。</li>
+    <li><b>生產版本規則要業務簽核：</b>同時有 E-BOM、M-BOM 兩個有效版本時，哪一個才是發包依據，要由 PP 與工程部門書面確認，寫進設定表，不要由程式猜。</li>
+    <li><b>預留與 BOM 不同步：</b>RESB 是採購單建立（或重新展開）當下的 BOM 快照。ECN 生效後沒有重新展開的舊採購單，RESB 仍然是舊版。報表要清楚標示「依預留」或「依 BOM 重新展開」，避免加工廠拿到的插件位置和實際發料對不上。</li>
+    <li><b>權限：</b>加 M_BEST_EKO（採購組織）與 C_STUE_WRK（BOM 工廠）的檢查。報表會把 BOM 結構整份交給外部加工廠，屬於機密資料。</li>
+  </ul>
+
+  <h3 id="ch09-4-qa">練習與自我檢核</h3>
+  <ol>
+    <li>原 ZMMQ0003 的 JOIN 只寫 <span class="kw">a~objectclas = b~objectclas</span>。假設系統有 50 萬筆 MATERIAL 檔頭，查一個料號、一次修改兩個欄位，理論上會得到幾筆？為什麼 UP TO 1000 ROWS 讓這個錯誤更難被發現？</li>
+    <li>S/4HANA 1809 中，MARD 的 CDPOS-TABKEY 要從第幾碼開始取 LGORT？ECC 又是第幾碼？請寫出不寫死位移的取法。</li>
+    <li>使用者要「上個月所有被改過 MARC-DISMM（MRP 類型）的料號，以及改之前、改之後的值」。請寫出 SQL，並說明 ORDER BY 為何要包含 CHANGENR。</li>
+    <li>什麼情況該用 MM04、RSSCD100、CHANGEDOCUMENT_READ、直接 SELECT？各舉一個情境。</li>
+    <li>用 RTTS 取出 MBEW 所有欄位的中文長文字，並和 DD03M 的查法比較優缺點。</li>
+    <li>CDPOS_UID 與 CDPOS_STR 各存什麼？在你的系統用 SE11 確認它們的欄位，並找一個 TABKEY 超過 70 碼的例子。</li>
+    <li>插件位置應該維護在標準 BOM 的哪張表、哪個欄位？在 CS02 要從哪裡進去維護？子項目數量合計與項目數量不一致時，系統會怎樣？</li>
+    <li>某半成品同時有 E-BOM（替代 01）與 M-BOM（替代 02）兩個有效的生產版本。原程式的 ANDAT 修正法在哪些情況會選錯？改寫版用什麼規則決定？如果兩個版本都未鎖定，程式應該怎麼處理？</li>
+    <li>把 §16 的遞迴展開補完：加上 S_MATKL 空白時的判斷、get_matkl 的 hashed buffer，並用一個三階含虛擬件的 BOM，和 CS11 的結果逐項比對。</li>
+    <li>把 80 個 PLGIN 欄位的自建表設計成正規化的 ZPPBOMPOS，寫出 SE11 欄位定義，以及一支從舊表轉換到新表的一次性程式（提示：§15 的 collect_zbom_plugin）。</li>
+    <li>RESB-AENNR 與「依採購日重新展開的 STPOX-AENNR」什麼時候會不同？報表應該以哪一個為準？請從加工廠實際發料的角度說明。</li>
+  </ol>
+</section>

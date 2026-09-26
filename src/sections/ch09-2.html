@@ -1,0 +1,849 @@
+<section class="chapter" id="ch09-2" data-title="MM 二次開發五案例">
+  <h2>第 9-2 章 MM 二次開發五案例</h2>
+  <p class="lede">這一章拆解 Casper《ABAP_08 ABAP 二次開發_MM》講義（2023/10 版）的五個 MM 實戰案例：用自建的 RFC 函數讀取即時庫存給外部系統、用 Excel 批次更新物料主檔的計畫交貨時間、用 BAPI_PR_CREATE 在流程中自動開請購單、在一張可編輯的 ALV 上批次維護採購確認（EKES），以及檢查廠商發票是否重複開立。五個案例都是「讀資料 → 整理 → 呼叫標準 API 寫回」這個模式，所以本章先做一個共用的 BAPI 工具類別，再逐案依「業務情境 → 選擇畫面與輸出 → 程式架構 → 關鍵段落現代改寫 → 原程式問題 → 上線注意」拆解。原程式的 TABLES、WITH HEADER LINE、FORM、REUSE_ALV 全部改寫成 S/4HANA 1809+ 的寫法，不貼整支原始碼。</p>
+
+  <div class="meta">
+    <div><b>核心 TCODE</b><span class="tcode">SE37</span><span class="tcode">SE38</span><span class="tcode">SE11</span><span class="tcode">SE54</span><span class="tcode">SM30</span><span class="tcode">MM02</span><span class="tcode">MM03</span><span class="tcode">MMBE</span><span class="tcode">MD04</span><span class="tcode">ME51N</span><span class="tcode">ME53N</span><span class="tcode">ME22N</span><span class="tcode">ME23N</span><span class="tcode">ME2A</span><span class="tcode">ME28</span><span class="tcode">MIRO</span><span class="tcode">MIR4</span><span class="tcode">MB5S</span><span class="tcode">OMRDC</span><span class="tcode">OMRM</span></div>
+    <div><b>關鍵物件</b>MARD、MARC（PLIFZ、WEBAZ）、EBAN、EKKO、EKPO、EKET、EKES、UEKES、EKBE、EKBES、RBKP、RSEG、LFB1（REPRF）、BAPI_MATERIAL_SAVEDATA、BAPI_MATERIAL_GET_ALL、BAPI_PR_CREATE、BAPI_TRANSACTION_COMMIT／ROLLBACK、BAPIRET2、ME_CONFIRMATION_UPDATE、ME_READ_HISTORY_DAO、ALSM_EXCEL_TO_INTERNAL_TABLE、TEXT_CONVERT_XLS_TO_SAP、CL_GUI_FRONTEND_SERVICES、VIEW_MAINTENANCE_CALL、CL_SALV_TABLE、CL_GUI_ALV_GRID</div>
+  </div>
+
+  <div class="warn"><b>去識別化說明：</b>原講義的物料號碼、工廠代碼、儲位與供應商都是某實際公司的資料，本章一律改成佔位符（物料 <span class="kw">MAT-A</span>／<span class="kw">MAT-B</span>、工廠 <span class="kw">1000</span>、儲位 <span class="kw">0001</span>）。講義 Excel 範本中的規格代號只寫成 <b>MMC-252</b> 這種前綴形式；截圖中的供應商名稱、儲位名稱、作者聯絡方式一律不轉錄。</div>
+
+  <h3 id="ch09-2-01">1. 素材對照與兩版差異</h3>
+  <p>素材有兩個版本：2022/09 的「四個案例」PDF（50 頁）與 2023/10 的「五個案例」docx（50 頁，本章主力）。兩版前四個案例的程式碼幾乎一字不差（連「第 01 節．利用 BAIP 讀取庫存」的筆誤都一樣），新版多了第五個案例 ZMMR0004。</p>
+  <table>
+    <thead><tr><th>本章小節</th><th>講義節次</th><th>原程式／物件</th><th>2022/09 四案例版</th><th>2023/10 五案例版</th></tr></thead>
+    <tbody>
+      <tr><td>§2</td><td>—</td><td>（本章新增）共用 BAPI 工具類別</td><td>—</td><td>—</td></tr>
+      <tr><td>§3、§4</td><td>1-01 ~ 1-04</td><td>RFC 函數 ZMATERIAL_STOCK_LIST、測試程式 ZMATERIAL_STOCK_LIST_SE38、外部 .NET（EEPCLOUD）呼叫片段、SQL Server 暫存表 eep_MARD</td><td>有（p.2 ~ 7）</td><td>有（p.2 ~ 7）</td></tr>
+      <tr><td>§5 ~ §8</td><td>2-00 ~ 2-10</td><td>暫存表 ZMARC_PLIFZ（SM30 維護畫面：函數群組 ZIT03、畫面 0001）、主程式 ZALSM_EXCEL_TO_INTERNAL_TABLE（INCLUDE ZMMB0017TOP／ZMMB0017FRM）</td><td>有（p.8 ~ 20）</td><td>有（p.8 ~ 20）</td></tr>
+      <tr><td>§9、§10</td><td>3-00 ~ 3-03</td><td>標準 BAPI_PR_CREATE 原始碼導讀、自建 ZBAPI_PR_CREATE、ME53N 執行結果</td><td>有（p.20 ~ 28）</td><td>有（p.20 ~ 28）</td></tr>
+      <tr><td>§11 ~ §13</td><td>4-00 ~ 4-03</td><td>ZMMB0022（INCLUDE ZMMB0022TOP／ZMMB0022FRM，檔頭仍寫 ZMMB0021）、自建表 ZMMB0021（生管燈號與意見）</td><td>有（p.40 ~ 50）</td><td>有（p.40 ~ 50）</td></tr>
+      <tr><td>§14 ~ §16</td><td>5-00 ~ 5-02</td><td>ZMMR0004（INCLUDE ZMMR0004TOP／ZMMR0004F01）</td><td><b>無</b></td><td><b>新增</b>（p.50 以後）</td></tr>
+      <tr><td>§17</td><td>—</td><td>批次 BAPI 共通的坑（本章整理）</td><td>—</td><td>—</td></tr>
+    </tbody>
+  </table>
+  <div class="note"><b>教材筆誤：</b>講義第 01 節標題寫「利用 <b>BAIP</b> 讀取庫存」，是 <b>BAPI</b> 的筆誤（目錄頁寫的是正確的「利用 BAPI 讀取庫存」）。另外，嚴格說 ZMATERIAL_STOCK_LIST 不是 BAPI，而是一支「遠端啟用（Remote-Enabled）」的自建函數：BAPI 是登錄在 BOR（<span class="tcode">BAPI</span> 瀏覽器）上的商業物件方法，要遵守命名、BAPIRET2 回傳、不自行 COMMIT 等規範。講義把「能被外部呼叫的 RFC 函數」通稱為 BAPI，是業界口語，但寫文件時要分清楚。</div>
+  <div class="note"><b>舊寫法對照（不保留原碼）：</b>原程式大量使用 <code>TABLES:</code>、<code>LIKE … OCCURS 0 WITH HEADER LINE</code>、<code>MOVE</code>、<code>DESCRIBE TABLE … LINES</code>、<code>CONCATENATE</code>、<code>FORM/PERFORM</code>、<code>REUSE_ALV_GRID_DISPLAY</code>＋<code>slis_t_fieldcat_alv</code>（ZMMB0022 光欄位目錄就手寫了四十多段）、<code>REUSE_ALV_FIELDCATALOG_MERGE</code>、以 <code>SELECT SINGLE *</code> 在 LOOP 裡逐筆讀 EKET 與 T163Y。本章全部改成內嵌宣告、<code>VALUE #( )</code>、字串範本、local class 方法與 CL_SALV_TABLE（可編輯的 ZMMB0022 改用 CL_GUI_ALV_GRID）。</div>
+
+  <h3 id="ch09-2-02">2. 共用骨架：BAPI 呼叫與 BAPIRET2 判斷</h3>
+  <p>五個案例有四個要呼叫「寫入型」BAPI 或函數。原程式各寫各的判斷，而且各有漏洞：案例二先 COMMIT 才看回傳、只判斷 <code>TYPE = 'E'</code>；案例三只看「有沒有拿到請購單號」；案例四在沒有 EXCEPTIONS 的函數後面檢查 <code>sy-subrc</code>。先把判斷規則收斂成一個 local class，後面每個案例都用它。</p>
+  <pre><code class="abap">CLASS lcl_bapi DEFINITION FINAL.
+  PUBLIC SECTION.
+    "BAPIRET2 中出現 E（錯誤）或 A（中止）就算失敗；W／I／S 不算
+    CLASS-METHODS has_error
+      IMPORTING it_return      TYPE bapiret2_t
+      RETURNING VALUE(rv_error) TYPE abap_bool.
+    CLASS-METHODS first_error
+      IMPORTING it_return     TYPE bapiret2_t
+      RETURNING VALUE(rv_text) TYPE string.
+    "依回傳決定 COMMIT 或 ROLLBACK；回傳 abap_true 代表真的寫進資料庫
+    CLASS-METHODS finish
+      IMPORTING it_return  TYPE bapiret2_t
+                iv_testrun TYPE abap_bool DEFAULT abap_false
+      RETURNING VALUE(rv_ok) TYPE abap_bool.
+ENDCLASS.
+
+CLASS lcl_bapi IMPLEMENTATION.
+  METHOD has_error.
+    rv_error = xsdbool( line_exists( it_return[ type = 'E' ] )
+                     OR line_exists( it_return[ type = 'A' ] ) ).
+  ENDMETHOD.
+
+  METHOD first_error.
+    LOOP AT it_return INTO DATA(ls_ret) WHERE type CA 'EA'.
+      rv_text = |{ ls_ret-id }/{ ls_ret-number }: { ls_ret-message }|.
+      RETURN.
+    ENDLOOP.
+  ENDMETHOD.
+
+  METHOD finish.
+    IF has_error( it_return ) = abap_true OR iv_testrun = abap_true.
+      CALL FUNCTION 'BAPI_TRANSACTION_ROLLBACK'.
+      rv_ok = abap_false.
+      RETURN.
+    ENDIF.
+    DATA ls_commit TYPE bapiret2.
+    CALL FUNCTION 'BAPI_TRANSACTION_COMMIT'
+      EXPORTING
+        wait   = abap_true          "等更新任務寫完再往下，後續才讀得到新資料
+      IMPORTING
+        return = ls_commit.
+    rv_ok = xsdbool( ls_commit-type NA 'EA' ).
+  ENDMETHOD.
+ENDCLASS.</code></pre>
+  <div class="warn"><b>BAPIRET2 判斷三原則：</b>（1）看 <b>TYPE 是 E 或 A</b>，不要只看 E，A（abort）更嚴重；（2）<b>先判斷、再決定 COMMIT 或 ROLLBACK</b>，不能先 COMMIT 再看結果——BAPI 失敗時通常不會自己寫庫，但同一個 LUW 裡前面成功的呼叫會被一起提交；（3）有 RETURN 表格的 BAPI 就看表格，不要用「有沒有拿到單號」或 <code>sy-subrc</code> 代替。BAPI 的基本觀念請見 <a href="#ch04-1">4-1 章 RFC 與 BAPI</a>。</div>
+
+  <h3 id="ch09-2-03">3. 案例一：用 RFC 函數讀即時庫存——情境與架構</h3>
+  <h4>業務情境</h4>
+  <p>公司的外部系統（講義稱 EEPCLOUD，一套以 .NET 撰寫的雲端應用）需要查詢 SAP 的即時庫存。做法是在 SAP 寫一支遠端啟用的函數 ZMATERIAL_STOCK_LIST，外部用 SAP .NET Connector（NCo）呼叫，把結果存進 SQL Server 的暫存表 eep_MARD（欄位 MATNR、WERKS、LGORT、LABST，主鍵為前三者）。講義註記此片段「已於 20220817 成功」。</p>
+  <h4>輸入與輸出</h4>
+  <table>
+    <thead><tr><th>項目</th><th>原設計</th><th>說明</th></tr></thead>
+    <tbody>
+      <tr><td>介面</td><td>只有一個 TABLES 參數 <code>T_MARD STRUCTURE ZMARD</code>，同時當輸入也當輸出</td><td>呼叫端填 MATNR、WERKS（可填 LGORT），函數清空後回填彙總結果</td></tr>
+      <tr><td>資料來源</td><td>MARD（儲存地點庫存）</td><td>以 FOR ALL ENTRIES 依物料＋工廠讀取</td></tr>
+      <tr><td>輸出</td><td>依 MATNR＋WERKS 以 COLLECT 加總 LABST（非限制使用庫存）</td><td>LGORT 欄位回傳時是空白——雖然輸入可以填儲位，但彙總時被丟掉</td></tr>
+      <tr><td>測試方式</td><td><span class="tcode">SE37</span> 單一測試：在 T_MARD 表格輸入 MATNR、WERKS → 返回 → 執行 → 點結果看即時庫存；<span class="tcode">SE38</span> 寫測試程式呼叫並 WRITE 輸出</td><td><span class="src">（依講義步驟整理）</span></td></tr>
+    </tbody>
+  </table>
+  <h4>程式架構（現代版）</h4>
+  <ol>
+    <li>介面改用明確的 IMPORTING／EXPORTING 表格類型（RFC 函數一律傳值），輸入鍵與輸出結果分開。</li>
+    <li>輸入為空時直接回傳空表——這是原程式最嚴重的漏洞（見 §4）。</li>
+    <li>去重 → 讀 MARD → 依「物料＋工廠」彙總（要保留儲位就依「物料＋工廠＋儲位」）。</li>
+    <li>函數屬性頁勾選 <b>Remote-Enabled Module</b>，並在 <span class="tcode">SE37</span> 標記為「Released」之前先談好介面版本管理，外部系統一旦串上就很難改參數。</li>
+  </ol>
+
+  <h3 id="ch09-2-04">4. 案例一：關鍵段落現代改寫與原程式問題</h3>
+  <p>函數本體改寫如下。介面中的 <code>ZMM_T_STOCK_KEY</code>（行型含 MATNR、WERKS、LGORT）與 <code>ZMM_T_STOCK_SUM</code>（MATNR、WERKS、LGORT、LABST）是在 <span class="tcode">SE11</span> 自建的表格類型。</p>
+  <pre><code class="abap">FUNCTION z_material_stock_list.
+*"----------------------------------------------------------------------
+*"*"Remote-Enabled Function Module
+*"  IMPORTING
+*"     VALUE(IT_KEY)      TYPE  ZMM_T_STOCK_KEY
+*"     VALUE(IV_BY_LGORT) TYPE  ABAP_BOOL DEFAULT ABAP_FALSE
+*"  EXPORTING
+*"     VALUE(ET_STOCK)    TYPE  ZMM_T_STOCK_SUM
+*"----------------------------------------------------------------------
+  "空輸入直接返回：FOR ALL ENTRIES 遇到空表會「忽略整個 WHERE」，變成全表讀取
+  IF it_key IS INITIAL.
+    RETURN.
+  ENDIF.
+
+  DATA(lt_key) = it_key.
+  SORT lt_key BY matnr werks.
+  DELETE ADJACENT DUPLICATES FROM lt_key COMPARING matnr werks.
+
+  SELECT matnr, werks, lgort, labst
+    FROM mard
+    FOR ALL ENTRIES IN @lt_key
+    WHERE matnr = @lt_key-matnr
+      AND werks = @lt_key-werks
+    INTO TABLE @DATA(lt_mard).
+
+  "呼叫端有指定儲位的物料，只保留該儲位
+  LOOP AT it_key INTO DATA(ls_key) WHERE lgort IS NOT INITIAL.
+    DELETE lt_mard WHERE matnr = ls_key-matnr
+                     AND werks = ls_key-werks
+                     AND lgort &lt;&gt; ls_key-lgort.
+  ENDLOOP.
+
+  LOOP AT lt_mard INTO DATA(ls_mard)
+       GROUP BY ( matnr = ls_mard-matnr
+                  werks = ls_mard-werks
+                  lgort = COND #( WHEN iv_by_lgort = abap_true THEN ls_mard-lgort ) )
+       INTO DATA(ls_grp).
+    APPEND VALUE #( matnr = ls_grp-matnr
+                    werks = ls_grp-werks
+                    lgort = ls_grp-lgort
+                    labst = REDUCE #( INIT s = CONV labst( 0 )
+                                      FOR m IN GROUP ls_grp
+                                      NEXT s = s + m-labst ) ) TO et_stock.
+  ENDLOOP.
+ENDFUNCTION.</code></pre>
+  <p>SE38 測試程式改成輸入鍵表＋CL_SALV_TABLE 顯示：</p>
+  <pre><code class="abap">REPORT z_material_stock_list_test.
+
+PARAMETERS p_werks TYPE werks_d DEFAULT '1000' OBLIGATORY.
+DATA gv_matnr TYPE matnr.
+SELECT-OPTIONS s_matnr FOR gv_matnr NO INTERVALS.   "只收列舉，不收區間
+
+START-OF-SELECTION.
+  DATA(lt_key) = VALUE zmm_t_stock_key(
+                   FOR r IN s_matnr WHERE ( sign = 'I' AND option = 'EQ' )
+                   ( matnr = r-low werks = p_werks ) ).
+
+  DATA lt_stock TYPE zmm_t_stock_sum.
+  CALL FUNCTION 'Z_MATERIAL_STOCK_LIST'
+    EXPORTING
+      it_key      = lt_key
+      iv_by_lgort = abap_true
+    IMPORTING
+      et_stock    = lt_stock.
+
+  SORT lt_stock BY matnr werks lgort.     "HANA 不保證順序，輸出前一定排序
+  TRY.
+      cl_salv_table=&gt;factory( IMPORTING r_salv_table = DATA(lo_alv)
+                              CHANGING  t_table      = lt_stock ).
+      lo_alv-&gt;get_functions( )-&gt;set_all( abap_true ).
+      lo_alv-&gt;display( ).
+    CATCH cx_salv_msg INTO DATA(lx).
+      MESSAGE lx TYPE 'I' DISPLAY LIKE 'E'.
+  ENDTRY.</code></pre>
+  <h4>原程式問題</h4>
+  <table>
+    <thead><tr><th>問題</th><th>後果</th><th>修正</th></tr></thead>
+    <tbody>
+      <tr><td>沒有檢查 T_MARD 是否為空就 FOR ALL ENTRIES</td><td>空表 = 讀整張 MARD。講義的 .NET 片段先 <code>Invoke</code> 一次再填參數，註解寫「這裏會等好幾秒」「取得的 T_MARD 就是 3 萬多筆的資料表」——正是這個漏洞的症狀</td><td>空輸入直接 RETURN；.NET 端先 <code>SetValue</code> 再 <code>Invoke</code>，只呼叫一次</td></tr>
+      <tr><td>TABLES 參數兼作輸入與輸出，函數內 <code>CLEAR t_mard[]</code></td><td>呼叫端的輸入被覆蓋，除錯困難</td><td>IMPORTING／EXPORTING 分開</td></tr>
+      <tr><td>接受 LGORT 輸入卻不使用、輸出 LGORT 永遠空白</td><td>外部系統以為拿到的是儲位庫存，其實是工廠總量；eep_MARD 以 MATNR＋WERKS＋LGORT 當主鍵，全部 LGORT 空白時照樣成立，不會報錯</td><td>明確提供 <code>iv_by_lgort</code> 選項</td></tr>
+      <tr><td><code>LIKE mard OCCURS 0 WITH HEADER LINE</code>、<code>SELECT *</code>、COLLECT</td><td>讀了 MARD 全部欄位，只用 4 個</td><td>明列欄位＋GROUP BY／REDUCE</td></tr>
+      <tr><td>只回傳 LABST</td><td>品檢庫存（INSME）、凍結庫存（SPEME）都沒算，業務說「系統有貨卻說沒有」</td><td>需求訪談時先定義「可用庫存」的口徑</td></tr>
+    </tbody>
+  </table>
+  <h4>上線注意</h4>
+  <ul>
+    <li><b>先找標準：</b>標準已有 <code>BAPI_MATERIAL_AVAILABILITY</code>（依 ATP 檢查規則回傳可用量，等同 CO09 的角度）與 <code>BAPI_MATERIAL_STOCK_REQ_LIST</code>（庫存／需求清單，等同 <span class="tcode">MD04</span>）。講義沒有用這兩支；若外部系統要的是「可承諾量」而非帳面庫存，應優先評估它們（參數請以 <span class="tcode">SE37</span> 確認，S/4HANA 的物料號欄位多有 <code>*_LONG</code> 版本）。</li>
+    <li>S/4HANA 的 MARD 是由物料文件 MATDOC 即時彙總的相容性視圖（proxy），大量頻繁查詢的成本比 ECC 高；外部系統每幾秒輪詢一次就該改成批次同步或只查異動物料。</li>
+    <li>RFC 使用者要給最小權限（S_RFC 限定函數群組），外部系統的連線帳密不要寫死在程式裡。</li>
+  </ul>
+
+  <h3 id="ch09-2-05">5. 案例二：Excel 批次更新前置時間——情境與暫存表</h3>
+  <h4>業務情境</h4>
+  <p>採購每季跟供應商重談交期後，要把幾百顆物料的「計畫交貨時間」（MARC-PLIFZ，MM02 MRP 2 視圖）一次更新。講義的做法分三段：Excel → 自建暫存表 ZMARC_PLIFZ → 用 BAPI 寫回 MARC，最後用 SM30 維護畫面顯示匯入結果，「不必一行一行的寫 ALV」。</p>
+  <h4>講義步驟 <span class="src">（依講義步驟整理）</span></h4>
+  <ol>
+    <li>2-01 在 <span class="tcode">SE11</span> 建暫存表 ZMARC_PLIFZ（MANDT、NUM、MATNR、PLIFZ）。</li>
+    <li>2-02 產生表格維護畫面：講義由 <span class="tcode">SE80</span> 進函數群組 ZIT03 的畫面 0001（產生器是 <span class="tcode">SE54</span>／SE11「表格維護產生器」）。</li>
+    <li>2-03 確認 <span class="tcode">SM30</span> 看得到畫面。</li>
+    <li>2-04 寫主程式 ZALSM_EXCEL_TO_INTERNAL_TABLE；2-05 用 Excel 整理資料（第 1 列欄名 NUM_COL、MATNR、PLIFZ，第 2 列起為資料，例如「1、MAT-A、123」「2、MMC-252、43」）。</li>
+    <li>2-06 選檔 → 2-07 Excel 寫入 IT_XLS 再寫入 IT_ZMARC_PLIFZ → 2-08 IT_MARC 寫入 MARC → 2-09 以維護視圖顯示結果。</li>
+  </ol>
+  <h4>暫存表建議擴充</h4>
+  <p>原表只有 NUM、MATNR、PLIFZ，且每次執行 <code>DELETE FROM ZMARC_PLIFZ</code> 整表清空（講義註解：「每次都清空，可能使用者比較不會被誤導」）。兩個人同時匯入時會互相清掉對方的資料，也看不出哪一筆寫回 MARC 失敗。建議改成：</p>
+  <table>
+    <thead><tr><th>欄位</th><th>型態</th><th>用途</th></tr></thead>
+    <tbody>
+      <tr><td>MANDT</td><td>MANDT（鍵）</td><td>用戶端，SQL 會自動處理，程式不必自己填</td></tr>
+      <tr><td>UNAME</td><td>SYUNAME（鍵）</td><td>匯入者，清除時只清自己的</td></tr>
+      <tr><td>NUM</td><td>INT4（鍵）</td><td>Excel 列號，方便回頭對照</td></tr>
+      <tr><td>MATNR／WERKS</td><td>MATNR／WERKS_D</td><td>工廠不再寫死在程式</td></tr>
+      <tr><td>PLIFZ（及 WEBAZ）</td><td>PLIFZ／WEBAZ</td><td>計畫交貨時間；若同時要更新收貨處理時間就加 WEBAZ</td></tr>
+      <tr><td>STATUS／MSG</td><td>CHAR1／BAPI_MSG</td><td>BAPI 回寫結果，SM30 一眼看出哪些失敗</td></tr>
+    </tbody>
+  </table>
+  <p>選擇畫面與檔案選擇器（講義 FORM OPEN_DIALOG 的現代版）：</p>
+  <pre><code class="abap">REPORT zmm_upload_plifz.
+
+PARAMETERS: p_file  TYPE localfile OBLIGATORY,
+            p_werks TYPE werks_d   OBLIGATORY,
+            p_test  AS CHECKBOX DEFAULT abap_true.   "預設試跑，確認後再正式寫入
+
+AT SELECTION-SCREEN ON VALUE-REQUEST FOR p_file.
+  DATA lt_files TYPE filetable.
+  DATA lv_rc    TYPE i.
+  cl_gui_frontend_services=&gt;file_open_dialog(
+    EXPORTING
+      window_title      = `選擇前置時間檔案`
+      file_filter       = `Excel (*.xlsx;*.xls)|*.xlsx;*.xls|Tab 分隔文字 (*.txt)|*.txt`
+      initial_directory = `C:\temp\`
+      multiselection    = abap_false
+    CHANGING
+      file_table        = lt_files
+      rc                = lv_rc
+    EXCEPTIONS
+      OTHERS            = 1 ).
+  IF sy-subrc = 0 AND lv_rc = 1.
+    p_file = lt_files[ 1 ]-filename.
+  ENDIF.</code></pre>
+  <div class="warn"><b>講義的事件區塊陷阱：</b>原程式在 <code>AT SELECTION-SCREEN ON VALUE-REQUEST FOR P_FILE.</code> 之後緊接著寫 <code>IF P_FILE IS INITIAL. MESSAGE … STOP. ENDIF.</code>。ABAP 的事件區塊一直延續到下一個事件關鍵字，所以這段「空白檢查」其實屬於 F4 事件，只在按 F4 時執行，按執行鍵時根本不會檢查。改用 <code>OBLIGATORY</code>，或把檢查放在 <code>AT SELECTION-SCREEN.</code>。</div>
+
+  <h3 id="ch09-2-06">6. 案例二：Excel 上傳的三種做法與差異</h3>
+  <p>講義用 <code>ALSM_EXCEL_TO_INTERNAL_TABLE</code>：它透過 OLE 開 Excel、以剪貼簿把儲存格搬回來，輸出是「列、欄、值」三欄的座標表（結構 ALSMEX_TABLINE），再用 <code>ASSIGN COMPONENT col OF STRUCTURE</code> 與 <code>AT END OF row</code> 組回一列。講義把這段當成教學重點（欄位符號、AT END OF 的運用），觀念值得學，但實務上有更直接的兩種寫法。</p>
+  <table>
+    <thead><tr><th>比較</th><th>cl_gui_frontend_services=&gt;gui_upload</th><th>TEXT_CONVERT_XLS_TO_SAP</th><th>ALSM_EXCEL_TO_INTERNAL_TABLE（講義）</th></tr></thead>
+    <tbody>
+      <tr><td>讀得了的格式</td><td>文字檔（Tab 分隔 txt、CSV）；FILETYPE 'BIN' 可讀二進位但要自己解析</td><td>.xls／.xlsx</td><td>.xls／.xlsx</td></tr>
+      <tr><td>原理</td><td>SAP GUI 前端檔案服務，直接讀檔</td><td>OLE 驅動使用者電腦上的 Excel</td><td>OLE＋剪貼簿</td></tr>
+      <tr><td>前提</td><td>SAP GUI（不需要 Excel）</td><td>SAP GUI for Windows 且本機裝 Excel</td><td>同左；儲存格值最長 50 字元</td></tr>
+      <tr><td>輸出</td><td>直接填進你定義的內表（依欄位順序）</td><td>直接填進你定義的內表，可略過標題列（I_LINE_HEADER）</td><td>座標表，要自己組列</td></tr>
+      <tr><td>速度與穩定度</td><td>最快、最穩</td><td>中等；Excel 開著或跳對話框時會卡</td><td>最慢；剪貼簿被其他程式佔用會失敗</td></tr>
+      <tr><td>背景作業</td><td colspan="3">三者都不能在背景執行（背景沒有 GUI）。批次排程請改成把檔案放應用伺服器（<span class="tcode">AL11</span>）用 <code>OPEN DATASET</code> 讀</td></tr>
+    </tbody>
+  </table>
+  <p><b>做法 A：gui_upload（使用者把 Excel「另存為 Unicode 文字（Tab 分隔）」）</b></p>
+  <pre><code class="abap">TYPES: BEGIN OF ty_line,          "全部用字元欄位接，轉型與檢查自己做
+         num   TYPE c LENGTH 10,
+         matnr TYPE c LENGTH 40,
+         plifz TYPE c LENGTH 10,
+       END OF ty_line,
+       tt_line TYPE STANDARD TABLE OF ty_line WITH EMPTY KEY.
+
+METHOD upload_text.            "RETURNING VALUE(rt_line) TYPE tt_line
+  cl_gui_frontend_services=&gt;gui_upload(
+    EXPORTING
+      filename            = CONV string( p_file )
+      filetype            = 'ASC'
+      has_field_separator = abap_true      "Tab 分隔
+      codepage            = '4110'         "UTF-8；Excel 另存 Unicode 文字時是 UTF-16，請改 '4103'
+    CHANGING
+      data_tab            = rt_line
+    EXCEPTIONS
+      OTHERS              = 1 ).
+  IF sy-subrc &lt;&gt; 0.
+    RAISE EXCEPTION TYPE zcx_mm_upload
+      EXPORTING textid = zcx_mm_upload=&gt;file_read_error.
+  ENDIF.
+  DELETE rt_line INDEX 1.              "去掉標題列
+  DELETE rt_line WHERE matnr IS INITIAL.
+ENDMETHOD.</code></pre>
+  <p><b>做法 B：TEXT_CONVERT_XLS_TO_SAP（直接讀 .xlsx，使用者不用另存）</b></p>
+  <pre><code class="abap">METHOD upload_excel.           "RETURNING VALUE(rt_line) TYPE tt_line
+  DATA lt_raw TYPE truxs_t_text_data.
+  DATA lv_file TYPE rlgrap-filename.
+  lv_file = p_file.
+
+  CALL FUNCTION 'TEXT_CONVERT_XLS_TO_SAP'
+    EXPORTING
+      i_field_seperator    = abap_true     "參數名稱原廠就拼成 SEPERATOR
+      i_line_header        = abap_true     "第 1 列是標題，自動略過
+      i_tab_raw_data       = lt_raw
+      i_filename           = lv_file
+    TABLES
+      i_tab_converted_data = rt_line
+    EXCEPTIONS
+      conversion_failed    = 1
+      OTHERS               = 2.
+  IF sy-subrc &lt;&gt; 0.
+    RAISE EXCEPTION TYPE zcx_mm_upload
+      EXPORTING textid = zcx_mm_upload=&gt;file_read_error.
+  ENDIF.
+  DELETE rt_line WHERE matnr IS INITIAL.
+ENDMETHOD.</code></pre>
+  <div class="tip"><b>選哪一個？</b>使用者是一般業務、檔案固定是 xlsx → TEXT_CONVERT_XLS_TO_SAP；要最快、要在 SAP GUI for Java／遠端桌面沒有 Excel 的環境跑 → gui_upload＋文字檔；一定要讀 xlsx 又不能依賴本機 Excel → 用 gui_upload 的 <code>filetype = 'BIN'</code> 讀成 xstring，再交給開源的 abap2xlsx 或 BRFplus 附帶的 <code>CL_FDT_XL_SPREADSHEET</code> 解析（後者不是正式 released API，升級時要回歸測試）。無論哪一種，接收結構都先用字元欄位，數值、日期、物料號自己轉——Excel 的「123」可能是「123.0」、日期可能是序號 45123。日期轉換可參考 <a href="#ch06-9">6-9 章 日期函數</a>。</div>
+
+  <h3 id="ch09-2-07">7. 案例二：驗證、寫暫存表與 BAPI_MATERIAL_SAVEDATA</h3>
+  <p>講義的 FORM UPDATE_MARC 先把 MARC 整列讀進 IT_MARC、在記憶體裡改 PLIFZ，再逐筆呼叫 <code>BAPI_MATERIAL_GET_ALL</code>（讀了但結果沒用到）與 <code>BAPI_MATERIAL_SAVEDATA</code>。核心觀念是對的：<b>絕不直接 UPDATE MARC</b>，一定走 BAPI，才會有檢查、鎖定與異動記錄（CDHDR／CDPOS）。改寫時把「驗證 → 暫存 → 寫回 → 回填狀態」拆成方法：</p>
+  <pre><code class="abap">METHOD stage.                  "IMPORTING it_line TYPE tt_line
+  "1. 物料號轉內碼、前置時間轉數值；轉不過的列直接標錯
+  mt_stage = VALUE #( FOR l IN it_line INDEX INTO i
+                      ( uname = sy-uname
+                        num   = i
+                        matnr = to_matnr( l-matnr )
+                        werks = p_werks
+                        plifz = COND #( WHEN l-plifz CO ' 0123456789' THEN l-plifz )
+                        status = COND #( WHEN l-plifz CN ' 0123456789' THEN 'E' ) ) ).
+
+  "2. 檢查 MARC 是否存在（物料未擴充到該工廠就不能更新）
+  IF mt_stage IS NOT INITIAL.
+    SELECT matnr, werks, plifz
+      FROM marc
+      FOR ALL ENTRIES IN @mt_stage
+      WHERE matnr = @mt_stage-matnr
+        AND werks = @mt_stage-werks
+      INTO TABLE @DATA(lt_marc).
+  ENDIF.
+  LOOP AT mt_stage ASSIGNING FIELD-SYMBOL(&lt;s&gt;) WHERE status IS INITIAL.
+    IF NOT line_exists( lt_marc[ matnr = &lt;s&gt;-matnr werks = &lt;s&gt;-werks ] ).
+      &lt;s&gt;-status = 'E'.
+      &lt;s&gt;-msg    = |物料 { &lt;s&gt;-matnr ALPHA = OUT } 未擴充到工廠 { &lt;s&gt;-werks }|.
+    ENDIF.
+  ENDLOOP.
+
+  "3. 只清自己的暫存資料，不影響別人
+  DELETE FROM zmarc_plifz WHERE uname = @sy-uname.
+  INSERT zmarc_plifz FROM TABLE @mt_stage.
+  COMMIT WORK.
+ENDMETHOD.</code></pre>
+  <pre><code class="abap">METHOD post.
+  LOOP AT mt_stage ASSIGNING FIELD-SYMBOL(&lt;s&gt;) WHERE status IS INITIAL.
+    DATA(ls_head) = VALUE bapimathead( material_long = &lt;s&gt;-matnr   "S/4HANA 40 碼物料號用 *_LONG 欄位
+                                       mrp_view      = abap_true ).
+    DATA(ls_plant)  = VALUE bapi_marc(  plant = &lt;s&gt;-werks  plnd_delry = &lt;s&gt;-plifz ).
+    DATA(ls_plantx) = VALUE bapi_marcx( plant = &lt;s&gt;-werks  plnd_delry = abap_true ).
+    "延伸：同時更新收貨處理時間 MARC-WEBAZ 時，對應 BAPI_MARC-GR_PR_TIME（請以 SE11 確認）
+
+    DATA ls_return TYPE bapiret2.
+    DATA lt_msg    TYPE STANDARD TABLE OF bapi_matreturn2 WITH EMPTY KEY.
+    CLEAR: ls_return, lt_msg.
+
+    IF p_test = abap_true.
+      &lt;s&gt;-status = 'T'.                 "試跑：只驗證不寫
+      &lt;s&gt;-msg    = |試跑：PLIFZ 將改為 { &lt;s&gt;-plifz }|.
+      CONTINUE.
+    ENDIF.
+
+    CALL FUNCTION 'BAPI_MATERIAL_SAVEDATA'
+      EXPORTING
+        headdata       = ls_head
+        plantdata      = ls_plant
+        plantdatax     = ls_plantx
+      IMPORTING
+        return         = ls_return
+      TABLES
+        returnmessages = lt_msg.
+
+    "SAVEDATA 的 RETURN 是單一結構；逐筆判斷後才 COMMIT，失敗就 ROLLBACK
+    IF lcl_bapi=&gt;finish( VALUE #( ( ls_return ) ) ) = abap_true.
+      &lt;s&gt;-status = 'S'.
+      &lt;s&gt;-msg    = ls_return-message.
+    ELSE.
+      &lt;s&gt;-status = 'E'.
+      &lt;s&gt;-msg    = COND #( WHEN ls_return-message IS NOT INITIAL THEN ls_return-message
+                           ELSE VALUE #( lt_msg[ type = 'E' ]-message OPTIONAL ) ).
+    ENDIF.
+  ENDLOOP.
+
+  UPDATE zmarc_plifz FROM TABLE @mt_stage.   "把結果寫回暫存表，SM30 可檢視
+  COMMIT WORK.
+ENDMETHOD.</code></pre>
+  <p>結果顯示沿用講義的點子——直接叫出暫存表的維護視圖，只讀模式：</p>
+  <pre><code class="abap">METHOD show_result.
+  CALL FUNCTION 'VIEW_MAINTENANCE_CALL'
+    EXPORTING
+      action    = 'S'                 "S = 顯示；U = 修改
+      view_name = 'ZMARC_PLIFZ'
+    EXCEPTIONS
+      OTHERS    = 1.
+  IF sy-subrc &lt;&gt; 0.
+    "沒產生維護畫面或沒權限時，退回 SALV 顯示
+    DATA(lt_show) = mt_stage.
+    TRY.
+        cl_salv_table=&gt;factory( IMPORTING r_salv_table = DATA(lo_alv)
+                                CHANGING  t_table      = lt_show ).
+        lo_alv-&gt;display( ).
+      CATCH cx_salv_msg.
+    ENDTRY.
+  ENDIF.
+ENDMETHOD.</code></pre>
+  <p>其中 <code>to_matnr( )</code> 是一個小方法：呼叫 <code>CONVERSION_EXIT_MATN1_INPUT</code> 把使用者輸入的物料號轉成內碼。S/4HANA 的物料號轉換常式是 MATN1，不要用 <code>ALPHA = IN</code>，後者只補數字前導零、遇到英數混合的物料號行為不同。</p>
+
+  <h3 id="ch09-2-08">8. 案例二：原程式問題與上線注意</h3>
+  <table>
+    <thead><tr><th>原程式寫法</th><th>問題</th><th>改法</th></tr></thead>
+    <tbody>
+      <tr><td>先 <code>BAPI_TRANSACTION_COMMIT</code>，再 <code>IF RETURN-TYPE = 'E'</code></td><td>判斷順序顛倒；A 類訊息被當成成功；失敗時沒有 ROLLBACK</td><td>§2 的 <code>lcl_bapi=&gt;finish( )</code></td></tr>
+      <tr><td>每筆成功都 <code>MESSAGE … TYPE 'I'</code></td><td>三百筆就要按三百次 Enter</td><td>結果寫回暫存表的 STATUS／MSG，最後一次顯示</td></tr>
+      <tr><td>工廠代碼寫死三處（SELECT、GET_ALL、PLANTDATA）</td><td>換工廠要改程式</td><td>選擇畫面參數</td></tr>
+      <tr><td><code>BAPI_MATERIAL_GET_ALL</code> 讀了 CLIENTDATA 卻沒使用；CLIENTDATA／CLIENTDATAX 傳空結構</td><td>多一次完整讀取，純浪費</td><td>只更新 MRP 視圖時只傳 HEADDATA、PLANTDATA、PLANTDATAX</td></tr>
+      <tr><td><code>DELETE FROM ZMARC_PLIFZ</code> 整表清空</td><td>多人同時匯入互相覆蓋</td><td>以 UNAME 分區</td></tr>
+      <tr><td>FOR ALL ENTRIES IN IT_ZMARC_PLIFZ 前沒檢查空表</td><td>Excel 全空時（雖然前面有 RETURN，但只離開 FORM UPLOAD，不會停止主程式）會讀整個工廠的 MARC</td><td>空表檢查＋例外中止</td></tr>
+      <tr><td>「IT_MARC 寫入 MARC」的說法</td><td>容易被誤解為直接更新 MARC</td><td>一律透過 BAPI，實際寫入由更新任務完成</td></tr>
+    </tbody>
+  </table>
+  <ul>
+    <li><b>先找標準：</b>大量主檔修改的標準工具有 <span class="tcode">MASS</span>／<span class="tcode">MM17</span>（物料大量維護）與 S/4HANA 的移轉工具；只改一兩個欄位時，先問使用者能不能用 MM17，不行再寫程式。</li>
+    <li>BAPI_MATERIAL_SAVEDATA 會鎖物料，<b>每筆物料都要 COMMIT（或 ROLLBACK）釋放鎖</b>，否則同一支程式下一筆改同一個物料會撞到自己的鎖；Excel 中同一物料出現兩列時，要先去重或合併。</li>
+    <li>一定保留「試跑」模式並預設勾選。上線前在測試機以 <span class="tcode">MM03</span> 抽查、以 CDHDR／CDPOS 確認異動記錄（查法見 <a href="#ch06-8">6-8 章</a>）。</li>
+    <li>PLIFZ 單位是「日曆天」，WEBAZ 是「工作天」；兩個欄位一起放在範本時，範本標題要寫清楚，否則採購常填錯。</li>
+  </ul>
+
+  <h3 id="ch09-2-09">9. 案例三：BAPI_PR_CREATE——情境與介面導讀</h3>
+  <h4>業務情境</h4>
+  <p>「在流程上建立請購單」：某個自建流程（例如安全庫存不足提醒、外部系統的申購單、專案物料清單）確認後，要自動在 SAP 開一張請購單（EBAN），不讓使用者再手動進 <span class="tcode">ME51N</span>。講義 3-03 的執行結果是在 <span class="tcode">ME53N</span> 看到一張新開的 NB 請購單，項次 10、數量 10、交貨日為當天。</p>
+  <h4>標準 BAPI 的介面重點</h4>
+  <p>講義 3-01 把 BAPI_PR_CREATE 的原始碼整段列出。重點不是背程式，而是從原始碼看出它的設計：</p>
+  <table>
+    <thead><tr><th>參數</th><th>結構</th><th>用途</th></tr></thead>
+    <tbody>
+      <tr><td>PRHEADER／PRHEADERX</td><td>BAPIMEREQHEADER／BAPIMEREQHEADERX</td><td>表頭：請購單類型 PR_TYPE（例如 NB）</td></tr>
+      <tr><td>TESTRUN</td><td>BAPIFLAG-BAPIFLAG</td><td>試跑：只檢查不存檔</td></tr>
+      <tr><td>NUMBER（輸出）</td><td>BAPIMEREQHEADER-PREQ_NO</td><td>新請購單號</td></tr>
+      <tr><td>PRITEM／PRITEMX</td><td>BAPIMEREQITEMIMP／BAPIMEREQITEMX</td><td>項目：PREQ_ITEM、MATERIAL（S/4 用 MATERIAL_LONG）、PLANT、PURCH_ORG、PUR_GROUP、QUANTITY、DELIV_DATE、PREQ_NAME…</td></tr>
+      <tr><td>PRACCOUNT／PRACCOUNTX</td><td>BAPIMEREQACCOUNT</td><td>科目指派（成本中心、WBS）</td></tr>
+      <tr><td>PRITEMTEXT／PRHEADERTEXT</td><td>BAPIMEREQITEMTEXT／BAPIMEREQHEADTEXT</td><td>長文</td></tr>
+      <tr><td>EXTENSIONIN</td><td>BAPIPAREX</td><td>自訂欄位（CI_EBANDB）</td></tr>
+      <tr><td>RETURN</td><td>BAPIRET2</td><td>訊息——成功與否以它為準</td></tr>
+    </tbody>
+  </table>
+  <ul>
+    <li>內部是 <code>lcl_bapi_requisition</code> 物件，依序 <code>set_header</code>、<code>set_items</code>、<code>set_account</code>…、<code>process( )</code>，與 ME51N 使用同一套採購文件框架，所以<b>檢查、定價、放行策略、訊息輸出和 ME51N 一致</b>。</li>
+    <li>開頭呼叫 <code>cl_bapi_mereq_mapping=&gt;map2i_matnr</code>：S/4HANA 的 40 碼物料號（MATERIAL_LONG）在這裡對應回內部欄位。</li>
+    <li>原始碼有 <code>ENHANCEMENT-POINT bapi_pr_create_g6／g7／g8 SPOTS es_sapl2105</code>，以及動態中斷點 <code>BREAK-POINT ID mmpur_2105</code>（在 <span class="tcode">SAAB</span> 啟用），除錯時很好用。</li>
+    <li><b>BAPI 本身不 COMMIT</b>（只有測試用的 <code>lf_cr</code> 旗標才會），呼叫端要自己呼叫 BAPI_TRANSACTION_COMMIT。</li>
+    <li>講義引用 SAP Note <b>499627</b>（FAQ: BAPIs for purchase requisitions）：舊的 <code>BAPI_REQUISITION_CREATE</code> 與新的 <code>BAPI_PR_CREATE</code> 不要混用，新開發一律用後者。</li>
+  </ul>
+
+  <h3 id="ch09-2-10">10. 案例三：ZBAPI_PR_CREATE 現代改寫與原程式問題</h3>
+  <p>講義的 ZBAPI_PR_CREATE 選擇畫面只有物料 P_MATNR、採購組織 P_EKORG、工廠 P_WERKS，數量寫死 10、交貨日寫死 SY-DATUM。改寫後把數量、日期、採購群組都開成參數，並支援試跑：</p>
+  <pre><code class="abap">REPORT zmm_pr_create.
+
+PARAMETERS: p_bsart TYPE eban-bsart DEFAULT 'NB' OBLIGATORY,
+            p_matnr TYPE matnr      OBLIGATORY,
+            p_werks TYPE werks_d    OBLIGATORY,
+            p_ekorg TYPE ekorg      OBLIGATORY,
+            p_ekgrp TYPE ekgrp,
+            p_menge TYPE bamng      OBLIGATORY,
+            p_lfdat TYPE eindt      OBLIGATORY,
+            p_test  AS CHECKBOX DEFAULT abap_true.
+
+START-OF-SELECTION.
+  DATA lt_item    TYPE STANDARD TABLE OF bapimereqitemimp WITH EMPTY KEY.
+  DATA lt_itemx   TYPE STANDARD TABLE OF bapimereqitemx   WITH EMPTY KEY.
+  DATA lt_return  TYPE bapiret2_t.
+  DATA lv_banfn   TYPE eban-banfn.
+
+  DATA(ls_head)  = VALUE bapimereqheader(  pr_type = p_bsart ).
+  DATA(ls_headx) = VALUE bapimereqheaderx( pr_type = abap_true ).
+
+  lt_item  = VALUE #( ( preq_item     = '00010'
+                        material_long = p_matnr
+                        plant         = p_werks
+                        purch_org     = p_ekorg
+                        pur_group     = p_ekgrp
+                        quantity      = p_menge
+                        deliv_date    = p_lfdat
+                        preq_name     = sy-uname ) ).
+  "X 結構：有填值的欄位才打 X；PUR_GROUP 空白時不要打 X，否則會被清空
+  lt_itemx = VALUE #( ( preq_item     = '00010'
+                        material_long = abap_true
+                        plant         = abap_true
+                        purch_org     = abap_true
+                        pur_group     = xsdbool( p_ekgrp IS NOT INITIAL )
+                        quantity      = abap_true
+                        deliv_date    = abap_true
+                        preq_name     = abap_true ) ).
+
+  CALL FUNCTION 'BAPI_PR_CREATE'
+    EXPORTING
+      prheader  = ls_head
+      prheaderx = ls_headx
+      testrun   = p_test
+    IMPORTING
+      number    = lv_banfn
+    TABLES
+      return    = lt_return
+      pritem    = lt_item
+      pritemx   = lt_itemx.
+
+  IF lcl_bapi=&gt;finish( it_return = lt_return iv_testrun = p_test ) = abap_true.
+    MESSAGE |請購單 { lv_banfn } 已建立| TYPE 'S'.
+  ELSEIF p_test = abap_true AND lcl_bapi=&gt;has_error( lt_return ) = abap_false.
+    MESSAGE |試跑通過，未存檔| TYPE 'S'.
+  ELSE.
+    MESSAGE lcl_bapi=&gt;first_error( lt_return ) TYPE 'S' DISPLAY LIKE 'E'.
+  ENDIF.</code></pre>
+  <p>「流程上」通常是一次好幾個項目。從來源內表組多個項次時，用 <code>FOR … INDEX INTO</code> 產生項次號，ITEM 與 ITEMX 用同一個迴圈產生，才不會對不起來：</p>
+  <pre><code class="abap">"it_need：來源需求（物料、工廠、數量、需求日），已依物料排序
+lt_item  = VALUE #( FOR n IN it_need INDEX INTO i
+                    ( preq_item     = CONV bnfpo( i * 10 )
+                      material_long = n-matnr
+                      plant         = n-werks
+                      purch_org     = p_ekorg
+                      quantity      = n-menge
+                      deliv_date    = n-eindt ) ).
+lt_itemx = VALUE #( FOR n IN it_need INDEX INTO i
+                    ( preq_item     = CONV bnfpo( i * 10 )
+                      material_long = abap_true
+                      plant         = abap_true
+                      purch_org     = abap_true
+                      quantity      = abap_true
+                      deliv_date    = abap_true ) ).</code></pre>
+  <h4>原程式問題</h4>
+  <ul>
+    <li><b>以 <code>IF LV_BANFN IS NOT INITIAL</code> 判斷成功</b>：有警告以外的錯誤時 BAPI 不會給號碼，這樣判斷大致可行，但訊息全被丟掉——失敗時使用者只看到空白畫面。應該看 RETURN，並把錯誤顯示出來。</li>
+    <li>數量 10、交貨日「今天」寫死：今天的交貨日在 MRP 裡會直接變成過期需求。</li>
+    <li>PUR_GROUP、FIXED、TRACKINGNO 被註解掉，靠預設值帶出；上線時採購群組決定了誰會收到這張請購單，建議明確給值或確認 OBAC／物料主檔預設。</li>
+    <li>欄位用 MATERIAL（18 碼），S/4HANA 啟用長物料號時會被截斷，應改用 MATERIAL_LONG。</li>
+  </ul>
+  <div class="warn"><b>上線注意：</b>（1）請購單有放行策略時，BAPI 建出來的單一樣要走放行；（2）重送保護：流程被重試時會重複開單，要在來源記錄上寫回請購單號，開單前先檢查；（3）執行者帳號要有 M_BANF_BSA／M_BANF_WRK 等權限，用背景帳號跑時請購人（PREQ_NAME）要自己填使用者，否則全部變成背景帳號。</div>
+
+  <h3 id="ch09-2-11">11. 案例四：採購單批次確認——情境與選擇畫面</h3>
+  <h4>業務情境</h4>
+  <p>供應商回覆交期後，採購要在 <span class="tcode">ME22N</span> 的「確認」頁籤逐張維護確認日期與數量（存在 EKES）。單量一大就很慢，於是 ZMMB0022 把符合條件的採購項目列在一張可編輯的 ALV 上，採購在「修改日期」「修改確認量」兩欄直接填，按存檔一次寫回。同時從自建表 ZMMB0021 帶出生管的燈號（R／Y／G）與意見，讓採購知道哪幾顆料生管在催。</p>
+  <div class="note">講義標題用「批次確認」，指的是供應商交期確認（order acknowledgment，存在 EKES），不是採購單的「核准放行」。若需求是批次放行，標準有 <span class="tcode">ME28</span> 與 <code>BAPI_PO_RELEASE</code>（傳入 PURCHASEORDER、PO_REL_CODE），本素材沒有用到；兩者不要混為一談。</div>
+  <h4>選擇畫面與輸出</h4>
+  <table>
+    <thead><tr><th>選擇條件</th><th>說明</th></tr></thead>
+    <tbody>
+      <tr><td>P_BEDAT、P_LIFNR、P_MATNR、P_EKORG、P_EBELN</td><td>採購日期、供應商、物料、採購組織、採購單號（都是 SELECT-OPTIONS，講義沿用 P_ 前綴）</td></tr>
+      <tr><td>P_CK1（預設勾）</td><td>排除交貨完成（EKPO-ELIKZ）的項目</td></tr>
+      <tr><td>P_CK2（預設勾）</td><td>排除已有交貨數量（EKES-DABMG）的確認列</td></tr>
+    </tbody>
+  </table>
+  <p>輸出欄位依序為：確認與否燈號（有無 EKES）、生管提示燈號、生管意見、採購確認日（EKES-EINDT）、<b>修改日期（可編輯）</b>、確認數量、<b>修改確認量（可編輯）</b>、原採購量、生管需求日（EKET-EINDT）、採購單號、項次、確認序號（EKES-ETENS，講義稱「三階」）、工廠、儲位、物料、物料群組、描述、物料類型、交貨數量、MRP 區域、承諾、交貨完成、庫存類型、確認需求（KZABS）、單位、採購類型、供應商與名稱、採購組織、採購群組、建檔日、採購日、公司代碼、狀態。雙擊採購單號進 <span class="tcode">ME23N</span>；自訂按鈕 ZSAV 存檔。</p>
+  <h4>程式架構（現代版）</h4>
+  <ol>
+    <li><code>lcl_po_confirm-&gt;select( )</code>：一次 JOIN 讀 EKKO／EKPO／EKES（左外連接）／LFA1，再讀 EKET 與 ZMMB0021。</li>
+    <li><code>lcl_po_confirm-&gt;display( )</code>：因為要編輯，這是少數<b>需要 CL_GUI_ALV_GRID</b> 的情境（CL_SALV_TABLE 不支援儲存格編輯），做法見 <a href="#ch03-2">3-2 章 OOALV 與 Screen</a>。</li>
+    <li><code>lcl_po_confirm-&gt;save( )</code>：<code>check_changed_data( )</code> 取回編輯值 → 逐張採購單鎖定 → 寫確認 → COMMIT → 回填結果欄。</li>
+  </ol>
+
+  <h3 id="ch09-2-12">12. 案例四：資料擷取改寫——多筆確認與排序</h3>
+  <p>一個採購項目可以有多筆確認（ETENS 1、2、3…）。原程式先 <code>READ TABLE IT_EKES WITH KEY EBELN EBELP</code> 取「第一筆」放進主列，再用另一個巢狀迴圈把 <code>ETENS &lt;&gt;</code> 主列那筆的其他確認 APPEND 到 IT_ZMMB0021_EXTRA、最後併回主表（註解還寫著「會進入死循環 盪掉」——這正是在 LOOP 同一張表時 APPEND 的後果，才改成先放 EXTRA 表）。問題是：取「第一筆」之前 IT_EKES <b>沒有排序</b>（SORT 寫在後面），HANA 回傳順序不固定，主列今天是 ETENS 1、明天可能是 2。現代寫法直接用左外連接一次展開，每筆確認一列：</p>
+  <pre><code class="abap">METHOD select.
+  SELECT k~ebeln, p~ebelp, p~werks, p~lgort, p~matnr, p~matkl, p~mtart,
+         p~menge, p~meins, p~elikz, p~insmk, p~kzabs, p~berid,
+         k~bstyp, k~lifnr, l~name1, k~ekorg, k~ekgrp, k~aedat, k~bedat, k~bukrs,
+         e~etens,
+         e~eindt AS ekes_eindt,
+         e~menge AS ekes_menge,
+         e~dabmg AS ekes_dabmg,
+         e~ebtyp
+    FROM ekko AS k
+    INNER JOIN ekpo AS p ON p~ebeln = k~ebeln
+    INNER JOIN lfa1 AS l ON l~lifnr = k~lifnr
+    LEFT OUTER JOIN ekes AS e ON e~ebeln = p~ebeln
+                             AND e~ebelp = p~ebelp
+    WHERE k~bedat IN @s_bedat
+      AND k~lifnr IN @s_lifnr
+      AND p~matnr IN @s_matnr
+      AND k~ekorg IN @s_ekorg
+      AND k~ebeln IN @s_ebeln
+      AND k~bstyp = 'F'                  "取代原程式的 EBELN LIKE '4%'
+      AND p~loekz = @space
+    ORDER BY k~ebeln, p~ebelp, e~etens   "明確排序，不靠資料庫的「自然順序」
+    INTO CORRESPONDING FIELDS OF TABLE @mt_out.
+
+  IF p_ck1 = abap_true.
+    DELETE mt_out WHERE elikz IS NOT INITIAL.
+  ENDIF.
+  IF p_ck2 = abap_true.
+    DELETE mt_out WHERE ekes_dabmg IS NOT INITIAL.
+  ENDIF.
+  IF mt_out IS INITIAL.
+    RETURN.
+  ENDIF.
+
+  "生管需求日：EKET 可能有多條計畫行，先排序再取最早一條
+  SELECT ebeln, ebelp, etenr, eindt
+    FROM eket
+    FOR ALL ENTRIES IN @mt_out
+    WHERE ebeln = @mt_out-ebeln
+      AND ebelp = @mt_out-ebelp
+    INTO TABLE @DATA(lt_eket).
+  SORT lt_eket BY ebeln ebelp eindt etenr.
+
+  SELECT ebeln, ebelp, light, rem
+    FROM zmmb0021
+    FOR ALL ENTRIES IN @mt_out
+    WHERE ebeln = @mt_out-ebeln
+      AND ebelp = @mt_out-ebelp
+    INTO TABLE @DATA(lt_pp).
+
+  LOOP AT mt_out ASSIGNING FIELD-SYMBOL(&lt;o&gt;).
+    READ TABLE lt_eket INTO DATA(ls_eket)
+         WITH KEY ebeln = &lt;o&gt;-ebeln ebelp = &lt;o&gt;-ebelp BINARY SEARCH.
+    IF sy-subrc = 0.
+      &lt;o&gt;-eket_eindt = ls_eket-eindt.
+    ENDIF.
+    &lt;o&gt;-light1 = COND #( WHEN &lt;o&gt;-etens IS NOT INITIAL THEN icon_led_green
+                         ELSE icon_led_red ).
+    DATA(ls_pp) = VALUE #( lt_pp[ ebeln = &lt;o&gt;-ebeln ebelp = &lt;o&gt;-ebelp ] OPTIONAL ).
+    &lt;o&gt;-light2 = SWITCH #( ls_pp-light WHEN 'R' THEN icon_led_red
+                                        WHEN 'Y' THEN icon_led_yellow
+                                        ELSE icon_led_green ).
+    &lt;o&gt;-rem = ls_pp-rem.
+  ENDLOOP.
+ENDMETHOD.</code></pre>
+  <div class="note"><b>其他改掉的地方：</b>原程式在 LOOP 中逐筆 <code>SELECT SINGLE * FROM EKET</code>（沒有排序、N 次資料庫往返），逐筆呼叫自建函數 ZFM_GET_MAKTX 與 ZFM_GET_NAME_ORGL 取物料描述和供應商名稱（再 N 次），這些都改成 JOIN 或一次 FOR ALL ENTRIES。數量欄原本宣告成 INT8 以便 ALV 不顯示小數，應維持 QUAN 型態並在欄位目錄設 <code>decimals_o</code>，否則有小數的單位（KG、M）會被截斷。原 SET_CELLCOLOR 依項次 0010～0090 逐一寫死整列顏色（C000～C800），第 100 項以後就沒顏色；要分組著色請依採購單號交替。</div>
+
+  <h3 id="ch09-2-13">13. 案例四：寫回確認——ME_CONFIRMATION_UPDATE 與風險</h3>
+  <p>原程式的存檔邏輯（FORM FORM_ME_CONFIRMATION_UPDATE）規則寫得很清楚，這部分值得保留：已交貨完成不可改、已有交貨數量不可改、沒填新日期也沒填新數量就略過、新舊日期相同就略過；原本沒有確認記錄的算「新增（I）」，確認序號給 1、確認量帶採購量；有記錄的算「修改（U）」；沒填新量就帶舊量、沒填新日期就帶舊日期。寫回用的是 <code>ME_CONFIRMATION_UPDATE</code>，傳入 UEKES 結構：</p>
+  <pre><code class="abap">METHOD save.
+  mo_grid-&gt;check_changed_data( ).          "取回 ALV 上的編輯值
+  DATA lt_uekes TYPE STANDARD TABLE OF uekes WITH EMPTY KEY.
+
+  LOOP AT mt_out ASSIGNING FIELD-SYMBOL(&lt;o&gt;)
+       WHERE elikz IS INITIAL AND ekes_dabmg IS INITIAL
+       GROUP BY &lt;o&gt;-ebeln INTO DATA(lv_ebeln).
+
+    "同一張採購單一起鎖、一起寫、一起 COMMIT
+    CALL FUNCTION 'ENQUEUE_EMEKKOE'
+      EXPORTING
+        ebeln          = lv_ebeln
+      EXCEPTIONS
+        foreign_lock   = 1
+        OTHERS         = 2.
+    IF sy-subrc &lt;&gt; 0.
+      LOOP AT GROUP lv_ebeln ASSIGNING FIELD-SYMBOL(&lt;l&gt;).
+        &lt;l&gt;-ok = 'LOCK'.
+      ENDLOOP.
+      CONTINUE.
+    ENDIF.
+
+    CLEAR lt_uekes.
+    LOOP AT GROUP lv_ebeln ASSIGNING FIELD-SYMBOL(&lt;g&gt;).
+      IF ( &lt;g&gt;-eindt_new IS INITIAL AND &lt;g&gt;-menge_new IS INITIAL )
+         OR &lt;g&gt;-eindt_new = &lt;g&gt;-ekes_eindt.
+        CONTINUE.
+      ENDIF.
+      DATA(lv_kz) = COND updkz_d( WHEN &lt;g&gt;-etens IS INITIAL THEN 'I' ELSE 'U' ).
+      APPEND VALUE #( ebeln = &lt;g&gt;-ebeln
+                      ebelp = &lt;g&gt;-ebelp
+                      etens = COND #( WHEN lv_kz = 'I' THEN 1 ELSE &lt;g&gt;-etens )
+                      eindt = COND #( WHEN &lt;g&gt;-eindt_new IS NOT INITIAL THEN &lt;g&gt;-eindt_new
+                                      ELSE &lt;g&gt;-ekes_eindt )
+                      menge = COND #( WHEN &lt;g&gt;-menge_new IS NOT INITIAL THEN &lt;g&gt;-menge_new
+                                      WHEN lv_kz = 'I' THEN &lt;g&gt;-menge
+                                      ELSE &lt;g&gt;-ekes_menge )
+                      dabmg = &lt;g&gt;-ekes_dabmg
+                      ebtyp = p_ebtyp            "確認類別，原程式寫死 'Z1'
+                      lpein = '1'                "日期格式：日
+                      estkz = '1'                "建立方式
+                      erdat = sy-datum
+                      ezeit = sy-uzeit
+                      kzdis = abap_true
+                      kz    = lv_kz ) TO lt_uekes.
+      &lt;g&gt;-ok = |{ lv_kz }/OK|.
+    ENDLOOP.
+
+    IF lt_uekes IS NOT INITIAL.
+      CALL FUNCTION 'ME_CONFIRMATION_UPDATE'
+        EXPORTING
+          i_ebeln = lv_ebeln
+        TABLES
+          xekes   = lt_uekes.
+      COMMIT WORK AND WAIT.
+    ENDIF.
+    CALL FUNCTION 'DEQUEUE_EMEKKOE'
+      EXPORTING
+        ebeln = lv_ebeln.
+  ENDLOOP.
+  mo_grid-&gt;refresh_table_display( ).
+ENDMETHOD.</code></pre>
+  <h4>原程式問題</h4>
+  <ul>
+    <li><b>檢查不存在的 sy-subrc：</b>呼叫 ME_CONFIRMATION_UPDATE 時沒有 EXCEPTIONS，<code>IF sy-subrc = 0</code> 永遠成立，NG 分支是死碼；計數與燈號都不可信。另外修改成功時原程式把結果欄寫成 <code>'U/NG'</code>（應為 U/OK），是複製貼上的筆誤。</li>
+    <li><b>沒有鎖定：</b>存檔時採購可能正在 ME22N 改同一張單，兩邊互蓋。改寫用鎖定物件 EMEKKOE 逐張鎖。</li>
+    <li><b>逐列 COMMIT：</b>同一張採購單的多個項目分多次 COMMIT，中途失敗會留下「一半確認」的單；改成以採購單為單位。</li>
+    <li>確認類別 EBTYP 寫死 'Z1'（原註解「NOT B1」），這個自訂類別必須先在 SPRO（MM › 採購 › 確認）與確認控制碼中設定，否則 ME22N 會顯示異常。</li>
+  </ul>
+  <div class="warn"><b>上線注意——這是直接寫 EKES 的內部函數：</b>ME_CONFIRMATION_UPDATE 不是 released 的 BAPI，是採購文件存檔流程內部使用的更新函數（處理類型請在 <span class="tcode">SE37</span> 屬性頁確認）。直接呼叫會繞過確認控制檢查、不會產生採購單的異動記錄，也不會重算 MRP 相關資訊。升級時介面可能改變。依「先找標準」原則，建議的順序是：（1）標準的供應商確認監控 <span class="tcode">ME2A</span> 與 EDI／IDoc ORDRSP 讓供應商自己回確認；（2）以批次輸入或 released API 維護確認（S/4HANA 的供應商確認有對應的 API／Fiori app，可在 SAP Business Accelerator Hub 查詢；ECC 時代常見的 <code>ME_PO_CONFIRM</code> 請以 SE37 確認是否存在與 release 狀態）；（3）最後才用本案的內部函數，並在測試機完整回歸 ME22N 顯示、MRP 與收貨。</div>
+
+  <h3 id="ch09-2-14">14. 案例五：發票重複檢查——先找標準（OMRDC、M8108）</h3>
+  <h4>業務情境</h4>
+  <p>會計發現同一張供應商發票被 MIRO 過帳兩次（一次由採購、一次由會計；或同一號碼打錯一個字元），造成重複付款。需求是「檢查廠商發票是否重複開」。依 Casper 的第三個實務原則——<b>標準設定 → BAdI → Enhancement Point → 修改標準</b>，先確認標準功能有沒有打開。</p>
+  <table>
+    <thead><tr><th>層次</th><th>內容</th><th>設定／查詢</th></tr></thead>
+    <tbody>
+      <tr><td>1. 供應商主檔</td><td>公司代碼層的「重複發票檢查」旗標 LFB1-REPRF（BP／供應商「付款交易」頁籤）</td><td><span class="tcode">BP</span>、<span class="tcode">SE16N</span> 查 LFB1</td></tr>
+      <tr><td>2. 後勤發票驗證的檢查條件</td><td>除了供應商、幣別、金額（一定比對）之外，可再勾選是否比對「公司代碼」「參考文件號碼（XBLNR）」「發票日期」</td><td><span class="tcode">OMRDC</span>（SPRO：MM › 後勤發票驗證 › 輸入進項發票 › 設定重複發票檢查）</td></tr>
+      <tr><td>3. 訊息強度</td><td>命中時出現訊息 <b>M8 108</b>（「請確認發票是否已以會計文件 &amp; 輸入」），預設是警告，可改成錯誤直接擋下</td><td><span class="tcode">OMRM</span>（發票驗證的訊息控制）</td></tr>
+      <tr><td>4. 暫存發票</td><td>暫存（parked）的發票也要納入比對，否則兩張都先暫存就抓不到</td><td>依版本行為測試確認</td></tr>
+    </tbody>
+  </table>
+  <div class="warn"><b>標準檢查為什麼還會漏：</b>標準是「完全相等」比對。參考號碼一張打「AB-001」、一張打「AB001」，金額一張含稅一張未稅，或發票日期差一天，就不會觸發 M8108。另外供應商主檔沒勾 REPRF 時整個檢查都不做。所以客製報表的價值在「事後稽核＋模糊比對」，而不是取代標準檢查；第一步永遠是把標準打開並改成錯誤訊息。</div>
+
+  <h3 id="ch09-2-15">15. 案例五：素材 ZMMR0004——用 GR／IR 數量找「多開」的發票</h3>
+  <p>新版講義的 ZMMR0004 實際做法不是比對發票號碼，而是從<b>數量</b>面偵測：同一採購項目的發票數量（IR）大於收貨數量（GR），就代表發票多開或重開。欄位、按鈕與選擇畫面（「Cleared items too」欄位 AM07M-MB5S_ZERO、權限按鈕 cl_mmim_auth、採購歷史 RM06EHBE）明顯是仿標準 <span class="tcode">MB5S</span>（GR/IR 餘額清單）改寫而來。</p>
+  <h4>選擇畫面與輸出</h4>
+  <ul>
+    <li>區塊 1：供應商 S_LIFNR、採購組織 S_EKORG、採購群組 S_EKGRP、物料 S_MATNR、採購單 S_EBELN、項次 S_EBELP、收貨過帳日 S_BUDAT、發票過帳日 S_BUDATP；P_ELIKZ（交貨完成也顯示，預設 X）。</li>
+    <li>區塊 2：ALV 版面 ALV_DEF（F4 用 LVC_VARIANT_F4）、ZERO（GR＝IR 的已結清項目也顯示）。</li>
+    <li>輸出：收貨量 WEMNG、暫存發票量 WEMNG_P、發票量 REMNG、差異 GRIR＝WEMNG－REMNG、收貨金額 WEWRT、發票金額 REWRT、各日期；<b>IR &gt; GR 標紅、GR &gt; IR 標綠</b>。雙擊採購單 → ME23N、供應商 → MK03、其他欄 → 採購歷史。</li>
+  </ul>
+  <h4>原架構與問題</h4>
+  <p>原程式：先從 MSEG 撈 101 異動的物料文件 → 用 FOR ALL ENTRIES 帶出 EKKO／EKPO → <b>每一個項目呼叫一次 <code>ME_READ_HISTORY_DAO</code></b> 讀 EKBE／EKBES，依 VGABE（1＝收貨、2＝發票、P 依素材視為暫存發票）與借貸 SHKZG 加減 BPMNG。問題有四：(1) S/4HANA 的 MSEG 是相容性視圖，<code>SELECT * FROM MSEG</code> 很重；(2) 逐項呼叫歷史函數是 N 次往返；(3) 「依收貨日期篩選」寫成先全撈再 <code>DELETE … NOT IN s_budat</code>；(4) 用 BPMNG（訂單「價格」單位數量），BPRME 與 MEINS 不同時 GR／IR 數量會不可比。改寫成一次彙總 EKBE：</p>
+  <pre><code class="abap">METHOD select_grir.
+  SELECT b~ebeln, b~ebelp, b~vgabe, b~shkzg,
+         SUM( b~menge ) AS menge,           "訂單單位數量（原程式用 BPMNG）
+         SUM( b~dmbtr ) AS dmbtr            "本幣金額
+    FROM ekbe AS b
+    INNER JOIN ekko AS k ON k~ebeln = b~ebeln
+    INNER JOIN ekpo AS p ON p~ebeln = b~ebeln AND p~ebelp = b~ebelp
+    WHERE k~lifnr IN @s_lifnr
+      AND k~ekorg IN @s_ekorg
+      AND k~ekgrp IN @s_ekgrp
+      AND b~ebeln IN @s_ebeln
+      AND b~ebelp IN @s_ebelp
+      AND p~matnr IN @s_matnr
+      AND p~loekz = @space
+      AND b~vgabe IN ( '1', '2' )           "1 收貨、2 發票：用列舉，不用區間
+    GROUP BY b~ebeln, b~ebelp, b~vgabe, b~shkzg
+    INTO TABLE @DATA(lt_hist).
+
+  LOOP AT lt_hist INTO DATA(ls_h)
+       GROUP BY ( ebeln = ls_h-ebeln ebelp = ls_h-ebelp ) INTO DATA(grp).
+    DATA(ls_out) = VALUE ty_out( ebeln = grp-ebeln ebelp = grp-ebelp ).
+    LOOP AT GROUP grp INTO DATA(m).
+      DATA(lv_sign) = COND i( WHEN m-shkzg = 'S' THEN 1 ELSE -1 ).
+      CASE m-vgabe.
+        WHEN '1'. ls_out-wemng = ls_out-wemng + lv_sign * m-menge.
+        WHEN '2'. ls_out-remng = ls_out-remng + lv_sign * m-menge.
+      ENDCASE.
+    ENDLOOP.
+    ls_out-grir = ls_out-wemng - ls_out-remng.
+    IF p_zero = abap_true OR ls_out-grir &lt;&gt; 0.
+      APPEND ls_out TO mt_out.
+    ENDIF.
+  ENDLOOP.
+  SORT mt_out BY ebeln ebelp.
+ENDMETHOD.</code></pre>
+  <div class="note">收貨日期、發票日期若要當篩選條件，把 <code>b~budat IN @s_budat</code> 放進 WHERE（注意會同時影響 GR 與 IR 的加總口徑，通常要拆兩次查詢）。借貸方向 SHKZG：收貨 S 為正、H（退貨、沖銷）為負；發票 S 為發票、H 為貸項通知單。要同時看暫存發票，暫存資料在 RBKP（狀態欄 RBSTAT）而不是只靠 EKBE，請以 SE11 確認各狀態值再納入。</div>
+
+  <h3 id="ch09-2-16">16. 案例五：客製重複發票稽核——RBKP／RSEG</h3>
+  <p>數量比對抓得到「多開」，抓不到「同一張發票換個採購單又開一次」。直接比對發票抬頭 RBKP 才完整。RBKP 的關鍵欄位：BELNR／GJAHR（發票文件）、BUKRS、LIFNR（開票方）、XBLNR（參考號碼＝供應商發票號碼）、BLDAT（發票日期）、BUDAT（過帳日）、RMWWR（含稅總額）、WAERS、STBLG（被沖銷時的沖銷文件號）；RSEG 是項目，帶 EBELN／EBELP／MENGE／WRBTR。</p>
+  <p><b>第一層：完全相同的組合（供應商＋參考號碼＋金額＋幣別）</b></p>
+  <pre><code class="abap">METHOD find_exact_dup.
+  SELECT bukrs, lifnr, xblnr, waers, rmwwr, COUNT(*) AS cnt
+    FROM rbkp
+    WHERE bukrs IN @s_bukrs
+      AND lifnr IN @s_lifnr
+      AND bldat IN @s_bldat
+      AND xblnr &lt;&gt; @space
+      AND stblg = @space                   "排除已被沖銷的發票
+    GROUP BY bukrs, lifnr, xblnr, waers, rmwwr
+    HAVING COUNT(*) &gt; 1
+    INTO TABLE @DATA(lt_key).
+  IF lt_key IS INITIAL.
+    RETURN.
+  ENDIF.
+
+  SELECT belnr, gjahr, bukrs, lifnr, xblnr, bldat, budat, rmwwr, waers, usnam
+    FROM rbkp
+    FOR ALL ENTRIES IN @lt_key
+    WHERE bukrs = @lt_key-bukrs
+      AND lifnr = @lt_key-lifnr
+      AND xblnr = @lt_key-xblnr
+      AND stblg = @space
+    INTO TABLE @mt_doc.
+  "FOR ALL ENTRIES 會去除重複列且不保證順序 → 自己排序，第一筆才是「原始發票」
+  SORT mt_doc BY bukrs lifnr xblnr budat belnr.
+ENDMETHOD.</code></pre>
+  <p><b>第二層：模糊比對（號碼正規化＋金額容差＋日期區間）</b>——把 XBLNR 去掉空白、連字號、斜線、點並轉大寫後再比，金額允許小差異，發票日期在 N 天內：</p>
+  <pre><code class="abap">METHOD find_fuzzy_dup.
+  "mt_all：期間內所有未沖銷發票（與上段同一個 SELECT，只是不做 GROUP BY）
+  LOOP AT mt_all ASSIGNING FIELD-SYMBOL(&lt;a&gt;).
+    &lt;a&gt;-xblnr_norm = to_upper( replace( val   = &lt;a&gt;-xblnr
+                                        regex = `[\s\-_/.]`
+                                        with  = ``
+                                        occ   = 0 ) ).
+  ENDLOOP.
+  SORT mt_all BY bukrs lifnr xblnr_norm bldat belnr.
+
+  LOOP AT mt_all INTO DATA(ls_a)
+       GROUP BY ( bukrs = ls_a-bukrs lifnr = ls_a-lifnr norm = ls_a-xblnr_norm )
+       INTO DATA(grp).
+    DATA(lt_grp) = VALUE tt_inv( FOR g IN GROUP grp ( g ) ).
+    CHECK lines( lt_grp ) &gt; 1.
+    DATA(ls_first) = lt_grp[ 1 ].
+    LOOP AT lt_grp INTO DATA(ls_next) FROM 2.
+      IF abs( ls_next-rmwwr - ls_first-rmwwr ) &lt;= p_tol
+         AND abs( ls_next-bldat - ls_first-bldat ) &lt;= p_days.
+        APPEND VALUE #( orig_belnr = ls_first-belnr
+                        dup_belnr  = ls_next-belnr
+                        lifnr      = ls_next-lifnr
+                        xblnr      = ls_next-xblnr
+                        rmwwr      = ls_next-rmwwr
+                        reason     = COND #( WHEN ls_next-xblnr = ls_first-xblnr
+                                             THEN `號碼相同` ELSE `號碼正規化後相同` ) )
+               TO mt_suspect.
+      ENDIF.
+    ENDLOOP.
+  ENDLOOP.
+ENDMETHOD.</code></pre>
+  <p>可疑清單用 CL_SALV_TABLE 顯示，雙擊發票文件以 <code>SET PARAMETER ID 'RBN' FIELD belnr</code>、<code>'GJR'</code> 帶入 <span class="tcode">MIR4</span> 顯示；需要看對應哪張採購單時，再以 FOR ALL ENTRIES 讀 RSEG 的 EBELN／EBELP。</p>
+  <div class="tip"><b>上線注意：</b>（1）這是事後稽核，建議排成每日背景作業（<span class="tcode">SM36</span>）、結果寄給應付帳款窗口；要「事前擋下」就回到 §14 把 M8108 改成錯誤，或在 MIRO 的 BAdI（例如 INVOICE_UPDATE，請在 <span class="tcode">SE18</span> 確認可用的方法）加正規化比對。（2）RBKP 資料量大，WHERE 一定帶公司代碼與日期區間。（3）XBLNR 正規化規則要跟應付窗口確認，有些供應商真的會用「A001」「A-001」代表兩張不同發票。（4）本段 <code>replace( … regex = … )</code> 是 POSIX 正規表示式，1809 可用；7.55 起建議改用 <code>pcre =</code>。</div>
+
+  <h3 id="ch09-2-17">17. 批次 BAPI 共通的四個坑</h3>
+  <div class="warn"><b>坑一：逐筆 COMMIT 還是整批 COMMIT？</b>
+  <ul>
+    <li><b>逐筆 COMMIT</b>（案例二、案例三的多張請購單）：一筆失敗不影響其他筆，能精確回報哪一筆錯；缺點是慢（每次都等更新任務），且中途中斷會留下「部分完成」，所以一定要有暫存表記錄每筆狀態、能續跑。會鎖主檔的 BAPI（BAPI_MATERIAL_SAVEDATA）只能逐筆。</li>
+    <li><b>整批 COMMIT</b>：同一個業務單位必須「全有或全無」時才用，例如同一張採購單的所有確認（案例四以採購單為單位）。整批中任何一筆回傳 E／A，就整批 ROLLBACK。</li>
+    <li>不要在一個 LUW 裡累積上千筆 BAPI 再 COMMIT：鎖表會爆、更新任務會逾時，出錯時也不知道是哪一筆。</li>
+  </ul></div>
+  <div class="warn"><b>坑二：BAPIRET2 只看 TYPE E／A。</b>W（警告）在 BAPI 裡不會擋存檔，但要記錄給使用者；S 不代表整體成功，同一張 RETURN 表可能同時有 S 與 E。<code>BAPI_TRANSACTION_COMMIT</code> 也有自己的 RETURN，要一起看。</div>
+  <div class="warn"><b>坑三：條件用列舉，不用區間。</b>案例四原本用 <code>EBELN LIKE '4%'</code> 判斷「是採購單」，號碼範圍一改（例如新開 45 開頭的號段給其他文件類型）就會多抓或漏抓；改用業務欄位 BSTYP／BSART 的列舉。案例五的 VGABE 也用 <code>IN ( '1', '2' )</code> 而不是區間。選擇畫面上物料、採購單讓使用者貼多筆 EQ，比讓他輸入 BT 區間安全——區間比的是字典序，遇到前導零、英數混合的號碼就會出錯。</div>
+  <div class="warn"><b>坑四：HANA 沒有預設排序。</b>本章四個地方都踩到：案例一輸出沒排序、案例四 EKES 取「第一筆」前沒排序、EKET 用 SELECT SINGLE 取不固定的一條計畫行、案例五 FOR ALL ENTRIES 後直接把第一筆當原始發票。凡是「取第一筆」「用 BINARY SEARCH」「AT NEW／AT END OF」「GROUP BY 後取代表」的邏輯，前面都要有明確的 ORDER BY 或 SORT。這也是 Casper 在成本評價專案上踩過的坑：同一料號同時有 H 與 E 兩種角度的資料，沒排序時一下抓到 H、一下抓到 E，結果就不穩定。</div>
+
+  <h3 id="ch09-2-qa">練習與自我檢核</h3>
+  <ol>
+    <li>講義第 01 節標題的「BAIP」是什麼的筆誤？ZMATERIAL_STOCK_LIST 嚴格說算不算 BAPI？差別在哪裡？</li>
+    <li>ZMATERIAL_STOCK_LIST 被外部系統呼叫時回傳了 3 萬多筆，根本原因是什麼？請寫出一行修正。</li>
+    <li>比較 <code>gui_upload</code>、<code>TEXT_CONVERT_XLS_TO_SAP</code>、<code>ALSM_EXCEL_TO_INTERNAL_TABLE</code> 在「是否需要本機 Excel」「能否讀 xlsx」「能否背景執行」三方面的差異。</li>
+    <li>原程式把 <code>IF P_FILE IS INITIAL … STOP.</code> 寫在 <code>AT SELECTION-SCREEN ON VALUE-REQUEST</code> 後面，會發生什麼事？</li>
+    <li>用 BAPI_MATERIAL_SAVEDATA 更新 MARC-PLIFZ 時，HEADDATA、PLANTDATA、PLANTDATAX 各要填哪些欄位？為什麼 PLANTDATAX-PLANT 要填工廠而不是 X？</li>
+    <li>為什麼「先 BAPI_TRANSACTION_COMMIT、再判斷 RETURN-TYPE = 'E'」是錯的？正確順序是？</li>
+    <li>BAPI_PR_CREATE 的 PRITEMX 中，若 PUR_GROUP 沒有給值卻打了 X，會發生什麼事？</li>
+    <li>SAP Note 499627 在談什麼？新開發應該用 BAPI_REQUISITION_CREATE 還是 BAPI_PR_CREATE？</li>
+    <li>ZMMB0022 為什麼不能用 CL_SALV_TABLE？存檔前一定要先呼叫 ALV 的哪個方法？</li>
+    <li>原程式在 <code>CALL FUNCTION 'ME_CONFIRMATION_UPDATE'</code> 後檢查 <code>sy-subrc</code>，這個檢查有意義嗎？為什麼？</li>
+    <li>「批次確認」與「批次放行（ME28）」有什麼不同？各自對應哪張表或哪支標準 BAPI？</li>
+    <li>標準的重複發票檢查在哪裡設定？一定會比對的欄位有哪些、可選的有哪些？命中時的訊息編號？如何把它從警告改成錯誤？</li>
+    <li>供應商發票號碼一張輸入「AB-001」、一張輸入「AB001」，標準檢查抓得到嗎？請說明 §16 的正規化做法。</li>
+    <li>ZMMR0004 用 EKBE 的 BPMNG 加總 GR／IR，什麼情況下會不準？改用哪個欄位？</li>
+    <li>列出本章所有「取第一筆」的地方，並說明各自應該用什麼欄位排序。</li>
+  </ol>
+</section>

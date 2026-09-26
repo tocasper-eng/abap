@@ -1,0 +1,621 @@
+<section class="chapter" id="ch09-5" data-title="跨模組工具與 QM 清單">
+  <h2>第 9-5 章 跨模組工具：資料表上下載、幣別小數位與 QM 客製清單</h2>
+  <p class="lede">這一章收三種「不屬於單一模組、但每個專案都會碰到」的素材：一支網路流傳的萬用資料表上傳下載程式（ZDOWNLOAD_UPLOAD_TABLE）、一份幣別小數位與 <span class="kw">CURRENCY_CONVERTING_FACTOR</span> 的筆記，以及 QM 檢驗模組 12 支常見客製程式的目錄。第一個工具很好用，但也很危險：它能把任意資料表整張清空再覆寫，而且會繞過所有業務邏輯。本章把它改寫成 S/4HANA 1809+ 的 RTTS 寫法，並加上名稱白名單、權限、鎖定與系統角色四道閘門。幣別那一段解釋為什麼日圓、台幣在資料庫裡「少了兩個零」，以及下載或做介面時該用哪個函數轉回來。QM 清單素材只有目錄，本章把它整理成「客製 ↔ 標準物件 ↔ 先找標準的替代方案」對照表。</p>
+
+  <div class="meta">
+    <div><b>核心 TCODE</b><span class="tcode">SE11</span><span class="tcode">SE16N</span><span class="tcode">SE13</span><span class="tcode">SCU3</span><span class="tcode">SU53</span><span class="tcode">SM12</span><span class="tcode">LSMW</span><span class="tcode">LTMC</span><span class="tcode">OY04</span><span class="tcode">OB08</span><span class="tcode">OB07</span><span class="tcode">QA32</span><span class="tcode">QA11</span><span class="tcode">QA12</span><span class="tcode">QE51N</span><span class="tcode">QS21</span><span class="tcode">QS61</span><span class="tcode">QP01</span><span class="tcode">QA08</span><span class="tcode">QDB1</span></div>
+    <div><b>關鍵物件</b>CL_ABAP_STRUCTDESCR、CL_ABAP_TABLEDESCR、CL_ABAP_DYN_PRG、CL_GUI_FRONTEND_SERVICES、S_TABU_NAM、ENQUEUE_E_TABLE、DD02L、T000、TCURX、TCURR、TCURF、CURRENCY_CONVERTING_FACTOR、CURRENCY_AMOUNT_SAP_TO_DISPLAY、CURRENCY_AMOUNT_DISPLAY_TO_SAP、BAPI_CURRENCY_CONV_TO_EXTERNAL、BAPI_CURRENCY_CONV_TO_INTERNAL、CONVERT_TO_LOCAL_CURRENCY、QALS、QAVE、QAMV、QAMR、QPMK、PLKO、PLMK、MAPL、QMAT、BAPI_INSPOPER_RECORDRESULTS、BAPI_INSPLOT_SETUSAGEDECISION</div>
+  </div>
+
+  <div class="warn"><b>資安說明：</b>原程式的註解有原作者的聯絡資訊，本章只稱它為「網路流傳的通用程式」，不轉錄作者資訊。QM 目錄中原本寫入的外部資料庫表名是客戶專屬名稱，本章一律改成 <span class="kw">ZEXT_QALS</span>。範例中的檔案路徑一律寫成 <span class="kw">C:\temp\</span>。</div>
+
+  <h3 id="ch09-5-01">1. 素材對照</h3>
+  <table>
+    <thead><tr><th>本章小節</th><th>原始檔名</th><th>素材內容</th><th>處理方式</th></tr></thead>
+    <tbody>
+      <tr><td>2 ~ 9</td><td>3__上傳文件.txt</td><td>ZDOWNLOAD_UPLOAD_TABLE 全文（約 600 行）：選擇畫面、DDIF_FIELDINFO_GET、cl_alv_table_create、GUI_DOWNLOAD／GUI_UPLOAD、OLE 寫 Excel、ZALSM_EXCEL_TO_INTERNAL_TABLE、DELETE FROM／MODIFY 動態表</td><td>拆解架構並重寫為 local class ＋ RTTS，<b>另外補上原程式完全沒有的安全閘門</b></td></tr>
+      <tr><td>10 ~ 13</td><td>3__幣別轉換.txt</td><td>簡體筆記：TCURX-CURRDEC、CURRENCY_CONVERTING_FACTOR 的計算規則，以及兩段 FORM 範例</td><td>改寫成繁體中文，補上內外部金額轉換函數、BAPI、輸出格式與匯率換算</td></tr>
+      <tr><td>14 ~ 16</td><td>9__ABAP_10_1_QM檢驗_常見客製_32_220901.txt</td><td>只有 12 支 QM 客製程式的目錄，<b>沒有內文</b></td><td>整理成清單表格，依 SAP 標準補上相關表、BAPI 與替代方案 <span class="src">（依 SAP 標準整理）</span></td></tr>
+    </tbody>
+  </table>
+  <div class="note">素材都讀得到，沒有缺頁。QM 目錄中的 ZBQM003／ZBQM004（檢驗批庫存與 UD 迴轉）已在 <a href="#ch06-6">6-6 章</a>拆解，ZMMI0001（下傳檢驗批）已在 <a href="#ch06-5">6-5 章</a>拆解，本章只列索引並連過去，不重寫。</div>
+
+  <h3 id="ch09-5-02">2. ZDOWNLOAD_UPLOAD_TABLE：業務情境與風險定位</h3>
+  <p>這支程式的原始需求很單純：<b>把 A 系統某張表整張下載成 txt 或 xls，再上傳到 B 系統同名的表</b>。常見用途是把開發機的自建對照表（例如科目對照、介面參數表）搬到測試機，或者把測試資料備份下來。原程式的選擇畫面有四個輸入：表名、檔案路徑、下載／上傳選項按鈕，以及「上傳前先清空整張表」的勾選框。</p>
+  <p>原程式的做法可以歸納成三步：</p>
+  <ol>
+    <li>用 <span class="kw">DDIF_FIELDINFO_GET</span> 讀出表的欄位，組成 field catalog，再用 <span class="kw">cl_alv_table_create=&gt;create_dynamic_table</span> 產生動態內表。</li>
+    <li>下載時執行 <span class="kw">SELECT * FROM (p_tbma)</span>。txt 格式用 <span class="kw">GUI_DOWNLOAD</span> 輸出，xls 格式用 OLE 一格一格寫進 Excel。</li>
+    <li>上傳時先把 txt 讀進來（<span class="kw">GUI_UPLOAD</span>），或者用自己複製的 <span class="kw">ZALSM_EXCEL_TO_INTERNAL_TABLE</span> 讀 Excel。如果有勾選清空，就執行 <span class="kw">DELETE FROM (p_tbma)</span>，最後用 <span class="kw">MODIFY (p_tbma) FROM TABLE</span> 寫入。</li>
+  </ol>
+  <div class="warn"><b>先講風險，再講程式。</b>這種萬用上傳工具在任何系統都等於一把萬能鑰匙：
+    <ul>
+      <li><b>它繞過業務邏輯。</b>直接寫 MARA、BKPF、VBAK 之類的標準表時，不會經過檢查、不會更新相關表（例如總帳餘額、索引表、狀態表），也不會觸發工作流程或 BAdI，資料一致性會直接崩壞。</li>
+      <li><b>它繞過變更文件。</b>CDHDR／CDPOS 是由應用程式呼叫變更文件函數寫入的，直接 MODIFY 不會留下任何紀錄。稽核時查不到是誰在什麼時候改了資料。</li>
+      <li><b>原程式沒有任何防護：</b>沒有權限檢查、沒有鎖定、不限制表名。只要能執行這支程式，就能把整張標準表清空。</li>
+    </ul>
+    因此本章的結論是：<b>這種工具只能用在自建的 Z／Y 表，而且只能在開發或測試系統執行。</b>標準表的資料要改用 LSMW、Migration Cockpit 或 BAPI 匯入（見第 9 節）。
+  </div>
+  <p>相關章節：只要「下載」的話，<a href="#ch06-13">6-13 章</a>有完整的 CSV／TXT 下載器（UTF-8 BOM、表頭、引號跳脫）。要找出資料在哪張表、列出表的欄位，請看 <a href="#ch06-10">6-10 章</a>（特別是第 12 節 DDIF_FIELDINFO_GET 與 RTTS）。</p>
+
+  <h3 id="ch09-5-03">3. 選擇畫面：限制可輸入的表</h3>
+  <p>原程式用 <span class="kw">SELECTION-SCREEN COMMENT</span> 加上在 INITIALIZATION 把中文字寫死的方式做畫面，表名欄位參照 <span class="kw">tabname16</span>，檔案路徑參照 <span class="kw">rlgrap-filename</span>（最多 128 字元）。現代寫法改用文字元素（SE38 → 跳到 → 文字元素 → 選擇文字）。表名在 <span class="kw">AT SELECTION-SCREEN</span> 就先擋掉，不讓使用者跑到後面才出錯。</p>
+  <pre><code class="abap">REPORT zbc_table_transfer.
+
+PARAMETERS: p_tab   TYPE tabname OBLIGATORY,
+            p_file  TYPE string LOWER CASE OBLIGATORY,
+            p_down  RADIOBUTTON GROUP g1 DEFAULT 'X' USER-COMMAND mode,
+            p_up    RADIOBUTTON GROUP g1,
+            p_clear AS CHECKBOX DEFAULT abap_false,   " 上傳前清空（危險）
+            p_test  AS CHECKBOX DEFAULT abap_true.    " 上傳只做模擬，不寫 DB
+
+AT SELECTION-SCREEN ON VALUE-REQUEST FOR p_file.
+  lcl_app=&gt;f4_file( ).
+
+AT SELECTION-SCREEN.
+  p_tab = to_upper( p_tab ).
+  " 上傳只允許自建表：用列舉的前綴比對，不用區間
+  IF p_up = abap_true AND p_tab(1) &lt;&gt; 'Z' AND p_tab(1) &lt;&gt; 'Y'.
+    MESSAGE |上傳只允許 Z／Y 自建表，{ p_tab } 不可上傳| TYPE 'E'.
+  ENDIF.
+  IF p_clear = abap_true AND p_up = abap_false.
+    MESSAGE '「清空」只在上傳模式有效' TYPE 'E'.
+  ENDIF.
+
+START-OF-SELECTION.
+  NEW lcl_app( )-&gt;run( ).</code></pre>
+  <div class="tip">預設勾選「模擬執行」（<span class="kw">p_test</span>），第一次執行只顯示「讀到幾筆、轉換失敗幾筆、會新增或覆蓋幾筆」，確認無誤才真正寫入。這是資料工具最便宜的保險。</div>
+  <p>F4 選檔用 <span class="kw">cl_gui_frontend_services=&gt;file_open_dialog</span>／<span class="kw">file_save_dialog</span>。原程式在 F4 中呼叫 <span class="kw">DYNP_VALUES_READ</span>，先讀出畫面上還沒送出的表名，當作預設檔名。這個技巧可以保留，但要改成內嵌宣告：</p>
+  <pre><code class="abap">CLASS-METHODS f4_file.
+...
+METHOD f4_file.
+  " 讀出畫面上尚未送出的表名，當作預設檔名
+  DATA(lt_dynp) = VALUE dynpread_tabtype( ( fieldname = 'P_TAB' ) ).
+  CALL FUNCTION 'DYNP_VALUES_READ'
+    EXPORTING dyname = sy-repid dynumb = sy-dynnr
+    TABLES    dynpfields = lt_dynp
+    EXCEPTIONS OTHERS = 1.
+  DATA(lv_default) = COND string( WHEN sy-subrc = 0
+                                  THEN to_upper( lt_dynp[ 1 ]-fieldvalue ) ).
+
+  DATA: lv_name TYPE string, lv_path TYPE string, lv_full TYPE string.
+  cl_gui_frontend_services=&gt;file_save_dialog(
+    EXPORTING default_file_name = lv_default
+              default_extension = 'txt'
+              file_filter       = 'Text (*.txt)|*.txt|'
+              initial_directory = 'C:\temp\'
+    CHANGING  filename = lv_name path = lv_path fullpath = lv_full
+    EXCEPTIONS OTHERS = 1 ).
+  IF sy-subrc = 0 AND lv_full IS NOT INITIAL.
+    p_file = lv_full.
+  ENDIF.
+ENDMETHOD.</code></pre>
+
+  <h3 id="ch09-5-04">4. 程式架構：從 10 個 FORM 到一個 local class</h3>
+  <table>
+    <thead><tr><th>原 FORM</th><th>職責</th><th>改寫後</th></tr></thead>
+    <tbody>
+      <tr><td>frm_get_filepath／get_dynp_value</td><td>選檔、讀畫面欄位</td><td><span class="kw">f4_file</span>（靜態方法）</td></tr>
+      <tr><td>get_tab_strc</td><td>DDIF_FIELDINFO_GET → field catalog → cl_alv_table_create</td><td><span class="kw">create_table_ref</span>：RTTS</td></tr>
+      <tr><td>download_table</td><td>又用 RTTS 建了<b>第二份</b>內表、SELECT、GUI_DOWNLOAD，xls 時逐格寫 OLE</td><td><span class="kw">download</span>：只輸出 txt（tab 分隔、UTF-8）</td></tr>
+      <tr><td>create_excel_and_download／fill_cell_gs</td><td>OLE 操作 Excel，每一格都呼叫一次</td><td>刪除。要 Excel 請用 SALV 匯出或 <a href="#ch06-5">6-5 章</a>第 14 節的方案</td></tr>
+      <tr><td>upload_txt／upload_excel</td><td>GUI_UPLOAD 直接讀進動態表／ZALSM 讀 Excel</td><td><span class="kw">upload</span>：讀成字串表再逐欄轉換</td></tr>
+      <tr><td>（無）</td><td>—</td><td><span class="kw">check_gate</span>：名稱、DD02L、系統角色、S_TABU_NAM</td></tr>
+      <tr><td>update_table</td><td>DELETE FROM／MODIFY，CATCH cx_root</td><td><span class="kw">write_db</span>：ENQUEUE → MODIFY → COMMIT → DEQUEUE</td></tr>
+      <tr><td>show_progress_indicator</td><td>SAPGUI_PROGRESS_INDICATOR</td><td><span class="kw">cl_progress_indicator=&gt;progress_indicate</span></td></tr>
+    </tbody>
+  </table>
+  <pre><code class="abap">CLASS lcx_gate DEFINITION INHERITING FROM cx_static_check.
+  PUBLIC SECTION.
+    DATA mv_text TYPE string READ-ONLY.
+    METHODS constructor IMPORTING iv_text TYPE string.
+ENDCLASS.
+
+CLASS lcx_gate IMPLEMENTATION.
+  METHOD constructor.
+    super-&gt;constructor( ).
+    mv_text = iv_text.
+  ENDMETHOD.
+ENDCLASS.
+
+CLASS lcl_app DEFINITION.
+  PUBLIC SECTION.
+    CLASS-METHODS f4_file.
+    METHODS run.
+  PRIVATE SECTION.
+    DATA: mv_tab  TYPE tabname,
+          mr_data TYPE REF TO data,            " 動態內表
+          mo_line TYPE REF TO cl_abap_structdescr.
+    METHODS create_table_ref RAISING lcx_gate.
+    METHODS download         RAISING lcx_gate.
+    METHODS check_gate       RAISING lcx_gate.
+    METHODS upload           RAISING lcx_gate.
+    METHODS write_db         RAISING lcx_gate.
+ENDCLASS.
+
+CLASS lcl_app IMPLEMENTATION.
+  METHOD run.
+    mv_tab = p_tab.
+    TRY.
+        create_table_ref( ).
+        IF p_down = abap_true.
+          download( ).
+        ELSE.
+          check_gate( ).          " 四道閘門，任何一道不過就中止
+          upload( ).
+          IF p_test = abap_false.
+            write_db( ).
+          ENDIF.
+        ENDIF.
+      CATCH lcx_gate INTO DATA(lx).
+        MESSAGE lx-&gt;mv_text TYPE 'S' DISPLAY LIKE 'E'.
+    ENDTRY.
+  ENDMETHOD.
+  ...
+ENDCLASS.</code></pre>
+
+  <h3 id="ch09-5-05">5. 關鍵改寫（一）：RTTS 建立動態內表</h3>
+  <p>原程式同一張表的結構建了兩次：<span class="kw">get_tab_strc</span> 用 <span class="kw">cl_alv_table_create=&gt;create_dynamic_table</span> 建一次，<span class="kw">download_table</span> 又用 RTTS 建一次。<span class="kw">create_dynamic_table</span> 內部用 <span class="kw">GENERATE SUBROUTINE POOL</span> 產生程式，同一個 internal session 最多只能產生 36 次，而且 field catalog 只帶 inttype、intlen、decimals，<b>會遺失資料元素的參照</b>，包括轉換常式（ALPHA）、幣別參照與欄位文字。RTTS 直接依 DDIC 型別建立內表，完整保留這些資訊：</p>
+  <pre><code class="abap">METHOD create_table_ref.
+  " 1) 依名稱取型別描述；不存在或不是結構就拋例外
+  cl_abap_typedescr=&gt;describe_by_name(
+    EXPORTING  p_name         = mv_tab
+    RECEIVING  p_descr_ref    = DATA(lo_type)
+    EXCEPTIONS type_not_found = 1 ).
+  IF sy-subrc &lt;&gt; 0 OR lo_type-&gt;kind &lt;&gt; cl_abap_typedescr=&gt;kind_struct.
+    RAISE EXCEPTION NEW lcx_gate( |{ mv_tab } 不是資料字典中的表或結構| ).
+  ENDIF.
+  mo_line = CAST cl_abap_structdescr( lo_type ).
+
+  " 2) 行型別 → 表型別 → 建立資料物件
+  DATA(lo_tab) = cl_abap_tabledescr=&gt;create( p_line_type = mo_line ).
+  CREATE DATA mr_data TYPE HANDLE lo_tab.
+ENDMETHOD.</code></pre>
+  <div class="note">欄位清單可以直接取 <span class="kw">mo_line-&gt;get_ddic_field_list( )</span>，回傳的是 DFIES 表，內容和 <span class="kw">DDIF_FIELDINFO_GET</span> 相同（含 fieldtext、convexit、reftable／reffield），不用再呼叫一次函數。詳見 <a href="#ch06-10">6-10 章</a>第 12 節。</div>
+
+  <h3 id="ch09-5-06">6. 關鍵改寫（二）：動態 SELECT 與下載 TXT</h3>
+  <p>原程式的寫法是 <span class="kw">SELECT * FROM (p_tbma) INTO CORRESPONDING FIELDS OF TABLE</span>，表名直接取自使用者輸入，而且沒有排序。改寫時要注意四件事：主機變數加 <span class="kw">@</span>；<b>明確寫 ORDER BY PRIMARY KEY</b>（HANA 沒有預設排序，同一張表下載兩次的順序可能不同，比對檔案時會很困擾）；設筆數上限；表名先經過 <span class="kw">check_table_name_str</span> 驗證（第 7 節）。輸出時自己把每一列組成 tab 分隔的字串，這樣欄位順序、表頭和編碼都由程式控制：</p>
+  <pre><code class="abap">METHOD download.
+  FIELD-SYMBOLS &lt;lt_data&gt; TYPE STANDARD TABLE.
+  ASSIGN mr_data-&gt;* TO &lt;lt_data&gt;.
+
+  DATA(lv_tab) = cl_abap_dyn_prg=&gt;check_table_name_str(   " 防注入，見第 7 節
+                   val = mv_tab packages = '' ).
+  SELECT * FROM (lv_tab)
+    ORDER BY PRIMARY KEY
+    INTO TABLE @&lt;lt_data&gt;
+    UP TO 500000 ROWS.
+
+  " 表頭 = 技術欄位名（上傳時用來核對欄位順序）
+  DATA(lt_fields) = mo_line-&gt;get_ddic_field_list( ).
+  DATA(lv_tabch)  = cl_abap_char_utilities=&gt;horizontal_tab.
+  DATA(lt_out) = VALUE string_table(
+    ( concat_lines_of( table = VALUE string_table( FOR f IN lt_fields ( CONV #( f-fieldname ) ) )
+                       sep   = lv_tabch ) ) ).
+
+  LOOP AT &lt;lt_data&gt; ASSIGNING FIELD-SYMBOL(&lt;ls_row&gt;).
+    DATA(lv_line) = ``.
+    DO lines( lt_fields ) TIMES.
+      ASSIGN COMPONENT sy-index OF STRUCTURE &lt;ls_row&gt; TO FIELD-SYMBOL(&lt;lv_val&gt;).
+      " 不加格式 = 內部格式：日期 YYYYMMDD、金額不乘幣別因子、保留前導零
+      lv_line = COND #( WHEN sy-index = 1 THEN |{ &lt;lv_val&gt; }|
+                        ELSE |{ lv_line }{ lv_tabch }{ &lt;lv_val&gt; }| ).
+    ENDDO.
+    APPEND lv_line TO lt_out.
+  ENDLOOP.
+
+  cl_gui_frontend_services=&gt;gui_download(
+    EXPORTING filename  = p_file
+              filetype  = 'ASC'
+              codepage  = '4110'          " UTF-8
+              write_bom = abap_true
+    CHANGING  data_tab  = lt_out
+    EXCEPTIONS OTHERS   = 1 ).
+  IF sy-subrc &lt;&gt; 0.
+    RAISE EXCEPTION NEW lcx_gate( |下載失敗：{ p_file }| ).
+  ENDIF.
+  MESSAGE |{ mv_tab } 共下載 { lines( &lt;lt_data&gt; ) } 筆| TYPE 'S'.
+ENDMETHOD.</code></pre>
+  <div class="warn"><b>內部格式與外部格式要分清楚。</b>這支工具的目的是「A 系統的表搬到 B 系統的同一張表」，所以下載和上傳都要用<b>內部格式</b>（不做 ALPHA、不乘幣別因子、日期不加分隔符號），兩邊才會對稱。如果檔案是要給人看或給外部系統用，就必須轉成外部格式，否則台幣、日圓金額會差 100 倍（見第 10 節）。兩種用途不要共用同一個檔案。</div>
+  <div class="note">原程式的 <span class="kw">write_field_separator = g_tab</span>（傳入 tab 字元）也能正常運作，因為這個參數只判斷有沒有值，有值就用 tab 分隔。正確寫法是傳 <span class="kw">abap_true</span>。原程式的 xls 格式其實是用 OLE 讓前端的 Excel 存檔，背景作業不能執行、速度極慢（每一格都要往返 GUI 一次），而且只支援 .xls。</div>
+
+  <h3 id="ch09-5-07">7. 關鍵改寫（三）：上傳前的四道閘門</h3>
+  <p>原程式完全沒有這一段。上傳是這支工具最危險的功能，所以在讀檔之前，要依序檢查四件事：</p>
+  <ol>
+    <li><b>表名防注入與白名單</b>：<span class="kw">cl_abap_dyn_prg=&gt;check_table_name_str</span> 確認輸入的確實是一張資料庫表，不是夾帶 SQL 片段的字串。<span class="kw">packages</span> 參數可以把範圍限縮在指定套件（介面請以 SE24 確認）。</li>
+    <li><b>DD02L 檢查</b>：必須是透明表（TABCLASS = TRANSP），交付類別（CONTFLAG）只允許 A（應用資料）或 C（客戶設定），不允許 S、W 這類系統表。</li>
+    <li><b>系統角色</b>：T000-CCCATEGORY = 'P'（生產用戶端）時一律拒絕。</li>
+    <li><b>權限</b>：S_TABU_NAM（ACTVT 02 變更、TABLE = 表名）。沒有權限時，使用者可以用 SU53 看缺了哪一項。</li>
+  </ol>
+  <pre><code class="abap">METHOD check_gate.
+  " 1) 防注入：不是 DB 表會拋 cx_abap_not_a_table
+  TRY.
+      DATA(lv_tab) = cl_abap_dyn_prg=&gt;check_table_name_str(
+                       val = mv_tab packages = '' ).
+    CATCH cx_abap_not_a_table cx_abap_not_in_package.
+      RAISE EXCEPTION NEW lcx_gate( |{ mv_tab } 不是可用的資料庫表| ).
+  ENDTRY.
+
+  " 2) 只允許 Z／Y 透明表，交付類別 A 或 C（列舉，不用區間）
+  SELECT SINGLE tabclass, contflag FROM dd02l
+    WHERE tabname  = @lv_tab
+      AND as4local = 'A'
+      AND as4vers  = '0000'
+    INTO @DATA(ls_dd02l).
+  IF sy-subrc &lt;&gt; 0
+     OR ls_dd02l-tabclass &lt;&gt; 'TRANSP'
+     OR NOT ( ls_dd02l-contflag = 'A' OR ls_dd02l-contflag = 'C' )
+     OR NOT ( lv_tab(1) = 'Z' OR lv_tab(1) = 'Y' ).
+    RAISE EXCEPTION NEW lcx_gate( |{ lv_tab } 不是可上傳的自建透明表| ).
+  ENDIF.
+
+  " 3) 生產用戶端一律拒絕
+  SELECT SINGLE cccategory FROM t000 WHERE mandt = @sy-mandt
+    INTO @DATA(lv_role).
+  IF lv_role = 'P'.
+    RAISE EXCEPTION NEW lcx_gate( '生產用戶端不可使用此工具上傳' ).
+  ENDIF.
+
+  " 4) 表層級權限
+  AUTHORITY-CHECK OBJECT 'S_TABU_NAM'
+    ID 'ACTVT' FIELD '02'
+    ID 'TABLE' FIELD lv_tab.
+  IF sy-subrc &lt;&gt; 0.
+    RAISE EXCEPTION NEW lcx_gate( |沒有 { lv_tab } 的變更權限（S_TABU_NAM），請看 SU53| ).
+  ENDIF.
+ENDMETHOD.</code></pre>
+  <div class="tip">下載一樣要檢查權限（S_TABU_NAM 的 ACTVT = 03），否則這支程式會變成「繞過 SE16 權限的後門」，可以讀到薪資（PA0008）或銀行帳號這類敏感表。實務上可以再加一張 Z 對照表，列出「允許用這支工具搬運的表」，用明確列舉的方式管理，比用前綴判斷更可靠。</div>
+
+  <h3 id="ch09-5-08">8. 關鍵改寫（四）：讀檔、逐欄轉換、鎖定後寫入</h3>
+  <p>原程式用 <span class="kw">GUI_UPLOAD</span> 直接把檔案讀進動態內表。這種讀法遇到欄位長度或型別不符時會整批失敗，而且看不出是第幾列、第幾欄出錯。原程式讀 Excel 的邏輯還有一個錯誤：每一列的第一格一律填成 <span class="kw">sy-mandt</span>，所以<b>跨用戶端表（沒有 MANDT）的第一個鍵值欄位會被蓋成用戶端代號</b>。改寫的做法是先讀成字串表，核對表頭，再逐欄指定並攔截轉換錯誤：</p>
+  <pre><code class="abap">METHOD upload.
+  FIELD-SYMBOLS &lt;lt_data&gt; TYPE STANDARD TABLE.
+  ASSIGN mr_data-&gt;* TO &lt;lt_data&gt;.
+
+  DATA lt_raw TYPE string_table.
+  cl_gui_frontend_services=&gt;gui_upload(
+    EXPORTING filename = p_file filetype = 'ASC' codepage = '4110'
+    CHANGING  data_tab = lt_raw
+    EXCEPTIONS OTHERS  = 1 ).
+  IF sy-subrc &lt;&gt; 0 OR lt_raw IS INITIAL.
+    RAISE EXCEPTION NEW lcx_gate( |無法讀取 { p_file }| ).
+  ENDIF.
+
+  DATA(lv_tabch)  = cl_abap_char_utilities=&gt;horizontal_tab.
+  DATA(lt_fields) = mo_line-&gt;get_ddic_field_list( ).
+
+  " 第 1 列必須是欄位名，而且順序要與 DDIC 完全一致
+  SPLIT lt_raw[ 1 ] AT lv_tabch INTO TABLE DATA(lt_head).
+  IF lines( lt_head ) &lt;&gt; lines( lt_fields ).
+    RAISE EXCEPTION NEW lcx_gate( '檔案欄位數與資料表不符，請先重新下載範本' ).
+  ENDIF.
+  LOOP AT lt_fields INTO DATA(ls_f).
+    DATA(lv_col) = replace( val = lt_head[ sy-tabix ] sub = cl_abap_char_utilities=&gt;byte_order_mark_utf8 with = `` ).
+    IF to_upper( condense( lv_col ) ) &lt;&gt; ls_f-fieldname.
+      RAISE EXCEPTION NEW lcx_gate( |第 { sy-tabix } 欄應為 { ls_f-fieldname }| ).
+    ENDIF.
+  ENDLOOP.
+
+  DATA(lv_err) = 0.
+  LOOP AT lt_raw INTO DATA(lv_raw) FROM 2.
+    DATA(lv_rowno) = sy-tabix.
+    SPLIT lv_raw AT lv_tabch INTO TABLE DATA(lt_cells).
+    APPEND INITIAL LINE TO &lt;lt_data&gt; ASSIGNING FIELD-SYMBOL(&lt;ls_row&gt;).
+    LOOP AT lt_cells INTO DATA(lv_cell).
+      ASSIGN COMPONENT sy-tabix OF STRUCTURE &lt;ls_row&gt; TO FIELD-SYMBOL(&lt;lv_val&gt;).
+      CHECK sy-subrc = 0.
+      TRY.
+          &lt;lv_val&gt; = lv_cell.                     " 內部格式直接指定
+        CATCH cx_sy_conversion_error INTO DATA(lx_conv).
+          lv_err += 1.                            " += 需 7.54 以上；舊版寫 lv_err = lv_err + 1
+          MESSAGE |第 { lv_rowno } 列第 { sy-tabix } 欄：{ lx_conv-&gt;get_text( ) }| TYPE 'I'.
+      ENDTRY.
+    ENDLOOP.
+  ENDLOOP.
+
+  IF lv_err &gt; 0.
+    RAISE EXCEPTION NEW lcx_gate( |有 { lv_err } 個欄位轉換失敗，已中止| ).
+  ENDIF.
+  MESSAGE |讀入 { lines( &lt;lt_data&gt; ) } 筆{ COND #( WHEN p_test = abap_true THEN '（模擬，未寫入）' ) }| TYPE 'S'.
+ENDMETHOD.</code></pre>
+  <p>寫入時一定要先鎖表。<span class="kw">ENQUEUE_E_TABLE</span> 是通用的表鎖，SM30 維護檢視也用同一個鎖物件，所以上傳期間別人無法在 SM30 修改同一張表。原程式用 <span class="kw">CATCH cx_root</span> 把所有錯誤都吃掉，而且沒有 ROLLBACK；如果 DELETE 成功、MODIFY 失敗，程式結束時的隱含 COMMIT 會讓<b>整張表被清空</b>。</p>
+  <pre><code class="abap">METHOD write_db.
+  FIELD-SYMBOLS &lt;lt_data&gt; TYPE STANDARD TABLE.
+  ASSIGN mr_data-&gt;* TO &lt;lt_data&gt;.
+  DATA(lv_tab) = cl_abap_dyn_prg=&gt;check_table_name_str( val = mv_tab packages = '' ).
+
+  CALL FUNCTION 'ENQUEUE_E_TABLE'
+    EXPORTING  mode_rstable   = 'E'
+               tabname        = lv_tab
+    EXCEPTIONS foreign_lock   = 1
+               system_failure = 2
+               OTHERS         = 3.
+  IF sy-subrc &lt;&gt; 0.
+    RAISE EXCEPTION NEW lcx_gate( |{ lv_tab } 正被他人鎖定（SM12 查詢）| ).
+  ENDIF.
+
+  TRY.
+      IF p_clear = abap_true.
+        DELETE FROM (lv_tab).                     " 只清目前用戶端
+      ENDIF.
+      MODIFY (lv_tab) FROM TABLE @&lt;lt_data&gt;.
+      COMMIT WORK AND WAIT.
+      MESSAGE |{ lv_tab } 寫入 { lines( &lt;lt_data&gt; ) } 筆| TYPE 'S'.
+    CATCH cx_sy_open_sql_db cx_sy_dynamic_osql_error INTO DATA(lx_sql).
+      ROLLBACK WORK.                              " DELETE 與 MODIFY 一起還原
+      CALL FUNCTION 'DEQUEUE_E_TABLE'
+        EXPORTING mode_rstable = 'E' tabname = lv_tab.
+      RAISE EXCEPTION NEW lcx_gate( |寫入失敗已還原：{ lx_sql-&gt;get_text( ) }| ).
+  ENDTRY.
+
+  CALL FUNCTION 'DEQUEUE_E_TABLE'
+    EXPORTING mode_rstable = 'E' tabname = lv_tab.
+ENDMETHOD.</code></pre>
+  <div class="note">自建表如果需要稽核軌跡，可以在 SE13（技術設定）勾選「Log data changes」，並確認系統參數 <span class="kw">rec/client</span> 已經開啟，之後就能在 SCU3 查到直接 MODIFY 的變更紀錄。這是唯一能讓這類工具留下紀錄的標準方法。</div>
+
+  <h3 id="ch09-5-09">9. 原程式問題與上線注意：標準表請走標準路</h3>
+  <table>
+    <thead><tr><th>原程式寫法／問題</th><th>後果</th><th>本章改寫</th></tr></thead>
+    <tbody>
+      <tr><td>沒有權限檢查、不限制表名</td><td>任何能執行的人都能清空任意標準表</td><td>四道閘門（第 7 節）</td></tr>
+      <tr><td>沒有鎖定，也沒有 ROLLBACK</td><td>並行時資料互相覆蓋；DELETE 成功、MODIFY 失敗時整張表變空</td><td>ENQUEUE_E_TABLE ＋ ROLLBACK WORK</td></tr>
+      <tr><td><span class="kw">OCCURS 0 WITH HEADER LINE</span>、<span class="kw">LIKE</span>、10 個 FORM</td><td>不符合 S/4HANA 語法規範</td><td>local class、內嵌宣告</td></tr>
+      <tr><td>cl_alv_table_create 建動態表</td><td>每個 session 最多產生 36 次；遺失 DDIC 參照</td><td>RTTS</td></tr>
+      <tr><td>SELECT 沒排序</td><td>HANA 上每次下載的順序不同</td><td>ORDER BY PRIMARY KEY</td></tr>
+      <tr><td>OLE 逐格寫 Excel、自製 ZALSM 讀 Excel（上限 100 欄 × 50000 列）</td><td>速度慢、不能背景執行、只支援 .xls</td><td>txt／UTF-8；Excel 見 <a href="#ch06-5">6-5 章</a></td></tr>
+      <tr><td>Excel 上傳時第一格強制填 sy-mandt</td><td>跨用戶端表的第一個鍵值被蓋掉</td><td>依表頭逐欄對應</td></tr>
+      <tr><td>訊息寫死在 INITIALIZATION（簡體）</td><td>無法翻譯</td><td>文字元素、訊息類別</td></tr>
+    </tbody>
+  </table>
+  <p>標準表的資料要依照「先找標準」的順序處理，工具越往右越危險：</p>
+  <table>
+    <thead><tr><th>情境</th><th>建議做法</th></tr></thead>
+    <tbody>
+      <tr><td>主資料、未結餘額的初始移轉</td><td>Migration Cockpit（1809 用 LTMC；之後改用 Fiori「Migrate Your Data」），有標準移轉物件與模擬功能</td></tr>
+      <tr><td>日常批次建立或變更業務資料</td><td>BAPI（見 <a href="#ch04-1">4-1 章</a>），或 LSMW 的 BAPI／IDoc 方法</td></tr>
+      <tr><td>標準表沒有 BAPI 的設定值</td><td>SPRO／SM30 搭配傳輸請求（SE10），不要直接寫表</td></tr>
+      <tr><td>自建 Z 表的主檔資料</td><td>SE54 產生維護檢視，用 SM30 維護；大量資料才用本章工具（開發或測試系統）</td></tr>
+      <tr><td>SE16N 的 <span class="kw">&amp;SAP_EDIT</span></td><td>多數系統已依 SAP Note 停用或限制，使用時也會留下紀錄，稽核會追查。<b>不要把它當成工具</b></td></tr>
+    </tbody>
+  </table>
+
+  <h3 id="ch09-5-10">10. 幣別小數位：TCURX 與 CURRENCY_CONVERTING_FACTOR</h3>
+  <p>SAP 的金額欄位（資料型別 CURR）在 DDIC 中大多定義為 2 位小數，例如 <span class="kw">WRBTR</span> 是 CURR 13,2。但日圓、韓圜沒有小數，SAP 的處理方式是：<b>資料庫一律照 2 位小數存放，小數位數不同的幣別，存進去之前先換算。</b>換算依據是 TCURX 表（OY04 維護）：</p>
+  <ul>
+    <li><span class="kw">TCURX-CURRKEY</span> 幣別、<span class="kw">TCURX-CURRDEC</span> 小數位數。</li>
+    <li>TCURX 沒有這個幣別時，視為 2 位小數（大多數幣別都不在 TCURX 裡）。</li>
+    <li>CURRDEC 大於 5 會報錯（例外 TOO_MANY_DECIMALS）。</li>
+    <li>換算因子 = 100 ÷（10 的 CURRDEC 次方）：0 位 → 100，2 位 → 1，3 位（如 KWD、BHD）→ 0.1，4 位 → 0.01。</li>
+  </ul>
+  <table>
+    <thead><tr><th>幣別</th><th>CURRDEC</th><th>因子</th><th>畫面金額</th><th>DB（SE16）看到的值</th></tr></thead>
+    <tbody>
+      <tr><td>USD、EUR（不在 TCURX）</td><td>2（預設）</td><td>1</td><td>1,234.56</td><td>1234.56</td></tr>
+      <tr><td>JPY、KRW</td><td>0</td><td>100</td><td>123,456</td><td>1234.56</td></tr>
+      <tr><td>TWD（台灣專案多設為 0）</td><td>0</td><td>100</td><td>50,000</td><td>500.00</td></tr>
+      <tr><td>KWD</td><td>3</td><td>0.1</td><td>1.234</td><td>12.34</td></tr>
+    </tbody>
+  </table>
+  <div class="warn"><b>下載或介面忘記轉換，台幣金額就會差 100 倍。</b>台灣專案通常會在 TCURX（OY04）把 TWD 設為 0 位小數。這時 SE16 或直接 SELECT 看到的 500.00 其實是新台幣 50,000 元。直接寫到 CSV、Power BI 或外部資料庫，對方收到的金額就少了 100 倍；反方向從外部檔案寫進 SAP 沒有換算，金額就多 100 倍。請先用 SE16 查 TCURX，確認自己系統中 TWD 的設定。<b>TCURX 上線之後絕對不能修改</b>，改了之後既有資料的解讀全部會跟著改變。</div>
+  <p>素材中的兩段 FORM 可以改寫成一個靜態方法。取得因子的方式有兩種：呼叫標準函數，或直接讀 TCURX 自己計算。</p>
+  <pre><code class="abap">CLASS lcl_curr DEFINITION.
+  PUBLIC SECTION.
+    CLASS-METHODS factor IMPORTING iv_waers         TYPE waers
+                         RETURNING VALUE(rv_factor) TYPE decfloat34.
+ENDCLASS.
+
+CLASS lcl_curr IMPLEMENTATION.
+  METHOD factor.
+    " 做法 A：標準函數
+    DATA lv_f TYPE p LENGTH 8 DECIMALS 5.   " 原筆記用 DECIMALS 3，4 位小數幣別（0.01）還夠；保守起見放大
+    CALL FUNCTION 'CURRENCY_CONVERTING_FACTOR'
+      EXPORTING  currency          = iv_waers
+      IMPORTING  factor            = lv_f
+      EXCEPTIONS too_many_decimals = 1
+                 OTHERS            = 2.
+    IF sy-subrc = 0 AND lv_f &lt;&gt; 0.
+      rv_factor = lv_f.
+      RETURN.
+    ENDIF.
+
+    " 做法 B：直接讀 TCURX（規則相同）
+    SELECT SINGLE currdec FROM tcurx
+      WHERE currkey = @iv_waers
+      INTO @DATA(lv_dec).
+    IF sy-subrc &lt;&gt; 0.
+      lv_dec = 2.                           " 沒維護 = 2 位
+    ENDIF.
+    rv_factor = 100 / ipow( base = 10 exp = lv_dec ).
+  ENDMETHOD.
+ENDCLASS.
+
+" 使用：DB 值 → 真實金額（外部）
+DATA(lv_display) = CONV decfloat34( ls_bseg-wrbtr ) * lcl_curr=&gt;factor( ls_bkpf-waers ).
+" 真實金額 → DB 值（素材例 1 的「除以因子」就是這個方向）
+DATA(lv_internal) = CONV wrbtr( lv_display / lcl_curr=&gt;factor( ls_bkpf-waers ) ).</code></pre>
+  <div class="note">素材例 2 在函數失敗時把因子設成 1。這個預設沒有錯（2 位小數的因子就是 1），但會把 TOO_MANY_DECIMALS 這類設定錯誤默默吞掉。改寫時建議至少記錄一筆警告。</div>
+
+  <h3 id="ch09-5-11">11. 內外部金額轉換函數與 BAPI 的外部格式</h3>
+  <p>不想自己乘除因子的話，SAP 有兩組現成函數，差別在於用途：</p>
+  <table>
+    <thead><tr><th>函數</th><th>方向</th><th>用途</th></tr></thead>
+    <tbody>
+      <tr><td><span class="kw">CURRENCY_AMOUNT_SAP_TO_DISPLAY</span></td><td>內部 → 外部</td><td>報表、下載、給人看的金額</td></tr>
+      <tr><td><span class="kw">CURRENCY_AMOUNT_DISPLAY_TO_SAP</span></td><td>外部 → 內部</td><td>上傳檔案寫回 SAP 前的換算</td></tr>
+      <tr><td><span class="kw">BAPI_CURRENCY_CONV_TO_EXTERNAL</span></td><td>內部 → 外部</td><td>BAPI／RFC 介面，外部欄位是 BAPICURR（23 位、4 位小數）</td></tr>
+      <tr><td><span class="kw">BAPI_CURRENCY_CONV_TO_INTERNAL</span></td><td>外部 → 內部</td><td>同上，另有位數上限檢查，回傳 RETURN</td></tr>
+    </tbody>
+  </table>
+  <pre><code class="abap">" 內部 → 外部（顯示用）
+DATA lv_disp TYPE p LENGTH 15 DECIMALS 2.   " 外部值用較寬的欄位，避免 0 位小數幣別溢位
+CALL FUNCTION 'CURRENCY_AMOUNT_SAP_TO_DISPLAY'
+  EXPORTING  currency        = 'TWD'
+             amount_internal = ls_item-wrbtr          " DB 值 500.00
+  IMPORTING  amount_display  = lv_disp                " 50000.00
+  EXCEPTIONS internal_error  = 1
+             OTHERS          = 2.
+
+" 外部 → 內部（上傳寫回前）
+DATA lv_int TYPE wrbtr.
+CALL FUNCTION 'CURRENCY_AMOUNT_DISPLAY_TO_SAP'
+  EXPORTING  currency        = 'TWD'
+             amount_display  = CONV wrbtr( '50000' )
+  IMPORTING  amount_internal = lv_int                 " 500.00
+  EXCEPTIONS internal_error  = 1
+             OTHERS          = 2.</code></pre>
+  <pre><code class="abap">" BAPI 介面的金額是外部格式（BAPICURR_D），呼叫 BAPI 前後常用這一組
+DATA lv_ext TYPE bapicurr_d.
+CALL FUNCTION 'BAPI_CURRENCY_CONV_TO_EXTERNAL'
+  EXPORTING currency        = 'JPY'
+            amount_internal = ls_item-wrbtr           " 1234.56
+  IMPORTING amount_external = lv_ext.                 " 123456.0000
+
+DATA: lv_back TYPE wrbtr, ls_ret TYPE bapireturn.
+CALL FUNCTION 'BAPI_CURRENCY_CONV_TO_INTERNAL'
+  EXPORTING currency             = 'JPY'
+            amount_external      = lv_ext
+            max_number_of_digits = 13                 " 目標欄位的總位數
+  IMPORTING amount_internal      = lv_back
+            return               = ls_ret.
+IF ls_ret-type = 'E'.
+  MESSAGE ls_ret-message TYPE 'I'.                    " 位數超過上限
+ENDIF.</code></pre>
+  <div class="note">多數標準 BAPI（例如 BAPI_ACC_DOCUMENT_POST 的 CURRENCYAMOUNT）的金額欄位本來就是外部格式，BAPI 內部會自己換算。<b>呼叫這類 BAPI 時直接傳畫面上的金額</b>，不要再自己除以因子，否則日圓、台幣會少 100 倍。上面兩個函數的參數型別請以 SE37 確認。</div>
+
+  <h3 id="ch09-5-12">12. 金額輸出：WRITE CURRENCY、字串範本與 SALV</h3>
+  <p>在清單或字串中顯示金額時，不必呼叫函數。語言本身就支援依 TCURX 放置小數點：</p>
+  <pre><code class="abap">DATA(lv_amt)   = CONV wrbtr( '1234.56' ).   " DB 內部值
+DATA(lv_waers) = CONV waers( 'JPY' ).
+
+" 1) WRITE ... CURRENCY：依 TCURX 決定小數位並加千分位
+DATA lv_text TYPE c LENGTH 20.
+WRITE lv_amt TO lv_text CURRENCY lv_waers.     " → 123,456
+
+" 2) 字串範本的 CURRENCY 格式選項（可與 NUMBER 搭配）
+DATA(lv_msg) = |金額 { lv_amt CURRENCY = lv_waers NUMBER = USER } { lv_waers }|.
+" → 金額 123,456 JPY（千分位符號依使用者設定）
+
+" 3) SALV：指定幣別參照欄，ALV 會自動處理小數位與加總
+TRY.
+    lo_salv-&gt;get_columns( )-&gt;get_column( 'WRBTR' )-&gt;set_currency_column( 'WAERS' ).
+  CATCH cx_salv_not_found cx_salv_data_error.
+ENDTRY.</code></pre>
+  <div class="warn">字串範本如果<b>沒有</b>加 <span class="kw">CURRENCY =</span>，<span class="kw">|{ lv_amt }|</span> 輸出的是 1234.56（內部值）。下載 CSV 時最常在這裡出錯。ALV 忘了設 currency 欄位時也一樣，日圓顯示成 1,234.56，而且加總時會把不同幣別的金額直接相加。另一個常見錯誤是把 WRITE 的結果存回數值欄位；WRITE 的結果只能用來顯示。</div>
+
+  <h3 id="ch09-5-13">13. 匯率換算：CONVERT_TO_LOCAL_CURRENCY 與 TCURR</h3>
+  <p>小數位的換算只是「同一個幣別的內外部表示」。不同幣別之間的換算要用匯率，匯率存在 TCURR（OB08 維護），主要欄位有：<span class="kw">KURST</span> 匯率類型（M 為平均匯率）、<span class="kw">FCURR</span>／<span class="kw">TCURR</span> 來源與目標幣別、<span class="kw">GDATU</span> 生效日、<span class="kw">UKURS</span> 匯率。換算比率（例如 100 JPY = x TWD）存在 TCURF。<b>GDATU 是反轉日期</b>（99999999 減去日期），所以不要自己寫 SELECT 查匯率，一律用函數處理：</p>
+  <pre><code class="abap">DATA lv_local TYPE wrbtr.
+CALL FUNCTION 'CONVERT_TO_LOCAL_CURRENCY'
+  EXPORTING  date             = ls_bkpf-budat
+             foreign_amount   = ls_item-wrbtr        " 內部值即可，函數會自己處理小數位
+             foreign_currency = ls_bkpf-waers        " 例：USD
+             local_currency   = 'TWD'
+             type_of_rate     = 'M'
+  IMPORTING  local_amount     = lv_local
+             exchange_rate    = DATA(lv_rate)
+  EXCEPTIONS no_rate_found    = 1
+             overflow         = 2
+             no_factors_found = 3
+             no_spread_found  = 4
+             derived_2_times  = 5
+             OTHERS           = 6.
+IF sy-subrc &lt;&gt; 0.
+  MESSAGE |{ ls_bkpf-budat DATE = USER } 找不到 { ls_bkpf-waers }→TWD 匯率（OB08）| TYPE 'I'.
+ENDIF.</code></pre>
+  <div class="tip">反方向換算用 <span class="kw">CONVERT_TO_FOREIGN_CURRENCY</span>。FI 憑證本身已經有本位幣金額（BSEG-DMBTR、ACDOCA-HSL），<b>報表應該直接讀這些欄位，不要用今天的匯率重算</b>，否則會和總帳對不起來。CDS 有 <span class="kw">CURRENCY_CONVERSION</span> 函數可以在資料庫層換算，屬於 CDS 章節的主題。例外名稱 derived_2_times 等請以 SE37 確認。</div>
+
+  <h3 id="ch09-5-14">14. QM 常見客製清單</h3>
+  <p>素材只有 12 支程式的目錄。下表依 SAP 標準補上各程式通常會用到的表與 BAPI，以及「先找標準」時應該先試的交易碼 <span class="src">（依 SAP 標準整理，素材無內文）</span>。</p>
+  <table>
+    <thead><tr><th>#</th><th>程式</th><th>用途</th><th>相關標準物件</th><th>先找標準的替代方案</th></tr></thead>
+    <tbody>
+      <tr><td>01</td><td>ZBQM001</td><td>檢驗特性（MIC）上傳</td><td>QPMK（主檢驗特性）、QPMT（文字）</td><td>QS21／QS23 單筆；大量用 Migration Cockpit 的 QM 移轉物件或 LSMW 錄製</td></tr>
+      <tr><td>02</td><td>ZBQM002</td><td>QM 檢驗報表</td><td>QALS、QAVE、QAMV、QAMR</td><td>QA32／QA33（檢驗批清單，可存 layout）、QE51N（結果工作清單）</td></tr>
+      <tr><td>03</td><td>ZBQM003</td><td>檢驗批庫存迴轉</td><td>QALS、QAVE、MATDOC</td><td>QA11／QA12、QAC2；詳見 <a href="#ch06-6">6-6 章</a></td></tr>
+      <tr><td>04</td><td>ZBQM004</td><td>檢驗批 UD 迴轉</td><td>QAVE、BAPI_INSPLOT_SETUSAGEDECISION</td><td>QA12 變更 UD；詳見 <a href="#ch06-6">6-6 章</a></td></tr>
+      <tr><td>05</td><td>ZBQM005</td><td>檢驗計畫物料指派／規格上傳</td><td>PLKO（PLNTY = Q）、PLPO、PLMK、MAPL</td><td>QP01／QP02（物料指派）、QS61（物料規格）、QDB1（抽樣計畫）、Migration Cockpit 檢驗計畫物件</td></tr>
+      <tr><td>06</td><td>ZQMB0001</td><td>下載檢驗資訊 QALS → 外部 DB 表 <span class="kw">ZEXT_QALS</span></td><td>QALS、QAVE</td><td>標準 CDS I_InspectionLot、OData API_INSPECTIONLOT_SRV（以 API Hub 確認版本）；架構參考 <a href="#ch06-5">6-5 章</a></td></tr>
+      <tr><td>07</td><td>ZMMI0001</td><td>下傳檢驗批</td><td>QALS、中繼表、DBCO</td><td>詳見 <a href="#ch06-5">6-5 章</a></td></tr>
+      <tr><td>08</td><td>ZQMR0002</td><td>QM 檢驗報表</td><td>QALS、QAVE、QAMR</td><td>QA32／QA33</td></tr>
+      <tr><td>09</td><td>ZQME0001</td><td>委外進料轉移庫存到未限制</td><td>QALS（HERKUNFT 01）、QAVE、MATDOC</td><td>QA11 的庫存過帳頁籤；QA10 自動 UD（背景作業）；或在 QMAT 檢討委外料是否真的需要檢驗</td></tr>
+      <tr><td>10</td><td>Z_QM_CREATE_INSPECTION_LOT</td><td>特定異動類型、儲位自動產生檢驗批</td><td>QALS、QMAT、MB_DOCUMENT_BADI</td><td>移動類型的 QM 設定（OMJJ）、QMAT 啟用檢驗類型（QA08 大量維護）、QA01 手動建立</td></tr>
+      <tr><td>11</td><td>ZQMR0003</td><td>檢驗批報表（加物料文件備註）</td><td>QALS-MBLNR／MJAHR／ZEILE → MATDOC</td><td>QA32 加欄位不夠時才客製；備註欄位從 MATDOC 取</td></tr>
+      <tr><td>12</td><td>ZQME0002</td><td>免驗檢驗批收料時押上檢驗員名字</td><td>QAVE-VNAME（UD 決策者）、QALS</td><td>免驗批（skip lot）、QA10 自動 UD；「是誰」的問題由 UD 的使用者欄位回答，不要改寫 QAVE</td></tr>
+    </tbody>
+  </table>
+  <div class="warn"><b>先找標準，再想客製。</b>12 支程式中有 5 支是報表或下載（02、06、07、08、11）。QA32 可以自訂 layout 並匯出，S/4HANA 也有檢驗批的 CDS 與 OData，大多不需要自己寫。會寫入資料的程式（03、04、09、10、12）則一律走 BAPI 或標準交易，<b>不可以直接 UPDATE QALS／QAVE</b>。檢驗批狀態、庫存和物料文件是連動的，改其中一張表，其他地方就會對不起來。</div>
+
+  <h3 id="ch09-5-15">15. QM 關鍵程式片段：讀檢驗批與記錄結果</h3>
+  <p>報表類客製（02、06、08、11）的核心是一段 QALS ＋ QAVE 的查詢。QAVE 的鍵值是 PRUEFLOS ＋ KZART ＋ ZAEHLER，同一個檢驗批可能有多筆 UD（改過 UD 就會多一筆），<b>取「最新的 UD」一定要排序</b>。這和 Casper 的 H／E 成本案例是同一個坑。</p>
+  <pre><code class="abap">SELECT q~prueflos, q~werk, q~art, q~herkunft, q~matnr, q~charg,
+       q~losmenge, q~mengeneinh, q~enstehdat,
+       q~mblnr, q~mjahr, q~zeile,
+       v~vcodegrp, v~vcode, v~vdatum, v~vname, v~zaehler
+  FROM qals AS q
+  LEFT OUTER JOIN qave AS v
+    ON v~prueflos = q~prueflos
+   AND v~kzart    = 'L'                       " 檢驗批層級的 UD
+  WHERE q~werk      IN @s_werks
+    AND q~art       IN @s_art                 " 檢驗類型用列舉（01、04、05…），不用區間
+    AND q~enstehdat IN @s_date
+  ORDER BY q~prueflos, v~zaehler DESCENDING
+  INTO TABLE @DATA(lt_lot).
+
+" 每個檢驗批只留最新一筆 UD（已按 zaehler 由大到小排序）
+DELETE ADJACENT DUPLICATES FROM lt_lot COMPARING prueflos.
+
+cl_salv_table=&gt;factory( IMPORTING r_salv_table = DATA(lo_salv)
+                        CHANGING  t_table      = lt_lot ).
+lo_salv-&gt;get_functions( )-&gt;set_all( abap_true ).
+lo_salv-&gt;display( ).</code></pre>
+  <p>上傳檢驗結果這一類客製（例如把儀器的量測值寫回檢驗批）應該使用 BAPI，不可以寫 QAMR。BAPI_INSPOPER_RECORDRESULTS 以「檢驗批 ＋ 作業」為單位記錄特性結果：</p>
+  <pre><code class="abap">DATA: lt_char TYPE STANDARD TABLE OF bapi2045d2,
+      lt_rett TYPE STANDARD TABLE OF bapiret2,
+      ls_ret  TYPE bapiret2.
+
+" 欄位名稱請以 SE11 查 BAPI2045D2 確認；以下為定量特性的平均值
+lt_char = VALUE #( ( insplot    = lv_prueflos
+                     inspoper   = '0010'
+                     inspchar   = '0010'
+                     mean_value = '12.35'
+                     closed     = abap_true
+                     evaluated  = abap_true ) ).
+
+CALL FUNCTION 'BAPI_INSPOPER_RECORDRESULTS'
+  EXPORTING insplot      = lv_prueflos
+            inspoper     = '0010'
+  IMPORTING return       = ls_ret
+  TABLES    char_results = lt_char
+            returntable  = lt_rett.
+
+IF ls_ret-type CA 'EA' OR line_exists( lt_rett[ type = 'E' ] ).
+  CALL FUNCTION 'BAPI_TRANSACTION_ROLLBACK'.
+ELSE.
+  CALL FUNCTION 'BAPI_TRANSACTION_COMMIT' EXPORTING wait = abap_true.
+ENDIF.</code></pre>
+  <div class="note">使用決策可以用 <span class="kw">BAPI_INSPLOT_SETUSAGEDECISION</span>，庫存過帳的參數與 UD 代碼群組請先用 SE37 的測試功能，在測試系統以單一檢驗批驗證。ZBQM003／004 的 UD 迴轉邏輯與 MATDOC 追蹤，請看 <a href="#ch06-6">6-6 章</a>第 11 ~ 14 節。</div>
+
+  <h3 id="ch09-5-16">16. QM 客製的上線注意</h3>
+  <ul>
+    <li><b>ZQMB0001 寫外部資料庫表 ZEXT_QALS</b>：沿用 <a href="#ch06-5">6-5 章</a>的「中繼表 ＋ 狀態回寫」架構，以 QALS 的建立日期或 UD 日期（QAVE-VDATUM）做差異抽取，不要每次全量重寫。寫到外部系統的數量與單位要一起帶；如果有金額，記得第 10 節的幣別因子。</li>
+    <li><b>Z_QM_CREATE_INSPECTION_LOT 類的「自動產生檢驗批」</b>：如果掛在 MB_DOCUMENT_BADI 這類過帳 BAdI，裡面不可以 COMMIT，也不可以呼叫會 COMMIT 的 BAPI。應該改成 <span class="kw">IN BACKGROUND TASK</span> 或事件觸發背景作業。先確認 OMJJ／QMAT 的標準設定能不能做到，「依儲位決定是否檢驗」通常才是需要客製的部分。</li>
+    <li><b>ZQME0001／0002 自動處理庫存或 UD</b>：標準 QA10 自動 UD 可以排背景作業，UD 使用者會是作業的執行帳號。如果業務要求顯示實際負責人，請在報表中對照，不要回寫 QAVE。</li>
+    <li><b>上傳類（ZBQM001、005）</b>：先用 Migration Cockpit 的模擬功能跑一次；自己寫的話，一樣要做第 7 節的權限檢查與「模擬執行」勾選框。</li>
+    <li><b>檢驗類型、工廠選擇條件用列舉</b>：檢驗類型 01、0101、04、05、08 的編碼不連續，用 BT 01～08 會把不該抓的類型也抓進來。</li>
+  </ul>
+
+  <h3 id="ch09-5-qa">練習與自我檢核</h3>
+  <ol>
+    <li>原 ZDOWNLOAD_UPLOAD_TABLE 如果在生產系統被一般使用者執行，最壞的情況是什麼？本章加上的四道閘門各自防的是哪一種風險？</li>
+    <li>為什麼 <span class="kw">cl_alv_table_create=&gt;create_dynamic_table</span> 建出來的動態表會遺失 ALPHA 轉換與幣別參照？RTTS 為什麼不會？</li>
+    <li>下載程式中為什麼要寫 <span class="kw">ORDER BY PRIMARY KEY</span>？請用 HANA 沒有預設排序的觀點說明。</li>
+    <li>原程式在 DELETE FROM 成功、MODIFY 失敗時會發生什麼事？改寫版如何避免？</li>
+    <li>TWD 在 TCURX 設為 0 位小數，SE16 看到 BSEG-WRBTR = 1500.00，實際金額是多少？寫到 CSV 時要用哪一個函數或格式選項？</li>
+    <li>呼叫 BAPI_ACC_DOCUMENT_POST 時，日圓金額該傳 123456 還是 1234.56？為什麼？</li>
+    <li>寫出一行字串範本，依幣別與使用者設定輸出金額。</li>
+    <li>TCURR-GDATU 為什麼不能直接用日期比較？應該改用哪個函數？</li>
+    <li>QM 清單的 12 支程式中，哪些可以用 QA32、CDS 或 OData 取代？哪些一定要走 BAPI？</li>
+    <li>寫一段 SELECT，取出每個檢驗批「最新一筆」UD，並說明為什麼少了 ORDER BY 就會不穩定。</li>
+    <li>如果要讓自建 Z 表的直接修改在 SCU3 查得到，需要哪兩項設定？</li>
+  </ol>
+</section>
